@@ -570,8 +570,8 @@ impl MultibandCompressorPlugin {
         }
 
         // Single-band aliases: map unprefixed names to band_params[0] or stub fields
-        let name = &id.0;
-        match name.as_str() {
+        let name = id.as_str();
+        match name {
             "makeup_gain" => {
                 let v = value
                     .as_float()
@@ -728,8 +728,8 @@ impl MultibandCompressorPlugin {
             return Some(v);
         }
         // Single-band aliases: map unprefixed names to band_params[0] or stub fields
-        let name = &id.0;
-        match name.as_str() {
+        let name = id.as_str();
+        match name {
             "makeup_gain" => {
                 return Some(ParameterValue::Float(
                     self.band_params.first().map_or(0.0, |bp| bp.makeup_gain_db),

@@ -56,7 +56,7 @@ macro_rules! sotf_nih_plugin {
                                 };
 
                             infos.push(plugins_bridge::param_bridge::BridgedParamInfo {
-                                id: param.id.0.clone(),
+                                id: param.id.clone(),
                                 name: param.name.clone(),
                                 unit: param.unit.clone(),
                                 min_value: min,

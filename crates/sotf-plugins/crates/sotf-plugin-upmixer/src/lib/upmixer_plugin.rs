@@ -1715,7 +1715,7 @@ impl Plugin for UpmixerPlugin {
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         // ml_model_path is not in PARAMS — handle before param_bridge
-        if id.0 == "ml_model_path" {
+        if id.as_str() == "ml_model_path" {
             let path = value
                 .as_string()
                 .ok_or_else(|| "ml_model_path must be a string".to_string())?;
@@ -1829,7 +1829,7 @@ impl Plugin for UpmixerPlugin {
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         // ml_model_path is not in PARAMS, handle it manually
-        if id.0 == "ml_model_path" {
+        if id.as_str() == "ml_model_path" {
             return Some(ParameterValue::String(self.ml.ml_model_path.clone()));
         }
         param_bridge::get_parameter(UP, id, |i| self.param_value(i))

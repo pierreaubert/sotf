@@ -21,7 +21,7 @@ pub fn save_state(plugin: &dyn Plugin) -> Vec<u8> {
                 ParameterValue::Bool(b) => serde_json::Value::from(b),
                 ParameterValue::String(s) => serde_json::Value::from(s),
             };
-            map.insert(param.id.0.clone(), json_val);
+            map.insert(param.id.to_string(), json_val);
         }
     }
 
@@ -38,13 +38,13 @@ pub fn load_state(plugin: &mut dyn Plugin, data: &[u8]) -> Result<(), String> {
     let params = plugin.parameters();
 
     for (key, json_val) in &map {
-        let Some(param) = params.iter().find(|param| param.id.0 == *key) else {
+        let Some(param) = params.iter().find(|param| param.id.as_str() == key) else {
             continue;
         };
         let value = value_from_json(key, json_val, &param.default_value)?;
 
         plugin
-            .set_parameter(ParameterId(key.clone()), value)
+            .set_parameter(ParameterId::from(key.clone()), value)
             .map_err(|e| format!("Failed to load parameter '{key}': {e}"))?;
     }
 
@@ -103,7 +103,7 @@ mod tests {
         plugin.initialize(48000).unwrap();
 
         // Set a parameter
-        let id = ParameterId("gain_db".to_string());
+        let id = ParameterId::from("gain_db");
         plugin
             .set_parameter(id.clone(), ParameterValue::Float(3.0))
             .unwrap();
@@ -198,10 +198,10 @@ mod tests {
         }
 
         fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> Result<(), String> {
-            self.set_calls.push(id.0.clone());
-            match (&id.0[..], value) {
+            self.set_calls.push(id.to_string());
+            match (id.as_str(), value) {
                 ("known", ParameterValue::Float(v)) if (-1.0..=1.0).contains(&v) => {
-                    self.values.insert(id.0, ParameterValue::Float(v));
+                    self.values.insert(id.to_string(), ParameterValue::Float(v));
                     Ok(())
                 }
                 ("known", _) => Err("invalid known value".to_string()),
@@ -210,7 +210,7 @@ mod tests {
         }
 
         fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-            self.values.get(&id.0).cloned()
+            self.values.get(id.as_str()).cloned()
         }
 
         fn process(

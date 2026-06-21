@@ -312,7 +312,7 @@ fn test_auto_gain_runtime_enable_disable() {
     // Enable auto-gain at runtime
     plugin
         .set_parameter(
-            ParameterId("auto_gain_enabled".to_string()),
+            ParameterId::from("auto_gain_enabled"),
             ParameterValue::Bool(true),
         )
         .unwrap();
@@ -337,7 +337,7 @@ fn test_auto_gain_runtime_enable_disable() {
     // Disable again
     plugin
         .set_parameter(
-            ParameterId("auto_gain_enabled".to_string()),
+            ParameterId::from("auto_gain_enabled"),
             ParameterValue::Bool(false),
         )
         .unwrap();

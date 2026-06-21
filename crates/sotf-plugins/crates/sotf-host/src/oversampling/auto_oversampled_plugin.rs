@@ -21,7 +21,18 @@ pub struct AutoOversampledPlugin {
 }
 
 impl AutoOversampledPlugin {
+    /// Default maximum host block size the oversampler pre-allocates for.
+    pub const DEFAULT_MAX_BLOCK_FRAMES: usize = 16384;
+
     pub fn new(inner: Box<dyn Plugin>, factor: u32) -> Result<Self, String> {
+        Self::new_with_max_frames(inner, factor, Self::DEFAULT_MAX_BLOCK_FRAMES)
+    }
+
+    pub fn new_with_max_frames(
+        inner: Box<dyn Plugin>,
+        factor: u32,
+        max_block_frames: usize,
+    ) -> Result<Self, String> {
         let channels = inner.input_channels();
         if channels != inner.output_channels() {
             return Err(format!(
@@ -32,7 +43,7 @@ impl AutoOversampledPlugin {
             ));
         }
         let oversampler = Oversampler::new(factor, channels)?;
-        let os_buf_size = 8192 * factor as usize * channels;
+        let os_buf_size = max_block_frames * factor as usize * channels;
         Ok(Self {
             inner,
             oversampler,

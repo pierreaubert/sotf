@@ -1,3 +1,4 @@
+use super::consts::MAX_ENGINE_SAMPLE_CAPACITY;
 use std::sync::mpsc::Receiver;
 
 /// Take frame_send_buffer for sending, then restore it from a recycled Vec or
@@ -18,6 +19,12 @@ pub(super) fn take_frame_buffer(
         }
         Err(_) => local_pool.pop().unwrap_or_default(),
     };
+
+    // Guarantee that the replacement buffer has enough capacity for the
+    // worst-case engine block so the next hot-path copy never reallocates.
+    if frame_send_buffer.capacity() < MAX_ENGINE_SAMPLE_CAPACITY {
+        frame_send_buffer.reserve(MAX_ENGINE_SAMPLE_CAPACITY - frame_send_buffer.len());
+    }
 
     frame_data
 }

@@ -197,7 +197,7 @@ fn test_lazy_rebuild_reflects_current_state_after_mute_toggle() {
     plugin.set_channel_state(0, true, false, false).unwrap();
 
     let params = plugin.parameters();
-    let cs_param = params.iter().find(|p| p.id.0 == "channel_states").unwrap();
+    let cs_param = params.iter().find(|p| p.id.as_str() == "channel_states").unwrap();
     let json = cs_param.default_value.as_string().unwrap();
     let states: Vec<ChannelState> = serde_json::from_str(json).unwrap();
     assert!(

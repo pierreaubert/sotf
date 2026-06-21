@@ -111,7 +111,7 @@ impl DynamicParams {
                 ParamKind::Bool => ParameterValue::Bool(self.bool_params[entry.index].value()),
                 ParamKind::Int => ParameterValue::Int(self.int_params[entry.index].value()),
             };
-            let _ = plugin.set_parameter(ParameterId(id.clone()), value);
+            let _ = plugin.set_parameter(ParameterId::from(id.clone()), value);
         }
     }
 }

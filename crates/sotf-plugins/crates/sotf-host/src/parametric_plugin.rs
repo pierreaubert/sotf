@@ -173,17 +173,35 @@ pub trait ParametricPlugin: Send {
 #[derive(Debug)]
 pub struct ParametricPluginAdapter<T: ParametricPlugin> {
     plugin: T,
+    /// Reusable f32 input scratch for the f64 processing path. Pre-sized and
+    /// grown on demand so the audio thread does not allocate per block.
+    input_scratch: Vec<f32>,
+    /// Reusable f32 output scratch for the f64 processing path.
+    output_scratch: Vec<f32>,
 }
 
 impl<T: ParametricPlugin> ParametricPluginAdapter<T> {
     /// Wrap a parametric plugin for use in the host graph.
     pub fn new(plugin: T) -> Self {
-        Self { plugin }
+        Self {
+            plugin,
+            input_scratch: Vec::new(),
+            output_scratch: Vec::new(),
+        }
     }
 
     /// Consume the adapter and return the inner plugin.
     pub fn into_inner(self) -> T {
         self.plugin
+    }
+
+    fn ensure_scratch(&mut self, input_len: usize, output_len: usize) {
+        if self.input_scratch.len() < input_len {
+            self.input_scratch.resize(input_len, 0.0);
+        }
+        if self.output_scratch.len() < output_len {
+            self.output_scratch.resize(output_len, 0.0);
+        }
     }
 }
 
@@ -247,7 +265,17 @@ impl<T: ParametricPlugin> Plugin for ParametricPluginAdapter<T> {
         output: &mut [f64],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        self.plugin.process_f64(input, output, context)
+        self.ensure_scratch(input.len(), output.len());
+        let input_f32 = &mut self.input_scratch[..input.len()];
+        let output_f32 = &mut self.output_scratch[..output.len()];
+        for (dst, &src) in input_f32.iter_mut().zip(input.iter()) {
+            *dst = src as f32;
+        }
+        let frames = self.plugin.process(input_f32, output_f32, context)?;
+        for (dst, &src) in output.iter_mut().zip(output_f32.iter()) {
+            *dst = src as f64;
+        }
+        Ok(frames)
     }
 
     fn latency_samples(&self) -> usize {

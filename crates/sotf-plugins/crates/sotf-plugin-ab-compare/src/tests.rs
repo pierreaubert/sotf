@@ -18,7 +18,7 @@ fn test_bypass_mode() {
     plugin.initialize(48000).unwrap();
     plugin
         .set_parameter(
-            ParameterId("bypass".to_string()),
+            ParameterId::from("bypass"),
             ParameterValue::Bool(true),
         )
         .unwrap();
@@ -158,12 +158,12 @@ fn test_binary_mode() {
     // Switch to B
     plugin
         .set_parameter(
-            ParameterId("selected_path".to_string()),
+            ParameterId::from("selected_path"),
             ParameterValue::Int(1),
         )
         .unwrap();
 
-    let value = plugin.get_parameter(&ParameterId("selected_path".to_string()));
+    let value = plugin.get_parameter(&ParameterId::from("selected_path"));
     assert_eq!(value, Some(ParameterValue::Int(1)));
 }
 
@@ -214,7 +214,7 @@ fn test_empty_path_fast_gain_is_reused_after_mix_changes() {
 
     plugin
         .set_parameter(
-            ParameterId("auto_gain_enabled".to_string()),
+            ParameterId::from("auto_gain_enabled"),
             ParameterValue::Bool(false),
         )
         .unwrap();
@@ -227,7 +227,7 @@ fn test_empty_path_fast_gain_is_reused_after_mix_changes() {
     }
 
     plugin
-        .set_parameter(ParameterId("mix".to_string()), ParameterValue::Float(1.0))
+        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
         .unwrap();
     plugin.mix_smoother.reset(1.0);
     plugin.process(&input, &mut output, &context).unwrap();
@@ -244,7 +244,7 @@ fn test_empty_path_fast_gain_is_reused_after_mix_changes() {
     );
 
     plugin
-        .set_parameter(ParameterId("mix".to_string()), ParameterValue::Float(-1.0))
+        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(-1.0))
         .unwrap();
     plugin.mix_smoother.reset(-1.0);
     plugin.process(&input, &mut output, &context).unwrap();
@@ -352,7 +352,7 @@ fn test_runtime_path_change() {
         r#"{"type": "Plugin", "plugin_type": "gain", "parameters": {"gain_db": -12.0}}"#;
     plugin
         .set_parameter(
-            ParameterId("path_a_config".to_string()),
+            ParameterId::from("path_a_config"),
             ParameterValue::String(new_config.to_string()),
         )
         .unwrap();
@@ -387,7 +387,7 @@ fn test_auto_gain_from_params_enabled() {
     let plugin = ABComparePlugin::from_params(2, params).unwrap();
 
     // Verify auto-gain is enabled via parameter
-    let value = plugin.get_parameter(&ParameterId("auto_gain_enabled".to_string()));
+    let value = plugin.get_parameter(&ParameterId::from("auto_gain_enabled"));
     assert_eq!(value, Some(ParameterValue::Bool(true)));
 }
 
@@ -400,7 +400,7 @@ fn test_auto_gain_from_params_disabled() {
 
     let plugin = ABComparePlugin::from_params(2, params).unwrap();
 
-    let value = plugin.get_parameter(&ParameterId("auto_gain_enabled".to_string()));
+    let value = plugin.get_parameter(&ParameterId::from("auto_gain_enabled"));
     assert_eq!(value, Some(ParameterValue::Bool(false)));
 }
 
@@ -412,20 +412,20 @@ fn test_auto_gain_parameter_set_get() {
     // Test auto_gain_enabled
     plugin
         .set_parameter(
-            ParameterId("auto_gain_enabled".to_string()),
+            ParameterId::from("auto_gain_enabled"),
             ParameterValue::Bool(false),
         )
         .unwrap();
-    let value = plugin.get_parameter(&ParameterId("auto_gain_enabled".to_string()));
+    let value = plugin.get_parameter(&ParameterId::from("auto_gain_enabled"));
     assert_eq!(value, Some(ParameterValue::Bool(false)));
 
     plugin
         .set_parameter(
-            ParameterId("auto_gain_enabled".to_string()),
+            ParameterId::from("auto_gain_enabled"),
             ParameterValue::Bool(true),
         )
         .unwrap();
-    let value = plugin.get_parameter(&ParameterId("auto_gain_enabled".to_string()));
+    let value = plugin.get_parameter(&ParameterId::from("auto_gain_enabled"));
     assert_eq!(value, Some(ParameterValue::Bool(true)));
 }
 
@@ -437,7 +437,7 @@ fn test_auto_gain_parameter_loudness_type() {
     // Set to ShortTerm (1)
     plugin
         .set_parameter(
-            ParameterId("loudness_type".to_string()),
+            ParameterId::from("loudness_type"),
             ParameterValue::Int(1),
         )
         .unwrap();
@@ -445,7 +445,7 @@ fn test_auto_gain_parameter_loudness_type() {
     // Set back to Momentary (0)
     plugin
         .set_parameter(
-            ParameterId("loudness_type".to_string()),
+            ParameterId::from("loudness_type"),
             ParameterValue::Int(0),
         )
         .unwrap();
@@ -461,7 +461,7 @@ fn test_auto_gain_parameter_max_db() {
     // Set max auto-gain
     plugin
         .set_parameter(
-            ParameterId("max_auto_gain_db".to_string()),
+            ParameterId::from("max_auto_gain_db"),
             ParameterValue::Float(20.0),
         )
         .unwrap();
@@ -478,7 +478,7 @@ fn test_auto_gain_parameter_smoothing() {
     // Set gain smoothing
     plugin
         .set_parameter(
-            ParameterId("gain_smoothing_ms".to_string()),
+            ParameterId::from("gain_smoothing_ms"),
             ParameterValue::Float(250.0),
         )
         .unwrap();
@@ -819,7 +819,7 @@ fn test_binary_mode_mix_transition() {
     plugin.initialize(48000).unwrap();
     plugin
         .set_parameter(
-            ParameterId("selected_path".to_string()),
+            ParameterId::from("selected_path"),
             ParameterValue::Int(1),
         )
         .unwrap();
@@ -835,7 +835,7 @@ fn test_binary_mode_mix_transition() {
 fn test_validate_parameter_unknown() {
     let plugin = ABComparePlugin::new(2).unwrap();
     let res = plugin.validate_parameter(
-        &ParameterId("unknown".to_string()),
+        &ParameterId::from("unknown"),
         &ParameterValue::Float(0.0),
     );
     assert!(res.is_err());
@@ -846,7 +846,7 @@ fn test_get_parameter_unknown() {
     let plugin = ABComparePlugin::new(2).unwrap();
     assert!(
         plugin
-            .get_parameter(&ParameterId("unknown".to_string()))
+            .get_parameter(&ParameterId::from("unknown"))
             .is_none()
     );
 }
@@ -864,7 +864,7 @@ fn test_can_use_empty_path_fast_path() {
     assert!(plugin.can_use_empty_path_fast_path());
     plugin
         .set_parameter(
-            ParameterId("phase_invert_a".to_string()),
+            ParameterId::from("phase_invert_a"),
             ParameterValue::Bool(true),
         )
         .unwrap();
@@ -877,7 +877,7 @@ fn test_recompute_empty_path_fast_gain() {
     plugin.initialize(48000).unwrap();
     let before = plugin.empty_path_fast_gain;
     plugin
-        .set_parameter(ParameterId("mix".to_string()), ParameterValue::Float(1.0))
+        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
         .unwrap();
     plugin.mix_smoother.reset(1.0);
     plugin.recompute_empty_path_fast_gain();
@@ -1090,6 +1090,6 @@ fn test_process_empty_path_fast() {
 fn test_validate_parameter_known() {
     let plugin = ABComparePlugin::new(2).unwrap();
     let res =
-        plugin.validate_parameter(&ParameterId("mix".to_string()), &ParameterValue::Float(0.0));
+        plugin.validate_parameter(&ParameterId::from("mix"), &ParameterValue::Float(0.0));
     assert!(res.is_ok());
 }

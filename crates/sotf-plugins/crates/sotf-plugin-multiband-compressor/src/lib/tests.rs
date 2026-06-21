@@ -258,7 +258,7 @@ fn test_per_band_knee_param_roundtrip() {
 
     // Also verify it appears in the parameters list
     let params = p.parameters();
-    let knee_param = params.iter().find(|par| par.id.0 == "band_0_knee");
+    let knee_param = params.iter().find(|par| par.id.as_str() == "band_0_knee");
     assert!(
         knee_param.is_some(),
         "band_0_knee must appear in parameters()"
@@ -457,7 +457,7 @@ fn test_stub_params_not_exposed() {
     let mut p = MultibandCompressorPlugin::new(2);
     p.initialize(48000).unwrap();
     let params = p.parameters();
-    let ids: Vec<&str> = params.iter().map(|par| par.id.0.as_str()).collect();
+    let ids: Vec<&str> = params.iter().map(|par| par.id.as_str()).collect();
 
     let stubs = [
         "sidechain_hpf_hz",
@@ -606,7 +606,7 @@ fn test_rebuild_cached_parameters_includes_aliases() {
     let mut p = MultibandCompressorPlugin::new(1);
     p.initialize(48000).unwrap();
     let params = p.parameters();
-    let ids: Vec<&str> = params.iter().map(|par| par.id.0.as_str()).collect();
+    let ids: Vec<&str> = params.iter().map(|par| par.id.as_str()).collect();
     assert!(ids.contains(&"makeup_gain"));
     assert!(ids.contains(&"auto_makeup"));
     assert!(ids.contains(&"measured_auto_makeup"));
@@ -1618,7 +1618,7 @@ fn test_rebuild_cached_parameters_band_count() {
     );
     p.initialize(48000).unwrap();
     let params = p.parameters();
-    let ids: Vec<&str> = params.iter().map(|par| par.id.0.as_str()).collect();
+    let ids: Vec<&str> = params.iter().map(|par| par.id.as_str()).collect();
 
     assert!(ids.contains(&"band_0_threshold"));
     assert!(ids.contains(&"band_1_threshold"));

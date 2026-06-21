@@ -226,7 +226,7 @@ impl Plugin for SpectrumAnalyzerPlugin {
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
-        match id.0.as_str() {
+        match id.as_str() {
             "smoothing" => {
                 let v = value.as_float().unwrap_or(0.7);
                 if v.is_finite() {

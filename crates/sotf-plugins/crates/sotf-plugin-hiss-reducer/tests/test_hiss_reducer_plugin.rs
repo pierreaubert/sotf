@@ -43,7 +43,7 @@ fn disabled_still_validates_buffer_size() {
 fn low_latency_param_does_not_exist() {
     let plugin = HissReducerPlugin::new(2);
     let params = plugin.parameters();
-    let has_low_latency = params.iter().any(|p| p.id.0 == "low_latency");
+    let has_low_latency = params.iter().any(|p| p.id.as_str() == "low_latency");
     assert!(
         !has_low_latency,
         "low_latency parameter should be removed (HissReducer is not FFT-based)"

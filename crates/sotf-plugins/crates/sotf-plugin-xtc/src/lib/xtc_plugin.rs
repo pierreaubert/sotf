@@ -953,14 +953,14 @@ impl Plugin for XtcPlugin {
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         // Parameters not in PARAMS — handle separately
-        if id.0 == "enabled" {
+        if id.as_str() == "enabled" {
             self.params.enabled = value
                 .as_bool()
                 .ok_or_else(|| "enabled must be a boolean".to_string())?;
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "kappa_target" {
+        if id.as_str() == "kappa_target" {
             let v = value
                 .as_float()
                 .ok_or_else(|| "kappa_target must be a float".to_string())?;
@@ -971,7 +971,7 @@ impl Plugin for XtcPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "hrtf_file" {
+        if id.as_str() == "hrtf_file" {
             let v = value
                 .as_string()
                 .ok_or_else(|| "hrtf_file must be a string".to_string())?;
@@ -987,7 +987,7 @@ impl Plugin for XtcPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "source_mode" {
+        if id.as_str() == "source_mode" {
             let v = value
                 .as_string()
                 .ok_or_else(|| "source_mode must be a string".to_string())?;
@@ -1015,7 +1015,7 @@ impl Plugin for XtcPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "recommended_matrix_file" {
+        if id.as_str() == "recommended_matrix_file" {
             let v = value
                 .as_string()
                 .ok_or_else(|| "recommended_matrix_file must be a string".to_string())?;
@@ -1040,7 +1040,7 @@ impl Plugin for XtcPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "itd_modeling" {
+        if id.as_str() == "itd_modeling" {
             let v = value
                 .as_string()
                 .ok_or_else(|| "itd_modeling must be a string".to_string())?;
@@ -1120,21 +1120,21 @@ impl Plugin for XtcPlugin {
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         // Parameters not in PARAMS — handle separately
-        if id.0 == "enabled" {
+        if id.as_str() == "enabled" {
             return Some(ParameterValue::Bool(self.params.enabled));
         }
-        if id.0 == "kappa_target" {
+        if id.as_str() == "kappa_target" {
             return Some(ParameterValue::Float(self.params.kappa_target));
         }
-        if id.0 == "hrtf_file" {
+        if id.as_str() == "hrtf_file" {
             return Some(ParameterValue::String(
                 self.params.hrtf_file.clone().unwrap_or_default(),
             ));
         }
-        if id.0 == "source_mode" {
+        if id.as_str() == "source_mode" {
             return Some(ParameterValue::String(self.params.source_mode.clone()));
         }
-        if id.0 == "recommended_matrix_file" {
+        if id.as_str() == "recommended_matrix_file" {
             return Some(ParameterValue::String(
                 self.params
                     .recommended_matrix_file
@@ -1142,7 +1142,7 @@ impl Plugin for XtcPlugin {
                     .unwrap_or_default(),
             ));
         }
-        if id.0 == "itd_modeling" {
+        if id.as_str() == "itd_modeling" {
             return Some(ParameterValue::String(self.params.itd_modeling.clone()));
         }
         param_bridge::get_parameter(XT, id, |i| self.param_value(i))

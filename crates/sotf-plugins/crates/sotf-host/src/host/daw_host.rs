@@ -129,6 +129,11 @@ pub struct DawHost {
 }
 
 impl DawHost {
+    /// Maximum block size the host pre-sizes its internal scratch and node
+    /// buffers for. Covers all current SOTF engine block sizes; larger blocks
+    /// still work but may trigger a one-time allocation on the audio thread.
+    const MAX_BLOCK_FRAMES: usize = 8192;
+
     pub fn new(channels: usize, sample_rate: u32) -> Self {
         let (parameter_event_tx, parameter_event_rx) =
             RingBuffer::new(PARAMETER_EVENT_QUEUE_CAPACITY);
@@ -403,8 +408,10 @@ impl DawHost {
             );
             return Ok(plugin);
         }
-        Ok(Box::new(crate::oversampling::AutoOversampledPlugin::new(
-            plugin, factor,
+        Ok(Box::new(crate::oversampling::AutoOversampledPlugin::new_with_max_frames(
+            plugin,
+            factor,
+            Self::MAX_BLOCK_FRAMES,
         )?))
     }
 
@@ -438,8 +445,14 @@ impl DawHost {
         let mut node_buffers = (0..num_slots).map(|_| None).collect::<Vec<_>>();
         let mut node_buffers_f64 = (0..num_slots).map(|_| None).collect::<Vec<_>>();
         for (&id, node) in &self.nodes {
-            node_buffers[id] = Some(NodeBuffer::<f32>::new(4096, node.output_channels()));
-            node_buffers_f64[id] = Some(NodeBuffer::<f64>::new(4096, node.output_channels()));
+            node_buffers[id] = Some(NodeBuffer::<f32>::new(
+                Self::MAX_BLOCK_FRAMES,
+                node.output_channels(),
+            ));
+            node_buffers_f64[id] = Some(NodeBuffer::<f64>::new(
+                Self::MAX_BLOCK_FRAMES,
+                node.output_channels(),
+            ));
         }
         // Cache per-node bypass flags before computing compensation delays
         // (compensation needs to know which nodes are bypassed for latency calculation)
@@ -453,14 +466,28 @@ impl DawHost {
 
         self.process_buffers = Some(ProcessBuffers {
             node_buffers,
-            scratch_input: vec![0.0f32; 4096 * 32],
-            scratch_output: vec![0.0f32; 4096 * 32],
-            merge_buffer: vec![0.0f32; 4096 * 32],
-            channel_map_buffer: vec![0.0f32; 4096 * 32],
+            scratch_input: vec![0.0f32; Self::MAX_BLOCK_FRAMES * 32],
+            scratch_output: vec![0.0f32; Self::MAX_BLOCK_FRAMES * 32],
+            merge_buffer: vec![0.0f32; Self::MAX_BLOCK_FRAMES * 32],
+            channel_map_buffer: vec![0.0f32; Self::MAX_BLOCK_FRAMES * 32],
             compensation_delays,
-            delay_scratch: vec![0.0f32; 4096 * 32],
+            delay_scratch: vec![0.0f32; Self::MAX_BLOCK_FRAMES * 32],
             parallel_scratch: (0..num_slots)
-                .map(|_| (Vec::new(), Vec::new(), Vec::new()))
+                .map(|id| {
+                    if let Some(node) = self.nodes.get(&id) {
+                        (
+                            vec![0.0f32; Self::MAX_BLOCK_FRAMES * node.input_channels()],
+                            vec![0.0f32; Self::MAX_BLOCK_FRAMES * node.output_channels()],
+                            vec![0.0f32; Self::MAX_BLOCK_FRAMES * node.input_channels()],
+                        )
+                    } else {
+                        (
+                            Vec::new(),
+                            Vec::new(),
+                            Vec::new(),
+                        )
+                    }
+                })
                 .collect(),
             parallel_results: Vec::with_capacity(
                 self.stages
@@ -472,14 +499,32 @@ impl DawHost {
         });
         self.process_buffers_f64 = Some(ProcessBuffers {
             node_buffers: node_buffers_f64,
-            scratch_input: vec![0.0f64; 4096 * 32],
-            scratch_output: vec![0.0f64; 4096 * 32],
-            merge_buffer: vec![0.0f64; 4096 * 32],
-            channel_map_buffer: vec![0.0f64; 4096 * 32],
+            scratch_input: vec![0.0f64; Self::MAX_BLOCK_FRAMES * 32],
+            scratch_output: vec![0.0f64; Self::MAX_BLOCK_FRAMES * 32],
+            merge_buffer: vec![0.0f64; Self::MAX_BLOCK_FRAMES * 32],
+            channel_map_buffer: vec![0.0f64; Self::MAX_BLOCK_FRAMES * 32],
             compensation_delays: compensation_delays_f64,
-            delay_scratch: vec![0.0f64; 4096 * 32],
-            parallel_scratch: Vec::new(),
-            parallel_results: Vec::new(),
+            delay_scratch: vec![0.0f64; Self::MAX_BLOCK_FRAMES * 32],
+            parallel_scratch: (0..num_slots)
+                .map(|id| {
+                    if let Some(node) = self.nodes.get(&id) {
+                        (
+                            vec![0.0f64; Self::MAX_BLOCK_FRAMES * node.input_channels()],
+                            vec![0.0f64; Self::MAX_BLOCK_FRAMES * node.output_channels()],
+                            vec![0.0f64; Self::MAX_BLOCK_FRAMES * node.input_channels()],
+                        )
+                    } else {
+                        (Vec::new(), Vec::new(), Vec::new())
+                    }
+                })
+                .collect(),
+            parallel_results: Vec::with_capacity(
+                self.stages
+                    .iter()
+                    .map(|stage| stage.nodes.len())
+                    .max()
+                    .unwrap_or(0),
+            ),
         });
         // Cache per-frame properties to avoid mutex locks during process()
         self.cached_frames_identity = true;
@@ -729,7 +774,7 @@ impl DawHost {
         let &nid = self.chain_nodes.get(index).ok_or("oob")?;
         self.queue_node_parameter(
             nid,
-            super::super::parameters::ParameterId(id.to_string()),
+            super::super::parameters::ParameterId::from(id),
             val,
         )
     }
@@ -746,7 +791,7 @@ impl DawHost {
         let &nid = self.chain_nodes.get(index).ok_or("oob")?;
         self.queue_node_parameter_at(
             nid,
-            super::super::parameters::ParameterId(id.to_string()),
+            super::super::parameters::ParameterId::from(id),
             val,
             sample_offset,
         )
@@ -838,7 +883,7 @@ impl DawHost {
         let &nid = self.chain_nodes.get(index).ok_or("oob")?;
         self.apply_parameter_event(ParameterEvent {
             node_id: nid,
-            param_id: super::super::parameters::ParameterId(id.to_string()),
+            param_id: super::super::parameters::ParameterId::from(id),
             value: val,
             sample_offset: 0,
         })

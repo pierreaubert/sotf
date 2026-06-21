@@ -1,9 +1,10 @@
 use super::super::{AudioFrame, DecoderCommand, DecoderMessage, DecoderResponse, ThreadEvent};
-use super::consts::DECODER_LOCAL_FRAME_CAPACITY;
-use super::consts::DECODER_LOCAL_FRAME_POOL_SIZE;
+use super::consts::{
+    DECODER_LOCAL_FRAME_CAPACITY, DECODER_LOCAL_FRAME_POOL_SIZE, MAX_ENGINE_SAMPLE_CAPACITY,
+    MAX_RESAMPLE_OUTPUT_SAMPLES, MAX_RESAMPLE_STAGING_SAMPLES,
+};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use super::consts::HAL_RECONNECT_INTERVAL;
-use super::consts::MAX_RESAMPLE_STAGING_SAMPLES;
 use super::consts::send_or_interrupt;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use super::hal_input_guard_trip::guard_hal_input_block;
@@ -84,18 +85,23 @@ impl DecoderState {
         Self {
             decoder: None,
             resampler: None,
-            resampler_buffer: SampleQueue::new(),
+            // Accumulates decoded samples; sized for several max-size blocks so
+            // the resampling loop rarely needs to grow it.
+            resampler_buffer: SampleQueue::with_capacity(MAX_ENGINE_SAMPLE_CAPACITY * 2),
             paused: false,
             current_source: None,
             spec: None,
             silent_source: false,
             silent_source_channels: 2,
             decode_buffer: None,
-            resample_output_buffer: Vec::new(),
-            resample_staging: SampleQueue::new(),
-            // Pre-allocate for typical frame size (1024 frames * 8 channels)
-            chunk_buffer: Vec::with_capacity(1024 * 8),
-            frame_send_buffer: Vec::with_capacity(1024 * 8),
+            // Sized for the worst common resampling ratio; `ensure_buffer_len`
+            // will grow it if an oversized block is requested.
+            resample_output_buffer: Vec::with_capacity(MAX_RESAMPLE_OUTPUT_SAMPLES),
+            // Holds several complete max-size blocks to absorb resampler jitter.
+            resample_staging: SampleQueue::with_capacity(MAX_RESAMPLE_STAGING_SAMPLES),
+            // Pre-allocated for the worst-case engine block (frames * channels).
+            chunk_buffer: Vec::with_capacity(MAX_ENGINE_SAMPLE_CAPACITY),
+            frame_send_buffer: Vec::with_capacity(MAX_ENGINE_SAMPLE_CAPACITY),
             frame_buffer_pool,
             recycle_rx,
             queued_next: None,
@@ -105,7 +111,7 @@ impl DecoderState {
             #[cfg(feature = "streaming")]
             stream_metadata: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
-            hal_input_buffer: Vec::new(),
+            hal_input_buffer: Vec::with_capacity(MAX_ENGINE_SAMPLE_CAPACITY),
             #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_reader: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -116,6 +122,24 @@ impl DecoderState {
             last_hal_sample_rate: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             last_hal_channels: None,
+        }
+    }
+
+    /// Grow `buffer` only when its capacity is insufficient for `len` samples.
+    /// After this call `buffer.len() >= len`; existing contents are preserved.
+    /// Growth is logged so it can be spotted in diagnostics, but it is allowed
+    /// for oversized blocks instead of panicking.
+    #[inline]
+    fn ensure_buffer_len(buffer: &mut Vec<f32>, len: usize) {
+        if buffer.len() < len {
+            if buffer.capacity() < len {
+                log::debug!(
+                    "[Decoder Thread] Growing scratch buffer beyond pre-sized capacity: {} -> {}",
+                    buffer.capacity(),
+                    len
+                );
+            }
+            buffer.resize(len, 0.0);
         }
     }
 
@@ -353,9 +377,7 @@ impl DecoderState {
         let send_chunk_len = frame_size * channels;
 
         while self.resample_staging.len() >= send_chunk_len {
-            if self.frame_send_buffer.len() < send_chunk_len {
-                self.frame_send_buffer.resize(send_chunk_len, 0.0);
-            }
+            Self::ensure_buffer_len(&mut self.frame_send_buffer, send_chunk_len);
             self.frame_send_buffer[..send_chunk_len]
                 .copy_from_slice(self.resample_staging.prefix(send_chunk_len));
             self.resample_staging.consume(send_chunk_len);
@@ -377,9 +399,7 @@ impl DecoderState {
             let aligned_len =
                 self.resample_staging.len() - (self.resample_staging.len() % channels);
             if aligned_len > 0 {
-                if self.frame_send_buffer.len() < aligned_len {
-                    self.frame_send_buffer.resize(aligned_len, 0.0);
-                }
+                Self::ensure_buffer_len(&mut self.frame_send_buffer, aligned_len);
                 self.frame_send_buffer[..aligned_len]
                     .copy_from_slice(self.resample_staging.prefix(aligned_len));
                 self.resample_staging.consume(aligned_len);
@@ -461,9 +481,7 @@ impl DecoderState {
 
                     if let Some(resampler) = &mut self.resampler {
                         // Copy chunk to pre-allocated buffer.
-                        if self.chunk_buffer.len() < chunk_len {
-                            self.chunk_buffer.resize(chunk_len, 0.0);
-                        }
+                        Self::ensure_buffer_len(&mut self.chunk_buffer, chunk_len);
                         self.chunk_buffer[..chunk_len]
                             .copy_from_slice(self.resampler_buffer.prefix(chunk_len));
                         self.resampler_buffer.consume(chunk_len);
@@ -472,9 +490,7 @@ impl DecoderState {
                         let max_output_frames = resampler.output_frames_for_input(frame_size);
                         let output_len = max_output_frames * channels;
 
-                        if self.resample_output_buffer.len() < output_len {
-                            self.resample_output_buffer.resize(output_len, 0.0);
-                        }
+                        Self::ensure_buffer_len(&mut self.resample_output_buffer, output_len);
 
                         let context = ProcessContext::new(source_sample_rate, frame_size);
 
@@ -540,9 +556,7 @@ impl DecoderState {
                         continue;
                     } else {
                         // No resampling - copy chunk to frame_send_buffer and take ownership
-                        if self.frame_send_buffer.len() < chunk_len {
-                            self.frame_send_buffer.resize(chunk_len, 0.0);
-                        }
+                        Self::ensure_buffer_len(&mut self.frame_send_buffer, chunk_len);
                         self.frame_send_buffer[..chunk_len]
                             .copy_from_slice(self.resampler_buffer.prefix(chunk_len));
                         self.resampler_buffer.consume(chunk_len);
@@ -614,9 +628,7 @@ impl DecoderState {
 
                         // Use chunk_buffer for padded chunk.
                         let padded_len = frame_size * channels;
-                        if self.chunk_buffer.len() < padded_len {
-                            self.chunk_buffer.resize(padded_len, 0.0);
-                        }
+                        Self::ensure_buffer_len(&mut self.chunk_buffer, padded_len);
                         let copy_len = remaining_samples.min(padded_len);
                         self.chunk_buffer[..copy_len]
                             .copy_from_slice(&self.resampler_buffer.as_slice()[..copy_len]);
@@ -629,9 +641,7 @@ impl DecoderState {
                         let max_output_frames = resampler.output_frames_for_input(frame_size);
                         let output_len = max_output_frames * channels;
 
-                        if self.resample_output_buffer.len() < output_len {
-                            self.resample_output_buffer.resize(output_len, 0.0);
-                        }
+                        Self::ensure_buffer_len(&mut self.resample_output_buffer, output_len);
 
                         let context = ProcessContext::new(source_sample_rate, frame_size);
 
@@ -673,9 +683,7 @@ impl DecoderState {
                     let remaining_samples = self.resampler_buffer.len();
                     let aligned_len = remaining_samples - (remaining_samples % channels);
                     if aligned_len > 0 {
-                        if self.frame_send_buffer.len() < aligned_len {
-                            self.frame_send_buffer.resize(aligned_len, 0.0);
-                        }
+                        Self::ensure_buffer_len(&mut self.frame_send_buffer, aligned_len);
                         self.frame_send_buffer[..aligned_len]
                             .copy_from_slice(self.resampler_buffer.prefix(aligned_len));
                         self.resampler_buffer.consume(aligned_len);
@@ -920,9 +928,10 @@ impl DecoderState {
             let hal_channels = reader.channel_count() as usize;
             let buffer_len = frame_size * hal_channels;
 
-            if self.hal_input_buffer.len() != buffer_len {
-                self.hal_input_buffer.resize(buffer_len, 0.0);
-            }
+            // Keep the HAL input buffer exactly `buffer_len`: truncate any stale
+            // tail and zero-fill any grown region before reading.
+            Self::ensure_buffer_len(&mut self.hal_input_buffer, buffer_len);
+            self.hal_input_buffer.truncate(buffer_len);
 
             let frames_read = reader.read(&mut self.hal_input_buffer);
             let samples_read = frames_to_sample_count(frames_read, hal_channels, buffer_len);
@@ -983,9 +992,7 @@ impl DecoderState {
                 let max_output_frames = resampler.output_frames_for_input(frame_size);
                 let output_len = max_output_frames * hal_channels;
 
-                if self.resample_output_buffer.len() < output_len {
-                    self.resample_output_buffer.resize(output_len, 0.0);
-                }
+                Self::ensure_buffer_len(&mut self.resample_output_buffer, output_len);
 
                 let context = ProcessContext::new(hal_sample_rate, frame_size);
 
@@ -1000,9 +1007,7 @@ impl DecoderState {
 
                 // Copy to frame_send_buffer
                 let frame_len = actual_output_frames * hal_channels;
-                if self.frame_send_buffer.len() < frame_len {
-                    self.frame_send_buffer.resize(frame_len, 0.0);
-                }
+                Self::ensure_buffer_len(&mut self.frame_send_buffer, frame_len);
                 self.frame_send_buffer[..frame_len]
                     .copy_from_slice(&self.resample_output_buffer[..frame_len]);
 
@@ -1045,9 +1050,7 @@ impl DecoderState {
                     self.last_hal_sample_rate = Some(hal_sample_rate);
                 }
 
-                if self.frame_send_buffer.len() < buffer_len {
-                    self.frame_send_buffer.resize(buffer_len, 0.0);
-                }
+                Self::ensure_buffer_len(&mut self.frame_send_buffer, buffer_len);
                 self.frame_send_buffer[..buffer_len]
                     .copy_from_slice(&self.hal_input_buffer[..buffer_len]);
                 let frame_data = take_frame_buffer(
@@ -1087,9 +1090,7 @@ impl DecoderState {
         // Use frame_send_buffer to avoid allocation for silent frames
         let silent_channels = self.silent_source_channels.max(1);
         let silent_len = frame_size * silent_channels;
-        if self.frame_send_buffer.len() < silent_len {
-            self.frame_send_buffer.resize(silent_len, 0.0);
-        }
+        Self::ensure_buffer_len(&mut self.frame_send_buffer, silent_len);
         self.frame_send_buffer[..silent_len].fill(0.0);
 
         let frame_data = take_frame_buffer(

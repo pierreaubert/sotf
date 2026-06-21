@@ -17,7 +17,10 @@ use sotf_host::sofa::SofaFile;
 use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::mpsc::{SyncSender, sync_channel};
+use std::thread::JoinHandle;
 
+#[derive(Clone)]
 pub(super) struct BinauralConfig {
     pub(super) input_channels: usize,
     pub(super) fft_size: usize,
@@ -128,6 +131,12 @@ pub struct BinauralDecoderPlugin {
     pub(super) room: BinauralRoom,
     pub(super) crossfade: BinauralCrossfade,
     pub(super) smoothing: BinauralSmoothing,
+    /// Channel used to request head-angle HRTF recomputations from the
+    /// background thread. Capacity 1; stale requests are dropped when the
+    /// thread is still busy.
+    pub(super) hrtf_update_tx: Option<SyncSender<(f32, f32, f32)>>,
+    /// Background HRTF update thread handle.
+    pub(super) hrtf_update_thread: Option<JoinHandle<()>>,
 }
 
 impl BinauralDecoderPlugin {
@@ -304,6 +313,8 @@ impl BinauralDecoderPlugin {
                 last_hrtf_pitch: 0.0,
                 last_hrtf_roll: 0.0,
             },
+            hrtf_update_tx: None,
+            hrtf_update_thread: None,
         };
         p.rebuild_cached_parameters();
         p
@@ -921,43 +932,96 @@ impl BinauralDecoderPlugin {
 
     /// Recompute HRTF filters with head-angle-rotated speaker positions and push a new state.
     ///
-    /// This is called whenever head angles have changed by more than 0.5° since the last
-    /// recompute. It only does meaningful work when a SOFA file is loaded.
-    pub(super) fn recompute_hrtf_for_head_angles(
-        &mut self,
+    /// Spawn (or restart) the background HRTF update thread.
+    ///
+    /// The thread listens for head-angle triples and recomputes the HRTF state
+    /// off the audio thread. It is only started when a SOFA file has been
+    /// loaded into the current state.
+    pub(super) fn spawn_hrtf_update_thread(&mut self) {
+        self.shutdown_hrtf_update_thread();
+
+        // Only spawn if we have HRTF data to rotate. Without a SOFA the default
+        // identity filters are used and there is nothing to recompute.
+        if self.state.load()._hrtf_data.is_none() {
+            return;
+        }
+
+        let state = Arc::clone(&self.state);
+        let config = self.config.clone();
+        let fft_r2c = Arc::clone(&self.fft.fft_r2c);
+        let lfe_channels = self.coefficients.lfe_channels.clone();
+
+        let (tx, rx) = sync_channel::<(f32, f32, f32)>(1);
+        let handle = std::thread::spawn(move || {
+            while let Ok((yaw, pitch, roll)) = rx.recv() {
+                let new_state = match Self::compute_head_rotated_hrtf_state(
+                    &state,
+                    &config,
+                    &fft_r2c,
+                    &lfe_channels,
+                    yaw,
+                    pitch,
+                    roll,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::warn!(
+                            "[BinauralDecoder] Background HRTF recompute failed: {}",
+                            e
+                        );
+                        continue;
+                    }
+                };
+                state.store(new_state);
+            }
+        });
+
+        self.hrtf_update_tx = Some(tx);
+        self.hrtf_update_thread = Some(handle);
+    }
+
+    fn shutdown_hrtf_update_thread(&mut self) {
+        // Dropping the sender unblocks the receiver's recv() with an error,
+        // causing the thread to exit cleanly.
+        self.hrtf_update_tx.take();
+        if let Some(handle) = self.hrtf_update_thread.take() {
+            if let Err(e) = handle.join() {
+                log::warn!("[BinauralDecoder] HRTF update thread panicked: {:?}", e);
+            }
+        }
+    }
+
+    /// Recompute a new `BinauralState` for the given head angles.
+    /// This is the CPU-heavy work that now runs off the audio thread.
+    fn compute_head_rotated_hrtf_state(
+        state: &Arc<ArcSwap<BinauralState>>,
+        config: &BinauralConfig,
+        fft_r2c: &Arc<dyn RealToComplex<f32>>,
+        lfe_channels: &[usize],
         yaw: f32,
         pitch: f32,
         roll: f32,
-    ) -> PluginResult<()> {
-        self.smoothing.last_hrtf_yaw = yaw;
-        self.smoothing.last_hrtf_pitch = pitch;
-        self.smoothing.last_hrtf_roll = roll;
-
-        if self.config.sample_rate == 0 {
-            return Ok(());
+    ) -> PluginResult<Arc<BinauralState>> {
+        if config.sample_rate == 0 {
+            return Ok(Arc::clone(&state.load_full()));
         }
 
-        // Use the SofaFile cached in the current state instead of reloading from disk
-        // on every head movement. Disk I/O inside the audio-thread path causes dropouts.
-        // The sofa is stored in _hrtf_data when initialize() or set_parameter("hrtf_file")
-        // loaded it. If no SOFA was loaded, we leave the default (identity) filters.
-        let state_guard = self.state.load();
+        let state_guard = state.load();
         let sofa_ref: &SofaFile = match state_guard._hrtf_data.as_ref() {
             Some(s) => s,
-            None => return Ok(()), // No SOFA loaded; nothing to re-query.
+            None => return Ok(Arc::clone(&state.load_full())),
         };
 
         let mut filters = vec![
-            vec![Complex::new(0.0, 0.0); self.config.freq_size * 2];
-            self.config.input_channels
+            vec![Complex::new(0.0, 0.0); config.freq_size * 2];
+            config.input_channels
         ];
 
-        for spk in self.config.speaker_config.speakers {
+        for spk in config.speaker_config.speakers {
             let ch = spk.channel;
-            if ch >= self.config.input_channels || self.coefficients.lfe_channels.contains(&ch) {
+            if ch >= config.input_channels || lfe_channels.contains(&ch) {
                 continue;
             }
-            // Apply inverse head rotation to the speaker's nominal position
             let (rotated_az, rotated_el) =
                 Self::rotate_speaker_position(spk.azimuth, spk.elevation, yaw, pitch, roll);
             let tgt = sotf_host::sofa::SourcePosition::new(rotated_az, rotated_el, 1.0);
@@ -967,32 +1031,31 @@ impl BinauralDecoderPlugin {
                 &near,
                 &gains,
                 sofa_ref,
-                self.config.fft_size,
-                self.config.sample_rate,
-                &self.fft.fft_r2c,
-                self.config.near_field_strength,
+                config.fft_size,
+                config.sample_rate,
+                fft_r2c,
+                config.near_field_strength,
                 tgt.azimuth,
                 tgt.elevation,
             );
-            filters[ch][..self.config.freq_size].copy_from_slice(&l_fft[..self.config.freq_size]);
-            filters[ch][self.config.freq_size..].copy_from_slice(&r_fft[..self.config.freq_size]);
+            filters[ch][..config.freq_size].copy_from_slice(&l_fft[..config.freq_size]);
+            filters[ch][config.freq_size..].copy_from_slice(&r_fft[..config.freq_size]);
         }
 
         super::hrtf::normalize_hrtf_gains(
             &mut filters,
-            &self.coefficients.lfe_channels,
-            self.config.freq_size,
-            self.config.input_channels,
+            lfe_channels,
+            config.freq_size,
+            config.input_channels,
         );
 
-        // Compute diffuse-field EQ from the cached SOFA (no I/O needed).
-        let eq = if self.config.diffuse_field_eq {
+        let eq = if config.diffuse_field_eq {
             Some(
                 super::filter::compute_diffuse_field_eq(
                     sofa_ref,
-                    self.config.fft_size,
-                    self.config.sample_rate,
-                    &self.fft.fft_r2c,
+                    config.fft_size,
+                    config.sample_rate,
+                    fft_r2c,
                 )
                 .map_err(|e| format!("Diffuse field EQ calculation failed: {}", e))?,
             )
@@ -1000,18 +1063,14 @@ impl BinauralDecoderPlugin {
             None
         };
 
-        // Clone the sofa Arc so the new state keeps ownership of the cached data.
         let sofa_clone = state_guard._hrtf_data.clone();
-        // Drop the guard before storing to avoid a self-borrow cycle via ArcSwap.
         drop(state_guard);
 
-        let new_state = Arc::new(BinauralState {
+        Ok(Arc::new(BinauralState {
             hrtf_filters_freq: filters,
             diffuse_field_eq_filter: eq,
             _hrtf_data: sofa_clone,
-        });
-        self.state.store(new_state);
-        Ok(())
+        }))
     }
 
     pub(super) fn reset_state(&mut self) {
@@ -1036,6 +1095,12 @@ impl BinauralDecoderPlugin {
     }
 }
 
+impl Drop for BinauralDecoderPlugin {
+    fn drop(&mut self) {
+        self.shutdown_hrtf_update_thread();
+    }
+}
+
 impl Plugin for BinauralDecoderPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Binaural Decoder", "2.1.0", "SotF")
@@ -1051,7 +1116,7 @@ impl Plugin for BinauralDecoderPlugin {
     }
     fn set_parameter(&mut self, id: ParameterId, val: ParameterValue) -> PluginResult<()> {
         // Parameters not in PARAMS — handle separately
-        if id.0 == "crossfade_ms" {
+        if id.as_str() == "crossfade_ms" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "crossfade_ms must be a float".to_string())?;
@@ -1061,7 +1126,7 @@ impl Plugin for BinauralDecoderPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "hrtf_file" {
+        if id.as_str() == "hrtf_file" {
             let path_str = val
                 .as_string()
                 .ok_or_else(|| "hrtf_file must be a string".to_string())?
@@ -1145,7 +1210,7 @@ impl Plugin for BinauralDecoderPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "head_yaw_deg" {
+        if id.as_str() == "head_yaw_deg" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
@@ -1157,7 +1222,7 @@ impl Plugin for BinauralDecoderPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "head_pitch_deg" {
+        if id.as_str() == "head_pitch_deg" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "head_pitch_deg must be a float".to_string())?;
@@ -1169,7 +1234,7 @@ impl Plugin for BinauralDecoderPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "head_roll_deg" {
+        if id.as_str() == "head_roll_deg" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "head_roll_deg must be a float".to_string())?;
@@ -1181,7 +1246,7 @@ impl Plugin for BinauralDecoderPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "hrtf_database_dir" {
+        if id.as_str() == "hrtf_database_dir" {
             let dir = val
                 .as_string()
                 .ok_or_else(|| "hrtf_database_dir must be a string".to_string())?
@@ -1213,7 +1278,7 @@ impl Plugin for BinauralDecoderPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.0 == "head_width_cm" {
+        if id.as_str() == "head_width_cm" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "head_width_cm must be a float".to_string())?;
@@ -1237,7 +1302,7 @@ impl Plugin for BinauralDecoderPlugin {
             }
             return Ok(());
         }
-        if id.0 == "ear_height_cm" {
+        if id.as_str() == "ear_height_cm" {
             let v = val
                 .as_float()
                 .ok_or_else(|| "ear_height_cm must be a float".to_string())?;
@@ -1292,10 +1357,10 @@ impl Plugin for BinauralDecoderPlugin {
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         // Parameters not in PARAMS — handle separately
-        if id.0 == "crossfade_ms" {
+        if id.as_str() == "crossfade_ms" {
             return Some(ParameterValue::Float(self.config.crossfade_ms));
         }
-        if id.0 == "sofa_file" || id.0 == "hrtf_file" {
+        if id.as_str() == "sofa_file" || id.as_str() == "hrtf_file" {
             let path_str = self
                 .config
                 .hrtf_path
@@ -1305,26 +1370,26 @@ impl Plugin for BinauralDecoderPlugin {
                 .to_string();
             return Some(ParameterValue::String(path_str));
         }
-        if id.0 == "head_yaw_deg" {
+        if id.as_str() == "head_yaw_deg" {
             return Some(ParameterValue::Float(self.smoothing.head_yaw_deg.target()));
         }
-        if id.0 == "head_pitch_deg" {
+        if id.as_str() == "head_pitch_deg" {
             return Some(ParameterValue::Float(
                 self.smoothing.head_pitch_deg.target(),
             ));
         }
-        if id.0 == "head_roll_deg" {
+        if id.as_str() == "head_roll_deg" {
             return Some(ParameterValue::Float(self.smoothing.head_roll_deg.target()));
         }
-        if id.0 == "hrtf_database_dir" {
+        if id.as_str() == "hrtf_database_dir" {
             return Some(ParameterValue::String(
                 self.config.hrtf_database_dir.clone(),
             ));
         }
-        if id.0 == "head_width_cm" {
+        if id.as_str() == "head_width_cm" {
             return Some(ParameterValue::Float(self.config.head_width_cm));
         }
-        if id.0 == "ear_height_cm" {
+        if id.as_str() == "ear_height_cm" {
             return Some(ParameterValue::Float(self.config.ear_height_cm));
         }
         param_bridge::get_parameter(BN, id, |i| self.param_value(i))
@@ -1553,6 +1618,11 @@ impl Plugin for BinauralDecoderPlugin {
             self.crossfade.crossfade_prev_state = None;
             self.crossfade.crossfade_remaining = 0;
         }
+
+        // Start the background HRTF rotation worker now that the SOFA (if any)
+        // is loaded and the shared state is initialized.
+        self.spawn_hrtf_update_thread();
+
         Ok(())
     }
     fn reset(&mut self) {
@@ -1583,17 +1653,17 @@ impl Plugin for BinauralDecoderPlugin {
             || (pitch - self.smoothing.last_hrtf_pitch).abs() > 0.5
             || (roll - self.smoothing.last_hrtf_roll).abs() > 0.5;
         if angle_changed {
-            // Recompute is best-effort: log errors but continue with old filters.
-            if let Err(e) = self.recompute_hrtf_for_head_angles(yaw, pitch, roll) {
-                log::warn!(
-                    "[BinauralDecoder] Head tracking HRTF recompute failed: {}",
-                    e
-                );
-                // Still update the cached angles so we don't spam errors every frame.
-                self.smoothing.last_hrtf_yaw = yaw;
-                self.smoothing.last_hrtf_pitch = pitch;
-                self.smoothing.last_hrtf_roll = roll;
+            // Request a background recomputation instead of blocking the audio
+            // thread. The update thread will store the new state; process_audio_block
+            // detects the change and crossfades. If the channel is full the thread
+            // is still busy, so we drop the stale request; the smoother will send
+            // a newer angle on the next frame.
+            if let Some(tx) = &self.hrtf_update_tx {
+                let _ = tx.try_send((yaw, pitch, roll));
             }
+            self.smoothing.last_hrtf_yaw = yaw;
+            self.smoothing.last_hrtf_pitch = pitch;
+            self.smoothing.last_hrtf_roll = roll;
         }
 
         let mut ip = 0;

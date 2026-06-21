@@ -37,7 +37,7 @@ gpui-keybinding = { workspace = true }
 gpui-audio-kit = { workspace = true }
 gpui-ui-kit = { workspace = true }
 gpui-themes = { workspace = true }
-gpui-px = { workspace = true, default-features = false, features = ["gpui"] }
+gpui-px = { workspace = true, features = ["gpui"] }
 gpui-d3rs = { workspace = true, features = ["gpui"] }
 glam = { workspace = true }
 

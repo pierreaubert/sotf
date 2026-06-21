@@ -1474,8 +1474,8 @@ fn test_parameters_returns_clone() {
     let params = ParametricInPlacePlugin::parameters(&p);
     assert!(!params.is_empty());
     // Should contain at least the expected parameters
-    assert!(params.iter().any(|param| param.id.0 == "low_gain"));
-    assert!(params.iter().any(|param| param.id.0 == "mode"));
+    assert!(params.iter().any(|param| param.id.as_str() == "low_gain"));
+    assert!(params.iter().any(|param| param.id.as_str() == "mode"));
 }
 
 #[test]
@@ -1490,7 +1490,7 @@ fn test_rebuild_cached_parameters_updates_values() {
     let params = ParametricInPlacePlugin::parameters(&p);
     let low_gain_param = params
         .iter()
-        .find(|param| param.id.0 == "low_gain")
+        .find(|param| param.id.as_str() == "low_gain")
         .unwrap();
     assert_eq!(
         low_gain_param.default_value,

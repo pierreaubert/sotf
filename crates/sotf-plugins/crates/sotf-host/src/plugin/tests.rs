@@ -396,3 +396,56 @@ fn validate_parameter_error_includes_parameter_id() {
         err
     );
 }
+
+/// In-place plugin that scales samples by 2.0 to exercise the f64 adapter.
+struct Scale2Plugin;
+
+impl InPlacePlugin for Scale2Plugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Scale2", "0.0.1", "Test")
+    }
+    fn channels(&self) -> usize {
+        2
+    }
+    fn parameters(&self) -> Vec<Parameter> {
+        vec![]
+    }
+    fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
+        Ok(())
+    }
+    fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
+        None
+    }
+    fn process_in_place(
+        &mut self,
+        buffer: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
+        for s in buffer.iter_mut() {
+            *s *= 2.0;
+        }
+        Ok(context.num_frames)
+    }
+    fn supports_f64(&self) -> bool {
+        true
+    }
+}
+
+#[test]
+fn in_place_adapter_f64_reuses_scratch_and_produces_correct_output() {
+    let mut adapted = InPlacePluginAdapter::new(Scale2Plugin);
+    let context = ProcessContext::new(48_000, 128);
+    let input: Vec<f64> = (0..256).map(|i| i as f64 * 0.01).collect();
+    let mut output = vec![0.0f64; 256];
+
+    // Warm up to allocate scratch buffers.
+    adapted.process_f64(&input, &mut output, &context).unwrap();
+
+    // Second call should reuse scratch buffers (no per-block allocation).
+    let result = adapted.process_f64(&input, &mut output, &context).unwrap();
+    assert_eq!(result, 128);
+    for (i, &s) in output.iter().enumerate() {
+        let expected = (i as f64 * 0.01) * 2.0;
+        assert!((s - expected).abs() < 1e-6, "sample {}: got {}, expected {}", i, s, expected);
+    }
+}

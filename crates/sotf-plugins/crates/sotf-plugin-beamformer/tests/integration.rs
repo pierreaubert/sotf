@@ -39,7 +39,7 @@ fn construct_from_params() {
 fn parameters_listed_by_trait() {
     let plugin = BeamformerPlugin::new(2, 48000);
     let params = plugin.parameters();
-    let ids: Vec<_> = params.iter().map(|p| p.id.0.as_str()).collect();
+    let ids: Vec<_> = params.iter().map(|p| p.id.as_str()).collect();
     assert!(ids.contains(&"steer_angle_deg"));
     assert!(ids.contains(&"beamformer_type"));
 }

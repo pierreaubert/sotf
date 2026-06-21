@@ -247,7 +247,7 @@ fn unknown_parameter_errors() {
 #[test]
 fn parameter_list_contains_expected_keys() {
     let plugin = DownmixPlugin::new(6);
-    let ids: Vec<_> = plugin.parameters().iter().map(|p| p.id.0.clone()).collect();
+    let ids: Vec<_> = plugin.parameters().iter().map(|p| p.id.to_string()).collect();
     assert!(ids.contains(&"center_gain_db".to_string()));
     assert!(ids.contains(&"phase_coherence".to_string()));
     assert!(ids.contains(&"itu_mode".to_string()));

@@ -28,10 +28,14 @@ impl MultichannelAutoGain {
     /// Create with given sample rate and parameters. The inner `AutoGain` is
     /// always 2-channel (stereo) — we fold multichannel output down to stereo
     /// for measurement.
+    /// Maximum number of frames the meter buffer is pre-sized for. This covers
+    /// all current SOTF host block sizes (128–8192) without reallocation.
+    const MAX_METER_FRAMES: usize = 8192;
+
     pub fn new(sample_rate: u32, params: AutoGainParams) -> Result<Self, String> {
         Ok(Self {
             inner: AutoGain::new(2, sample_rate, params)?,
-            meter_buf: Vec::new(),
+            meter_buf: vec![0.0; Self::MAX_METER_FRAMES * 2],
         })
     }
 
@@ -90,7 +94,7 @@ impl MultichannelAutoGain {
         }
 
         self.fill_meter_buffer(output, num_frames, out_ch, speaker_config);
-        self.inner.measure_output(&self.meter_buf)?;
+        self.inner.measure_output(&self.meter_buf[..num_frames * 2])?;
 
         for frame in 0..num_frames {
             let gain = self.inner.next_gain_linear();
@@ -114,16 +118,25 @@ impl MultichannelAutoGain {
         out_ch: usize,
         speaker_config: &SpeakerConfig,
     ) {
-        self.meter_buf.resize(num_frames * 2, 0.0);
-        self.meter_buf.fill(0.0);
+        let needed = num_frames * 2;
+        debug_assert!(
+            self.meter_buf.capacity() >= needed,
+            "MultichannelAutoGain meter buffer capacity {} is smaller than required {}",
+            self.meter_buf.capacity(),
+            needed
+        );
+        if self.meter_buf.len() < needed {
+            self.meter_buf.resize(needed, 0.0);
+        }
+        let buf = &mut self.meter_buf[..needed];
 
         // Stereo or mono passthrough: copy directly.
         if out_ch <= 2 {
             for frame in 0..num_frames {
                 let out_base = frame * out_ch;
                 let meter_base = frame * 2;
-                self.meter_buf[meter_base] = output[out_base];
-                self.meter_buf[meter_base + 1] = if out_ch == 2 {
+                buf[meter_base] = output[out_base];
+                buf[meter_base + 1] = if out_ch == 2 {
                     output[out_base + 1]
                 } else {
                     output[out_base]
@@ -131,6 +144,8 @@ impl MultichannelAutoGain {
             }
             return;
         }
+
+        buf.fill(0.0);
 
         for frame in 0..num_frames {
             let out_base = frame * out_ch;
@@ -141,13 +156,13 @@ impl MultichannelAutoGain {
                 }
                 let sample = output[out_base + sp.channel];
                 if sp.azimuth > 10.0 {
-                    self.meter_buf[meter_base] += sample;
+                    buf[meter_base] += sample;
                 } else if sp.azimuth < -10.0 {
-                    self.meter_buf[meter_base + 1] += sample;
+                    buf[meter_base + 1] += sample;
                 } else {
                     let split = sample * std::f32::consts::FRAC_1_SQRT_2;
-                    self.meter_buf[meter_base] += split;
-                    self.meter_buf[meter_base + 1] += split;
+                    buf[meter_base] += split;
+                    buf[meter_base + 1] += split;
                 }
             }
         }

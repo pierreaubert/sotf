@@ -4,14 +4,21 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::Arc;
 
 /// Unique identifier for a parameter
 #[derive(Debug, Clone, Hash, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct ParameterId(pub String);
+pub struct ParameterId(pub Arc<str>);
 
 impl From<&str> for ParameterId {
     fn from(s: &str) -> Self {
-        ParameterId(s.to_string())
+        ParameterId(Arc::from(s))
+    }
+}
+
+impl From<String> for ParameterId {
+    fn from(s: String) -> Self {
+        ParameterId(Arc::from(s))
     }
 }
 
@@ -25,6 +32,11 @@ impl ParameterId {
     /// Get the parameter ID as a string slice
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Consume the wrapper and return the inner `Arc<str>`.
+    pub fn into_arc(self) -> Arc<str> {
+        self.0
     }
 }
 

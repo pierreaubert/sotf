@@ -621,7 +621,7 @@ impl EqPlugin {
         self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        let name = id.0.as_str();
+        let name = id.as_str();
         if name == "auto_gain_enabled" {
             Parameter::new_bool("auto_gain_enabled", "Auto Gain", true).validate(&value)?;
             self.auto_gain.set_enabled(value.as_bool().unwrap_or(true));
@@ -828,7 +828,7 @@ impl EqPlugin {
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        let name = id.0.as_str();
+        let name = id.as_str();
         if name == "auto_gain_enabled" {
             Some(ParameterValue::Bool(self.auto_gain.is_enabled()))
         } else if name == "oversampling" {

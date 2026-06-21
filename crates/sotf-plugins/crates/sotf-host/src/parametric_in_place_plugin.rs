@@ -175,17 +175,29 @@ pub trait ParametricInPlacePlugin: Send {
 #[derive(Debug)]
 pub struct ParametricInPlacePluginAdapter<T: ParametricInPlacePlugin> {
     plugin: T,
+    /// Reusable f32 scratch for the f64 in-place processing path. Pre-sized and
+    /// grown on demand so the audio thread does not allocate per block.
+    scratch: Vec<f32>,
 }
 
 impl<T: ParametricInPlacePlugin> ParametricInPlacePluginAdapter<T> {
     /// Wrap a parametric in-place plugin for use in the host graph.
     pub fn new(plugin: T) -> Self {
-        Self { plugin }
+        Self {
+            plugin,
+            scratch: Vec::new(),
+        }
     }
 
     /// Consume the adapter and return the inner plugin.
     pub fn into_inner(self) -> T {
         self.plugin
+    }
+
+    fn ensure_scratch(&mut self, len: usize) {
+        if self.scratch.len() < len {
+            self.scratch.resize(len, 0.0);
+        }
     }
 }
 
@@ -239,7 +251,16 @@ impl<T: ParametricInPlacePlugin> InPlacePlugin for ParametricInPlacePluginAdapte
         buffer: &mut [f64],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
-        self.plugin.process_in_place_f64(buffer, context)
+        self.ensure_scratch(buffer.len());
+        let scratch = &mut self.scratch[..buffer.len()];
+        for (dst, &src) in scratch.iter_mut().zip(buffer.iter()) {
+            *dst = src as f32;
+        }
+        let frames = self.plugin.process_in_place(scratch, context)?;
+        for (dst, &src) in buffer.iter_mut().zip(scratch.iter()) {
+            *dst = src as f64;
+        }
+        Ok(frames)
     }
 
     fn latency_samples(&self) -> usize {

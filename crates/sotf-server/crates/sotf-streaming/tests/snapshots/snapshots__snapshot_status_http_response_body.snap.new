@@ -1,0 +1,16 @@
+---
+source: crates/sotf-server/crates/sotf-streaming/tests/snapshots.rs
+assertion_line: 86
+expression: value
+---
+{
+  "status": "ok",
+  "bind_addr": "127.0.0.1:<port>",
+  "clients": 0,
+  "sample_rate": 48000,
+  "channels": 2,
+  "published_chunks": 0,
+  "dropped_chunks": 0,
+  "published_frames": 0,
+  "published_bytes": 0
+}

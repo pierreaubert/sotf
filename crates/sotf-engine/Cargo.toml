@@ -99,3 +99,7 @@ sotf-test = { workspace = true }
 [[bench]]
 name = "playback_runtime_benchmark"
 harness = false
+
+[[bench]]
+name = "timeline_processor_benchmark"
+harness = false

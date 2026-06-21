@@ -379,66 +379,66 @@ use super::super::spectral_compressor_plugin_params::SpectralCompressorPluginPar
         // Set all parameters
         plugin
             .set_parameter(
-                ParameterId("threshold".into()),
+                ParameterId::from("threshold"),
                 ParameterValue::Float(-30.0),
             )
             .unwrap();
         plugin
-            .set_parameter(ParameterId("ratio".into()), ParameterValue::Float(4.0))
+            .set_parameter(ParameterId::from("ratio"), ParameterValue::Float(4.0))
             .unwrap();
         plugin
-            .set_parameter(ParameterId("attack".into()), ParameterValue::Float(10.0))
+            .set_parameter(ParameterId::from("attack"), ParameterValue::Float(10.0))
             .unwrap();
         plugin
-            .set_parameter(ParameterId("release".into()), ParameterValue::Float(100.0))
+            .set_parameter(ParameterId::from("release"), ParameterValue::Float(100.0))
             .unwrap();
         plugin
-            .set_parameter(ParameterId("knee".into()), ParameterValue::Float(3.0))
+            .set_parameter(ParameterId::from("knee"), ParameterValue::Float(3.0))
             .unwrap();
         plugin
             .set_parameter(
-                ParameterId("spectral_smoothing".into()),
+                ParameterId::from("spectral_smoothing"),
                 ParameterValue::Float(0.5),
             )
             .unwrap();
         plugin
-            .set_parameter(ParameterId("mix".into()), ParameterValue::Float(0.8))
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.8))
             .unwrap();
         plugin
-            .set_parameter(ParameterId("fft_size".into()), ParameterValue::Int(2))
+            .set_parameter(ParameterId::from("fft_size"), ParameterValue::Int(2))
             .unwrap();
 
         // Verify all parameters
         assert_eq!(
-            plugin.get_parameter(&ParameterId("threshold".into())),
+            plugin.get_parameter(&ParameterId::from("threshold")),
             Some(ParameterValue::Float(-30.0))
         );
         assert_eq!(
-            plugin.get_parameter(&ParameterId("ratio".into())),
+            plugin.get_parameter(&ParameterId::from("ratio")),
             Some(ParameterValue::Float(4.0))
         );
         assert_eq!(
-            plugin.get_parameter(&ParameterId("attack".into())),
+            plugin.get_parameter(&ParameterId::from("attack")),
             Some(ParameterValue::Float(10.0))
         );
         assert_eq!(
-            plugin.get_parameter(&ParameterId("release".into())),
+            plugin.get_parameter(&ParameterId::from("release")),
             Some(ParameterValue::Float(100.0))
         );
         assert_eq!(
-            plugin.get_parameter(&ParameterId("knee".into())),
+            plugin.get_parameter(&ParameterId::from("knee")),
             Some(ParameterValue::Float(3.0))
         );
         assert_eq!(
-            plugin.get_parameter(&ParameterId("spectral_smoothing".into())),
+            plugin.get_parameter(&ParameterId::from("spectral_smoothing")),
             Some(ParameterValue::Float(0.5))
         );
         assert_eq!(
-            plugin.get_parameter(&ParameterId("mix".into())),
+            plugin.get_parameter(&ParameterId::from("mix")),
             Some(ParameterValue::Float(0.8))
         );
         assert_eq!(
-            plugin.get_parameter(&ParameterId("fft_size".into())),
+            plugin.get_parameter(&ParameterId::from("fft_size")),
             Some(ParameterValue::Int(2))
         );
     }

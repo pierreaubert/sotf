@@ -15,14 +15,28 @@ pub(super) const HAL_RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
 #[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
 pub(super) const HAL_INPUT_RUNAWAY_PEAK_LIMIT: f32 = 8.0;
 
+/// Maximum engine block size (frames) used to pre-size decoder/processing
+/// scratch buffers. Blocks larger than this still work, but may allocate once
+/// on the first oversized call.
+pub(super) const MAX_ENGINE_BLOCK_FRAMES: usize = 8192;
+
+/// Maximum channel count used to pre-size engine scratch buffers.
+pub(super) const MAX_ENGINE_CHANNELS: usize = 8;
+
+/// Worst-case interleaved sample count for one engine block.
+pub(super) const MAX_ENGINE_SAMPLE_CAPACITY: usize = MAX_ENGINE_BLOCK_FRAMES * MAX_ENGINE_CHANNELS;
+
+/// Resampler output headroom for the worst common ratio (up to ~2x).
+pub(super) const MAX_RESAMPLE_OUTPUT_SAMPLES: usize = MAX_ENGINE_SAMPLE_CAPACITY * 2;
+
 /// Maximum size of resample staging buffer to prevent unbounded growth.
-/// This limits memory usage while ensuring we can handle typical resampling
-/// ratios (e.g., 48kHz→44.1kHz produces ~940-frame blocks, so we allow ~4x that).
-pub(super) const MAX_RESAMPLE_STAGING_SAMPLES: usize = 1024 * 8 * 4; // 1024 frames * 8 channels * 4x margin
+/// Sized for several complete max-size blocks to absorb resampler jitter
+/// (e.g., 48kHz→44.1kHz produces slightly smaller blocks per input chunk).
+pub(super) const MAX_RESAMPLE_STAGING_SAMPLES: usize = MAX_ENGINE_SAMPLE_CAPACITY * 4;
 
 pub(super) const DECODER_LOCAL_FRAME_POOL_SIZE: usize = 8;
 
-pub(super) const DECODER_LOCAL_FRAME_CAPACITY: usize = 1024 * 8;
+pub(super) const DECODER_LOCAL_FRAME_CAPACITY: usize = MAX_ENGINE_SAMPLE_CAPACITY;
 
 /// Helper to send a message with backpressure handling and interruption support
 pub(super) fn send_or_interrupt<T>(

@@ -149,14 +149,14 @@ impl ParamBridge {
 
         let raw = denormalize_value(spec, normalized);
         let value = raw_to_parameter_value(spec, raw);
-        let id = ParameterId(spec.engine_key.to_string());
+        let id = ParameterId::from(spec.engine_key.to_string());
         plugin.set_parameter(id, value)
     }
 
     /// Get a normalized parameter value (0.0-1.0) from a plugin.
     pub fn get_normalized(&self, plugin: &dyn Plugin, index: usize) -> Option<f64> {
         let spec = self.specs.get(index)?;
-        let id = ParameterId(spec.engine_key.to_string());
+        let id = ParameterId::from(spec.engine_key.to_string());
         let value = plugin.get_parameter(&id)?;
         let raw = parameter_value_to_raw(&value);
         Some(normalize_value(spec, raw))
@@ -177,13 +177,13 @@ impl ParamBridge {
 
         let clamped = spec.clamp_f64(raw_value);
         let value = raw_to_parameter_value(spec, clamped);
-        let id = ParameterId(engine_key.to_string());
+        let id = ParameterId::from(engine_key.to_string());
         plugin.set_parameter(id, value)
     }
 
     /// Get a raw parameter value from a plugin.
     pub fn get_raw(&self, plugin: &dyn Plugin, engine_key: &str) -> Option<f64> {
-        let id = ParameterId(engine_key.to_string());
+        let id = ParameterId::from(engine_key.to_string());
         let value = plugin.get_parameter(&id)?;
         Some(parameter_value_to_raw(&value))
     }

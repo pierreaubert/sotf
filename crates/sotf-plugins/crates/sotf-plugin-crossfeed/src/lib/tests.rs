@@ -317,12 +317,12 @@ fn test_itd_parameter() {
 
     // Set ITD delay
     p.set_parameter(
-        ParameterId("itd_delay_ms".to_string()),
+        ParameterId::from("itd_delay_ms"),
         ParameterValue::Float(0.3),
     )
     .unwrap();
 
-    let val = p.get_parameter(&ParameterId("itd_delay_ms".to_string()));
+    let val = p.get_parameter(&ParameterId::from("itd_delay_ms"));
     assert_eq!(val, Some(ParameterValue::Float(0.3)));
 }
 
@@ -590,7 +590,7 @@ fn test_mix_ramp_no_step_discontinuity() {
 
     // Jump mix to 1.0
     p.set_parameter(
-        sotf_host::parameters::ParameterId("mix".to_string()),
+        sotf_host::parameters::ParameterId::from("mix"),
         sotf_host::parameters::ParameterValue::Float(1.0),
     )
     .unwrap();

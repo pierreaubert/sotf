@@ -561,7 +561,7 @@ impl Plugin for ABComparePlugin {
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
-        match id.0.as_str() {
+        match id.as_str() {
             "mix" => {
                 let v = value
                     .as_float()
@@ -699,7 +699,7 @@ impl Plugin for ABComparePlugin {
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        match id.0.as_str() {
+        match id.as_str() {
             "mix" => Some(ParameterValue::Float(self.mix)),
             "mix_mode" => Some(ParameterValue::Int(match self.mix_mode {
                 MixMode::Potentiometer => 0,

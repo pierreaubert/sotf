@@ -60,7 +60,7 @@ pub fn get_parameter(
     let (idx, spec) = specs
         .iter()
         .enumerate()
-        .find(|(_, s)| s.engine_key == id.0)?;
+        .find(|(_, s)| s.engine_key == id.as_str())?;
     let val = get_value(idx)?;
     Some(f64_to_param_value(spec, val))
 }
@@ -79,7 +79,7 @@ pub fn set_parameter(
     let (idx, spec) = specs
         .iter()
         .enumerate()
-        .find(|(_, s)| s.engine_key == id.0)
+        .find(|(_, s)| s.engine_key == id.as_str())
         .ok_or_else(|| {
             log::warn!(
                 "param_bridge::set_parameter rejected unknown parameter '{}' (known: {})",

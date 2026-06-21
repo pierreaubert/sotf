@@ -2220,7 +2220,7 @@ fn test_xtc_process_auto_gain_measures() {
 fn test_xtc_set_head_model() {
     let params = XtcPluginParams::default();
     let mut plugin = XtcPlugin::new(params, 48000).unwrap();
-    let id = ParameterId("head_model".to_string());
+    let id = ParameterId::from("head_model");
     let val = ParameterValue::Int(1);
     plugin.set_parameter(id.clone(), val).unwrap();
     assert_eq!(plugin.param_value(26), Some(1.0));

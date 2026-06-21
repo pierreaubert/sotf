@@ -4,7 +4,9 @@
 // under various configurations and workloads.
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use sotf_host::{Plugin, ProcessContext};
+use sotf_host::{
+    ParameterId, ParameterValue, Plugin, ProcessContext,
+};
 use sotf_plugin_binaural::{BinauralDecoderPlugin, RoomModel};
 use std::hint::black_box;
 use std::time::Duration;
@@ -241,6 +243,85 @@ fn bench_large_blocks(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark head-tracking induced HRTF recomputation.
+fn bench_head_tracking(c: &mut Criterion) {
+    let mut group = c.benchmark_group("binaural_head_tracking");
+    group.warm_up_time(Duration::from_secs(3));
+
+    let sample_rate = 48000;
+    let block_size = 512;
+    let fft_size = 2048;
+    let channels = 6;
+
+    group.throughput(Throughput::Elements((block_size * channels) as u64));
+
+    // Use the MIT KEMAR SOFA file shipped with the project so the benchmark
+    // actually exercises head-tracking HRTF recomputation.
+    let manifest_dir = std::path::PathBuf::from(
+        std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string()),
+    );
+    let sofa_path = manifest_dir
+        .ancestors()
+        .nth(4)
+        .map(|p| p.join("data_cached/org.sofacoustics/mit/kemar_large.sofa"))
+        .unwrap_or_default();
+    if !sofa_path.exists() {
+        eprintln!(
+            "Skipping binaural_head_tracking benchmark: SOFA file not found at {}",
+            sofa_path.display()
+        );
+        group.finish();
+        return;
+    }
+
+    group.bench_function("process_after_yaw_change", |b| {
+        let mut decoder = create_decoder(channels, fft_size, true);
+        decoder.initialize(sample_rate).unwrap();
+        decoder
+            .set_parameter(
+                ParameterId::from("hrtf_file"),
+                ParameterValue::String(sofa_path.to_string_lossy().to_string()),
+            )
+            .unwrap();
+
+        let input = vec![0.5f32; block_size * channels];
+        let mut output = vec![0.0f32; block_size * 2];
+        let context = ProcessContext::new(sample_rate, block_size);
+
+        // Steady-state warm-up.
+        for _ in 0..10 {
+            decoder
+                .process(&input, &mut output, &context)
+                .unwrap();
+        }
+
+        // Alternate yaw between two large angles on every measured iteration so
+        // every process() call observes an angle change > 0.5° and must enqueue
+        // a background HRTF recompute. set_parameter for yaw is a simple target
+        // update and is included in the measurement as part of the real-time path.
+        let mut toggle = false;
+        b.iter(|| {
+            toggle = !toggle;
+            let yaw = if toggle { 45.0 } else { -45.0 };
+            decoder
+                .set_parameter(
+                    ParameterId::from("head_yaw_deg"),
+                    ParameterValue::Float(yaw),
+                )
+                .unwrap();
+            decoder
+                .process(
+                    black_box(&input),
+                    black_box(&mut output),
+                    black_box(&context),
+                )
+                .unwrap();
+        });
+    });
+
+    group.finish();
+}
+
 /// Benchmark passthrough mode (no SOFA)
 fn bench_passthrough(c: &mut Criterion) {
     let mut group = c.benchmark_group("binaural_passthrough");
@@ -334,6 +415,7 @@ criterion_group!(
     bench_optimization_comparison,
     bench_externalization,
     bench_large_blocks,
+    bench_head_tracking,
     bench_passthrough,
     bench_atmos_7_1_4,
 );

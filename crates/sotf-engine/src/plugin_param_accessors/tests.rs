@@ -96,7 +96,7 @@ fn validate_engine_keys_exist_in_dsp_plugin() {
 
         let dsp_params = plugin.parameters();
         let dsp_keys: std::collections::HashSet<&str> =
-            dsp_params.iter().map(|p| p.id.0.as_str()).collect();
+            dsp_params.iter().map(|p| p.id.as_str()).collect();
 
         for (i, spec) in specs.iter().enumerate() {
             let Some((engine_key, _)) = settings.engine_param_at(i) else {

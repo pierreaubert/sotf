@@ -347,7 +347,7 @@ mod tests {
     fn parameters_exposes_input_channels_id() {
         let plugin = stub_plugin(2);
         let params = plugin.parameters();
-        let ids: Vec<&str> = params.iter().map(|p| p.id.0.as_str()).collect();
+        let ids: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
         assert!(
             ids.contains(&"input_channels"),
             "expected parameter id 'input_channels', got: {:?}",
@@ -398,7 +398,7 @@ mod tests {
     fn parameters_exposes_connected_diagnostic() {
         let plugin = stub_plugin(2);
         let params = plugin.parameters();
-        let ids: Vec<&str> = params.iter().map(|p| p.id.0.as_str()).collect();
+        let ids: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
         assert!(ids.contains(&"is_connected"));
     }
 

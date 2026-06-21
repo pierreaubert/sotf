@@ -27,7 +27,7 @@ impl Plugin for F64ScalePlugin {
         id: crate::parameters::ParameterId,
         value: crate::parameters::ParameterValue,
     ) -> Result<(), String> {
-        if id.0 == "factor"
+        if id.as_str() == "factor"
             && let crate::parameters::ParameterValue::Float(value) = value
         {
             self.factor = value as f64;
@@ -39,7 +39,7 @@ impl Plugin for F64ScalePlugin {
         &self,
         id: &crate::parameters::ParameterId,
     ) -> Option<crate::parameters::ParameterValue> {
-        if id.0 == "factor" {
+        if id.as_str() == "factor" {
             Some(crate::parameters::ParameterValue::Float(self.factor as f32))
         } else {
             None

@@ -12,6 +12,14 @@ categories.workspace = true
 name = "sotf_host"
 path = "src/lib.rs"
 
+[[bench]]
+name = "multichannel_auto_gain_benchmark"
+harness = false
+
+[[bench]]
+name = "parameter_id_benchmark"
+harness = false
+
 [[bin]]
 name = "qa-host"
 path = "bin/qa_host.rs"
@@ -60,6 +68,7 @@ libloading = { workspace = true, optional = true }
 insta = { workspace = true }
 tempfile = { workspace = true }
 proptest = { workspace = true }
+criterion = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

@@ -185,15 +185,15 @@ impl Plugin for HalOutputPlugin {
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id.0 == "underrun_count" {
+        if id.as_str() == "underrun_count" {
             Some(ParameterValue::Int(
                 self.underrun_counter.load(Ordering::Relaxed) as i32,
             ))
-        } else if id.0 == "write_success_ratio" {
+        } else if id.as_str() == "write_success_ratio" {
             Some(ParameterValue::Float(self.write_success_ratio))
-        } else if id.0 == "is_connected" {
+        } else if id.as_str() == "is_connected" {
             Some(ParameterValue::Bool(self.is_connected))
-        } else if id.0 == "is_backpressured" {
+        } else if id.as_str() == "is_backpressured" {
             Some(ParameterValue::Bool(self.is_backpressured))
         } else {
             None
@@ -315,8 +315,8 @@ mod tests {
         // Use a raw struct literal to avoid calling new() so this compiles on
         // any platform regardless of feature flags.
         let plugin = make_test_plugin();
-        let old_id = ParameterId("buffer_fill_level".to_string());
-        let new_id = ParameterId("write_success_ratio".to_string());
+        let old_id = ParameterId::from("buffer_fill_level");
+        let new_id = ParameterId::from("write_success_ratio");
 
         assert!(
             plugin.get_parameter(&old_id).is_none(),
@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn get_parameter_write_success_ratio_returns_float() {
         let plugin = make_test_plugin();
-        let id = ParameterId("write_success_ratio".to_string());
+        let id = ParameterId::from("write_success_ratio");
         match plugin.get_parameter(&id) {
             Some(ParameterValue::Float(v)) => {
                 assert!(
@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn get_parameter_underrun_count_returns_int() {
         let plugin = make_test_plugin();
-        let id = ParameterId("underrun_count".to_string());
+        let id = ParameterId::from("underrun_count");
         assert!(matches!(
             plugin.get_parameter(&id),
             Some(ParameterValue::Int(_))
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn diagnostic_parameters_include_connection_and_backpressure() {
         let plugin = make_test_plugin();
-        let ids: Vec<String> = plugin.parameters().iter().map(|p| p.id.0.clone()).collect();
+        let ids: Vec<String> = plugin.parameters().iter().map(|p| p.id.to_string()).collect();
         assert!(ids.contains(&"is_connected".to_string()));
         assert!(ids.contains(&"is_backpressured".to_string()));
     }
@@ -365,11 +365,11 @@ mod tests {
     fn get_parameter_connection_and_backpressure_defaults_to_expected_values() {
         let plugin = make_test_plugin();
         assert_eq!(
-            plugin.get_parameter(&ParameterId("is_connected".to_string())),
+            plugin.get_parameter(&ParameterId::from("is_connected")),
             Some(ParameterValue::Bool(false))
         );
         assert_eq!(
-            plugin.get_parameter(&ParameterId("is_backpressured".to_string())),
+            plugin.get_parameter(&ParameterId::from("is_backpressured")),
             Some(ParameterValue::Bool(false))
         );
     }

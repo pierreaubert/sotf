@@ -864,7 +864,7 @@ impl MultibandExpanderPlugin {
 
     pub fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         // Handle processing_mode separately (not in GLOBAL_PARAMS)
-        if id.0 == "processing_mode" {
+        if id.as_str() == "processing_mode" {
             let idx = value
                 .as_int()
                 .ok_or_else(|| "processing_mode must be an integer".to_string())?;
@@ -1009,8 +1009,8 @@ impl MultibandExpanderPlugin {
         }
 
         // Single-band aliases: map unprefixed names to band_params[0]
-        let name = &id.0;
-        match name.as_str() {
+        let name = id.as_str();
+        match name {
             "auto_makeup" => {
                 let v = value
                     .as_bool()
@@ -1159,7 +1159,7 @@ impl MultibandExpanderPlugin {
 
     pub fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         // Handle processing_mode separately (not in GLOBAL_PARAMS)
-        if id.0 == "processing_mode" {
+        if id.as_str() == "processing_mode" {
             let idx = if self.processing_mode == "spectral" {
                 1
             } else {
@@ -1172,7 +1172,8 @@ impl MultibandExpanderPlugin {
             return Some(v);
         }
         // Single-band aliases: map unprefixed names to band_params[0]
-        match id.0.as_str() {
+        let name = id.as_str();
+        match name {
             "auto_makeup" => {
                 return Some(ParameterValue::Bool(
                     self.band_params.first().is_some_and(|bp| bp.auto_makeup),
@@ -1191,7 +1192,7 @@ impl MultibandExpanderPlugin {
             _ => {}
         }
         // Fall through to band-level params
-        let name = &id.0;
+        let name = id.as_str();
         if name.starts_with("band_") {
             let parts: Vec<&str> = name.split('_').collect();
             if parts.len() >= 3 {

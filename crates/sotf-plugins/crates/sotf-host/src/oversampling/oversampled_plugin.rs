@@ -27,14 +27,32 @@ pub struct OversampledPlugin<P: InPlacePlugin> {
 }
 
 impl<P: InPlacePlugin> OversampledPlugin<P> {
+    /// Default maximum host block size the oversampler pre-allocates for.
+    /// Doubled from the previous 8192 to cover large offline-render blocks
+    /// without reallocation.
+    pub const DEFAULT_MAX_BLOCK_FRAMES: usize = 16384;
+
     /// Create a new oversampled plugin wrapper.
     ///
     /// `factor` must be 2 or 4. The inner plugin will be initialized at
     /// `sample_rate * factor` when `initialize()` is called.
+    /// Pre-allocates for [`Self::DEFAULT_MAX_BLOCK_FRAMES`] frames; use
+    /// [`Self::new_with_max_frames`] if the host requires a different limit.
     pub fn new(inner: P, factor: u32, channels: usize) -> Result<Self, String> {
+        Self::new_with_max_frames(inner, factor, channels, Self::DEFAULT_MAX_BLOCK_FRAMES)
+    }
+
+    /// Create a new oversampled plugin wrapper with a custom maximum host
+    /// block size. The oversampled buffer is pre-sized to
+    /// `max_block_frames * factor * channels`.
+    pub fn new_with_max_frames(
+        inner: P,
+        factor: u32,
+        channels: usize,
+        max_block_frames: usize,
+    ) -> Result<Self, String> {
         let oversampler = Oversampler::new(factor, channels)?;
-        // Pre-allocate for max expected oversampled block: 8192 * factor * channels
-        let os_buf_size = 8192 * factor as usize * channels;
+        let os_buf_size = max_block_frames * factor as usize * channels;
         Ok(Self {
             inner,
             oversampler,

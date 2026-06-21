@@ -89,7 +89,7 @@ fn test_band_split_from_params_frequency_spread_is_geometric() {
     };
     let p = BandSplitPlugin::from_params(1, &params).unwrap();
     let freq2 = p
-        .get_parameter(&ParameterId("frequency_2".to_string()))
+        .get_parameter(&ParameterId::from("frequency_2"))
         .and_then(|v| v.as_float())
         .expect("frequency_2 parameter should exist");
     assert!((freq2 - 2000.0).abs() < 1.0);
@@ -102,11 +102,11 @@ fn test_band_split_from_params_frequency_spread_is_geometric() {
     };
     let p = BandSplitPlugin::from_params(1, &params).unwrap();
     let freq2 = p
-        .get_parameter(&ParameterId("frequency_2".to_string()))
+        .get_parameter(&ParameterId::from("frequency_2"))
         .and_then(|v| v.as_float())
         .expect("frequency_2 parameter should exist");
     let freq3 = p
-        .get_parameter(&ParameterId("frequency_3".to_string()))
+        .get_parameter(&ParameterId::from("frequency_3"))
         .and_then(|v| v.as_float())
         .expect("frequency_3 parameter should exist");
     assert!((freq2 - 2000.0).abs() < 1.0);
@@ -207,7 +207,7 @@ fn test_band_split_per_band_gain_accuracy() {
     p_boosted.initialize(48000).unwrap();
     p_boosted
         .set_parameter(
-            ParameterId("band_0_gain_db".to_string()),
+            ParameterId::from("band_0_gain_db"),
             ParameterValue::Float(6.0),
         )
         .unwrap();
@@ -232,7 +232,7 @@ fn test_band_split_frequency_parameter() {
     p.initialize(48000).unwrap();
 
     // Check frequency_2 parameter
-    let val = p.get_parameter(&ParameterId("frequency_2".to_string()));
+    let val = p.get_parameter(&ParameterId::from("frequency_2"));
     assert!(val.is_some());
     if let Some(ParameterValue::Float(f)) = val {
         assert!((f - 5000.0).abs() < 1.0);
@@ -263,7 +263,7 @@ fn test_gain_change_is_smoothed() {
 
     // Apply +12 dB gain and process ONE short block immediately
     p.set_parameter(
-        ParameterId("band_0_gain_db".to_string()),
+        ParameterId::from("band_0_gain_db"),
         ParameterValue::Float(12.0),
     )
     .unwrap();
@@ -313,7 +313,7 @@ fn test_frequency_change_no_discontinuity() {
 
     // Change frequency dramatically: 500 Hz → 8000 Hz
     p.set_parameter(
-        ParameterId("frequency".to_string()),
+        ParameterId::from("frequency"),
         ParameterValue::Float(8000.0),
     )
     .unwrap();
@@ -407,7 +407,7 @@ fn test_from_params_2_bands_default() {
     let p = BandSplitPlugin::from_params(1, &params).unwrap();
     assert_eq!(p.num_bands, 2);
     let f0 = p
-        .get_parameter(&ParameterId("frequency".to_string()))
+        .get_parameter(&ParameterId::from("frequency"))
         .and_then(|v| v.as_float())
         .unwrap();
     assert!((f0 - 750.0).abs() < 1.0);
@@ -418,18 +418,18 @@ fn test_set_parameter_nan_frequency_is_rejected() {
     let mut p = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
     p.initialize(48000).unwrap();
     let before = p
-        .get_parameter(&ParameterId("frequency".to_string()))
+        .get_parameter(&ParameterId::from("frequency"))
         .and_then(|v| v.as_float())
         .unwrap();
     assert!(
         p.set_parameter(
-            ParameterId("frequency".to_string()),
+            ParameterId::from("frequency"),
             ParameterValue::Float(f32::NAN),
         )
         .is_err()
     );
     let after = p
-        .get_parameter(&ParameterId("frequency".to_string()))
+        .get_parameter(&ParameterId::from("frequency"))
         .and_then(|v| v.as_float())
         .unwrap();
     assert_eq!(before, after);
@@ -441,7 +441,7 @@ fn test_set_parameter_unknown_returns_error() {
     p.initialize(48000).unwrap();
     assert!(
         p.set_parameter(
-            ParameterId("not_a_param".to_string()),
+            ParameterId::from("not_a_param"),
             ParameterValue::Float(1.0),
         )
         .is_err()
@@ -453,23 +453,23 @@ fn test_set_parameter_gain_out_of_range_is_clamped() {
     let mut p = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
     p.initialize(48000).unwrap();
     p.set_parameter(
-        ParameterId("band_0_gain_db".to_string()),
+        ParameterId::from("band_0_gain_db"),
         ParameterValue::Float(100.0),
     )
     .unwrap();
     let v = p
-        .get_parameter(&ParameterId("band_0_gain_db".to_string()))
+        .get_parameter(&ParameterId::from("band_0_gain_db"))
         .and_then(|v| v.as_float())
         .unwrap();
     assert!(v <= 24.0);
 
     p.set_parameter(
-        ParameterId("band_0_gain_db".to_string()),
+        ParameterId::from("band_0_gain_db"),
         ParameterValue::Float(-100.0),
     )
     .unwrap();
     let v2 = p
-        .get_parameter(&ParameterId("band_0_gain_db".to_string()))
+        .get_parameter(&ParameterId::from("band_0_gain_db"))
         .and_then(|v| v.as_float())
         .unwrap();
     assert!(v2 >= -24.0);
@@ -478,7 +478,7 @@ fn test_set_parameter_gain_out_of_range_is_clamped() {
 #[test]
 fn test_get_parameter_unknown_returns_none() {
     let p = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
-    assert_eq!(p.get_parameter(&ParameterId("no_such".to_string())), None);
+    assert_eq!(p.get_parameter(&ParameterId::from("no_such")), None);
 }
 
 #[test]

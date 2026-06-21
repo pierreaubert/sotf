@@ -10,11 +10,40 @@ use std::sync::Arc;
 /// Adapter to convert InPlacePlugin to Plugin
 pub struct InPlacePluginAdapter<T: InPlacePlugin> {
     pub(super) plugin: T,
+    /// Reusable f32 scratch for the f64 processing path. Pre-sized and grown on
+    /// demand so the audio thread does not allocate per block.
+    scratch: Vec<f32>,
 }
 
 impl<T: InPlacePlugin> InPlacePluginAdapter<T> {
     pub fn new(plugin: T) -> Self {
-        Self { plugin }
+        Self {
+            plugin,
+            scratch: Vec::new(),
+        }
+    }
+
+    fn ensure_scratch(&mut self, len: usize) {
+        if self.scratch.len() < len {
+            self.scratch.resize(len, 0.0);
+        }
+    }
+
+    fn process_in_place_f64_with_scratch(
+        &mut self,
+        buffer: &mut [f64],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        self.ensure_scratch(buffer.len());
+        let scratch = &mut self.scratch[..buffer.len()];
+        for (dst, &src) in scratch.iter_mut().zip(buffer.iter()) {
+            *dst = src as f32;
+        }
+        let frames = self.plugin.process_in_place(scratch, context)?;
+        for (dst, &src) in buffer.iter_mut().zip(scratch.iter()) {
+            *dst = src as f64;
+        }
+        Ok(frames)
     }
 }
 
@@ -91,12 +120,11 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
         let out_ch = self.plugin.channels();
         if in_ch == out_ch {
             output.copy_from_slice(input);
-            self.plugin.process_in_place_f64(output, context)
+            self.process_in_place_f64_with_scratch(output, context)
         } else {
             output[..input.len()].copy_from_slice(input);
             let frames = self
-                .plugin
-                .process_in_place_f64(&mut output[..input.len()], context)?;
+                .process_in_place_f64_with_scratch(&mut output[..input.len()], context)?;
             for frame in 0..frames {
                 let src = frame * in_ch;
                 let dst = frame * out_ch;

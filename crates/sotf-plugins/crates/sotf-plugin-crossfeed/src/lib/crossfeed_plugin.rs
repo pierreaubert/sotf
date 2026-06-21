@@ -440,7 +440,7 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
     fn current_values(&self) -> ParameterSet {
         let mut values = ParameterSet::new();
         for param in &self.cached_parameters {
-            if param.id.0 == "head_yaw_deg" {
+            if param.id.as_str() == "head_yaw_deg" {
                 values.insert(
                     ParameterId::from("head_yaw_deg"),
                     ParameterValue::Float(self.params.head_yaw_deg),
@@ -455,7 +455,7 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
         let mut head_yaw_changed = false;
         for (id, value) in values {
-            if id.0 == "head_yaw_deg" {
+            if id.as_str() == "head_yaw_deg" {
                 let v = value
                     .as_float()
                     .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
@@ -507,7 +507,7 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
         value: &ParameterValue,
     ) -> PluginResult<()> {
         // head_yaw_deg is clamped in apply_values rather than rejected.
-        if id.0 == "head_yaw_deg" {
+        if id.as_str() == "head_yaw_deg" {
             value
                 .as_float()
                 .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;

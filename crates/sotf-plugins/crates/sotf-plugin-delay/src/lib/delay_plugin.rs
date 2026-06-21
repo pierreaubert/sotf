@@ -291,7 +291,7 @@ impl ParametricInPlacePlugin for DelayPlugin {
         );
         if self.is_per_channel() {
             for (ch, &ms) in self.channel_delays_ms.iter().enumerate() {
-                values.insert(ParameterId(format!("delay_ms_{ch}")), ParameterValue::Float(ms));
+                values.insert(ParameterId::from(format!("delay_ms_{ch}")), ParameterValue::Float(ms));
             }
         }
         values

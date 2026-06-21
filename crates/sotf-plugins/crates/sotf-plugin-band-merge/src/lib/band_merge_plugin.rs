@@ -44,7 +44,7 @@ impl BandMergePlugin {
         let mut p = Self {
             output_channels,
             num_bands: bands,
-            param_bands: ParameterId("bands".to_string()),
+            param_bands: ParameterId::from("bands"),
             band_gains_db: [0.0; MAX_BANDS],
             band_gains_linear: [1.0; MAX_BANDS],
             band_mutes: [false; MAX_BANDS],
@@ -180,7 +180,7 @@ impl Plugin for BandMergePlugin {
         if id == &self.param_bands {
             return Some(ParameterValue::Int(self.num_bands as i32));
         }
-        if id.0 == "reconstruction_error_db" {
+        if id.as_str() == "reconstruction_error_db" {
             self.reconstruction_error_requested.set(true);
             return Some(ParameterValue::Float(self.reconstruction_error_db));
         }

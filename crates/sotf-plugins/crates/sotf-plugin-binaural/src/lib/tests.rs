@@ -496,7 +496,7 @@ fn test_head_angle_parameters_listed() {
         RoomModel::default(),
     );
     let params = plugin.parameters();
-    let names: Vec<_> = params.iter().map(|p| p.id.0.as_str()).collect();
+    let names: Vec<_> = params.iter().map(|p| p.id.as_str()).collect();
     assert!(
         names.contains(&"head_yaw_deg"),
         "head_yaw_deg should be listed"
@@ -1120,7 +1120,7 @@ fn test_dead_params_not_exposed_in_parameters() {
         RoomModel::default(),
     );
     let params = plugin.parameters();
-    let names: Vec<&str> = params.iter().map(|p| p.id.0.as_str()).collect();
+    let names: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
     assert!(
         !names.contains(&"enable_optimization"),
         "enable_optimization (dead code) must not be exposed in parameters()"
@@ -1498,4 +1498,93 @@ fn test_initialize_empty_hrtf_database_dir_no_crash() {
     );
     plugin.config.hrtf_database_dir = "".to_string();
     plugin.initialize(48000).unwrap();
+}
+
+/// Verify that head-yaw changes trigger a background HRTF recompute and that
+/// the audio thread eventually picks up the rotated filters.
+#[test]
+fn test_head_yaw_background_update_changes_state() {
+    use sotf_host::sofa::SofaFile;
+
+    const NUM_MEAS: usize = 36;
+    const IR_LEN: usize = 64;
+    const SAMPLE_RATE_F: f32 = 44100.0;
+
+    let mut positions = Vec::with_capacity(NUM_MEAS);
+    let mut impulse_responses = Vec::with_capacity(NUM_MEAS * 2 * IR_LEN);
+    for i in 0..NUM_MEAS {
+        let az = -180.0 + (i as f32) * (360.0 / NUM_MEAS as f32);
+        positions.push(sotf_host::sofa::SourcePosition::new(az, 0.0, 1.0));
+        let mut ir_l = vec![0.0f32; IR_LEN];
+        ir_l[0] = 1.0 + i as f32 * 0.01;
+        let ir_r = vec![0.0f32; IR_LEN];
+        impulse_responses.extend_from_slice(&ir_l);
+        impulse_responses.extend_from_slice(&ir_r);
+    }
+
+    let sofa = SofaFile {
+        sample_rate: SAMPLE_RATE_F,
+        num_measurements: NUM_MEAS,
+        ir_length: IR_LEN,
+        positions,
+        impulse_responses,
+        convention: "SimpleFreeFieldHRIR".to_string(),
+        data_sample_rate: Some(SAMPLE_RATE_F),
+    };
+
+    let freq_size = 1024 / 2 + 1;
+    let initial_filters = vec![
+        vec![Complex::new(0.0, 0.0); freq_size * 2];
+        2
+    ];
+    let initial_state = Arc::new(BinauralState {
+        hrtf_filters_freq: initial_filters,
+        diffuse_field_eq_filter: None,
+        _hrtf_data: Some(sofa),
+    });
+
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.initialize(44100).unwrap();
+    plugin.state.store(initial_state);
+    plugin.spawn_hrtf_update_thread();
+
+    plugin
+        .set_parameter(
+            ParameterId::from("head_yaw_deg"),
+            ParameterValue::Float(45.0),
+        )
+        .unwrap();
+
+    let num_frames = 512;
+    let input: Vec<f32> = (0..num_frames * 2)
+        .map(|i| (i as f32 * 0.01).sin() * 0.5)
+        .collect();
+    let mut output = vec![0.0f32; num_frames * 2];
+    let context = ProcessContext::new(44100, num_frames);
+
+    // Process enough blocks for the smoother to advance past 0.5° and for the
+    // background thread to finish at least one recomputation.
+    for _ in 0..20 {
+        plugin.process(&input, &mut output, &context).unwrap();
+    }
+
+    let final_state = plugin.state.load_full();
+    let left_filter = &final_state.hrtf_filters_freq[0][..freq_size];
+    let is_identity = left_filter.iter().all(|c| c.norm() < 1e-3);
+    assert!(
+        !is_identity,
+        "background HRTF update should have produced non-identity filters"
+    );
 }

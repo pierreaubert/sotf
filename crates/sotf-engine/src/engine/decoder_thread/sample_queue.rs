@@ -10,8 +10,16 @@ pub(super) struct SampleQueue {
 }
 
 impl SampleQueue {
+    #[allow(dead_code)] // Used by unit tests; kept for symmetry with `with_capacity`.
     pub(super) fn new() -> Self {
         Self::default()
+    }
+
+    pub(super) fn with_capacity(capacity: usize) -> Self {
+        Self {
+            data: Vec::with_capacity(capacity),
+            start: 0,
+        }
     }
 
     pub(super) fn len(&self) -> usize {

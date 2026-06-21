@@ -13,6 +13,17 @@ const ACTIVE_EMPTY_SLEEP_PROCESSING_US: u64 = 100;
 /// Coarser wait once playback has explicitly stopped or reached end of stream.
 const IDLE_EMPTY_SLEEP_PROCESSING_MS: u64 = 1;
 
+/// Maximum engine block size (frames) used to pre-size processing scratch buffers.
+const MAX_ENGINE_BLOCK_FRAMES: usize = 8192;
+/// Maximum channel count used to pre-size processing scratch buffers.
+const MAX_ENGINE_CHANNELS: usize = 8;
+/// Worst-case interleaved sample count for one engine block.
+const MAX_ENGINE_SAMPLE_CAPACITY: usize = MAX_ENGINE_BLOCK_FRAMES * MAX_ENGINE_CHANNELS;
+/// Headroom for plugins that expand channels or sample rate (e.g. resamplers).
+const MAX_PROCESSING_SAMPLE_CAPACITY: usize = MAX_ENGINE_SAMPLE_CAPACITY * 2;
+/// Number of spare buffers kept on the processing thread for recycle-queue misses.
+const RECYCLE_FALLBACK_POOL_SIZE: usize = 4;
+
 /// Processing state
 pub(super) struct ProcessingState {
     /// Current plugin host
@@ -52,6 +63,9 @@ pub(super) struct ProcessingState {
     pub(super) frames_over_budget: u64,
     /// RT diagnostics: how many recycle misses (fallback Vec allocation)
     pub(super) recycle_miss_count: u64,
+    /// Spare buffers used when the playback→processing recycle queue is
+    /// temporarily empty. Pre-sized so the steady-state hot path does not allocate.
+    pub(super) recycle_fallback_pool: Vec<Vec<f32>>,
     /// Optional nonblocking tap for live network PCM streaming.
     #[cfg(feature = "streaming")]
     pub(super) network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
@@ -63,6 +77,11 @@ impl ProcessingState {
         sample_rate: u32,
         #[cfg(feature = "streaming")] network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
     ) -> Self {
+        let mut recycle_fallback_pool = Vec::with_capacity(RECYCLE_FALLBACK_POOL_SIZE);
+        for _ in 0..RECYCLE_FALLBACK_POOL_SIZE {
+            recycle_fallback_pool.push(Vec::with_capacity(MAX_PROCESSING_SAMPLE_CAPACITY));
+        }
+
         Self {
             host: PluginHost::new(channels, sample_rate),
             prev_host: None,
@@ -70,8 +89,9 @@ impl ProcessingState {
             crossfade_step: 0.0,
             channels,
             bypassed: false,
-            process_buffer: Vec::new(),
-            prev_process_buffer: Vec::new(),
+            // Pre-sized for the worst-case processing block so the hot path only reuses memory.
+            process_buffer: Vec::with_capacity(MAX_PROCESSING_SAMPLE_CAPACITY),
+            prev_process_buffer: Vec::with_capacity(MAX_PROCESSING_SAMPLE_CAPACITY),
             frame_count: 0,
             total_output_samples: 0,
             first_frame_time: None,
@@ -83,6 +103,7 @@ impl ProcessingState {
             last_rt_diag: std::time::Instant::now(),
             frames_over_budget: 0,
             recycle_miss_count: 0,
+            recycle_fallback_pool,
             #[cfg(feature = "streaming")]
             network_stream_tap,
         }
@@ -124,7 +145,12 @@ impl ProcessingState {
     }
 
     pub(super) fn prepare_scratch_buffer(buffer: &mut Vec<f32>, len: usize) {
-        if buffer.len() != len {
+        // Grow capacity only when necessary; never shrink, so the same backing
+        // allocation can be reused across frames of different sizes.
+        if buffer.capacity() < len {
+            buffer.reserve(len - buffer.len());
+        }
+        if buffer.len() < len {
             buffer.resize(len, 0.0);
         }
     }
@@ -488,7 +514,13 @@ pub(super) fn run_processing_thread(
                 }
 
                 let frame_start = std::time::Instant::now();
-                match state.process_frame(&frame.data, &mut process_buffer, frame.num_frames) {
+                // Pass only the expected output slice so the host sees exactly the
+                // buffer size it advertised via `output_frames_for_input`.
+                match state.process_frame(
+                    &frame.data,
+                    &mut process_buffer[..output_samples],
+                    frame.num_frames,
+                ) {
                     Ok(actual_output_frames) => {
                         let frame_elapsed = frame_start.elapsed();
                         if frame_elapsed > state.max_frame_duration {
@@ -521,7 +553,8 @@ pub(super) fn run_processing_thread(
                         state.total_output_samples += actual_output_samples as u64;
 
                         // Reuse a recycled Vec from the playback thread if available.
-                        // Steady state should never allocate thanks to pre-filled recycle queues.
+                        // Steady state should never allocate thanks to pre-filled recycle queues
+                        // and the local fallback pool.
                         let frame_data = {
                             let mut buf = match recycle_rx.try_recv() {
                                 Ok(mut v) => {
@@ -534,9 +567,15 @@ pub(super) fn run_processing_thread(
                                     v
                                 }
                                 Err(_) => {
-                                    // Fallback if recycle queue is empty (ramp-up or stall)
-                                    state.recycle_miss_count += 1;
-                                    Vec::with_capacity(actual_output_samples)
+                                    // Fallback if recycle queue is empty (ramp-up or stall).
+                                    // Pop a pre-sized spare first; only allocate as a last resort.
+                                    state
+                                        .recycle_fallback_pool
+                                        .pop()
+                                        .unwrap_or_else(|| {
+                                            state.recycle_miss_count += 1;
+                                            Vec::with_capacity(actual_output_samples)
+                                        })
                                 }
                             };
                             buf.extend_from_slice(&process_buffer[..actual_output_samples]);

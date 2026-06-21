@@ -56,7 +56,7 @@ impl Plugin for GainPlugin {
         id: crate::parameters::ParameterId,
         val: crate::parameters::ParameterValue,
     ) -> Result<(), String> {
-        if id.0 == "gain"
+        if id.as_str() == "gain"
             && let crate::parameters::ParameterValue::Float(v) = val
         {
             self.gain = v;
@@ -68,7 +68,7 @@ impl Plugin for GainPlugin {
         &self,
         id: &crate::parameters::ParameterId,
     ) -> Option<crate::parameters::ParameterValue> {
-        if id.0 == "gain" {
+        if id.as_str() == "gain" {
             Some(crate::parameters::ParameterValue::Float(self.gain))
         } else {
             None

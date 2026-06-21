@@ -506,7 +506,7 @@ impl Plugin for MatrixPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        let id_str = id.0.as_str();
+        let id_str = id.as_str();
         if id_str == "preset" {
             let idx = value
                 .as_int()
@@ -605,7 +605,7 @@ impl Plugin for MatrixPlugin {
         if let Some(v) = param_bridge::get_parameter(MX, id, |i| self.param_value(i)) {
             return Some(v);
         }
-        let id_str = id.0.as_str();
+        let id_str = id.as_str();
         if id_str == "preset" {
             let idx = PRESET_CHOICES
                 .iter()

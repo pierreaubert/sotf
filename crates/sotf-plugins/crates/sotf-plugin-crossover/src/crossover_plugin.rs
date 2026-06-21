@@ -403,14 +403,14 @@ impl Plugin for CrossoverPlugin {
         // In per-channel mode, the global `frequency` and `mode` parameters
         // don't apply — every channel has its own. Reject these writes so
         // they don't silently mutate unused global state.
-        if self.is_per_channel() && (id.0 == "frequency" || id.0 == "mode") {
+        if self.is_per_channel() && (id.as_str() == "frequency" || id.as_str() == "mode") {
             return Err(format!(
                 "crossover '{}' is in per-channel mode; use 'channel_frequency_N' / 'channel_mode_N' instead",
                 id.0
             ));
         }
 
-        if id.0 == "frequency" {
+        if id.as_str() == "frequency" {
             let val = value.as_float().unwrap_or(1000.0);
             if val.is_finite() {
                 self.freq_smoother.set_target(val);
@@ -425,7 +425,7 @@ impl Plugin for CrossoverPlugin {
                 self.rebuild_cached_parameters();
             }
             Ok(())
-        } else if id.0 == "mode" {
+        } else if id.as_str() == "mode" {
             if let Some(s) = value.as_string() {
                 self.mode = CrossoverMode::from_str(s)?;
                 self.rebuild_cached_parameters();
@@ -445,7 +445,7 @@ impl Plugin for CrossoverPlugin {
                 self.rebuild_cached_parameters();
             }
             Ok(())
-        } else if id.0 == "fir_taps" {
+        } else if id.as_str() == "fir_taps" {
             let taps = value.as_int().unwrap_or(DEFAULT_FIR_CROSSOVER_TAPS as i32);
             self.fir_taps = (taps.max(31) as usize).min(16385);
             if self.fir_taps.is_multiple_of(2) {
@@ -485,15 +485,15 @@ impl Plugin for CrossoverPlugin {
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id.0 == "frequency" {
+        if id.as_str() == "frequency" {
             Some(ParameterValue::Float(self.freq_smoother.target()))
-        } else if id.0 == "mode" {
+        } else if id.as_str() == "mode" {
             Some(ParameterValue::String(self.mode.as_str().to_string()))
         } else if let Some(smoother_idx) = Self::parse_extra_freq_index(&id.0) {
             self.extra_freq_smoothers
                 .get(smoother_idx)
                 .map(|s| ParameterValue::Float(s.target()))
-        } else if id.0 == "fir_taps" && self.kind == CrossoverKind::LinearPhase {
+        } else if id.as_str() == "fir_taps" && self.kind == CrossoverKind::LinearPhase {
             Some(ParameterValue::Int(self.fir_taps as i32))
         } else if let Some(ch) = parse_channel_freq_id(&id.0) {
             self.channel_frequencies_hz

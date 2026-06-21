@@ -89,7 +89,7 @@ mod tests {
         let mut plugin = MatrixPlugin::with_matrix(2, 2, matrix).unwrap();
 
         // Check Mute Parameter
-        let mute0_id = ParameterId("mute_0".to_string());
+        let mute0_id = ParameterId::from("mute_0");
         plugin
             .set_parameter(mute0_id.clone(), ParameterValue::Bool(true))
             .unwrap();
@@ -122,7 +122,7 @@ mod tests {
         );
 
         // Check Dim Parameter
-        let dim1_id = ParameterId("dim_1".to_string());
+        let dim1_id = ParameterId::from("dim_1");
         plugin
             .set_parameter(dim1_id.clone(), ParameterValue::Bool(true))
             .unwrap();

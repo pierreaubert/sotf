@@ -75,14 +75,14 @@ impl Plugin for ChannelCorrelationPlugin {
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
-        if id.0 == "enabled" {
+        if id.as_str() == "enabled" {
             self.enabled = value.as_bool().unwrap_or(true);
             self.rebuild_cached_parameters();
         }
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id.0 == "enabled" {
+        if id.as_str() == "enabled" {
             Some(ParameterValue::Bool(self.enabled))
         } else {
             None

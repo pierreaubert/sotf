@@ -154,7 +154,7 @@ fn parameter_get_set_roundtrip() {
 fn parameters_listed_by_trait() {
     let plugin = BinauralDecoderPlugin::from_params(default_params());
     let params = plugin.parameters();
-    let ids: Vec<_> = params.iter().map(|p| p.id.0.as_str()).collect();
+    let ids: Vec<_> = params.iter().map(|p| p.id.as_str()).collect();
     assert!(ids.contains(&"externalization"));
     assert!(ids.contains(&"near_field_strength"));
     assert!(ids.contains(&"crossfade_ms"));

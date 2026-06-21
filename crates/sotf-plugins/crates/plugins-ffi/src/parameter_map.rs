@@ -220,7 +220,7 @@ impl ParameterMap {
             } else {
                 info.min_value + (normalized_value * (info.max_value - info.min_value))
             };
-            let id = sotf_host::parameters::ParameterId(param_id.to_string());
+            let id = sotf_host::parameters::ParameterId::from(param_id.to_string());
             let value = sotf_host::parameters::ParameterValue::Float(raw as f32);
             plugin.set_parameter(id, value)
         } else {
@@ -242,7 +242,7 @@ impl ParameterMap {
         })?;
 
         let info = &self.cached_infos[pos];
-        let id = sotf_host::parameters::ParameterId(param_id.to_string());
+        let id = sotf_host::parameters::ParameterId::from(param_id.to_string());
         let value = plugin.get_parameter(&id)?;
         let raw = match value {
             sotf_host::parameters::ParameterValue::Float(f) => f as f64,
