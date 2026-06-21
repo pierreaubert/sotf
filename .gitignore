@@ -101,3 +101,4 @@ CTAGS
 
 /roadmap-*.md
 .clauge-worktrees/
+.worktrees/
