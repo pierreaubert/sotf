@@ -376,6 +376,40 @@ impl PlayerView {
         let volume = state.app.playback.volume;
         let muted = state.app.playback.muted;
         let is_playing = state.app.playback.is_playing;
+        let window_width = state.app.ui_state.window_width;
+        let window_height = state.app.ui_state.window_height;
+        let progress_bar_fill = theme.feedback.progress_bar_fill;
+        let progress_bar_bg = theme.feedback.progress_bar_bg;
+
+        // Compute window width in rems for responsive breakpoints
+        let responsive_scale = crate::ui::compute_responsive_scale(window_width, window_height);
+        let effective_rem = 16.0
+            * (state.app.ui_state.font_scale * responsive_scale).clamp(
+                crate::ui::DEFAULT_MIN_FONT_SIZE_PX / 16.0,
+                crate::ui::DEFAULT_MAX_FONT_SIZE_PX / 16.0,
+            );
+        let window_width_rems = window_width / effective_rem;
+
+        // Waveform data for the compact collapsed visualization
+        let position_secs = state.app.playback.position_secs;
+        let duration_secs = state.app.playback.duration_secs;
+        let progress = if duration_secs > 0.0 {
+            (position_secs / duration_secs).clamp(0.0, 1.0) as f32
+        } else {
+            0.0
+        };
+        let waveform = if let Some(queue_idx) = state.app.playback.current_queue_index {
+            if let Some(item) = state.app.queue_state.get(queue_idx) {
+                item.current_track().and_then(|t| t.waveform.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let waveform_bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
+
+        // Title read must happen after releasing the immutable `state` borrow.
         let title = self.current_footer_title(translations, cx);
         let state_for_expand = self.state.clone();
 
@@ -401,6 +435,23 @@ impl PlayerView {
                     .whitespace_nowrap()
                     .child(title),
             )
+            .when(window_width_rems >= 45.0 && waveform.is_some(), |el| {
+                el.child(
+                    div()
+                        .id("footer-collapsed-waveform")
+                        .flex_1()
+                        .min_w_0()
+                        .max_w(rems(20.0))
+                        .h(rems(1.5))
+                        .child(WaveformElement::new(
+                            waveform,
+                            progress,
+                            progress_bar_fill,
+                            progress_bar_bg,
+                            waveform_bounds_ref,
+                        )),
+                )
+            })
             .child(self.render_compact_transport(is_playing, theme.clone(), cx))
             .child(self.render_compact_volume(volume, muted, theme.clone(), cx))
             .child(
