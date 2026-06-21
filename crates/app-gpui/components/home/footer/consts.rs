@@ -351,7 +351,7 @@ impl PlayerView {
                     .align(StackAlign::Center)
                     // Left section: Track info text (hidden on narrow screens)
                     .when(show_track_info, |el| {
-                        el.child(self.render_footer_track_info(&translations, cx))
+                        el.child(self.render_footer_track_info(&translations, window_width_rems, cx))
                     })
                     // Center section: Transport + waveform
                     .child(self.render_footer_center(show_waveform, cx))
@@ -517,12 +517,23 @@ impl PlayerView {
     pub(super) fn render_footer_track_info(
         &self,
         translations: &crate::i18n::Translations,
+        window_width_rems: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = &state.app.ui_state.theme;
         let no_track_label = translations.playback_no_track;
+
+        // Shrink the track-info block on narrow windows so the right-side
+        // collapse button is never pushed off-screen.
+        let track_info_max_w = if window_width_rems < 50.0 {
+            rems(10.0)
+        } else if window_width_rems < 70.0 {
+            rems(12.5)
+        } else {
+            rems(15.625)
+        };
 
         // Check if we're in HAL input mode (macOS only)
         #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -561,7 +572,7 @@ impl PlayerView {
                 )
                 .build()
                 .min_w(rems(9.375))
-                .max_w(rems(15.625));
+                .max_w(track_info_max_w);
         }
 
         // Get current track info from queue
@@ -630,7 +641,7 @@ impl PlayerView {
             )
             .build()
             .min_w(rems(9.375))
-            .max_w(rems(15.625))
+            .max_w(track_info_max_w)
     }
 
     /// Center section: Transport controls + waveform + time
