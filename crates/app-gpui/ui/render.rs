@@ -871,7 +871,7 @@ impl PlayerView {
                 el.child(self.render_sidebar_screen_item(
                     "nav-room-eq",
                     translations.screen_room_eq,
-                    IconName::AudioWaveform,
+                    IconName::Brain,
                     Screen::RoomEq,
                     current_screen == Screen::RoomEq,
                     collapsed,
@@ -916,10 +916,17 @@ impl PlayerView {
                     .when(!collapsed, |el| {
                         el.child(
                             div()
-                                .text_size(d.text_xs)
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.text_muted)
-                                .child("Preferences"),
+                                .flex()
+                                .items_center()
+                                .gap(d.grid)
+                                .child(Icon::new(IconName::Cog).xs().color(theme.text_muted))
+                                .child(
+                                    div()
+                                        .text_size(d.text_xs)
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(theme.text_muted)
+                                        .child("Preferences"),
+                                ),
                         )
                         .child(
                             div()
@@ -1089,7 +1096,7 @@ impl PlayerView {
         self.render_sidebar_item_base(
             "nav-devices",
             "Devices",
-            IconName::Speaker,
+            if collapsed { IconName::Cog } else { IconName::Speaker },
             false,
             collapsed,
             theme,
