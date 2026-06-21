@@ -56,6 +56,10 @@ pub enum IconName {
     SlidersHorizontal,
     User,
     PenTool,
+
+    // Intelligence / settings
+    Brain,
+    Cog,
 }
 
 impl IconName {
@@ -99,6 +103,8 @@ impl IconName {
             IconName::SlidersHorizontal => "icons/sliders-horizontal.svg",
             IconName::User => "icons/user.svg",
             IconName::PenTool => "icons/pen-tool.svg",
+            IconName::Brain => "icons/brain.svg",
+            IconName::Cog => "icons/cog.svg",
         }
     }
 }
