@@ -34,7 +34,6 @@ pub(super) struct BinauralConfig {
     pub(super) hrtf_database_dir: String,
     pub(super) head_width_cm: f32,
     pub(super) ear_height_cm: f32,
-    pub(super) enable_optimization: bool,
     pub(super) diffuse_field_eq: bool,
     pub(super) lfe_crossover: f32,
     pub(super) lfe_distance: f32,
@@ -46,7 +45,6 @@ pub(super) struct BinauralConfig {
     pub(super) late_reverb_mix: f32,
     pub(super) late_reverb_rt60: f32,
     pub(super) late_reverb_damping: f32,
-    pub(super) headphone_eq_enabled: bool,
     pub(super) cached_parameters: Vec<Parameter>,
 }
 
@@ -145,7 +143,7 @@ impl BinauralDecoderPlugin {
         input_channels: usize,
         fft_size: usize,
         hrtf_path: Option<PathBuf>,
-        enable_optimization: bool,
+        _enable_optimization: bool,
         externalization: f32,
         near_field_strength: f32,
         diffuse_field_eq: bool,
@@ -236,7 +234,6 @@ impl BinauralDecoderPlugin {
                 hrtf_database_dir: String::new(),
                 head_width_cm: 15.0,
                 ear_height_cm: 10.0,
-                enable_optimization,
                 diffuse_field_eq,
                 lfe_crossover,
                 lfe_distance,
@@ -248,7 +245,6 @@ impl BinauralDecoderPlugin {
                 late_reverb_mix: 0.3,
                 late_reverb_rt60: 1.0,
                 late_reverb_damping: 0.3,
-                headphone_eq_enabled: false,
                 cached_parameters: Vec::new(),
             },
             fft: BinauralFft {
@@ -965,10 +961,7 @@ impl BinauralDecoderPlugin {
                 ) {
                     Ok(s) => s,
                     Err(e) => {
-                        log::warn!(
-                            "[BinauralDecoder] Background HRTF recompute failed: {}",
-                            e
-                        );
+                        log::warn!("[BinauralDecoder] Background HRTF recompute failed: {}", e);
                         continue;
                     }
                 };
@@ -984,10 +977,10 @@ impl BinauralDecoderPlugin {
         // Dropping the sender unblocks the receiver's recv() with an error,
         // causing the thread to exit cleanly.
         self.hrtf_update_tx.take();
-        if let Some(handle) = self.hrtf_update_thread.take() {
-            if let Err(e) = handle.join() {
-                log::warn!("[BinauralDecoder] HRTF update thread panicked: {:?}", e);
-            }
+        if let Some(handle) = self.hrtf_update_thread.take()
+            && let Err(e) = handle.join()
+        {
+            log::warn!("[BinauralDecoder] HRTF update thread panicked: {:?}", e);
         }
     }
 
@@ -1012,10 +1005,8 @@ impl BinauralDecoderPlugin {
             None => return Ok(Arc::clone(&state.load_full())),
         };
 
-        let mut filters = vec![
-            vec![Complex::new(0.0, 0.0); config.freq_size * 2];
-            config.input_channels
-        ];
+        let mut filters =
+            vec![vec![Complex::new(0.0, 0.0); config.freq_size * 2]; config.input_channels];
 
         for spk in config.speaker_config.speakers {
             let ch = spk.channel;

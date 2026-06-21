@@ -362,31 +362,53 @@ impl PlayerView {
         // Extract only the tiny bits of queue data needed to build the
         // accordion. Previously this cloned the entire `Vec<QueueItem>`
         // (including every Track in every album) on every render.
-        let (theme, queue_len, expanded_idx, summaries) = {
+        let (theme, queue_len, expanded_idx, summaries, max_title_chars) = {
             let state = self.state.read(cx);
+            let layout = state.layout.read(cx);
             let queue_len = state.app.queue_state.len();
             let selected_idx = if queue_len == 0 {
                 None
             } else {
                 Some(state.app.queue_state.selected_index.min(queue_len - 1))
             };
-            let expanded_idx = state
+            let fallback_expanded_idx = state
                 .app
                 .playback
                 .current_queue_index
                 .filter(|idx| *idx < queue_len)
                 .or(selected_idx);
+            let expanded_idx = if state.app.ui_state.queue_expansion_overridden {
+                state
+                    .app
+                    .ui_state
+                    .queue_expanded_album
+                    .filter(|idx| *idx < queue_len)
+            } else {
+                fallback_expanded_idx
+            };
 
             let theme = state.app.ui_state.theme.clone();
             let summaries = crate::queue_render::queue_accordion_summaries(&state.app.queue_state);
+            let max_title_chars = state.app.max_chars_queue_list_title(layout);
 
-            (theme, queue_len, expanded_idx, summaries)
+            (theme, queue_len, expanded_idx, summaries, max_title_chars)
         };
 
         let accordion_items = summaries
             .into_iter()
             .map(|summary| {
-                AccordionItem::new(format!("queue-album-{}", summary.idx), summary.title)
+                let title = if summary.title.chars().count() > max_title_chars {
+                    summary
+                        .title
+                        .chars()
+                        .take(max_title_chars)
+                        .collect::<String>()
+                        + "..."
+                } else {
+                    summary.title
+                };
+
+                AccordionItem::new(format!("queue-album-{}", summary.idx), title)
                     .trailing(summary.track_position)
                     .content(self.render_queue_album_detail(summary.idx, translations, cx))
             })
@@ -480,10 +502,6 @@ impl PlayerView {
                                 .theme(accordion_theme)
                                 .aria_label(translations.queue_title)
                                 .on_change(move |id, is_expanded, _window, cx| {
-                                    if !is_expanded {
-                                        return;
-                                    }
-
                                     let id = id.to_string();
                                     let Some(idx) = id
                                         .strip_prefix("queue-album-")
@@ -497,42 +515,16 @@ impl PlayerView {
                                             return;
                                         }
 
-                                        state.app.queue_state.selected_index = idx;
-
-                                        let current_channels = state
-                                            .app
-                                            .playback
-                                            .current_queue_index
-                                            .and_then(|queue_idx| {
-                                                state.app.queue_state.get(queue_idx)
-                                            })
-                                            .and_then(|item| item.current_track())
-                                            .and_then(|track| track.channels)
-                                            .unwrap_or(2)
-                                            as usize;
-                                        let target =
-                                            state.app.queue_state.get(idx).and_then(|item| {
-                                                item.current_track().map(|track| {
-                                                    (
-                                                        track.audio_source(),
-                                                        track.channels.unwrap_or(2) as usize,
-                                                    )
-                                                })
-                                            });
-
-                                        if let Some((source, target_channels)) = target {
-                                            let prefer_smooth_switch =
-                                                state.app.playback.is_playing
-                                                    && state.app.playback.current_queue_index
-                                                        != Some(idx)
-                                                    && current_channels == target_channels;
-                                            state.app.queue_state.current_index = Some(idx);
-                                            state.app.playback.current_queue_index = Some(idx);
-                                            if prefer_smooth_switch {
-                                                Self::play_track_smooth(state, source);
-                                            } else {
-                                                Self::play_track(state, source);
-                                            }
+                                        if is_expanded {
+                                            state.app.ui_state.queue_expanded_album = Some(idx);
+                                            state.app.ui_state.queue_expansion_overridden = true;
+                                            state.app.queue_state.selected_index = idx;
+                                        } else if state.app.ui_state.queue_expanded_album
+                                            == Some(idx)
+                                            || state.app.ui_state.queue_expanded_album.is_none()
+                                        {
+                                            state.app.ui_state.queue_expanded_album = None;
+                                            state.app.ui_state.queue_expansion_overridden = true;
                                         }
                                     });
                                 }),
@@ -714,6 +706,7 @@ impl PlayerView {
                                 .flex_col()
                                 .gap(d.grid)
                                 .flex_1()
+                                .min_w_0()
                                 // Album title
                                 .child(
                                     div()

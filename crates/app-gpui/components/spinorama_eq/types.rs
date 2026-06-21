@@ -16,6 +16,7 @@ use sotf_audio_player::autoeq::speaker::{
     SpeakerOptimizationProgress,
 };
 use sotf_audio_player::autoeq::types::SpeakerConfigType;
+use std::time::Duration;
 
 /// One progress sample from the optimizer:
 /// `(iteration, loss, optional_score, progress_pct)`.
@@ -30,6 +31,52 @@ type OptimizationOutcome = (
     Option<sotf_audio_player::autoeq::SpeakerOptimizationResult>,
     Option<String>,
 );
+
+const SPINORAMA_FETCH_RETRIES: usize = 3;
+const SPINORAMA_RETRY_DELAY: Duration = Duration::from_secs(2);
+
+fn classify_spinorama_fetch_error(error: &str) -> String {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("dns")
+        || lower.contains("resolve")
+        || lower.contains("connection")
+        || lower.contains("network")
+        || lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("tcp")
+    {
+        "No network access. Check your connection and try again.".to_string()
+    } else {
+        "spinorama.org is unavailable. Try again later.".to_string()
+    }
+}
+
+async fn fetch_json_with_spinorama_retries<T>(url: String) -> Result<T, String>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let mut last_error = String::new();
+
+    for attempt in 1..=SPINORAMA_FETCH_RETRIES {
+        match reqwest::get(&url).await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    return response.json::<T>().await.map_err(|e| e.to_string());
+                }
+                last_error = format!("API request failed: {}", response.status());
+            }
+            Err(error) => {
+                last_error = error.to_string();
+            }
+        }
+
+        if attempt < SPINORAMA_FETCH_RETRIES {
+            smol::Timer::after(SPINORAMA_RETRY_DELAY).await;
+        }
+    }
+
+    Err(classify_spinorama_fetch_error(&last_error))
+}
 
 impl PlayerView {
     // ========================================================================
@@ -311,6 +358,7 @@ impl PlayerView {
                         cx.notify();
                     })),
             );
+        let navigation = navigation.build().flex_none();
 
         // Home button for navigation back to Library
         let state_for_home = self.state.clone();
@@ -321,6 +369,7 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_between()
+            .min_w_0()
             .px(d.card)
             .py(d.card)
             .bg(theme.background_secondary)
@@ -346,7 +395,14 @@ impl PlayerView {
                     }),
             )
             // Centered header with flex-1
-            .child(div().flex_1().flex().justify_center().child(header))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .justify_center()
+                    .child(header),
+            )
             // Navigation buttons on the right
             .child(navigation)
     }
@@ -371,9 +427,13 @@ impl PlayerView {
         // Per-request oneshot channel — no shared global state.
         let (tx, rx) = smol::channel::bounded::<Result<Vec<String>, String>>(1);
         std::thread::spawn(move || {
-            let result =
-                spinorama_runtime().block_on(async { autoeq::fetch_available_speakers().await });
-            let _ = tx.send_blocking(result.map_err(|e| e.to_string()));
+            let result = spinorama_runtime().block_on(async {
+                fetch_json_with_spinorama_retries::<Vec<String>>(
+                    "https://api.spinorama.org/v1/speakers".to_string(),
+                )
+                .await
+            });
+            let _ = tx.send_blocking(result);
         });
 
         // Poll the channel on the GPUI scheduler. Awaiting `rx.recv()` lets
@@ -524,14 +584,9 @@ impl PlayerView {
                     "https://api.spinorama.org/v1/speaker/{}/versions",
                     encoded_speaker
                 );
-                let response = reqwest::get(&url).await?;
-                if !response.status().is_success() {
-                    return Err(format!("API request failed: {}", response.status()).into());
-                }
-                let versions: Vec<String> = response.json().await?;
-                Ok::<Vec<String>, Box<dyn std::error::Error + Send + Sync>>(versions)
+                fetch_json_with_spinorama_retries::<Vec<String>>(url).await
             });
-            let _ = tx.send_blocking(result.map_err(|e| e.to_string()));
+            let _ = tx.send_blocking(result);
         });
 
         // Poll the channel on the GPUI scheduler. Awaiting `rx.recv()` lets
@@ -672,14 +727,9 @@ impl PlayerView {
                     "https://api.spinorama.org/v1/speaker/{}/version/{}/measurements",
                     encoded_speaker, encoded_version
                 );
-                let response = reqwest::get(&url).await?;
-                if !response.status().is_success() {
-                    return Err(format!("API request failed: {}", response.status()).into());
-                }
-                let measurements: Vec<String> = response.json().await?;
-                Ok::<Vec<String>, Box<dyn std::error::Error + Send + Sync>>(measurements)
+                fetch_json_with_spinorama_retries::<Vec<String>>(url).await
             });
-            let _ = measurements_tx.send_blocking(result.map_err(|e| e.to_string()));
+            let _ = measurements_tx.send_blocking(result);
         });
 
         // Await the channel, then chain the phase-check + curves-load

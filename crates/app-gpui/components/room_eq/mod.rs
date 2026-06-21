@@ -225,6 +225,7 @@ impl PlayerView {
                         cx.notify();
                     })),
             );
+        let navigation = navigation.build().flex_none();
 
         // Home button for navigation back to Library
         let state_for_home = self.state.clone();
@@ -235,6 +236,7 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_between()
+            .min_w_0()
             .px(d.card)
             .py(d.card)
             .bg(theme.background_secondary)
@@ -260,7 +262,14 @@ impl PlayerView {
                     }),
             )
             // Centered header with flex-1
-            .child(div().flex_1().flex().justify_center().child(wizard_header))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .justify_center()
+                    .child(wizard_header),
+            )
             // Navigation buttons on the right
             .child(navigation)
     }

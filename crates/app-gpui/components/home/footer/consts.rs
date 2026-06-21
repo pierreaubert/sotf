@@ -92,6 +92,8 @@ const BREAKPOINT_HIDE_WAVEFORM_REMS: f32 = 43.75; // ~700px at 16px rem
 
 const BREAKPOINT_HIDE_TRACK_INFO_REMS: f32 = 34.375; // ~550px at 16px rem
 
+const BREAKPOINT_SHOW_COLLAPSED_WAVEFORM_REMS: f32 = 48.0;
+
 impl PlayerView {
     pub(crate) fn render_scan_status_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
@@ -371,12 +373,21 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let title = self.current_footer_title(translations, cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let volume = state.app.playback.volume;
         let muted = state.app.playback.muted;
         let is_playing = state.app.playback.is_playing;
-        let title = self.current_footer_title(translations, cx);
+        let window_width = state.app.ui_state.window_width;
+        let window_height = state.app.ui_state.window_height;
+        let responsive_scale = crate::ui::compute_responsive_scale(window_width, window_height);
+        let effective_rem = 16.0
+            * (state.app.ui_state.font_scale * responsive_scale).clamp(
+                crate::ui::DEFAULT_MIN_FONT_SIZE_PX / 16.0,
+                crate::ui::DEFAULT_MAX_FONT_SIZE_PX / 16.0,
+            );
+        let show_waveform = window_width / effective_rem >= BREAKPOINT_SHOW_COLLAPSED_WAVEFORM_REMS;
         let state_for_expand = self.state.clone();
 
         div()
@@ -401,6 +412,9 @@ impl PlayerView {
                     .whitespace_nowrap()
                     .child(title),
             )
+            .when(show_waveform, |el| {
+                el.child(self.render_compact_waveform(theme.clone(), cx))
+            })
             .child(self.render_compact_transport(is_playing, theme.clone(), cx))
             .child(self.render_compact_volume(volume, muted, theme.clone(), cx))
             .child(
@@ -631,6 +645,7 @@ impl PlayerView {
             .build()
             .min_w(rems(9.375))
             .max_w(rems(15.625))
+            .flex_shrink()
     }
 
     /// Center section: Transport controls + waveform + time
@@ -705,6 +720,7 @@ impl PlayerView {
             .pb(d.gap_md)
             .justify_between()
             .flex_1()
+            .min_w_0()
             .max_w(rems(37.5))
             // Row 1: [time] [<< < ▶ > >>] [time] — timestamps at far edges
             .child(
@@ -1147,6 +1163,43 @@ impl PlayerView {
             .into_any_element()
     }
 
+    pub(super) fn render_compact_waveform(
+        &self,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let state = self.state.read(cx);
+        let progress = if state.app.playback.duration_secs > 0.0 {
+            (state.app.playback.position_secs / state.app.playback.duration_secs).clamp(0.0, 1.0)
+                as f32
+        } else {
+            0.0
+        };
+        let waveform = state
+            .app
+            .playback
+            .current_queue_index
+            .and_then(|queue_idx| state.app.queue_state.get(queue_idx))
+            .and_then(|item| item.current_track())
+            .and_then(|track| track.waveform.clone());
+        let bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
+
+        div()
+            .id("footer-collapsed-waveform")
+            .flex_1()
+            .min_w(rems(6.0))
+            .max_w(rems(18.0))
+            .h(rems(1.5))
+            .child(WaveformElement::new(
+                waveform,
+                progress,
+                theme.feedback.progress_bar_fill,
+                theme.feedback.progress_bar_bg,
+                bounds_ref,
+            ))
+            .into_any_element()
+    }
+
     /// Right section: footer collapse + volume
     pub(super) fn render_footer_right(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
@@ -1165,6 +1218,7 @@ impl PlayerView {
             .items_center()
             .gap(d.gap_md)
             .justify_end()
+            .flex_none()
             .child(self.render_volume_button(volume, muted, theme_clone.clone(), cx))
             .child(
                 div()

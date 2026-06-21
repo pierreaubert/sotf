@@ -1800,8 +1800,6 @@ dependencies = [
 [[package]]
 name = "coreaudio-rs"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aae284fbaf7d27aa0e292f7677dfbe26503b0d555026f702940805a630eac17"
 dependencies = [
  "bitflags 1.3.2",
  "libc",
@@ -14557,7 +14555,3 @@ dependencies = [
  "syn 2.0.117",
  "winnow 1.0.2",
 ]
-
-[[patch.unused]]
-name = "psm"
-version = "0.1.30"

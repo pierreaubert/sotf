@@ -60,7 +60,24 @@ impl PlayerView {
             // populated `error_message` but had no rendering site on this
             // screen (the user just saw the spinner stop with no result).
             .when_some(fetch_error_message, |vstack, msg| {
-                vstack.child(Text::new(msg).size(TextSize::Xs).color(theme.error))
+                vstack.child(
+                    div()
+                        .w_full()
+                        .min_w_0()
+                        .p(d.pad_x)
+                        .rounded(d.r_md)
+                        .bg(theme.feedback.toast_error_bg)
+                        .border_1()
+                        .border_color(theme.error)
+                        .child(
+                            div()
+                                .w_full()
+                                .min_w_0()
+                                .text_size(d.text_xs)
+                                .text_color(theme.error)
+                                .child(msg),
+                        ),
+                )
             })
             .child(
                 Text::new(translations.spinorama_search_desc)

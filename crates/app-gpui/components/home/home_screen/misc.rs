@@ -7,7 +7,6 @@ use crate::ui::{
 use sotf_audio_player::Album;
 use std::sync::Arc;
 
-const HOME_SHELF_CONTENT_RESERVE_PX: f32 = 192.0;
 const HOME_SHELF_BASE_REM_PX: f32 = 16.0;
 
 pub(super) const EXPANDED_ALBUM_LIMIT: usize = 24;
@@ -15,7 +14,7 @@ pub(super) const EXPANDED_ALBUM_LIMIT: usize = 24;
 pub(super) fn collapsed_album_limit_for_width(window_width: f32) -> usize {
     let card_width = ALBUM_CARD_WIDTH_REMS * HOME_SHELF_BASE_REM_PX;
     let card_gap = ALBUM_CARD_GAP_REMS * HOME_SHELF_BASE_REM_PX;
-    let available = (window_width - HOME_SHELF_CONTENT_RESERVE_PX).max(card_width);
+    let available = (window_width - 2.0 * HOME_SHELF_BASE_REM_PX).max(card_width);
     let slot = card_width + card_gap;
     (((available + card_gap) / slot).floor() as usize).max(1)
 }
@@ -37,8 +36,7 @@ pub(super) fn expanded_album_limit_for_dimensions(
     let effective_rem = 16.0 * combined_scale;
 
     let card_with_gap = (ALBUM_CARD_WIDTH_REMS + ALBUM_CARD_GAP_REMS) * effective_rem;
-    let available_width =
-        (window_width - HOME_SHELF_CONTENT_RESERVE_PX * combined_scale).max(card_with_gap);
+    let available_width = (window_width - 2.0 * effective_rem).max(card_with_gap);
     let columns = (available_width / card_with_gap).floor().max(1.0) as usize;
 
     // Home screen has less chrome than the library view (no stats/filter bar),
