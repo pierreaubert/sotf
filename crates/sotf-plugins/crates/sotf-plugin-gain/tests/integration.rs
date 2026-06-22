@@ -6,8 +6,8 @@
 // ============================================================================
 
 use sotf_host::db_to_linear;
-use sotf_host::parametric_plugin::ParametricPlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::parametric_plugin::ParametricPlugin;
 use sotf_host::plugin::ProcessContext;
 use sotf_plugin_gain::{GainPlugin, GainPluginParams};
 
@@ -295,7 +295,8 @@ fn zero_frames_returns_zero_and_leaves_buffer() {
 fn set_unknown_parameter_fails() {
     let mut plugin = GainPlugin::new(2, 0.0);
     plugin.plugin_initialize(SR).unwrap();
-    let result = plugin.parametric_set_parameter(ParameterId::from("nonexistent"), ParameterValue::Float(1.0));
+    let result = plugin
+        .parametric_set_parameter(ParameterId::from("nonexistent"), ParameterValue::Float(1.0));
     match result {
         Ok(_) => panic!("expected unknown parameter error"),
         Err(err) => {
@@ -370,7 +371,8 @@ fn set_non_finite_gain_fails() {
 fn set_channel_gain_out_of_bounds_fails() {
     let mut plugin = GainPlugin::new(2, 0.0);
     plugin.plugin_initialize(SR).unwrap();
-    let result = plugin.parametric_set_parameter(ParameterId::from("gain_db_5"), ParameterValue::Float(0.0));
+    let result =
+        plugin.parametric_set_parameter(ParameterId::from("gain_db_5"), ParameterValue::Float(0.0));
     match result {
         Ok(_) => panic!("expected out-of-bounds channel gain error"),
         Err(err) => {

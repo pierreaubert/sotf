@@ -8,7 +8,10 @@ pub struct UpdatePluginChainCommand(pub Vec<PluginConfig>);
 impl ManagerCommandHandler for UpdatePluginChainCommand {
     fn execute(&self, ctx: &mut ManagerContext) -> ManagerResponse {
         let plugins = &self.0;
-        log::debug!("[Manager Thread] Update plugin chain ({} plugins)", plugins.len());
+        log::debug!(
+            "[Manager Thread] Update plugin chain ({} plugins)",
+            plugins.len()
+        );
         log::trace!(
             "[Manager Thread] UpdatePluginChain: Validating configuration with {} plugins",
             plugins.len()
@@ -16,7 +19,10 @@ impl ManagerCommandHandler for UpdatePluginChainCommand {
 
         // Validate config before processing
         if let Err(e) = super::super::validate::validate_plugin_configs(plugins) {
-            log::warn!("[Manager Thread] Plugin configuration validation failed: {}", e);
+            log::warn!(
+                "[Manager Thread] Plugin configuration validation failed: {}",
+                e
+            );
             ctx.config_queue.metrics.record_rejection();
             return ManagerResponse::Error(e.to_string());
         }
@@ -32,9 +38,10 @@ impl ManagerCommandHandler for UpdatePluginChainCommand {
                 "[Manager Thread] UpdatePluginChain: Queueing update (queue size before: {})",
                 ctx.config_queue.queue.len()
             );
-            let queued = ctx
-                .config_queue
-                .enqueue(plugins.clone(), super::super::types::ConfigUpdatePriority::UserDirect);
+            let queued = ctx.config_queue.enqueue(
+                plugins.clone(),
+                super::super::types::ConfigUpdatePriority::UserDirect,
+            );
             if queued {
                 log::debug!(
                     "[Manager Thread] UpdatePluginChain: Update QUEUED (not applied immediately)"
@@ -48,9 +55,7 @@ impl ManagerCommandHandler for UpdatePluginChainCommand {
             }
         }
 
-        log::debug!(
-            "[Manager Thread] UpdatePluginChain: Applying update immediately (not queued)"
-        );
+        log::debug!("[Manager Thread] UpdatePluginChain: Applying update immediately (not queued)");
 
         // Otherwise, apply immediately using the synchronized apply function
         match super::super::apply::apply_plugin_update(

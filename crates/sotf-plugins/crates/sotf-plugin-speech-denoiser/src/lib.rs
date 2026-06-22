@@ -4,10 +4,12 @@ use crate::params::PARAMS as SP;
 use plugins_denoiser::rnnoise::RnnoiseBackend;
 use serde::{Deserialize, Serialize};
 use sotf_host::param_bridge;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 
 /// RNNoise processes fixed 480-sample frames at 48 kHz.
 pub const SPEECH_DENOISER_FRAME_SIZE: usize = 480;
@@ -69,6 +71,14 @@ impl ParametricInPlacePlugin for SpeechDenoiserPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Speech Denoiser", "1.0.0", "SotF")
             .with_description("RNNoise speech denoiser")
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Fft
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Fft, None, self.latency_samples(), false)
     }
 
     fn channels(&self) -> usize {

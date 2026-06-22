@@ -361,11 +361,8 @@ pub use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, Aut
 pub use sotf_host::host::{DawHost, GraphEdge, Host};
 pub use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 pub use sotf_host::plugin::{
-    InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
-};
-pub use sotf_host::{
-    ParametricInPlacePlugin, ParametricInPlacePluginAdapter, ParametricPlugin,
-    ParametricPluginAdapter,
+    InPlacePlugin, InPlacePluginAdapter, Plugin, PluginCostClass, PluginInfo, PluginResult,
+    ProcessContext,
 };
 #[cfg(feature = "qa")]
 pub use sotf_host::test_utils::benchmark_plugin_full;
@@ -374,6 +371,10 @@ pub use sotf_host::test_utils::{
     BufferComparison, CountingAlloc, PerformanceProfiler, SignalGen, assert_no_allocs,
     detect_latency, generate_dc, measure_peak_db, measure_rms_db, run_standard_tests,
     test_parameter_ramp, test_varied_buffer_sizes,
+};
+pub use sotf_host::{
+    ParametricInPlacePlugin, ParametricInPlacePluginAdapter, ParametricPlugin,
+    ParametricPluginAdapter,
 };
 
 pub use sotf_host::simd::enable_ftz_daz;

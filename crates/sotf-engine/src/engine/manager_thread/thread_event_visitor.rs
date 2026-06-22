@@ -61,7 +61,11 @@ pub trait ThreadEventVisitor {
 }
 
 /// Dispatch an event to a visitor, mutating the provided state in place.
-pub fn visit<V: ThreadEventVisitor>(event: ThreadEvent, state: &mut AudioEngineState, visitor: &mut V) {
+pub fn visit<V: ThreadEventVisitor>(
+    event: ThreadEvent,
+    state: &mut AudioEngineState,
+    visitor: &mut V,
+) {
     match event {
         ThreadEvent::DecoderEndOfStream => visitor.decoder_end_of_stream(state),
         ThreadEvent::DecoderGaplessTransition(source) => {
@@ -250,10 +254,7 @@ impl ThreadEventVisitor for AudioEngineStateUpdater {
 }
 
 /// Convenience entry point used by `handle_thread_event`.
-pub fn update_state_with_event(
-    event: ThreadEvent,
-    state: &Arc<ArcSwap<AudioEngineState>>,
-) {
+pub fn update_state_with_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>>) {
     let mut new_state = (**state.load()).clone();
     let mut updater = AudioEngineStateUpdater;
     visit(event, &mut new_state, &mut updater);

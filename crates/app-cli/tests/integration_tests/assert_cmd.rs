@@ -147,7 +147,11 @@ fn player_cli_devices_lists_audio_devices() {
 fn player_cli_replay_gain_analyzes_local_wav() {
     ensure_fixture_wav();
     let wav = fixture_wav();
-    assert!(wav.is_file(), "fixture WAV should be generated at {}", wav.display());
+    assert!(
+        wav.is_file(),
+        "fixture WAV should be generated at {}",
+        wav.display()
+    );
 
     player_cmd()
         .args(["replay-gain", wav.to_str().unwrap()])
@@ -491,7 +495,13 @@ fn player_cli_library_search_finds_matches() {
     seed_library_db(&db_path);
 
     player_cmd()
-        .args(["library", "--db", db_path.to_str().unwrap(), "search", "Seeded Artist A"])
+        .args([
+            "library",
+            "--db",
+            db_path.to_str().unwrap(),
+            "search",
+            "Seeded Artist A",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("Matching album IDs:"));
@@ -797,10 +807,8 @@ fn recorder_output_wav_has_expected_properties() {
     // hound writes 32-bit float as either WAVE_FORMAT_IEEE_FLOAT (3) or
     // WAVE_FORMAT_EXTENSIBLE (0xFFFE) with a KSDATAFORMAT_SUBTYPE_IEEE_FLOAT
     // sub-format GUID. Both mean 32-bit float samples.
-    let is_float = fmt_tag == 0x0003
-        || (fmt_tag == 0xFFFE
-            && header.len() >= 46
-            && u16_le(44) == 0x0003);
+    let is_float =
+        fmt_tag == 0x0003 || (fmt_tag == 0xFFFE && header.len() >= 46 && u16_le(44) == 0x0003);
     assert!(is_float, "expected 32-bit float format (tag {fmt_tag})");
     assert_eq!(channel_count, channels, "channel count mismatch");
     assert_eq!(header_sample_rate, sample_rate, "sample rate mismatch");

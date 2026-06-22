@@ -29,7 +29,8 @@ pub fn poll_probe_capture(app: &mut App) -> bool {
     match outcome {
         Ok((results, wav_path)) => {
             app.recording
-                .model.probe_capture
+                .model
+                .probe_capture
                 .apply_results(results, Some(wav_path));
         }
         Err(e) => {
@@ -99,7 +100,8 @@ pub fn poll_bass_anchor_capture(app: &mut App) -> bool {
     match outcome {
         Ok((results, wav_path)) => {
             app.recording
-                .model.bass_anchor_capture
+                .model
+                .bass_anchor_capture
                 .apply_results(results, Some(wav_path));
         }
         Err(e) => {

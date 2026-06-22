@@ -1,6 +1,8 @@
 // Integration tests for sotf-plugin-multiband-expander exercising the public Plugin trait.
 
-use sotf_host::{ParametricInPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
+use sotf_host::{
+    ParameterId, ParameterValue, ParametricInPlacePluginAdapter, Plugin, ProcessContext,
+};
 use sotf_plugin_multiband_expander::{MultibandExpanderPlugin, MultibandExpanderPluginParams};
 
 fn sine_buffer(num_frames: usize, channels: usize, freq: f32, sample_rate: u32) -> Vec<f32> {
@@ -127,7 +129,8 @@ fn expansion_attenuates_quiet_signal() {
         mix: 1.0,
         ..Default::default()
     };
-    let mut plugin = ParametricInPlacePluginAdapter::new(MultibandExpanderPlugin::with_params(2, params));
+    let mut plugin =
+        ParametricInPlacePluginAdapter::new(MultibandExpanderPlugin::with_params(2, params));
     plugin.initialize(48000).unwrap();
 
     let num_frames = 8192;

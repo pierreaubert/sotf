@@ -26,7 +26,9 @@ use crate::params::{AaePluginParams, build_parameters};
 use sotf_host::auto_gain::{AutoGainLoudnessType, AutoGainParams};
 use sotf_host::multichannel_auto_gain::MultichannelAutoGain;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use sotf_host::speaker_config::{
@@ -412,6 +414,15 @@ impl Plugin for AaePlugin {
 
     fn output_channels(&self) -> usize {
         self.num_output_channels
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(
+            PluginCostClass::Dynamics,
+            None,
+            self.latency_samples(),
+            true,
+        )
     }
 
     fn parameters(&self) -> Vec<Parameter> {

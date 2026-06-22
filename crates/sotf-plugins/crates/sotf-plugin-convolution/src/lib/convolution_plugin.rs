@@ -12,10 +12,12 @@ use rubato::{Fft, FixedSync, Resampler};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use sotf_host::param_bridge;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
@@ -538,6 +540,22 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Convolution", "2.1.0", "Sotf")
     }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Convolution
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::linear_transform(
+            PluginCostClass::Convolution,
+            None,
+            self.latency_samples(),
+            false,
+            true,
+            false,
+        )
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }

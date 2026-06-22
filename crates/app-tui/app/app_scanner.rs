@@ -399,7 +399,9 @@ impl App {
             );
             self.ui.status_message = Some(format!(
                 "Bliss scan complete: {}/{} succeeded, {} failed",
-                self.scan.bliss_manager.succeeded, self.scan.bliss_manager.total, self.scan.bliss_manager.failed
+                self.scan.bliss_manager.succeeded,
+                self.scan.bliss_manager.total,
+                self.scan.bliss_manager.failed
             ));
             self.clear_pause_override_if_idle();
         }

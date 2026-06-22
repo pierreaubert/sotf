@@ -1,4 +1,6 @@
-use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, DawHost,  LoudnessMonitorPlugin};
+use sotf_plugins::{
+    DawHost, LoudnessMonitorPlugin, ParametricInPlacePluginAdapter, ParametricPluginAdapter,
+};
 use std::time::Instant;
 
 #[sotf_test::slow]

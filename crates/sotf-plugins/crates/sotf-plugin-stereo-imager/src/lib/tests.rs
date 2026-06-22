@@ -17,7 +17,8 @@ fn test_reset_snaps_smoothers() {
     plugin.initialize(48000).unwrap();
 
     // Drive the width smoother into a transition: set a new target
-    plugin.parametric_set_parameter(ParameterId::from("width"), ParameterValue::Float(0.0))
+    plugin
+        .parametric_set_parameter(ParameterId::from("width"), ParameterValue::Float(0.0))
         .unwrap();
 
     // reset() should snap the smoother to the new target (0.0)
@@ -55,7 +56,11 @@ fn test_crossover_frequency_changes_are_smoothed() {
     plugin.initialize(48000).unwrap();
 
     let initial = plugin.crossover_low.frequency();
-    plugin.parametric_set_parameter(ParameterId::from("low_mid_freq"), ParameterValue::Float(1000.0))
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("low_mid_freq"),
+            ParameterValue::Float(1000.0),
+        )
         .unwrap();
 
     assert!(
@@ -89,9 +94,11 @@ fn test_rapid_mono_bass_toggle_no_nan() {
 
     // Toggle mono_bass multiple times before and during processing
     for _ in 0..5 {
-        plugin.parametric_set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(true))
+        plugin
+            .parametric_set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(true))
             .unwrap();
-        plugin.parametric_set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(false))
+        plugin
+            .parametric_set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(false))
             .unwrap();
     }
 
@@ -353,25 +360,29 @@ fn test_parameter_roundtrip() {
     plugin.initialize(48000).unwrap();
 
     // Set width
-    plugin.parametric_set_parameter(ParameterId::from("width"), ParameterValue::Float(1.5))
+    plugin
+        .parametric_set_parameter(ParameterId::from("width"), ParameterValue::Float(1.5))
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("width"));
     assert_eq!(val, Some(ParameterValue::Float(1.5)));
 
     // Set mono_bass
-    plugin.parametric_set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(true))
+    plugin
+        .parametric_set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(true))
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("mono_bass"));
     assert_eq!(val, Some(ParameterValue::Bool(true)));
 
     // Set mix
-    plugin.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.75))
+    plugin
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.75))
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("mix"));
     assert_eq!(val, Some(ParameterValue::Float(0.75)));
 
     // Unknown parameter should fail
-    let result = plugin.parametric_set_parameter(ParameterId::from("nonexistent"), ParameterValue::Float(1.0));
+    let result = plugin
+        .parametric_set_parameter(ParameterId::from("nonexistent"), ParameterValue::Float(1.0));
     assert!(result.is_err());
 
     // Unknown get should return None
@@ -440,7 +451,8 @@ fn test_set_parameter_all_band_params_roundtrip() {
     ];
 
     for &(id, value) in cases {
-        plugin.parametric_set_parameter(ParameterId::from(id), ParameterValue::Float(value))
+        plugin
+            .parametric_set_parameter(ParameterId::from(id), ParameterValue::Float(value))
             .unwrap();
         let got = plugin.parametric_get_parameter(&ParameterId::from(id));
         assert_eq!(

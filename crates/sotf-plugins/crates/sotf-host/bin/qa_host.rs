@@ -6,7 +6,7 @@ use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 
 use sotf_host::plugin::{InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext};
-use sotf_host::test_utils::{assert_no_allocs, run_standard_tests, CountingAlloc};
+use sotf_host::test_utils::{CountingAlloc, assert_no_allocs, run_standard_tests};
 use std::time::Instant;
 
 #[global_allocator]

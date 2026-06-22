@@ -166,17 +166,20 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     // still drive redraws but noise-floor jitter does not.
                     let new_position = state.position_secs;
                     let new_loudness = app
-                        .plugin_rack.graph
+                        .plugin_rack
+                        .graph
                         .output_monitor_engine_index()
                         .and_then(|idx| player.get_cached_plugin_data(idx))
                         .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
                     app.playback.current_sample_rate = state.sample_rate;
 
-                    let pos_changed =
-                        (new_position * 10.0).round() != (app.media_control.last_position_secs * 10.0).round();
-                    let play_state_changed = state.is_playing != app.media_control.last_is_playing_state;
+                    let pos_changed = (new_position * 10.0).round()
+                        != (app.media_control.last_position_secs * 10.0).round();
+                    let play_state_changed =
+                        state.is_playing != app.media_control.last_is_playing_state;
                     let new_loudness_signature = loudness_redraw_signature(new_loudness.as_ref());
-                    let loudness_changed = new_loudness_signature != app.media_control.last_loudness_signature;
+                    let loudness_changed =
+                        new_loudness_signature != app.media_control.last_loudness_signature;
 
                     if pos_changed || play_state_changed || loudness_changed {
                         app.ui.needs_redraw = true;
@@ -246,7 +249,8 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             app.plugin_rack.graph.clear_suspensions();
                             app.plugin_rack.graph.update_channel_dependent_plugins();
 
-                            let conflicts = app.plugin_rack.graph.find_channel_conflicts(track_channels);
+                            let conflicts =
+                                app.plugin_rack.graph.find_channel_conflicts(track_channels);
                             if !conflicts.is_empty() {
                                 log::info!(
                                     "[TUI] Auto-advance channel conflict: {}ch file with {} incompatible plugin(s)",
@@ -326,7 +330,8 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 // Mark update as in progress and clear the trigger flag immediately
                                 app.plugin_rack.update_in_progress = true;
                                 app.plugin_rack.needs_update = false;
-                                app.plugin_rack.update_last_attempt = Some(std::time::Instant::now());
+                                app.plugin_rack.update_last_attempt =
+                                    Some(std::time::Instant::now());
 
                                 log::debug!(
                                     "[TUI] Attempting plugin update (attempt {}/{})",
@@ -339,7 +344,8 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 app.plugin_rack.graph.set_replay_gain(rg_gain);
 
                                 let sample_rate = app
-                                    .playback.current_sample_rate
+                                    .playback
+                                    .current_sample_rate
                                     .map(|r| r as f64)
                                     .unwrap_or_else(|| app.get_current_sample_rate());
 
@@ -349,7 +355,8 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 // routed bass management. Same fix as the
                                 // GPUI app's structural-flush path.
                                 let result = if app.plugin_rack.graph.is_linear() {
-                                    let plugins = app.plugin_rack.graph.to_plugin_configs(sample_rate);
+                                    let plugins =
+                                        app.plugin_rack.graph.to_plugin_configs(sample_rate);
                                     player.update_plugins(plugins)
                                 } else {
                                     let config =

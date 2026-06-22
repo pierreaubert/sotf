@@ -83,7 +83,8 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     && app.recording.model.step == RecordingStep::SplCalibration
                 {
                     if app.recording.output_directory.is_empty() {
-                        app.recording.model.status_message = "Set an output directory first".to_string();
+                        app.recording.model.status_message =
+                            "Set an output directory first".to_string();
                         return None;
                     }
                     init_recording_channels(app);
@@ -372,12 +373,12 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             }
             KeyCode::Down => {
                 let completed = app
-                        .recording
-                        .model
-                        .channel_recordings
-                        .iter()
-                        .filter(|ch| ch.state == ChannelRecordingState::Done)
-                        .count();
+                    .recording
+                    .model
+                    .channel_recordings
+                    .iter()
+                    .filter(|ch| ch.state == ChannelRecordingState::Done)
+                    .count();
                 if app.recording.selected_channel_view + 1 < completed {
                     app.recording.selected_channel_view += 1;
                 }
@@ -445,7 +446,8 @@ fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
                 match app.recording.probe_selected_field {
                     FIELD_PROBE_MS => {
                         if let Ok(v) = v {
-                            app.recording.model.probe_capture.probe_duration_ms = v.clamp(100.0, 5000.0);
+                            app.recording.model.probe_capture.probe_duration_ms =
+                                v.clamp(100.0, 5000.0);
                         }
                     }
                     FIELD_SILENCE_MS => {
@@ -499,8 +501,12 @@ fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
                 app.recording.model.probe_capture.silence_duration_ms = v;
             }
             FIELD_MIC_CHANNEL => {
-                app.recording.model.probe_capture.input_channel =
-                    app.recording.model.probe_capture.input_channel.saturating_add(1);
+                app.recording.model.probe_capture.input_channel = app
+                    .recording
+                    .model
+                    .probe_capture
+                    .input_channel
+                    .saturating_add(1);
             }
             _ => {}
         },
@@ -514,8 +520,12 @@ fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
                 app.recording.model.probe_capture.silence_duration_ms = v;
             }
             FIELD_MIC_CHANNEL => {
-                app.recording.model.probe_capture.input_channel =
-                    app.recording.model.probe_capture.input_channel.saturating_sub(1);
+                app.recording.model.probe_capture.input_channel = app
+                    .recording
+                    .model
+                    .probe_capture
+                    .input_channel
+                    .saturating_sub(1);
             }
             _ => {}
         },
@@ -747,7 +757,8 @@ fn handle_saving_step_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Enter => {
             if app.recording.selected_save_field == 4 {
                 // Unit toggle is a pure cycle — no edit mode needed.
-                app.recording.model.room_dimension_unit = app.recording.model.room_dimension_unit.toggled();
+                app.recording.model.room_dimension_unit =
+                    app.recording.model.room_dimension_unit.toggled();
             } else {
                 app.recording.editing_save_value = true;
                 app.recording.edit_buffer = current_save_field_value(app);
@@ -756,7 +767,8 @@ fn handle_saving_step_keys(app: &mut App, key: KeyEvent) {
         KeyCode::Char('u') | KeyCode::Char('U') => {
             // Quick keyboard shortcut for the unit toggle from any
             // field — saves the user tabbing to field 4.
-            app.recording.model.room_dimension_unit = app.recording.model.room_dimension_unit.toggled();
+            app.recording.model.room_dimension_unit =
+                app.recording.model.room_dimension_unit.toggled();
         }
         _ => {}
     }

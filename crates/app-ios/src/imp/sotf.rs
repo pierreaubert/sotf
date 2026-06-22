@@ -448,9 +448,9 @@ mod tests {
         push_remote_command(RemoteCommand::NextTrack);
         push_remote_command(RemoteCommand::PrevTrack);
         push_remote_command(RemoteCommand::QrPayloadScanned);
-        push_remote_command(RemoteCommand::ImportFiles(vec![
-            PathBuf::from("/tmp/x.mp3"),
-        ]));
+        push_remote_command(RemoteCommand::ImportFiles(vec![PathBuf::from(
+            "/tmp/x.mp3",
+        )]));
 
         assert_eq!(sotf_ios_pop_remote_command(), 1);
         assert_eq!(sotf_ios_pop_remote_command(), 2);
@@ -481,10 +481,7 @@ mod tests {
 
         let empty2 = sotf_ios_take_imported_files_json();
         assert!(!empty2.is_null());
-        assert_eq!(
-            unsafe { CStr::from_ptr(empty2) }.to_str().unwrap(),
-            "[]"
-        );
+        assert_eq!(unsafe { CStr::from_ptr(empty2) }.to_str().unwrap(), "[]");
         sotf_ios_string_free(empty2);
     }
 

@@ -803,7 +803,10 @@ fn test_learn_noise_resets_mcra() {
         plugin.mcra.frame_counter[0], 0,
         "learn_noise should reset MCRA (frame_counter back to 0)"
     );
-    assert!(plugin.noise_profile.is_learning, "Should be in learning mode");
+    assert!(
+        plugin.noise_profile.is_learning,
+        "Should be in learning mode"
+    );
 }
 
 /// Issue #2: Harmonic/percussive mode must NOT pull a high Wiener gain DOWN to 0.5.
@@ -914,7 +917,8 @@ fn test_multi_resolution_no_double_smoothing() {
     // without extra smoothing. We verify that current_flux and gains are finite
     // and that the code path was exercised.
     let mrs = plugin
-        .multi_res.multi_res_state
+        .multi_res
+        .multi_res_state
         .as_ref()
         .expect("multi_res_state should be Some when multi_resolution=true");
 

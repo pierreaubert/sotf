@@ -1736,7 +1736,9 @@ mod property_tests {
     use serde_json::json;
 
     fn simple_string_strategy() -> BoxedStrategy<String> {
-        proptest::string::string_regex("[a-zA-Z0-9_ ./:-]+").unwrap().boxed()
+        proptest::string::string_regex("[a-zA-Z0-9_ ./:-]+")
+            .unwrap()
+            .boxed()
     }
 
     fn command_payload_strategy() -> BoxedStrategy<serde_json::Value> {
@@ -1750,21 +1752,27 @@ mod property_tests {
             Just(json!({ "command": "play" })),
             Just(json!({ "command": "pause" })),
             Just(json!({ "command": "stop" })),
-            (0.0f64..3600.0).prop_map(|position| json!({ "command": "seek", "position": position })),
-            (-60.0f32..12.0f32).prop_map(|volume| json!({ "command": "set_volume", "volume": volume })),
+            (0.0f64..3600.0)
+                .prop_map(|position| json!({ "command": "seek", "position": position })),
+            (-60.0f32..12.0f32)
+                .prop_map(|volume| json!({ "command": "set_volume", "volume": volume })),
             Just(json!({ "command": "list_devices" })),
-            simple_string_strategy().prop_map(|device| json!({ "command": "set_device", "device": device })),
+            simple_string_strategy()
+                .prop_map(|device| json!({ "command": "set_device", "device": device })),
             Just(json!({ "command": "get_loudness" })),
             Just(json!({ "command": "get_metering" })),
             Just(json!({ "command": "get_plugins" })),
             Just(json!({ "command": "get_available_plugins" })),
             Just(json!({ "command": "driver_status" })),
             Just(json!({ "command": "shutdown" })),
-            prop::bool::ANY.prop_map(|enabled| json!({ "command": "set_encryption", "enabled": enabled })),
+            prop::bool::ANY
+                .prop_map(|enabled| json!({ "command": "set_encryption", "enabled": enabled })),
             Just(json!({ "command": "encryption_status" })),
             Just(json!({ "command": "rotate_encryption_key" })),
-            (1u32..192_000u32).prop_map(|rate| json!({ "command": "set_sample_rate", "rate": rate })),
-            (1u32..8192u32).prop_map(|frames| json!({ "command": "set_buffer_frames", "frames": frames })),
+            (1u32..192_000u32)
+                .prop_map(|rate| json!({ "command": "set_sample_rate", "rate": rate })),
+            (1u32..8192u32)
+                .prop_map(|frames| json!({ "command": "set_buffer_frames", "frames": frames })),
             Just(json!({ "command": "get_driver_config" })),
         ]
         .boxed()

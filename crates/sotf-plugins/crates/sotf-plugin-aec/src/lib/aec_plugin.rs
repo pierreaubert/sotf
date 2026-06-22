@@ -6,7 +6,9 @@ use crate::two_path::TwoPathAec;
 use rustfft::num_complex::Complex;
 use rustfft::{Fft, FftPlanner};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -182,6 +184,10 @@ impl Plugin for AecPlugin {
 
     fn output_channels(&self) -> usize {
         1 // echo-cancelled mono
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Fft, None, self.latency_samples(), true)
     }
 
     fn parameters(&self) -> Vec<Parameter> {

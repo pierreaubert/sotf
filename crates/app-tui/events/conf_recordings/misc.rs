@@ -15,7 +15,8 @@ pub(super) fn now_ms() -> u64 {
 pub(super) fn request_spl_cancel(app: &mut App) {
     log::info!("Cancel requested for SPL calibration capture");
     app.recording
-        .model.spl_cancel_requested
+        .model
+        .spl_cancel_requested
         .store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -31,7 +32,8 @@ pub(super) fn current_save_field_value(app: &App) -> String {
         n if n >= 6 => {
             let row = n - 6;
             app.recording
-                .model.channel_speakers
+                .model
+                .channel_speakers
                 .get(row)
                 .cloned()
                 .unwrap_or_default()
@@ -54,13 +56,16 @@ pub(super) fn commit_save_field_edit(app: &mut App) {
     match app.recording.selected_save_field {
         0 => app.recording.model.save_name = buf,
         1 => {
-            app.recording.model.room_width_input = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+            app.recording.model.room_width_input =
+                buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
         }
         2 => {
-            app.recording.model.room_depth_input = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+            app.recording.model.room_depth_input =
+                buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
         }
         3 => {
-            app.recording.model.room_height_input = buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+            app.recording.model.room_height_input =
+                buf.trim().parse::<f64>().unwrap_or(0.0).max(0.0);
         }
         5 => app.recording.model.setup_description = buf,
         n if n >= 6 => {
@@ -132,14 +137,22 @@ pub(super) fn set_recording_field_from_string(app: &mut App) {
         }
         CtcLoopbackInput => {
             if let Ok(v) = buf.parse::<usize>() {
-                app.recording.model.recording_config.ctc_loopback_input_channel =
-                    Some(v.saturating_sub(1).min(127));
+                app.recording
+                    .model
+                    .recording_config
+                    .ctc_loopback_input_channel = Some(v.saturating_sub(1).min(127));
             }
         }
         ChannelInput(i) => {
             if let Ok(v) = buf.parse::<usize>() {
                 let v = v.saturating_sub(1).min(127);
-                if let Some(slot) = app.recording.model.recording_config.channel_mappings.get_mut(i) {
+                if let Some(slot) = app
+                    .recording
+                    .model
+                    .recording_config
+                    .channel_mappings
+                    .get_mut(i)
+                {
                     *slot = v;
                 }
             }
@@ -157,7 +170,13 @@ pub(crate) fn update_channel_mappings_for_config(
     // For Custom, keep the existing channel mappings (renamed to generic Ch labels
     // when transitioning into Custom from a preset) so the user can edit them.
     if config == SpeakerConfiguration::Custom {
-        let len = app.recording.model.playback_config.channel_mappings.len().max(2);
+        let len = app
+            .recording
+            .model
+            .playback_config
+            .channel_mappings
+            .len()
+            .max(2);
         app.recording.model.playback_config.channel_mappings = (0..len)
             .map(|i| ChannelMapping::single(i, format!("Ch{}", i + 1)))
             .collect();
@@ -200,7 +219,13 @@ pub(crate) fn init_recording_channels(app: &mut App) {
     use sotf_audio_player::recording_types::ChannelRecording;
 
     let num_speakers = app.recording.model.playback_config.channel_mappings.len();
-    let num_mics = app.recording.model.recording_config.channel_mappings.len().max(1);
+    let num_mics = app
+        .recording
+        .model
+        .recording_config
+        .channel_mappings
+        .len()
+        .max(1);
     let num_positions = app.recording.model.recording_config.num_positions.max(1);
     let expected_count = num_speakers * num_mics * num_positions;
     if app.recording.model.channel_recordings.len() != expected_count {
@@ -235,7 +260,8 @@ pub(crate) fn init_recording_channels(app: &mut App) {
         app.recording.model.channel_recordings = recordings;
         app.recording.model.transfer_matrix_loopbacks.clear();
         app.recording.model.ctc_reference_sweep_path = None;
-        app.recording.model.current_recording_channel = if expected_count > 0 { Some(0) } else { None };
+        app.recording.model.current_recording_channel =
+            if expected_count > 0 { Some(0) } else { None };
     }
 }
 
@@ -258,7 +284,8 @@ pub(super) fn ctc_raw_capture_channel_indices(app: &App, channel_idx: usize) -> 
         .collect();
     indices.sort_by_key(|idx| {
         app.recording
-            .model.channel_recordings
+            .model
+            .channel_recordings
             .get(*idx)
             .map(|rec| rec.mic_index)
             .unwrap_or(usize::MAX)
@@ -325,12 +352,17 @@ pub(crate) fn save_recordings(app: &mut App) {
     let mut ctc_raw_sweep_range = None;
     let mut ctc_raw_fallback = false;
     let mut ctc_measurements = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
-        ctc_reference_sweep = app.recording.model.ctc_reference_sweep_path.as_ref().map(|path| {
-            std::path::Path::new(path)
-                .strip_prefix(&dir)
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|_| std::path::PathBuf::from(path))
-        });
+        ctc_reference_sweep = app
+            .recording
+            .model
+            .ctc_reference_sweep_path
+            .as_ref()
+            .map(|path| {
+                std::path::Path::new(path)
+                    .strip_prefix(&dir)
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|_| std::path::PathBuf::from(path))
+            });
         match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
             &app.recording.model.channel_recordings,
             &channel_names,
@@ -338,7 +370,10 @@ pub(crate) fn save_recordings(app: &mut App) {
             app.recording.model.recording_config.sample_rate,
             std::path::Path::new(&dir),
             ctc_strategy,
-            app.recording.model.recording_config.ctc_loopback_input_channel,
+            app.recording
+                .model
+                .recording_config
+                .ctc_loopback_input_channel,
             &app.recording.model.transfer_matrix_loopbacks,
         ) {
             Ok(Some(measurements)) => {
@@ -408,7 +443,12 @@ pub(crate) fn save_recordings(app: &mut App) {
         return;
     }
 
-    let mic_calibration_paths_value = app.recording.model.recording_config.mic_calibration_paths.clone();
+    let mic_calibration_paths_value = app
+        .recording
+        .model
+        .recording_config
+        .mic_calibration_paths
+        .clone();
 
     let configuration = RecordingConfiguration {
         playback_device_name: Some(app.recording.model.playback_config.device_name.clone()),
@@ -417,7 +457,8 @@ pub(crate) fn save_recordings(app: &mut App) {
         playback_channels: Some(app.recording.model.playback_config.num_channels),
         speaker_configuration: Some(
             app.recording
-                .model.playback_config
+                .model
+                .playback_config
                 .speaker_configuration
                 .as_str()
                 .to_string(),

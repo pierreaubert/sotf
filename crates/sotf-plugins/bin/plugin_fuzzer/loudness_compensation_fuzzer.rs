@@ -1,8 +1,10 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{ParametricInPlacePluginAdapter, 
-    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, Plugin};
+use sotf_plugins::{
+    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, ParametricInPlacePluginAdapter,
+    Plugin,
+};
 
 pub(super) struct LoudnessCompensationFuzzer;
 

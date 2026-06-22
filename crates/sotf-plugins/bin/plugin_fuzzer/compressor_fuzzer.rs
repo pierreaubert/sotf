@@ -1,9 +1,10 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{ParametricInPlacePluginAdapter, 
-    BandCompressorParams, MultibandCompressorPlugin,
-    MultibandCompressorPluginParams, Plugin};
+use sotf_plugins::{
+    BandCompressorParams, MultibandCompressorPlugin, MultibandCompressorPluginParams,
+    ParametricInPlacePluginAdapter, Plugin,
+};
 
 pub(super) struct CompressorFuzzer;
 

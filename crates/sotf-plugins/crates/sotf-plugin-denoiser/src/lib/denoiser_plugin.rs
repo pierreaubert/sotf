@@ -8,11 +8,13 @@ use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_bridge;
-use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
-use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_plugin_pnd::analysis::PndAnalyzer;
 use std::any::Any;
 use std::sync::Arc;
@@ -32,7 +34,7 @@ pub(super) struct DenoiserFft {
     pub fft_inverse: Arc<dyn ComplexToReal<f32>>,
     pub window: Vec<f32>,
     pub synthesis_window: Vec<f32>,
-    pub time_domain: Vec<Vec<f32>>, // [channels][fft_size]
+    pub time_domain: Vec<Vec<f32>>,          // [channels][fft_size]
     pub freq_domain: Vec<Vec<Complex<f32>>>, // [channels][spectrum_size]
 }
 
@@ -64,12 +66,12 @@ pub(super) struct DenoiserCoefficients {
 
 /// IMCRA/MCRA noise-estimation state and hyperparameters.
 pub(super) struct DenoiserMcra {
-    pub noise_psd: Vec<Vec<f32>>, // Estimated noise power spectrum
-    pub smoothed_psd: Vec<Vec<f32>>, // Smoothed signal PSD (S_tmp)
-    pub min_psd: Vec<Vec<f32>>,   // Minimum PSD tracker — window A
-    pub min_psd_b: Vec<Vec<f32>>, // Minimum PSD tracker — window B (IMCRA)
+    pub noise_psd: Vec<Vec<f32>>,       // Estimated noise power spectrum
+    pub smoothed_psd: Vec<Vec<f32>>,    // Smoothed signal PSD (S_tmp)
+    pub min_psd: Vec<Vec<f32>>,         // Minimum PSD tracker — window A
+    pub min_psd_b: Vec<Vec<f32>>,       // Minimum PSD tracker — window B (IMCRA)
     pub speech_presence: Vec<Vec<f32>>, // Speech presence probability (p)
-    pub frame_counter: Vec<usize>, // Per-channel frame count
+    pub frame_counter: Vec<usize>,      // Per-channel frame count
     pub mcra_alpha_s: f32,
     pub mcra_alpha_p: f32,
     pub mcra_l: usize,
@@ -91,8 +93,8 @@ pub(super) struct DenoiserNoiseProfile {
 pub(super) struct DenoiserMasking {
     pub bark_map: Vec<f32>, // [spectrum_size] frequency-to-Bark mapping
     pub bark_bin_range: Vec<(usize, usize)>, // [spectrum_size] precomputed (lo, hi) bin range within MAX_SPREAD_BARK
-    pub masking_threshold: Vec<f32>, // [spectrum_size] scratch for masking thresholds
-    pub masking_signal_power: Vec<f32>, // [spectrum_size] scratch for signal power
+    pub masking_threshold: Vec<f32>,         // [spectrum_size] scratch for masking thresholds
+    pub masking_signal_power: Vec<f32>,      // [spectrum_size] scratch for signal power
 }
 
 /// Decision-directed SNR parameters and state.
@@ -104,9 +106,9 @@ pub(super) struct DenoiserDecisionDirected {
 
 /// Wiener gain buffers and frequency-smoothing state.
 pub(super) struct DenoiserGains {
-    pub gain: Vec<Vec<f32>>, // Current Wiener gains per bin
-    pub smoothed_gain: Vec<Vec<f32>>, // Temporally smoothed gains
-    pub freq_smooth_temp: Vec<f32>, // [spectrum_size] scratch for smoothing across bins
+    pub gain: Vec<Vec<f32>>,                 // Current Wiener gains per bin
+    pub smoothed_gain: Vec<Vec<f32>>,        // Temporally smoothed gains
+    pub freq_smooth_temp: Vec<f32>,          // [spectrum_size] scratch for smoothing across bins
     pub freq_smooth_kernel: (f32, f32, f32), // Precomputed (c0, c1, c2) Gaussian weights
 }
 
@@ -126,8 +128,8 @@ pub(super) struct DenoiserSpatial {
 /// Harmonic/percussive separation state.
 pub(super) struct DenoiserTonalTransient {
     pub tonal_transient_seps: Vec<math_audio_dsp::tonal_transient::TonalTransientSeparator>,
-    pub tt_magnitudes: Vec<f32>, // [spectrum_size]
-    pub tt_tonal_mask: Vec<f32>, // [spectrum_size]
+    pub tt_magnitudes: Vec<f32>,     // [spectrum_size]
+    pub tt_tonal_mask: Vec<f32>,     // [spectrum_size]
     pub tt_transient_mask: Vec<f32>, // [spectrum_size]
 }
 
@@ -137,10 +139,10 @@ pub(super) struct DenoiserIo {
     pub input_buffer_fill: usize,
     pub temp_input_block: Vec<f32>, // Pre-allocated block for FFT input
     pub output_accumulator: Vec<Vec<f32>>, // [channels][ring_capacity]
-    pub output_ring_mask: usize,           // ring_capacity - 1 (for & masking)
-    pub output_read_pos: usize,            // read position in ring
-    pub output_write_pos: usize,           // next overlap-add write position
-    pub output_accumulator_fill: usize,    // frames available for reading
+    pub output_ring_mask: usize,    // ring_capacity - 1 (for & masking)
+    pub output_read_pos: usize,     // read position in ring
+    pub output_write_pos: usize,    // next overlap-add write position
+    pub output_accumulator_fill: usize, // frames available for reading
     pub time_out_channels: Vec<Vec<f32>>,
 }
 
@@ -274,8 +276,16 @@ impl DenoiserPlugin {
             },
 
             coeffs: DenoiserCoefficients {
-                attack_coeff: Self::time_to_coeff(pk(DN, "attack_ms").default_f32(), 44100, hop_size),
-                release_coeff: Self::time_to_coeff(pk(DN, "release_ms").default_f32(), 44100, hop_size),
+                attack_coeff: Self::time_to_coeff(
+                    pk(DN, "attack_ms").default_f32(),
+                    44100,
+                    hop_size,
+                ),
+                release_coeff: Self::time_to_coeff(
+                    pk(DN, "release_ms").default_f32(),
+                    44100,
+                    hop_size,
+                ),
                 reduction_linear: 10.0_f32.powf(pk(DN, "reduction_db").default_f32() / 10.0),
                 floor_linear: 10.0_f32.powf(pk(DN, "floor_db").default_f32() / 20.0),
             },
@@ -320,7 +330,9 @@ impl DenoiserPlugin {
                 gain,
                 smoothed_gain,
                 freq_smooth_temp: vec![0.0_f32; spectrum_size],
-                freq_smooth_kernel: Self::compute_smoothing_kernel(pk(DN, "smoothing").default_f32()),
+                freq_smooth_kernel: Self::compute_smoothing_kernel(
+                    pk(DN, "smoothing").default_f32(),
+                ),
             },
 
             spectral_sub: DenoiserSpectralSub {
@@ -395,13 +407,21 @@ impl DenoiserPlugin {
             3 => Some(self.params.attack_ms as f64),
             4 => Some(self.params.release_ms as f64),
             5 => Some(if self.params.low_latency { 1.0 } else { 0.0 }),
-            6 => Some(if self.params.polyphonic_detection { 1.0 } else { 0.0 }),
+            6 => Some(if self.params.polyphonic_detection {
+                1.0
+            } else {
+                0.0
+            }),
             7 => Some(self.mcra.mcra_alpha_s as f64),
             8 => Some(self.mcra.mcra_alpha_p as f64),
             9 => Some(self.mcra.mcra_l as f64),
             10 => Some(self.mcra.mcra_delta as f64),
             11 => Some(self.params.transparency as f64),
-            12 => Some(if self.decision_directed.dd_enabled { 1.0 } else { 0.0 }),
+            12 => Some(if self.decision_directed.dd_enabled {
+                1.0
+            } else {
+                0.0
+            }),
             13 => Some(self.decision_directed.dd_alpha as f64),
             14 => Some(if self.params.psychoacoustic_masking {
                 1.0
@@ -418,11 +438,23 @@ impl DenoiserPlugin {
             } else {
                 0.0
             }),
-            17 => Some(if self.spectral_sub.spectral_sub_enabled { 1.0 } else { 0.0 }),
+            17 => Some(if self.spectral_sub.spectral_sub_enabled {
+                1.0
+            } else {
+                0.0
+            }),
             18 => Some(self.spectral_sub.spectral_sub_alpha as f64),
             19 => Some(self.spectral_sub.spectral_sub_beta as f64),
-            20 => Some(if self.noise_profile.is_learning { 1.0 } else { 0.0 }),
-            21 => Some(if self.noise_profile.use_captured_profile { 1.0 } else { 0.0 }),
+            20 => Some(if self.noise_profile.is_learning {
+                1.0
+            } else {
+                0.0
+            }),
+            21 => Some(if self.noise_profile.use_captured_profile {
+                1.0
+            } else {
+                0.0
+            }),
             22 => Some(0.0), // clear_profile: trigger-only, always reads as false
             23 => Some(if self.auxiliary.formant_preserver.enabled {
                 1.0
@@ -430,9 +462,21 @@ impl DenoiserPlugin {
                 0.0
             }),
             24 => Some(self.auxiliary.formant_preserver.strength as f64),
-            25 => Some(if self.multi_res.multi_resolution { 1.0 } else { 0.0 }),
-            26 => Some(if self.params.harmonic_percussive { 1.0 } else { 0.0 }),
-            27 => Some(if self.params.spatial_denoise { 1.0 } else { 0.0 }),
+            25 => Some(if self.multi_res.multi_resolution {
+                1.0
+            } else {
+                0.0
+            }),
+            26 => Some(if self.params.harmonic_percussive {
+                1.0
+            } else {
+                0.0
+            }),
+            27 => Some(if self.params.spatial_denoise {
+                1.0
+            } else {
+                0.0
+            }),
             28 => Some(self.params.spatial_strength as f64),
             _ => None,
         }
@@ -579,7 +623,8 @@ impl DenoiserPlugin {
 
         // Phase 1: Apply window and forward FFT (must happen before shifting)
         // Copy into pre-allocated scratch before shifting.
-        self.io.temp_input_block
+        self.io
+            .temp_input_block
             .iter_mut()
             .take(block_samples)
             .zip(self.io.input_buffer.iter().take(block_samples))
@@ -616,7 +661,11 @@ impl DenoiserPlugin {
         // The small-FFT path has already been fed samples and computed its own
         // gains.  Blend them into `self.gains.smoothed_gain` based on spectral flux.
         if let Some(ref mrs) = self.multi_res.multi_res_state {
-            mrs.combine_gains(&mut self.gains.smoothed_gain, self.config.channels, self.config.spectrum_size);
+            mrs.combine_gains(
+                &mut self.gains.smoothed_gain,
+                self.config.channels,
+                self.config.spectrum_size,
+            );
         }
 
         // Phase 4: Apply gains and inverse FFT
@@ -727,6 +776,14 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
             .with_description("Wiener filter denoiser with MCRA noise estimation")
     }
 
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Fft
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Fft, None, self.latency_samples(), false)
+    }
+
     fn channels(&self) -> usize {
         self.config.channels
     }
@@ -736,7 +793,8 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
     }
 
     fn current_values(&self) -> ParameterSet {
-        self.ui.cached_parameters
+        self.ui
+            .cached_parameters
             .iter()
             .map(|p| (p.id.clone(), p.default_value.clone()))
             .collect()
@@ -850,7 +908,9 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
         self.auxiliary.formant_preserver.log_mag_scratch.fill(0.0);
         self.auxiliary.formant_preserver.envelope.fill(0.0);
         self.spatial.spatial_coherence.fill(1.0);
-        self.spatial.spatial_cross.fill(Complex::new(1.0_f32, 0.0_f32));
+        self.spatial
+            .spatial_cross
+            .fill(Complex::new(1.0_f32, 0.0_f32));
 
         // Reset multi-resolution state
         if let Some(ref mut mrs) = self.multi_res.multi_res_state {
@@ -932,7 +992,8 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
             let remaining_input = total_samples - input_pos;
             let samples_to_copy = remaining_input.min(space_available);
 
-            self.io.input_buffer[self.io.input_buffer_fill..self.io.input_buffer_fill + samples_to_copy]
+            self.io.input_buffer
+                [self.io.input_buffer_fill..self.io.input_buffer_fill + samples_to_copy]
                 .copy_from_slice(&buffer[input_pos..input_pos + samples_to_copy]);
             self.io.input_buffer_fill += samples_to_copy;
             input_pos += samples_to_copy;

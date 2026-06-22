@@ -44,7 +44,8 @@ impl App {
             self.audio_devices.outputs = output_devices.clone();
             if !self.audio_devices.outputs.is_empty() {
                 self.audio_devices.selected_output_index = self
-                    .audio_devices.outputs
+                    .audio_devices
+                    .outputs
                     .iter()
                     .position(|d| d.is_default)
                     .unwrap_or(0);
@@ -101,7 +102,8 @@ impl App {
             self.audio_devices.outputs = output_devices.clone();
             if !self.audio_devices.outputs.is_empty() {
                 self.audio_devices.selected_output_index = self
-                    .audio_devices.outputs
+                    .audio_devices
+                    .outputs
                     .iter()
                     .position(|d| d.is_default)
                     .unwrap_or(0);
@@ -250,7 +252,9 @@ impl App {
     }
 
     pub fn get_selected_output_device(&self) -> Option<&AudioDevice> {
-        self.audio_devices.outputs.get(self.audio_devices.selected_output_index)
+        self.audio_devices
+            .outputs
+            .get(self.audio_devices.selected_output_index)
     }
 
     /// Get the maximum output channels supported by the selected device
@@ -387,7 +391,8 @@ impl App {
                 self.playback.current_queue_index = Some(current_idx - 1);
             }
         }
-        if self.queue_view.selected_index >= self.queue.len() && self.queue_view.selected_index > 0 {
+        if self.queue_view.selected_index >= self.queue.len() && self.queue_view.selected_index > 0
+        {
             self.queue_view.selected_index = self.queue.len() - 1;
         }
         self.queue_view.selected_track_index = None;
@@ -429,7 +434,8 @@ impl App {
     pub fn select_next_album(&mut self) {
         let count = self.filtered_albums().len();
         if count > 0 {
-            self.library_view.selected_album_index = (self.library_view.selected_album_index + 1) % count;
+            self.library_view.selected_album_index =
+                (self.library_view.selected_album_index + 1) % count;
         }
     }
 
@@ -447,14 +453,18 @@ impl App {
     pub fn page_down_albums(&mut self, page_size: usize) {
         let count = self.filtered_albums().len();
         if count > 0 {
-            self.library_view.selected_album_index = (self.library_view.selected_album_index + page_size).min(count - 1);
+            self.library_view.selected_album_index =
+                (self.library_view.selected_album_index + page_size).min(count - 1);
         }
     }
 
     pub fn page_up_albums(&mut self, page_size: usize) {
         let count = self.filtered_albums().len();
         if count > 0 {
-            self.library_view.selected_album_index = self.library_view.selected_album_index.saturating_sub(page_size);
+            self.library_view.selected_album_index = self
+                .library_view
+                .selected_album_index
+                .saturating_sub(page_size);
         }
     }
 
@@ -477,14 +487,18 @@ impl App {
 
         let tree_items = self.get_tree_items();
         if !tree_items.is_empty() {
-            self.library_view.selected_tree_index = self.library_view.selected_tree_index.saturating_sub(page_size);
+            self.library_view.selected_tree_index = self
+                .library_view
+                .selected_tree_index
+                .saturating_sub(page_size);
         }
     }
 
     pub fn select_next_directory(&mut self) {
         let tree_items = self.get_directory_tree_items();
         if !tree_items.is_empty() {
-            self.library_view.selected_directory_index = (self.library_view.selected_directory_index + 1) % tree_items.len();
+            self.library_view.selected_directory_index =
+                (self.library_view.selected_directory_index + 1) % tree_items.len();
         }
     }
 
@@ -510,7 +524,10 @@ impl App {
     pub fn page_up_directories(&mut self, page_size: usize) {
         let tree_items = self.get_directory_tree_items();
         if !tree_items.is_empty() {
-            self.library_view.selected_directory_index = self.library_view.selected_directory_index.saturating_sub(page_size);
+            self.library_view.selected_directory_index = self
+                .library_view
+                .selected_directory_index
+                .saturating_sub(page_size);
         }
     }
 
@@ -533,13 +550,15 @@ impl App {
                 Some(_) => {
                     // Past last track → move to next album header
                     self.queue_view.selected_track_index = None;
-                    self.queue_view.selected_index = (self.queue_view.selected_index + 1) % self.queue.len();
+                    self.queue_view.selected_index =
+                        (self.queue_view.selected_index + 1) % self.queue.len();
                 }
             }
         } else {
             // Collapsed album → move to next album
             self.queue_view.selected_track_index = None;
-            self.queue_view.selected_index = (self.queue_view.selected_index + 1) % self.queue.len();
+            self.queue_view.selected_index =
+                (self.queue_view.selected_index + 1) % self.queue.len();
         }
     }
 
@@ -580,7 +599,8 @@ impl App {
             Ok(needs_scan) => {
                 if needs_scan {
                     self.scan.needs_rescan = true;
-                    self.ui.status_message = Some("Directory added. Press 's' to scan.".to_string());
+                    self.ui.status_message =
+                        Some("Directory added. Press 's' to scan.".to_string());
                 } else {
                     self.ui.status_message = Some("Directory already exists.".to_string());
                 }
@@ -696,7 +716,8 @@ impl App {
                 .collect(),
             queue_index: self.playback.current_queue_index,
             track_index: self
-                .playback.current_queue_index
+                .playback
+                .current_queue_index
                 .and_then(|idx| self.queue.get(idx))
                 .map(|entry| entry.item.current_track_index)
                 .unwrap_or(0),
@@ -717,7 +738,8 @@ impl App {
             self.audio_devices.current_output_name = Some(device_name.clone());
             // Find the device index
             if let Some(idx) = self
-                .audio_devices.outputs
+                .audio_devices
+                .outputs
                 .iter()
                 .position(|d| d.name == *device_name)
             {
@@ -755,7 +777,11 @@ impl App {
         if let Some(preset_name) = &config.plugin_preset {
             // Use the plugin chain's own load method
             if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
-                match self.plugin_rack.graph.load_from_file(&presets_dir, preset_name) {
+                match self
+                    .plugin_rack
+                    .graph
+                    .load_from_file(&presets_dir, preset_name)
+                {
                     Ok(warnings) => {
                         // Update BinauralDecoder input channels after loading
                         self.plugin_rack.graph.update_channel_dependent_plugins();
@@ -933,7 +959,9 @@ impl App {
 
         // Get the filtered tree items to find which artist we're on
         let tree_items = self.get_tree_items();
-        if let Some(TreeItem::Artist { name, .. }) = tree_items.get(self.library_view.selected_tree_index) {
+        if let Some(TreeItem::Artist { name, .. }) =
+            tree_items.get(self.library_view.selected_tree_index)
+        {
             // Find this artist in the tree and toggle expansion
             for artist_node in &mut self.library_view.artist_tree {
                 if artist_node.artist == *name {

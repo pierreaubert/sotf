@@ -208,9 +208,10 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
     match std::fs::read_to_string(path) {
         Ok(contents) => match RoomEqMeasurementsFile::load_from_json(&contents, base_dir) {
             Ok(channels) => {
-                app.room_eq.model.ctc_config = serde_json::from_str::<autoeq::RoomConfig>(&contents)
-                    .ok()
-                    .and_then(|room_config| room_config.ctc);
+                app.room_eq.model.ctc_config =
+                    serde_json::from_str::<autoeq::RoomConfig>(&contents)
+                        .ok()
+                        .and_then(|room_config| room_config.ctc);
                 if let (Some(ctc), Some(dir)) = (app.room_eq.model.ctc_config.as_mut(), base_dir) {
                     ctc.resolve_paths(dir);
                 }

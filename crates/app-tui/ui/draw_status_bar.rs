@@ -108,7 +108,9 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         if app.scan.bliss_manager.in_progress {
             scanner_parts.push(format!(
                 "Bliss {}/{}/{}",
-                app.scan.bliss_manager.succeeded, app.scan.bliss_manager.failed, app.scan.bliss_manager.total
+                app.scan.bliss_manager.succeeded,
+                app.scan.bliss_manager.failed,
+                app.scan.bliss_manager.total
             ));
         }
         if app.scan.in_progress {
@@ -116,7 +118,8 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         }
         if !scanner_parts.is_empty() {
             let paused = app
-                .scan.pause_flag
+                .scan
+                .pause_flag
                 .load(std::sync::atomic::Ordering::Relaxed);
             let label = if paused {
                 format!("[paused] {} ", scanner_parts.join(", "))

@@ -89,7 +89,10 @@ mod tests {
         for input in inputs {
             let once = normalize_album_key(input);
             let twice = normalize_album_key(&once);
-            assert_eq!(once, twice, "normalize_album_key not idempotent for {input:?}");
+            assert_eq!(
+                once, twice,
+                "normalize_album_key not idempotent for {input:?}"
+            );
         }
     }
 

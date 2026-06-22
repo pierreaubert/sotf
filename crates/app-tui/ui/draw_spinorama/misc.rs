@@ -135,7 +135,8 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 })
                 .collect();
 
-            let list_title = if s.model.speaker_suggestions.is_empty() && !s.model.loading_speakers {
+            let list_title = if s.model.speaker_suggestions.is_empty() && !s.model.loading_speakers
+            {
                 "Speakers (press 'r' to load from spinorama.org)".to_string()
             } else {
                 format!(
@@ -418,8 +419,17 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     ])
                     .split(content_area);
 
-                let initial_score = s.model.progress_history.iter().find_map(|(_, _, score)| *score);
-                let final_score = s.model.progress_history.iter().rev().find_map(|(_, _, score)| *score);
+                let initial_score = s
+                    .model
+                    .progress_history
+                    .iter()
+                    .find_map(|(_, _, score)| *score);
+                let final_score = s
+                    .model
+                    .progress_history
+                    .iter()
+                    .rev()
+                    .find_map(|(_, _, score)| *score);
                 let score_part = match (initial_score, final_score) {
                     (Some(init), Some(fin)) => format!(
                         "  |  Score: {:.2} → {:.2} (Δ {:+.2})",

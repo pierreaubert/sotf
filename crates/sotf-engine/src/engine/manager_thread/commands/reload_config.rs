@@ -25,8 +25,10 @@ impl ManagerCommandHandler for ReloadConfigCommand {
         match super::super::validate::validate_plugin_configs(&new_config.plugins) {
             Ok(_) => {
                 log::debug!("[Manager Thread] Config validated, enqueuing plugin update");
-                ctx.config_queue
-                    .enqueue(new_config.plugins, super::super::types::ConfigUpdatePriority::UserDirect);
+                ctx.config_queue.enqueue(
+                    new_config.plugins,
+                    super::super::types::ConfigUpdatePriority::UserDirect,
+                );
                 ManagerResponse::Ok
             }
             Err(e) => {

@@ -8,7 +8,10 @@ use crate::params::PARAMS as GN;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet, ParametricPlugin};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
+    ProcessContext,
+};
 use sotf_host::simd::{apply_gain_simd, apply_per_channel_gain_simd};
 use sotf_host::smoothing::Smoother;
 
@@ -244,6 +247,10 @@ impl ParametricPlugin for GainPlugin {
         PluginInfo::new("Gain", "1.2.0", "Sotf")
     }
 
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Scalar
+    }
+
     fn input_channels(&self) -> usize {
         self.channels
     }
@@ -391,13 +398,74 @@ impl ParametricPlugin for GainPlugin {
         output.copy_from_slice(input);
         self.process_in_place(output, context)
     }
-}
 
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        if op != PluginCompiledOp::ApplyGain {
+            return None;
+        }
+        let sample_len = match context.num_frames.checked_mul(self.channels) {
+            Some(sample_len) => sample_len,
+            None => return Some(Err("Gain block sample count overflow".to_string())),
+        };
+        if input.len() < sample_len {
+            return Some(Err(format!(
+                "Gain compiled input too small: need {sample_len} samples, got {}",
+                input.len()
+            )));
+        }
+        if output.len() < sample_len {
+            return Some(Err(format!(
+                "Gain compiled output too small: need {sample_len} samples, got {}",
+                output.len()
+            )));
+        }
+        output[..sample_len].copy_from_slice(&input[..sample_len]);
+        Some(self.process_in_place(&mut output[..sample_len], context))
+    }
+
+    fn compiled_static_gain(&self) -> Option<f32> {
+        if self.is_per_channel() {
+            return None;
+        }
+        let current = self.global_gain_smoother.current();
+        let target = self.global_gain_smoother.target();
+        if (current - target).abs() <= 1e-6 {
+            Some(target)
+        } else {
+            None
+        }
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let static_gain = self.compiled_static_gain();
+        PluginCompileMetadata {
+            cost_class: PluginCostClass::Scalar,
+            compiled_op: Some(PluginCompiledOp::ApplyGain),
+            static_gain,
+            linear: true,
+            time_invariant_for_block: static_gain.is_some(),
+            channel_mixing: false,
+            stateful: static_gain.is_none(),
+            latency_samples: 0,
+            can_absorb_input_gain: static_gain.is_some(),
+            can_absorb_output_gain: static_gain.is_some(),
+            can_merge_with_eq: false,
+            boundary: false,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use sotf_host::parametric_plugin::ParametricPlugin;
+    use sotf_host::plugin::PluginCompiledOp;
     #[test]
     fn test_unity_gain() {
         let mut p = GainPlugin::new(2, 0.0);
@@ -415,24 +483,28 @@ mod tests {
     fn test_set_parameter_rejects_out_of_range_gain() {
         let mut p = GainPlugin::new(2, 0.0);
         // +21 dB is above the param spec max of +20 dB — must be rejected.
-        let result = p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(21.0));
+        let result =
+            p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(21.0));
         assert!(
             result.is_err(),
             "gain_db=21.0 should be rejected (spec max is 20.0), but got Ok"
         );
         // -61 dB is below the param spec min of -60 dB — must be rejected.
-        let result = p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-61.0));
+        let result =
+            p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-61.0));
         assert!(
             result.is_err(),
             "gain_db=-61.0 should be rejected (spec min is -60.0), but got Ok"
         );
         // Values within spec range must be accepted.
-        let result = p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(20.0));
+        let result =
+            p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(20.0));
         assert!(
             result.is_ok(),
             "gain_db=20.0 should be accepted (spec max), got Err"
         );
-        let result = p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-60.0));
+        let result =
+            p.parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-60.0));
         assert!(
             result.is_ok(),
             "gain_db=-60.0 should be accepted (spec min), got Err"
@@ -581,6 +653,81 @@ mod tests {
         assert!((buffer[3] - ch1_gain).abs() < 1e-4);
     }
 
+    #[test]
+    fn test_compiled_apply_gain_matches_regular_process() {
+        let input: Vec<f32> = (0..128)
+            .map(|i| (((i * 17) % 31) as f32 - 15.0) / 16.0)
+            .collect();
+        let context = ProcessContext::new(48000, input.len() / 2);
+        let mut regular = GainPlugin::with_smoothing(2, -6.0, 0.0);
+        let mut compiled = GainPlugin::with_smoothing(2, -6.0, 0.0);
+        regular.plugin_initialize(48000).unwrap();
+        compiled.plugin_initialize(48000).unwrap();
+        let mut regular_output = vec![0.0; input.len()];
+        let mut compiled_output = vec![0.0; input.len()];
+
+        let regular_frames = regular
+            .process(&input, &mut regular_output, &context)
+            .unwrap();
+        let compiled_frames = compiled
+            .process_compiled_f32(
+                PluginCompiledOp::ApplyGain,
+                &input,
+                &mut compiled_output,
+                &context,
+            )
+            .expect("gain should accept compiled apply-gain op")
+            .unwrap();
+
+        assert_eq!(regular_frames, context.num_frames);
+        assert_eq!(compiled_frames, context.num_frames);
+        assert_eq!(compiled_output, regular_output);
+    }
+
+    #[test]
+    fn test_compiled_static_gain_reports_only_settled_global_gain() {
+        let mut p = GainPlugin::new(2, -6.0);
+        let initial = GainPlugin::db_to_linear(-6.0);
+        assert!(
+            (p.compiled_static_gain().unwrap() - initial).abs() < 1e-6,
+            "constructor starts global gain smoother at its target"
+        );
+
+        p.set_gain_db(-12.0);
+        assert!(
+            p.compiled_static_gain().is_none(),
+            "transitioning smoother must not be fused as a static gain"
+        );
+
+        p.set_channel_gain_db(0, -3.0).unwrap();
+        assert!(
+            p.compiled_static_gain().is_none(),
+            "per-channel gain must not be fused as a scalar gain"
+        );
+    }
+
+    #[test]
+    fn test_compile_metadata_tracks_static_gain_legality() {
+        let mut p = GainPlugin::new(2, -6.0);
+        let metadata = p.compile_metadata();
+        assert_eq!(metadata.compiled_op, Some(PluginCompiledOp::ApplyGain));
+        assert!(metadata.static_gain.is_some());
+        assert!(metadata.linear);
+        assert!(metadata.time_invariant_for_block);
+        assert!(!metadata.boundary);
+        assert!(metadata.can_absorb_input_gain);
+        assert!(metadata.can_absorb_output_gain);
+
+        p.set_gain_db(-12.0);
+        let metadata = p.compile_metadata();
+        assert_eq!(metadata.compiled_op, Some(PluginCompiledOp::ApplyGain));
+        assert!(metadata.static_gain.is_none());
+        assert!(metadata.linear);
+        assert!(!metadata.time_invariant_for_block);
+        assert!(metadata.stateful);
+        assert!(!metadata.can_absorb_input_gain);
+    }
+
     /// set_parameter smoke tests for gain, smoothing_ms, and per-channel gains.
     #[test]
     fn test_set_parameter_smoke_known_values() {
@@ -592,7 +739,10 @@ mod tests {
         assert!((p.gain_db() - (-12.0)).abs() < 1e-5);
 
         // smoothing_ms
-        p.parametric_set_parameter(ParameterId::from("smoothing_ms"), ParameterValue::Float(50.0))
+        p.parametric_set_parameter(
+            ParameterId::from("smoothing_ms"),
+            ParameterValue::Float(50.0),
+        )
         .unwrap();
         assert!((p.smoothing_ms - 50.0).abs() < 1e-5);
 
@@ -651,7 +801,10 @@ mod tests {
             Some(ParameterValue::Float(-10.0))
         );
 
-        p.parametric_set_parameter(ParameterId::from("smoothing_ms"), ParameterValue::Float(42.0))
+        p.parametric_set_parameter(
+            ParameterId::from("smoothing_ms"),
+            ParameterValue::Float(42.0),
+        )
         .unwrap();
         assert_eq!(
             p.parametric_get_parameter(&ParameterId::from("smoothing_ms")),

@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{ParametricInPlacePluginAdapter, LimiterPlugin, LimiterPluginParams, Plugin};
+use sotf_plugins::{LimiterPlugin, LimiterPluginParams, ParametricInPlacePluginAdapter, Plugin};
 
 pub(super) struct LimiterFuzzer;
 

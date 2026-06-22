@@ -1,6 +1,6 @@
 use super::plugin_info::PluginInfo;
 use super::process_context::ProcessContext;
-use super::types::PluginResult;
+use super::types::{PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginResult};
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use std::any::Any;
 use std::sync::Arc;
@@ -66,6 +66,31 @@ pub trait InPlacePlugin: Send {
         context: &ProcessContext,
     ) -> PluginResult<usize>;
 
+    /// Optional specialized operation used by host compiled render plans.
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        let _ = (op, input, output, context);
+        None
+    }
+
+    /// Stable scalar gain that a host compiled plan may fuse with adjacent ops.
+    fn compiled_static_gain(&self) -> Option<f32> {
+        None
+    }
+
+    /// Parameter-sensitive compile/fusion metadata for this plugin state.
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let mut metadata =
+            PluginCompileMetadata::boundary(self.cost_class(), self.latency_samples());
+        metadata.static_gain = self.compiled_static_gain();
+        metadata
+    }
+
     /// Process f64 audio samples in-place. Override together with
     /// `supports_f64()` for true double-precision DSP.
     fn process_in_place_f64(
@@ -87,6 +112,11 @@ pub trait InPlacePlugin: Send {
     /// Get the processing latency in samples (if any)
     fn latency_samples(&self) -> usize {
         0
+    }
+
+    /// Coarse cost category for host scheduling.
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Scalar
     }
 
     /// Get data from the plugin (if it's an analyzer or exposes internal state)

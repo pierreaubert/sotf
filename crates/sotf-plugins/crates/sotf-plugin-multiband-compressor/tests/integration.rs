@@ -1,6 +1,8 @@
 // Integration tests for sotf-plugin-multiband-compressor exercising the public Plugin trait.
 
-use sotf_host::{ParametricInPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
+use sotf_host::{
+    ParameterId, ParameterValue, ParametricInPlacePluginAdapter, Plugin, ProcessContext,
+};
 use sotf_plugin_multiband_compressor::{
     MultibandCompressorPlugin, MultibandCompressorPluginParams,
 };
@@ -131,7 +133,8 @@ fn compression_reduces_level() {
         mix: 1.0,
         ..Default::default()
     };
-    let mut plugin = ParametricInPlacePluginAdapter::new(MultibandCompressorPlugin::with_params(2, params));
+    let mut plugin =
+        ParametricInPlacePluginAdapter::new(MultibandCompressorPlugin::with_params(2, params));
     plugin.initialize(48000).unwrap();
 
     let num_frames = 8192;

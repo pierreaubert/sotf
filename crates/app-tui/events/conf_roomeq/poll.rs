@@ -125,7 +125,11 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         if p.iteration > 0 && p.iteration % 100 == 0 {
             let msg = format!(
                 "[{}] iter {}/{} loss={:.6}",
-                app.room_eq.model.current_channel.clone().unwrap_or_default(),
+                app.room_eq
+                    .model
+                    .current_channel
+                    .clone()
+                    .unwrap_or_default(),
                 p.iteration,
                 p.max_iterations,
                 p.loss

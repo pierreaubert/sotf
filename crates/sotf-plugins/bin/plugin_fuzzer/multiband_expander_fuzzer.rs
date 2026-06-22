@@ -1,8 +1,9 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{ParametricInPlacePluginAdapter, 
-    MultibandExpanderPlugin, MultibandExpanderPluginParams, Plugin};
+use sotf_plugins::{
+    MultibandExpanderPlugin, MultibandExpanderPluginParams, ParametricInPlacePluginAdapter, Plugin,
+};
 
 pub(super) struct MultibandExpanderFuzzer;
 

@@ -8,7 +8,9 @@ use super::consts::PRESET_STEREO_DOWNMIX;
 use crate::params::PARAMS as MX;
 use sotf_host::param_bridge;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::smoothing::Smoother;
 use sotf_plugin_channel_mute_solo::ChannelState;
 
@@ -493,6 +495,11 @@ impl Plugin for MatrixPlugin {
     }
     fn output_channels(&self) -> usize {
         self.physical_output_channels
+    }
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let mut metadata = PluginCompileMetadata::routing(PluginCostClass::Scalar, None, true);
+        metadata.boundary = self.physical_input_channels != self.physical_output_channels;
+        metadata
     }
     fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
         self.cached_parameters.clone()

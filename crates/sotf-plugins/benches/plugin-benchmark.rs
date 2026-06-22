@@ -8,7 +8,7 @@
 // - Different buffer sizes and sample rates
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use sotf_plugins::{ParametricPluginAdapter, GainPlugin,   PluginHost, ProcessContext};
+use sotf_plugins::{GainPlugin, ParametricPluginAdapter, PluginHost, ProcessContext};
 use std::hint::black_box;
 
 // ============================================================================

@@ -5,6 +5,7 @@ use std::sync::Arc;
 mod audio_sample;
 mod buffer_guard;
 mod compensation_delays;
+mod compiled_plan;
 mod daw_host;
 mod delay_buffer;
 mod graph_edge;

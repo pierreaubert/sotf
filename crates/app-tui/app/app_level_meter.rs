@@ -9,7 +9,8 @@ impl App {
     /// Uses caching to avoid rebuilding every frame
     pub fn update_level_meter_groups(&mut self) {
         let num_channels = self
-            .playback.loudness_info
+            .playback
+            .loudness_info
             .as_ref()
             .map(|l| l.channel_peaks.len())
             .unwrap_or(0);
@@ -165,7 +166,8 @@ impl App {
     /// Toggle mute for the selected level meter group
     pub fn toggle_level_meter_mute(&mut self) {
         if let Some(group) = self
-            .level_meters.groups
+            .level_meters
+            .groups
             .get_mut(self.level_meters.selected_group)
         {
             group.muted = !group.muted;
@@ -176,7 +178,8 @@ impl App {
     /// Toggle solo for the selected level meter group
     pub fn toggle_level_meter_solo(&mut self) {
         if let Some(group) = self
-            .level_meters.groups
+            .level_meters
+            .groups
             .get_mut(self.level_meters.selected_group)
         {
             let is_currently_soloed = group.soloed;
@@ -199,7 +202,8 @@ impl App {
     /// Toggle dim for the selected level meter group
     pub fn toggle_level_meter_dim(&mut self) {
         if let Some(group) = self
-            .level_meters.groups
+            .level_meters
+            .groups
             .get_mut(self.level_meters.selected_group)
         {
             group.dimmed = !group.dimmed;
@@ -214,7 +218,8 @@ impl App {
 
         // Calculate total channel count
         let num_channels = self
-            .level_meters.groups
+            .level_meters
+            .groups
             .iter()
             .map(|g| g.channels.len())
             .sum();

@@ -18,7 +18,9 @@ use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
@@ -539,6 +541,18 @@ impl ParametricInPlacePlugin for LoudnessCompensationPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Loudness Compensation", "3.0.0", "Sotf")
     }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Iir
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        if self.auto_gain_enabled {
+            return PluginCompileMetadata::boundary(PluginCostClass::Iir, 0);
+        }
+        PluginCompileMetadata::linear_transform(PluginCostClass::Iir, None, 0, false, true, true)
+    }
+
     fn channels(&self) -> usize {
         self.num_channels
     }
@@ -564,9 +578,7 @@ impl ParametricInPlacePlugin for LoudnessCompensationPlugin {
             "auto_gain_enabled" => ParameterValue::Bool(self.auto_gain_enabled),
             "auto_gain_max_db" => ParameterValue::Float(self.auto_gain_max_db),
             "auto_gain_smoothing_ms" => ParameterValue::Float(self.auto_gain_smoothing_ms),
-            "auto_gain_position" => {
-                ParameterValue::String(self.auto_gain_position.to_string())
-            }
+            "auto_gain_position" => ParameterValue::String(self.auto_gain_position.to_string()),
             "mode" => ParameterValue::Int(self.mode_index as i32),
             "playback_level_db" => ParameterValue::Float(self.playback_level_db),
             "reference_level_db" => ParameterValue::Float(self.reference_level_db),

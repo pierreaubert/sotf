@@ -4,8 +4,8 @@
 //! construction, initialization, parameter get/set, audio processing, bypass,
 //! reset, and error paths.
 
-use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 use sotf_plugin_saturation::{SaturationPlugin, SaturationPluginParams};
 

@@ -1,9 +1,9 @@
 use super::band_compressor_params::BandCompressorParams;
 use super::multiband_compressor_plugin::MultibandCompressorPlugin;
 use super::types::MultibandCompressorPluginParams;
-use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::ProcessContext;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::{PluginCompiledOp, ProcessContext};
 
 #[test]
 fn test_mb_comp_basic() {
@@ -13,6 +13,77 @@ fn test_mb_comp_basic() {
     p.process_in_place(&mut b, &ProcessContext::new(48000, 1000))
         .unwrap();
     assert!(b[999].is_finite());
+}
+
+#[test]
+fn test_mb_comp_compiled_op_matches_process_in_place_without_lookahead() {
+    let sr = 48000;
+    let frames = 512;
+    let channels = 2;
+    let params = MultibandCompressorPluginParams {
+        per_band_lookahead_ms: 0.0,
+        ..Default::default()
+    };
+    let mut regular = MultibandCompressorPlugin::with_params(channels, params.clone());
+    let mut compiled = MultibandCompressorPlugin::with_params(channels, params);
+    regular.initialize(sr).unwrap();
+    compiled.initialize(sr).unwrap();
+
+    let input: Vec<f32> = (0..frames * channels)
+        .map(|i| 0.42 * (i as f32 * 0.037).sin() + 0.11 * (i as f32 * 0.19).cos())
+        .collect();
+    let ctx = ProcessContext::new(sr, frames);
+    let mut expected = input.clone();
+    let mut actual = vec![0.0; input.len()];
+
+    let expected_frames = regular.process_in_place(&mut expected, &ctx).unwrap();
+    let actual_frames = compiled
+        .process_compiled_f32(
+            PluginCompiledOp::MultibandCompressor,
+            &input,
+            &mut actual,
+            &ctx,
+        )
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(actual_frames, expected_frames);
+    let max_error = expected
+        .iter()
+        .zip(actual.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_error <= 1e-6,
+        "compiled multiband compressor output diverged: max_error={max_error}"
+    );
+}
+
+#[test]
+fn test_mb_comp_compiled_op_declines_lookahead() {
+    let sr = 48000;
+    let frames = 128;
+    let channels = 2;
+    let params = MultibandCompressorPluginParams {
+        per_band_lookahead_ms: 2.0,
+        ..Default::default()
+    };
+    let mut plugin = MultibandCompressorPlugin::with_params(channels, params);
+    plugin.initialize(sr).unwrap();
+    let input = vec![0.1; frames * channels];
+    let mut output = vec![0.0; input.len()];
+
+    assert!(
+        plugin
+            .process_compiled_f32(
+                PluginCompiledOp::MultibandCompressor,
+                &input,
+                &mut output,
+                &ProcessContext::new(sr, frames),
+            )
+            .is_none(),
+        "lookahead compressor should stay on regular host path until latency is exposed"
+    );
 }
 
 /// Unity passthrough: with ratio 1:1 on all bands (no compression),

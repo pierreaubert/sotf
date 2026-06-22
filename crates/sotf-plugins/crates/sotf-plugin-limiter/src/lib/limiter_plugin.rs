@@ -7,10 +7,13 @@ use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
+    ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
-use sotf_host::{ParametricInPlacePlugin, DualRelease, TruePeakDetector};
+use sotf_host::{DualRelease, ParametricInPlacePlugin, TruePeakDetector};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -250,6 +253,11 @@ impl ParametricInPlacePlugin for LimiterPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Limiter", "1.3.0", "SotF")
     }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Dynamics
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -259,16 +267,40 @@ impl ParametricInPlacePlugin for LimiterPlugin {
 
     fn current_values(&self) -> ParameterSet {
         let mut values = ParameterSet::new();
-        values.insert(self.param_threshold.clone(), ParameterValue::Float(self.threshold_db));
-        values.insert(self.param_release.clone(), ParameterValue::Float(self.release_ms));
-        values.insert(self.param_lookahead.clone(), ParameterValue::Float(self.lookahead_ms));
+        values.insert(
+            self.param_threshold.clone(),
+            ParameterValue::Float(self.threshold_db),
+        );
+        values.insert(
+            self.param_release.clone(),
+            ParameterValue::Float(self.release_ms),
+        );
+        values.insert(
+            self.param_lookahead.clone(),
+            ParameterValue::Float(self.lookahead_ms),
+        );
         values.insert(self.param_soft.clone(), ParameterValue::Bool(self.soft));
-        values.insert(self.param_true_peak.clone(), ParameterValue::Bool(self.true_peak));
-        values.insert(self.param_isp_mode.clone(), ParameterValue::Bool(self.isp_mode));
-        values.insert(self.param_dual_release.clone(), ParameterValue::Bool(self.dual_release));
+        values.insert(
+            self.param_true_peak.clone(),
+            ParameterValue::Bool(self.true_peak),
+        );
+        values.insert(
+            self.param_isp_mode.clone(),
+            ParameterValue::Bool(self.isp_mode),
+        );
+        values.insert(
+            self.param_dual_release.clone(),
+            ParameterValue::Bool(self.dual_release),
+        );
         values.insert(self.param_mix.clone(), ParameterValue::Float(self.mix));
-        values.insert(self.param_feed_forward.clone(), ParameterValue::Bool(self.feed_forward));
-        values.insert(self.param_link_amount.clone(), ParameterValue::Float(self.link_amount));
+        values.insert(
+            self.param_feed_forward.clone(),
+            ParameterValue::Bool(self.feed_forward),
+        );
+        values.insert(
+            self.param_link_amount.clone(),
+            ParameterValue::Float(self.link_amount),
+        );
         values
     }
 
@@ -569,11 +601,51 @@ impl ParametricInPlacePlugin for LimiterPlugin {
         Ok(num_frames)
     }
 
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        if op != PluginCompiledOp::Limiter {
+            return None;
+        }
+        let sample_len = context.num_frames.checked_mul(self.channels)?;
+        if input.len() < sample_len || output.len() < sample_len {
+            return Some(Err(format!(
+                "limiter compiled buffer too small: need {sample_len} samples, input={}, output={}",
+                input.len(),
+                output.len()
+            )));
+        }
+        output[..sample_len].copy_from_slice(&input[..sample_len]);
+        Some(self.process_in_place(&mut output[..sample_len], context))
+    }
+
     fn latency_samples(&self) -> usize {
         if self.lookahead_ms > 0.0 {
             self.lookahead_len
         } else {
             0
+        }
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let latency_samples = self.latency_samples();
+        PluginCompileMetadata {
+            cost_class: PluginCostClass::Dynamics,
+            compiled_op: (latency_samples == 0).then_some(PluginCompiledOp::Limiter),
+            static_gain: None,
+            linear: false,
+            time_invariant_for_block: false,
+            channel_mixing: self.link_amount > 0.0 && self.channels > 1,
+            stateful: true,
+            latency_samples,
+            can_absorb_input_gain: false,
+            can_absorb_output_gain: false,
+            can_merge_with_eq: false,
+            boundary: true,
         }
     }
 

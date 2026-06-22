@@ -12,7 +12,9 @@ use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{deinterleave_stereo, interleave_stereo};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
@@ -560,6 +562,10 @@ impl Plugin for PndPlugin {
 
     fn output_channels(&self) -> usize {
         self.channels
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Fft, None, self.latency_samples(), false)
     }
 
     fn parameters(&self) -> Vec<Parameter> {

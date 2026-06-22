@@ -50,7 +50,8 @@ impl App {
             // (inline refresh shows the menu but doesn't set the input to a suggestion)
             let current_input = get_input(self).to_string();
             let already_selected = self
-                .autocomplete.suggestions
+                .autocomplete
+                .suggestions
                 .get(self.autocomplete.index)
                 .is_some_and(|s| *s == current_input);
             if already_selected {
@@ -221,7 +222,8 @@ impl App {
         for preset in &self.plugin_rack.available_presets {
             let preset_without_ext = preset.trim_end_matches(".json");
             if preset_without_ext.to_lowercase().starts_with(&input_lower) {
-                self.autocomplete.suggestions
+                self.autocomplete
+                    .suggestions
                     .push(preset_without_ext.to_string());
             }
         }

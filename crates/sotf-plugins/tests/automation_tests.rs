@@ -2,8 +2,9 @@
 
 mod tests {
     use sotf_plugins::{
-        CompressorPlugin, GainPlugin, ParametricInPlacePlugin, ParametricInPlacePluginAdapter,
-        ParametricPlugin, ParametricPluginAdapter, ParameterId, test_parameter_ramp,
+        CompressorPlugin, GainPlugin, ParameterId, ParametricInPlacePlugin,
+        ParametricInPlacePluginAdapter, ParametricPlugin, ParametricPluginAdapter,
+        test_parameter_ramp,
     };
 
     #[test]

@@ -226,11 +226,17 @@ mod tests {
     #[test]
     fn parse_attribute_finds_quoted_and_unquoted_values() {
         assert_eq!(
-            parse_attribute(r#"#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS="mp4a.40.2""#, "BANDWIDTH"),
+            parse_attribute(
+                r#"#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS="mp4a.40.2""#,
+                "BANDWIDTH"
+            ),
             Some("128000")
         );
         assert_eq!(
-            parse_attribute(r#"#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS="mp4a.40.2""#, "CODECS"),
+            parse_attribute(
+                r#"#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS="mp4a.40.2""#,
+                "CODECS"
+            ),
             Some("mp4a.40.2")
         );
         assert_eq!(
@@ -249,7 +255,10 @@ mod tests {
 
     #[test]
     fn parse_attribute_pair_trims_quotes() {
-        assert_eq!(parse_attribute_pair("NAME=\"value\"", "NAME"), Some("value"));
+        assert_eq!(
+            parse_attribute_pair("NAME=\"value\"", "NAME"),
+            Some("value")
+        );
         assert_eq!(parse_attribute_pair("NAME=value", "NAME"), Some("value"));
         assert_eq!(parse_attribute_pair("OTHER=1", "NAME"), None);
     }
@@ -345,15 +354,11 @@ mod tests {
         }
 
         fn attribute_name_strategy() -> BoxedStrategy<String> {
-            proptest::string::string_regex("[A-Z]+")
-                .unwrap()
-                .boxed()
+            proptest::string::string_regex("[A-Z]+").unwrap().boxed()
         }
 
         fn tag_name_strategy() -> BoxedStrategy<String> {
-            proptest::string::string_regex("[A-Z]+")
-                .unwrap()
-                .boxed()
+            proptest::string::string_regex("[A-Z]+").unwrap().boxed()
         }
 
         proptest! {

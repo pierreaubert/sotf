@@ -11,10 +11,13 @@ use sotf_host::lookahead::LookaheadBuffer;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
+    ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::{LogSmoother, Smoother};
 use std::any::Any;
@@ -106,9 +109,21 @@ impl MultibandCompressorPlugin {
         while xfs.len() < 4 {
             xfs.push(default_xfs[xfs.len()]);
         }
-        let ratio = if params.ratio == 0.0 { 4.0 } else { params.ratio };
-        let attack_ms = if params.attack_ms == 0.0 { 5.0 } else { params.attack_ms };
-        let release_ms = if params.release_ms == 0.0 { 50.0 } else { params.release_ms };
+        let ratio = if params.ratio == 0.0 {
+            4.0
+        } else {
+            params.ratio
+        };
+        let attack_ms = if params.attack_ms == 0.0 {
+            5.0
+        } else {
+            params.attack_ms
+        };
+        let release_ms = if params.release_ms == 0.0 {
+            50.0
+        } else {
+            params.release_ms
+        };
         let mut bcomps = Vec::with_capacity(nb);
         for _ in 0..nb {
             bcomps.push(BandCompressor {
@@ -802,6 +817,20 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         PluginInfo::new("Multiband Compressor", "2.0.0", "Sotf")
             .with_description("Phase-coherent multiband dynamics processor")
     }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Dynamics
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(
+            PluginCostClass::Dynamics,
+            (self.per_band_lookahead_ms <= 0.0).then_some(PluginCompiledOp::MultibandCompressor),
+            self.latency_samples(),
+            false,
+        )
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -1142,6 +1171,28 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         flush_denormals_inplace(buffer);
         Ok(nf)
     }
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        if op != PluginCompiledOp::MultibandCompressor || self.per_band_lookahead_ms > 0.0 {
+            return None;
+        }
+        let sample_len = context.num_frames.checked_mul(self.channels)?;
+        if input.len() < sample_len || output.len() < sample_len {
+            return Some(Err(format!(
+                "multiband compressor compiled buffer too small: need {sample_len} samples, input={}, output={}",
+                input.len(),
+                output.len()
+            )));
+        }
+        output[..sample_len].copy_from_slice(&input[..sample_len]);
+        Some(self.process_in_place(&mut output[..sample_len], context))
+    }
+
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }

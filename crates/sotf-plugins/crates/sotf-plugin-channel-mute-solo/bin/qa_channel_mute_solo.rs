@@ -1,5 +1,8 @@
 use sotf_host::plugin::ProcessContext;
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, CountingAlloc, assert_no_allocs, run_standard_tests};
+use sotf_host::{
+    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter,
+    ParametricPluginAdapter, assert_no_allocs, run_standard_tests,
+};
 use sotf_plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
 
 #[global_allocator]

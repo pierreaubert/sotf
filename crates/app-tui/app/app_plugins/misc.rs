@@ -16,7 +16,8 @@ impl App {
 
     pub fn add_plugin(&mut self, plugin_type: &PluginType) {
         let insert_idx = self.plugin_rack.graph.user_plugin_insert_index();
-        self.plugin_rack.graph
+        self.plugin_rack
+            .graph
             .insert_plugin(insert_idx, plugin_type)
             .ok();
         // Update BinauralDecoder input channels after adding
@@ -26,7 +27,9 @@ impl App {
 
     pub fn remove_plugin(&mut self, index: usize) {
         self.plugin_rack.graph.remove_plugin_by_index(index).ok();
-        if self.plugin_rack.selected_index >= self.plugin_rack.graph.len() && self.plugin_rack.selected_index > 0 {
+        if self.plugin_rack.selected_index >= self.plugin_rack.graph.len()
+            && self.plugin_rack.selected_index > 0
+        {
             self.plugin_rack.selected_index = self.plugin_rack.graph.len() - 1;
         }
         // Update BinauralDecoder input channels after removal
@@ -63,7 +66,8 @@ impl App {
 
     pub fn select_next_plugin(&mut self) {
         if !self.plugin_rack.graph.is_empty() {
-            self.plugin_rack.selected_index = (self.plugin_rack.selected_index + 1) % self.plugin_rack.graph.len();
+            self.plugin_rack.selected_index =
+                (self.plugin_rack.selected_index + 1) % self.plugin_rack.graph.len();
         }
     }
 
@@ -93,12 +97,14 @@ impl App {
     }
 
     pub fn get_editing_plugin(&self) -> Option<&sotf_audio_player::Plugin> {
-        self.plugin_rack.editing_index
+        self.plugin_rack
+            .editing_index
             .and_then(|idx| self.plugin_rack.graph.get_plugin(idx))
     }
 
     pub fn get_editing_plugin_mut(&mut self) -> Option<&mut sotf_audio_player::Plugin> {
-        self.plugin_rack.editing_index
+        self.plugin_rack
+            .editing_index
             .and_then(|idx| self.plugin_rack.graph.get_plugin_mut(idx))
     }
 
@@ -106,7 +112,8 @@ impl App {
         if let Some(plugin) = self.get_editing_plugin() {
             let param_count = get_param_count(&plugin.settings);
             if param_count > 0 {
-                self.plugin_rack.param_selection = (self.plugin_rack.param_selection + 1) % param_count;
+                self.plugin_rack.param_selection =
+                    (self.plugin_rack.param_selection + 1) % param_count;
             }
         }
     }
@@ -359,7 +366,8 @@ impl App {
             return;
         };
         match self
-            .plugin_rack.graph
+            .plugin_rack
+            .graph
             .save_to_file(&presets_dir, &self.plugin_rack.file_input)
         {
             Ok(_) => {
@@ -383,22 +391,26 @@ impl App {
         }
 
         if let Some(preset_filename) = self
-            .plugin_rack.available_presets
+            .plugin_rack
+            .available_presets
             .get(self.plugin_rack.selected_preset_index)
             .cloned()
         {
             // Pass filename as-is; save_to_file handles .json extension correctly
             // Save using the plugin chain's own save method
             let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-                self.ui.status_message = Some("Error: Could not find presets directory".to_string());
+                self.ui.status_message =
+                    Some("Error: Could not find presets directory".to_string());
                 return;
             };
             match self
-                .plugin_rack.graph
+                .plugin_rack
+                .graph
                 .save_to_file(&presets_dir, &preset_filename)
             {
                 Ok(_) => {
-                    self.ui.status_message = Some(format!("Overwritten preset: {}", preset_filename));
+                    self.ui.status_message =
+                        Some(format!("Overwritten preset: {}", preset_filename));
                     self.plugin_rack.last_loaded_preset = Some(preset_filename);
                     // Refresh presets list
                     self.refresh_plugin_presets();
@@ -424,7 +436,8 @@ impl App {
             return;
         };
         match self
-            .plugin_rack.graph
+            .plugin_rack
+            .graph
             .load_from_file(&presets_dir, &self.plugin_rack.file_input)
         {
             Ok(warnings) => {
@@ -475,7 +488,8 @@ impl App {
                     && ext == "json"
                     && let Some(filename) = path.file_name()
                 {
-                    self.plugin_rack.available_presets
+                    self.plugin_rack
+                        .available_presets
                         .push(filename.to_string_lossy().to_string());
                 }
             }
@@ -492,8 +506,8 @@ impl App {
     /// Select the next preset in the list
     pub fn select_next_preset(&mut self) {
         if !self.plugin_rack.available_presets.is_empty() {
-            self.plugin_rack.selected_preset_index =
-                (self.plugin_rack.selected_preset_index + 1) % self.plugin_rack.available_presets.len();
+            self.plugin_rack.selected_preset_index = (self.plugin_rack.selected_preset_index + 1)
+                % self.plugin_rack.available_presets.len();
         }
     }
 
@@ -501,7 +515,8 @@ impl App {
     pub fn select_previous_preset(&mut self) {
         if !self.plugin_rack.available_presets.is_empty() {
             if self.plugin_rack.selected_preset_index == 0 {
-                self.plugin_rack.selected_preset_index = self.plugin_rack.available_presets.len() - 1;
+                self.plugin_rack.selected_preset_index =
+                    self.plugin_rack.available_presets.len() - 1;
             } else {
                 self.plugin_rack.selected_preset_index -= 1;
             }
@@ -517,7 +532,8 @@ impl App {
         }
 
         if let Some(preset_filename) = self
-            .plugin_rack.available_presets
+            .plugin_rack
+            .available_presets
             .get(self.plugin_rack.selected_preset_index)
             .cloned()
         {
@@ -528,11 +544,13 @@ impl App {
             );
             // Use the plugin chain's own load method (handles path construction)
             let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-                self.ui.status_message = Some("Error: Could not find presets directory".to_string());
+                self.ui.status_message =
+                    Some("Error: Could not find presets directory".to_string());
                 return;
             };
             match self
-                .plugin_rack.graph
+                .plugin_rack
+                .graph
                 .load_from_file(&presets_dir, &preset_filename)
             {
                 Ok(warnings) => {
@@ -545,7 +563,8 @@ impl App {
                             preset_filename,
                             self.plugin_rack.graph.len()
                         );
-                        self.ui.status_message = Some(format!("Loaded preset: {}", preset_filename));
+                        self.ui.status_message =
+                            Some(format!("Loaded preset: {}", preset_filename));
                     } else {
                         log::warn!(
                             "Loaded preset: {} ({} plugins, {} skipped)",

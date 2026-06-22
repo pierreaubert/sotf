@@ -4,12 +4,14 @@ use super::consts::SAMPLE_RATE;
 use super::consts::generate_test_buffer;
 use criterion::Criterion;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, 
+use sotf_plugins::{
     AaePlugin, AaePluginParams, ChannelMuteSoloPlugin, CrossoverPlugin, DeclickPlugin, DelayPlugin,
-    EqPlugin, ExpanderPlugin, GatePlugin, HissReducerPlugin,  LimiterPlugin,
+    EqPlugin, ExpanderPlugin, GatePlugin, HissReducerPlugin, LimiterPlugin,
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
-    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig,
-    SpeechDenoiserPlugin};
+    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, ParametricInPlacePlugin,
+    ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin, ProcessContext,
+    SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
+};
 use std::hint::black_box;
 
 pub(super) fn benchmark_eq(c: &mut Criterion) {

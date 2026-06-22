@@ -5,9 +5,11 @@
 //! intentionally change channel counts (upmix followed by downmix) and chains
 //! that place a mismatched plugin at the end.
 
-use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, 
-    CompressorPlugin, EqPlugin, GainPlugin,  LimiterPlugin, PluginHost};
 use sotf_plugins::factory::create_plugin;
+use sotf_plugins::{
+    CompressorPlugin, EqPlugin, GainPlugin, LimiterPlugin, ParametricInPlacePluginAdapter,
+    ParametricPluginAdapter, PluginHost,
+};
 
 const SAMPLE_RATE: u32 = 48_000;
 const FRAMES: usize = 512;
@@ -75,7 +77,8 @@ fn channel_preserving_chain_maintains_count() {
 
         let input = interleaved_sine(channels, FRAMES);
         let mut output = vec![0.0f32; FRAMES * channels];
-        host.process(&input, &mut output).expect("process should succeed");
+        host.process(&input, &mut output)
+            .expect("process should succeed");
 
         assert_all_finite(&output, &format!("preserving-chain@{channels}ch"));
         let energy: f32 = output.iter().map(|s| s * s).sum();
@@ -96,7 +99,11 @@ fn upmix_then_downmix_returns_to_stereo() {
     let upmixer = create_plugin("upmixer", &serde_json::json!({}), 2, SAMPLE_RATE)
         .expect("upmixer should instantiate with stereo input");
     host.add_plugin(upmixer).unwrap();
-    assert_eq!(host.output_channels(), 6, "upmixer should output 6 channels");
+    assert_eq!(
+        host.output_channels(),
+        6,
+        "upmixer should output 6 channels"
+    );
 
     // Downmix: 6ch -> 2ch
     let downmix = create_plugin(
@@ -148,13 +155,8 @@ fn mismatched_plugin_at_end_is_rejected_gracefully() {
     assert_eq!(host.output_channels(), 2);
 
     // mono_to_stereo expects 1 input channel but the chain is currently 2ch.
-    let mismatch = create_plugin(
-        "mono_to_stereo",
-        &serde_json::json!({}),
-        1,
-        SAMPLE_RATE,
-    )
-    .expect("mono_to_stereo should instantiate on its own");
+    let mismatch = create_plugin("mono_to_stereo", &serde_json::json!({}), 1, SAMPLE_RATE)
+        .expect("mono_to_stereo should instantiate on its own");
 
     let err = host
         .add_plugin(mismatch)
@@ -203,13 +205,8 @@ fn mono_stereo_chain_changes_and_restores_count() {
     assert_eq!(host.output_channels(), 1, "chain should now be mono");
 
     // mono_to_stereo: 1ch -> 2ch.
-    let to_stereo = create_plugin(
-        "mono_to_stereo",
-        &serde_json::json!({}),
-        1,
-        SAMPLE_RATE,
-    )
-    .expect("mono_to_stereo should instantiate with mono input");
+    let to_stereo = create_plugin("mono_to_stereo", &serde_json::json!({}), 1, SAMPLE_RATE)
+        .expect("mono_to_stereo should instantiate with mono input");
     host.add_plugin(to_stereo).unwrap();
     assert_eq!(
         host.output_channels(),

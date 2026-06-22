@@ -18,11 +18,14 @@ use math_audio_iir_fir::{Biquad, BiquadCoefficients, SvfFilter, SvfFilterType};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData};
 use sotf_host::oversampling::Oversampler;
-use sotf_host::parametric_plugin::{
-    ParametricPlugin, ParameterSchema, ParameterSet, ParametricPluginAdapter,
-};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_plugin::{
+    ParameterSchema, ParameterSet, ParametricPlugin, ParametricPluginAdapter,
+};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
+    ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use std::any::Any;
 use std::sync::Arc;
@@ -526,6 +529,110 @@ impl EqPlugin {
         }
     }
 
+    #[inline]
+    fn process_biquads_interleaved_no_transitions(
+        filters: &mut [Vec<Vec<Biquad>>],
+        buffer: &mut [f32],
+        num_frames: usize,
+        num_channels: usize,
+    ) {
+        if num_channels == 2 && filters.len() >= 2 {
+            let (left_filters, right_filters) = filters.split_at_mut(1);
+            let left_filters = &mut left_filters[0];
+            let right_filters = &mut right_filters[0];
+            for frame in buffer.chunks_exact_mut(2).take(num_frames) {
+                let mut left = frame[0] as f64;
+                for stages in left_filters.iter_mut() {
+                    for stage in stages {
+                        left = stage.process(left);
+                    }
+                }
+                frame[0] = left as f32;
+
+                let mut right = frame[1] as f64;
+                for stages in right_filters.iter_mut() {
+                    for stage in stages {
+                        right = stage.process(right);
+                    }
+                }
+                frame[1] = right as f32;
+            }
+            return;
+        }
+
+        for frame in buffer.chunks_exact_mut(num_channels).take(num_frames) {
+            for (sample, channel_filters) in frame.iter_mut().zip(filters.iter_mut()) {
+                let mut processed = *sample as f64;
+                for stages in channel_filters {
+                    for stage in stages {
+                        processed = stage.process(processed);
+                    }
+                }
+                *sample = processed as f32;
+            }
+        }
+    }
+
+    fn process_compiled_biquad_bank(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
+        enable_ftz_daz();
+        let num_frames = context.num_frames;
+        let nc = self.num_channels;
+        let sample_len = num_frames
+            .checked_mul(nc)
+            .ok_or_else(|| "EQ block sample count overflow".to_string())?;
+        if input.len() < sample_len {
+            return Err(format!(
+                "EQ compiled input too small: need {sample_len} samples, got {}",
+                input.len()
+            ));
+        }
+        if output.len() < sample_len {
+            return Err(format!(
+                "EQ compiled output too small: need {sample_len} samples, got {}",
+                output.len()
+            ));
+        }
+
+        self.cache_update_counter += 1;
+        let mut do_measure = false;
+        if self.cache_update_counter >= MEASUREMENT_THROTTLE {
+            self.cache_update_counter = 0;
+            do_measure = true;
+        }
+
+        if do_measure {
+            let _ = self.auto_gain.measure_input(&input[..sample_len]);
+        }
+
+        let output = &mut output[..sample_len];
+        output.copy_from_slice(&input[..sample_len]);
+        Self::process_biquads_interleaved_no_transitions(&mut self.filters, output, num_frames, nc);
+        self.process_advanced_interleaved(output, num_frames);
+
+        if do_measure {
+            let _ = self.auto_gain.measure_output(output);
+            let ag_data = self.auto_gain.get_data();
+            self.cache.update(|d| {
+                *d = ag_data;
+            });
+        }
+
+        self.auto_gain.apply_compensation(output, num_frames);
+        flush_denormals_inplace(output);
+        Ok(num_frames)
+    }
+
+    fn can_process_compiled_biquad_bank(&self) -> bool {
+        self.topology != 1
+            && self.oversampling_factor == 1
+            && self.transitions.iter().all(Option::is_none)
+    }
+
     /// Wrap this EQ plugin in a `Box<dyn Plugin>` using the parametric adapter.
     pub fn into_boxed_plugin(self) -> Box<dyn Plugin> {
         Box::new(ParametricPluginAdapter::new(self))
@@ -535,6 +642,10 @@ impl EqPlugin {
 impl ParametricPlugin for EqPlugin {
     fn plugin_info(&self) -> PluginInfo {
         self.info()
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Iir
     }
 
     fn input_channels(&self) -> usize {
@@ -602,6 +713,34 @@ impl ParametricPlugin for EqPlugin {
     ) -> Result<usize, String> {
         output.copy_from_slice(input);
         self.process_in_place(output, context)
+    }
+
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        if op != PluginCompiledOp::EqBiquadBank || !self.can_process_compiled_biquad_bank() {
+            return None;
+        }
+        Some(self.process_compiled_biquad_bank(input, output, context))
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let latency_samples = EqPlugin::latency_samples(self);
+        let compiled_op = self
+            .can_process_compiled_biquad_bank()
+            .then_some(PluginCompiledOp::EqBiquadBank);
+        PluginCompileMetadata::linear_transform(
+            PluginCostClass::Iir,
+            compiled_op,
+            latency_samples,
+            false,
+            true,
+            latency_samples == 0,
+        )
     }
 
     fn latency_samples(&self) -> usize {
@@ -1030,18 +1169,12 @@ impl EqPlugin {
                 }
             } else {
                 // Fast path: no transitions active
-                for frame in 0..num_frames {
-                    for ch in 0..nc {
-                        let idx = frame * nc + ch;
-                        let mut s = buffer[idx] as f64;
-                        for stages in &mut self.filters[ch] {
-                            for stage in stages {
-                                s = stage.process(s);
-                            }
-                        }
-                        buffer[idx] = s as f32;
-                    }
-                }
+                Self::process_biquads_interleaved_no_transitions(
+                    &mut self.filters,
+                    buffer,
+                    num_frames,
+                    nc,
+                );
             }
         } else {
             // ----------------------------------------------------------------

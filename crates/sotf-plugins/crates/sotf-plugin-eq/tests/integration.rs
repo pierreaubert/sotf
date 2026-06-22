@@ -8,9 +8,9 @@
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_host::AutoGainParams;
-use sotf_host::parametric_plugin::{ParametricPlugin, ParametricPluginAdapter};
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::parametric_plugin::{ParametricPlugin, ParametricPluginAdapter};
+use sotf_host::plugin::{Plugin, PluginCompiledOp, ProcessContext};
 use sotf_plugin_eq::{BiquadFilterConfig, EqFilterTopology, EqPlugin, EqPluginParams};
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -71,7 +71,11 @@ fn empty_chain_is_exact_passthrough() {
     let mut output = vec![0.0f32; input.len()];
 
     let processed = plugin
-        .process(&input, &mut output, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(SAMPLE_RATE, FRAMES),
+        )
         .unwrap();
 
     assert_eq!(processed, FRAMES);
@@ -109,10 +113,74 @@ fn from_params_builds_processable_plugin() {
     let mut buffer = vec![0.0f32; input.len()];
 
     plugin
-        .process(&input, &mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(
+            &input,
+            &mut buffer,
+            &ProcessContext::new(SAMPLE_RATE, FRAMES),
+        )
         .unwrap();
 
     assert!(buffer.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn compiled_biquad_bank_matches_regular_process() {
+    let filters = || {
+        vec![
+            Biquad::new(
+                BiquadFilterType::Highpass,
+                40.0,
+                SAMPLE_RATE as f64,
+                0.707,
+                0.0,
+            ),
+            Biquad::new(BiquadFilterType::Peak, 1000.0, SAMPLE_RATE as f64, 1.2, 3.0),
+            Biquad::new(
+                BiquadFilterType::Highshelf,
+                8000.0,
+                SAMPLE_RATE as f64,
+                0.707,
+                -2.0,
+            ),
+        ]
+    };
+    let mut regular = EqPlugin::new(2, filters());
+    let mut compiled = EqPlugin::new(2, filters());
+    regular.plugin_initialize(SAMPLE_RATE).unwrap();
+    compiled.plugin_initialize(SAMPLE_RATE).unwrap();
+
+    let input: Vec<f32> = (0..FRAMES * 2)
+        .map(|i| (((i * 37) % 101) as f32 - 50.0) / 51.0)
+        .collect();
+    let mut regular_output = vec![0.0_f32; input.len()];
+    let mut compiled_output = vec![0.0_f32; input.len()];
+    let context = ProcessContext::new(SAMPLE_RATE, FRAMES);
+
+    let regular_frames = regular
+        .process(&input, &mut regular_output, &context)
+        .unwrap();
+    let compiled_frames = compiled
+        .process_compiled_f32(
+            PluginCompiledOp::EqBiquadBank,
+            &input,
+            &mut compiled_output,
+            &context,
+        )
+        .expect("steady-state biquad EQ should accept compiled op")
+        .unwrap();
+
+    assert_eq!(regular_frames, FRAMES);
+    assert_eq!(compiled_frames, FRAMES);
+    let max_error: f32 = regular_output
+        .iter()
+        .zip(compiled_output.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_error < 1e-6,
+        "compiled EQ output diverged from regular process: max_error={}",
+        max_error
+    );
 }
 
 #[test]
@@ -256,7 +324,11 @@ fn topology_switch_to_svf_produces_finite_output() {
     let input = vec![0.25f32; FRAMES * 2];
     let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process(&input, &mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(
+            &input,
+            &mut buffer,
+            &ProcessContext::new(SAMPLE_RATE, FRAMES),
+        )
         .unwrap();
 
     assert!(buffer.iter().all(|s| s.is_finite()));
@@ -274,7 +346,11 @@ fn oversampling_switch_updates_internal_state() {
     let input = vec![0.1f32; FRAMES];
     let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process(&input, &mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(
+            &input,
+            &mut buffer,
+            &ProcessContext::new(SAMPLE_RATE, FRAMES),
+        )
         .unwrap();
     assert!(buffer.iter().all(|s| s.is_finite()));
 
@@ -285,7 +361,11 @@ fn oversampling_switch_updates_internal_state() {
     let input = vec![0.1f32; FRAMES];
     let mut buffer = vec![0.0f32; input.len()];
     plugin
-        .process(&input, &mut buffer, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(
+            &input,
+            &mut buffer,
+            &ProcessContext::new(SAMPLE_RATE, FRAMES),
+        )
         .unwrap();
     assert!(buffer.iter().all(|s| s.is_finite()));
 }
@@ -337,7 +417,8 @@ fn invalid_oversampling_factor_errors() {
     let mut plugin = EqPlugin::new(1, vec![]);
     plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
-    let result = plugin.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(3));
+    let result =
+        plugin.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(3));
     assert!(result.is_err(), "oversampling factor 3 should be rejected");
     assert!(result.unwrap_err().contains("Invalid oversampling"));
 }
@@ -348,7 +429,8 @@ fn odd_band_order_errors() {
     let mut plugin = EqPlugin::new(1, vec![f]);
     plugin.plugin_initialize(SAMPLE_RATE).unwrap();
 
-    let result = plugin.parametric_set_parameter(ParameterId::from("band_0_order"), ParameterValue::Int(3));
+    let result =
+        plugin.parametric_set_parameter(ParameterId::from("band_0_order"), ParameterValue::Int(3));
     assert!(result.is_err(), "odd band order should be rejected");
     assert!(result.unwrap_err().contains("even"));
 }

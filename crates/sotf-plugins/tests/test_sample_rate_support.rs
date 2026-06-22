@@ -9,7 +9,8 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
     CompressorPlugin, CrossoverPlugin, DelayPlugin, EqPlugin, ExpanderPlugin, GainPlugin,
     GatePlugin, LimiterPlugin, MatrixPlugin, ParametricInPlacePlugin,
-    ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin, PluginHost, ProcessContext};
+    ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin, PluginHost, ProcessContext,
+};
 
 const SAMPLE_RATES: [u32; 5] = [22050, 44100, 48000, 96000, 192000];
 const NUM_FRAMES: usize = 512;

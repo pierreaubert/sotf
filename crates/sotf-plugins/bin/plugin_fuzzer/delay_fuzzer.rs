@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{ParametricInPlacePluginAdapter, DelayPlugin, DelayPluginParams, Plugin};
+use sotf_plugins::{DelayPlugin, DelayPluginParams, ParametricInPlacePluginAdapter, Plugin};
 
 pub(super) struct DelayFuzzer;
 

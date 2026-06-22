@@ -5,10 +5,10 @@
 //! report that the current backend cannot carry DSD frames and fall back or
 //! error accordingly.
 
-use sotf_audio::decoder::core::create_decoder_from_source_with_dsd_mode_and_metadata;
 use sotf_audio::decoder::AudioSource;
+use sotf_audio::decoder::core::create_decoder_from_source_with_dsd_mode_and_metadata;
 use sotf_audio::engine::{
-    plan_dsd_output, DsdOutputBackend, DsdOutputMode, DsdOutputPlan, DsdOutputStatus,
+    DsdOutputBackend, DsdOutputMode, DsdOutputPlan, DsdOutputStatus, plan_dsd_output,
 };
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -84,15 +84,16 @@ fn dsf_file_is_recognized_and_decodes_to_pcm() {
     let dsf_path = make_minimal_dsf();
     let source = AudioSource::File(dsf_path);
 
-    let (decoder, metadata_rx) = create_decoder_from_source_with_dsd_mode_and_metadata(
-        &source,
-        DsdOutputMode::PcmDecode,
-    )
-    .expect("PcmDecode should produce a PCM decoder for a DSF source");
+    let (decoder, metadata_rx) =
+        create_decoder_from_source_with_dsd_mode_and_metadata(&source, DsdOutputMode::PcmDecode)
+            .expect("PcmDecode should produce a PCM decoder for a DSF source");
 
     assert_eq!(decoder.spec().sample_rate, 2_822_400 / 64);
     assert_eq!(decoder.spec().channels, 2);
-    assert!(metadata_rx.is_none(), "local files have no live metadata receiver");
+    assert!(
+        metadata_rx.is_none(),
+        "local files have no live metadata receiver"
+    );
 }
 
 #[test]
@@ -128,10 +129,8 @@ fn dsd_required_bitstream_modes_error_for_dsf() {
     let dsf_path = make_minimal_dsf();
     let source = AudioSource::File(dsf_path);
 
-    let dop = create_decoder_from_source_with_dsd_mode_and_metadata(
-        &source,
-        DsdOutputMode::DopRequired,
-    );
+    let dop =
+        create_decoder_from_source_with_dsd_mode_and_metadata(&source, DsdOutputMode::DopRequired);
     assert!(
         matches!(dop, Err(sotf_audio::AudioDecoderError::UnsupportedFormat(ref m)) if m.contains("cannot carry bit-perfect DoP frames")),
         "DoPRequired should error: {:?}",

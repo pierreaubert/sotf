@@ -143,15 +143,13 @@ pub use oversampling::{
     planar_to_interleaved,
 };
 pub use parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-pub use parametric_in_place_plugin::{
-    ParametricInPlacePlugin, ParametricInPlacePluginAdapter,
-};
+pub use parametric_in_place_plugin::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter};
 pub use parametric_plugin::{
     ParameterSchema, ParameterSet, ParametricPlugin, ParametricPluginAdapter,
 };
 pub use plugin::{
-    InPlacePlugin, InPlacePluginAdapter, LoopRange, MidiEvent, MidiMessage, Plugin, PluginInfo,
-    PluginResult, ProcessContext, TimeSignature, TransportInfo,
+    InPlacePlugin, InPlacePluginAdapter, LoopRange, MidiEvent, MidiMessage, Plugin,
+    PluginCostClass, PluginInfo, PluginResult, ProcessContext, TimeSignature, TransportInfo,
 };
 
 #[cfg(feature = "qa")]

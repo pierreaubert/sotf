@@ -2,7 +2,7 @@ use super::misc::interleaved_to_planar;
 use super::misc::planar_to_interleaved;
 use super::oversampler::Oversampler;
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
-use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use crate::plugin::{Plugin, PluginCompileMetadata, PluginInfo, PluginResult, ProcessContext};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -146,6 +146,15 @@ impl Plugin for AutoOversampledPlugin {
             return Err(err);
         }
         Ok(nf)
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let mut metadata = self.inner.compile_metadata();
+        metadata.compiled_op = None;
+        metadata.static_gain = None;
+        metadata.latency_samples = self.latency_samples();
+        metadata.boundary = true;
+        metadata
     }
 
     fn latency_samples(&self) -> usize {

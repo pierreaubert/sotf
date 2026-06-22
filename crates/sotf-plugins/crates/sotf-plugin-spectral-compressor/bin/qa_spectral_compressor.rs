@@ -1,4 +1,6 @@
-use sotf_host::parametric_in_place_plugin::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter};
+use sotf_host::parametric_in_place_plugin::{
+    ParametricInPlacePlugin, ParametricInPlacePluginAdapter,
+};
 use sotf_host::plugin::{InPlacePlugin, ProcessContext};
 use sotf_plugin_spectral_compressor::SpectralCompressorPlugin;
 

@@ -20,7 +20,10 @@ impl ManagerCommandHandler for ShutdownCommand {
             log::trace!("[Manager Thread] Decoder shutdown command dropped: {}", e);
         }
         if let Err(e) = ctx.processing.send_command(ProcessingCommand::Shutdown) {
-            log::trace!("[Manager Thread] Processing shutdown command dropped: {}", e);
+            log::trace!(
+                "[Manager Thread] Processing shutdown command dropped: {}",
+                e
+            );
         }
         if let Err(e) = ctx.playback.send_command(PlaybackCommand::Shutdown) {
             log::trace!("[Manager Thread] Playback shutdown command dropped: {}", e);

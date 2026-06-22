@@ -19,8 +19,14 @@ impl ManagerCommandHandler for SetVolumeCommand {
         // Best-effort: the playback thread may have already exited after
         // end-of-stream drain. The volume is stored in state and will be
         // applied when the next engine starts.
-        if let Err(e) = ctx.playback.send_command(PlaybackCommand::SetVolume(volume)) {
-            log::debug!("[Manager Thread] SetVolume send failed (playback ended): {}", e);
+        if let Err(e) = ctx
+            .playback
+            .send_command(PlaybackCommand::SetVolume(volume))
+        {
+            log::debug!(
+                "[Manager Thread] SetVolume send failed (playback ended): {}",
+                e
+            );
         }
 
         ManagerResponse::Ok

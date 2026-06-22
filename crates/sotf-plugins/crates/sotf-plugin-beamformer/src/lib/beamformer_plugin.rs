@@ -8,7 +8,9 @@ use crate::superdirective::SuperdirectiveBeamformer;
 use math_audio_dsp::stft::RealFftProcessor;
 use nalgebra::Complex;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -174,6 +176,10 @@ impl Plugin for BeamformerPlugin {
 
     fn output_channels(&self) -> usize {
         1
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Fft, None, self.latency_samples(), true)
     }
 
     fn parameters(&self) -> Vec<Parameter> {

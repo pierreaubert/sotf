@@ -43,7 +43,8 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char('r') => {
             // Rename selected playlist
             if let Some(playlist) = app
-                .playlists.controller
+                .playlists
+                .controller
                 .playlists()
                 .get(app.playlists.controller.selected_playlist_index)
             {

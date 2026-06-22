@@ -61,16 +61,37 @@ fn snapshot_room_eq_optimizer_config_default() {
 fn snapshot_api_parse_range_header_results() {
     let cases = [
         ("no header", api_parse_range_header(None, 100)),
-        ("full range", api_parse_range_header(Some("bytes=0-99"), 100)),
+        (
+            "full range",
+            api_parse_range_header(Some("bytes=0-99"), 100),
+        ),
         ("open ended", api_parse_range_header(Some("bytes=10-"), 100)),
         ("suffix", api_parse_range_header(Some("bytes=-10"), 100)),
-        ("end beyond file", api_parse_range_header(Some("bytes=0-999"), 100)),
-        ("missing bytes prefix", api_parse_range_header(Some("0-99"), 100)),
-        ("multiple ranges", api_parse_range_header(Some("bytes=0-9,10-19"), 100)),
-        ("start at length", api_parse_range_header(Some("bytes=100-"), 100)),
-        ("end before start", api_parse_range_header(Some("bytes=10-5"), 100)),
+        (
+            "end beyond file",
+            api_parse_range_header(Some("bytes=0-999"), 100),
+        ),
+        (
+            "missing bytes prefix",
+            api_parse_range_header(Some("0-99"), 100),
+        ),
+        (
+            "multiple ranges",
+            api_parse_range_header(Some("bytes=0-9,10-19"), 100),
+        ),
+        (
+            "start at length",
+            api_parse_range_header(Some("bytes=100-"), 100),
+        ),
+        (
+            "end before start",
+            api_parse_range_header(Some("bytes=10-5"), 100),
+        ),
         ("zero suffix", api_parse_range_header(Some("bytes=-0"), 100)),
-        ("zero file length", api_parse_range_header(Some("bytes=0-"), 0)),
+        (
+            "zero file length",
+            api_parse_range_header(Some("bytes=0-"), 0),
+        ),
     ];
 
     insta::assert_debug_snapshot!(cases);

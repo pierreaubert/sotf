@@ -112,7 +112,8 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
         KeyCode::Char('m') => {
             let entry = app.queue.get(app.queue_view.selected_index)?;
             let target_track = app
-                .queue_view.selected_track_index
+                .queue_view
+                .selected_track_index
                 .and_then(|idx| entry.item.album.tracks.get(idx))
                 .or_else(|| entry.item.current_track())
                 .or_else(|| entry.item.album.tracks.first());
@@ -144,13 +145,16 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     .unwrap_or_else(|| format!("Track {}", t_idx + 1));
                 let path = track.path.clone();
                 match app.playlists.controller.add_tracks(db, &[path]) {
-                    Ok(()) => app.ui.status_message = Some(format!("Added '{}' to playlist", title)),
+                    Ok(()) => {
+                        app.ui.status_message = Some(format!("Added '{}' to playlist", title))
+                    }
                     Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
                 }
             } else {
                 let active_id = app.playlists.controller.active_playlist_id();
                 let pl_idx = active_id.and_then(|id| {
-                    app.playlists.controller
+                    app.playlists
+                        .controller
                         .playlists()
                         .iter()
                         .position(|p| p.id == Some(id))
@@ -158,7 +162,8 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 if let Some(pl_idx) = pl_idx {
                     let album = entry.item.album.clone();
                     match app
-                        .playlists.controller
+                        .playlists
+                        .controller
                         .add_album_to_playlist(db, pl_idx, &album)
                     {
                         Ok(()) => {

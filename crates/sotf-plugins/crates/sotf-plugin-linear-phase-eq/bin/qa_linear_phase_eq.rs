@@ -1,5 +1,8 @@
 use sotf_host::plugin::ProcessContext;
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, CountingAlloc, measure_peak_db, run_standard_tests};
+use sotf_host::{
+    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter,
+    ParametricPluginAdapter, measure_peak_db, run_standard_tests,
+};
 use sotf_plugin_linear_phase_eq::{BandConfig, LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 use std::f32::consts::PI;
 

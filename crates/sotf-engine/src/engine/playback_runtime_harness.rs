@@ -650,9 +650,7 @@ mod tests {
         let sink_handle = std::thread::spawn(move || run_mock_sink(sink_rx, done_tx));
 
         decoder
-            .send_command(DecoderCommand::Play(
-                temp_wav.path().to_path_buf().into(),
-            ))
+            .send_command(DecoderCommand::Play(temp_wav.path().to_path_buf().into()))
             .expect("Play command should send");
 
         let report = done_rx

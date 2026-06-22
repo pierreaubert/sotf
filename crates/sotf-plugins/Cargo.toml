@@ -138,6 +138,10 @@ path = "bin/plugin_fuzzer.rs"
 name = "external-plugin-sandbox-test"
 path = "bin/external_plugin_sandbox_test.rs"
 
+[[bin]]
+name = "daw-scale-stress"
+path = "bin/daw_scale_stress.rs"
+
 [[bench]]
 name = "all-plugins-benchmark"
 harness = false

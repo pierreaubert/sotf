@@ -117,8 +117,8 @@ pub(crate) fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
     };
 
     let progress_pct = if app.scan.maintenance_progress_total > 0 {
-        (app.scan.maintenance_progress_checked as f32 / app.scan.maintenance_progress_total as f32 * 100.0)
-            as u32
+        (app.scan.maintenance_progress_checked as f32 / app.scan.maintenance_progress_total as f32
+            * 100.0) as u32
     } else {
         0
     };
@@ -135,7 +135,9 @@ pub(crate) fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
             Span::styled(
                 format!(
                     "{} / {} ({}%)",
-                    app.scan.maintenance_progress_checked, app.scan.maintenance_progress_total, progress_pct
+                    app.scan.maintenance_progress_checked,
+                    app.scan.maintenance_progress_total,
+                    progress_pct
                 ),
                 Style::default()
                     .fg(app.theme.accent_primary)
@@ -197,8 +199,8 @@ pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
     };
 
     let progress_pct = if app.scan.replay_gain_manager.total > 0 {
-        (app.scan.replay_gain_manager.processed as f32 / app.scan.replay_gain_manager.total as f32 * 100.0)
-            as u32
+        (app.scan.replay_gain_manager.processed as f32 / app.scan.replay_gain_manager.total as f32
+            * 100.0) as u32
     } else {
         0
     };
@@ -215,7 +217,9 @@ pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
             Span::styled(
                 format!(
                     "{} / {} ({}%)",
-                    app.scan.replay_gain_manager.processed, app.scan.replay_gain_manager.total, progress_pct
+                    app.scan.replay_gain_manager.processed,
+                    app.scan.replay_gain_manager.total,
+                    progress_pct
                 ),
                 Style::default()
                     .fg(app.theme.accent_primary)

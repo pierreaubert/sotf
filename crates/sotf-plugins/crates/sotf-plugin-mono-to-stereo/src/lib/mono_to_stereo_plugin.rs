@@ -11,7 +11,9 @@ use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::ParameterId;
 use sotf_host::parameters::{Parameter, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::smoothing::Smoother;
 use std::sync::Arc;
 
@@ -333,6 +335,19 @@ impl Plugin for MonoToStereoPlugin {
     }
     fn output_channels(&self) -> usize {
         2
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let mut metadata = PluginCompileMetadata::linear_transform(
+            PluginCostClass::Fft,
+            None,
+            self.latency_samples(),
+            true,
+            true,
+            false,
+        );
+        metadata.boundary = true;
+        metadata
     }
 
     fn parameters(&self) -> Vec<Parameter> {

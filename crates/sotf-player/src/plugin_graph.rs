@@ -1055,7 +1055,10 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output: UpmixerOutputSettings { binaural_preview, .. },
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
                     ..
                 } => {
                     current_channels =
@@ -1171,7 +1174,10 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output: UpmixerOutputSettings { binaural_preview, .. },
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
                     ..
                 } => {
                     return upmixer_settings_output_channels(speaker_config, *binaural_preview);
@@ -1204,7 +1210,10 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output: UpmixerOutputSettings { binaural_preview, .. },
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
                     ..
                 } => {
                     return Some(if *binaural_preview {
@@ -1237,7 +1246,10 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output: UpmixerOutputSettings { binaural_preview, .. },
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
                     ..
                 } => {
                     config = Some(if *binaural_preview {
@@ -1382,7 +1394,10 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output: UpmixerOutputSettings { binaural_preview, .. },
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
                     ..
                 } => {
                     running_channels =
@@ -1603,7 +1618,10 @@ impl PluginGraph {
                 match &node.plugin.settings {
                     PluginSettings::Upmixer {
                         speaker_config,
-                        output: UpmixerOutputSettings { binaural_preview, .. },
+                        output:
+                            UpmixerOutputSettings {
+                                binaural_preview, ..
+                            },
                         ..
                     } => {
                         current_channels =

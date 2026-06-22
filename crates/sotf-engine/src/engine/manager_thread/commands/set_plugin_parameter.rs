@@ -17,11 +17,14 @@ impl ManagerCommandHandler for SetPluginParameterCommand {
             self.value
         );
 
-        if let Err(e) = ctx.processing.send_command(ProcessingCommand::SetParameter {
-            plugin_index: self.plugin_index,
-            param_id: self.param_id.clone(),
-            value: self.value.clone(),
-        }) {
+        if let Err(e) = ctx
+            .processing
+            .send_command(ProcessingCommand::SetParameter {
+                plugin_index: self.plugin_index,
+                param_id: self.param_id.clone(),
+                value: self.value.clone(),
+            })
+        {
             return ManagerResponse::Error(e);
         }
 

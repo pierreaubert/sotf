@@ -1,7 +1,10 @@
 use super::channel_correlation_monitor::ChannelCorrelationMonitor;
 use crate::analyzer::{CorrelationData, RealTimeCache};
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
-use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use crate::plugin::{
+    Plugin, PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
+    ProcessContext,
+};
 use rtrb::{Consumer, RingBuffer};
 use std::any::Any;
 use std::sync::Arc;
@@ -64,6 +67,15 @@ impl Plugin for ChannelCorrelationPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Channel Correlation", "1.0.0", "Sotf")
     }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Analyzer
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::analyzer(Some(PluginCompiledOp::AnalyzerTap))
+    }
+
     fn input_channels(&self) -> usize {
         self.num_channels
     }
@@ -136,6 +148,18 @@ impl Plugin for ChannelCorrelationPlugin {
             });
         }
         Ok(context.num_frames)
+    }
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        if op != PluginCompiledOp::AnalyzerTap {
+            return None;
+        }
+        Some(self.process(input, output, context))
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         Some(self.cache.load() as Arc<dyn Any + Send + Sync>)

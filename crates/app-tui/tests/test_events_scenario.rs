@@ -174,7 +174,10 @@ mod tests {
                         app.spinorama_eq.model.optimizer_config.loss_function, "flat",
                         "loss_function should have changed from default"
                     );
-                    assert_eq!(app.spinorama_eq.model.optimizer_config.loss_function, "flat-asymmetric",);
+                    assert_eq!(
+                        app.spinorama_eq.model.optimizer_config.loss_function,
+                        "flat-asymmetric",
+                    );
                 },
             ),
             // 7. Esc → step tab bar, Right x3 → UpdatePlugin, Down → enter content

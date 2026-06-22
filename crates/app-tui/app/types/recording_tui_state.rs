@@ -95,8 +95,7 @@ impl Default for RecordingTuiState {
 impl RecordingTuiState {
     /// Currently-active mic-calibration path string (read-only).
     pub fn active_mic_cal_path(&self) -> &str {
-        self.model
-            .active_mic_cal_path(self.editing_mic_cal_channel)
+        self.model.active_mic_cal_path(self.editing_mic_cal_channel)
     }
 
     /// Mutable reference to the currently-active mic-calibration string.

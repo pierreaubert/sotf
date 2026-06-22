@@ -477,7 +477,6 @@ pub struct UpmixerOutputSettings {
     pub auto_gain_smoothing_ms: f64,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginSettings {
     EQ {
@@ -1497,8 +1496,9 @@ impl PluginSettings {
 
     pub fn to_plugin_config(&self, sample_rate: f64) -> PluginConfig {
         let wire_type = self.plugin_type().wire_name();
-        if let Some(config) = super::plugin_config_converter::PluginConfigConverterRegistry::global()
-            .convert(wire_type, self, sample_rate)
+        if let Some(config) = super::plugin_config_converter::PluginConfigConverterRegistry::global(
+        )
+        .convert(wire_type, self, sample_rate)
         {
             return config;
         }
@@ -1576,7 +1576,8 @@ impl PluginSettings {
                         enable_hr_direct: p(u, "enable_hr_direct").default_bool(),
                         hr_sharpen: p(u, "hr_sharpen").default_f64(),
                         height_hf_cap_hz: p(u, "height_hf_cap_hz").default_f64(),
-                        height_transient_reduction: p(u, "height_transient_reduction").default_f64(),
+                        height_transient_reduction: p(u, "height_transient_reduction")
+                            .default_f64(),
                         height_direct_leak: p(u, "height_direct_leak").default_f64(),
                     },
                     ambient_analysis: UpmixerAmbientAnalysisSettings {
@@ -2339,7 +2340,9 @@ mod tests {
 
         let json = serde_json::to_value(&settings).expect("serialize");
         // PluginSettings is an externally tagged enum, so the variant is the outer key.
-        let inner = json.get("Upmixer").expect("externally tagged variant object");
+        let inner = json
+            .get("Upmixer")
+            .expect("externally tagged variant object");
         // Flattened sub-structs must produce keys inside the variant object, not nested objects.
         assert!(inner.get("speaker_config").is_some());
         assert!(inner.get("gain_front_direct").is_some());
@@ -2350,7 +2353,10 @@ mod tests {
         match roundtripped {
             PluginSettings::Upmixer {
                 speaker_config,
-                output: UpmixerOutputSettings { binaural_preview, .. },
+                output:
+                    UpmixerOutputSettings {
+                        binaural_preview, ..
+                    },
                 ..
             } => {
                 assert_eq!(speaker_config, "7.1.4");

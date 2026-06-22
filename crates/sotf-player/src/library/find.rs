@@ -156,7 +156,11 @@ pub fn find_and_generate_album_thumbnail(album: &mut Album) {
         return;
     }
 
-    let track_dirs: Vec<&Path> = album.tracks.iter().filter_map(|t| t.path.parent()).collect();
+    let track_dirs: Vec<&Path> = album
+        .tracks
+        .iter()
+        .filter_map(|t| t.path.parent())
+        .collect();
     if track_dirs.is_empty() {
         return;
     }

@@ -4,7 +4,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 pub(super) fn handle_metadata_editor_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     if app
-        .modal.metadata_editor
+        .modal
+        .metadata_editor
         .as_ref()
         .is_some_and(|editor| editor.editing)
     {

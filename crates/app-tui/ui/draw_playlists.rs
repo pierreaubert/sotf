@@ -38,13 +38,16 @@ pub(crate) fn draw_playlists_screen(f: &mut Frame, area: Rect, app: &App) {
 
     // Overlay for text input modes
     match app.playlists.mode {
-        PlaylistMode::Create => draw_input_popup(f, area, "New Playlist", &app.playlists.name_input),
+        PlaylistMode::Create => {
+            draw_input_popup(f, area, "New Playlist", &app.playlists.name_input)
+        }
         PlaylistMode::Rename => {
             draw_input_popup(f, area, "Rename Playlist", &app.playlists.name_input)
         }
         PlaylistMode::ConfirmDelete => {
             let name = app
-                .playlists.controller
+                .playlists
+                .controller
                 .playlists()
                 .get(app.playlists.controller.selected_playlist_index)
                 .map(|p| p.name.as_str())

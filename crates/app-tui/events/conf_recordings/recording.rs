@@ -38,7 +38,12 @@ pub(crate) fn recording_field_value_string_kind(app: &App, field: &RecordingFiel
         Level => format!("{:.1}", app.recording.model.signal_level_db),
         SweepStart => format!("{:.0}", app.recording.model.sweep_start_freq),
         SweepEnd => format!("{:.0}", app.recording.model.sweep_end_freq),
-        NumRecordingChannels => app.recording.model.recording_config.num_channels.to_string(),
+        NumRecordingChannels => app
+            .recording
+            .model
+            .recording_config
+            .num_channels
+            .to_string(),
         CtcLoopbackInput => app
             .recording
             .model

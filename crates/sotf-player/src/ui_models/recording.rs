@@ -11,8 +11,8 @@ use crate::recording_types::{
     TransferMatrixLoopbackRecording,
 };
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// Default signal level (dBFS) used as the SPL-calibrated reference for
 /// capture, delay probe, and bass anchor.

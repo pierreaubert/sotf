@@ -121,7 +121,11 @@ fn process_plugin(plugin: &mut Box<dyn Plugin>, channels: usize, plugin_type: &s
     let output_channels = plugin.output_channels();
     let mut output = vec![0.0f32; output_channels * FRAMES];
     plugin
-        .process(&input, &mut output, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(SAMPLE_RATE, FRAMES),
+        )
         .expect("process failed");
 
     if KNOWN_NON_FINITE_WITH_DEFAULTS.contains(&plugin_type) {
@@ -188,13 +192,21 @@ const KNOWN_ROUNDTRIP_FAILURES: &[(&str, &str, &str)] = &[
         "auto_gain_smoothing_ms",
         "default 0 is below parameter minimum 1",
     ),
-    ("fletcher_munson", "low_freq", "default 0 is below minimum 20"),
+    (
+        "fletcher_munson",
+        "low_freq",
+        "default 0 is below minimum 20",
+    ),
     (
         "fletcher_munson",
         "high_freq",
         "default 0 is below minimum 2000",
     ),
-    ("fletcher_munson", "mid_freq", "default 0 is below minimum 500"),
+    (
+        "fletcher_munson",
+        "mid_freq",
+        "default 0 is below minimum 500",
+    ),
     ("fletcher_munson", "mid_q", "default 0 is below minimum 0.1"),
     (
         "fletcher_munson",
@@ -243,9 +255,7 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
         let mut plugin = match create_plugin(plugin_type, &params, channels, SAMPLE_RATE) {
             Ok(p) => p,
             Err(err) => {
-                unexpected_failures.push(format!(
-                    "{plugin_type}: instantiate failed: {err}"
-                ));
+                unexpected_failures.push(format!("{plugin_type}: instantiate failed: {err}"));
                 continue;
             }
         };
@@ -293,10 +303,7 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
 /// New plugin types should reject unknown parameters; this list only documents
 /// existing behavior so the cross-cutting test stays green while fixes are
 /// planned per-plugin.
-const KNOWN_TO_ACCEPT_UNKNOWN_PARAMS: &[&str] = &[
-    "matrix",
-    "ambisonics_decoder",
-];
+const KNOWN_TO_ACCEPT_UNKNOWN_PARAMS: &[&str] = &["matrix", "ambisonics_decoder"];
 
 /// Plugins that produce non-finite output when driven with the default test
 /// signal. These still participate in instantiation and parameter round-trip

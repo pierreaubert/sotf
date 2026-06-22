@@ -5,7 +5,9 @@ use super::types::BandSplitPluginParams;
 use crate::params::{CROSSOVER_TYPES, PARAMS as BS};
 use sotf_host::param_bridge;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::{LinearSmoother, LogSmoother};
 
@@ -224,6 +226,18 @@ impl Plugin for BandSplitPlugin {
     }
     fn output_channels(&self) -> usize {
         self.input_channels * self.num_bands
+    }
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let mut metadata = PluginCompileMetadata::linear_transform(
+            PluginCostClass::Iir,
+            None,
+            0,
+            false,
+            true,
+            false,
+        );
+        metadata.boundary = true;
+        metadata
     }
     fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
         self.cached_parameters.clone()

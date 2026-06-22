@@ -8,7 +8,9 @@ use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeclickPluginParams {
@@ -80,6 +82,14 @@ impl ParametricInPlacePlugin for DeclickPlugin {
             .with_description("Time-domain click and transient repair")
     }
 
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Fft
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Fft, None, self.latency_samples(), false)
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -90,7 +100,10 @@ impl ParametricInPlacePlugin for DeclickPlugin {
 
     fn current_values(&self) -> ParameterSet {
         let mut values = ParameterSet::new();
-        values.insert(ParameterId::from("enabled"), ParameterValue::Bool(self.enabled));
+        values.insert(
+            ParameterId::from("enabled"),
+            ParameterValue::Bool(self.enabled),
+        );
         values.insert(
             ParameterId::from("sensitivity"),
             ParameterValue::Float(self.sensitivity),

@@ -120,8 +120,12 @@ fn parameter_roundtrip() {
     ];
 
     for (id, value) in cases {
-        plugin.parametric_set_parameter(id.clone(), value.clone()).unwrap();
-        let read = plugin.parametric_get_parameter(&id).expect("parameter should exist");
+        plugin
+            .parametric_set_parameter(id.clone(), value.clone())
+            .unwrap();
+        let read = plugin
+            .parametric_get_parameter(&id)
+            .expect("parameter should exist");
         assert_eq!(read, value, "round-trip failed for {}", id);
     }
 

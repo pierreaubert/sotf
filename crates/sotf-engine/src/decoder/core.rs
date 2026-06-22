@@ -489,15 +489,16 @@ mod tests {
         let (temp, _mono) = sotf_testkit::audio::temp_sine_wav(0.1, 48_000, 2, 440.0).unwrap();
         let source = AudioSource::File(temp.path().to_path_buf());
 
-        let result = create_decoder_from_source_with_dsd_mode_and_metadata(
-            &source,
-            DsdOutputMode::Disabled,
-        );
+        let result =
+            create_decoder_from_source_with_dsd_mode_and_metadata(&source, DsdOutputMode::Disabled);
 
         let (decoder, metadata_rx) = result.expect("WAV file source should decode");
         assert_eq!(decoder.spec().sample_rate, 48_000);
         assert_eq!(decoder.spec().channels, 2);
-        assert!(metadata_rx.is_none(), "local files have no live metadata receiver");
+        assert!(
+            metadata_rx.is_none(),
+            "local files have no live metadata receiver"
+        );
     }
 
     #[test]

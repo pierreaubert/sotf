@@ -11,7 +11,10 @@ impl ManagerCommandHandler for PlayCommand {
         let source = &self.0;
         log::debug!("[Manager Thread] Play: {}", source.display_name());
 
-        if let Err(e) = ctx.decoder.send_command(DecoderCommand::Play(source.clone())) {
+        if let Err(e) = ctx
+            .decoder
+            .send_command(DecoderCommand::Play(source.clone()))
+        {
             return ManagerResponse::Error(e);
         }
 

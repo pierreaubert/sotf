@@ -159,7 +159,9 @@ fn main() {
                     std::process::exit(1);
                 }
             } else {
-                log::info!("Status command not yet implemented (requires running manager instance)");
+                log::info!(
+                    "Status command not yet implemented (requires running manager instance)"
+                );
             }
         }
         Commands::Library { db, action } => {

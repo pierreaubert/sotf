@@ -11,8 +11,8 @@ use sotf_audio_player_tui::app::{
     App, ConfigureSubScreen, FederationMode, HeadphoneEqStep, InputMode, QueueEntry, QueueItem,
     Screen, ServerSection, SpinoramaStep,
 };
-use sotf_audio_player_tui::theme::Theme;
 use sotf_audio_player_tui::events::handle_key_event;
+use sotf_audio_player_tui::theme::Theme;
 use std::sync::{Mutex, Once};
 
 // ── Test harness helpers ───────────────────────────────────────────────────
@@ -144,7 +144,8 @@ fn esc_chain_returns_from_configure_to_library() {
 #[test]
 fn spinorama_full_wizard_workflow() {
     let mut app = app_on_library();
-    app.spinorama_eq.model.available_speakers = vec!["Adam A7V".to_string(), "Genelec 8030C".to_string()];
+    app.spinorama_eq.model.available_speakers =
+        vec!["Adam A7V".to_string(), "Genelec 8030C".to_string()];
     app.spinorama_eq.update_filter();
 
     // Library -> Configure -> SpinoramaEq
@@ -243,7 +244,10 @@ fn headphone_eq_full_wizard_navigation() {
     app.headphone_eq.config_selected_field = 0; // num_filters
     let before = app.headphone_eq.model.optimizer_config.num_filters;
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.headphone_eq.model.optimizer_config.num_filters, before + 1);
+    assert_eq!(
+        app.headphone_eq.model.optimizer_config.num_filters,
+        before + 1
+    );
 
     // Enter direct-edit mode and commit a new value
     send_keys(&mut app, &[KeyCode::Enter]);
@@ -324,7 +328,10 @@ fn recording_capture_requires_output_directory() {
     // Should be blocked at SplCalibration because output dir is empty
     assert_eq!(app.recording.model.step, RecordingStep::SplCalibration);
     assert!(
-        app.recording.model.status_message.contains("output directory"),
+        app.recording
+            .model
+            .status_message
+            .contains("output directory"),
         "expected warning about output directory, got: {}",
         app.recording.model.status_message
     );
@@ -455,7 +462,12 @@ fn federation_add_source_workflow() {
     }
     send_keys(&mut app, &[KeyCode::Enter]);
     assert!(app.federation_state.edit.as_ref().unwrap().editing_value);
-    app.federation_state.edit.as_mut().unwrap().edit_buffer.clear();
+    app.federation_state
+        .edit
+        .as_mut()
+        .unwrap()
+        .edit_buffer
+        .clear();
     type_text(&mut app, "My Source");
     send_keys(&mut app, &[KeyCode::Enter]);
     assert!(!app.federation_state.edit.as_ref().unwrap().editing_value);
@@ -479,7 +491,8 @@ fn plugin_chain_save_load_roundtrip() {
     let eq_idx = (0..app.plugin_rack.graph.len())
         .rev()
         .find(|&i| {
-            app.plugin_rack.graph
+            app.plugin_rack
+                .graph
                 .get_plugin(i)
                 .map(|p| matches!(p.settings, PluginSettings::EQ { .. }))
                 .unwrap_or(false)
@@ -505,7 +518,8 @@ fn plugin_chain_save_load_roundtrip() {
 
     let saved_len = app.plugin_rack.graph.len();
     let preset_name = "integration_test_eq";
-    app.plugin_rack.graph
+    app.plugin_rack
+        .graph
         .save_to_file(temp_dir.path(), preset_name)
         .expect("save plugin chain");
 
@@ -513,13 +527,15 @@ fn plugin_chain_save_load_roundtrip() {
     app.plugin_rack.graph = sotf_audio_player::PluginGraph::with_default_rack();
     assert!(app.plugin_rack.graph.len() < saved_len);
 
-    app.plugin_rack.graph
+    app.plugin_rack
+        .graph
         .load_from_file(temp_dir.path(), preset_name)
         .expect("load plugin chain");
     assert_eq!(app.plugin_rack.graph.len(), saved_len);
 
     let reloaded_eq = app
-        .plugin_rack.graph
+        .plugin_rack
+        .graph
         .get_plugin(eq_idx)
         .expect("reloaded EQ plugin index");
     if let PluginSettings::EQ { filters, .. } = &reloaded_eq.settings {
@@ -549,13 +565,15 @@ fn app_config_save_load_roundtrip() {
         ..Default::default()
     };
     app.library.albums.push(album.clone());
-    app.queue.push(QueueEntry::new(QueueItem::new(album.clone())));
+    app.queue
+        .push(QueueEntry::new(QueueItem::new(album.clone())));
     app.playback.current_queue_index = Some(0);
 
     // Save a real plugin preset so load_config can restore it.
-    let presets_dir = sotf_audio_player::config::get_plugin_presets_dir()
-        .expect("plugin presets dir");
-    app.plugin_rack.graph
+    let presets_dir =
+        sotf_audio_player::config::get_plugin_presets_dir().expect("plugin presets dir");
+    app.plugin_rack
+        .graph
         .save_to_file(&presets_dir, "my-preset")
         .expect("save plugin preset");
     app.plugin_rack.last_loaded_preset = Some("my-preset.json".to_string());
@@ -567,7 +585,10 @@ fn app_config_save_load_roundtrip() {
     app2.library.albums.push(album);
     app2.load_config().expect("load app config");
 
-    assert_eq!(app2.plugin_rack.last_loaded_preset, Some("my-preset.json".to_string()));
+    assert_eq!(
+        app2.plugin_rack.last_loaded_preset,
+        Some("my-preset.json".to_string())
+    );
     assert_eq!(app2.playback.current_queue_index, Some(0));
     assert_eq!(app2.queue.len(), 1);
     assert_eq!(

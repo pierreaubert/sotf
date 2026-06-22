@@ -1,13 +1,27 @@
 use super::buffer_guard::BufferGuard;
 use super::compensation_delays::CompensationDelays;
+use super::compiled_plan::{
+    CompiledBarrierKind, CompiledOpKind, CompiledRegionKind, CompiledRenderPlan,
+};
 use super::daw_host::DawHost;
 use super::delay_buffer::DelayBuffer;
 use super::graph_edge::GraphEdge;
+use super::graph_node::GraphNode;
+use super::misc::DEFAULT_PARALLEL_NODE_COST;
+use super::misc::HEAVY_PARALLEL_NODE_COST;
+use super::misc::MODERATE_PARALLEL_NODE_COST;
 use super::misc::PARAMETER_EVENT_QUEUE_CAPACITY;
 use super::node_buffer::NodeBuffer;
+use super::processing_stage::ProcessingStage;
 use super::types::ProcessBuffers;
 
-use crate::plugin::InPlacePluginAdapter;
+use crate::plugin::{
+    InPlacePluginAdapter, Plugin, PluginCompileMetadata, PluginCompiledOp, PluginCostClass,
+    PluginInfo, ProcessContext,
+};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 mod channel_changing_plugin;
 mod f64_scale_plugin;
@@ -52,6 +66,648 @@ fn test_parameter_event_scratch_is_preallocated_to_queue_capacity() {
         g.queues.parameter_event_scratch.capacity() >= PARAMETER_EVENT_QUEUE_CAPACITY,
         "parameter event scratch should not allocate while draining a full ring"
     );
+}
+
+#[test]
+fn test_parallel_node_cost_classifies_variable_frame_as_heavy() {
+    let mut g = DawHost::new(2, 48000);
+    let node = g
+        .add_node("variable".into(), Box::new(VariableFramePlugin::new(2, 64)))
+        .unwrap();
+    g.build().unwrap();
+
+    assert_eq!(g.cached_parallel_node_costs[node], HEAVY_PARALLEL_NODE_COST);
+}
+
+#[test]
+fn test_parallel_node_cost_uses_plugin_cost_class() {
+    assert_eq!(
+        DawHost::estimate_parallel_node_cost(
+            &CostClassPlugin::new("IIR", PluginCostClass::Iir),
+            0,
+            "unremarkable"
+        ),
+        MODERATE_PARALLEL_NODE_COST
+    );
+    assert_eq!(
+        DawHost::estimate_parallel_node_cost(
+            &CostClassPlugin::new("FFT", PluginCostClass::Fft),
+            0,
+            "unremarkable"
+        ),
+        HEAVY_PARALLEL_NODE_COST
+    );
+    assert_eq!(
+        DawHost::estimate_parallel_node_cost(
+            &CostClassPlugin::new("Analyzer", PluginCostClass::Analyzer),
+            0,
+            "spectral analyzer"
+        ),
+        DEFAULT_PARALLEL_NODE_COST
+    );
+}
+
+#[test]
+fn test_compiled_plan_empty_graph_is_passthrough() {
+    let mut g = DawHost::new(2, 48000);
+    g.build().unwrap();
+
+    assert!(matches!(
+        g.compiled_plan,
+        CompiledRenderPlan::EmptyPassthrough
+    ));
+}
+
+#[test]
+fn test_compiled_plan_linear_f32_tags_specialized_gain_op() {
+    let mut g = DawHost::new(2, 48000);
+    g.add_plugin(Box::new(CostClassPlugin::new(
+        "Gain",
+        PluginCostClass::Scalar,
+    )))
+    .unwrap();
+    g.build().unwrap();
+
+    let CompiledRenderPlan::LinearF32(plan) = &g.compiled_plan else {
+        panic!("expected linear f32 compiled plan");
+    };
+    assert_eq!(plan.input_channels, 2);
+    assert_eq!(plan.output_channels, 2);
+    assert_eq!(plan.ops.len(), 1);
+    assert_eq!(plan.ops[0].kind, CompiledOpKind::ApplyGain);
+    assert_eq!(plan.segments.len(), 1);
+    assert_eq!(plan.segments[0].barrier_after, None);
+    assert_eq!(plan.segments[0].region_kind, CompiledRegionKind::Scalar);
+}
+
+#[test]
+fn test_compiled_plan_linear_f32_tags_channel_mute_solo_op() {
+    let mut g = DawHost::new(2, 48000);
+    g.add_plugin(Box::new(CostClassPlugin::new(
+        "Channel Mute Solo",
+        PluginCostClass::Scalar,
+    )))
+    .unwrap();
+    g.build().unwrap();
+
+    let CompiledRenderPlan::LinearF32(plan) = &g.compiled_plan else {
+        panic!("expected linear f32 compiled plan");
+    };
+    assert_eq!(plan.ops.len(), 1);
+    assert_eq!(plan.ops[0].kind, CompiledOpKind::ChannelMuteSolo);
+}
+
+#[test]
+fn test_compiled_linear_f32_uses_specialized_eq_hook() {
+    let mut g = DawHost::new(2, 48000);
+    g.add_plugin(Box::new(SpecializedEqHookPlugin)).unwrap();
+    g.build().unwrap();
+
+    let input = vec![0.25_f32, -0.5, 0.75, -1.0];
+    let mut output = vec![0.0_f32; input.len()];
+    let frames = g.process(&input, &mut output).unwrap();
+
+    assert_eq!(frames, 2);
+    assert_eq!(output, vec![0.5, -1.0, 1.5, -2.0]);
+}
+
+#[test]
+fn test_compiled_linear_f32_uses_other_specialized_hooks() {
+    let cases = [
+        (
+            "Gain",
+            PluginCostClass::Scalar,
+            PluginCompiledOp::ApplyGain,
+            3.0_f32,
+        ),
+        (
+            "Channel Mute Solo",
+            PluginCostClass::Scalar,
+            PluginCompiledOp::ChannelMuteSolo,
+            4.0_f32,
+        ),
+        (
+            "Spectrum Analyzer",
+            PluginCostClass::Analyzer,
+            PluginCompiledOp::AnalyzerTap,
+            5.0_f32,
+        ),
+        (
+            "Limiter",
+            PluginCostClass::Dynamics,
+            PluginCompiledOp::Limiter,
+            6.0_f32,
+        ),
+        (
+            "Multiband Compressor",
+            PluginCostClass::Dynamics,
+            PluginCompiledOp::MultibandCompressor,
+            7.0_f32,
+        ),
+    ];
+
+    for (name, class, op, scale) in cases {
+        let mut g = DawHost::new(2, 48000);
+        g.add_plugin(Box::new(SpecializedCompiledHookPlugin {
+            name,
+            class,
+            op,
+            scale,
+        }))
+        .unwrap();
+        g.build().unwrap();
+
+        let input = vec![0.25_f32, -0.5, 0.75, -1.0];
+        let mut output = vec![0.0_f32; input.len()];
+        let frames = g.process(&input, &mut output).unwrap();
+
+        assert_eq!(frames, 2, "{name}");
+        assert_eq!(
+            output,
+            input
+                .iter()
+                .map(|sample| sample * scale)
+                .collect::<Vec<_>>(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn test_compiled_linear_f32_fuses_static_gain_run() {
+    let process_calls = Arc::new(AtomicUsize::new(0));
+    let mut g = DawHost::new(2, 48000);
+    g.add_plugin(Box::new(StaticGainFusionPlugin {
+        gain: 2.0,
+        process_calls: Arc::clone(&process_calls),
+    }))
+    .unwrap();
+    g.add_plugin(Box::new(StaticGainFusionPlugin {
+        gain: 3.0,
+        process_calls: Arc::clone(&process_calls),
+    }))
+    .unwrap();
+    g.build().unwrap();
+
+    let input = vec![0.25_f32, -0.5, 0.75, -1.0];
+    let mut output = vec![0.0_f32; input.len()];
+    let frames = g.process(&input, &mut output).unwrap();
+
+    assert_eq!(frames, 2);
+    assert_eq!(output, vec![1.5, -3.0, 4.5, -6.0]);
+    assert_eq!(
+        process_calls.load(Ordering::Relaxed),
+        0,
+        "fused static gain run should bypass regular plugin process calls"
+    );
+}
+
+#[test]
+fn test_compiled_linear_f32_folds_static_gain_across_linear_region() {
+    let process_calls = Arc::new(AtomicUsize::new(0));
+    let mut g = DawHost::new(2, 48000);
+    g.add_plugin(Box::new(StaticGainFusionPlugin {
+        gain: 2.0,
+        process_calls: Arc::clone(&process_calls),
+    }))
+    .unwrap();
+    g.add_plugin(Box::new(SpecializedEqHookPlugin)).unwrap();
+    g.add_plugin(Box::new(StaticGainFusionPlugin {
+        gain: 3.0,
+        process_calls: Arc::clone(&process_calls),
+    }))
+    .unwrap();
+    g.build().unwrap();
+
+    let input = vec![0.25_f32, -0.5, 0.75, -1.0];
+    let mut output = vec![0.0_f32; input.len()];
+    let frames = g.process(&input, &mut output).unwrap();
+
+    assert_eq!(frames, 2);
+    assert_eq!(output, vec![3.0, -6.0, 9.0, -12.0]);
+    assert_eq!(
+        process_calls.load(Ordering::Relaxed),
+        0,
+        "static gain plugins should be folded across the linear EQ region"
+    );
+}
+
+#[test]
+fn test_compiled_plan_segments_fft_barrier_in_linear_chain() {
+    let mut g = DawHost::new(2, 48000);
+    g.add_plugin(Box::new(CostClassPlugin::new(
+        "Gain",
+        PluginCostClass::Scalar,
+    )))
+    .unwrap();
+    g.add_plugin(Box::new(CostClassPlugin::new(
+        "Spectral",
+        PluginCostClass::Fft,
+    )))
+    .unwrap();
+    g.add_plugin(Box::new(CostClassPlugin::new(
+        "Gain",
+        PluginCostClass::Scalar,
+    )))
+    .unwrap();
+    g.build().unwrap();
+
+    let CompiledRenderPlan::LinearF32(plan) = &g.compiled_plan else {
+        panic!("expected linear f32 compiled plan");
+    };
+    assert_eq!(plan.ops.len(), 3);
+    assert_eq!(plan.segments.len(), 2);
+    assert_eq!(
+        plan.segments[0].barrier_after,
+        Some(CompiledBarrierKind::Fft)
+    );
+    assert_eq!(plan.segments[0].region_kind, CompiledRegionKind::Stft);
+    assert_eq!(plan.segments[1].barrier_after, None);
+}
+
+#[test]
+fn test_compiled_plan_graph_fallback_for_dag() {
+    let mut g = DawHost::new(2, 48000);
+    let a = g
+        .add_node(
+            "a".into(),
+            Box::new(CostClassPlugin::new("Gain", PluginCostClass::Scalar)),
+        )
+        .unwrap();
+    let b = g
+        .add_node(
+            "b".into(),
+            Box::new(CostClassPlugin::new("Gain", PluginCostClass::Scalar)),
+        )
+        .unwrap();
+    let c = g
+        .add_node(
+            "c".into(),
+            Box::new(CostClassPlugin::new("Gain", PluginCostClass::Scalar)),
+        )
+        .unwrap();
+    g.add_edge(GraphEdge::new(a, b)).unwrap();
+    g.add_edge(GraphEdge::new(a, c)).unwrap();
+    g.build().unwrap();
+
+    let CompiledRenderPlan::Graph(plan) = &g.compiled_plan else {
+        panic!("expected graph compiled plan");
+    };
+    assert!(!plan.segments.is_empty());
+}
+
+struct CostClassPlugin {
+    name: &'static str,
+    class: PluginCostClass,
+}
+
+impl CostClassPlugin {
+    fn new(name: &'static str, class: PluginCostClass) -> Self {
+        Self { name, class }
+    }
+}
+
+impl Plugin for CostClassPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new(self.name, "0.1", "test")
+    }
+
+    fn input_channels(&self) -> usize {
+        2
+    }
+
+    fn output_channels(&self) -> usize {
+        2
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        self.class
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let compiled_op = match (self.name, self.class) {
+            ("Gain", PluginCostClass::Scalar) => Some(PluginCompiledOp::ApplyGain),
+            ("Channel Mute Solo", PluginCostClass::Scalar) => {
+                Some(PluginCompiledOp::ChannelMuteSolo)
+            }
+            _ => None,
+        };
+        match self.class {
+            PluginCostClass::Scalar | PluginCostClass::Iir => {
+                PluginCompileMetadata::linear_transform(
+                    self.class,
+                    compiled_op,
+                    0,
+                    false,
+                    false,
+                    self.class == PluginCostClass::Iir,
+                )
+            }
+            PluginCostClass::Analyzer => PluginCompileMetadata::analyzer(compiled_op),
+            PluginCostClass::Dynamics => {
+                PluginCompileMetadata::nonlinear(self.class, compiled_op, 0, false)
+            }
+            PluginCostClass::Fft | PluginCostClass::Convolution | PluginCostClass::External => {
+                PluginCompileMetadata::boundary(self.class, 0)
+            }
+        }
+    }
+
+    fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+        vec![]
+    }
+
+    fn set_parameter(
+        &mut self,
+        _: crate::parameters::ParameterId,
+        _: crate::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        Err("none".into())
+    }
+
+    fn get_parameter(
+        &self,
+        _: &crate::parameters::ParameterId,
+    ) -> Option<crate::parameters::ParameterValue> {
+        None
+    }
+
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        ctx: &ProcessContext,
+    ) -> Result<usize, String> {
+        output.copy_from_slice(input);
+        Ok(ctx.num_frames)
+    }
+}
+
+struct SpecializedEqHookPlugin;
+
+impl Plugin for SpecializedEqHookPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("EQ", "0.1", "test")
+    }
+
+    fn input_channels(&self) -> usize {
+        2
+    }
+
+    fn output_channels(&self) -> usize {
+        2
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Iir
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::linear_transform(
+            PluginCostClass::Iir,
+            Some(PluginCompiledOp::EqBiquadBank),
+            0,
+            false,
+            true,
+            true,
+        )
+    }
+
+    fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+        vec![]
+    }
+
+    fn set_parameter(
+        &mut self,
+        _: crate::parameters::ParameterId,
+        _: crate::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        Err("none".into())
+    }
+
+    fn get_parameter(
+        &self,
+        _: &crate::parameters::ParameterId,
+    ) -> Option<crate::parameters::ParameterValue> {
+        None
+    }
+
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        ctx: &ProcessContext,
+    ) -> Result<usize, String> {
+        output.copy_from_slice(input);
+        Ok(ctx.num_frames)
+    }
+
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        ctx: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        if op != PluginCompiledOp::EqBiquadBank {
+            return None;
+        }
+        for (dst, src) in output.iter_mut().zip(input.iter()) {
+            *dst = *src * 2.0;
+        }
+        Some(Ok(ctx.num_frames))
+    }
+}
+
+struct SpecializedCompiledHookPlugin {
+    name: &'static str,
+    class: PluginCostClass,
+    op: PluginCompiledOp,
+    scale: f32,
+}
+
+impl Plugin for SpecializedCompiledHookPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new(self.name, "0.1", "test")
+    }
+
+    fn input_channels(&self) -> usize {
+        2
+    }
+
+    fn output_channels(&self) -> usize {
+        2
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        self.class
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        match self.class {
+            PluginCostClass::Scalar | PluginCostClass::Iir => {
+                PluginCompileMetadata::linear_transform(
+                    self.class,
+                    Some(self.op),
+                    0,
+                    false,
+                    true,
+                    self.class == PluginCostClass::Iir,
+                )
+            }
+            PluginCostClass::Analyzer => PluginCompileMetadata::analyzer(Some(self.op)),
+            PluginCostClass::Dynamics => {
+                PluginCompileMetadata::nonlinear(self.class, Some(self.op), 0, false)
+            }
+            PluginCostClass::Fft | PluginCostClass::Convolution | PluginCostClass::External => {
+                PluginCompileMetadata::boundary(self.class, 0)
+            }
+        }
+    }
+
+    fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+        vec![]
+    }
+
+    fn set_parameter(
+        &mut self,
+        _: crate::parameters::ParameterId,
+        _: crate::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        Err("none".into())
+    }
+
+    fn get_parameter(
+        &self,
+        _: &crate::parameters::ParameterId,
+    ) -> Option<crate::parameters::ParameterValue> {
+        None
+    }
+
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        ctx: &ProcessContext,
+    ) -> Result<usize, String> {
+        output.copy_from_slice(input);
+        Ok(ctx.num_frames)
+    }
+
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        ctx: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        if op != self.op {
+            return None;
+        }
+        for (dst, src) in output.iter_mut().zip(input.iter()) {
+            *dst = *src * self.scale;
+        }
+        Some(Ok(ctx.num_frames))
+    }
+}
+
+struct StaticGainFusionPlugin {
+    gain: f32,
+    process_calls: Arc<AtomicUsize>,
+}
+
+impl Plugin for StaticGainFusionPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Gain", "0.1", "test")
+    }
+
+    fn input_channels(&self) -> usize {
+        2
+    }
+
+    fn output_channels(&self) -> usize {
+        2
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Scalar
+    }
+
+    fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+        vec![]
+    }
+
+    fn set_parameter(
+        &mut self,
+        _: crate::parameters::ParameterId,
+        _: crate::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        Err("none".into())
+    }
+
+    fn get_parameter(
+        &self,
+        _: &crate::parameters::ParameterId,
+    ) -> Option<crate::parameters::ParameterValue> {
+        None
+    }
+
+    fn compiled_static_gain(&self) -> Option<f32> {
+        Some(self.gain)
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let mut metadata = PluginCompileMetadata::linear_transform(
+            PluginCostClass::Scalar,
+            Some(PluginCompiledOp::ApplyGain),
+            0,
+            false,
+            false,
+            false,
+        );
+        metadata.static_gain = Some(self.gain);
+        metadata
+    }
+
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        ctx: &ProcessContext,
+    ) -> Result<usize, String> {
+        self.process_calls.fetch_add(1, Ordering::Relaxed);
+        for (dst, src) in output.iter_mut().zip(input.iter()) {
+            *dst = *src * self.gain;
+        }
+        Ok(ctx.num_frames)
+    }
+}
+
+#[test]
+fn test_parallel_stage_work_threshold_distinguishes_heavy_nodes() {
+    let mut nodes = HashMap::new();
+    nodes.insert(0, GraphNode::new(0, "a".into(), 2, 2));
+    nodes.insert(1, GraphNode::new(1, "b".into(), 2, 2));
+
+    let mut stage = ProcessingStage::new();
+    stage.add_node(0);
+    stage.add_node(1);
+
+    let cheap_costs = vec![DEFAULT_PARALLEL_NODE_COST; 2];
+    assert!(!DawHost::should_parallelize_stage(
+        &stage,
+        128,
+        &nodes,
+        &cheap_costs
+    ));
+
+    let heavy_costs = vec![HEAVY_PARALLEL_NODE_COST; 2];
+    assert!(DawHost::should_parallelize_stage(
+        &stage,
+        128,
+        &nodes,
+        &heavy_costs
+    ));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 // Integration tests for Gate plugin
 
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, PluginHost};
+use sotf_host::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter, PluginHost};
 use sotf_plugin_gate::{GateData, GatePlugin};
 
 // ---------------------------------------------------------------------------
@@ -30,7 +30,7 @@ use sotf_plugin_gate::{GateData, GatePlugin};
 ///   - gain_B ≈ gain_A.
 #[test]
 fn test_attack_controls_gate_open_speed() {
-        use sotf_host::plugin::ProcessContext;
+    use sotf_host::plugin::ProcessContext;
     let sr = 48000u32;
 
     let silence_frames = (0.3 * sr as f32) as usize; // 300 ms settle
@@ -104,7 +104,7 @@ fn test_attack_controls_gate_open_speed() {
 /// true even when channel 0 has full attenuation.
 #[test]
 fn test_linked_mode_is_open_false_when_gated() {
-        use sotf_host::plugin::ProcessContext;
+    use sotf_host::plugin::ProcessContext;
 
     let sr = 48000u32;
     // Linked stereo gate, threshold -30 dB.  No hold so gate closes cleanly.
@@ -231,7 +231,7 @@ fn test_gate_hysteresis_prevents_chatter() {
     // A signal oscillating between -22dB and -18dB should not cause rapid
     // open/close transitions. With hysteresis, once open (at -18dB > -20dB),
     // the gate stays open until signal drops below -24dB (which -22dB does not).
-        use sotf_host::parameters::{ParameterId, ParameterValue};
+    use sotf_host::parameters::{ParameterId, ParameterValue};
     use sotf_host::plugin::ProcessContext;
     use sotf_plugin_gate::GatePlugin;
 

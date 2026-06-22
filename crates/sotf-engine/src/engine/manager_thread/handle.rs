@@ -12,10 +12,7 @@ use arc_swap::ArcSwap;
 use std::sync::Arc;
 
 /// Handle a thread event by dispatching it through the thread-event visitor.
-pub(super) fn handle_thread_event(
-    event: ThreadEvent,
-    state: &Arc<ArcSwap<AudioEngineState>>,
-) {
+pub(super) fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>>) {
     super::thread_event_visitor::update_state_with_event(event, state);
 }
 
@@ -65,7 +62,9 @@ mod tests {
 
         // PlaybackOutputAccessChanged
         handle_thread_event(
-            ThreadEvent::PlaybackOutputAccessChanged(sotf_types::OutputAccessStatus::ExclusiveActive),
+            ThreadEvent::PlaybackOutputAccessChanged(
+                sotf_types::OutputAccessStatus::ExclusiveActive,
+            ),
             &state,
         );
         assert_eq!(

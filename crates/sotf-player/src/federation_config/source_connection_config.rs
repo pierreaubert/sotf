@@ -420,7 +420,13 @@ mod tests {
 
     fn source_keys() -> Vec<&'static str> {
         vec![
-            "subsonic", "mpd", "dlna", "peer", "tidal", "spotify", "icy_radio",
+            "subsonic",
+            "mpd",
+            "dlna",
+            "peer",
+            "tidal",
+            "spotify",
+            "icy_radio",
         ]
     }
 
@@ -571,7 +577,8 @@ mod tests {
                 let expected = expected_display(&config, i, value);
                 let actual = clone.field_value(i);
                 assert_eq!(
-                    actual, expected,
+                    actual,
+                    expected,
                     "{} field {i} round-trip failed (set {value:?}, expected {expected:?})",
                     config.source_type_key()
                 );
@@ -617,7 +624,12 @@ mod tests {
         for config in all_configs() {
             let json = serde_json::to_string(&config).expect("serialize");
             let decoded: SourceConnectionConfig = serde_json::from_str(&json).expect("deserialize");
-            assert_eq!(decoded, config, "{} JSON round-trip failed", config.source_type_key());
+            assert_eq!(
+                decoded,
+                config,
+                "{} JSON round-trip failed",
+                config.source_type_key()
+            );
         }
     }
 
@@ -708,10 +720,12 @@ mod tests {
 
         fn dlna_config_strategy() -> BoxedStrategy<SourceConnectionConfig> {
             (maybe_empty_token_strategy(), maybe_empty_token_strategy())
-                .prop_map(|(location_url, friendly_name)| SourceConnectionConfig::Dlna {
-                    location_url,
-                    friendly_name,
-                })
+                .prop_map(
+                    |(location_url, friendly_name)| SourceConnectionConfig::Dlna {
+                        location_url,
+                        friendly_name,
+                    },
+                )
                 .boxed()
         }
 
@@ -739,11 +753,13 @@ mod tests {
                 proptest::string::string_regex("[A-Z_]+").unwrap().boxed(),
                 proptest::string::string_regex("[A-Z]{2}").unwrap().boxed(),
             )
-                .prop_map(|(access_token, quality, country_code)| SourceConnectionConfig::Tidal {
-                    access_token,
-                    quality,
-                    country_code,
-                })
+                .prop_map(
+                    |(access_token, quality, country_code)| SourceConnectionConfig::Tidal {
+                        access_token,
+                        quality,
+                        country_code,
+                    },
+                )
                 .boxed()
         }
 
@@ -753,11 +769,13 @@ mod tests {
                 token_strategy(),
                 proptest::string::string_regex("[A-Za-z]+").unwrap().boxed(),
             )
-                .prop_map(|(username, password, quality)| SourceConnectionConfig::Spotify {
-                    username,
-                    password,
-                    quality,
-                })
+                .prop_map(
+                    |(username, password, quality)| SourceConnectionConfig::Spotify {
+                        username,
+                        password,
+                        quality,
+                    },
+                )
                 .boxed()
         }
 

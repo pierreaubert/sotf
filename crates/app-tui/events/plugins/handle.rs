@@ -124,7 +124,8 @@ pub(in super::super) fn handle_edit_plugin_mode(
 ) -> Option<PlayerCommand> {
     // Check if we're editing a Matrix plugin
     let is_matrix = app
-        .plugin_rack.graph
+        .plugin_rack
+        .graph
         .get_plugin(app.plugin_rack.selected_index)
         .is_some_and(|p| matches!(p.settings, PluginSettings::Matrix { .. }));
 
@@ -140,7 +141,10 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Enter | KeyCode::Char('e') => {
             // Open file explorer for FilePath parameters
-            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index)
+            if let Some(plugin) = app
+                .plugin_rack
+                .graph
+                .get_plugin(app.plugin_rack.selected_index)
                 && let Some(spec) = plugin
                     .settings
                     .param_specs()
@@ -200,7 +204,11 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Char('a') => {
             // Load APO file (for EQ plugins)
-            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index) {
+            if let Some(plugin) = app
+                .plugin_rack
+                .graph
+                .get_plugin(app.plugin_rack.selected_index)
+            {
                 if matches!(plugin.settings, PluginSettings::EQ { .. }) {
                     app.input_mode = InputMode::LoadApoFile;
                     app.ui.status_message = Some("Enter path to APO file:".to_string());
@@ -213,7 +221,11 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Char('o') => {
             // Open SOFA file browser (for Binaural Decoder plugins)
-            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index) {
+            if let Some(plugin) = app
+                .plugin_rack
+                .graph
+                .get_plugin(app.plugin_rack.selected_index)
+            {
                 if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
                     app.open_file_explorer(
                         FilePickerOrigin::SofaFile,
@@ -232,7 +244,11 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Char('f') => {
             // Open IR file browser (for Convolution plugins)
-            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index) {
+            if let Some(plugin) = app
+                .plugin_rack
+                .graph
+                .get_plugin(app.plugin_rack.selected_index)
+            {
                 if let PluginSettings::Convolution { ref ir_file, .. } = plugin.settings {
                     let current_path = ir_file.clone();
                     app.open_file_explorer(
@@ -251,7 +267,10 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Char('A') => {
             // Load Path A config from preset file (for A/B Compare plugins)
-            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index)
+            if let Some(plugin) = app
+                .plugin_rack
+                .graph
+                .get_plugin(app.plugin_rack.selected_index)
                 && matches!(plugin.settings, PluginSettings::ABCompare { .. })
             {
                 let start = sotf_audio_player::config::get_plugin_presets_dir()
@@ -268,7 +287,10 @@ pub(in super::super) fn handle_edit_plugin_mode(
         }
         KeyCode::Char('B') => {
             // Load Path B config from preset file (for A/B Compare plugins)
-            if let Some(plugin) = app.plugin_rack.graph.get_plugin(app.plugin_rack.selected_index)
+            if let Some(plugin) = app
+                .plugin_rack
+                .graph
+                .get_plugin(app.plugin_rack.selected_index)
                 && matches!(plugin.settings, PluginSettings::ABCompare { .. })
             {
                 let start = sotf_audio_player::config::get_plugin_presets_dir()
@@ -418,7 +440,9 @@ pub(in super::super) fn handle_save_plugins_mode(
         }
         KeyCode::Enter => {
             // If there are presets shown and input is empty, use selected preset (overwrite)
-            if app.plugin_rack.file_input.is_empty() && !app.plugin_rack.available_presets.is_empty() {
+            if app.plugin_rack.file_input.is_empty()
+                && !app.plugin_rack.available_presets.is_empty()
+            {
                 app.save_selected_preset();
             } else if !app.plugin_rack.file_input.is_empty() {
                 app.save_plugins();
@@ -456,7 +480,8 @@ pub(in super::super) fn handle_save_plugins_mode(
                 // Navigate preset list when input is empty
                 if app.plugin_rack.file_input.is_empty()
                     && !app.plugin_rack.available_presets.is_empty()
-                    && app.plugin_rack.selected_preset_index < app.plugin_rack.available_presets.len() - 1
+                    && app.plugin_rack.selected_preset_index
+                        < app.plugin_rack.available_presets.len() - 1
                 {
                     app.plugin_rack.selected_preset_index += 1;
                 }
@@ -496,7 +521,9 @@ pub(in super::super) fn handle_load_plugins_mode(
         }
         KeyCode::Enter => {
             // If there are presets shown and input is empty, load selected preset
-            if app.plugin_rack.file_input.is_empty() && !app.plugin_rack.available_presets.is_empty() {
+            if app.plugin_rack.file_input.is_empty()
+                && !app.plugin_rack.available_presets.is_empty()
+            {
                 app.load_selected_preset();
             } else if !app.plugin_rack.file_input.is_empty() {
                 app.load_plugins();

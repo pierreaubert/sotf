@@ -13,7 +13,9 @@ use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::ParameterId;
 use sotf_host::parameters::ParameterValue;
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::smoothing::Smoother;
 use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 use std::sync::Arc;
@@ -750,6 +752,21 @@ impl Plugin for DownmixPlugin {
     }
     fn output_channels(&self) -> usize {
         2
+    }
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let latency_samples = self.latency_samples();
+        PluginCompileMetadata::linear_transform(
+            if self.phase_coherence {
+                PluginCostClass::Fft
+            } else {
+                PluginCostClass::Scalar
+            },
+            None,
+            latency_samples,
+            true,
+            true,
+            false,
+        )
     }
     fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
         self.cached_parameters.clone()

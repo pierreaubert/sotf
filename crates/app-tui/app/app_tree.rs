@@ -53,7 +53,8 @@ impl App {
 
         let tree_items = self.get_tree_items();
         if !tree_items.is_empty() {
-            self.library_view.selected_tree_index = (self.library_view.selected_tree_index + 1) % tree_items.len();
+            self.library_view.selected_tree_index =
+                (self.library_view.selected_tree_index + 1) % tree_items.len();
         }
     }
 

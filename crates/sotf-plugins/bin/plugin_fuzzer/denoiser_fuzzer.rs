@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{ParametricInPlacePluginAdapter, DenoiserPlugin, DenoiserPluginParams, Plugin};
+use sotf_plugins::{DenoiserPlugin, DenoiserPluginParams, ParametricInPlacePluginAdapter, Plugin};
 
 pub(super) struct DenoiserFuzzer;
 

@@ -17,12 +17,14 @@ use super::misc::EPSILON;
 use crate::params::{BAND_PARAMS, MAX_BANDS, PARAMS as DQ};
 use math_audio_dsp::fast_math::fast_log10;
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::param_specs::ParamType;
+use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
@@ -300,6 +302,14 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
         PluginInfo::new("DynamicEQ", "1.0.0", "SotF")
     }
 
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Dynamics
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Dynamics, None, 0, self.link_channels)
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -310,22 +320,58 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
 
     fn current_values(&self) -> ParameterSet {
         let mut values = ParameterSet::new();
-        values.insert(self.param_num_bands.clone(), ParameterValue::Int(self.num_bands as i32));
-        values.insert(self.param_threshold.clone(), ParameterValue::Float(self.threshold_db));
+        values.insert(
+            self.param_num_bands.clone(),
+            ParameterValue::Int(self.num_bands as i32),
+        );
+        values.insert(
+            self.param_threshold.clone(),
+            ParameterValue::Float(self.threshold_db),
+        );
         values.insert(self.param_ratio.clone(), ParameterValue::Float(self.ratio));
-        values.insert(self.param_attack.clone(), ParameterValue::Float(self.attack_ms));
-        values.insert(self.param_release.clone(), ParameterValue::Float(self.release_ms));
+        values.insert(
+            self.param_attack.clone(),
+            ParameterValue::Float(self.attack_ms),
+        );
+        values.insert(
+            self.param_release.clone(),
+            ParameterValue::Float(self.release_ms),
+        );
         values.insert(self.param_knee.clone(), ParameterValue::Float(self.knee_db));
-        values.insert(self.param_link_channels.clone(), ParameterValue::Bool(self.link_channels));
+        values.insert(
+            self.param_link_channels.clone(),
+            ParameterValue::Bool(self.link_channels),
+        );
         values.insert(self.param_mix.clone(), ParameterValue::Float(self.mix));
         for (i, band) in self.bands[..self.num_bands].iter().enumerate() {
-            values.insert(ParameterId::from(format!("band_{i}_frequency").as_str()), ParameterValue::Float(band.frequency));
-            values.insert(ParameterId::from(format!("band_{i}_q").as_str()), ParameterValue::Float(band.q));
-            values.insert(ParameterId::from(format!("band_{i}_gain").as_str()), ParameterValue::Float(band.target_gain_db));
-            values.insert(ParameterId::from(format!("band_{i}_band_threshold").as_str()), ParameterValue::Float(band.band_threshold));
-            values.insert(ParameterId::from(format!("band_{i}_band_ratio").as_str()), ParameterValue::Float(band.band_ratio));
-            values.insert(ParameterId::from(format!("band_{i}_active").as_str()), ParameterValue::Bool(band.active));
-            values.insert(ParameterId::from(format!("band_{i}_solo").as_str()), ParameterValue::Bool(band.solo));
+            values.insert(
+                ParameterId::from(format!("band_{i}_frequency").as_str()),
+                ParameterValue::Float(band.frequency),
+            );
+            values.insert(
+                ParameterId::from(format!("band_{i}_q").as_str()),
+                ParameterValue::Float(band.q),
+            );
+            values.insert(
+                ParameterId::from(format!("band_{i}_gain").as_str()),
+                ParameterValue::Float(band.target_gain_db),
+            );
+            values.insert(
+                ParameterId::from(format!("band_{i}_band_threshold").as_str()),
+                ParameterValue::Float(band.band_threshold),
+            );
+            values.insert(
+                ParameterId::from(format!("band_{i}_band_ratio").as_str()),
+                ParameterValue::Float(band.band_ratio),
+            );
+            values.insert(
+                ParameterId::from(format!("band_{i}_active").as_str()),
+                ParameterValue::Bool(band.active),
+            );
+            values.insert(
+                ParameterId::from(format!("band_{i}_solo").as_str()),
+                ParameterValue::Bool(band.solo),
+            );
         }
         values
     }
@@ -333,128 +379,129 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
         for (id, value) in values {
             if id == self.param_num_bands {
-            let v = value
-                .as_int()
-                .or_else(|| value.as_float().map(|f| f as i32))
-                .unwrap_or(pk(DQ, "num_bands").default_f64() as i32);
-            self.num_bands = (v as usize).clamp(1, MAX_BANDS);
-        } else if id == self.param_threshold {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DQ, "threshold").default_f64() as f32);
-            if v.is_finite() {
-                self.threshold_db = v.clamp(-60.0, 0.0);
-                self.threshold_smoother.set_target(self.threshold_db);
-                for band in &mut self.bands {
-                    if (band.band_threshold - self.threshold_db).abs() <= 0.01 {
-                        band.use_band_threshold = false;
+                let v = value
+                    .as_int()
+                    .or_else(|| value.as_float().map(|f| f as i32))
+                    .unwrap_or(pk(DQ, "num_bands").default_f64() as i32);
+                self.num_bands = (v as usize).clamp(1, MAX_BANDS);
+            } else if id == self.param_threshold {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DQ, "threshold").default_f64() as f32);
+                if v.is_finite() {
+                    self.threshold_db = v.clamp(-60.0, 0.0);
+                    self.threshold_smoother.set_target(self.threshold_db);
+                    for band in &mut self.bands {
+                        if (band.band_threshold - self.threshold_db).abs() <= 0.01 {
+                            band.use_band_threshold = false;
+                        }
+                    }
+                }
+            } else if id == self.param_ratio {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DQ, "ratio").default_f64() as f32);
+                if v.is_finite() {
+                    self.ratio = v.clamp(1.0, 20.0);
+                    for band in &mut self.bands {
+                        if (band.band_ratio - self.ratio).abs() <= 0.01 {
+                            band.use_band_ratio = false;
+                        }
+                    }
+                }
+            } else if id == self.param_attack {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DQ, "attack").default_f64() as f32);
+                if v.is_finite() {
+                    self.attack_ms = v.clamp(0.1, 100.0);
+                    for band in &mut self.bands {
+                        for core in &mut band.cores {
+                            core.set_attack_release(self.attack_ms, self.release_ms);
+                        }
+                    }
+                }
+            } else if id == self.param_release {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DQ, "release").default_f64() as f32);
+                if v.is_finite() {
+                    self.release_ms = v.clamp(10.0, 1000.0);
+                    for band in &mut self.bands {
+                        for core in &mut band.cores {
+                            core.set_attack_release(self.attack_ms, self.release_ms);
+                        }
+                    }
+                }
+            } else if id == self.param_knee {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DQ, "knee").default_f64() as f32);
+                if v.is_finite() {
+                    self.knee_db = v.clamp(0.0, 20.0);
+                }
+            } else if id == self.param_link_channels {
+                self.link_channels = value.as_bool().unwrap_or(default_link_channels());
+            } else if id == self.param_mix {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(DQ, "mix").default_f64() as f32);
+                if v.is_finite() {
+                    self.mix = v.clamp(0.0, 1.0);
+                    self.mix_smoother.set_target(self.mix);
+                }
+            } else if let Some(rest) = id.0.strip_prefix("band_") {
+                // Per-band parameters: band_N_field
+                if let Some(sep) = rest.find('_') {
+                    let b_idx = rest[..sep].parse::<usize>().unwrap_or(0);
+                    let field = &rest[sep + 1..];
+                    if b_idx < self.bands.len() {
+                        let band = &mut self.bands[b_idx];
+                        match field {
+                            "frequency" | "freq" => {
+                                if let Some(v) = value.as_float() {
+                                    band.frequency = v.clamp(20.0, 20000.0);
+                                    band.rebuild_sidechain_filters(self.sample_rate);
+                                    band.rebuild_eq_filters(self.sample_rate);
+                                }
+                            }
+                            "q" => {
+                                if let Some(v) = value.as_float() {
+                                    band.q = v.clamp(0.1, 10.0);
+                                    band.rebuild_sidechain_filters(self.sample_rate);
+                                    band.rebuild_eq_filters(self.sample_rate);
+                                }
+                            }
+                            "gain" => {
+                                if let Some(v) = value.as_float() {
+                                    band.target_gain_db = v.clamp(-24.0, 24.0);
+                                }
+                            }
+                            "threshold" | "band_threshold" => {
+                                if let Some(v) = value.as_float() {
+                                    band.band_threshold = v.clamp(-60.0, 0.0);
+                                    band.use_band_threshold =
+                                        (band.band_threshold - self.threshold_db).abs() > 0.01;
+                                }
+                            }
+                            "ratio" | "band_ratio" => {
+                                if let Some(v) = value.as_float() {
+                                    band.band_ratio = v.clamp(1.0, 20.0);
+                                    band.use_band_ratio =
+                                        (band.band_ratio - self.ratio).abs() > 0.01;
+                                }
+                            }
+                            "active" => {
+                                band.active = value.as_bool().unwrap_or(true);
+                            }
+                            "solo" => {
+                                band.solo = value.as_bool().unwrap_or(false);
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
-        } else if id == self.param_ratio {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DQ, "ratio").default_f64() as f32);
-            if v.is_finite() {
-                self.ratio = v.clamp(1.0, 20.0);
-                for band in &mut self.bands {
-                    if (band.band_ratio - self.ratio).abs() <= 0.01 {
-                        band.use_band_ratio = false;
-                    }
-                }
-            }
-        } else if id == self.param_attack {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DQ, "attack").default_f64() as f32);
-            if v.is_finite() {
-                self.attack_ms = v.clamp(0.1, 100.0);
-                for band in &mut self.bands {
-                    for core in &mut band.cores {
-                        core.set_attack_release(self.attack_ms, self.release_ms);
-                    }
-                }
-            }
-        } else if id == self.param_release {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DQ, "release").default_f64() as f32);
-            if v.is_finite() {
-                self.release_ms = v.clamp(10.0, 1000.0);
-                for band in &mut self.bands {
-                    for core in &mut band.cores {
-                        core.set_attack_release(self.attack_ms, self.release_ms);
-                    }
-                }
-            }
-        } else if id == self.param_knee {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DQ, "knee").default_f64() as f32);
-            if v.is_finite() {
-                self.knee_db = v.clamp(0.0, 20.0);
-            }
-        } else if id == self.param_link_channels {
-            self.link_channels = value.as_bool().unwrap_or(default_link_channels());
-        } else if id == self.param_mix {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(DQ, "mix").default_f64() as f32);
-            if v.is_finite() {
-                self.mix = v.clamp(0.0, 1.0);
-                self.mix_smoother.set_target(self.mix);
-            }
-        } else if let Some(rest) = id.0.strip_prefix("band_") {
-            // Per-band parameters: band_N_field
-            if let Some(sep) = rest.find('_') {
-                let b_idx = rest[..sep].parse::<usize>().unwrap_or(0);
-                let field = &rest[sep + 1..];
-                if b_idx < self.bands.len() {
-                    let band = &mut self.bands[b_idx];
-                    match field {
-                        "frequency" | "freq" => {
-                            if let Some(v) = value.as_float() {
-                                band.frequency = v.clamp(20.0, 20000.0);
-                                band.rebuild_sidechain_filters(self.sample_rate);
-                                band.rebuild_eq_filters(self.sample_rate);
-                            }
-                        }
-                        "q" => {
-                            if let Some(v) = value.as_float() {
-                                band.q = v.clamp(0.1, 10.0);
-                                band.rebuild_sidechain_filters(self.sample_rate);
-                                band.rebuild_eq_filters(self.sample_rate);
-                            }
-                        }
-                        "gain" => {
-                            if let Some(v) = value.as_float() {
-                                band.target_gain_db = v.clamp(-24.0, 24.0);
-                            }
-                        }
-                        "threshold" | "band_threshold" => {
-                            if let Some(v) = value.as_float() {
-                                band.band_threshold = v.clamp(-60.0, 0.0);
-                                band.use_band_threshold =
-                                    (band.band_threshold - self.threshold_db).abs() > 0.01;
-                            }
-                        }
-                        "ratio" | "band_ratio" => {
-                            if let Some(v) = value.as_float() {
-                                band.band_ratio = v.clamp(1.0, 20.0);
-                                band.use_band_ratio = (band.band_ratio - self.ratio).abs() > 0.01;
-                            }
-                        }
-                        "active" => {
-                            band.active = value.as_bool().unwrap_or(true);
-                        }
-                        "solo" => {
-                            band.solo = value.as_bool().unwrap_or(false);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -487,7 +534,11 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
         })
     }
 
-    fn parametric_set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+    fn parametric_set_parameter(
+        &mut self,
+        id: ParameterId,
+        value: ParameterValue,
+    ) -> PluginResult<()> {
         if id.0.starts_with("band_") {
             let mut values = ParameterSet::new();
             values.insert(id, value);

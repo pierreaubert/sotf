@@ -5,7 +5,9 @@ use rubato::{
     WindowFunction,
 };
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 
 /// Resampler plugin using rubato
 ///
@@ -400,6 +402,17 @@ impl Plugin for ResamplerPlugin {
 
     fn output_channels(&self) -> usize {
         self.num_channels
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::linear_transform(
+            PluginCostClass::Convolution,
+            None,
+            self.latency_samples(),
+            false,
+            true,
+            false,
+        )
     }
 
     fn parameters(&self) -> Vec<Parameter> {

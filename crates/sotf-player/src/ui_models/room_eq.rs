@@ -569,7 +569,9 @@ impl RoomEqScreenModel {
                 let base_name = first
                     .channel_name
                     .find(" (")
-                    .map_or(first.channel_name.as_str(), |pos| &first.channel_name[..pos])
+                    .map_or(first.channel_name.as_str(), |pos| {
+                        &first.channel_name[..pos]
+                    })
                     .to_string();
 
                 let primary_result = first.result.clone().unwrap();
@@ -823,9 +825,8 @@ impl RoomEqScreenModel {
                                 );
                             }
                         } else {
-                            driver_measurements.push(
-                                autoeq::roomeq::MeasurementSource::InMemory(to_curve(meas)),
-                            );
+                            driver_measurements
+                                .push(autoeq::roomeq::MeasurementSource::InMemory(to_curve(meas)));
                         }
 
                         let xover_id = format!("xover_{}", channel_name);
@@ -883,14 +884,14 @@ impl RoomEqScreenModel {
             .ctc_config
             .clone()
             .or_else(|| {
-                self.ctc_measurements.clone().map(|measurements| {
-                    autoeq::roomeq::CtcConfig {
+                self.ctc_measurements
+                    .clone()
+                    .map(|measurements| autoeq::roomeq::CtcConfig {
                         enabled: false,
                         matrix_source: "measured".to_string(),
                         measurements: Some(measurements),
                         ..Default::default()
-                    }
-                })
+                    })
             })
             .map(|mut ctc| {
                 ctc.enabled = false;
@@ -909,14 +910,14 @@ impl RoomEqScreenModel {
                     SimpleCrossoverChoice::Lr24 => "LR24",
                     SimpleCrossoverChoice::Lr48 => "LR48",
                 };
-                crossovers
-                    .entry(xover_id.clone())
-                    .or_insert_with(|| autoeq::roomeq::CrossoverConfig {
+                crossovers.entry(xover_id.clone()).or_insert_with(|| {
+                    autoeq::roomeq::CrossoverConfig {
                         crossover_type: crossover_type.to_string(),
                         frequency: Some(80.0),
                         frequencies: None,
                         frequency_range: None,
-                    });
+                    }
+                });
                 xover_id
             });
             ctc_system_config_for_speaker_names(
@@ -1022,12 +1023,8 @@ mod tests {
     }
 
     fn make_done_recording(channel_index: usize, channel_name: &str) -> ChannelRecording {
-        let mut rec = ChannelRecording::with_mic_position(
-            channel_index,
-            channel_name.to_string(),
-            0,
-            0,
-        );
+        let mut rec =
+            ChannelRecording::with_mic_position(channel_index, channel_name.to_string(), 0, 0);
         rec.state = ChannelRecordingState::Done;
         rec.result = Some(make_recording_result(channel_index));
         rec
@@ -1081,7 +1078,10 @@ mod tests {
     fn start_optimization_with_no_measurements_sets_error() {
         let mut model = RoomEqScreenModel::default();
         let effects = model.apply(RoomEqViewEvent::StartOptimization);
-        assert_eq!(model.error_message, Some("No measurements loaded".to_string()));
+        assert_eq!(
+            model.error_message,
+            Some("No measurements loaded".to_string())
+        );
         assert_eq!(effects.len(), 1);
         assert!(
             matches!(&effects[0], RoomEqEffect::ShowError(msg) if msg == "No measurements loaded"),
@@ -1093,7 +1093,9 @@ mod tests {
     #[test]
     fn start_optimization_with_measurements_starts() {
         let mut model = RoomEqScreenModel::default();
-        model.apply(RoomEqViewEvent::LoadMeasurements(vec![make_measurement("L")]));
+        model.apply(RoomEqViewEvent::LoadMeasurements(vec![make_measurement(
+            "L",
+        )]));
         let effects = model.apply(RoomEqViewEvent::StartOptimization);
         assert_eq!(model.optimization_status, OptimizationStatus::Running);
         assert_eq!(effects.len(), 1);
@@ -1143,11 +1145,11 @@ mod tests {
     fn load_from_recording_groups_by_speaker() {
         let mut model = RoomEqScreenModel::default();
         let mut recording_state = RecordingState::default();
-        recording_state.channel_recordings = vec![
-            make_done_recording(0, "L"),
-            make_done_recording(1, "R"),
-        ];
-        let effects = model.apply(RoomEqViewEvent::LoadFromRecording(Box::new(recording_state)));
+        recording_state.channel_recordings =
+            vec![make_done_recording(0, "L"), make_done_recording(1, "R")];
+        let effects = model.apply(RoomEqViewEvent::LoadFromRecording(Box::new(
+            recording_state,
+        )));
         assert!(effects.is_empty());
         assert_eq!(model.channel_measurements.len(), 2);
         assert_eq!(model.channel_measurements[0].channel_name, "L");

@@ -197,8 +197,7 @@ impl HeadphoneEqScreenModel {
     /// Reset optimization state.
     pub fn reset_optimization(&mut self) {
         self.optimization_status = OptimizationStatus::Idle;
-        self.cancel_requested
-            .store(false, Ordering::Relaxed);
+        self.cancel_requested.store(false, Ordering::Relaxed);
         self.progress = 0.0;
         self.progress_history.clear();
         self.current_loss = 0.0;

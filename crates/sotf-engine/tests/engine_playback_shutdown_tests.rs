@@ -88,9 +88,8 @@ fn audio_engine_play_shutdown_race_repeated() {
     const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
     for i in 0..ITERATIONS {
-        let engine = AudioEngine::new(config.clone()).unwrap_or_else(|e| {
-            panic!("iteration {}: failed to create AudioEngine: {}", i, e)
-        });
+        let engine = AudioEngine::new(config.clone())
+            .unwrap_or_else(|e| panic!("iteration {}: failed to create AudioEngine: {}", i, e));
 
         engine
             .play(wav_path.clone())
@@ -116,8 +115,5 @@ fn audio_engine_play_shutdown_race_repeated() {
         );
     }
 
-    eprintln!(
-        "Successfully completed {} play→shutdown cycles",
-        ITERATIONS
-    );
+    eprintln!("Successfully completed {} play→shutdown cycles", ITERATIONS);
 }

@@ -69,9 +69,15 @@ impl PluginConfigConverterRegistry {
         registry.register("limiter", dynamics::convert_limiter);
         registry.register("gate", dynamics::convert_gate);
         registry.register("expander", dynamics::convert_expander);
-        registry.register("multiband_compressor", dynamics::convert_multiband_compressor);
+        registry.register(
+            "multiband_compressor",
+            dynamics::convert_multiband_compressor,
+        );
         registry.register("multiband_expander", dynamics::convert_multiband_expander);
-        registry.register("loudness_compensation", effects::convert_loudness_compensation);
+        registry.register(
+            "loudness_compensation",
+            effects::convert_loudness_compensation,
+        );
         registry.register("fletcher_munson", effects::convert_fletcher_munson);
         registry.register("binaural_decoder", spatial::convert_binaural_decoder);
         registry.register("convolution", effects::convert_convolution);

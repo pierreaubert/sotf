@@ -51,7 +51,8 @@ pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
 
     // File list
     let items: Vec<ListItem> = app
-        .file_explorer.items
+        .file_explorer
+        .items
         .iter()
         .enumerate()
         .map(|(i, path)| {

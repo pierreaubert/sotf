@@ -117,7 +117,8 @@ fn test_roomeq_recommended_matrix_supports_more_than_two_speakers() {
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 3);
     let matrix = plugin
-        .filter_state.cached_current_filters
+        .filter_state
+        .cached_current_filters
         .speaker_filters
         .as_ref()
         .expect("roomEQ speaker filter matrix");

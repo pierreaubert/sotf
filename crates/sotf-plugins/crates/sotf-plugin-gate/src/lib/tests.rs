@@ -459,7 +459,8 @@ fn test_set_parameter_unknown_id_returns_error() {
     let mut p = GatePlugin::new(1, -20.0, 10.0, 1.0, 0.0, 50.0);
     p.initialize(48000).unwrap();
 
-    let result = p.parametric_set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0));
+    let result =
+        p.parametric_set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0));
     assert!(result.is_err());
 }
 
@@ -469,7 +470,8 @@ fn test_set_parameter_type_mismatch_returns_error() {
     p.initialize(48000).unwrap();
 
     // threshold is float, not bool
-    let result = p.parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Bool(true));
+    let result =
+        p.parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Bool(true));
     assert!(result.is_err());
 }
 

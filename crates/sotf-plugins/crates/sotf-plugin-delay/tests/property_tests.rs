@@ -6,7 +6,9 @@
 //   - Dry (mix = 0) signal passes through unchanged.
 
 use proptest::prelude::*;
-use sotf_host::{ParametricInPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
+use sotf_host::{
+    ParameterId, ParameterValue, ParametricInPlacePluginAdapter, Plugin, ProcessContext,
+};
 use sotf_plugin_delay::DelayPlugin;
 
 // Small, fast buffers: 64 frames stereo = 128 samples.

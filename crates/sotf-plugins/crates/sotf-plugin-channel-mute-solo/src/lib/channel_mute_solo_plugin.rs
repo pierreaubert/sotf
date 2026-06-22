@@ -5,7 +5,10 @@ use super::types::ChannelState;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
+    ProcessContext,
+};
 use sotf_host::simd::apply_per_channel_gain_simd;
 use sotf_host::smoothing::Smoother;
 
@@ -218,16 +221,28 @@ impl ChannelMuteSoloPlugin {
         ];
         for ch in 0..self.channels {
             params.push(
-                Parameter::new_bool(&format!("mute_{ch}"), &format!("Mute Ch{ch}"), self.channel_states[ch].muted)
-                    .with_group("Per-Channel"),
+                Parameter::new_bool(
+                    &format!("mute_{ch}"),
+                    &format!("Mute Ch{ch}"),
+                    self.channel_states[ch].muted,
+                )
+                .with_group("Per-Channel"),
             );
             params.push(
-                Parameter::new_bool(&format!("solo_{ch}"), &format!("Solo Ch{ch}"), self.channel_states[ch].soloed)
-                    .with_group("Per-Channel"),
+                Parameter::new_bool(
+                    &format!("solo_{ch}"),
+                    &format!("Solo Ch{ch}"),
+                    self.channel_states[ch].soloed,
+                )
+                .with_group("Per-Channel"),
             );
             params.push(
-                Parameter::new_bool(&format!("dim_{ch}"), &format!("Dim Ch{ch}"), self.channel_states[ch].dimmed)
-                    .with_group("Per-Channel"),
+                Parameter::new_bool(
+                    &format!("dim_{ch}"),
+                    &format!("Dim Ch{ch}"),
+                    self.channel_states[ch].dimmed,
+                )
+                .with_group("Per-Channel"),
             );
         }
         *self.cached_parameters.borrow_mut() = params;
@@ -278,6 +293,21 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Channel Mute/Solo", "1.1.0", "SotF")
             .with_description("Mute or solo individual channels (Optimized & Smoothed)")
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Scalar
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let mut metadata = PluginCompileMetadata::routing(
+            PluginCostClass::Scalar,
+            Some(PluginCompiledOp::ChannelMuteSolo),
+            false,
+        );
+        metadata.stateful = self.fade_ms > 0.0;
+        metadata.time_invariant_for_block = !metadata.stateful;
+        metadata
     }
 
     fn channels(&self) -> usize {
@@ -405,7 +435,6 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
         Ok(())
     }
 
-
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         for smoother in &mut self.channel_smoothers {
@@ -484,5 +513,39 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
         }
 
         Ok(num_frames)
+    }
+
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        if op != PluginCompiledOp::ChannelMuteSolo {
+            return None;
+        }
+        let sample_len = match context.num_frames.checked_mul(self.channels) {
+            Some(sample_len) => sample_len,
+            None => {
+                return Some(Err(
+                    "Channel mute/solo block sample count overflow".to_string()
+                ));
+            }
+        };
+        if input.len() < sample_len {
+            return Some(Err(format!(
+                "Channel mute/solo compiled input too small: need {sample_len} samples, got {}",
+                input.len()
+            )));
+        }
+        if output.len() < sample_len {
+            return Some(Err(format!(
+                "Channel mute/solo compiled output too small: need {sample_len} samples, got {}",
+                output.len()
+            )));
+        }
+        output[..sample_len].copy_from_slice(&input[..sample_len]);
+        Some(self.process_in_place(&mut output[..sample_len], context))
     }
 }

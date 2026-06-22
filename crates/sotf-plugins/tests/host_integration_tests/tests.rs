@@ -1,6 +1,7 @@
-use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, 
-    DawHost, DenoiserPlugin, DownmixPlugin, GainPlugin, GraphEdge,  Plugin,
-    UpmixerPlugin, XtcPlugin, XtcPluginParams};
+use sotf_plugins::{
+    DawHost, DenoiserPlugin, DownmixPlugin, GainPlugin, GraphEdge, ParametricInPlacePluginAdapter,
+    ParametricPluginAdapter, Plugin, UpmixerPlugin, XtcPlugin, XtcPluginParams,
+};
 
 #[test]
 fn test_cycle_detection() {

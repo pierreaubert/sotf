@@ -107,7 +107,8 @@ pub fn record_signal(
     let output_dir = output_dir.unwrap_or_else(|| {
         std::env::current_dir().expect("current directory should be accessible")
     });
-    std::fs::create_dir_all(&output_dir).map_err(|e| format!("failed to create output directory: {e}"))?;
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|e| format!("failed to create output directory: {e}"))?;
 
     println!("{}", "=".repeat(60));
     println!("Signal Recording and Analysis");

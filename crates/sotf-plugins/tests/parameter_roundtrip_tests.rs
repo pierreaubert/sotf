@@ -277,7 +277,11 @@ fn process_one_block(
     let input = vec![0.0f32; input_channels * FRAMES];
     let output_frames = plugin.output_frames_for_input(FRAMES);
     let mut output = vec![0.0f32; output_channels * output_frames];
-    plugin.process(&input, &mut output, &ProcessContext::new(SAMPLE_RATE, FRAMES))?;
+    plugin.process(
+        &input,
+        &mut output,
+        &ProcessContext::new(SAMPLE_RATE, FRAMES),
+    )?;
     Ok(())
 }
 
