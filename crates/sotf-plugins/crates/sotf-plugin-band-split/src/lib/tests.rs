@@ -562,14 +562,17 @@ fn test_param_keys_are_cached_and_reused() {
     assert_eq!(p.dynamic_param_keys[0].1, "Frequency 2");
     assert_eq!(p.dynamic_param_keys[1].0, ParameterId::from("frequency_3"));
     assert_eq!(p.band_gain_param_keys.len(), 4);
-    assert_eq!(p.band_gain_param_keys[0].0, ParameterId::from("band_0_gain_db"));
-    assert_eq!(p.band_gain_param_keys[0].1, "Band 1 Gain (dB)");
-    assert_eq!(p.band_gain_param_keys[3].0, ParameterId::from("band_3_gain_db"));
-
-    let keys_before = (
-        p.dynamic_param_keys.clone(),
-        p.band_gain_param_keys.clone(),
+    assert_eq!(
+        p.band_gain_param_keys[0].0,
+        ParameterId::from("band_0_gain_db")
     );
+    assert_eq!(p.band_gain_param_keys[0].1, "Band 1 Gain (dB)");
+    assert_eq!(
+        p.band_gain_param_keys[3].0,
+        ParameterId::from("band_3_gain_db")
+    );
+
+    let keys_before = (p.dynamic_param_keys.clone(), p.band_gain_param_keys.clone());
     p.rebuild_cached_parameters();
     assert_eq!(
         (p.dynamic_param_keys.clone(), p.band_gain_param_keys.clone()),
@@ -577,6 +580,14 @@ fn test_param_keys_are_cached_and_reused() {
     );
 
     let params = p.parameters();
-    assert!(params.iter().any(|param| param.id == ParameterId::from("frequency_2")));
-    assert!(params.iter().any(|param| param.id == ParameterId::from("band_2_gain_db")));
+    assert!(
+        params
+            .iter()
+            .any(|param| param.id == ParameterId::from("frequency_2"))
+    );
+    assert!(
+        params
+            .iter()
+            .any(|param| param.id == ParameterId::from("band_2_gain_db"))
+    );
 }

@@ -15,31 +15,39 @@ fn test_parameter_roundtrip() {
     plugin.initialize(48000).unwrap();
 
     // Set attack to 50%
-    plugin.parametric_set_parameter(ParameterId::from("attack"), ParameterValue::Float(50.0))
+    plugin
+        .parametric_set_parameter(ParameterId::from("attack"), ParameterValue::Float(50.0))
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("attack"));
     assert_eq!(val, Some(ParameterValue::Float(50.0)));
 
     // Set sustain to -75%
-    plugin.parametric_set_parameter(ParameterId::from("sustain"), ParameterValue::Float(-75.0))
+    plugin
+        .parametric_set_parameter(ParameterId::from("sustain"), ParameterValue::Float(-75.0))
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("sustain"));
     assert_eq!(val, Some(ParameterValue::Float(-75.0)));
 
     // Set sensitivity
-    plugin.parametric_set_parameter(ParameterId::from("sensitivity"), ParameterValue::Float(6.0))
+    plugin
+        .parametric_set_parameter(ParameterId::from("sensitivity"), ParameterValue::Float(6.0))
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("sensitivity"));
     assert_eq!(val, Some(ParameterValue::Float(6.0)));
 
     // Set output gain
-    plugin.parametric_set_parameter(ParameterId::from("output_gain"), ParameterValue::Float(-3.0))
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("output_gain"),
+            ParameterValue::Float(-3.0),
+        )
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("output_gain"));
     assert_eq!(val, Some(ParameterValue::Float(-3.0)));
 
     // Set mix
-    plugin.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+    plugin
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("mix"));
     assert_eq!(val, Some(ParameterValue::Float(0.5)));
@@ -360,7 +368,10 @@ fn test_set_parameter_unknown_id_returns_error() {
     let mut plugin = TransientShaperPlugin::new(1);
     plugin.initialize(48000).unwrap();
 
-    let result = plugin.parametric_set_parameter(ParameterId::from("not_a_real_param"), ParameterValue::Float(1.0));
+    let result = plugin.parametric_set_parameter(
+        ParameterId::from("not_a_real_param"),
+        ParameterValue::Float(1.0),
+    );
     assert!(result.is_err());
 }
 

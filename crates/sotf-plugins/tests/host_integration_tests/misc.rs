@@ -1,4 +1,4 @@
-use sotf_plugins::{ParametricPluginAdapter, DawHost, GainPlugin, GraphEdge};
+use sotf_plugins::{DawHost, GainPlugin, GraphEdge, ParametricPluginAdapter};
 
 fn process_until_settled(host: &mut DawHost, input: &[f32], output: &mut [f32]) {
     let nf = input.len() / host.input_channels();

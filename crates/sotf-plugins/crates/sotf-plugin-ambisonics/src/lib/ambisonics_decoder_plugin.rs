@@ -7,7 +7,9 @@ use super::spherical_harmonics::channel_count;
 use plugins_spatial::validate_interleaved_io;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::speaker_config::get_speaker_config;
 use std::any::Any;
 use std::sync::Arc;
@@ -170,6 +172,20 @@ impl Plugin for AmbisonicsDecoderPlugin {
 
     fn output_channels(&self) -> usize {
         self.output_channels
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let latency_samples = self.latency_samples();
+        let mut metadata = PluginCompileMetadata::linear_transform(
+            PluginCostClass::Iir,
+            None,
+            latency_samples,
+            true,
+            true,
+            false,
+        );
+        metadata.boundary = true;
+        metadata
     }
 
     fn parameters(&self) -> Vec<Parameter> {

@@ -23,7 +23,11 @@ fn synthetic_bump_curve() -> autoeq::Curve {
     let mut spl = Vec::with_capacity(n);
     for i in 0..n {
         let f = f_min * (i as f64 * log_step).exp();
-        let bump = if (f - 1_000.0).abs() < 150.0 { 3.0 } else { 0.0 };
+        let bump = if (f - 1_000.0).abs() < 150.0 {
+            3.0
+        } else {
+            0.0
+        };
         freq.push(f);
         spl.push(bump);
     }
@@ -81,10 +85,7 @@ fn count_channel_filters(result: &RoomOptimizationResult) -> HashMap<String, usi
             let mut count = 0usize;
             for plugin in &chain.plugins {
                 if plugin.plugin_type == "eq" {
-                    let is_broadband = plugin
-                        .parameters
-                        .get("label")
-                        .and_then(|v| v.as_str())
+                    let is_broadband = plugin.parameters.get("label").and_then(|v| v.as_str())
                         == Some("broadband");
                     let filter_count = plugin
                         .parameters

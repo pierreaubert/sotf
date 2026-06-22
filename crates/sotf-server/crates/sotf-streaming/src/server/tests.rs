@@ -92,9 +92,7 @@ fn parse_content_length(headers: &[u8]) -> Option<usize> {
 }
 
 fn read_response(stream: &mut TcpStream, timeout: Duration) -> Vec<u8> {
-    let mut bytes = read_until(stream, timeout, |b| {
-        b.windows(4).any(|w| w == b"\r\n\r\n")
-    });
+    let mut bytes = read_until(stream, timeout, |b| b.windows(4).any(|w| w == b"\r\n\r\n"));
     let Some(header_end) = bytes
         .windows(4)
         .position(|w| w == b"\r\n\r\n")
@@ -291,9 +289,5 @@ fn parallel_server_starts_use_distinct_ports() {
         addrs.len()
     );
     let unique: HashSet<_> = addrs.iter().copied().collect();
-    assert_eq!(
-        unique.len(),
-        N,
-        "servers reused a port: {addrs:?}",
-    );
+    assert_eq!(unique.len(), N, "servers reused a port: {addrs:?}",);
 }

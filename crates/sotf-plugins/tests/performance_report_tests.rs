@@ -1,7 +1,10 @@
 #![cfg(any(feature = "qa", debug_assertions))]
 
 mod tests {
-use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, CompressorPlugin, GainPlugin,  PerformanceProfiler};
+    use sotf_plugins::{
+        CompressorPlugin, GainPlugin, ParametricInPlacePluginAdapter, ParametricPluginAdapter,
+        PerformanceProfiler,
+    };
 
     #[test]
     fn test_generate_performance_summary() {

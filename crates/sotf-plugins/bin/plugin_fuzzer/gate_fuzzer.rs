@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{ParametricInPlacePluginAdapter, GatePlugin, GatePluginParams, Plugin};
+use sotf_plugins::{GatePlugin, GatePluginParams, ParametricInPlacePluginAdapter, Plugin};
 
 pub(super) struct GateFuzzer;
 

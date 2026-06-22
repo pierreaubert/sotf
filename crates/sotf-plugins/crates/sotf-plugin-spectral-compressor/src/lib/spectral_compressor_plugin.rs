@@ -7,10 +7,12 @@ use super::stft_state::StftState;
 use crate::params::{PARAMS as SC, TARGET_MODES};
 use sotf_host::delta_monitor::DeltaMonitor;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
@@ -452,6 +454,14 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
         PluginInfo::new("Spectral Compressor", "1.0.0", "Sotf")
     }
 
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Fft
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Fft, None, self.latency_samples(), false)
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -470,7 +480,10 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
             ParameterId::from("threshold"),
             ParameterValue::Float(self.threshold_db),
         );
-        values.insert(ParameterId::from("ratio"), ParameterValue::Float(self.ratio));
+        values.insert(
+            ParameterId::from("ratio"),
+            ParameterValue::Float(self.ratio),
+        );
         values.insert(
             ParameterId::from("attack"),
             ParameterValue::Float(self.attack_ms),
@@ -479,7 +492,10 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
             ParameterId::from("release"),
             ParameterValue::Float(self.release_ms),
         );
-        values.insert(ParameterId::from("knee"), ParameterValue::Float(self.knee_db));
+        values.insert(
+            ParameterId::from("knee"),
+            ParameterValue::Float(self.knee_db),
+        );
         values.insert(
             ParameterId::from("spectral_smoothing"),
             ParameterValue::Float(self.spectral_smoothing),

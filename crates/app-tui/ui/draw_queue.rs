@@ -207,7 +207,8 @@ pub(crate) fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
     if let Some(image_path) = app.get_current_album_image().cloned() {
         // Create the protocol once and cache it; reuse across renders so it can resize properly
         let needs_create = app
-            .library_view.image_protocol_path
+            .library_view
+            .image_protocol_path
             .as_ref()
             .is_none_or(|p| *p != image_path);
         if needs_create && let Some(picker) = &mut app.library_view.image_picker {

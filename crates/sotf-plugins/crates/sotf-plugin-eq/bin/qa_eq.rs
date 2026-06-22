@@ -1,7 +1,7 @@
 use sotf_host::parametric_plugin::{ParameterSet, ParametricPlugin};
 use sotf_host::plugin::ProcessContext;
 use sotf_host::{
-    CountingAlloc, ParametricPluginAdapter, ParameterId, ParameterValue, measure_peak_db,
+    CountingAlloc, ParameterId, ParameterValue, ParametricPluginAdapter, measure_peak_db,
     run_standard_tests,
 };
 use sotf_plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};

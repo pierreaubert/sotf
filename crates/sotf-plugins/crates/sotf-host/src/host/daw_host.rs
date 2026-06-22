@@ -4,12 +4,20 @@ use super::audio_sample::ensure_len;
 use super::audio_sample::write_plugin_failure_passthrough;
 use super::buffer_guard::BufferGuard;
 use super::compensation_delays::CompensationDelays;
+use super::compiled_plan::{
+    CompiledGraphPlan, CompiledLinearPlan, CompiledOp, CompiledOpKind, CompiledRenderPlan,
+    build_segments,
+};
 use super::delay_buffer::DelayBuffer;
 use super::graph_edge::GraphEdge;
 use super::graph_mutation_sender::GraphMutationSender;
 use super::graph_node::GraphNode;
 use super::graph_topology::GraphTopology;
+use super::misc::DEFAULT_PARALLEL_NODE_COST;
 use super::misc::GRAPH_MUTATION_QUEUE_CAPACITY;
+use super::misc::HEAVY_PARALLEL_NODE_COST;
+use super::misc::MIN_PARALLEL_STAGE_WORK_UNITS;
+use super::misc::MODERATE_PARALLEL_NODE_COST;
 use super::misc::PARAMETER_EVENT_QUEUE_CAPACITY;
 use super::misc::panic_payload_description;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -31,7 +39,7 @@ use crate::external_plugin_isolated::IsolatedExternalPlugin;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::external_plugin_process::ExternalPluginProcessEvent;
 use crate::parameters::{ParameterId, ParameterValue};
-use crate::plugin::{Plugin, ProcessContext};
+use crate::plugin::{Plugin, PluginCompiledOp, PluginCostClass, ProcessContext};
 use arc_swap::ArcSwap;
 use rayon::prelude::*;
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -40,6 +48,25 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompiledLinearSource {
+    ExternalInput,
+    ScratchInput,
+    ScratchOutput,
+}
+
+fn plugin_compiled_op(kind: CompiledOpKind) -> Option<PluginCompiledOp> {
+    match kind {
+        CompiledOpKind::ApplyGain => Some(PluginCompiledOp::ApplyGain),
+        CompiledOpKind::EqBiquadBank => Some(PluginCompiledOp::EqBiquadBank),
+        CompiledOpKind::ChannelMuteSolo => Some(PluginCompiledOp::ChannelMuteSolo),
+        CompiledOpKind::Limiter => Some(PluginCompiledOp::Limiter),
+        CompiledOpKind::MultibandCompressor => Some(PluginCompiledOp::MultibandCompressor),
+        CompiledOpKind::AnalyzerTap => Some(PluginCompiledOp::AnalyzerTap),
+        _ => None,
+    }
+}
 
 pub(super) struct DawQueueEndpoints {
     pub(super) parameter_event_tx: Option<Producer<ParameterEvent>>,
@@ -69,6 +96,7 @@ pub(super) struct DawAutomationState {
 pub(super) struct DawConfig {
     pub(super) sample_rate: u32,
     pub(super) parallel_enabled: bool,
+    pub(super) compiled_linear_enabled: bool,
     pub(super) initial_input_channels: usize,
     /// Whether plugins may request their own preferred oversampling wrapper.
     pub(super) plugin_preferred_oversampling_enabled: bool,
@@ -112,6 +140,10 @@ pub struct DawHost {
     pub(super) analyzer_indices: Vec<usize>,
     /// Cached total latency in samples, computed during build() and invalidated on graph changes
     pub(super) cached_latency: Option<usize>,
+    pub(super) compiled_plan: CompiledRenderPlan,
+    /// Per-node cost estimate used to decide whether a parallel stage has enough
+    /// work to amortize scheduler overhead. Built off the audio path.
+    pub(super) cached_parallel_node_costs: Vec<u32>,
     /// Flat cache of bypass state for O(1) audio-thread lookup. **Mirror** of
     /// the authoritative `GraphNode::bypassed`; rebuilt in `build()` and kept
     /// in sync exclusively through `Self::set_bypass_state` so the two flags
@@ -160,6 +192,8 @@ impl DawHost {
             cached_output_frame_ratios: Vec::new(),
             analyzer_indices: Vec::new(),
             cached_latency: None,
+            compiled_plan: CompiledRenderPlan::default(),
+            cached_parallel_node_costs: Vec::new(),
             bypassed: Vec::new(),
             node_latency_from_input: Vec::new(),
             automation_scratch: Vec::new(),
@@ -183,6 +217,7 @@ impl DawHost {
             config: DawConfig {
                 sample_rate,
                 parallel_enabled: true,
+                compiled_linear_enabled: true,
                 initial_input_channels: channels,
                 plugin_preferred_oversampling_enabled: true,
                 forced_oversampling_factor: None,
@@ -199,6 +234,13 @@ impl DawHost {
     }
     pub fn set_parallel_enabled(&mut self, e: bool) {
         self.config.parallel_enabled = e;
+    }
+
+    pub fn set_compiled_linear_enabled(&mut self, enabled: bool) {
+        if self.config.compiled_linear_enabled != enabled {
+            self.config.compiled_linear_enabled = enabled;
+            self.built = false;
+        }
     }
 
     /// Enable or disable plugins' `preferred_oversampling()` requests.
@@ -457,8 +499,12 @@ impl DawHost {
         // Cache per-node bypass flags before computing compensation delays
         // (compensation needs to know which nodes are bypassed for latency calculation)
         self.bypassed = vec![false; num_slots];
+        self.cached_parallel_node_costs = vec![DEFAULT_PARALLEL_NODE_COST; num_slots];
         for (&id, node) in &self.nodes {
             self.bypassed[id] = node.bypassed;
+            let plugin = self.plugins[id].as_ref().unwrap();
+            self.cached_parallel_node_costs[id] =
+                Self::estimate_parallel_node_cost(plugin.as_ref(), id, &node.name);
         }
         // Compute per-node cumulative latency from inputs and compensation delays
         let compensation_delays = self.compute_compensation_delays::<f32>(num_slots)?;
@@ -556,9 +602,159 @@ impl DawHost {
         });
         // Cache total latency so total_latency_samples() is O(1)
         self.cached_latency = Some(self.compute_latency());
+        self.compiled_plan = self.compile_render_plan();
         self.built = true;
         self.publish_topology_snapshot();
         Ok(())
+    }
+
+    pub(super) fn compile_render_plan(&self) -> CompiledRenderPlan {
+        if self.nodes.is_empty() {
+            CompiledRenderPlan::EmptyPassthrough
+        } else if self.config.compiled_linear_enabled && self.can_process_f32_linear_chain() {
+            CompiledRenderPlan::LinearF32(self.compile_linear_f32_plan())
+        } else {
+            CompiledRenderPlan::Graph(self.compile_graph_plan())
+        }
+    }
+
+    pub(super) fn compile_linear_f32_plan(&self) -> CompiledLinearPlan {
+        let ops = self
+            .chain_nodes
+            .iter()
+            .map(|&id| self.compile_op(id))
+            .collect::<Vec<_>>();
+        CompiledLinearPlan {
+            input_channels: self.input_channels(),
+            output_channels: self.output_channels(),
+            segments: build_segments(&ops),
+            ops,
+        }
+    }
+
+    pub(super) fn compile_graph_plan(&self) -> CompiledGraphPlan {
+        let ops = self
+            .stages
+            .iter()
+            .flat_map(|stage| stage.nodes.iter().copied())
+            .map(|id| self.compile_op(id))
+            .collect::<Vec<_>>();
+        CompiledGraphPlan {
+            segments: build_segments(&ops),
+        }
+    }
+
+    pub(super) fn compile_op(&self, id: NodeId) -> CompiledOp {
+        let plugin = self.plugins[id].as_ref().unwrap();
+        let node = &self.nodes[&id];
+        let metadata = plugin.compile_metadata();
+        CompiledOp::from_plugin(
+            node,
+            metadata,
+            plugin.supports_f64(),
+            Self::plugin_output_frames_for_input_isolated(plugin.as_ref(), id, &node.name, 100)
+                == 100,
+            Self::plugin_output_sample_rate_isolated(plugin.as_ref(), id, &node.name, 48_000)
+                == 48_000,
+        )
+    }
+
+    pub(super) fn can_process_f32_linear_chain(&self) -> bool {
+        if self.chain_nodes.is_empty() || self.chain_nodes.len() != self.nodes.len() {
+            return false;
+        }
+        if !self.cached_frames_identity
+            || !self.cached_rate_identity
+            || self.has_variable_frame_plugin
+        {
+            return false;
+        }
+        if self.input_nodes.len() != 1 || self.output_nodes.len() != 1 {
+            return false;
+        }
+        if self.input_nodes[0] != self.chain_nodes[0]
+            || self.output_nodes[0] != *self.chain_nodes.last().unwrap()
+        {
+            return false;
+        }
+        if self.edges.len() != self.chain_nodes.len().saturating_sub(1) {
+            return false;
+        }
+        for &nid in &self.chain_nodes {
+            let Some(node) = self.nodes.get(&nid) else {
+                return false;
+            };
+            if node.input_channels() != node.output_channels() || self.plugins[nid].is_none() {
+                return false;
+            }
+        }
+        for pair in self.chain_nodes.windows(2) {
+            let from = pair[0];
+            let to = pair[1];
+            let Some(edge) = self
+                .edges
+                .iter()
+                .find(|edge| edge.from_node == from && edge.to_node == to)
+            else {
+                return false;
+            };
+            if edge.edge_type != EdgeType::Audio || edge.channel_map.is_some() {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub(super) fn estimate_parallel_node_cost(
+        plugin: &dyn Plugin,
+        node_id: NodeId,
+        node_name: &str,
+    ) -> u32 {
+        let metadata = plugin.compile_metadata();
+        let has_latency_or_variable_frames = metadata.latency_samples > 0
+            || Self::plugin_output_frames_for_input_isolated(plugin, node_id, node_name, 100)
+                != 100
+            || Self::plugin_output_sample_rate_isolated(plugin, node_id, node_name, 48_000)
+                != 48_000;
+        if has_latency_or_variable_frames {
+            return HEAVY_PARALLEL_NODE_COST;
+        }
+
+        match metadata.cost_class {
+            PluginCostClass::Scalar => {}
+            PluginCostClass::Analyzer => return DEFAULT_PARALLEL_NODE_COST,
+            PluginCostClass::Iir | PluginCostClass::Dynamics => {
+                return MODERATE_PARALLEL_NODE_COST;
+            }
+            PluginCostClass::Fft | PluginCostClass::Convolution | PluginCostClass::External => {
+                return HEAVY_PARALLEL_NODE_COST;
+            }
+        }
+
+        let name = plugin.info().name.to_ascii_lowercase();
+        if name.contains("spectral")
+            || name.contains("linear phase")
+            || name.contains("convolution")
+            || name.contains("denoiser")
+            || name.contains("declick")
+            || name.contains("hiss")
+            || name.contains("fir")
+            || name.contains("fft")
+        {
+            HEAVY_PARALLEL_NODE_COST
+        } else if name.contains("eq")
+            || name.contains("compressor")
+            || name.contains("limiter")
+            || name.contains("expander")
+            || name.contains("saturation")
+            || name.contains("transient")
+            || name.contains("delay")
+            || name.contains("external")
+        {
+            MODERATE_PARALLEL_NODE_COST
+        } else {
+            DEFAULT_PARALLEL_NODE_COST
+        }
     }
 
     pub fn add_plugin(&mut self, plugin: Box<dyn Plugin>) -> Result<(), String> {
@@ -1025,6 +1221,65 @@ impl DawHost {
         }
     }
 
+    pub(super) fn process_compiled_plugin_f32_isolated(
+        plugin: &mut dyn Plugin,
+        node: &GraphNode,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext<'_>,
+    ) -> Option<usize> {
+        let result = match catch_unwind(AssertUnwindSafe(|| {
+            plugin.process_compiled_f32(op, input, output, context)
+        })) {
+            Ok(result) => result?,
+            Err(payload) => {
+                let reason = panic_payload_description(payload.as_ref());
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) panicked in compiled {:?}: {}; using regular process for this block",
+                    node.name,
+                    node.id,
+                    op,
+                    reason
+                );
+                return None;
+            }
+        };
+
+        match result {
+            Ok(frames) => {
+                if frames.saturating_mul(node.output_channels()) <= output.len() {
+                    Some(frames)
+                } else {
+                    crate::rate_limited_log!(
+                        error,
+                        5,
+                        "host: plugin '{}' (node {}) compiled {:?} returned {} frames but output buffer holds {} samples; using regular process for this block",
+                        node.name,
+                        node.id,
+                        op,
+                        frames,
+                        output.len()
+                    );
+                    None
+                }
+            }
+            Err(err) => {
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) compiled {:?} failed: {err}; using regular process for this block",
+                    node.name,
+                    node.id,
+                    op
+                );
+                None
+            }
+        }
+    }
+
     pub(super) fn process_plugin_f64_isolated(
         plugin: &mut dyn Plugin,
         node: &GraphNode,
@@ -1412,6 +1667,9 @@ impl DawHost {
         let max_of = self.output_frames_for_input(nf);
         let out_ch = self.output_channels();
         self.apply_automation_for_block(nf);
+        if let Some(plan) = self.compiled_plan.linear_f32().cloned() {
+            return self.process_compiled_linear_f32_plan(&plan, input, output, block_start_sample);
+        }
         let stage_block_start_sample = block_start_sample;
 
         // Use BufferGuard to guarantee process_buffers are returned even on early ?-return
@@ -1437,6 +1695,7 @@ impl DawHost {
                 &self.predecessors,
                 &self.is_input_node,
                 &self.bypassed,
+                &self.cached_parallel_node_costs,
                 bufs,
             ) {
                 cf = parallel_result?;
@@ -1541,6 +1800,375 @@ impl DawHost {
         // BufferGuard's Drop impl returns bufs to self.process_buffers when
         // `guard` falls out of scope here.
         Ok(cf)
+    }
+
+    pub(super) fn process_compiled_linear_f32_plan(
+        &mut self,
+        plan: &CompiledLinearPlan,
+        input: &[f32],
+        output: &mut [f32],
+        block_start_sample: u64,
+    ) -> Result<usize, String> {
+        let input_channels = plan.input_channels;
+        let linear_gain_regions = self.compiled_linear_gain_regions(plan);
+        let static_gains = (0..plan.ops.len())
+            .map(|idx| self.compiled_op_static_gain(plan, idx))
+            .collect::<Vec<_>>();
+        let mut guard = BufferGuard::take(&mut self.process_buffers);
+        let bufs = guard.get_mut();
+
+        let mut current_source = CompiledLinearSource::ExternalInput;
+        let mut current_len = input.len();
+        let mut current_frames = input.len() / input_channels;
+        let mut active_gain_region: Option<(usize, f32)> = None;
+
+        let mut idx = 0;
+        while idx < plan.ops.len() {
+            if active_gain_region.is_none() {
+                active_gain_region = linear_gain_regions[idx];
+            }
+
+            if active_gain_region.is_some() && static_gains[idx].is_some() {
+                idx += 1;
+                if let Some((region_end, gain)) = active_gain_region
+                    && idx == region_end
+                {
+                    current_source = Self::apply_compiled_region_gain(
+                        bufs,
+                        input,
+                        output,
+                        current_source,
+                        current_len,
+                        gain,
+                        region_end == plan.ops.len(),
+                    )?;
+                    active_gain_region = None;
+                }
+                continue;
+            }
+
+            let op = &plan.ops[idx];
+            let nid = op.node_id;
+            let node = self
+                .nodes
+                .get(&nid)
+                .ok_or_else(|| format!("Missing node {nid} during compiled f32 processing"))?;
+            let region_writes_final_gain = active_gain_region
+                .is_some_and(|(region_end, gain)| region_end == plan.ops.len() && gain != 1.0);
+            let is_last = idx + 1 == plan.ops.len() && !region_writes_final_gain;
+            let output_frames = {
+                let plugin = self.plugins[nid].as_ref().unwrap();
+                Self::plugin_output_frames_for_input_isolated(
+                    plugin.as_ref(),
+                    nid,
+                    &node.name,
+                    current_frames,
+                )
+            };
+            let output_len = output_frames * node.output_channels();
+
+            let frames = match (is_last, current_source) {
+                (true, CompiledLinearSource::ExternalInput) => {
+                    if output.len() < output_len {
+                        return Err(format!(
+                            "f32 output too small: need {output_len} samples, got {}",
+                            output.len()
+                        ));
+                    }
+                    Self::process_f32_node(
+                        self.plugins[nid].as_mut().unwrap().as_mut(),
+                        node,
+                        op.kind,
+                        self.bypassed.get(nid).copied().unwrap_or(false),
+                        &input[..current_len],
+                        &mut output[..output_len],
+                        self.config.sample_rate,
+                        block_start_sample,
+                        current_frames,
+                    )?
+                }
+                (true, CompiledLinearSource::ScratchInput) => {
+                    if output.len() < output_len {
+                        return Err(format!(
+                            "f32 output too small: need {output_len} samples, got {}",
+                            output.len()
+                        ));
+                    }
+                    Self::process_f32_node(
+                        self.plugins[nid].as_mut().unwrap().as_mut(),
+                        node,
+                        op.kind,
+                        self.bypassed.get(nid).copied().unwrap_or(false),
+                        &bufs.scratch_input[..current_len],
+                        &mut output[..output_len],
+                        self.config.sample_rate,
+                        block_start_sample,
+                        current_frames,
+                    )?
+                }
+                (true, CompiledLinearSource::ScratchOutput) => {
+                    if output.len() < output_len {
+                        return Err(format!(
+                            "f32 output too small: need {output_len} samples, got {}",
+                            output.len()
+                        ));
+                    }
+                    Self::process_f32_node(
+                        self.plugins[nid].as_mut().unwrap().as_mut(),
+                        node,
+                        op.kind,
+                        self.bypassed.get(nid).copied().unwrap_or(false),
+                        &bufs.scratch_output[..current_len],
+                        &mut output[..output_len],
+                        self.config.sample_rate,
+                        block_start_sample,
+                        current_frames,
+                    )?
+                }
+                (false, CompiledLinearSource::ExternalInput) => {
+                    ensure_len(&mut bufs.scratch_output, output_len);
+                    let frames = Self::process_f32_node(
+                        self.plugins[nid].as_mut().unwrap().as_mut(),
+                        node,
+                        op.kind,
+                        self.bypassed.get(nid).copied().unwrap_or(false),
+                        &input[..current_len],
+                        &mut bufs.scratch_output[..output_len],
+                        self.config.sample_rate,
+                        block_start_sample,
+                        current_frames,
+                    )?;
+                    current_source = CompiledLinearSource::ScratchOutput;
+                    frames
+                }
+                (false, CompiledLinearSource::ScratchInput) => {
+                    ensure_len(&mut bufs.scratch_output, output_len);
+                    let frames = Self::process_f32_node(
+                        self.plugins[nid].as_mut().unwrap().as_mut(),
+                        node,
+                        op.kind,
+                        self.bypassed.get(nid).copied().unwrap_or(false),
+                        &bufs.scratch_input[..current_len],
+                        &mut bufs.scratch_output[..output_len],
+                        self.config.sample_rate,
+                        block_start_sample,
+                        current_frames,
+                    )?;
+                    current_source = CompiledLinearSource::ScratchOutput;
+                    frames
+                }
+                (false, CompiledLinearSource::ScratchOutput) => {
+                    ensure_len(&mut bufs.scratch_input, output_len);
+                    let frames = Self::process_f32_node(
+                        self.plugins[nid].as_mut().unwrap().as_mut(),
+                        node,
+                        op.kind,
+                        self.bypassed.get(nid).copied().unwrap_or(false),
+                        &bufs.scratch_output[..current_len],
+                        &mut bufs.scratch_input[..output_len],
+                        self.config.sample_rate,
+                        block_start_sample,
+                        current_frames,
+                    )?;
+                    current_source = CompiledLinearSource::ScratchInput;
+                    frames
+                }
+            };
+
+            current_frames = frames;
+            current_len = frames * node.output_channels();
+            idx += 1;
+            if let Some((region_end, gain)) = active_gain_region
+                && idx == region_end
+            {
+                current_source = Self::apply_compiled_region_gain(
+                    bufs,
+                    input,
+                    output,
+                    current_source,
+                    current_len,
+                    gain,
+                    region_end == plan.ops.len(),
+                )?;
+                active_gain_region = None;
+            }
+        }
+
+        self.automation_state.playback_position += input.len() / input_channels;
+        Ok(current_frames)
+    }
+
+    fn compiled_linear_gain_regions(&self, plan: &CompiledLinearPlan) -> Vec<Option<(usize, f32)>> {
+        (0..plan.ops.len())
+            .map(|start| self.compiled_linear_gain_region(plan, start))
+            .collect()
+    }
+
+    fn compiled_linear_gain_region(
+        &self,
+        plan: &CompiledLinearPlan,
+        start: usize,
+    ) -> Option<(usize, f32)> {
+        let first = plan.ops.get(start)?;
+        if first.barrier.is_some()
+            || first.metadata_boundary
+            || !first.linear
+            || !first.time_invariant_for_block
+            || !first.can_absorb_input_gain
+            || !first.can_absorb_output_gain
+            || first.input_channels != first.output_channels
+        {
+            return None;
+        }
+
+        let mut end = start;
+        let mut gain = 1.0_f32;
+        let mut saw_static_gain = false;
+        while let Some(op) = plan.ops.get(end) {
+            if op.barrier.is_some()
+                || op.metadata_boundary
+                || !op.linear
+                || !op.time_invariant_for_block
+                || !op.can_absorb_input_gain
+                || !op.can_absorb_output_gain
+                || op.input_channels != op.output_channels
+            {
+                break;
+            }
+            if let Some(op_gain) = self.compiled_op_static_gain(plan, end) {
+                saw_static_gain = true;
+                gain *= op_gain;
+            } else if op.kind == CompiledOpKind::ApplyGain {
+                break;
+            }
+            end += 1;
+        }
+        (saw_static_gain && end > start).then_some((end, gain))
+    }
+
+    fn compiled_op_static_gain(&self, plan: &CompiledLinearPlan, idx: usize) -> Option<f32> {
+        let op = plan.ops.get(idx)?;
+        if op.kind != CompiledOpKind::ApplyGain {
+            return None;
+        }
+        let nid = op.node_id;
+        if self.bypassed.get(nid).copied().unwrap_or(false) {
+            return Some(1.0);
+        }
+        self.plugins
+            .get(nid)
+            .and_then(|plugin| plugin.as_ref())
+            .and_then(|plugin| plugin.compile_metadata().static_gain)
+    }
+
+    fn apply_compiled_region_gain(
+        bufs: &mut ProcessBuffers<f32>,
+        input: &[f32],
+        output: &mut [f32],
+        current_source: CompiledLinearSource,
+        current_len: usize,
+        gain: f32,
+        is_final: bool,
+    ) -> Result<CompiledLinearSource, String> {
+        if is_final {
+            if output.len() < current_len {
+                return Err(format!(
+                    "f32 output too small: need {current_len} samples, got {}",
+                    output.len()
+                ));
+            }
+            match current_source {
+                CompiledLinearSource::ExternalInput => {
+                    Self::write_scaled_f32(&input[..current_len], &mut output[..current_len], gain)
+                }
+                CompiledLinearSource::ScratchInput => Self::write_scaled_f32(
+                    &bufs.scratch_input[..current_len],
+                    &mut output[..current_len],
+                    gain,
+                ),
+                CompiledLinearSource::ScratchOutput => Self::write_scaled_f32(
+                    &bufs.scratch_output[..current_len],
+                    &mut output[..current_len],
+                    gain,
+                ),
+            }
+            return Ok(current_source);
+        }
+
+        match current_source {
+            CompiledLinearSource::ExternalInput => {
+                ensure_len(&mut bufs.scratch_output, current_len);
+                Self::write_scaled_f32(
+                    &input[..current_len],
+                    &mut bufs.scratch_output[..current_len],
+                    gain,
+                );
+                Ok(CompiledLinearSource::ScratchOutput)
+            }
+            CompiledLinearSource::ScratchInput => {
+                ensure_len(&mut bufs.scratch_output, current_len);
+                Self::write_scaled_f32(
+                    &bufs.scratch_input[..current_len],
+                    &mut bufs.scratch_output[..current_len],
+                    gain,
+                );
+                Ok(CompiledLinearSource::ScratchOutput)
+            }
+            CompiledLinearSource::ScratchOutput => {
+                ensure_len(&mut bufs.scratch_input, current_len);
+                Self::write_scaled_f32(
+                    &bufs.scratch_output[..current_len],
+                    &mut bufs.scratch_input[..current_len],
+                    gain,
+                );
+                Ok(CompiledLinearSource::ScratchInput)
+            }
+        }
+    }
+
+    fn write_scaled_f32(input: &[f32], output: &mut [f32], gain: f32) {
+        debug_assert!(output.len() >= input.len());
+        if (gain - 1.0).abs() <= f32::EPSILON {
+            output[..input.len()].copy_from_slice(input);
+        } else {
+            for (dst, src) in output.iter_mut().zip(input.iter()) {
+                *dst = *src * gain;
+            }
+        }
+    }
+
+    pub(super) fn process_f32_node(
+        plugin: &mut dyn Plugin,
+        node: &GraphNode,
+        op_kind: CompiledOpKind,
+        bypassed: bool,
+        input: &[f32],
+        output: &mut [f32],
+        sample_rate: u32,
+        sample_position: u64,
+        num_frames: usize,
+    ) -> Result<usize, String> {
+        if bypassed {
+            output[..input.len()].copy_from_slice(input);
+            return Ok(num_frames);
+        }
+        let context =
+            ProcessContext::new(sample_rate, num_frames).with_sample_position(sample_position);
+        if let Some(compiled_op) = plugin_compiled_op(op_kind) {
+            if let Some(frames) = Self::process_compiled_plugin_f32_isolated(
+                plugin,
+                node,
+                compiled_op,
+                input,
+                output,
+                &context,
+            ) {
+                return Ok(frames);
+            }
+        }
+        Ok(Self::process_plugin_f32_isolated(
+            plugin, node, input, output, &context,
+        ))
     }
 
     pub(super) fn apply_automation_for_block(&mut self, nf: usize) {
@@ -2103,9 +2731,12 @@ impl DawHost {
         predecessors: &[Vec<GraphEdge>],
         is_input_node: &[bool],
         bypassed: &[bool],
+        parallel_node_costs: &[u32],
         bufs: &mut ProcessBuffers<f32>,
     ) -> Option<Result<usize, String>> {
-        if !parallel_enabled || stage.nodes.len() < 2 {
+        if !parallel_enabled
+            || !Self::should_parallelize_stage(stage, cf, nodes, parallel_node_costs)
+        {
             return None;
         }
 
@@ -2233,6 +2864,38 @@ impl DawHost {
         }
 
         stage_cf.map(Ok)
+    }
+
+    pub(super) fn should_parallelize_stage(
+        stage: &ProcessingStage,
+        frames: usize,
+        nodes: &HashMap<NodeId, GraphNode>,
+        parallel_node_costs: &[u32],
+    ) -> bool {
+        if stage.nodes.len() < 2 {
+            return false;
+        }
+        Self::stage_work_units(stage, frames, nodes, parallel_node_costs)
+            >= MIN_PARALLEL_STAGE_WORK_UNITS
+    }
+
+    pub(super) fn stage_work_units(
+        stage: &ProcessingStage,
+        frames: usize,
+        nodes: &HashMap<NodeId, GraphNode>,
+        parallel_node_costs: &[u32],
+    ) -> usize {
+        stage.nodes.iter().fold(0usize, |total, &nid| {
+            let channels = nodes
+                .get(&nid)
+                .map(|node| node.input_channels().max(node.output_channels()).max(1))
+                .unwrap_or(1);
+            let cost = parallel_node_costs
+                .get(nid)
+                .copied()
+                .unwrap_or(DEFAULT_PARALLEL_NODE_COST) as usize;
+            total.saturating_add(frames.saturating_mul(channels).saturating_mul(cost))
+        })
     }
 
     pub(super) fn merge_inputs_into<T: AudioSample>(

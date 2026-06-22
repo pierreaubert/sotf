@@ -1,9 +1,9 @@
 //! Snapshot tests for SOTF streaming protocol responses.
 
+use sotf_streaming::{PcmStreamServer, PcmStreamServerConfig};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
-use sotf_streaming::{PcmStreamServer, PcmStreamServerConfig};
 
 /// Recursively sort object keys so snapshots are stable regardless of
 /// serde_json's map backend (BTreeMap vs IndexMap/preserve_order).
@@ -41,7 +41,9 @@ fn read_raw_response(addr: std::net::SocketAddr, request: &[u8]) -> Vec<u8> {
     while Instant::now() < deadline {
         match TcpStream::connect(addr) {
             Ok(mut stream) => {
-                stream.set_read_timeout(Some(Duration::from_millis(50))).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_millis(50)))
+                    .unwrap();
                 stream.write_all(request).unwrap();
                 let mut buf = [0u8; 4096];
                 let mut bytes = Vec::new();
@@ -102,7 +104,8 @@ fn snapshot_status_http_response_body() {
     let mut value: serde_json::Value = serde_json::from_str(&text).expect("status body is json");
     // The bind_addr contains an ephemeral port; redact it for stability.
     if let Some(addr) = value.get_mut("bind_addr").and_then(|v| v.as_str()) {
-        *value.get_mut("bind_addr").unwrap() = serde_json::json!(addr.replace(addr.split(':').last().unwrap_or(""), "<port>"));
+        *value.get_mut("bind_addr").unwrap() =
+            serde_json::json!(addr.replace(addr.split(':').last().unwrap_or(""), "<port>"));
     }
     insta::assert_json_snapshot!(sort_json_keys(value));
 }

@@ -1,10 +1,10 @@
 //! Plugin factory and path builder for A/B Compare plugin.
 
 use super::config::{GraphEdgeConfig, GraphNodeConfig, PathConfig};
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricPluginAdapter};
 use sotf_host::PluginFactoryFn;
 use sotf_host::host::{DawHost, GraphEdge};
 use sotf_host::plugin::Plugin;
+use sotf_host::{ParametricInPlacePluginAdapter, ParametricPluginAdapter};
 use sotf_plugin_delay::{DelayPlugin, DelayPluginParams};
 use sotf_plugin_eq::{EqPlugin, EqPluginParams};
 use sotf_plugin_gain::{GainPlugin, GainPluginParams};

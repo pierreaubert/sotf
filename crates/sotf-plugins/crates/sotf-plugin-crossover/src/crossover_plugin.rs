@@ -7,7 +7,9 @@ use super::types::CrossoverPluginParams;
 use sotf_host::fir_crossover::{DEFAULT_FIR_CROSSOVER_TAPS, FirCrossover, MultibandFirCrossover};
 use sotf_host::lr4_crossover::{Lr4Crossover, MultibandLr4Crossover};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::LogSmoother;
 
@@ -391,6 +393,20 @@ impl Plugin for CrossoverPlugin {
 
     fn output_channels(&self) -> usize {
         self.calc_output_channels()
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let latency_samples = self.latency_samples();
+        let mut metadata = PluginCompileMetadata::linear_transform(
+            PluginCostClass::Iir,
+            None,
+            latency_samples,
+            false,
+            true,
+            false,
+        );
+        metadata.boundary = true;
+        metadata
     }
 
     fn parameters(&self) -> Vec<Parameter> {

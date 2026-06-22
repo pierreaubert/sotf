@@ -45,7 +45,10 @@ fn test_eq_boost() {
     )];
     let mut p = EqPlugin::new(1, f);
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
     let mut b: Vec<f32> = (0..1024).map(|k| (k as f32 * 0.1).sin()).collect();
     let i = b.clone();
@@ -56,8 +59,8 @@ fn test_eq_boost() {
 
 #[test]
 fn test_eq_processing_varied_buffers() {
-use sotf_host::{ParametricPluginAdapter, ParametricPlugin, Plugin, test_varied_buffer_sizes};
-        let sample_rate = 48000.0;
+    use sotf_host::{ParametricPlugin, ParametricPluginAdapter, Plugin, test_varied_buffer_sizes};
+    let sample_rate = 48000.0;
     let channels = 2;
     let f = vec![Biquad::new(
         BiquadFilterType::Peak,
@@ -125,7 +128,10 @@ fn test_eq_warped_biquad_filter_processes() {
     };
     let mut p = EqPlugin::from_params(1, 48000, params).unwrap();
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
 
     assert_eq!(p.filters[0].len(), 0);
@@ -166,7 +172,10 @@ fn test_eq_kautz_filter_processes_as_dry_plus_correction() {
     };
     let mut p = EqPlugin::from_params(1, 48000, params).unwrap();
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
 
     assert_eq!(p.filters[0].len(), 0);
@@ -187,8 +196,8 @@ fn test_eq_kautz_filter_processes_as_dry_plus_correction() {
 
 #[test]
 fn test_eq_rt_safety() {
-use sotf_host::{ParametricPluginAdapter, ParametricPlugin, Plugin, assert_no_allocs};
-        let sample_rate = 48000;
+    use sotf_host::{ParametricPlugin, ParametricPluginAdapter, Plugin, assert_no_allocs};
+    let sample_rate = 48000;
     let channels = 2;
     let mut inner = EqPlugin::new(channels, vec![]);
     inner.plugin_initialize(sample_rate).unwrap();
@@ -225,7 +234,7 @@ fn test_parameter_smoothing_starts_transition() {
 
     // Change gain -> should start a transition
     p.parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(6.0))
-    .unwrap();
+        .unwrap();
 
     assert!(p.transitions[0].is_some());
     let trans = p.transitions[0].as_ref().unwrap();
@@ -244,12 +253,15 @@ fn test_parameter_smoothing_completes() {
     )];
     let mut p = EqPlugin::new(1, f);
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
 
     // Trigger a transition
     p.parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(6.0))
-    .unwrap();
+        .unwrap();
     assert!(p.transitions[0].is_some());
 
     // Process enough samples to complete the transition (~5ms at 48kHz = 240 samples)
@@ -275,7 +287,10 @@ fn test_initialize_preserves_state_on_sample_rate_change() {
     )];
     let mut p = EqPlugin::new(1, f);
     p.plugin_initialize(44100).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
 
     // Process some audio to build up filter state
@@ -306,7 +321,10 @@ fn test_smoothed_output_bounded_between_old_and_new() {
     )];
     let mut p = EqPlugin::new(1, f);
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
 
     // Process some warmup
@@ -314,7 +332,10 @@ fn test_smoothed_output_bounded_between_old_and_new() {
     _process_in_place(&mut p, &mut warmup, &ProcessContext::new(48000, 1024));
 
     // Now change gain to +12dB
-    p.parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(12.0))
+    p.parametric_set_parameter(
+        ParameterId::from("band_0_gain"),
+        ParameterValue::Float(12.0),
+    )
     .unwrap();
 
     // Process during transition with DC signal
@@ -333,27 +354,24 @@ fn test_oversampling_parameter_set_get() {
     p.plugin_initialize(48000).unwrap();
 
     // Default is 1 (no oversampling)
-    assert_eq!(
-        _get_param(&p, "oversampling"),
-        Some(ParameterValue::Int(1))
-    );
+    assert_eq!(_get_param(&p, "oversampling"), Some(ParameterValue::Int(1)));
 
     // Set to 2x
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
-    .unwrap();
+        .unwrap();
     assert_eq!(p.oversampling_factor, 2);
     assert!(p.oversampler.is_some());
     assert!(p.latency_samples() > 0);
 
     // Set to 4x
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(4))
-    .unwrap();
+        .unwrap();
     assert_eq!(p.oversampling_factor, 4);
     assert!(p.oversampler.is_some());
 
     // Set back to 1x
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(1))
-    .unwrap();
+        .unwrap();
     assert_eq!(p.oversampling_factor, 1);
     assert!(p.oversampler.is_none());
     assert_eq!(p.latency_samples(), 0);
@@ -366,20 +384,14 @@ fn test_oversampling_invalid_factor() {
 
     // Factor 3 is invalid
     assert!(
-        p.parametric_set_parameter(
-            ParameterId::from("oversampling"),
-            ParameterValue::Int(3),
-        )
-        .is_err()
+        p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(3),)
+            .is_err()
     );
 
     // Factor 0 is invalid
     assert!(
-        p.parametric_set_parameter(
-            ParameterId::from("oversampling"),
-            ParameterValue::Int(0),
-        )
-        .is_err()
+        p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(0),)
+            .is_err()
     );
 }
 
@@ -394,10 +406,13 @@ fn test_oversampling_2x_processes_audio() {
     )];
     let mut p = EqPlugin::new(2, f);
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
-    .unwrap();
+        .unwrap();
 
     // Process several blocks to let the resampler fill up
     let num_frames = 512;
@@ -432,10 +447,13 @@ fn test_oversampling_4x_processes_audio() {
     )];
     let mut p = EqPlugin::new(2, f);
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(4))
-    .unwrap();
+        .unwrap();
 
     let num_frames = 512;
     let nc = 2;
@@ -462,12 +480,12 @@ fn test_oversampling_latency_reported() {
     assert_eq!(p.latency_samples(), 0);
 
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
-    .unwrap();
+        .unwrap();
     let lat_2x = p.latency_samples();
     assert!(lat_2x > 0, "2x oversampling should have latency");
 
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(4))
-    .unwrap();
+        .unwrap();
     let lat_4x = p.latency_samples();
     assert!(lat_4x > 0, "4x oversampling should have latency");
 }
@@ -488,7 +506,7 @@ fn test_oversampling_biquad_freq_scaled() {
     assert!((p.filters[0][0][0].srate - 48000.0).abs() < 1.0);
 
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
-    .unwrap();
+        .unwrap();
     // After setting 2x oversampling, biquads should be recalculated at 96000 Hz
     assert!((p.filters[0][0][0].srate - 96000.0).abs() < 1.0);
 }
@@ -498,7 +516,7 @@ fn test_oversampling_reset_clears_state() {
     let mut p = EqPlugin::new(2, vec![]);
     p.plugin_initialize(48000).unwrap();
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
-    .unwrap();
+        .unwrap();
 
     // Push some audio through
     let num_frames = 512;
@@ -512,7 +530,11 @@ fn test_oversampling_reset_clears_state() {
     let mut silence = vec![0.0f32; num_frames * nc];
     // Process enough blocks to flush any stale state
     for _ in 0..10 {
-        _process_in_place(&mut p, &mut silence, &ProcessContext::new(48000, num_frames));
+        _process_in_place(
+            &mut p,
+            &mut silence,
+            &ProcessContext::new(48000, num_frames),
+        );
     }
     for (i, &s) in silence.iter().enumerate() {
         assert!(s.abs() < 1e-6, "sample {} not silent after reset: {}", i, s);
@@ -540,12 +562,15 @@ fn test_multi_stage_transition_covers_all_stages() {
     };
     let mut p = EqPlugin::from_params(1, 48000, params).unwrap();
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
 
     // Trigger a gain change
     p.parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(6.0))
-    .unwrap();
+        .unwrap();
 
     // Transition should exist and cover 2 stages (order=4 => 2 stages)
     assert!(p.transitions[0].is_some());
@@ -622,8 +647,9 @@ fn test_set_parameter_rejects_odd_filter_order() {
         )],
     );
 
-    let err = p.parametric_set_parameter(ParameterId::from("band_0_order"), ParameterValue::Int(3))
-    .unwrap_err();
+    let err = p
+        .parametric_set_parameter(ParameterId::from("band_0_order"), ParameterValue::Int(3))
+        .unwrap_err();
     assert!(
         err.contains("Filter order must be even"),
         "odd runtime order should be rejected, got: {err}"
@@ -684,7 +710,10 @@ fn test_multi_stage_transition_output_is_finite() {
     };
     let mut p = EqPlugin::from_params(1, 48000, params).unwrap();
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
 
     // Warmup
@@ -692,7 +721,10 @@ fn test_multi_stage_transition_output_is_finite() {
     _process_in_place(&mut p, &mut buf, &ProcessContext::new(48000, 256));
 
     // Trigger transition
-    p.parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(18.0))
+    p.parametric_set_parameter(
+        ParameterId::from("band_0_gain"),
+        ParameterValue::Float(18.0),
+    )
     .unwrap();
 
     // Process during transition
@@ -765,7 +797,10 @@ fn test_process_in_place_single_frame_does_not_panic() {
     )];
     let mut p = EqPlugin::new(2, f);
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
     let mut buffer = vec![0.5f32, 0.5f32];
     let ctx = ProcessContext::new(48000, 1);
@@ -788,7 +823,10 @@ fn test_set_parameter_nan_freq_rejected() {
     );
     p.plugin_initialize(48000).unwrap();
 
-    let result = p.parametric_set_parameter(ParameterId::from("band_0_freq"), ParameterValue::Float(f32::NAN));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_freq"),
+        ParameterValue::Float(f32::NAN),
+    );
     assert!(result.is_err(), "NaN frequency should be rejected");
 }
 
@@ -806,7 +844,10 @@ fn test_set_parameter_nan_q_rejected() {
     );
     p.plugin_initialize(48000).unwrap();
 
-    let result = p.parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(f32::NAN));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_q"),
+        ParameterValue::Float(f32::NAN),
+    );
     assert!(result.is_err(), "NaN Q should be rejected");
 }
 
@@ -824,7 +865,10 @@ fn test_set_parameter_nan_gain_rejected() {
     );
     p.plugin_initialize(48000).unwrap();
 
-    let result = p.parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(f32::NAN));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_gain"),
+        ParameterValue::Float(f32::NAN),
+    );
     assert!(result.is_err(), "NaN gain should be rejected");
 }
 
@@ -842,7 +886,10 @@ fn test_set_parameter_infinite_freq_rejected() {
     );
     p.plugin_initialize(48000).unwrap();
 
-    let result = p.parametric_set_parameter(ParameterId::from("band_0_freq"), ParameterValue::Float(f32::INFINITY));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_freq"),
+        ParameterValue::Float(f32::INFINITY),
+    );
     assert!(result.is_err(), "Infinite frequency should be rejected");
 }
 
@@ -851,7 +898,10 @@ fn test_set_parameter_unknown_parameter_returns_error() {
     let mut p = EqPlugin::new(1, vec![]);
     p.plugin_initialize(48000).unwrap();
 
-    let result = p.parametric_set_parameter(ParameterId::from("not_a_real_param"), ParameterValue::Float(1.0));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("not_a_real_param"),
+        ParameterValue::Float(1.0),
+    );
     assert!(result.is_err(), "Unknown parameter should return error");
     let err = result.unwrap_err();
     assert!(
@@ -874,7 +924,10 @@ fn test_set_parameter_invalid_band_field_returns_error() {
     );
     p.plugin_initialize(48000).unwrap();
 
-    let result = p.parametric_set_parameter(ParameterId::from("band_0_badfield"), ParameterValue::Float(1000.0));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_badfield"),
+        ParameterValue::Float(1000.0),
+    );
     assert!(result.is_err(), "Invalid band field should return error");
     let err = result.unwrap_err();
     assert!(
@@ -899,7 +952,10 @@ fn test_set_parameter_out_of_range_band_index_does_not_panic() {
 
     // Band 99 does not exist. The implementation should not panic; it
     // currently silently ignores the update, which is acceptable.
-    let result = p.parametric_set_parameter(ParameterId::from("band_99_freq"), ParameterValue::Float(2000.0));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_99_freq"),
+        ParameterValue::Float(2000.0),
+    );
     assert!(
         result.is_ok(),
         "out-of-range band should not panic/error: {:?}",
@@ -913,7 +969,10 @@ fn test_set_parameter_auto_gain_roundtrip() {
     p.plugin_initialize(48000).unwrap();
 
     // Disable
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
     assert_eq!(
         _get_param(&p, "auto_gain_enabled"),
@@ -921,7 +980,10 @@ fn test_set_parameter_auto_gain_roundtrip() {
     );
 
     // Enable
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(true))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(true),
+    )
     .unwrap();
     assert_eq!(
         _get_param(&p, "auto_gain_enabled"),
@@ -945,12 +1007,12 @@ fn test_set_parameter_tdf2_roundtrip() {
     assert!(!p.use_tdf2);
 
     p.parametric_set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(true))
-    .unwrap();
+        .unwrap();
     assert!(p.use_tdf2);
     assert!(p.filters[0][0][0].use_tdf2);
 
     p.parametric_set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(false))
-    .unwrap();
+        .unwrap();
     assert!(!p.use_tdf2);
     assert!(!p.filters[0][0][0].use_tdf2);
 }
@@ -970,13 +1032,19 @@ fn test_set_parameter_topology_svf_roundtrip() {
     p.plugin_initialize(48000).unwrap();
     assert_eq!(p.topology, 0);
 
-    p.parametric_set_parameter(ParameterId::from("topology"), ParameterValue::String("SVF".to_string()))
+    p.parametric_set_parameter(
+        ParameterId::from("topology"),
+        ParameterValue::String("SVF".to_string()),
+    )
     .unwrap();
     assert_eq!(p.topology, 1);
     assert_eq!(p.svf_filters.len(), 1);
     assert_eq!(p.svf_filters[0].len(), 1);
 
-    p.parametric_set_parameter(ParameterId::from("topology"), ParameterValue::String("Biquad".to_string()))
+    p.parametric_set_parameter(
+        ParameterId::from("topology"),
+        ParameterValue::String("Biquad".to_string()),
+    )
     .unwrap();
     assert_eq!(p.topology, 0);
     assert!(p.svf_filters.is_empty());
@@ -993,9 +1061,15 @@ fn test_svf_topology_processes_finite_output() {
     )];
     let mut p = EqPlugin::new(2, f);
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Bool(false))
+    p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(false),
+    )
     .unwrap();
-    p.parametric_set_parameter(ParameterId::from("topology"), ParameterValue::String("SVF".to_string()))
+    p.parametric_set_parameter(
+        ParameterId::from("topology"),
+        ParameterValue::String("SVF".to_string()),
+    )
     .unwrap();
 
     let num_frames = 512;
@@ -1037,11 +1111,17 @@ fn test_set_parameter_band_freq_out_of_bounds_rejected() {
     p.plugin_initialize(48000).unwrap();
 
     // Below minimum
-    let result = p.parametric_set_parameter(ParameterId::from("band_0_freq"), ParameterValue::Float(10.0));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_freq"),
+        ParameterValue::Float(10.0),
+    );
     assert!(result.is_err(), "freq below FREQ_MIN should be rejected");
 
     // Above maximum
-    let result = p.parametric_set_parameter(ParameterId::from("band_0_freq"), ParameterValue::Float(25000.0));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_freq"),
+        ParameterValue::Float(25000.0),
+    );
     assert!(result.is_err(), "freq above FREQ_MAX should be rejected");
 }
 
@@ -1059,10 +1139,16 @@ fn test_set_parameter_band_gain_out_of_bounds_rejected() {
     );
     p.plugin_initialize(48000).unwrap();
 
-    let result = p.parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(30.0));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_gain"),
+        ParameterValue::Float(30.0),
+    );
     assert!(result.is_err(), "gain above GAIN_MAX should be rejected");
 
-    let result = p.parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(-30.0));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_gain"),
+        ParameterValue::Float(-30.0),
+    );
     assert!(result.is_err(), "gain below GAIN_MIN should be rejected");
 }
 
@@ -1200,7 +1286,7 @@ fn test_set_parameter_band_q_roundtrip() {
     );
     p.plugin_initialize(48000).unwrap();
     p.parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.5))
-    .unwrap();
+        .unwrap();
     assert!(p.transitions[0].is_some());
     let val = _get_param(&p, "band_0_q");
     assert_eq!(val, Some(ParameterValue::Float(2.5)));
@@ -1219,7 +1305,10 @@ fn test_set_parameter_band_freq_roundtrip() {
         )],
     );
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("band_0_freq"), ParameterValue::Float(2000.0))
+    p.parametric_set_parameter(
+        ParameterId::from("band_0_freq"),
+        ParameterValue::Float(2000.0),
+    )
     .unwrap();
     assert!(p.transitions[0].is_some());
     let val = _get_param(&p, "band_0_freq");
@@ -1240,7 +1329,7 @@ fn test_set_parameter_topology_float() {
     );
     p.plugin_initialize(48000).unwrap();
     p.parametric_set_parameter(ParameterId::from("topology"), ParameterValue::Float(1.0))
-    .unwrap();
+        .unwrap();
     assert_eq!(p.topology, 1);
 }
 
@@ -1257,7 +1346,10 @@ fn test_set_parameter_topology_noop() {
         )],
     );
     p.plugin_initialize(48000).unwrap();
-    p.parametric_set_parameter(ParameterId::from("topology"), ParameterValue::String("Biquad".to_string()))
+    p.parametric_set_parameter(
+        ParameterId::from("topology"),
+        ParameterValue::String("Biquad".to_string()),
+    )
     .unwrap();
     assert_eq!(p.topology, 0);
     assert!(p.svf_filters.is_empty());
@@ -1269,10 +1361,13 @@ fn test_set_parameter_oversampling_float_fallback() {
     p.plugin_initialize(48000).unwrap();
     // Set to 2x first
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
-    .unwrap();
+        .unwrap();
     assert_eq!(p.oversampling_factor, 2);
     // Float value falls through to unwrap_or(1)
-    p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Float(2.0))
+    p.parametric_set_parameter(
+        ParameterId::from("oversampling"),
+        ParameterValue::Float(2.0),
+    )
     .unwrap();
     assert_eq!(p.oversampling_factor, 1);
 }
@@ -1281,7 +1376,10 @@ fn test_set_parameter_oversampling_float_fallback() {
 fn test_set_parameter_auto_gain_validation_fails() {
     let mut p = EqPlugin::new(1, vec![]);
     p.plugin_initialize(48000).unwrap();
-    let result = p.parametric_set_parameter(ParameterId::from("auto_gain_enabled"), ParameterValue::Float(1.0));
+    let result = p.parametric_set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Float(1.0),
+    );
     assert!(result.is_err());
 }
 
@@ -1305,9 +1403,18 @@ fn test_get_parameter_band_order() {
 #[test]
 fn test_validate_sample_rate_returns_static_error() {
     use super::validate::validate_sample_rate;
-    assert_eq!(validate_sample_rate(f64::NAN).unwrap_err(), "Invalid sample rate");
-    assert_eq!(validate_sample_rate(0.0).unwrap_err(), "Invalid sample rate");
-    assert_eq!(validate_sample_rate(-48000.0).unwrap_err(), "Invalid sample rate");
+    assert_eq!(
+        validate_sample_rate(f64::NAN).unwrap_err(),
+        "Invalid sample rate"
+    );
+    assert_eq!(
+        validate_sample_rate(0.0).unwrap_err(),
+        "Invalid sample rate"
+    );
+    assert_eq!(
+        validate_sample_rate(-48000.0).unwrap_err(),
+        "Invalid sample rate"
+    );
     assert!(validate_sample_rate(48000.0).is_ok());
 }
 
@@ -1343,7 +1450,7 @@ fn test_validate_freq_q_gain_returns_static_error() {
 
 #[test]
 fn test_parametric_plugin_schema_matches_in_place_params() {
-        let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0);
+    let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0);
     let plugin = EqPlugin::new(1, vec![f]);
 
     let schema = plugin.parameter_schema();
@@ -1359,7 +1466,7 @@ fn test_parametric_plugin_schema_matches_in_place_params() {
 
 #[test]
 fn test_parametric_plugin_current_values_roundtrip() {
-        let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 6.0);
+    let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 6.0);
     let plugin = EqPlugin::new(1, vec![f]);
     let values = plugin.current_values();
 
@@ -1466,12 +1573,15 @@ fn test_parametric_adapter_filter_update_changes_output() {
 
 #[test]
 fn test_parametric_plugin_apply_values_updates_filters() {
-        let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0);
+    let f = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.0, 0.0);
     let mut plugin = EqPlugin::new(1, vec![f]);
     plugin.plugin_initialize(48000).unwrap();
 
     let mut values = sotf_host::parametric_plugin::ParameterSet::new();
-    values.insert(ParameterId::from("band_0_freq"), ParameterValue::Float(2500.0));
+    values.insert(
+        ParameterId::from("band_0_freq"),
+        ParameterValue::Float(2500.0),
+    );
     values.insert(ParameterId::from("band_0_gain"), ParameterValue::Float(3.0));
     ParametricPlugin::apply_values(&mut plugin, values).unwrap();
 

@@ -222,7 +222,8 @@ fn test_spatial_coherence_uses_complex_cross_term() {
     // Strongly coherent case: identical complex bins each frame.
     plugin.spatial.spatial_coherence.fill(1.0);
     plugin
-        .spatial.spatial_cross
+        .spatial
+        .spatial_cross
         .fill(rustfft::num_complex::Complex::new(0.0, 0.0));
     for frame in 0..12 {
         let angle = frame as f32 * 0.0;
@@ -240,7 +241,8 @@ fn test_spatial_coherence_uses_complex_cross_term() {
     // should cancel toward 0 even though magnitudes stay the same.
     plugin.spatial.spatial_coherence.fill(1.0);
     plugin
-        .spatial.spatial_cross
+        .spatial
+        .spatial_cross
         .fill(rustfft::num_complex::Complex::new(0.0, 0.0));
     for frame in 0..12 {
         let phase = (frame as f32) * 0.7;

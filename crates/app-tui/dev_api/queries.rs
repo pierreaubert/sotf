@@ -46,34 +46,40 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         // Metadata editor
         "metadata.editor_open" => json!(app.modal.metadata_editor.is_some()),
         "metadata.target" => json!(
-            app.modal.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .map(|editor| editor.target_label.clone())
         ),
         "metadata.title" => json!(
-            app.modal.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .map(|editor| editor.fields.title.clone())
         ),
         "metadata.year" => json!(
-            app.modal.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .map(|editor| editor.fields.year.clone())
         ),
         "metadata.preview_files" => json!(
-            app.modal.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .and_then(|editor| editor.preview.as_ref())
                 .map(|preview| preview.affected_files.len())
         ),
         "metadata.unsupported_count" => json!(
-            app.modal.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .and_then(|editor| editor.preview.as_ref())
                 .map(|preview| preview.unsupported_writes.len())
         ),
         "metadata.candidate_count" => json!(
-            app.modal.metadata_editor
+            app.modal
+                .metadata_editor
                 .as_ref()
                 .map(|editor| editor.search_results.len())
         ),
@@ -83,7 +89,8 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "recording.all_done" => {
             json!(
                 app.recording
-                    .model.channel_recordings
+                    .model
+                    .channel_recordings
                     .iter()
                     .all(|c| c.state
                         == sotf_audio_player::recording_types::ChannelRecordingState::Done)
@@ -91,7 +98,8 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         }
         "recording.done_count" => json!(
             app.recording
-                .model.channel_recordings
+                .model
+                .channel_recordings
                 .iter()
                 .filter(
                     |c| c.state == sotf_audio_player::recording_types::ChannelRecordingState::Done
@@ -105,11 +113,19 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         "roomeq.step" => json!(format!("{:?}", app.room_eq.model.step)),
         "roomeq.measurement_count" => json!(app.room_eq.model.channel_measurements.len()),
         "roomeq.speaker_config_count" => json!(app.room_eq.model.channel_measurements.len()),
-        "roomeq.optimization_status" => json!(format!("{:?}", app.room_eq.model.optimization_status)),
+        "roomeq.optimization_status" => {
+            json!(format!("{:?}", app.room_eq.model.optimization_status))
+        }
         "roomeq.result_count" => json!(app.room_eq.model.channel_results.len()),
         "roomeq.has_dsp_output" => json!(app.room_eq.model.dsp_output.is_some()),
         "roomeq.dsp_channel_count" => {
-            json!(app.room_eq.model.dsp_output.as_ref().map(|d| d.channels.len()))
+            json!(
+                app.room_eq
+                    .model
+                    .dsp_output
+                    .as_ref()
+                    .map(|d| d.channels.len())
+            )
         }
         "roomeq.filter_count" => json!(
             app.room_eq
@@ -120,10 +136,16 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
                 .sum::<usize>()
         ),
         "roomeq.average_pre_score" => {
-            json!(average_room_eq_score(&app.room_eq.model.channel_results, |r| r.pre_score))
+            json!(average_room_eq_score(
+                &app.room_eq.model.channel_results,
+                |r| r.pre_score
+            ))
         }
         "roomeq.average_post_score" => {
-            json!(average_room_eq_score(&app.room_eq.model.channel_results, |r| r.post_score))
+            json!(average_room_eq_score(
+                &app.room_eq.model.channel_results,
+                |r| r.post_score
+            ))
         }
         "roomeq.status" => json!(app.room_eq.model.status_message.as_str()),
         "roomeq.error" => json!(app.room_eq.model.error_message.as_deref().unwrap_or("")),
@@ -149,7 +171,8 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
 
         // Level meters
         "level_meters.channel_count" => json!(
-            app.level_meters.groups
+            app.level_meters
+                .groups
                 .iter()
                 .map(|g| g.channels.len())
                 .sum::<usize>()

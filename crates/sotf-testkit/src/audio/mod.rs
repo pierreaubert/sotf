@@ -1,6 +1,6 @@
 //! Deterministic audio signal generators and WAV fixture helpers.
 
-use hound::{WavReader, WavSpec, WavWriter, SampleFormat};
+use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
 
@@ -137,7 +137,9 @@ pub fn write_wav<P: AsRef<Path>>(
 }
 
 /// Read the first channel of a WAV file as f32 samples.
-pub fn read_first_channel_f32<P: AsRef<Path>>(path: P) -> Result<(u32, u16, Vec<f32>), hound::Error> {
+pub fn read_first_channel_f32<P: AsRef<Path>>(
+    path: P,
+) -> Result<(u32, u16, Vec<f32>), hound::Error> {
     let reader = WavReader::open(path)?;
     let spec = reader.spec();
     let channels = spec.channels as usize;

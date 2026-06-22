@@ -6,7 +6,7 @@ use math_audio_dsp::fast_math::fast_pow10;
 use sotf_host::TruePeakDetector;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
-use sotf_host::plugin::ProcessContext;
+use sotf_host::plugin::{PluginCompiledOp, ProcessContext};
 
 #[test]
 fn test_limiter_basic() {
@@ -19,6 +19,60 @@ fn test_limiter_basic() {
     for &s in &b[500..] {
         assert!(s.abs() <= thresh_lin * 1.05);
     }
+}
+
+#[test]
+fn test_limiter_compiled_op_matches_process_in_place() {
+    let sr = 48000;
+    let frames = 512;
+    let channels = 2;
+    let mut regular = LimiterPlugin::new(channels, -6.0, 50.0, 0.0, false);
+    let mut compiled = LimiterPlugin::new(channels, -6.0, 50.0, 0.0, false);
+    regular.initialize(sr).unwrap();
+    compiled.initialize(sr).unwrap();
+
+    let input: Vec<f32> = (0..frames * channels)
+        .map(|i| 0.82 * (i as f32 * 0.071).sin())
+        .collect();
+    let ctx = ProcessContext::new(sr, frames);
+    let mut expected = input.clone();
+    let mut actual = vec![0.0; input.len()];
+
+    let expected_frames = regular.process_in_place(&mut expected, &ctx).unwrap();
+    let actual_frames = compiled
+        .process_compiled_f32(PluginCompiledOp::Limiter, &input, &mut actual, &ctx)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(actual_frames, expected_frames);
+    let max_error = expected
+        .iter()
+        .zip(actual.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_error <= 1e-6,
+        "compiled limiter output diverged: max_error={max_error}"
+    );
+}
+
+#[test]
+fn test_limiter_compile_metadata_tracks_lookahead_latency() {
+    let mut no_lookahead = LimiterPlugin::new(2, -6.0, 50.0, 0.0, false);
+    no_lookahead.initialize(48000).unwrap();
+    let metadata = no_lookahead.compile_metadata();
+    assert_eq!(metadata.compiled_op, Some(PluginCompiledOp::Limiter));
+    assert_eq!(metadata.latency_samples, 0);
+    assert!(metadata.boundary);
+    assert!(metadata.stateful);
+    assert!(!metadata.linear);
+
+    let mut lookahead = LimiterPlugin::new(2, -6.0, 50.0, 5.0, false);
+    lookahead.initialize(48000).unwrap();
+    let metadata = lookahead.compile_metadata();
+    assert_eq!(metadata.compiled_op, None);
+    assert!(metadata.latency_samples > 0);
+    assert!(metadata.boundary);
 }
 
 /// Regression: threshold smoother was advanced twice per block (once via
@@ -180,8 +234,10 @@ fn test_dual_release_parameter() {
     p.initialize(48000).unwrap();
     assert!(!p.dual_release);
 
-    p.parametric_set_parameter(ParameterId::from("dual_release"),
-    ParameterValue::Bool(true),)
+    p.parametric_set_parameter(
+        ParameterId::from("dual_release"),
+        ParameterValue::Bool(true),
+    )
     .unwrap();
     assert!(p.dual_release);
 
@@ -252,7 +308,8 @@ fn test_limiter_mix_parameter() {
     // Create limiter with mix=0 set via parameter after init (so smoother starts at 0)
     let mut p_dry = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
     p_dry.initialize(sr).unwrap();
-    p_dry.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
+    p_dry
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
         .unwrap();
 
     let mut p_wet = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
@@ -791,7 +848,8 @@ fn test_set_parameter_unknown_id_returns_error() {
     let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
     p.initialize(48000).unwrap();
 
-    let result = p.parametric_set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0));
+    let result =
+        p.parametric_set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0));
     assert!(result.is_err());
 }
 
@@ -856,8 +914,10 @@ fn test_set_parameter_feed_forward_and_link_amount() {
     let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
     p.initialize(48000).unwrap();
 
-    p.parametric_set_parameter(ParameterId::from("feed_forward"),
-    ParameterValue::Bool(true),)
+    p.parametric_set_parameter(
+        ParameterId::from("feed_forward"),
+        ParameterValue::Bool(true),
+    )
     .unwrap();
     assert!(p.feed_forward);
 

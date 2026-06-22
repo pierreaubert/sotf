@@ -1,5 +1,7 @@
 use sotf_host::plugin::ProcessContext;
-use sotf_host::{CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, run_standard_tests};
+use sotf_host::{
+    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, run_standard_tests,
+};
 use sotf_plugin_de_esser::{DeEsserPlugin, DeEsserPluginParams};
 use std::f32::consts::PI;
 

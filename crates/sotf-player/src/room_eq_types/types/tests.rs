@@ -1,5 +1,5 @@
-use super::read_first_wav_channel_f32;
 use super::ChannelMeasurement;
+use super::read_first_wav_channel_f32;
 use crate::recording_types::RecordingResult;
 use std::path::Path;
 
@@ -23,7 +23,9 @@ fn write_wav_bytes(
     bytes.extend_from_slice(&format.to_le_bytes());
     bytes.extend_from_slice(&channels.to_le_bytes());
     bytes.extend_from_slice(&sample_rate.to_le_bytes());
-    bytes.extend_from_slice(&(sample_rate * channels as u32 * bytes_per_sample as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(sample_rate * channels as u32 * bytes_per_sample as u32).to_le_bytes(),
+    );
     bytes.extend_from_slice(&(channels * bytes_per_sample as u16).to_le_bytes());
     bytes.extend_from_slice(&bits.to_le_bytes());
     bytes.extend_from_slice(b"data");
@@ -49,7 +51,14 @@ fn read_first_wav_channel_handles_pcm16() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pcm16.wav");
     // Stereo: left = max, right = half max
-    write_wav_bytes(&path, 1, 16, 2, 48000, &[i16::MAX as i32, (i16::MAX / 2) as i32]);
+    write_wav_bytes(
+        &path,
+        1,
+        16,
+        2,
+        48000,
+        &[i16::MAX as i32, (i16::MAX / 2) as i32],
+    );
 
     let (samples, sr) = read_first_wav_channel_f32(&path).unwrap();
     assert_eq!(sr, 48000);
@@ -144,35 +153,30 @@ fn compute_lr_slope_returns_none_for_empty_measurements() {
 fn compute_lr_slope_computes_negative_slope() {
     // LR measurements: magnitude falls with log frequency → negative slope
     let freqs: Vec<f32> = (1..=50).map(|i| 200.0 + i as f32 * 396.0).collect();
-    let mags: Vec<f32> = freqs
-        .iter()
-        .map(|f| 20.0 - 3.0 * f.log10())
-        .collect();
-    let measurements = vec![
-        ChannelMeasurement {
-            channel_name: "L".to_string(),
-            measurement: RecordingResult {
-                channel: 0,
-                wav_path: None,
-                csv_path: None,
-                frequencies: freqs.clone(),
-                magnitude_db: mags.clone(),
-                phase_deg: vec![0.0; freqs.len()],
-                impulse_response: None,
-                impulse_time_ms: None,
-                excess_group_delay_ms: None,
-                thd_percent: None,
-                harmonic_distortion_db: None,
-                rt60_ms: None,
-                clarity_c50_db: None,
-                clarity_c80_db: None,
-                spectrogram_db: None,
-            },
-            is_group: false,
-            group_drivers: Vec::new(),
-            multi_mic_measurements: Vec::new(),
+    let mags: Vec<f32> = freqs.iter().map(|f| 20.0 - 3.0 * f.log10()).collect();
+    let measurements = vec![ChannelMeasurement {
+        channel_name: "L".to_string(),
+        measurement: RecordingResult {
+            channel: 0,
+            wav_path: None,
+            csv_path: None,
+            frequencies: freqs.clone(),
+            magnitude_db: mags.clone(),
+            phase_deg: vec![0.0; freqs.len()],
+            impulse_response: None,
+            impulse_time_ms: None,
+            excess_group_delay_ms: None,
+            thd_percent: None,
+            harmonic_distortion_db: None,
+            rt60_ms: None,
+            clarity_c50_db: None,
+            clarity_c80_db: None,
+            spectrogram_db: None,
         },
-    ];
+        is_group: false,
+        group_drivers: Vec::new(),
+        multi_mic_measurements: Vec::new(),
+    }];
 
     let (slope, min, max) = super::compute_lr_slope(&measurements).unwrap();
     assert!(slope < 0.0, "expected negative slope, got {slope}");

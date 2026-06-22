@@ -4,15 +4,17 @@ use super::consts::assert_no_allocs;
 use super::consts::generate_test_buffer;
 use criterion::Criterion;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, 
+use sotf_plugins::{
     ABComparePlugin, AaePlugin, AaePluginParams, AecPlugin, AecPluginParams, AutoGain,
     AutoGainParams, BandMergePlugin, BandSplitPlugin, BeamformerPlugin, ChannelMuteSoloPlugin,
     CompressorPlugin, CrossoverPlugin, DeclickPlugin, DelayPlugin, DenoiserPlugin, EqPlugin,
-    ExpanderPlugin, GainPlugin, GatePlugin, HissReducerPlugin,  LimiterPlugin,
+    ExpanderPlugin, GainPlugin, GatePlugin, HissReducerPlugin, LimiterPlugin,
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
-    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext, SPEECH_DENOISER_FRAME_SIZE,
-    SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin, UpmixerPlugin, UpmixerPluginParams,
-    XtcPlugin, XtcPluginParams};
+    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, ParametricInPlacePlugin,
+    ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin, ProcessContext,
+    SPEECH_DENOISER_FRAME_SIZE, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
+    UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
+};
 
 pub(super) fn test_eq_zero_alloc() {
     let filters = vec![

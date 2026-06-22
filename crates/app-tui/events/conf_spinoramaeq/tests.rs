@@ -55,7 +55,6 @@ fn spinorama_step_round_trip() {
     }
 }
 
-
 #[cfg(test)]
 mod poll_tests {
     use std::sync::{Arc, Mutex};
@@ -116,6 +115,9 @@ mod poll_tests {
         assert!(poll_spinorama_optimization(&mut app));
         assert_eq!(app.spinorama_eq.model.filters.len(), 1);
         assert_eq!(app.spinorama_eq.model.filters[0].filter_type, "Lowshelf");
-        assert_eq!(app.spinorama_eq.model.optimization_status, OptimizationStatus::Completed);
+        assert_eq!(
+            app.spinorama_eq.model.optimization_status,
+            OptimizationStatus::Completed
+        );
     }
 }

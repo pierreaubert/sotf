@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Re-export the workspace-level demo audio helpers from `sotf-testkit`.
-pub use sotf_testkit::audio::{demo_audio_file as get_demo_file, test_data_audio_dir as demo_audio_dir};
+pub use sotf_testkit::audio::{
+    demo_audio_file as get_demo_file, test_data_audio_dir as demo_audio_dir,
+};
 
 /// Returns all WAV files in the demo audio directory
 pub fn all_wav_files() -> Vec<PathBuf> {

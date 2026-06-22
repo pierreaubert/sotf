@@ -5,7 +5,7 @@ use super::types::ChannelMuteSoloParams;
 use super::types::ChannelState;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
-use sotf_host::plugin::ProcessContext;
+use sotf_host::plugin::{PluginCompiledOp, ProcessContext};
 
 mod misc;
 
@@ -292,6 +292,37 @@ fn test_process_dim_applies_dim_gain() {
     assert!((buffer[2] - expected * 3.0).abs() < 1e-5);
     assert!((buffer[1] - 2.0).abs() < 1e-6);
     assert!((buffer[3] - 4.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_compiled_channel_mute_solo_matches_in_place_process() {
+    let input = vec![1.0, 2.0, 3.0, 4.0, -1.0, -2.0, -3.0, -4.0];
+    let context = ProcessContext::new(48000, input.len() / 2);
+    let mut regular = ChannelMuteSoloPlugin::new(2, true);
+    let mut compiled = ChannelMuteSoloPlugin::new(2, true);
+    regular.set_fade_ms(0.0);
+    compiled.set_fade_ms(0.0);
+    regular.set_channel_state(0, true, false, false).unwrap();
+    compiled.set_channel_state(0, true, false, false).unwrap();
+    let mut regular_output = input.clone();
+    let mut compiled_output = vec![0.0; input.len()];
+
+    let regular_frames = regular
+        .process_in_place(&mut regular_output, &context)
+        .unwrap();
+    let compiled_frames = compiled
+        .process_compiled_f32(
+            PluginCompiledOp::ChannelMuteSolo,
+            &input,
+            &mut compiled_output,
+            &context,
+        )
+        .expect("channel mute/solo should accept compiled op")
+        .unwrap();
+
+    assert_eq!(regular_frames, context.num_frames);
+    assert_eq!(compiled_frames, context.num_frames);
+    assert_eq!(compiled_output, regular_output);
 }
 
 #[test]

@@ -1,7 +1,9 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{ParametricInPlacePluginAdapter, ConvolutionPlugin, ConvolutionPluginParams, Plugin};
+use sotf_plugins::{
+    ConvolutionPlugin, ConvolutionPluginParams, ParametricInPlacePluginAdapter, Plugin,
+};
 
 pub(super) struct ConvolutionFuzzer {
     pub(super) sample_rate: u32,

@@ -135,10 +135,7 @@ fn interleaved_sine(channels: usize, frames: usize) -> Vec<f32> {
 /// Try to instantiate and process `plugin_type` with `channels` input channels.
 /// Returns `Ok(output_channels)` on success, or `Err(error_message)` if the
 /// plugin reports an error. A panic is propagated as a panic.
-fn try_instantiate_and_process(
-    plugin_type: &str,
-    channels: usize,
-) -> Result<usize, String> {
+fn try_instantiate_and_process(plugin_type: &str, channels: usize) -> Result<usize, String> {
     // Beamformer panics internally when asked for fewer than 2 mics.
     if plugin_type == "beamformer" && channels < 2 {
         return Err("beamformer requires at least 2 microphones".to_string());
@@ -151,7 +148,9 @@ fn try_instantiate_and_process(
         SAMPLE_RATE,
     )?;
 
-    plugin.initialize(SAMPLE_RATE).map_err(|e| format!("initialize: {e}"))?;
+    plugin
+        .initialize(SAMPLE_RATE)
+        .map_err(|e| format!("initialize: {e}"))?;
 
     let input = interleaved_sine(channels, FRAMES);
     let output_channels = plugin.output_channels();
@@ -161,7 +160,11 @@ fn try_instantiate_and_process(
 
     let mut output = vec![0.0f32; output_channels * FRAMES];
     plugin
-        .process(&input, &mut output, &ProcessContext::new(SAMPLE_RATE, FRAMES))
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(SAMPLE_RATE, FRAMES),
+        )
         .map_err(|e| format!("process: {e}"))?;
 
     Ok(output_channels)
@@ -199,9 +202,7 @@ fn all_plugins_channel_count_support() {
                 }
                 Err(payload) => {
                     let reason = panic_payload_description(&payload);
-                    panics.push(format!(
-                        "{plugin_type}@{channels}ch panicked: {reason}"
-                    ));
+                    panics.push(format!("{plugin_type}@{channels}ch panicked: {reason}"));
                 }
             }
         }
@@ -209,9 +210,9 @@ fn all_plugins_channel_count_support() {
         // If the plugin has a strict input-channel requirement that happens to
         // be one of the counts under test, it must succeed there.
         if let Some(req) = required {
-            let found = results.iter().any(|(t, ch, r)| {
-                *t == plugin_type && *ch == req && r.is_ok()
-            });
+            let found = results
+                .iter()
+                .any(|(t, ch, r)| *t == plugin_type && *ch == req && r.is_ok());
             if !found {
                 unexpected_failures.push(format!(
                     "{plugin_type} did not accept its required {req} input channel(s)"
@@ -297,9 +298,7 @@ fn channel_preserving_plugins_maintain_count() {
                     }
                 }
                 Ok(Err(err)) => {
-                    failures.push(format!(
-                        "{plugin_type}@{channels}ch failed: {err}"
-                    ));
+                    failures.push(format!("{plugin_type}@{channels}ch failed: {err}"));
                 }
                 Err(payload) => {
                     failures.push(format!(
@@ -327,8 +326,8 @@ fn channel_changing_plugins_behave_as_documented() {
     assert_eq!(out, 2, "mono_to_stereo output should be stereo");
 
     // upmixer: 2 -> 6 (default 5.1 speaker configuration)
-    let out = try_instantiate_and_process("upmixer", 2)
-        .expect("upmixer must accept 2 input channels");
+    let out =
+        try_instantiate_and_process("upmixer", 2).expect("upmixer must accept 2 input channels");
     assert_eq!(out, 6, "upmixer default output should be 5.1 (6 channels)");
 
     // downmix: N -> 2 for surround-capable input channel counts
@@ -347,13 +346,11 @@ fn channel_changing_plugins_behave_as_documented() {
     assert_eq!(out, 2, "crossfeed output should be stereo");
 
     // xtc: stereo in, stereo out
-    let out = try_instantiate_and_process("xtc", 2)
-        .expect("xtc must accept 2 input channels");
+    let out = try_instantiate_and_process("xtc", 2).expect("xtc must accept 2 input channels");
     assert_eq!(out, 2, "xtc output should be stereo");
 
     // aae / active_acoustic_enhancement: stereo in, 5.1 out (default config)
-    let out = try_instantiate_and_process("aae", 2)
-        .expect("aae must accept 2 input channels");
+    let out = try_instantiate_and_process("aae", 2).expect("aae must accept 2 input channels");
     assert_eq!(out, 6, "aae default output should be 5.1 (6 channels)");
 
     // ab_compare / ab: stereo in, stereo out
@@ -362,8 +359,7 @@ fn channel_changing_plugins_behave_as_documented() {
     assert_eq!(out, 2, "ab_compare output should be stereo");
 
     // aec: stereo reference + signal in, single-channel echo-cancelled output
-    let out = try_instantiate_and_process("aec", 2)
-        .expect("aec must accept 2 input channels");
+    let out = try_instantiate_and_process("aec", 2).expect("aec must accept 2 input channels");
     assert_eq!(out, 1, "aec output should be mono (1 channel)");
 
     // binaural_decoder: stereo in, stereo out

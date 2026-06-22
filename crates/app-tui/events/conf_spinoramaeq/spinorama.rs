@@ -86,7 +86,12 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 None
             }
             KeyCode::Down => {
-                let max = app.spinorama_eq.model.speaker_suggestions.len().saturating_sub(1);
+                let max = app
+                    .spinorama_eq
+                    .model
+                    .speaker_suggestions
+                    .len()
+                    .saturating_sub(1);
                 if app.spinorama_eq.selected_speaker_idx < max {
                     app.spinorama_eq.selected_speaker_idx += 1;
                 }

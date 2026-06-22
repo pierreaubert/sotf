@@ -154,11 +154,19 @@ pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
                 .recording_config
                 .ctc_loopback_input_channel
                 .unwrap_or(0) as i32;
-            app.recording.model.recording_config.ctc_loopback_input_channel =
-                Some((cur + delta).clamp(0, 127) as usize);
+            app.recording
+                .model
+                .recording_config
+                .ctc_loopback_input_channel = Some((cur + delta).clamp(0, 127) as usize);
         }
         ChannelInput(i) => {
-            if let Some(slot) = app.recording.model.recording_config.channel_mappings.get_mut(i) {
+            if let Some(slot) = app
+                .recording
+                .model
+                .recording_config
+                .channel_mappings
+                .get_mut(i)
+            {
                 let cur = *slot as i32;
                 let next = (cur + delta).clamp(0, 127) as usize;
                 *slot = next;

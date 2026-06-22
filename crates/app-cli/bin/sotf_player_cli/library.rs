@@ -10,8 +10,13 @@ fn load_albums_or_empty(db_path: &Path) -> Result<Vec<Album>, String> {
         return Ok(Vec::new());
     }
 
-    let db = MusicDatabase::open_secondary(db_path)
-        .map_err(|e| format!("Failed to open library database '{}': {}", db_path.display(), e))?;
+    let db = MusicDatabase::open_secondary(db_path).map_err(|e| {
+        format!(
+            "Failed to open library database '{}': {}",
+            db_path.display(),
+            e
+        )
+    })?;
 
     // An existing but uninitialised SQLite file (e.g. a freshly-created temp
     // path) is reported as an empty library.
@@ -44,8 +49,13 @@ pub(super) fn run_library_command(db_path: &Path, action: &LibraryAction) -> Res
                 return Ok(());
             }
 
-            let db = MusicDatabase::open_secondary(db_path)
-                .map_err(|e| format!("Failed to open library database '{}': {}", db_path.display(), e))?;
+            let db = MusicDatabase::open_secondary(db_path).map_err(|e| {
+                format!(
+                    "Failed to open library database '{}': {}",
+                    db_path.display(),
+                    e
+                )
+            })?;
 
             let ids = db
                 .search_library(query)

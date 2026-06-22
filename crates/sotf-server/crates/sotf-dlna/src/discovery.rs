@@ -228,7 +228,10 @@ mod tests {
         let from: SocketAddr = "192.168.1.2:8200".parse().unwrap();
         let device = parse_search_response(response, from).unwrap();
         assert_eq!(device.location, "http://192.168.1.2:8200/desc.xml");
-        assert_eq!(device.device_type, "urn:schemas-upnp-org:device:MediaServer:1");
+        assert_eq!(
+            device.device_type,
+            "urn:schemas-upnp-org:device:MediaServer:1"
+        );
         assert_eq!(device.usn, "uuid:lowercase");
     }
 

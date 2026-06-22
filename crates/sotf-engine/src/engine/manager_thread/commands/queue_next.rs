@@ -10,9 +10,10 @@ impl ManagerCommandHandler for QueueNextCommand {
         let source = self.0.clone();
         log::debug!("[Manager Thread] QueueNext: {}", source.display_name());
 
-        if let Err(e) =
-            super::super::validate::validate_gapless_source_compatible(&source, ctx.config.input_channels)
-        {
+        if let Err(e) = super::super::validate::validate_gapless_source_compatible(
+            &source,
+            ctx.config.input_channels,
+        ) {
             return ManagerResponse::Error(e);
         }
 

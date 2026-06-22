@@ -8,7 +8,9 @@ use super::types::DitherPluginParams;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 
 pub struct DitherPlugin {
@@ -154,6 +156,14 @@ impl DitherPlugin {
 impl ParametricInPlacePlugin for DitherPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Dither", "1.0.0", "Sotf")
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Dynamics
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Dynamics, None, 0, false)
     }
 
     fn channels(&self) -> usize {

@@ -230,7 +230,8 @@ fn test_volume_with_hal_pipeline() {
     hal_buffer.read_audio(&mut read_buffer);
 
     // Apply volume via GainPlugin (-6dB global)
-    let mut gain_plugin = ParametricPluginAdapter::new(GainPlugin::new(channel_count as usize, -6.0));
+    let mut gain_plugin =
+        ParametricPluginAdapter::new(GainPlugin::new(channel_count as usize, -6.0));
     gain_plugin
         .initialize(sample_rate)
         .expect("Failed to initialize");

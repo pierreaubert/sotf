@@ -4,7 +4,9 @@
 //! `InPlacePluginAdapter`) as a black box: instantiation, parameter get/set,
 //! audio processing, error paths and state transitions.
 
-use sotf_host::{ParametricInPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
+use sotf_host::{
+    ParameterId, ParameterValue, ParametricInPlacePluginAdapter, Plugin, ProcessContext,
+};
 use sotf_plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 use std::io::Write;
 

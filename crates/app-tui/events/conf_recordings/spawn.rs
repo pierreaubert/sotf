@@ -98,7 +98,8 @@ pub(super) fn spawn_spl_calibration_capture(app: &mut App) {
     // Reset the cancel flag and capture status so the new run starts
     // clean. `engine_result` is cleared on every fresh capture.
     app.recording
-        .model.spl_cancel_requested
+        .model
+        .spl_cancel_requested
         .store(false, std::sync::atomic::Ordering::Relaxed);
     let cancel_flag = app.recording.model.spl_cancel_requested.clone();
 

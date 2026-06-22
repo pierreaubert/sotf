@@ -12,7 +12,9 @@ use sotf_host::auto_gain::{AutoGainLoudnessType, AutoGainParams};
 use sotf_host::multichannel_auto_gain::MultichannelAutoGain;
 use sotf_host::param_bridge;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config};
@@ -1707,6 +1709,10 @@ impl Plugin for UpmixerPlugin {
 
     fn output_channels(&self) -> usize {
         self.effective_output_channels()
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Fft, None, self.latency_samples(), true)
     }
 
     fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {

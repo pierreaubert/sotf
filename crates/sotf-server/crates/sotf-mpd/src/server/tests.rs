@@ -292,7 +292,10 @@ async fn test_read_line_bounded_oversize_by_one() {
     let mut reader = BufReader::new(input);
     match read_line_bounded(&mut reader, 3).await {
         LineRead::TooLong => {}
-        other => panic!("expected TooLong, got {other:?}", other = format_outcome(&other)),
+        other => panic!(
+            "expected TooLong, got {other:?}",
+            other = format_outcome(&other)
+        ),
     }
 }
 
@@ -316,7 +319,10 @@ async fn test_read_line_bounded_invalid_utf8() {
     let mut reader = BufReader::new(input);
     match read_line_bounded(&mut reader, MAX_LINE_BYTES).await {
         LineRead::InvalidUtf8 => {}
-        other => panic!("expected InvalidUtf8, got {other:?}", other = format_outcome(&other)),
+        other => panic!(
+            "expected InvalidUtf8, got {other:?}",
+            other = format_outcome(&other)
+        ),
     }
 }
 

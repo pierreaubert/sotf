@@ -122,8 +122,12 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                             && !app.headphone_eq.model.headphone_suggestions.is_empty()
                         {
                             let idx = app.headphone_eq.selected_headphone_idx;
-                            if let Some(name) =
-                                app.headphone_eq.model.headphone_suggestions.get(idx).cloned()
+                            if let Some(name) = app
+                                .headphone_eq
+                                .model
+                                .headphone_suggestions
+                                .get(idx)
+                                .cloned()
                             {
                                 app.headphone_eq.model.selected_headphone = Some(name.clone());
                                 // Start download
@@ -823,7 +827,10 @@ mod tests {
         app.headphone_eq.config_selected_field = 0; // num_filters
         let before = app.headphone_eq.model.optimizer_config.num_filters;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Right));
-        assert_eq!(app.headphone_eq.model.optimizer_config.num_filters, before + 1);
+        assert_eq!(
+            app.headphone_eq.model.optimizer_config.num_filters,
+            before + 1
+        );
         handle_headphone_eq_keys(&mut app, key(KeyCode::Left));
         assert_eq!(app.headphone_eq.model.optimizer_config.num_filters, before);
         // Should stay on Configure step
@@ -908,7 +915,10 @@ mod tests {
         // measurement_path is empty, so optimization will fail immediately (no spawn)
         handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
         assert!(!app.headphone_eq.step_tab_focused);
-        assert_eq!(app.headphone_eq.model.optimization_status, OptimizationStatus::Failed);
+        assert_eq!(
+            app.headphone_eq.model.optimization_status,
+            OptimizationStatus::Failed
+        );
     }
 
     #[test]
@@ -919,7 +929,10 @@ mod tests {
         app.headphone_eq.model.optimization_status = OptimizationStatus::Running;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Down));
         assert!(!app.headphone_eq.step_tab_focused);
-        assert_eq!(app.headphone_eq.model.optimization_status, OptimizationStatus::Running);
+        assert_eq!(
+            app.headphone_eq.model.optimization_status,
+            OptimizationStatus::Running
+        );
     }
 
     #[test]
@@ -952,7 +965,8 @@ mod tests {
         app.headphone_eq.step = HeadphoneEqStep::SelectFile;
         app.headphone_eq.editing_search = true;
         app.headphone_eq.model.headphone_search = "test".to_string();
-        app.headphone_eq.model.available_headphones = vec!["testphone".to_string(), "other".to_string()];
+        app.headphone_eq.model.available_headphones =
+            vec!["testphone".to_string(), "other".to_string()];
         app.headphone_eq.update_filter();
         handle_headphone_eq_keys(&mut app, key(KeyCode::Backspace));
         assert_eq!(app.headphone_eq.model.headphone_search, "tes");
@@ -1074,7 +1088,10 @@ mod tests {
         app.headphone_eq.model.optimization_status = OptimizationStatus::Running;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
         assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Optimize);
-        assert_eq!(app.headphone_eq.model.optimization_status, OptimizationStatus::Running);
+        assert_eq!(
+            app.headphone_eq.model.optimization_status,
+            OptimizationStatus::Running
+        );
     }
 
     #[test]
@@ -1093,7 +1110,13 @@ mod tests {
         // No filters, so apply_headphone_to_plugins should fail
         handle_headphone_eq_keys(&mut app, key(KeyCode::Enter));
         assert!(app.ui.status_message.is_some());
-        assert!(app.ui.status_message.as_ref().unwrap().starts_with("Error:"));
+        assert!(
+            app.ui
+                .status_message
+                .as_ref()
+                .unwrap()
+                .starts_with("Error:")
+        );
     }
 
     #[test]

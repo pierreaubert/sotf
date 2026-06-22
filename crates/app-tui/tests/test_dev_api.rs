@@ -179,7 +179,10 @@ fn query_metadata_editor() {
         resolve("metadata.title", &app).unwrap(),
         serde_json::json!("Test Title")
     );
-    assert_eq!(resolve("metadata.year", &app).unwrap(), serde_json::json!("2024"));
+    assert_eq!(
+        resolve("metadata.year", &app).unwrap(),
+        serde_json::json!("2024")
+    );
     assert_eq!(resolve("metadata.preview_files", &app).unwrap(), 1);
     assert_eq!(resolve("metadata.unsupported_count", &app).unwrap(), 1);
     assert_eq!(resolve("metadata.candidate_count", &app).unwrap(), 1);
@@ -218,12 +221,19 @@ fn query_room_eq_state() {
     assert!(resolve("roomeq.dsp_channel_count", &app).unwrap().is_null());
     assert_eq!(resolve("roomeq.filter_count", &app).unwrap(), 0);
     assert!(resolve("roomeq.average_pre_score", &app).unwrap().is_null());
-    assert!(resolve("roomeq.average_post_score", &app).unwrap().is_null());
+    assert!(
+        resolve("roomeq.average_post_score", &app)
+            .unwrap()
+            .is_null()
+    );
     assert_eq!(
         resolve("roomeq.status", &app).unwrap(),
         serde_json::json!("running")
     );
-    assert_eq!(resolve("roomeq.error", &app).unwrap(), serde_json::json!("boom"));
+    assert_eq!(
+        resolve("roomeq.error", &app).unwrap(),
+        serde_json::json!("boom")
+    );
 }
 
 #[test]
@@ -239,7 +249,10 @@ fn query_headphone_eq_and_spinorama_steps() {
 #[test]
 fn query_settings_theme() {
     let app = make_app();
-    assert_eq!(resolve("settings.theme", &app).unwrap(), serde_json::json!("dark"));
+    assert_eq!(
+        resolve("settings.theme", &app).unwrap(),
+        serde_json::json!("dark")
+    );
 }
 
 #[test]

@@ -14,8 +14,8 @@
 // Run with:
 //   cargo run -p sotf-plugins --example restore_mono --release -- input.wav output.wav
 
-use sotf_host::plugin::{Plugin, ProcessContext};
 use sotf_host::ParametricInPlacePluginAdapter;
+use sotf_host::plugin::{Plugin, ProcessContext};
 use sotf_plugin_declick::{DeclickPlugin, DeclickPluginParams};
 use sotf_plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 use sotf_plugin_hiss_reducer::{HissReducerPlugin, HissReducerPluginParams};

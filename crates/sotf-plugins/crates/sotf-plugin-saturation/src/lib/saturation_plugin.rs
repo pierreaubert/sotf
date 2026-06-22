@@ -19,10 +19,12 @@ use sotf_host::envelope_follower::EnvelopeFollower;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::oversampling::Oversampler;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
@@ -385,6 +387,14 @@ impl ParametricInPlacePlugin for SaturationPlugin {
         PluginInfo::new("Saturation", "1.0.0", "SotF")
     }
 
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Dynamics
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Dynamics, None, 0, false)
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -440,112 +450,112 @@ impl ParametricInPlacePlugin for SaturationPlugin {
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
         for (id, value) in values {
             if id == self.param_mode {
-            let new_mode = if let Some(s) = value.as_string() {
-                match s {
-                    "Soft Clip" | "soft_clip" => SaturationMode::SoftClip,
-                    "Tube" | "tube" => SaturationMode::Tube,
-                    "Tape" | "tape" => SaturationMode::Tape,
-                    "Exciter" | "exciter" => SaturationMode::Exciter,
-                    _ => SaturationMode::SoftClip,
+                let new_mode = if let Some(s) = value.as_string() {
+                    match s {
+                        "Soft Clip" | "soft_clip" => SaturationMode::SoftClip,
+                        "Tube" | "tube" => SaturationMode::Tube,
+                        "Tape" | "tape" => SaturationMode::Tape,
+                        "Exciter" | "exciter" => SaturationMode::Exciter,
+                        _ => SaturationMode::SoftClip,
+                    }
+                } else if let Some(v) = value.as_float() {
+                    SaturationMode::from_index(v as usize)
+                } else {
+                    SaturationMode::SoftClip
+                };
+                self.mode = new_mode;
+            } else if id == self.param_drive {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(SAT, "drive").default_f64() as f32);
+                if v.is_finite() {
+                    self.drive = v.clamp(1.0, 20.0);
+                    self.drive_smoother.set_target(self.drive);
                 }
-            } else if let Some(v) = value.as_float() {
-                SaturationMode::from_index(v as usize)
+            } else if id == self.param_tone {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(SAT, "tone").default_f64() as f32);
+                if v.is_finite() {
+                    self.tone = v.clamp(1.0, 3.0);
+                }
+            } else if id == self.param_exciter_freq {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(SAT, "exciter_freq").default_f64() as f32);
+                if v.is_finite() {
+                    self.exciter_freq = v.clamp(500.0, 10000.0);
+                    self.rebuild_crossovers();
+                }
+            } else if id == self.param_oversampling {
+                let new_index = if let Some(s) = value.as_string() {
+                    match s {
+                        "Off" | "off" => 0,
+                        "2x" => 1,
+                        "4x" => 2,
+                        _ => 0,
+                    }
+                } else if let Some(v) = value.as_float() {
+                    (v as usize).min(2)
+                } else {
+                    0
+                };
+                if new_index != self.oversampling_index {
+                    self.oversampling_index = new_index;
+                    self.rebuild_oversampler();
+                }
+            } else if id == self.param_output_gain {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(SAT, "output_gain").default_f64() as f32);
+                if v.is_finite() {
+                    self.output_gain_db = v.clamp(-12.0, 12.0);
+                    self.output_smoother.set_target(self.output_gain_db);
+                }
+            } else if id == self.param_mix {
+                let v = value
+                    .as_float()
+                    .unwrap_or(pk(SAT, "mix").default_f64() as f32);
+                if v.is_finite() {
+                    self.mix = v.clamp(0.0, 1.0);
+                    self.mix_smoother.set_target(self.mix);
+                }
+            } else if id == self.param_dynamic_amount {
+                let v = value.as_float().unwrap_or(0.0);
+                if v.is_finite() {
+                    self.dynamic_amount = v.clamp(0.0, 1.0);
+                }
+            } else if id == self.param_dynamic_attack_ms {
+                let v = value.as_float().unwrap_or(5.0);
+                if v.is_finite() {
+                    self.dynamic_attack_ms = v.clamp(0.1, 100.0);
+                    for ef in &mut self.envelope_followers {
+                        ef.set_times(
+                            self.dynamic_attack_ms,
+                            self.dynamic_release_ms,
+                            self.sample_rate,
+                        );
+                    }
+                }
+            } else if id == self.param_dynamic_release_ms {
+                let v = value.as_float().unwrap_or(50.0);
+                if v.is_finite() {
+                    self.dynamic_release_ms = v.clamp(1.0, 500.0);
+                    for ef in &mut self.envelope_followers {
+                        ef.set_times(
+                            self.dynamic_attack_ms,
+                            self.dynamic_release_ms,
+                            self.sample_rate,
+                        );
+                    }
+                }
+            } else if id == self.param_dc_blocker {
+                self.dc_blocker_enabled = value.as_float().unwrap_or(1.0) > 0.5;
+            } else if id == self.param_use_adaa {
+                self.use_adaa = value.as_float().unwrap_or(1.0) > 0.5;
             } else {
-                SaturationMode::SoftClip
-            };
-            self.mode = new_mode;
-        } else if id == self.param_drive {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(SAT, "drive").default_f64() as f32);
-            if v.is_finite() {
-                self.drive = v.clamp(1.0, 20.0);
-                self.drive_smoother.set_target(self.drive);
+                return Err(format!("Unknown parameter: {id}"));
             }
-        } else if id == self.param_tone {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(SAT, "tone").default_f64() as f32);
-            if v.is_finite() {
-                self.tone = v.clamp(1.0, 3.0);
-            }
-        } else if id == self.param_exciter_freq {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(SAT, "exciter_freq").default_f64() as f32);
-            if v.is_finite() {
-                self.exciter_freq = v.clamp(500.0, 10000.0);
-                self.rebuild_crossovers();
-            }
-        } else if id == self.param_oversampling {
-            let new_index = if let Some(s) = value.as_string() {
-                match s {
-                    "Off" | "off" => 0,
-                    "2x" => 1,
-                    "4x" => 2,
-                    _ => 0,
-                }
-            } else if let Some(v) = value.as_float() {
-                (v as usize).min(2)
-            } else {
-                0
-            };
-            if new_index != self.oversampling_index {
-                self.oversampling_index = new_index;
-                self.rebuild_oversampler();
-            }
-        } else if id == self.param_output_gain {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(SAT, "output_gain").default_f64() as f32);
-            if v.is_finite() {
-                self.output_gain_db = v.clamp(-12.0, 12.0);
-                self.output_smoother.set_target(self.output_gain_db);
-            }
-        } else if id == self.param_mix {
-            let v = value
-                .as_float()
-                .unwrap_or(pk(SAT, "mix").default_f64() as f32);
-            if v.is_finite() {
-                self.mix = v.clamp(0.0, 1.0);
-                self.mix_smoother.set_target(self.mix);
-            }
-        } else if id == self.param_dynamic_amount {
-            let v = value.as_float().unwrap_or(0.0);
-            if v.is_finite() {
-                self.dynamic_amount = v.clamp(0.0, 1.0);
-            }
-        } else if id == self.param_dynamic_attack_ms {
-            let v = value.as_float().unwrap_or(5.0);
-            if v.is_finite() {
-                self.dynamic_attack_ms = v.clamp(0.1, 100.0);
-                for ef in &mut self.envelope_followers {
-                    ef.set_times(
-                        self.dynamic_attack_ms,
-                        self.dynamic_release_ms,
-                        self.sample_rate,
-                    );
-                }
-            }
-        } else if id == self.param_dynamic_release_ms {
-            let v = value.as_float().unwrap_or(50.0);
-            if v.is_finite() {
-                self.dynamic_release_ms = v.clamp(1.0, 500.0);
-                for ef in &mut self.envelope_followers {
-                    ef.set_times(
-                        self.dynamic_attack_ms,
-                        self.dynamic_release_ms,
-                        self.sample_rate,
-                    );
-                }
-            }
-        } else if id == self.param_dc_blocker {
-            self.dc_blocker_enabled = value.as_float().unwrap_or(1.0) > 0.5;
-        } else if id == self.param_use_adaa {
-            self.use_adaa = value.as_float().unwrap_or(1.0) > 0.5;
-        } else {
-            return Err(format!("Unknown parameter: {id}"));
-        }
         }
         self.rebuild_cached_parameters();
         Ok(())

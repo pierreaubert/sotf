@@ -448,7 +448,8 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let num_channels = app
-        .playback.loudness_info
+        .playback
+        .loudness_info
         .as_ref()
         .map(|l| l.channel_peaks.len())
         .unwrap_or(0);
@@ -508,7 +509,8 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 
     // Calculate dimensions
     let max_name_lines = app
-        .level_meters.groups
+        .level_meters
+        .groups
         .iter()
         .flat_map(|g| &g.channels)
         .map(|ch| ch.display_name.len())
@@ -543,7 +545,8 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 
     // First try with padded group widths (min 3 for [M][S][D] controls)
     let padded_groups_width: usize = app
-        .level_meters.groups
+        .level_meters
+        .groups
         .iter()
         .map(|g| g.channels.len().max(3))
         .sum::<usize>()
@@ -554,7 +557,8 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 
     // If padded widths don't fit, use actual channel counts (no min 3 padding)
     let compact_groups_width: usize = app
-        .level_meters.groups
+        .level_meters
+        .groups
         .iter()
         .map(|g| g.channels.len())
         .sum::<usize>()
@@ -939,7 +943,7 @@ mod tests {
     use super::*;
     use crate::app::App;
     use crate::theme::Theme;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
     use sotf_audio::LoudnessData;
     use std::sync::Arc;
 
@@ -982,7 +986,11 @@ mod tests {
             "expected True Peak header; got {:?}",
             content
         );
-        assert!(content.contains("LUFS"), "expected LUFS section; got {:?}", content);
+        assert!(
+            content.contains("LUFS"),
+            "expected LUFS section; got {:?}",
+            content
+        );
         assert!(
             content.contains("Stereo width"),
             "expected Stereo width section; got {:?}",

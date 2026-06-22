@@ -9,14 +9,15 @@
 // - Check for NaN/Inf values.
 // - Confirm no crashes on invalid config.
 
-use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, 
+use sotf_plugins::{
     ABComparePlugin, BandMergePlugin, BandSplitPlugin, BinauralDecoderPlugin,
     ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin, CrossoverPlugin,
     DelayPlugin, DenoiserPlugin, DownmixPlugin, EqPlugin, ExpanderPlugin, GainPlugin, GatePlugin,
-     LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin,
-    MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
-    ParameterValue, Plugin, PndPlugin, ProcessContext,
-    ResamplerPlugin, RoomModel, SpectrumAnalyzerPlugin, UpmixerPlugin, XtcPlugin, XtcPluginParams};
+    LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin, MatrixPlugin,
+    MonoToStereoPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, ParameterValue,
+    ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin, PndPlugin, ProcessContext,
+    ResamplerPlugin, RoomModel, SpectrumAnalyzerPlugin, UpmixerPlugin, XtcPlugin, XtcPluginParams,
+};
 
 const SAMPLE_RATE: u32 = 48000;
 const BUFFER_SIZE: usize = 1024;
@@ -32,7 +33,9 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     ))));
 
     // 2. Gain
-    plugins.push(Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, 0.0))));
+    plugins.push(Box::new(ParametricPluginAdapter::new(GainPlugin::new(
+        2, 0.0,
+    ))));
 
     // 3. Compressor
     plugins.push(Box::new(ParametricInPlacePluginAdapter::new(

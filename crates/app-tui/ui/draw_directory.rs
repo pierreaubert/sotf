@@ -30,7 +30,10 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let input_text = if app.library_view.editing_directory {
-        format!("Path: {}█ (Tab to autocomplete)", app.library_view.directory_input)
+        format!(
+            "Path: {}█ (Tab to autocomplete)",
+            app.library_view.directory_input
+        )
     } else {
         "Path: (Press 'a' to add directory)".to_string()
     };
@@ -186,7 +189,8 @@ pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
 
 pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     let paused = app
-        .scan.pause_flag
+        .scan
+        .pause_flag
         .load(std::sync::atomic::Ordering::Relaxed);
 
     let pause_tag = if paused { " [paused]" } else { "" };

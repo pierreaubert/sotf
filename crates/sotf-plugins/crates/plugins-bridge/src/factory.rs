@@ -1,8 +1,8 @@
 //! Universal plugin factory for all SOTF audio plugins.
 
+use sotf_host::ParametricPluginAdapter;
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePluginAdapter;
 use sotf_host::plugin::Plugin;
-use sotf_host::ParametricPluginAdapter;
 
 /// Create a plugin instance from a type name, channel count, sample rate, and JSON config.
 ///

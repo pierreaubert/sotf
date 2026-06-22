@@ -2,7 +2,7 @@
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::ProcessContext;
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, PluginHost};
+use sotf_host::{ParametricInPlacePlugin, ParametricInPlacePluginAdapter, PluginHost};
 use sotf_plugin_limiter::LimiterPlugin;
 
 #[test]
@@ -82,8 +82,11 @@ fn test_feed_forward_lookahead_tracks_peak() {
         false,
     );
     plugin.initialize(48000).unwrap();
-    plugin.parametric_set_parameter(ParameterId::from("feed_forward"),
-    ParameterValue::Bool(true),)
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("feed_forward"),
+            ParameterValue::Bool(true),
+        )
         .unwrap();
 
     // Build a buffer with a loud transient in the middle.

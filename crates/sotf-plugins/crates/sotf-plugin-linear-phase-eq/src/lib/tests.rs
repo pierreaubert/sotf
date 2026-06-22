@@ -7,8 +7,8 @@ use super::misc::{
 use super::types::BandConfig;
 use super::types::LinearPhaseEqPluginParams;
 use math_audio_iir_fir::BiquadFilterType;
-use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 
 mod misc;

@@ -9,12 +9,14 @@ use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, peq_butterworth_highpass};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_bridge;
-use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
-use sotf_host::{ParametricInPlacePlugin, DetectionMode, LevelDetector, LookaheadBuffer};
+use sotf_host::{DetectionMode, LevelDetector, LookaheadBuffer, ParametricInPlacePlugin};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -299,6 +301,20 @@ impl ParametricInPlacePlugin for GatePlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Gate", "1.3.0", "SotF")
     }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Dynamics
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(
+            PluginCostClass::Dynamics,
+            None,
+            self.latency_samples(),
+            self.link_channels || self.sidechain_external,
+        )
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -329,7 +345,7 @@ impl ParametricInPlacePlugin for GatePlugin {
                 2 | 4 => self.update_coefficients(),                        // attack or release
                 3 => self.update_hold_samples(),                            // hold
                 5 => self.mix_smoother.set_target(self.mix),                // mix
-                7 | 8 => self.rebuild_sidechain_hpf(),                      // sidechain_hpf_hz or order
+                7 | 8 => self.rebuild_sidechain_hpf(), // sidechain_hpf_hz or order
                 9 => {
                     // detection_mode
                     let mode = if self.detection_mode_index == 1 {

@@ -37,7 +37,14 @@ mod poll_tests {
 
         assert!(poll_room_eq_optimization(&mut app));
         assert_eq!(app.room_eq.model.overall_progress, 0.1f32);
-        assert_eq!(app.room_eq.model.current_channel.clone().unwrap_or_default(), "Left");
+        assert_eq!(
+            app.room_eq
+                .model
+                .current_channel
+                .clone()
+                .unwrap_or_default(),
+            "Left"
+        );
         assert_eq!(app.room_eq.model.status_message.as_str(), "Optimizing Left");
         assert_eq!(
             app.room_eq.opt_log_lines.back().map(String::as_str),

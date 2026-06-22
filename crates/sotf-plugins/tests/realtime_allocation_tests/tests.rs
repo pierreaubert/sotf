@@ -3,15 +3,17 @@ use super::consts::SAMPLE_RATE;
 use super::consts::generate_test_buffer;
 use super::misc::assert_no_allocs;
 use serial_test::serial;
-use sotf_plugins::{ParametricInPlacePlugin, ParametricPluginAdapter, 
+use sotf_plugins::{
     ABComparePlugin, AutoGain, AutoGainParams, BandMergePlugin, BandSplitPlugin,
     BinauralDecoderPlugin, ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin,
     CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, CrossoverPlugin, DeclickPlugin,
     DenoiserPlugin, DownmixPlugin, DownmixPluginParams, EqPlugin, ExpanderPlugin, GainPlugin,
-    GatePlugin,   LimiterPlugin, LoudnessCompensationPlugin,
-    LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
-    MultibandExpanderPlugin, Plugin, PndPlugin, ProcessContext, ResamplerPlugin, RoomModel,
-    SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, XtcPlugin, XtcPluginParams};
+    GatePlugin, LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin, MatrixPlugin,
+    MonoToStereoPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
+    ParametricInPlacePlugin, ParametricPluginAdapter, Plugin, PndPlugin, ProcessContext,
+    ResamplerPlugin, RoomModel, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, XtcPlugin,
+    XtcPluginParams,
+};
 
 #[test]
 #[serial]

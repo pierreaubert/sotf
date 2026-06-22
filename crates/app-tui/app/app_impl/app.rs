@@ -372,9 +372,9 @@ impl App {
                 waveform_manager: sotf_audio_player::WaveformScanManager::with_pause_flag(
                     Arc::clone(&scanner_pause_flag),
                 ),
-                bliss_manager: sotf_audio_player::BlissScanManager::with_pause_flag(
-                    Arc::clone(&scanner_pause_flag),
-                ),
+                bliss_manager: sotf_audio_player::BlissScanManager::with_pause_flag(Arc::clone(
+                    &scanner_pause_flag,
+                )),
                 threads: None,
                 needs_rescan: false,
             },
@@ -402,7 +402,10 @@ impl App {
             recording: super::super::types::RecordingTuiState::default(),
             federation_state: super::super::types::FederationTuiState::default(),
             server_state: load_server_tui_state(),
-            federation_receivers: FederationReceivers { scan: None, test: None },
+            federation_receivers: FederationReceivers {
+                scan: None,
+                test: None,
+            },
         };
 
         // Load playlists from database
@@ -433,7 +436,8 @@ impl App {
     }
 
     pub fn current_track_source(&self) -> Option<sotf_audio::decoder::AudioSource> {
-        self.playback.current_queue_index
+        self.playback
+            .current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.current_track())
             .map(|track| track.audio_source())
@@ -441,7 +445,8 @@ impl App {
 
     /// Get the currently playing track info
     pub fn current_track(&self) -> Option<&Track> {
-        self.playback.current_queue_index
+        self.playback
+            .current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.current_track())
     }
@@ -553,7 +558,11 @@ impl App {
         let filters = EQFilter::from_apo_file(path)?;
 
         // Update the currently selected plugin if it's an EQ
-        if let Some(plugin) = self.plugin_rack.graph.get_plugin_mut(self.plugin_rack.selected_index) {
+        if let Some(plugin) = self
+            .plugin_rack
+            .graph
+            .get_plugin_mut(self.plugin_rack.selected_index)
+        {
             if let PluginSettings::EQ { channels, .. } = &plugin.settings {
                 let channels = *channels;
                 let filter_count = filters.len();
@@ -580,7 +589,11 @@ impl App {
         use sotf_audio_player::PluginSettings;
 
         // Update the currently selected plugin if it's a binaural decoder
-        if let Some(plugin) = self.plugin_rack.graph.get_plugin_mut(self.plugin_rack.selected_index) {
+        if let Some(plugin) = self
+            .plugin_rack
+            .graph
+            .get_plugin_mut(self.plugin_rack.selected_index)
+        {
             if let PluginSettings::BinauralDecoder {
                 ref mut sofa_file, ..
             } = plugin.settings
@@ -658,7 +671,8 @@ impl App {
         } else {
             // No EQ plugin found — insert one at the user-plugin slot
             let insert_at = self.plugin_rack.graph.user_plugin_insert_index();
-            self.plugin_rack.graph
+            self.plugin_rack
+                .graph
                 .insert_plugin(insert_at, &PluginType::EQ)
                 .ok();
             insert_at
@@ -751,7 +765,8 @@ impl App {
             .collect();
 
         let sample_rate = self
-            .playback.current_sample_rate
+            .playback
+            .current_sample_rate
             .map(|r| r as f64)
             .unwrap_or_else(|| self.get_current_sample_rate());
 
@@ -795,9 +810,10 @@ impl App {
             return;
         }
 
-        if let (Some(path), Some(start_time)) =
-            (&self.playback.current_track_path, self.playback.current_track_start_time)
-        {
+        if let (Some(path), Some(start_time)) = (
+            &self.playback.current_track_path,
+            self.playback.current_track_start_time,
+        ) {
             let elapsed = start_time.elapsed().as_secs();
             if elapsed >= 30 {
                 // Record the play in the database
@@ -829,7 +845,11 @@ impl App {
     pub fn toggle_selected_album_favorite(&mut self) {
         // Copy the index first to avoid borrow conflicts with filtered_albums()
         let idx = self.library_view.selected_album_index;
-        let album_id = self.library_view.cached_filtered_albums.get(idx).and_then(|a| a.id);
+        let album_id = self
+            .library_view
+            .cached_filtered_albums
+            .get(idx)
+            .and_then(|a| a.id);
         if let Some(album_id) = album_id
             && let Some(db) = self.library.get_database()
         {
@@ -857,7 +877,8 @@ impl App {
     /// Toggle favorite on the current queue album
     pub fn toggle_current_queue_album_favorite(&mut self) {
         let album_id = self
-            .playback.current_queue_index
+            .playback
+            .current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.album.id);
         if let Some(album_id) = album_id

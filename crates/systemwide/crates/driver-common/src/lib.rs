@@ -498,10 +498,7 @@ mod tests {
     fn test_driver_error_display_all_variants() {
         assert_eq!(DriverError::not_available("na").to_string(), "na");
         assert_eq!(DriverError::not_installed("ni").to_string(), "ni");
-        assert_eq!(
-            DriverError::permission_denied("pd").to_string(),
-            "pd"
-        );
+        assert_eq!(DriverError::permission_denied("pd").to_string(), "pd");
         assert_eq!(DriverError::timeout("to").to_string(), "to");
         assert_eq!(DriverError::io("io").to_string(), "io");
         assert_eq!(DriverError::other("ot").to_string(), "ot");

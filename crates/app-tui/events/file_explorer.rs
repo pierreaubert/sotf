@@ -72,7 +72,10 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
             }
         }
         FilePickerOrigin::IrFile => {
-            if let Some(plugin) = app.plugin_rack.graph.get_plugin_mut(app.plugin_rack.selected_index)
+            if let Some(plugin) = app
+                .plugin_rack
+                .graph
+                .get_plugin_mut(app.plugin_rack.selected_index)
                 && let PluginSettings::Convolution {
                     ref mut ir_file, ..
                 } = plugin.settings
@@ -129,8 +132,10 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                     let sample_rate = app.get_current_sample_rate();
                     match preset_file_to_path_config_json(&json_content, sample_rate) {
                         Ok(path_config_json) => {
-                            if let Some(plugin) =
-                                app.plugin_rack.graph.get_plugin_mut(app.plugin_rack.selected_index)
+                            if let Some(plugin) = app
+                                .plugin_rack
+                                .graph
+                                .get_plugin_mut(app.plugin_rack.selected_index)
                                 && let PluginSettings::ABCompare {
                                     ref mut path_a_config,
                                     ref mut path_b_config,
@@ -148,7 +153,8 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                                 }
                             }
                             let filename = path.file_name().unwrap_or_default().to_string_lossy();
-                            app.ui.status_message = Some(format!("Config loaded from {}", filename));
+                            app.ui.status_message =
+                                Some(format!("Config loaded from {}", filename));
                             app.request_plugin_update();
                         }
                         Err(e) => {
@@ -177,7 +183,8 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
             // Build the output file path: directory + playlist_name.m3u8
             let export_path = if path.is_dir() {
                 let playlist_name = app
-                    .playlists.controller
+                    .playlists
+                    .controller
                     .active_playlist()
                     .map(|p| p.name.as_str())
                     .unwrap_or("playlist");
@@ -197,7 +204,8 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                 path.clone()
             };
             match app
-                .playlists.controller
+                .playlists
+                .controller
                 .export_playlist(&app.library, &export_path)
             {
                 Ok(()) => {

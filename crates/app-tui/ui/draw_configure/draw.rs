@@ -19,7 +19,8 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
 
     // --- Output devices block ----------------------------------------------
     let items: Vec<ListItem> = app
-        .audio_devices.outputs
+        .audio_devices
+        .outputs
         .iter()
         .enumerate()
         .map(|(i, device)| {
@@ -104,7 +105,8 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
 
     // --- Cast devices block ------------------------------------------------
     let cast_items: Vec<ListItem> = app
-        .audio_devices.cast
+        .audio_devices
+        .cast
         .iter()
         .map(|device| {
             let line = Line::from(vec![
@@ -502,7 +504,8 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 }
             };
             let mic_cal_value = |ch: usize| {
-                s.model.recording_config
+                s.model
+                    .recording_config
                     .mic_calibration_paths
                     .get(ch)
                     .and_then(|o| o.clone())
@@ -511,7 +514,8 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             };
             let channel_input_label = |ch: usize| format!("Ch{} input", ch + 1);
             let channel_input_value = |ch: usize| {
-                s.model.recording_config
+                s.model
+                    .recording_config
                     .channel_mappings
                     .get(ch)
                     .map(|c| (c + 1).to_string())
@@ -527,7 +531,11 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             rows.push((
                 Some(2),
                 "Speaker Config".to_string(),
-                s.model.playback_config.speaker_configuration.as_str().to_string(),
+                s.model
+                    .playback_config
+                    .speaker_configuration
+                    .as_str()
+                    .to_string(),
             ));
             rows.push((None, "── Signal ──".to_string(), String::new()));
             rows.push((
@@ -574,12 +582,17 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             rows.push((
                 Some(10),
                 "CTC Matrix".to_string(),
-                s.model.recording_config.ctc_matrix_strategy.as_str().to_string(),
+                s.model
+                    .recording_config
+                    .ctc_matrix_strategy
+                    .as_str()
+                    .to_string(),
             ));
             rows.push((
                 Some(11),
                 "Loopback Input".to_string(),
-                s.model.recording_config
+                s.model
+                    .recording_config
                     .ctc_loopback_input_channel
                     .map(|ch| (ch + 1).to_string())
                     .unwrap_or_else(|| "<none>".to_string()),
@@ -978,18 +991,23 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
     } else {
         "Session Name"
     };
-    let name_para = Paragraph::new(field_text(0, s.model.save_name.clone(), "type session name"))
-        .style(focused(0))
-        .block(Block::default().borders(Borders::ALL).title(name_title));
+    let name_para = Paragraph::new(field_text(
+        0,
+        s.model.save_name.clone(),
+        "type session name",
+    ))
+    .style(focused(0))
+    .block(Block::default().borders(Borders::ALL).title(name_title));
     f.render_widget(name_para, inner[0]);
 
     // --- Room Dimensions ---------------------------------------------
     // Single line with four "cells" separated by spaces. Each cell is
     // rendered via a sub-paragraph so the accent-bold style only lands
     // on the focused one.
-    let room_block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!("Room Dimensions ({})", s.model.room_dimension_unit.label()));
+    let room_block = Block::default().borders(Borders::ALL).title(format!(
+        "Room Dimensions ({})",
+        s.model.room_dimension_unit.label()
+    ));
     let room_inner = room_block.inner(inner[1]);
     f.render_widget(room_block, inner[1]);
 
@@ -1394,7 +1412,12 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
 
     // --- Explainer + config summary ------------------------------------
     let tone_ms = 1000.0 * bac.bass_duration_s;
-    let loopback_hint = match app.recording.model.recording_config.ctc_loopback_input_channel {
+    let loopback_hint = match app
+        .recording
+        .model
+        .recording_config
+        .ctc_loopback_input_channel
+    {
         Some(ch) => format!(" • loopback ref ch {}", ch),
         None => String::new(),
     };

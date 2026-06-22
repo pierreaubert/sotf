@@ -179,35 +179,40 @@ fn plugin_adapter_exposes_plugin_trait() {
 fn parameter_roundtrip_global_params() {
     let mut plugin = FirDesignerPlugin::new(1, SAMPLE_RATE);
 
-    plugin.parametric_set_parameter(ParameterId::from("num_filters"), ParameterValue::Int(3))
+    plugin
+        .parametric_set_parameter(ParameterId::from("num_filters"), ParameterValue::Int(3))
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("num_filters")),
         Some(ParameterValue::Int(3))
     );
 
-    plugin.parametric_set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(2))
+    plugin
+        .parametric_set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(2))
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("fir_length")),
         Some(ParameterValue::Int(2))
     );
 
-    plugin.parametric_set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(1))
+    plugin
+        .parametric_set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(1))
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("phase_mode")),
         Some(ParameterValue::Int(1))
     );
 
-    plugin.parametric_set_parameter(ParameterId::from("auto_gain"), ParameterValue::Bool(true))
+    plugin
+        .parametric_set_parameter(ParameterId::from("auto_gain"), ParameterValue::Bool(true))
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("auto_gain")),
         Some(ParameterValue::Bool(true))
     );
 
-    plugin.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+    plugin
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
         .unwrap();
     let got = plugin.parametric_get_parameter(&ParameterId::from("mix"));
     assert!(
@@ -235,31 +240,41 @@ fn parameter_roundtrip_band_params() {
     };
     let mut plugin = FirDesignerPlugin::from_params(1, SAMPLE_RATE, params).unwrap();
 
-    plugin.parametric_set_parameter(ParameterId::from("band_0_freq"),
-    ParameterValue::Float(500.0),)
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("band_0_freq"),
+            ParameterValue::Float(500.0),
+        )
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("band_0_freq")),
         Some(ParameterValue::Float(500.0))
     );
 
-    plugin.parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.0))
+    plugin
+        .parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.0))
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("band_0_q")),
         Some(ParameterValue::Float(2.0))
     );
 
-    plugin.parametric_set_parameter(ParameterId::from("band_0_gain"),
-    ParameterValue::Float(-3.0),)
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("band_0_gain"),
+            ParameterValue::Float(-3.0),
+        )
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("band_0_gain")),
         Some(ParameterValue::Float(-3.0))
     );
 
-    plugin.parametric_set_parameter(ParameterId::from("band_0_active"),
-    ParameterValue::Bool(false),)
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("band_0_active"),
+            ParameterValue::Bool(false),
+        )
         .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("band_0_active")),
@@ -286,7 +301,8 @@ fn phase_mode_transition_changes_latency() {
     let mut plugin = FirDesignerPlugin::from_params(1, SAMPLE_RATE, params).unwrap();
     assert_eq!(plugin.latency_samples(), (1024 - 1) / 2);
 
-    plugin.parametric_set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(1))
+    plugin
+        .parametric_set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(1))
         .unwrap();
     assert_eq!(plugin.latency_samples(), 0);
 }
@@ -342,8 +358,10 @@ fn reset_returns_deterministic_state() {
 #[test]
 fn unknown_band_parameter_errors() {
     let mut plugin = FirDesignerPlugin::new(1, SAMPLE_RATE);
-    let result = plugin.parametric_set_parameter(ParameterId::from("band_0_not_real"),
-    ParameterValue::Float(1.0),);
+    let result = plugin.parametric_set_parameter(
+        ParameterId::from("band_0_not_real"),
+        ParameterValue::Float(1.0),
+    );
     assert!(result.is_err(), "unknown band parameter should error");
     assert!(result.unwrap_err().contains("Unknown parameter"));
 }

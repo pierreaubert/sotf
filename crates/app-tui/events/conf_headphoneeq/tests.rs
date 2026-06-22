@@ -26,7 +26,6 @@ pub(crate) fn headphone_eq_step_next(
     }
 }
 
-
 #[cfg(test)]
 mod poll_tests {
     use std::sync::{Arc, Mutex};
@@ -77,6 +76,9 @@ mod poll_tests {
         assert!(poll_headphone_eq_optimization(&mut app));
         assert_eq!(app.headphone_eq.model.filters.len(), 1);
         assert_eq!(app.headphone_eq.model.filters[0].filter_type, "Peak");
-        assert_eq!(app.headphone_eq.model.optimization_status, OptimizationStatus::Completed);
+        assert_eq!(
+            app.headphone_eq.model.optimization_status,
+            OptimizationStatus::Completed
+        );
     }
 }

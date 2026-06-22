@@ -61,9 +61,18 @@ impl From<SolvedNode<'_>> for AppSolvedLayout {
     fn from(solved: SolvedNode<'_>) -> Self {
         Self {
             is_horizontal: solved.resolved_axis == Some(Axis::Horizontal),
-            library: solved.find("library").map(SolvedSlot::from).unwrap_or_default(),
-            queue: solved.find("queue").map(SolvedSlot::from).unwrap_or_default(),
-            rack: solved.find("rack").map(SolvedSlot::from).unwrap_or_default(),
+            library: solved
+                .find("library")
+                .map(SolvedSlot::from)
+                .unwrap_or_default(),
+            queue: solved
+                .find("queue")
+                .map(SolvedSlot::from)
+                .unwrap_or_default(),
+            rack: solved
+                .find("rack")
+                .map(SolvedSlot::from)
+                .unwrap_or_default(),
         }
     }
 }

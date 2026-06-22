@@ -108,8 +108,11 @@ pub(super) fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
             .iter()
             .map(|(id, _)| *id)
             .collect();
-        app.headphone_eq.model.optimizer_config.loss =
-            super::super::cycle_string(&app.headphone_eq.model.optimizer_config.loss, &losses, delta);
+        app.headphone_eq.model.optimizer_config.loss = super::super::cycle_string(
+            &app.headphone_eq.model.optimizer_config.loss,
+            &losses,
+            delta,
+        );
         return;
     }
     let c = &mut app.headphone_eq.model.optimizer_config;

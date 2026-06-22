@@ -4,7 +4,10 @@
 
 use crate::analyzer::{RealTimeCache, SpectrumData};
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
-use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use crate::plugin::{
+    Plugin, PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
+    ProcessContext,
+};
 use math_audio_dsp::fast_math::fast_log10;
 
 use rtrb::{Consumer, RingBuffer};
@@ -215,6 +218,15 @@ impl Plugin for SpectrumAnalyzerPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Spectrum Analyzer", "1.1.0", "Sotf")
     }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Analyzer
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::analyzer(Some(PluginCompiledOp::AnalyzerTap))
+    }
+
     fn input_channels(&self) -> usize {
         self.num_channels
     }
@@ -379,6 +391,18 @@ impl Plugin for SpectrumAnalyzerPlugin {
             });
         }
         Ok(context.num_frames)
+    }
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        if op != PluginCompiledOp::AnalyzerTap {
+            return None;
+        }
+        Some(self.process(input, output, context))
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         Some(self.cache.load() as Arc<dyn Any + Send + Sync>)

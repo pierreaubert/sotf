@@ -141,7 +141,7 @@ ctrlc = "3.5"
 directories = "6"
 env_logger = "0.11"
 libc = "0.2"
-log = "0.4"
+log = "0.4.28"
 memmap2 = "0.9"
 mimalloc = { version = "0.1" }
 notify = { version = "8.2" }
@@ -156,7 +156,7 @@ rfd = "0.16"
 # automatically when a shipping app is in the build graph.
 rusqlite = { version = "0.38" }
 rust-embed = "8"
-smol = "2.0"
+smol = "2"
 strsim = "0.11"
 tempfile = "3.23"
 thiserror = "2.0.17"
@@ -282,7 +282,7 @@ driver-hal = { path = "crates/systemwide/crates/driver-hal" }  # macOS only
 # audio
 cpal = "0.17"
 hound = "3.5"
-id3 = "1.16"
+id3 = "1.16.3"
 lofty = "0.22"
 rubato = "1.0"
 audioadapter-buffers = "2.0"
@@ -337,7 +337,7 @@ bincode = { version = "2.0.1", features = ["serde"] }
 # Proc macro dependencies
 proc-macro2 = "1"
 quote = "1"
-proptest = "1.6"
+proptest = "1.9"
 syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
 
 # Graphics and visualization

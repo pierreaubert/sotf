@@ -3,7 +3,8 @@
 use serde_json::json;
 use sotf_types::{
     EngineConfig, EngineOversamplingPolicy, NetworkEndpointConfig, NetworkEndpointMode,
-    OutputAccessMode, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
+    OutputAccessMode, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig,
+    PluginGraphNodeConfig,
 };
 
 fn eq_plugin() -> PluginConfig {
@@ -75,13 +76,8 @@ fn snapshot_plugin_graph_eq_compressor_gain() {
     let graph = PluginGraphConfig::try_new(
         vec![
             PluginGraphNodeConfig::try_new(0, "eq", eq_plugin().parameters, 2).unwrap(),
-            PluginGraphNodeConfig::try_new(
-                1,
-                "compressor",
-                compressor_plugin().parameters,
-                2,
-            )
-            .unwrap(),
+            PluginGraphNodeConfig::try_new(1, "compressor", compressor_plugin().parameters, 2)
+                .unwrap(),
             PluginGraphNodeConfig::try_new(2, "gain", gain_plugin().parameters, 2).unwrap(),
         ],
         vec![

@@ -1,8 +1,9 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{ParametricInPlacePluginAdapter, 
-    CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, Plugin};
+use sotf_plugins::{
+    CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, ParametricInPlacePluginAdapter, Plugin,
+};
 
 pub(super) struct CrossfeedFuzzer;
 

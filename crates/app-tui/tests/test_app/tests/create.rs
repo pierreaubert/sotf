@@ -683,7 +683,8 @@ fn test_rebuild_artist_tree() {
 
     // Find Artist A node - should have 2 albums
     let artist_a = app
-        .library_view.artist_tree
+        .library_view
+        .artist_tree
         .iter()
         .find(|n| n.artist == "Artist A")
         .unwrap();
@@ -691,7 +692,8 @@ fn test_rebuild_artist_tree() {
 
     // Find Artist B node - should have 1 album
     let artist_b = app
-        .library_view.artist_tree
+        .library_view
+        .artist_tree
         .iter()
         .find(|n| n.artist == "Artist B")
         .unwrap();
@@ -971,12 +973,7 @@ fn test_add_album_to_queue_does_not_start_playback() {
         fs::write(temp_dir.path().join(format!("track{}.flac", i)), b"").unwrap();
     }
 
-    let album = create_test_album(
-        "Artist",
-        "Album",
-        temp_dir.path().to_str().unwrap(),
-        2,
-    );
+    let album = create_test_album("Artist", "Album", temp_dir.path().to_str().unwrap(), 2);
     app.library.albums.push(album);
     app.request_filter_update();
 

@@ -1,7 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 #[cfg(test)]
 mod tests {
-        use sotf_host::{ParametricInPlacePlugin, ParameterId, ParameterValue, ProcessContext};
+    use sotf_host::{ParameterId, ParameterValue, ParametricInPlacePlugin, ProcessContext};
     use sotf_plugin_denoiser::{DenoiserPlugin, DenoiserPluginParams};
 
     #[test]
@@ -12,7 +12,8 @@ mod tests {
         let mut denoiser = DenoiserPlugin::from_params(2, params);
 
         // Check if parameter is set correctly
-        let param_val = denoiser.parametric_get_parameter(&ParameterId::from("polyphonic_detection"));
+        let param_val =
+            denoiser.parametric_get_parameter(&ParameterId::from("polyphonic_detection"));
         assert_eq!(param_val, Some(ParameterValue::Bool(true)));
 
         // Initialize

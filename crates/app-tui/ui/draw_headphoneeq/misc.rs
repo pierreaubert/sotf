@@ -509,7 +509,12 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Loss chart or hint
             if s.model.progress_history.len() >= 2 {
-                let history: Vec<_> = s.model.progress_history.iter().map(|(i, l)| (*i, *l, None)).collect();
+                let history: Vec<_> = s
+                    .model
+                    .progress_history
+                    .iter()
+                    .map(|(i, l)| (*i, *l, None))
+                    .collect();
                 draw_loss_chart(f, inner[2], app, &history);
             } else {
                 let hint = match &s.model.optimization_status {

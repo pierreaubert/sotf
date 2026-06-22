@@ -11,10 +11,12 @@ use super::types::TransientShaperPluginParams;
 use crate::params::PARAMS as TS;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parameters::{Parameter, ParameterImportance};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::parameters::{Parameter, ParameterImportance};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
@@ -23,7 +25,7 @@ pub struct TransientShaperPlugin {
     pub(super) sample_rate: u32,
 
     // Parameters
-    pub(super) attack_amount: f32, // -1.0 to 1.0 (from -100% to +100%)
+    pub(super) attack_amount: f32,  // -1.0 to 1.0 (from -100% to +100%)
     pub(super) sustain_amount: f32, // -1.0 to 1.0
     pub(super) sensitivity_db: f32,
     pub(super) output_gain_db: f32,
@@ -161,6 +163,14 @@ impl ParametricInPlacePlugin for TransientShaperPlugin {
         PluginInfo::new("TransientShaper", "1.0.0", "SotF")
     }
 
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Dynamics
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Dynamics, None, 0, false)
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -181,29 +191,39 @@ impl ParametricInPlacePlugin for TransientShaperPlugin {
         for (id, value) in values {
             match id.as_str() {
                 "attack" => {
-                    if let Some(v) = value.as_float() && v.is_finite() {
+                    if let Some(v) = value.as_float()
+                        && v.is_finite()
+                    {
                         self.attack_amount = (v / 100.0).clamp(-1.0, 1.0);
                         self.attack_smoother.set_target(self.attack_amount);
                     }
                 }
                 "sustain" => {
-                    if let Some(v) = value.as_float() && v.is_finite() {
+                    if let Some(v) = value.as_float()
+                        && v.is_finite()
+                    {
                         self.sustain_amount = (v / 100.0).clamp(-1.0, 1.0);
                         self.sustain_smoother.set_target(self.sustain_amount);
                     }
                 }
                 "sensitivity" => {
-                    if let Some(v) = value.as_float() && v.is_finite() {
+                    if let Some(v) = value.as_float()
+                        && v.is_finite()
+                    {
                         self.sensitivity_db = v.clamp(-12.0, 12.0);
                     }
                 }
                 "output_gain" => {
-                    if let Some(v) = value.as_float() && v.is_finite() {
+                    if let Some(v) = value.as_float()
+                        && v.is_finite()
+                    {
                         self.output_gain_db = v.clamp(-12.0, 12.0);
                     }
                 }
                 "mix" => {
-                    if let Some(v) = value.as_float() && v.is_finite() {
+                    if let Some(v) = value.as_float()
+                        && v.is_finite()
+                    {
                         self.mix = v.clamp(0.0, 1.0);
                         self.mix_smoother.set_target(self.mix);
                     }

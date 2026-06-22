@@ -736,7 +736,10 @@ mod tests {
         // channel_measurements is empty, so auto_start_optimization does NOT spawn
         handle_room_eq_keys(&mut app, key(KeyCode::Enter));
         assert!(!app.room_eq.step_tab_focused);
-        assert_eq!(app.room_eq.model.optimization_status, OptimizationStatus::Idle);
+        assert_eq!(
+            app.room_eq.model.optimization_status,
+            OptimizationStatus::Idle
+        );
     }
 
     #[test]
@@ -755,7 +758,10 @@ mod tests {
         let mut app = app_on_room_eq_content();
         app.room_eq.model.step = RoomEqStep::LoadData;
         handle_room_eq_keys(&mut app, key(KeyCode::Enter));
-        assert_eq!(app.file_explorer.picker_origin, FilePickerOrigin::RoomEqFilePath);
+        assert_eq!(
+            app.file_explorer.picker_origin,
+            FilePickerOrigin::RoomEqFilePath
+        );
     }
 
     #[test]
@@ -872,7 +878,10 @@ mod tests {
         let mut app = app_on_room_eq_content();
         app.room_eq.model.step = RoomEqStep::Process;
         handle_room_eq_keys(&mut app, key(KeyCode::Char('1')));
-        assert!(matches!(app.room_eq.model.wizard_mode, RoomEqWizardMode::Simple));
+        assert!(matches!(
+            app.room_eq.model.wizard_mode,
+            RoomEqWizardMode::Simple
+        ));
     }
 
     #[test]
@@ -880,7 +889,10 @@ mod tests {
         let mut app = app_on_room_eq_content();
         app.room_eq.model.step = RoomEqStep::Process;
         handle_room_eq_keys(&mut app, key(KeyCode::Char('2')));
-        assert!(matches!(app.room_eq.model.wizard_mode, RoomEqWizardMode::Full));
+        assert!(matches!(
+            app.room_eq.model.wizard_mode,
+            RoomEqWizardMode::Full
+        ));
     }
 
     #[test]
@@ -1014,7 +1026,10 @@ mod tests {
         app.room_eq.model.optimization_status = OptimizationStatus::Idle;
         // channel_measurements empty → Failed
         handle_room_eq_keys(&mut app, key(KeyCode::Enter));
-        assert_eq!(app.room_eq.model.optimization_status, OptimizationStatus::Failed);
+        assert_eq!(
+            app.room_eq.model.optimization_status,
+            OptimizationStatus::Failed
+        );
     }
 
     #[test]
@@ -1023,7 +1038,10 @@ mod tests {
         app.room_eq.model.step = RoomEqStep::Optimize;
         app.room_eq.model.optimization_status = OptimizationStatus::Running;
         handle_room_eq_keys(&mut app, key(KeyCode::Enter));
-        assert_eq!(app.room_eq.model.optimization_status, OptimizationStatus::Running);
+        assert_eq!(
+            app.room_eq.model.optimization_status,
+            OptimizationStatus::Running
+        );
     }
 
     #[test]
@@ -1033,7 +1051,10 @@ mod tests {
         app.room_eq.model.optimization_status = OptimizationStatus::Completed;
         // channel_measurements empty → Failed
         handle_room_eq_keys(&mut app, key(KeyCode::Enter));
-        assert_eq!(app.room_eq.model.optimization_status, OptimizationStatus::Failed);
+        assert_eq!(
+            app.room_eq.model.optimization_status,
+            OptimizationStatus::Failed
+        );
     }
 
     #[test]

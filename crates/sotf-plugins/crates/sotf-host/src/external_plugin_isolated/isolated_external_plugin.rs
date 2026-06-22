@@ -8,7 +8,9 @@ use crate::external_plugin_host::{ExternalPluginHostBlockStatus, ExternalPluginH
 use crate::external_plugin_ipc::{PluginIpcLayout, PluginSandboxRuntimeStatus};
 use crate::external_plugin_process::{ExternalPluginProcessEvent, ExternalPluginProcessSupervisor};
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
-use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use crate::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 
 pub struct IsolatedExternalPlugin {
     pub(super) descriptor: PluginDescriptor,
@@ -269,6 +271,14 @@ impl Plugin for IsolatedExternalPlugin {
             &self.descriptor.version,
             &self.descriptor.vendor,
         )
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::External
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::boundary(PluginCostClass::External, self.latency_samples())
     }
 
     fn input_channels(&self) -> usize {

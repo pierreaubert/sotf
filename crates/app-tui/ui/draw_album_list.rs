@@ -5,7 +5,8 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
 
     // Calculate channel count for truncation logic
     let num_channels = app
-        .playback.loudness_info
+        .playback
+        .loudness_info
         .as_ref()
         .map(|info| info.channel_peaks.len())
         .unwrap_or(2);

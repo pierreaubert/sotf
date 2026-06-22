@@ -126,12 +126,13 @@ fn test_adjust_upmixer_parameters() {
                     center_spread,
                     ..
                 },
-            lfe: UpmixerLfeSettings {
-                lfe_gain,
-                lfe_cutoff_hz,
-                bandpass_hz,
-                ..
-            },
+            lfe:
+                UpmixerLfeSettings {
+                    lfe_gain,
+                    lfe_cutoff_hz,
+                    bandpass_hz,
+                    ..
+                },
             subharmonic:
                 UpmixerSubharmonicSettings {
                     enable_subharmonic_synth,
@@ -194,12 +195,13 @@ fn test_adjust_upmixer_parameters() {
                 center_spread,
                 ..
             },
-        lfe: UpmixerLfeSettings {
-            lfe_gain,
-            lfe_cutoff_hz,
-            bandpass_hz,
-            ..
-        },
+        lfe:
+            UpmixerLfeSettings {
+                lfe_gain,
+                lfe_cutoff_hz,
+                bandpass_hz,
+                ..
+            },
         subharmonic:
             UpmixerSubharmonicSettings {
                 enable_subharmonic_synth,
@@ -419,7 +421,8 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
     // Loudness compensation
     let mut app = App::new(Theme::default(), false);
     let plugin_idx = app
-        .plugin_rack.graph
+        .plugin_rack
+        .graph
         .add_plugin(&PluginType::LoudnessCompensation);
     app.plugin_rack.editing_index = Some(plugin_idx);
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
@@ -456,7 +459,10 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
 #[test]
 fn test_adjust_binaural_decoder_parameters_and_set_sofa() {
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::BinauralDecoder);
+    let plugin_idx = app
+        .plugin_rack
+        .graph
+        .add_plugin(&PluginType::BinauralDecoder);
     app.plugin_rack.editing_index = Some(plugin_idx);
     app.plugin_rack.selected_index = plugin_idx;
 
@@ -687,7 +693,12 @@ fn test_move_plugin_boundary() {
 
     // Try to move last plugin down (should do nothing)
     let last_idx = app.plugin_rack.graph.len() - 1;
-    let last_plugin_type = app.plugin_rack.graph.get_plugin(last_idx).unwrap().plugin_type();
+    let last_plugin_type = app
+        .plugin_rack
+        .graph
+        .get_plugin(last_idx)
+        .unwrap()
+        .plugin_type();
     app.move_plugin_down(last_idx);
     let plugin = app.plugin_rack.graph.get_plugin(last_idx).unwrap();
     assert_eq!(plugin.plugin_type(), last_plugin_type);
@@ -886,7 +897,8 @@ fn test_apply_spinorama_to_plugins_adds_eq_when_missing() {
 
     // An EQ plugin should now exist in the chain
     let has_eq = (0..app.plugin_rack.graph.len()).any(|i| {
-        app.plugin_rack.graph
+        app.plugin_rack
+            .graph
             .get_plugin(i)
             .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
             .unwrap_or(false)
@@ -905,7 +917,8 @@ fn test_apply_spinorama_to_plugins_updates_last_eq() {
     // Record indices of both EQ plugins
     let eq_indices: Vec<usize> = (0..app.plugin_rack.graph.len())
         .filter(|&i| {
-            app.plugin_rack.graph
+            app.plugin_rack
+                .graph
                 .get_plugin(i)
                 .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
                 .unwrap_or(false)
@@ -953,7 +966,6 @@ fn test_apply_spinorama_to_plugins_empty_filters_returns_error() {
     assert!(result.is_err());
 }
 
-
 #[cfg(test)]
 mod draw_tests {
     use crate::app::{App, Screen};
@@ -986,7 +998,6 @@ mod draw_tests {
         );
     }
 }
-
 
 #[cfg(test)]
 mod scanner_tests {

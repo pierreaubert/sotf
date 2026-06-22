@@ -108,10 +108,12 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     .block(Block::default().borders(Borders::ALL).title("Error"));
                 f.render_widget(err_para, inner[1]);
             } else if !s.model.channel_measurements.is_empty() {
-                let status =
-                    Paragraph::new(format!(" {} channels loaded", s.model.channel_measurements.len()))
-                        .style(Style::default().fg(app.theme.accent_success))
-                        .block(Block::default().borders(Borders::ALL).title("Status"));
+                let status = Paragraph::new(format!(
+                    " {} channels loaded",
+                    s.model.channel_measurements.len()
+                ))
+                .style(Style::default().fg(app.theme.accent_success))
+                .block(Block::default().borders(Borders::ALL).title("Status"));
                 f.render_widget(status, inner[1]);
             } else {
                 let status = Paragraph::new(" No data loaded")
@@ -447,7 +449,12 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                                 s.model.status_message.clone(),
                                 Style::default().fg(app.theme.accent_primary),
                             )
-                        } else if s.model.current_channel.as_ref().is_some_and(|n| !n.is_empty()) {
+                        } else if s
+                            .model
+                            .current_channel
+                            .as_ref()
+                            .is_some_and(|n| !n.is_empty())
+                        {
                             (
                                 format!("{}...", s.model.current_channel.as_deref().unwrap_or("")),
                                 Style::default().fg(app.theme.accent_primary),
@@ -459,11 +466,17 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                             )
                         }
                     } else {
-                        let speaker_info = if s.model.current_channel.as_ref().is_some_and(|n| !n.is_empty()) {
+                        let speaker_info = if s
+                            .model
+                            .current_channel
+                            .as_ref()
+                            .is_some_and(|n| !n.is_empty())
+                        {
                             if s.opt_total_speakers() > 1 {
                                 format!(
                                     " | {}/{} {}",
-                                    s.opt_total_speakers().min(s.model.channel_results.len() + 1),
+                                    s.opt_total_speakers()
+                                        .min(s.model.channel_results.len() + 1),
                                     s.opt_total_speakers(),
                                     s.model.current_channel.as_deref().unwrap_or("")
                                 )
@@ -476,14 +489,20 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         (
                             format!(
                                 "Optimizing... iter {}/{} | loss: {:.4}{}",
-                                s.model.current_iteration, s.opt_max_iter, s.model.current_loss, speaker_info
+                                s.model.current_iteration,
+                                s.opt_max_iter,
+                                s.model.current_loss,
+                                speaker_info
                             ),
                             Style::default().fg(app.theme.accent_primary),
                         )
                     }
                 }
                 OptimizationStatus::Completed => (
-                    format!("Completed! {} channel results", s.model.channel_results.len()),
+                    format!(
+                        "Completed! {} channel results",
+                        s.model.channel_results.len()
+                    ),
                     Style::default().fg(app.theme.accent_success),
                 ),
                 OptimizationStatus::Failed => (

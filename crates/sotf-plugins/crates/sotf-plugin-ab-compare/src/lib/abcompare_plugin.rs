@@ -7,7 +7,9 @@ use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use sotf_host::host::DawHost;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::sync::Arc;
@@ -545,6 +547,10 @@ impl Plugin for ABComparePlugin {
 
     fn output_channels(&self) -> usize {
         self.num_channels
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::boundary(PluginCostClass::External, self.latency_samples())
     }
 
     fn parameters(&self) -> Vec<Parameter> {

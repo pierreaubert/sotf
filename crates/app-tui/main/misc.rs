@@ -107,7 +107,10 @@ pub(super) fn start_playback(
     }
 
     let plugins = app.plugin_rack.graph.to_plugin_configs(sample_rate);
-    let mut output_channels = app.plugin_rack.graph.output_channels_for_input(track_channels);
+    let mut output_channels = app
+        .plugin_rack
+        .graph
+        .output_channels_for_input(track_channels);
 
     let device_max = app.get_device_max_channels();
     log::info!(
@@ -256,7 +259,8 @@ pub(super) fn update_media_controls(
     // Snapshot the desired metadata.
     let track = app.current_track();
     let album_title = app
-        .playback.current_queue_index
+        .playback
+        .current_queue_index
         .and_then(|idx| app.queue.get(idx))
         .map(|entry| entry.item.album.title.clone())
         .filter(|s| !s.is_empty());
@@ -270,7 +274,8 @@ pub(super) fn update_media_controls(
     let duration_secs = track.and_then(|t| t.duration_secs);
 
     let cover_url = app
-        .playback.current_queue_index
+        .playback
+        .current_queue_index
         .and_then(|idx| app.queue.get(idx))
         .and_then(|entry| entry.item.album.album_art_path.as_ref())
         .filter(|path| path.exists())
@@ -461,7 +466,8 @@ pub(super) fn dispatch_tui_action(
         }
         "MetadataSetField" => {
             let editor = app
-                .modal.metadata_editor
+                .modal
+                .metadata_editor
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
             let field = payload_str(&payload, "field")?;
@@ -473,7 +479,8 @@ pub(super) fn dispatch_tui_action(
         "MetadataPreview" => {
             let (target, patch) = {
                 let editor = app
-                    .modal.metadata_editor
+                    .modal
+                    .metadata_editor
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
                 (
@@ -485,7 +492,8 @@ pub(super) fn dispatch_tui_action(
             };
             let result = MetadataController::preview_edit(&app.library, target, patch);
             let editor = app
-                .modal.metadata_editor
+                .modal
+                .metadata_editor
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
             match result {
@@ -501,7 +509,8 @@ pub(super) fn dispatch_tui_action(
         }
         "MetadataInjectCandidate" => {
             let editor = app
-                .modal.metadata_editor
+                .modal
+                .metadata_editor
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
             editor
@@ -512,7 +521,8 @@ pub(super) fn dispatch_tui_action(
         }
         "MetadataImportCandidate" => {
             let editor = app
-                .modal.metadata_editor
+                .modal
+                .metadata_editor
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
             let candidate = editor

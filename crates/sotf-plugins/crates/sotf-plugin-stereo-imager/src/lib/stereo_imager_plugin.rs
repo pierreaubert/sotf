@@ -3,10 +3,12 @@ use super::stereo_imager_plugin_params::StereoImagerPluginParams;
 use crate::params::PARAMS as SI;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parameters::Parameter;
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::parameters::Parameter;
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
@@ -143,6 +145,14 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("StereoImager", env!("CARGO_PKG_VERSION"), "SotF")
             .with_description("Multi-band M/S stereo width control")
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Iir
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::linear_transform(PluginCostClass::Iir, None, 0, true, true, false)
     }
 
     fn channels(&self) -> usize {

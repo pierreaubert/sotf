@@ -163,12 +163,26 @@ fn metadata_editor_opens_edits_previews_imports_and_closes() {
         ],
     );
     assert_eq!(
-        app.modal.metadata_editor.as_ref().unwrap().fields.year.as_str(),
+        app.modal
+            .metadata_editor
+            .as_ref()
+            .unwrap()
+            .fields
+            .year
+            .as_str(),
         "2024"
     );
-    assert!(app.modal.metadata_editor.as_ref().unwrap().preview.is_some());
+    assert!(
+        app.modal
+            .metadata_editor
+            .as_ref()
+            .unwrap()
+            .preview
+            .is_some()
+    );
 
-    app.modal.metadata_editor
+    app.modal
+        .metadata_editor
         .as_mut()
         .unwrap()
         .search_results
@@ -407,7 +421,10 @@ fn spinorama_configure_right_adjusts_field() {
     app.spinorama_eq.selected_field = 1; // num_filters
     let before = app.spinorama_eq.model.optimizer_config.num_filters;
     send_keys(&mut app, &[KeyCode::Right]);
-    assert_eq!(app.spinorama_eq.model.optimizer_config.num_filters, before + 1);
+    assert_eq!(
+        app.spinorama_eq.model.optimizer_config.num_filters,
+        before + 1
+    );
     assert_eq!(app.spinorama_eq.step, SpinoramaStep::Configure);
 }
 

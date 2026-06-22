@@ -28,8 +28,7 @@ fn remove_answer_record(packet: &mut Vec<u8>, index: usize) {
     let mut pos = 12;
     for _ in 0..index {
         let (_, name_end) = decode_dns_name(packet, pos).expect("valid record name");
-        let rdlength =
-            u16::from_be_bytes([packet[name_end + 8], packet[name_end + 9]]) as usize;
+        let rdlength = u16::from_be_bytes([packet[name_end + 8], packet[name_end + 9]]) as usize;
         pos = name_end + 10 + rdlength;
     }
 

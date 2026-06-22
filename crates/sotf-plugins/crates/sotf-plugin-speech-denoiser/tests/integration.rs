@@ -1,7 +1,7 @@
 // Integration tests for sotf-plugin-speech-denoiser exercising the public InPlacePlugin trait.
 
-use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 use sotf_plugin_speech_denoiser::{
     SPEECH_DENOISER_FRAME_SIZE, SpeechDenoiserPlugin, SpeechDenoiserPluginParams,

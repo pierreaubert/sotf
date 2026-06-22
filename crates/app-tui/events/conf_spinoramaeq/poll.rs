@@ -112,7 +112,10 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
         app.spinorama_eq.opt_max_iter = max_iter;
         app.spinorama_eq.model.current_loss = loss;
         app.spinorama_eq.model.progress = pct;
-        app.spinorama_eq.model.progress_history.push((iter, loss, score));
+        app.spinorama_eq
+            .model
+            .progress_history
+            .push((iter, loss, score));
         return true;
     }
 

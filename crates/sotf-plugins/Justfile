@@ -191,6 +191,56 @@ plugins-bench-all:
 plugins-bench-allocation:
 	cargo bench -p sotf-plugins --bench allocation-benchmark
 
+[group('plugins')]
+plugins-daw-stress:
+	cargo run -p sotf-plugins --bin daw-scale-stress -- --quick
+
+[group('plugins')]
+plugins-daw-stress-full:
+	cargo run --release -p sotf-plugins --bin daw-scale-stress -- --chain mixed --mode both
+
+[group('plugins')]
+plugins-daw-report:
+	cd {{justfile_directory()}}/../.. && ./scripts/daw-perf-report.sh
+
+[group('plugins')]
+plugins-daw-scheduler-sweep:
+	cd {{justfile_directory()}}/../.. && ./scripts/daw-scheduler-sweep.sh
+
+[group('plugins')]
+plugins-daw-gate csv:
+	cd {{justfile_directory()}}/../.. && ./scripts/daw-perf-gate.sh {{csv}}
+
+[group('plugins')]
+plugins-daw-allocation-gate:
+	cargo test -p sotf-plugins --test realtime_allocation_tests
+	cargo test -p sotf-engine --test engine_allocation_tests
+	cargo test -p sotf-engine --test playback_runtime_allocation_tests
+
+[group('plugins')]
+plugins-daw-hotpath-audit:
+	cd {{justfile_directory()}}/../.. && ./scripts/daw-hotpath-audit.sh
+
+[group('plugins')]
+plugins-daw-compare baseline candidate:
+	cd {{justfile_directory()}}/../.. && ./scripts/daw-compare-csv.sh {{baseline}} {{candidate}}
+
+[group('plugins')]
+plugins-daw-rank csv:
+	cd {{justfile_directory()}}/../.. && ./scripts/daw-rank-csv.sh {{csv}}
+
+[group('plugins')]
+plugins-daw-bench-flush:
+	cargo run --release -p sotf-plugins --bin daw-scale-stress -- --focus flush --blocks 4096
+
+[group('plugins')]
+plugins-daw-bench-autogain:
+	cargo run --release -p sotf-plugins --bin daw-scale-stress -- --focus auto-gain --blocks 4096
+
+[group('plugins')]
+plugins-daw-bench-scheduling:
+	cargo run --release -p sotf-plugins --bin daw-scale-stress -- --focus scheduling --mode both --tracks 64 --blocks 1024
+
 # Per-crate benchmarks
 [group('plugins')]
 plugins-bench-individual:
@@ -337,4 +387,3 @@ plugins-check:
 [group('plugins')]
 plugins-clippy:
 	cargo clippy -p sotf-plugins --no-default-features
-

@@ -2,7 +2,9 @@ use super::types::HalInputPluginParams;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalInputReader;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -118,6 +120,10 @@ impl Plugin for HalInputPlugin {
 
     fn output_channels(&self) -> usize {
         self.channels
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::boundary(PluginCostClass::External, self.latency_samples())
     }
 
     fn parameters(&self) -> Vec<Parameter> {

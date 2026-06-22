@@ -8,7 +8,8 @@
 
 use sotf_plugins::{
     GainPlugin, LimiterPlugin, ParametricInPlacePlugin, ParametricPlugin, Plugin, ProcessContext,
-    UpmixerPlugin};
+    UpmixerPlugin,
+};
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 

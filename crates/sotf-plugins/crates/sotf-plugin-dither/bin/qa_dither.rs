@@ -1,5 +1,8 @@
 use sotf_host::plugin::ProcessContext;
-use sotf_host::{ParametricInPlacePluginAdapter, ParametricInPlacePlugin, ParametricPluginAdapter, CountingAlloc, run_standard_tests};
+use sotf_host::{
+    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter,
+    ParametricPluginAdapter, run_standard_tests,
+};
 use sotf_plugin_dither::{DitherPlugin, DitherPluginParams};
 
 #[global_allocator]

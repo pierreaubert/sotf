@@ -66,14 +66,10 @@ pub(super) fn optimize_single_driver(
         };
         let optim_params = autoeq::OptimParams::from(&config.args);
 
-        let result = autoeq::optimize_speaker(
-            &input_config,
-            &optim_params,
-            progress_config,
-            lib_callback,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let result =
+            autoeq::optimize_speaker(&input_config, &optim_params, progress_config, lib_callback)
+                .await
+                .map_err(|e| e.to_string())?;
 
         Ok(SpeakerOptimizationResult::from(result))
     })

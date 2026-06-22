@@ -760,7 +760,10 @@ mod tests {
 
     #[test]
     fn api_parse_range_header_multiple_ranges() {
-        assert_eq!(api_parse_range_header(Some("bytes=0-9,10-19"), 100), Err(()));
+        assert_eq!(
+            api_parse_range_header(Some("bytes=0-9,10-19"), 100),
+            Err(())
+        );
     }
 
     #[test]

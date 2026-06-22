@@ -3,7 +3,9 @@ use super::misc::MAX_BANDS;
 use super::misc::db_to_linear;
 use super::types::BandMergePluginParams;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use std::cell::Cell;
 
@@ -129,6 +131,18 @@ impl Plugin for BandMergePlugin {
     }
     fn output_channels(&self) -> usize {
         self.output_channels
+    }
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let mut metadata = PluginCompileMetadata::linear_transform(
+            PluginCostClass::Scalar,
+            None,
+            0,
+            true,
+            true,
+            false,
+        );
+        metadata.boundary = true;
+        metadata
     }
     fn parameters(&self) -> Vec<Parameter> {
         self.cached_parameters.clone()

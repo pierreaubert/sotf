@@ -60,7 +60,8 @@ pub(super) fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<Play
         KeyCode::Char('R') => {
             // Force ReplayGain rescan of all tracks
             if let Err(e) = app.start_force_replay_gain_scan() {
-                app.ui.status_message = Some(format!("Error starting ReplayGain force scan: {}", e));
+                app.ui.status_message =
+                    Some(format!("Error starting ReplayGain force scan: {}", e));
             }
             None
         }

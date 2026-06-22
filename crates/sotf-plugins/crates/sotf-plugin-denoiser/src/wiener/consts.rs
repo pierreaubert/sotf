@@ -335,7 +335,8 @@ impl DenoiserPlugin {
         // Access freq_domain and noise_psd directly to avoid borrow conflicts
         // with self.gains.gain[channel].
         let radius: usize = 3;
-        let use_captured = self.noise_profile.use_captured_profile && self.noise_profile.has_noise_profile;
+        let use_captured =
+            self.noise_profile.use_captured_profile && self.noise_profile.has_noise_profile;
 
         for k in 0..n {
             // Inline get_power_at_bin and get_effective_noise_power to avoid
@@ -387,8 +388,16 @@ impl DenoiserPlugin {
 
     /// Update attack/release coefficients when parameters change
     pub(in super::super) fn update_envelope_coefficients(&mut self) {
-        self.coeffs.attack_coeff = Self::time_to_coeff(self.params.attack_ms, self.config.sample_rate, self.config.hop_size);
-        self.coeffs.release_coeff = Self::time_to_coeff(self.params.release_ms, self.config.sample_rate, self.config.hop_size);
+        self.coeffs.attack_coeff = Self::time_to_coeff(
+            self.params.attack_ms,
+            self.config.sample_rate,
+            self.config.hop_size,
+        );
+        self.coeffs.release_coeff = Self::time_to_coeff(
+            self.params.release_ms,
+            self.config.sample_rate,
+            self.config.hop_size,
+        );
         self.coeffs.reduction_linear = 10.0_f32.powf(self.params.reduction_db / 10.0);
         self.coeffs.floor_linear = 10.0_f32.powf(self.params.floor_db / 20.0);
     }
@@ -451,7 +460,11 @@ impl DenoiserPlugin {
         let mean_env: f32 = envelope.iter().sum::<f32>() / n as f32;
         let floor_gain = strength * 0.3;
 
-        for (env_val, gain_val) in envelope.iter().zip(self.gains.gain[channel].iter_mut()).take(n) {
+        for (env_val, gain_val) in envelope
+            .iter()
+            .zip(self.gains.gain[channel].iter_mut())
+            .take(n)
+        {
             if *env_val > mean_env + 0.13 {
                 // 0.13 in log10(power) units = 1.3 dB above mean (10 * 0.13 = 1.3 dB)
                 *gain_val = gain_val.max(floor_gain);

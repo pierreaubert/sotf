@@ -540,7 +540,10 @@ impl PluginChain {
             match &plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output: UpmixerOutputSettings { binaural_preview, .. },
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
                     ..
                 } => {
                     return Some(if *binaural_preview {
@@ -572,7 +575,10 @@ impl PluginChain {
             match &plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output: UpmixerOutputSettings { binaural_preview, .. },
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
                     ..
                 } => {
                     config = Some(if *binaural_preview {
@@ -611,7 +617,10 @@ impl PluginChain {
             match &plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output: UpmixerOutputSettings { binaural_preview, .. },
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
                     ..
                 } => {
                     return upmixer_settings_output_channels(speaker_config, *binaural_preview);
@@ -658,7 +667,10 @@ impl PluginChain {
             match &plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output: UpmixerOutputSettings { binaural_preview, .. },
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
                     ..
                 } => {
                     running_channels =
@@ -746,7 +758,10 @@ impl PluginChain {
             match &plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output: UpmixerOutputSettings { binaural_preview, .. },
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
                     ..
                 } => {
                     running_channels =
@@ -1218,7 +1233,10 @@ impl PluginChain {
                 match &self.plugins[i].settings {
                     PluginSettings::Upmixer {
                         speaker_config,
-                        output: UpmixerOutputSettings { binaural_preview, .. },
+                        output:
+                            UpmixerOutputSettings {
+                                binaural_preview, ..
+                            },
                         ..
                     } => {
                         current_channels =
@@ -1261,13 +1279,13 @@ impl PluginChain {
 mod tests {
 
     use super::*;
+    use crate::plugins::matrix::{
+        apply_matrix_preset, available_matrix_presets, detect_matrix_preset,
+    };
     use crate::plugins::{
         UpmixerAmbientAnalysisSettings, UpmixerBypassSettings, UpmixerDecorrelationSettings,
         UpmixerDialogueSettings, UpmixerGainSettings, UpmixerHeightSettings, UpmixerLfeSettings,
         UpmixerOutputSettings, UpmixerSubharmonicSettings,
-    };
-    use crate::plugins::matrix::{
-        apply_matrix_preset, available_matrix_presets, detect_matrix_preset,
     };
 
     #[test]
@@ -1376,7 +1394,10 @@ mod tests {
         if let Some(plugin) = chain.get_plugin_mut(0)
             && let PluginSettings::Upmixer {
                 speaker_config,
-                output: UpmixerOutputSettings { binaural_preview, .. },
+                output:
+                    UpmixerOutputSettings {
+                        binaural_preview, ..
+                    },
                 ..
             } = &mut plugin.settings
         {

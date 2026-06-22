@@ -44,7 +44,8 @@ impl DenoiserPlugin {
 
         for ch in 0..self.config.channels {
             for k in 0..self.config.spectrum_size {
-                self.noise_profile.noise_profile_storage[ch][k] = self.noise_profile.learning_accumulator[ch][k] / count;
+                self.noise_profile.noise_profile_storage[ch][k] =
+                    self.noise_profile.learning_accumulator[ch][k] / count;
             }
         }
 
@@ -99,6 +100,7 @@ impl DenoiserPlugin {
         if !self.noise_profile.is_learning || self.noise_profile.learning_frames_target == 0 {
             return 0.0;
         }
-        self.noise_profile.learning_frames_count as f32 / self.noise_profile.learning_frames_target as f32
+        self.noise_profile.learning_frames_count as f32
+            / self.noise_profile.learning_frames_target as f32
     }
 }

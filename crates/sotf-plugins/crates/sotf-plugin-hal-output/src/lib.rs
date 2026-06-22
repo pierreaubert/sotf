@@ -6,7 +6,9 @@ pub mod params;
 
 use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -15,8 +17,7 @@ use driver_hal::HalOutputWriter;
 
 // Static error messages used on the audio hot path. Using constants avoids
 // re-formatting a fresh `String` every time an error is reported.
-const ERR_INVALID_CHANNEL_COUNT: &str =
-    "Invalid channel count. Must be between 1 and 16";
+const ERR_INVALID_CHANNEL_COUNT: &str = "Invalid channel count. Must be between 1 and 16";
 #[cfg(all(target_os = "macos", feature = "hal"))]
 const ERR_HAL_DAEMON_NOT_INITIALIZED: &str =
     "HAL driver not initialized. Ensure daemon initialized HAL before creating plugins";
@@ -142,6 +143,10 @@ impl Plugin for HalOutputPlugin {
 
     fn output_channels(&self) -> usize {
         0 // Sink plugin - no output
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::boundary(PluginCostClass::External, self.latency_samples())
     }
 
     fn parameters(&self) -> Vec<Parameter> {

@@ -20,7 +20,8 @@ impl DenoiserPlugin {
 
         // Perform Forward FFT (Real -> Complex) for all channels
         for ch in 0..self.config.channels {
-            self.fft.fft_forward
+            self.fft
+                .fft_forward
                 .process(&mut self.fft.time_domain[ch], &mut self.fft.freq_domain[ch])
                 .map_err(|e| format!("FFT forward failed: {:?}", e))?;
         }
@@ -38,8 +39,12 @@ impl DenoiserPlugin {
             }
 
             // Inverse FFT (Complex -> Real)
-            self.fft.fft_inverse
-                .process(&mut self.fft.freq_domain[ch], &mut self.io.time_out_channels[ch])
+            self.fft
+                .fft_inverse
+                .process(
+                    &mut self.fft.freq_domain[ch],
+                    &mut self.io.time_out_channels[ch],
+                )
                 .map_err(|e| format!("FFT inverse failed: {:?}", e))?;
         }
         Ok(())

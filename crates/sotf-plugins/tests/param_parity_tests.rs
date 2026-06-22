@@ -12,14 +12,15 @@
 // get_parameter.
 
 use sotf_plugins::param_specs::{self, ParamSpec, ParamType};
-use sotf_plugins::{ParametricInPlacePluginAdapter, ParametricPluginAdapter, 
+use sotf_plugins::{
     ABComparePlugin, BandMergePlugin, BandSplitPlugin, BinauralDecoderPlugin,
     ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin, DelayPlugin,
     DenoiserPlugin, DownmixPlugin, ExpanderPlugin, FirDesignerPlugin, GainPlugin, GatePlugin,
-     LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin,
-    MonoToStereoPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, ParameterId,
-    ParameterValue, Plugin, PndPlugin, RoomModel, UpmixerPlugin,
-    XtcPlugin, XtcPluginParams};
+    LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin, MonoToStereoPlugin,
+    MultibandCompressorPlugin, MultibandExpanderPlugin, ParameterId, ParameterValue,
+    ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin, PndPlugin, RoomModel,
+    UpmixerPlugin, XtcPlugin, XtcPluginParams,
+};
 
 const SAMPLE_RATE: u32 = 48000;
 
@@ -39,7 +40,9 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "compressor",
-            plugin: Box::new(ParametricInPlacePluginAdapter::new(CompressorPlugin::new(2))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(CompressorPlugin::new(
+                2,
+            ))),
             params: param_specs::compressor::GLOBAL_PARAMS,
         },
         PluginWithSpec {
@@ -106,7 +109,9 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "denoiser",
-            plugin: Box::new(ParametricInPlacePluginAdapter::new(DenoiserPlugin::new(2, false))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(DenoiserPlugin::new(
+                2, false,
+            ))),
             params: param_specs::denoiser::PARAMS,
         },
         PluginWithSpec {
@@ -160,12 +165,16 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
         },
         PluginWithSpec {
             name: "multiband_compressor",
-            plugin: Box::new(ParametricInPlacePluginAdapter::new(MultibandCompressorPlugin::new(2))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(
+                MultibandCompressorPlugin::new(2),
+            )),
             params: param_specs::multiband_compressor::GLOBAL_PARAMS,
         },
         PluginWithSpec {
             name: "multiband_expander",
-            plugin: Box::new(ParametricInPlacePluginAdapter::new(MultibandExpanderPlugin::new(2))),
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(
+                MultibandExpanderPlugin::new(2),
+            )),
             params: param_specs::multiband_expander::GLOBAL_PARAMS,
         },
         PluginWithSpec {

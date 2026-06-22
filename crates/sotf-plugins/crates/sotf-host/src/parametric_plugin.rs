@@ -11,7 +11,10 @@
 //! existing plugins can implement both traits during a gradual migration.
 
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
-use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use crate::plugin::{
+    Plugin, PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
+    ProcessContext,
+};
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -84,6 +87,31 @@ pub trait ParametricPlugin: Send {
         context: &ProcessContext,
     ) -> Result<usize, String>;
 
+    /// Optional specialized operation used by host compiled render plans.
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        let _ = (op, input, output, context);
+        None
+    }
+
+    /// Stable scalar gain that a host compiled plan may fuse with adjacent ops.
+    fn compiled_static_gain(&self) -> Option<f32> {
+        None
+    }
+
+    /// Parameter-sensitive compile/fusion metadata for this plugin state.
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let mut metadata =
+            PluginCompileMetadata::boundary(self.cost_class(), self.latency_samples());
+        metadata.static_gain = self.compiled_static_gain();
+        metadata
+    }
+
     /// Process one block of interleaved f64 audio.
     fn process_f64(
         &mut self,
@@ -106,6 +134,11 @@ pub trait ParametricPlugin: Send {
     /// Processing latency in samples.
     fn latency_samples(&self) -> usize {
         0
+    }
+
+    /// Coarse cost category for host scheduling.
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Scalar
     }
 
     /// Expose internal data for analyzers.
@@ -259,6 +292,24 @@ impl<T: ParametricPlugin> Plugin for ParametricPluginAdapter<T> {
         self.plugin.process(input, output, context)
     }
 
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        self.plugin.process_compiled_f32(op, input, output, context)
+    }
+
+    fn compiled_static_gain(&self) -> Option<f32> {
+        self.plugin.compiled_static_gain()
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        self.plugin.compile_metadata()
+    }
+
     fn process_f64(
         &mut self,
         input: &[f64],
@@ -280,6 +331,10 @@ impl<T: ParametricPlugin> Plugin for ParametricPluginAdapter<T> {
 
     fn latency_samples(&self) -> usize {
         self.plugin.latency_samples()
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        self.plugin.cost_class()
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {

@@ -22,7 +22,8 @@ mod inner {
 
                 if use_halfblocks {
                     log::info!("Terminal.app detected, using halfblocks for album art");
-                    self.library_view.image_picker = Some(ratatui_image::picker::Picker::halfblocks());
+                    self.library_view.image_picker =
+                        Some(ratatui_image::picker::Picker::halfblocks());
                 } else {
                     match ratatui_image::picker::Picker::from_query_stdio() {
                         Ok(picker) => {
@@ -33,7 +34,8 @@ mod inner {
                                 "Failed to query terminal for font size: {}, using halfblocks fallback",
                                 e
                             );
-                            self.library_view.image_picker = Some(ratatui_image::picker::Picker::halfblocks());
+                            self.library_view.image_picker =
+                                Some(ratatui_image::picker::Picker::halfblocks());
                         }
                     }
                 }
@@ -69,8 +71,9 @@ mod inner {
         /// Cycle to the next image in the album directory
         pub fn next_album_image(&mut self) {
             if !self.library_view.album_images.is_empty() {
-                self.library_view.selected_image_index =
-                    (self.library_view.selected_image_index + 1) % self.library_view.album_images.len();
+                self.library_view.selected_image_index = (self.library_view.selected_image_index
+                    + 1)
+                    % self.library_view.album_images.len();
                 self.library_view.image_protocol = None;
                 self.library_view.image_protocol_path = None;
             }
@@ -80,7 +83,8 @@ mod inner {
         pub fn prev_album_image(&mut self) {
             if !self.library_view.album_images.is_empty() {
                 if self.library_view.selected_image_index == 0 {
-                    self.library_view.selected_image_index = self.library_view.album_images.len() - 1;
+                    self.library_view.selected_image_index =
+                        self.library_view.album_images.len() - 1;
                 } else {
                     self.library_view.selected_image_index -= 1;
                 }
@@ -91,7 +95,9 @@ mod inner {
 
         /// Get the currently selected album image path
         pub fn get_current_album_image(&self) -> Option<&PathBuf> {
-            self.library_view.album_images.get(self.library_view.selected_image_index)
+            self.library_view
+                .album_images
+                .get(self.library_view.selected_image_index)
         }
     }
 }

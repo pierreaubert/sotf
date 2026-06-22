@@ -1,7 +1,7 @@
 use super::PluginFuzzer;
 use rand::Rng;
 use rand::rngs::StdRng;
-use sotf_plugins::{ParametricPluginAdapter, GainPlugin, GainPluginParams,  Plugin};
+use sotf_plugins::{GainPlugin, GainPluginParams, ParametricPluginAdapter, Plugin};
 
 pub(super) struct GainFuzzer;
 

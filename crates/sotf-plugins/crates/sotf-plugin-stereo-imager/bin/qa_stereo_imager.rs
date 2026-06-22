@@ -1,6 +1,6 @@
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::{InPlacePluginAdapter, ProcessContext};
-use sotf_host::{ParametricInPlacePluginAdapter, CountingAlloc, run_standard_tests};
+use sotf_host::{CountingAlloc, ParametricInPlacePluginAdapter, run_standard_tests};
 use sotf_plugin_stereo_imager::{StereoImagerPlugin, StereoImagerPluginParams};
 
 #[global_allocator]

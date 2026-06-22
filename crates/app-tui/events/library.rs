@@ -156,7 +156,11 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
             None
         }
         KeyCode::Char('m') => {
-            if let Some(album) = app.library_view.cached_filtered_albums.get(app.library_view.selected_album_index) {
+            if let Some(album) = app
+                .library_view
+                .cached_filtered_albums
+                .get(app.library_view.selected_album_index)
+            {
                 match crate::app::MetadataEditorState::for_album(album) {
                     Ok(editor) => {
                         app.modal.metadata_editor = Some(editor);
@@ -176,7 +180,8 @@ pub(super) fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<Player
                     if let Some(db) = app.library.get_database() {
                         // Find the playlist index for the active playlist's ID
                         let pl_idx = app
-                            .playlists.controller
+                            .playlists
+                            .controller
                             .playlists()
                             .iter()
                             .position(|p| p.id == Some(active_id));

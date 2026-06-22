@@ -1,6 +1,8 @@
 // Integration tests for sotf-plugin-linear-phase-eq exercising the public Plugin trait.
 
-use sotf_host::{ParametricInPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
+use sotf_host::{
+    ParameterId, ParameterValue, ParametricInPlacePluginAdapter, Plugin, ProcessContext,
+};
 use sotf_plugin_linear_phase_eq::{BandConfig, LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 
 fn sine_buffer(num_frames: usize, channels: usize, freq: f32, sample_rate: u32) -> Vec<f32> {

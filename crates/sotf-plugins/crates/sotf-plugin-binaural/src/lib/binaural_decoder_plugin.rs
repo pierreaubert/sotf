@@ -10,7 +10,9 @@ use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz, window_mul_simd};
 use sotf_host::smoothing::Smoother;
 use sotf_host::sofa::SofaFile;
@@ -1101,6 +1103,16 @@ impl Plugin for BinauralDecoderPlugin {
     }
     fn output_channels(&self) -> usize {
         2
+    }
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::linear_transform(
+            PluginCostClass::Convolution,
+            None,
+            self.latency_samples(),
+            true,
+            true,
+            false,
+        )
     }
     fn parameters(&self) -> Vec<Parameter> {
         self.config.cached_parameters.clone()

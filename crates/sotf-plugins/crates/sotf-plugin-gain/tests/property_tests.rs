@@ -7,7 +7,7 @@
 //   - Increasing gain increases output for a positive input.
 
 use proptest::prelude::*;
-use sotf_host::{ParametricPlugin, ParameterId, ParameterValue, ProcessContext};
+use sotf_host::{ParameterId, ParameterValue, ParametricPlugin, ProcessContext};
 use sotf_plugin_gain::GainPlugin;
 
 proptest! {

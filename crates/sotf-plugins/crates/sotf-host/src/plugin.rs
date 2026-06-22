@@ -109,6 +109,39 @@ pub trait Plugin: Send {
         context: &ProcessContext,
     ) -> Result<usize, String>;
 
+    /// Process a host-selected compiled operation.
+    ///
+    /// Returning `None` asks the host to use the regular `process` path. This
+    /// keeps compiled plans opportunistic: the host can tag likely-specialized
+    /// nodes while the concrete plugin decides whether its current state is
+    /// eligible for the optimized operation.
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        let _ = (op, input, output, context);
+        None
+    }
+
+    /// Stable scalar gain that a host compiled plan may fuse with adjacent ops.
+    ///
+    /// Return `Some(gain)` only when skipping `process()` for this block would
+    /// preserve DSP state, for example when gain smoothing is already settled.
+    fn compiled_static_gain(&self) -> Option<f32> {
+        None
+    }
+
+    /// Parameter-sensitive compile/fusion metadata for this plugin state.
+    fn compile_metadata(&self) -> types::PluginCompileMetadata {
+        let mut metadata =
+            types::PluginCompileMetadata::boundary(self.cost_class(), self.latency_samples());
+        metadata.static_gain = self.compiled_static_gain();
+        metadata
+    }
+
     /// Process f64 audio samples.
     ///
     /// Plugins that need true double-precision processing should override this
@@ -136,6 +169,12 @@ pub trait Plugin: Send {
     /// This is used to compensate for algorithmic delays
     fn latency_samples(&self) -> usize {
         0
+    }
+
+    /// Coarse cost category for host scheduling. Override for FFT,
+    /// convolution, dynamics, and other non-scalar DSP.
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Scalar
     }
 
     /// Check if the plugin supports a specific channel configuration

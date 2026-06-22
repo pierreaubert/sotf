@@ -7,7 +7,10 @@ pub struct GetPluginDataCommand(pub usize);
 impl ManagerCommandHandler for GetPluginDataCommand {
     fn execute(&self, ctx: &mut ManagerContext) -> ManagerResponse {
         let index = self.0;
-        if let Err(e) = ctx.processing.send_command(ProcessingCommand::GetPluginData(index)) {
+        if let Err(e) = ctx
+            .processing
+            .send_command(ProcessingCommand::GetPluginData(index))
+        {
             return ManagerResponse::Error(e);
         }
 

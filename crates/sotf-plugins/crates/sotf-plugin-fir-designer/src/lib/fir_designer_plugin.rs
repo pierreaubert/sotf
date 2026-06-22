@@ -18,7 +18,9 @@ use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
@@ -452,6 +454,27 @@ impl ParametricInPlacePlugin for FirDesignerPlugin {
             .with_description("FIR magnitude and phase designer")
     }
 
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Convolution
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        if self.auto_gain {
+            return PluginCompileMetadata::boundary(
+                PluginCostClass::Convolution,
+                self.latency_samples(),
+            );
+        }
+        PluginCompileMetadata::linear_transform(
+            PluginCostClass::Convolution,
+            None,
+            self.latency_samples(),
+            false,
+            true,
+            false,
+        )
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -478,7 +501,10 @@ impl ParametricInPlacePlugin for FirDesignerPlugin {
             ParameterId::from("auto_gain"),
             ParameterValue::Bool(self.auto_gain),
         );
-        values.insert(ParameterId::from("mix"), ParameterValue::Float(self.mix_value));
+        values.insert(
+            ParameterId::from("mix"),
+            ParameterValue::Float(self.mix_value),
+        );
         for (i, band) in self.bands.iter().enumerate() {
             values.insert(
                 ParameterId::from(format!("band_{}_type", i).as_str()),

@@ -11,7 +11,9 @@ use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{deinterleave_stereo, enable_ftz_daz, interleave_stereo};
 use sotf_host::smoothing::Smoother;
 
@@ -429,6 +431,17 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
             .with_description(format!("Headphone crossfeed ({})", mode_str))
     }
 
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Iir
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        if self.params.autogain_enabled {
+            return PluginCompileMetadata::boundary(PluginCostClass::Iir, 0);
+        }
+        PluginCompileMetadata::linear_transform(PluginCostClass::Iir, None, 0, true, true, false)
+    }
+
     fn channels(&self) -> usize {
         2
     }
@@ -445,7 +458,9 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
                     ParameterId::from("head_yaw_deg"),
                     ParameterValue::Float(self.params.head_yaw_deg),
                 );
-            } else if let Some(v) = param_bridge::get_parameter(CF, &param.id, |i| self.param_value(i)) {
+            } else if let Some(v) =
+                param_bridge::get_parameter(CF, &param.id, |i| self.param_value(i))
+            {
                 values.insert(param.id.clone(), v);
             }
         }

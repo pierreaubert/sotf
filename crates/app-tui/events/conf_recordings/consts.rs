@@ -150,7 +150,11 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         .get(mic_index)
         .copied()
         .unwrap_or(0) as u16;
-    let loopback_input = app.recording.model.recording_config.ctc_loopback_input_channel;
+    let loopback_input = app
+        .recording
+        .model
+        .recording_config
+        .ctc_loopback_input_channel;
     let position_idx = selected.mic_position_index;
 
     // Per-channel calibration lives in `recording_config.mic_calibration_paths`.
@@ -322,7 +326,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             sample_rate,
             1,
         ) {
-            app.recording.model.status_message = format!("Could not write CTC reference sweep: {}", e);
+            app.recording.model.status_message =
+                format!("Could not write CTC reference sweep: {}", e);
         } else {
             app.recording.model.ctc_reference_sweep_path =
                 Some(reference_path.to_string_lossy().to_string());

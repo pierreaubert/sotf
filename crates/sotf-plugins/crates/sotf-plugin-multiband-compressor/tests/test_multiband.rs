@@ -1,7 +1,7 @@
 // Integration tests for Multiband Compressor plugin
 
-use sotf_host::{InPlacePlugin, ParametricInPlacePluginAdapter};
 use sotf_host::ProcessContext;
+use sotf_host::{InPlacePlugin, ParametricInPlacePluginAdapter};
 use sotf_plugin_multiband_compressor::MultibandCompressorPlugin;
 
 #[test]

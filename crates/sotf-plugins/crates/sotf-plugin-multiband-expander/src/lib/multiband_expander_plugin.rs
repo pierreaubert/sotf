@@ -18,10 +18,12 @@ use sotf_host::detector::LevelDetector;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::{LogSmoother, Smoother};
 use std::any::Any;
@@ -106,9 +108,21 @@ impl MultibandExpanderPlugin {
         while xfs.len() < 4 {
             xfs.push(default_xfs[xfs.len()]);
         }
-        let ratio = if params.ratio == 0.0 { 2.0 } else { params.ratio };
-        let attack_ms = if params.attack_ms == 0.0 { 1.0 } else { params.attack_ms };
-        let release_ms = if params.release_ms == 0.0 { 100.0 } else { params.release_ms };
+        let ratio = if params.ratio == 0.0 {
+            2.0
+        } else {
+            params.ratio
+        };
+        let attack_ms = if params.attack_ms == 0.0 {
+            1.0
+        } else {
+            params.attack_ms
+        };
+        let release_ms = if params.release_ms == 0.0 {
+            100.0
+        } else {
+            params.release_ms
+        };
         let mut bexps = Vec::with_capacity(nb);
         for _ in 0..nb {
             bexps.push(BandExpander {
@@ -1242,6 +1256,20 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Multiband Expander", "1.2.0", "Sotf")
     }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Dynamics
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        let cost_class = if self.spectral.is_some() {
+            PluginCostClass::Fft
+        } else {
+            PluginCostClass::Dynamics
+        };
+        PluginCompileMetadata::nonlinear(cost_class, None, self.latency_samples(), false)
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }

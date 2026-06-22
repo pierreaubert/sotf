@@ -8,7 +8,9 @@ use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HissReducerPluginParams {
@@ -103,6 +105,14 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
             .with_description("Stationary high-frequency hiss reducer")
     }
 
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Fft
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::nonlinear(PluginCostClass::Fft, None, self.latency_samples(), false)
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -113,7 +123,10 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
 
     fn current_values(&self) -> ParameterSet {
         let mut values = ParameterSet::new();
-        values.insert(ParameterId::from("enabled"), ParameterValue::Bool(self.params.enabled));
+        values.insert(
+            ParameterId::from("enabled"),
+            ParameterValue::Bool(self.params.enabled),
+        );
         values.insert(
             ParameterId::from("threshold_db"),
             ParameterValue::Float(self.params.threshold_db),

@@ -334,7 +334,12 @@ mod tests {
         let mut changed = false;
 
         // Param index 0 = band 0 frequency
-        assert!(set_plugin_param_value(&mut settings, 0, 2500.0, &mut changed));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            0,
+            2500.0,
+            &mut changed
+        ));
         match settings {
             PluginSettings::EQ { filters, .. } => assert_eq!(filters[0].frequency, 2500.0),
             _ => panic!("expected EQ"),
@@ -395,7 +400,12 @@ mod tests {
         };
         let mut changed = false;
 
-        assert!(set_plugin_param_value(&mut settings, 0, -12.0, &mut changed));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            0,
+            -12.0,
+            &mut changed
+        ));
         match settings {
             PluginSettings::Gain { gain_db, .. } => assert!((gain_db - -12.0).abs() < 0.01),
             _ => panic!("expected Gain"),
@@ -439,7 +449,12 @@ mod tests {
         let mut changed = false;
 
         // Band-level threshold at index 106
-        assert!(set_plugin_param_value(&mut settings, 106, -15.0, &mut changed));
+        assert!(set_plugin_param_value(
+            &mut settings,
+            106,
+            -15.0,
+            &mut changed
+        ));
         match settings {
             PluginSettings::MultibandCompressor { bands, .. } => {
                 assert!((bands[0].threshold_db.unwrap() - -15.0).abs() < 0.01);
@@ -457,6 +472,11 @@ mod tests {
         };
         let mut changed = false;
 
-        assert!(!set_plugin_param_value(&mut settings, 999, 0.0, &mut changed));
+        assert!(!set_plugin_param_value(
+            &mut settings,
+            999,
+            0.0,
+            &mut changed
+        ));
     }
 }

@@ -62,7 +62,8 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
     }
 
     let items: Vec<ListItem> = app
-        .plugin_rack.graph
+        .plugin_rack
+        .graph
         .plugins()
         .iter()
         .enumerate()
@@ -173,7 +174,9 @@ pub(crate) fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
         );
 
     let mut state = ListState::default();
-    if is_selecting && let Some(&row) = display_for_selectable.get(app.plugin_rack.add_selected_index) {
+    if is_selecting
+        && let Some(&row) = display_for_selectable.get(app.plugin_rack.add_selected_index)
+    {
         state.select(Some(row));
     }
 

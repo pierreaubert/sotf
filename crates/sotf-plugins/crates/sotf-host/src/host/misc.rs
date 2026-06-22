@@ -6,6 +6,14 @@ pub(super) const PARAMETER_EVENT_QUEUE_CAPACITY: usize = 1024;
 
 pub(super) const GRAPH_MUTATION_QUEUE_CAPACITY: usize = 128;
 
+pub(super) const DEFAULT_PARALLEL_NODE_COST: u32 = 1;
+
+pub(super) const MODERATE_PARALLEL_NODE_COST: u32 = 4;
+
+pub(super) const HEAVY_PARALLEL_NODE_COST: u32 = 16;
+
+pub(super) const MIN_PARALLEL_STAGE_WORK_UNITS: usize = 32 * 128 * 2;
+
 pub(super) fn panic_payload_description(payload: &(dyn Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
         (*message).to_string()

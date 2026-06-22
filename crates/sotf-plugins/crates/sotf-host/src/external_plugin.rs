@@ -1,6 +1,8 @@
 use crate::error::PluginError;
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
-use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use crate::plugin::{
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use crate::serialization::{PluginPreset, SerializablePlugin};
 #[cfg(any(
     feature = "external-plugin-clap",
@@ -213,6 +215,14 @@ impl Plugin for ExternalPlugin {
             &self.descriptor.version,
             &self.descriptor.vendor,
         )
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::External
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::boundary(PluginCostClass::External, self.latency_samples())
     }
 
     fn input_channels(&self) -> usize {

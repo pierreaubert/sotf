@@ -10,7 +10,10 @@ impl ManagerCommandHandler for BypassProcessingCommand {
         let bypass = self.0;
         log::debug!("[Manager Thread] Bypass processing: {}", bypass);
 
-        if let Err(e) = ctx.processing.send_command(ProcessingCommand::Bypass(bypass)) {
+        if let Err(e) = ctx
+            .processing
+            .send_command(ProcessingCommand::Bypass(bypass))
+        {
             return ManagerResponse::Error(e);
         }
 

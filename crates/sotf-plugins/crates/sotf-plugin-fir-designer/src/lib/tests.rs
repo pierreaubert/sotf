@@ -124,7 +124,8 @@ fn test_overlap_buffers_match_fir_tail_length() {
         assert_eq!(overlap.len(), expected_tail);
     }
 
-    plugin.parametric_set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(3))
+    plugin
+        .parametric_set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(3))
         .unwrap();
     let expected_tail = plugin.fir_length() - 1;
     assert!(expected_tail < plugin.fft_size);
@@ -144,7 +145,8 @@ fn test_rebuild_fir_reuses_design_scratch_vectors() {
     assert!(initial_freq_capacity >= plugin.design_freqs.len());
     assert!(initial_mag_capacity >= plugin.design_magnitudes_db.len());
 
-    plugin.parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(6.0))
+    plugin
+        .parametric_set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(6.0))
         .unwrap();
     plugin.rebuild_fir();
 
@@ -164,7 +166,8 @@ fn test_parameter_roundtrip() {
     let mut plugin = FirDesignerPlugin::new(2, 48000);
 
     // Set mix
-    plugin.parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+    plugin
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("mix"));
     match val {
@@ -173,8 +176,11 @@ fn test_parameter_roundtrip() {
     }
 
     // Set band frequency
-    plugin.parametric_set_parameter(ParameterId::from("band_0_freq"),
-    ParameterValue::Float(2000.0),)
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("band_0_freq"),
+            ParameterValue::Float(2000.0),
+        )
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("band_0_freq"));
     match val {
@@ -273,13 +279,17 @@ fn test_fir_length_from_index_bounds() {
 fn test_set_parameter_num_filters_grows_bands() {
     let mut plugin = FirDesignerPlugin::new(1, 48000);
     let original = plugin.num_filters;
-    plugin.parametric_set_parameter(ParameterId::from("num_filters"), ParameterValue::Int(8))
+    plugin
+        .parametric_set_parameter(ParameterId::from("num_filters"), ParameterValue::Int(8))
         .unwrap();
     assert_eq!(plugin.num_filters, 8);
     assert!(plugin.bands.len() >= 8);
     // Shrink back
-    plugin.parametric_set_parameter(ParameterId::from("num_filters"),
-    ParameterValue::Int(original as i32),)
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("num_filters"),
+            ParameterValue::Int(original as i32),
+        )
         .unwrap();
     assert_eq!(plugin.num_filters, original);
 }
@@ -288,7 +298,8 @@ fn test_set_parameter_num_filters_grows_bands() {
 fn test_set_parameter_fir_length_resizes() {
     let mut plugin = FirDesignerPlugin::new(1, 48000);
     let original_fft = plugin.fft_size;
-    plugin.parametric_set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(3))
+    plugin
+        .parametric_set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(3))
         .unwrap();
     assert_eq!(plugin.fir_length_index, 3);
     assert_eq!(plugin.fir_length(), 8192);
@@ -300,7 +311,8 @@ fn test_set_parameter_fir_length_resizes() {
 fn test_set_parameter_phase_mode() {
     let mut plugin = FirDesignerPlugin::new(1, 48000);
     assert_eq!(plugin.phase_mode_index, 0);
-    plugin.parametric_set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(1))
+    plugin
+        .parametric_set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(1))
         .unwrap();
     assert_eq!(plugin.phase_mode_index, 1);
     assert_eq!(plugin.latency_samples(), 0);
@@ -310,7 +322,8 @@ fn test_set_parameter_phase_mode() {
 fn test_set_parameter_auto_gain() {
     let mut plugin = FirDesignerPlugin::new(1, 48000);
     assert!(!plugin.auto_gain);
-    plugin.parametric_set_parameter(ParameterId::from("auto_gain"), ParameterValue::Bool(true))
+    plugin
+        .parametric_set_parameter(ParameterId::from("auto_gain"), ParameterValue::Bool(true))
         .unwrap();
     assert!(plugin.auto_gain);
 }
@@ -438,7 +451,8 @@ fn test_set_parameter_band_type() {
     let mut plugin = FirDesignerPlugin::new(1, 48000);
     assert_eq!(plugin.bands[0].filter_type, BiquadFilterType::Peak);
 
-    plugin.parametric_set_parameter(ParameterId::from("band_0_type"), ParameterValue::Int(3))
+    plugin
+        .parametric_set_parameter(ParameterId::from("band_0_type"), ParameterValue::Int(3))
         .unwrap();
     assert_eq!(plugin.bands[0].filter_type, BiquadFilterType::Lowpass);
     assert!(plugin.fir_dirty);
@@ -447,7 +461,8 @@ fn test_set_parameter_band_type() {
 #[test]
 fn test_set_parameter_band_q() {
     let mut plugin = FirDesignerPlugin::new(1, 48000);
-    plugin.parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.5))
+    plugin
+        .parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.5))
         .unwrap();
     assert!((plugin.bands[0].q - 2.5).abs() < 1e-6);
     assert!(plugin.fir_dirty);
@@ -456,8 +471,11 @@ fn test_set_parameter_band_q() {
 #[test]
 fn test_set_parameter_band_gain() {
     let mut plugin = FirDesignerPlugin::new(1, 48000);
-    plugin.parametric_set_parameter(ParameterId::from("band_0_gain"),
-    ParameterValue::Float(-6.0),)
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("band_0_gain"),
+            ParameterValue::Float(-6.0),
+        )
         .unwrap();
     assert!((plugin.bands[0].gain_db - (-6.0)).abs() < 1e-6);
     assert!(plugin.fir_dirty);
@@ -468,8 +486,11 @@ fn test_set_parameter_band_active() {
     let mut plugin = FirDesignerPlugin::new(1, 48000);
     assert!(plugin.bands[0].active);
 
-    plugin.parametric_set_parameter(ParameterId::from("band_0_active"),
-    ParameterValue::Bool(false),)
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("band_0_active"),
+            ParameterValue::Bool(false),
+        )
         .unwrap();
     assert!(!plugin.bands[0].active);
     assert!(plugin.fir_dirty);
@@ -478,8 +499,10 @@ fn test_set_parameter_band_active() {
 #[test]
 fn test_set_parameter_unknown_band_param_errors() {
     let mut plugin = FirDesignerPlugin::new(1, 48000);
-    let result = plugin.parametric_set_parameter(ParameterId::from("band_0_unknown"),
-    ParameterValue::Float(1.0),);
+    let result = plugin.parametric_set_parameter(
+        ParameterId::from("band_0_unknown"),
+        ParameterValue::Float(1.0),
+    );
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Unknown parameter"));
 }
@@ -490,18 +513,21 @@ fn test_get_parameter_band_type_q_active() {
     plugin.bands[0].q = 2.5;
     plugin.bands[0].active = false;
 
-    let t = plugin.parametric_get_parameter(&ParameterId::from("band_0_type"))
+    let t = plugin
+        .parametric_get_parameter(&ParameterId::from("band_0_type"))
         .unwrap();
     assert_eq!(
         t,
         ParameterValue::Int(filter_type_to_index(BiquadFilterType::Peak) as i32)
     );
 
-    let q = plugin.parametric_get_parameter(&ParameterId::from("band_0_q"))
+    let q = plugin
+        .parametric_get_parameter(&ParameterId::from("band_0_q"))
         .unwrap();
     assert_eq!(q, ParameterValue::Float(2.5));
 
-    let active = plugin.parametric_get_parameter(&ParameterId::from("band_0_active"))
+    let active = plugin
+        .parametric_get_parameter(&ParameterId::from("band_0_active"))
         .unwrap();
     assert_eq!(active, ParameterValue::Bool(false));
 }
@@ -513,16 +539,22 @@ fn test_set_parameter_same_value_no_rebuild() {
 
     // Setting fir_length to same value should not resize
     let current = plugin.fir_length_index as i32;
-    plugin.parametric_set_parameter(ParameterId::from("fir_length"),
-    ParameterValue::Int(current),)
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("fir_length"),
+            ParameterValue::Int(current),
+        )
         .unwrap();
     assert_eq!(plugin.fft_size, original_fft);
 
     // Setting phase_mode to same value should not mark dirty
     plugin.fir_dirty = false;
     let current_phase = plugin.phase_mode_index as i32;
-    plugin.parametric_set_parameter(ParameterId::from("phase_mode"),
-    ParameterValue::Int(current_phase),)
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("phase_mode"),
+            ParameterValue::Int(current_phase),
+        )
         .unwrap();
     assert!(!plugin.fir_dirty);
 }
@@ -533,10 +565,8 @@ fn test_set_parameter_auto_gain_non_bool_rejected() {
     assert!(!plugin.auto_gain);
 
     // Passing a float instead of bool should be rejected by schema validation
-    let result = plugin.parametric_set_parameter(
-        ParameterId::from("auto_gain"),
-        ParameterValue::Float(1.0),
-    );
+    let result =
+        plugin.parametric_set_parameter(ParameterId::from("auto_gain"), ParameterValue::Float(1.0));
     assert!(result.is_err(), "type mismatch should be rejected");
     assert!(!plugin.auto_gain);
 }

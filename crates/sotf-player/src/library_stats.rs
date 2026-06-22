@@ -435,7 +435,15 @@ mod tests {
 
     #[test]
     fn compute_ignores_empty_metadata() {
-        let albums = [album_with_tracks("X", Some(""), Some(""), Some(""), Some(0), 2, &["T"])];
+        let albums = [album_with_tracks(
+            "X",
+            Some(""),
+            Some(""),
+            Some(""),
+            Some(0),
+            2,
+            &["T"],
+        )];
         let stats = LibraryStats::compute(&albums);
         assert_eq!(stats.artists_count, 0);
         assert_eq!(stats.composers_count, 0);

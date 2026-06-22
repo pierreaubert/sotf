@@ -2,7 +2,7 @@ use super::Plugin;
 use super::in_place_plugin::InPlacePlugin;
 use super::plugin_info::PluginInfo;
 use super::process_context::ProcessContext;
-use super::types::PluginResult;
+use super::types::{PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginResult};
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use std::any::Any;
 use std::sync::Arc;
@@ -110,6 +110,24 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
         }
     }
 
+    fn process_compiled_f32(
+        &mut self,
+        op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        self.plugin.process_compiled_f32(op, input, output, context)
+    }
+
+    fn compiled_static_gain(&self) -> Option<f32> {
+        self.plugin.compiled_static_gain()
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        self.plugin.compile_metadata()
+    }
+
     fn process_f64(
         &mut self,
         input: &[f64],
@@ -136,6 +154,10 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
 
     fn latency_samples(&self) -> usize {
         self.plugin.latency_samples()
+    }
+
+    fn cost_class(&self) -> PluginCostClass {
+        self.plugin.cost_class()
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {

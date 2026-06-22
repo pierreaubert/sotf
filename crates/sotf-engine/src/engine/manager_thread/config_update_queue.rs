@@ -31,7 +31,8 @@ use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 pub(in crate::engine::manager_thread) struct ConfigUpdateQueue {
     pub(in crate::engine::manager_thread) queue: VecDeque<PendingConfigUpdate>,
     pub(in crate::engine::manager_thread) update_in_progress: bool,
-    pub(in crate::engine::manager_thread) last_working_config: Option<Vec<super::super::PluginConfig>>,
+    pub(in crate::engine::manager_thread) last_working_config:
+        Option<Vec<super::super::PluginConfig>>,
     pub(in crate::engine::manager_thread) metrics: ConfigUpdateMetrics,
 }
 

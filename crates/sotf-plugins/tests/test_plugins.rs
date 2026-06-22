@@ -1,6 +1,6 @@
 // Integration tests for the plugin system
 
-use sotf_plugins::{ParametricPluginAdapter, GainPlugin,  PluginHost};
+use sotf_plugins::{GainPlugin, ParametricPluginAdapter, PluginHost};
 
 #[test]
 fn test_plugin_host_single_plugin() {

@@ -1,7 +1,7 @@
 use super::super::saturation_plugin::SaturationPlugin;
 use super::super::saturation_plugin_params::SaturationPluginParams;
-use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 
 pub(super) fn make_context(num_frames: usize) -> ProcessContext<'static> {

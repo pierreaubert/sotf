@@ -5,7 +5,9 @@ use super::types::DelayPluginParams;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
-use sotf_host::plugin::{PluginInfo, PluginResult, ProcessContext};
+use sotf_host::plugin::{
+    PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
@@ -263,6 +265,15 @@ impl ParametricInPlacePlugin for DelayPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("Delay", "2.0.0", "SotF")
     }
+
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Iir
+    }
+
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::linear_transform(PluginCostClass::Iir, None, 0, false, true, false)
+    }
+
     fn channels(&self) -> usize {
         self.channels
     }
@@ -273,10 +284,19 @@ impl ParametricInPlacePlugin for DelayPlugin {
 
     fn current_values(&self) -> ParameterSet {
         let mut values = ParameterSet::new();
-        values.insert(ParameterId::from("delay_ms"), ParameterValue::Float(self.delay_ms));
-        values.insert(ParameterId::from("feedback"), ParameterValue::Float(self.feedback));
+        values.insert(
+            ParameterId::from("delay_ms"),
+            ParameterValue::Float(self.delay_ms),
+        );
+        values.insert(
+            ParameterId::from("feedback"),
+            ParameterValue::Float(self.feedback),
+        );
         values.insert(ParameterId::from("mix"), ParameterValue::Float(self.mix));
-        values.insert(ParameterId::from("lfo_rate_hz"), ParameterValue::Float(self.lfo_rate_hz));
+        values.insert(
+            ParameterId::from("lfo_rate_hz"),
+            ParameterValue::Float(self.lfo_rate_hz),
+        );
         values.insert(
             ParameterId::from("lfo_depth_ms"),
             ParameterValue::Float(self.lfo_depth_ms),

@@ -9,7 +9,8 @@ pub(crate) fn autocomplete_dropdown_height(app: &App) -> u16 {
         return 0;
     }
     // items + 2 for borders
-    app.autocomplete.suggestions
+    app.autocomplete
+        .suggestions
         .len()
         .min(MAX_VISIBLE_SUGGESTIONS) as u16
         + 2

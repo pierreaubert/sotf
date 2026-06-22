@@ -54,7 +54,10 @@ fn init_recording_channels_expands_speaker_mic_position_matrix() {
         "FL (Pos 2 / Mic 1)"
     );
     assert_eq!(app.recording.model.channel_recordings[4].channel_index, 0);
-    assert_eq!(app.recording.model.channel_recordings[4].mic_position_index, 1);
+    assert_eq!(
+        app.recording.model.channel_recordings[4].mic_position_index,
+        1
+    );
 }
 
 #[test]
@@ -159,7 +162,10 @@ fn update_channel_mappings_creates_correct_channels() {
     let mut app = make_app();
     update_channel_mappings_for_config(&mut app, SpeakerConfiguration::Stereo);
     assert_eq!(app.recording.model.playback_config.num_channels, 2);
-    assert_eq!(app.recording.model.playback_config.channel_mappings.len(), 2);
+    assert_eq!(
+        app.recording.model.playback_config.channel_mappings.len(),
+        2
+    );
 }
 
 #[test]

@@ -45,7 +45,10 @@ impl PluginGraphNode {
         match &plugin.settings {
             PluginSettings::Upmixer {
                 speaker_config,
-                output: UpmixerOutputSettings { binaural_preview, .. },
+                output:
+                    UpmixerOutputSettings {
+                        binaural_preview, ..
+                    },
                 ..
             } => (
                 2,
