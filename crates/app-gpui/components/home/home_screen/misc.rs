@@ -1,12 +1,12 @@
 use super::home_album_ext::HomeAlbumExt;
 use crate::ui::PlayerView;
 use crate::ui::{
-    ALBUM_CARD_GAP_REMS, ALBUM_CARD_HEIGHT_REMS, ALBUM_CARD_WIDTH_REMS, CHROME_HEIGHT_REMS,
-    combined_scale_bounds, compute_responsive_scale,
+    ALBUM_CARD_GAP_REMS, ALBUM_CARD_WIDTH_REMS, estimate_grid_dimensions,
 };
 use sotf_audio_player::Album;
 use std::sync::Arc;
 
+const HOME_SHELF_CONTENT_RESERVE_PX: f32 = 192.0;
 const HOME_SHELF_BASE_REM_PX: f32 = 16.0;
 
 pub(super) const EXPANDED_ALBUM_LIMIT: usize = 24;
@@ -14,7 +14,7 @@ pub(super) const EXPANDED_ALBUM_LIMIT: usize = 24;
 pub(super) fn collapsed_album_limit_for_width(window_width: f32) -> usize {
     let card_width = ALBUM_CARD_WIDTH_REMS * HOME_SHELF_BASE_REM_PX;
     let card_gap = ALBUM_CARD_GAP_REMS * HOME_SHELF_BASE_REM_PX;
-    let available = (window_width - 2.0 * HOME_SHELF_BASE_REM_PX).max(card_width);
+    let available = (window_width - HOME_SHELF_CONTENT_RESERVE_PX).max(card_width);
     let slot = card_width + card_gap;
     (((available + card_gap) / slot).floor() as usize).max(1)
 }
@@ -30,22 +30,13 @@ pub(super) fn expanded_album_limit_for_dimensions(
     min_font_size_px: Option<f32>,
     max_font_size_px: Option<f32>,
 ) -> usize {
-    let responsive_scale = compute_responsive_scale(window_width, window_height);
-    let (scale_min, scale_max) = combined_scale_bounds(min_font_size_px, max_font_size_px);
-    let combined_scale = (font_scale * responsive_scale).clamp(scale_min, scale_max);
-    let effective_rem = 16.0 * combined_scale;
-
-    let card_with_gap = (ALBUM_CARD_WIDTH_REMS + ALBUM_CARD_GAP_REMS) * effective_rem;
-    let available_width = (window_width - 2.0 * effective_rem).max(card_with_gap);
-    let columns = (available_width / card_with_gap).floor().max(1.0) as usize;
-
-    // Home screen has less chrome than the library view (no stats/filter bar),
-    // but shelf titles and the footer still consume space. Use the same chrome
-    // estimate as the library grid as a conservative lower bound.
-    let chrome_height = CHROME_HEIGHT_REMS * effective_rem;
-    let available_height = (window_height - chrome_height).max(16.0 * effective_rem);
-    let card_height = ALBUM_CARD_HEIGHT_REMS * effective_rem;
-    let rows = (available_height / card_height).floor().max(1.0) as usize;
+    let (columns, rows) = estimate_grid_dimensions(
+        window_width,
+        window_height,
+        font_scale,
+        min_font_size_px,
+        max_font_size_px,
+    );
 
     // Show enough rows to fill the viewport plus one extra row of buffering.
     (columns * rows.saturating_add(1)).max(EXPANDED_ALBUM_LIMIT)

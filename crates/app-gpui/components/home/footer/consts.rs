@@ -92,8 +92,6 @@ const BREAKPOINT_HIDE_WAVEFORM_REMS: f32 = 43.75; // ~700px at 16px rem
 
 const BREAKPOINT_HIDE_TRACK_INFO_REMS: f32 = 34.375; // ~550px at 16px rem
 
-const BREAKPOINT_SHOW_COLLAPSED_WAVEFORM_REMS: f32 = 48.0;
-
 impl PlayerView {
     pub(crate) fn render_scan_status_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
@@ -353,7 +351,7 @@ impl PlayerView {
                     .align(StackAlign::Center)
                     // Left section: Track info text (hidden on narrow screens)
                     .when(show_track_info, |el| {
-                        el.child(self.render_footer_track_info(&translations, cx))
+                        el.child(self.render_footer_track_info(&translations, window_width_rems, cx))
                     })
                     // Center section: Transport + waveform
                     .child(self.render_footer_center(show_waveform, cx))
@@ -373,7 +371,6 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let title = self.current_footer_title(translations, cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let volume = state.app.playback.volume;
@@ -381,13 +378,39 @@ impl PlayerView {
         let is_playing = state.app.playback.is_playing;
         let window_width = state.app.ui_state.window_width;
         let window_height = state.app.ui_state.window_height;
+        let progress_bar_fill = theme.feedback.progress_bar_fill;
+        let progress_bar_bg = theme.feedback.progress_bar_bg;
+
+        // Compute window width in rems for responsive breakpoints
         let responsive_scale = crate::ui::compute_responsive_scale(window_width, window_height);
         let effective_rem = 16.0
             * (state.app.ui_state.font_scale * responsive_scale).clamp(
                 crate::ui::DEFAULT_MIN_FONT_SIZE_PX / 16.0,
                 crate::ui::DEFAULT_MAX_FONT_SIZE_PX / 16.0,
             );
-        let show_waveform = window_width / effective_rem >= BREAKPOINT_SHOW_COLLAPSED_WAVEFORM_REMS;
+        let window_width_rems = window_width / effective_rem;
+
+        // Waveform data for the compact collapsed visualization
+        let position_secs = state.app.playback.position_secs;
+        let duration_secs = state.app.playback.duration_secs;
+        let progress = if duration_secs > 0.0 {
+            (position_secs / duration_secs).clamp(0.0, 1.0) as f32
+        } else {
+            0.0
+        };
+        let waveform = if let Some(queue_idx) = state.app.playback.current_queue_index {
+            if let Some(item) = state.app.queue_state.get(queue_idx) {
+                item.current_track().and_then(|t| t.waveform.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let waveform_bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
+
+        // Title read must happen after releasing the immutable `state` borrow.
+        let title = self.current_footer_title(translations, cx);
         let state_for_expand = self.state.clone();
 
         div()
@@ -412,8 +435,22 @@ impl PlayerView {
                     .whitespace_nowrap()
                     .child(title),
             )
-            .when(show_waveform, |el| {
-                el.child(self.render_compact_waveform(theme.clone(), cx))
+            .when(window_width_rems >= 45.0 && waveform.is_some(), |el| {
+                el.child(
+                    div()
+                        .id("footer-collapsed-waveform")
+                        .flex_1()
+                        .min_w_0()
+                        .max_w(rems(20.0))
+                        .h(rems(1.5))
+                        .child(WaveformElement::new(
+                            waveform,
+                            progress,
+                            progress_bar_fill,
+                            progress_bar_bg,
+                            waveform_bounds_ref,
+                        )),
+                )
             })
             .child(self.render_compact_transport(is_playing, theme.clone(), cx))
             .child(self.render_compact_volume(volume, muted, theme.clone(), cx))
@@ -531,12 +568,23 @@ impl PlayerView {
     pub(super) fn render_footer_track_info(
         &self,
         translations: &crate::i18n::Translations,
+        window_width_rems: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = &state.app.ui_state.theme;
         let no_track_label = translations.playback_no_track;
+
+        // Shrink the track-info block on narrow windows so the right-side
+        // collapse button is never pushed off-screen.
+        let track_info_max_w = if window_width_rems < 50.0 {
+            rems(10.0)
+        } else if window_width_rems < 70.0 {
+            rems(12.5)
+        } else {
+            rems(15.625)
+        };
 
         // Check if we're in HAL input mode (macOS only)
         #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -575,7 +623,7 @@ impl PlayerView {
                 )
                 .build()
                 .min_w(rems(9.375))
-                .max_w(rems(15.625));
+                .max_w(track_info_max_w);
         }
 
         // Get current track info from queue
@@ -644,8 +692,7 @@ impl PlayerView {
             )
             .build()
             .min_w(rems(9.375))
-            .max_w(rems(15.625))
-            .flex_shrink()
+            .max_w(track_info_max_w)
     }
 
     /// Center section: Transport controls + waveform + time
@@ -720,7 +767,6 @@ impl PlayerView {
             .pb(d.gap_md)
             .justify_between()
             .flex_1()
-            .min_w_0()
             .max_w(rems(37.5))
             // Row 1: [time] [<< < ▶ > >>] [time] — timestamps at far edges
             .child(
@@ -1163,43 +1209,6 @@ impl PlayerView {
             .into_any_element()
     }
 
-    pub(super) fn render_compact_waveform(
-        &self,
-        theme: crate::theme::Theme,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let state = self.state.read(cx);
-        let progress = if state.app.playback.duration_secs > 0.0 {
-            (state.app.playback.position_secs / state.app.playback.duration_secs).clamp(0.0, 1.0)
-                as f32
-        } else {
-            0.0
-        };
-        let waveform = state
-            .app
-            .playback
-            .current_queue_index
-            .and_then(|queue_idx| state.app.queue_state.get(queue_idx))
-            .and_then(|item| item.current_track())
-            .and_then(|track| track.waveform.clone());
-        let bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
-
-        div()
-            .id("footer-collapsed-waveform")
-            .flex_1()
-            .min_w(rems(6.0))
-            .max_w(rems(18.0))
-            .h(rems(1.5))
-            .child(WaveformElement::new(
-                waveform,
-                progress,
-                theme.feedback.progress_bar_fill,
-                theme.feedback.progress_bar_bg,
-                bounds_ref,
-            ))
-            .into_any_element()
-    }
-
     /// Right section: footer collapse + volume
     pub(super) fn render_footer_right(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
@@ -1218,7 +1227,6 @@ impl PlayerView {
             .items_center()
             .gap(d.gap_md)
             .justify_end()
-            .flex_none()
             .child(self.render_volume_button(volume, muted, theme_clone.clone(), cx))
             .child(
                 div()
