@@ -86,12 +86,13 @@ fn test_mb_comp_compiled_op_declines_lookahead() {
     );
 }
 
-/// Unity passthrough: with ratio 1:1 on all bands (no compression),
-/// the crossover should reconstruct the signal without significant loss.
+/// Unity passthrough: with ratio 1:1 on all bands (no compression) and dry mix,
+/// the output should equal the input.
 #[test]
 fn test_mb_comp_crossover_reconstruction() {
     let mut params = MultibandCompressorPluginParams {
         num_bands: 3,
+        mix: 0.0,
         ..Default::default()
     };
     for band in &mut params.bands {
@@ -1759,13 +1760,13 @@ fn test_band_compressor_params_default() {
 }
 
 #[test]
-fn test_default_true() {
-    assert!(super::default::default_true());
+fn test_default_active() {
+    assert!(crate::params::default_active());
 }
 
 #[test]
 fn test_default_link_amount() {
-    assert_eq!(super::default::default_link_amount(), 1.0);
+    assert_eq!(crate::params::default_link_amount(), 1.0);
 }
 
 #[test]

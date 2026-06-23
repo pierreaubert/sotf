@@ -1,4 +1,4 @@
-use super::default::default_true;
+use crate::params::default_active;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,7 +13,7 @@ pub struct BandCompressorParams {
     pub auto_makeup: bool,
     #[serde(default)]
     pub measured_auto_makeup: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_active")]
     pub active: bool,
     pub solo: bool,
     pub bypass: bool,
@@ -30,7 +30,7 @@ impl Default for BandCompressorParams {
             makeup_gain_db: 0.0,
             auto_makeup: false,
             measured_auto_makeup: false,
-            active: true,
+            active: default_active(),
             solo: false,
             bypass: false,
         }

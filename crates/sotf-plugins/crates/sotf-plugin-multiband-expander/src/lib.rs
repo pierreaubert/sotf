@@ -6,8 +6,6 @@ pub mod params;
 mod band_expander;
 #[path = "lib/band_expander_params.rs"]
 mod band_expander_params;
-#[path = "lib/default.rs"]
-mod default;
 #[path = "lib/misc.rs"]
 mod misc;
 #[path = "lib/multiband_expander_data.rs"]

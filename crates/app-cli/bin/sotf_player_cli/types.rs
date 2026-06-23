@@ -1,5 +1,13 @@
 use clap::{Parser, Subcommand};
 use sotf_plugins::param_specs::{
+    compressor::{
+        DETECTION_MODES as COMP_DETECTION_MODES, GLOBAL_PARAMS as COMP_GLOBAL_PARAMS,
+        PARAMS as COMP_PARAMS,
+    },
+    expander::{
+        DETECTION_MODES as EXP_DETECTION_MODES, GLOBAL_PARAMS as EXP_GLOBAL_PARAMS,
+        PARAMS as EXP_PARAMS,
+    },
     find_by_key as pk,
     gain::PARAMS as GAIN_PARAMS,
     gate::PARAMS as GATE_PARAMS,
@@ -321,7 +329,7 @@ pub(super) struct CompressorArgs {
     #[arg(
         id = "compressor_threshold_db",
         long = "compressor-threshold-db",
-        default_value = "-20.0"
+        default_value_t = pk(COMP_PARAMS, "threshold").default_f64() as f32
     )]
     pub(super) threshold_db: f32,
 
@@ -329,7 +337,7 @@ pub(super) struct CompressorArgs {
     #[arg(
         id = "compressor_ratio",
         long = "compressor-ratio",
-        default_value = "4.0"
+        default_value_t = pk(COMP_PARAMS, "ratio").default_f64() as f32
     )]
     pub(super) ratio: f32,
 
@@ -337,7 +345,7 @@ pub(super) struct CompressorArgs {
     #[arg(
         id = "compressor_attack_ms",
         long = "compressor-attack-ms",
-        default_value = "5.0"
+        default_value_t = pk(COMP_PARAMS, "attack").default_f64() as f32
     )]
     pub(super) attack_ms: f32,
 
@@ -345,7 +353,7 @@ pub(super) struct CompressorArgs {
     #[arg(
         id = "compressor_release_ms",
         long = "compressor-release-ms",
-        default_value = "50.0"
+        default_value_t = pk(COMP_PARAMS, "release").default_f64() as f32
     )]
     pub(super) release_ms: f32,
 
@@ -353,20 +361,30 @@ pub(super) struct CompressorArgs {
     #[arg(
         id = "compressor_knee_db",
         long = "compressor-knee-db",
-        default_value = "6.0"
+        default_value_t = pk(COMP_PARAMS, "knee").default_f64() as f32
     )]
     pub(super) knee_db: f32,
 
     /// Compressor makeup gain in dB (-24 to 24)
-    #[arg(long = "compressor-makeup-gain-db", default_value = "0.0")]
+    #[arg(
+        long = "compressor-makeup-gain-db",
+        default_value_t = pk(COMP_PARAMS, "makeup_gain").default_f64() as f32
+    )]
     pub(super) makeup_gain_db: f32,
 
     /// Compressor wet/dry mix (0.0 to 1.0)
-    #[arg(id = "compressor_mix", long = "compressor-mix", default_value = "1.0")]
+    #[arg(
+        id = "compressor_mix",
+        long = "compressor-mix",
+        default_value_t = pk(COMP_PARAMS, "mix").default_f64() as f32
+    )]
     pub(super) mix: f32,
 
     /// Enable compressor auto-makeup gain
-    #[arg(long = "compressor-auto-makeup", default_value_t = false)]
+    #[arg(
+        long = "compressor-auto-makeup",
+        default_value_t = pk(COMP_PARAMS, "auto_makeup").default_bool()
+    )]
     pub(super) auto_makeup: bool,
 
     /// Disable compressor channel linking (channels linked by default)
@@ -381,7 +399,7 @@ pub(super) struct CompressorArgs {
     #[arg(
         id = "compressor_sidechain_hpf_hz",
         long = "compressor-sidechain-hpf-hz",
-        default_value = "80.0"
+        default_value_t = pk(COMP_PARAMS, "sidechain_hpf_hz").default_f64() as f32
     )]
     pub(super) sidechain_hpf_hz: f32,
 
@@ -389,7 +407,7 @@ pub(super) struct CompressorArgs {
     #[arg(
         id = "compressor_detection_mode",
         long = "compressor-detection-mode",
-        default_value = "peak"
+        default_value_t = COMP_DETECTION_MODES[0].to_string()
     )]
     pub(super) detection_mode: String,
 
@@ -397,19 +415,22 @@ pub(super) struct CompressorArgs {
     #[arg(
         id = "compressor_lookahead_ms",
         long = "compressor-lookahead-ms",
-        default_value = "0.0"
+        default_value_t = pk(COMP_PARAMS, "lookahead_ms").default_f64() as f32
     )]
     pub(super) lookahead_ms: f32,
 
     /// Enable compressor program-dependent release
-    #[arg(long = "compressor-program-dependent-release", default_value_t = false)]
+    #[arg(
+        long = "compressor-program-dependent-release",
+        default_value_t = pk(COMP_PARAMS, "program_dependent_release").default_bool()
+    )]
     pub(super) program_dependent_release: bool,
 
     /// Enable compressor measured auto-makeup gain
     #[arg(
         id = "compressor_measured_auto_makeup",
         long = "compressor-measured-auto-makeup",
-        default_value_t = false
+        default_value_t = pk(COMP_PARAMS, "measured_auto_makeup").default_bool()
     )]
     pub(super) measured_auto_makeup: bool,
 }
@@ -581,19 +602,23 @@ pub(super) struct ExpanderArgs {
     #[arg(
         id = "expander_threshold_db",
         long = "expander-threshold-db",
-        default_value = "-40.0"
+        default_value_t = pk(EXP_PARAMS, "threshold").default_f64() as f32
     )]
     pub(super) threshold_db: f32,
 
     /// Expander ratio (1.0 to 20.0)
-    #[arg(id = "expander_ratio", long = "expander-ratio", default_value = "2.0")]
+    #[arg(
+        id = "expander_ratio",
+        long = "expander-ratio",
+        default_value_t = pk(EXP_PARAMS, "ratio").default_f64() as f32
+    )]
     pub(super) ratio: f32,
 
     /// Expander attack time in ms (0.1 to 50)
     #[arg(
         id = "expander_attack_ms",
         long = "expander-attack-ms",
-        default_value = "1.0"
+        default_value_t = pk(EXP_PARAMS, "attack").default_f64() as f32
     )]
     pub(super) attack_ms: f32,
 
@@ -601,7 +626,7 @@ pub(super) struct ExpanderArgs {
     #[arg(
         id = "expander_release_ms",
         long = "expander-release-ms",
-        default_value = "100.0"
+        default_value_t = pk(EXP_PARAMS, "release").default_f64() as f32
     )]
     pub(super) release_ms: f32,
 
@@ -609,7 +634,7 @@ pub(super) struct ExpanderArgs {
     #[arg(
         id = "expander_range_db",
         long = "expander-range-db",
-        default_value = "40.0"
+        default_value_t = pk(EXP_PARAMS, "range").default_f64() as f32
     )]
     pub(super) range_db: f32,
 
@@ -617,7 +642,7 @@ pub(super) struct ExpanderArgs {
     #[arg(
         id = "expander_knee_db",
         long = "expander-knee-db",
-        default_value = "6.0"
+        default_value_t = pk(EXP_PARAMS, "knee").default_f64() as f32
     )]
     pub(super) knee_db: f32,
 
@@ -625,7 +650,7 @@ pub(super) struct ExpanderArgs {
     #[arg(
         id = "expander_hysteresis_db",
         long = "expander-hysteresis-db",
-        default_value = "4.0"
+        default_value_t = pk(EXP_PARAMS, "hysteresis").default_f64() as f32
     )]
     pub(super) hysteresis_db: f32,
 
@@ -633,12 +658,16 @@ pub(super) struct ExpanderArgs {
     #[arg(
         id = "expander_hold_ms",
         long = "expander-hold-ms",
-        default_value = "10.0"
+        default_value_t = pk(EXP_PARAMS, "hold").default_f64() as f32
     )]
     pub(super) hold_ms: f32,
 
     /// Expander wet/dry mix (0.0 to 1.0)
-    #[arg(id = "expander_mix", long = "expander-mix", default_value = "1.0")]
+    #[arg(
+        id = "expander_mix",
+        long = "expander-mix",
+        default_value_t = pk(EXP_PARAMS, "mix").default_f64() as f32
+    )]
     pub(super) mix: f32,
 
     /// Disable expander channel linking (channels linked by default)
@@ -653,7 +682,7 @@ pub(super) struct ExpanderArgs {
     #[arg(
         id = "expander_sidechain_hpf_hz",
         long = "expander-sidechain-hpf-hz",
-        default_value = "80.0"
+        default_value_t = pk(EXP_PARAMS, "sidechain_hpf_hz").default_f64() as f32
     )]
     pub(super) sidechain_hpf_hz: f32,
 
@@ -661,7 +690,7 @@ pub(super) struct ExpanderArgs {
     #[arg(
         id = "expander_lookahead_ms",
         long = "expander-lookahead-ms",
-        default_value = "0.0"
+        default_value_t = pk(EXP_PARAMS, "lookahead_ms").default_f64() as f32
     )]
     pub(super) lookahead_ms: f32,
 
@@ -669,7 +698,7 @@ pub(super) struct ExpanderArgs {
     #[arg(
         id = "expander_detection_mode",
         long = "expander-detection-mode",
-        default_value = "peak"
+        default_value_t = EXP_DETECTION_MODES[0].to_string()
     )]
     pub(super) detection_mode: String,
 
@@ -677,7 +706,7 @@ pub(super) struct ExpanderArgs {
     #[arg(
         id = "expander_measured_auto_makeup",
         long = "expander-measured-auto-makeup",
-        default_value_t = false
+        default_value_t = pk(EXP_PARAMS, "measured_auto_makeup").default_bool()
     )]
     pub(super) measured_auto_makeup: bool,
 }
@@ -696,7 +725,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_threshold_db",
         long = "mb-compressor-threshold-db",
-        default_value = "-20.0"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "threshold").default_f64() as f32
     )]
     pub(super) threshold_db: f32,
 
@@ -704,7 +733,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_ratio",
         long = "mb-compressor-ratio",
-        default_value = "4.0"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "ratio").default_f64() as f32
     )]
     pub(super) ratio: f32,
 
@@ -712,7 +741,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_attack_ms",
         long = "mb-compressor-attack-ms",
-        default_value = "5.0"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "attack").default_f64() as f32
     )]
     pub(super) attack_ms: f32,
 
@@ -720,7 +749,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_release_ms",
         long = "mb-compressor-release-ms",
-        default_value = "50.0"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "release").default_f64() as f32
     )]
     pub(super) release_ms: f32,
 
@@ -728,7 +757,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_knee_db",
         long = "mb-compressor-knee-db",
-        default_value = "6.0"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "knee").default_f64() as f32
     )]
     pub(super) knee_db: f32,
 
@@ -736,7 +765,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_mix",
         long = "mb-compressor-mix",
-        default_value = "1.0"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "mix").default_f64() as f32
     )]
     pub(super) mix: f32,
 
@@ -744,7 +773,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_num_bands",
         long = "mb-compressor-num-bands",
-        default_value = "3"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "num_bands").default_usize()
     )]
     pub(super) num_bands: usize,
 
@@ -752,7 +781,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_crossover_preset",
         long = "mb-compressor-crossover-preset",
-        default_value = "1"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "crossover_preset").default_i32()
     )]
     pub(super) crossover_preset: i32,
 
@@ -760,7 +789,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_crossover_freq_1",
         long = "mb-compressor-crossover-freq-1",
-        default_value = "200.0"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "crossover_freq_1").default_f64() as f32
     )]
     pub(super) crossover_freq_1: f32,
 
@@ -768,7 +797,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_crossover_freq_2",
         long = "mb-compressor-crossover-freq-2",
-        default_value = "2000.0"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "crossover_freq_2").default_f64() as f32
     )]
     pub(super) crossover_freq_2: f32,
 
@@ -776,7 +805,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_crossover_freq_3",
         long = "mb-compressor-crossover-freq-3",
-        default_value = "8000.0"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "crossover_freq_3").default_f64() as f32
     )]
     pub(super) crossover_freq_3: f32,
 
@@ -784,7 +813,7 @@ pub(super) struct MultibandCompressorArgs {
     #[arg(
         id = "mb_compressor_crossover_freq_4",
         long = "mb-compressor-crossover-freq-4",
-        default_value = "12000.0"
+        default_value_t = pk(COMP_GLOBAL_PARAMS, "crossover_freq_4").default_f64() as f32
     )]
     pub(super) crossover_freq_4: f32,
 
@@ -811,7 +840,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_threshold_db",
         long = "mb-expander-threshold-db",
-        default_value = "-40.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "threshold").default_f64() as f32
     )]
     pub(super) threshold_db: f32,
 
@@ -819,7 +848,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_ratio",
         long = "mb-expander-ratio",
-        default_value = "2.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "ratio").default_f64() as f32
     )]
     pub(super) ratio: f32,
 
@@ -827,7 +856,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_attack_ms",
         long = "mb-expander-attack-ms",
-        default_value = "1.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "attack").default_f64() as f32
     )]
     pub(super) attack_ms: f32,
 
@@ -835,7 +864,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_release_ms",
         long = "mb-expander-release-ms",
-        default_value = "100.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "release").default_f64() as f32
     )]
     pub(super) release_ms: f32,
 
@@ -843,7 +872,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_range_db",
         long = "mb-expander-range-db",
-        default_value = "40.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "range").default_f64() as f32
     )]
     pub(super) range_db: f32,
 
@@ -851,7 +880,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_knee_db",
         long = "mb-expander-knee-db",
-        default_value = "6.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "knee").default_f64() as f32
     )]
     pub(super) knee_db: f32,
 
@@ -859,7 +888,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_hysteresis_db",
         long = "mb-expander-hysteresis-db",
-        default_value = "4.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "hysteresis").default_f64() as f32
     )]
     pub(super) hysteresis_db: f32,
 
@@ -867,7 +896,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_hold_ms",
         long = "mb-expander-hold-ms",
-        default_value = "10.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "hold").default_f64() as f32
     )]
     pub(super) hold_ms: f32,
 
@@ -875,7 +904,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_mix",
         long = "mb-expander-mix",
-        default_value = "1.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "mix").default_f64() as f32
     )]
     pub(super) mix: f32,
 
@@ -883,7 +912,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_num_bands",
         long = "mb-expander-num-bands",
-        default_value = "3"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "num_bands").default_usize()
     )]
     pub(super) num_bands: usize,
 
@@ -891,7 +920,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_crossover_preset",
         long = "mb-expander-crossover-preset",
-        default_value = "1"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "crossover_preset").default_i32()
     )]
     pub(super) crossover_preset: i32,
 
@@ -899,7 +928,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_crossover_freq_1",
         long = "mb-expander-crossover-freq-1",
-        default_value = "200.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "crossover_freq_1").default_f64() as f32
     )]
     pub(super) crossover_freq_1: f32,
 
@@ -907,7 +936,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_crossover_freq_2",
         long = "mb-expander-crossover-freq-2",
-        default_value = "2000.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "crossover_freq_2").default_f64() as f32
     )]
     pub(super) crossover_freq_2: f32,
 
@@ -915,7 +944,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_crossover_freq_3",
         long = "mb-expander-crossover-freq-3",
-        default_value = "8000.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "crossover_freq_3").default_f64() as f32
     )]
     pub(super) crossover_freq_3: f32,
 
@@ -923,7 +952,7 @@ pub(super) struct MultibandExpanderArgs {
     #[arg(
         id = "mb_expander_crossover_freq_4",
         long = "mb-expander-crossover-freq-4",
-        default_value = "12000.0"
+        default_value_t = pk(EXP_GLOBAL_PARAMS, "crossover_freq_4").default_f64() as f32
     )]
     pub(super) crossover_freq_4: f32,
 

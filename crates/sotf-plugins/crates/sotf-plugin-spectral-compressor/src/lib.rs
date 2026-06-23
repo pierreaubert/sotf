@@ -1,8 +1,6 @@
 #![allow(clippy::duplicate_mod)]
 pub mod params;
 
-#[path = "lib/default.rs"]
-mod default;
 #[path = "lib/misc.rs"]
 mod misc;
 #[path = "lib/spectral_compressor_plugin.rs"]

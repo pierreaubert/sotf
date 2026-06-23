@@ -4,8 +4,6 @@ pub mod params;
 
 #[path = "lib/band_compressor_params.rs"]
 mod band_compressor_params;
-#[path = "lib/default.rs"]
-mod default;
 #[path = "lib/multiband_compressor_data.rs"]
 mod multiband_compressor_data;
 #[path = "lib/multiband_compressor_plugin.rs"]

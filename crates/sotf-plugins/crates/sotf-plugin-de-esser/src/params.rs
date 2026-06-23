@@ -164,6 +164,33 @@ fn d_mix() -> f64 {
     pk(PARAMS, "mix").default_f64()
 }
 
+/// Public default helpers used by `DeEsserPluginParams` so its serde defaults
+/// come from the same `PARAMS` array used by `PluginParamDef`.
+pub fn default_frequency() -> f32 {
+    d_frequency() as f32
+}
+pub fn default_q() -> f32 {
+    d_q() as f32
+}
+pub fn default_threshold() -> f32 {
+    d_threshold() as f32
+}
+pub fn default_ratio() -> f32 {
+    d_ratio() as f32
+}
+pub fn default_attack_ms() -> f32 {
+    d_attack() as f32
+}
+pub fn default_release_ms() -> f32 {
+    d_release() as f32
+}
+pub fn default_mode() -> String {
+    d_mode()
+}
+pub fn default_mix() -> f32 {
+    d_mix() as f32
+}
+
 impl Default for Params {
     fn default() -> Self {
         Self {

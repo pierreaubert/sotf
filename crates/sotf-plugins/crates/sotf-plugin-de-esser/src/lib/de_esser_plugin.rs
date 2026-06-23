@@ -2,14 +2,11 @@ use super::consts::DB_CONVERSION_FACTOR;
 use super::consts::EPSILON;
 use super::consts::FIXED_KNEE_DB;
 use super::de_esser_data::DeEsserData;
-use super::default::default_attack;
-use super::default::default_frequency;
-use super::default::default_q;
-use super::default::default_ratio;
-use super::default::default_release;
-use super::default::default_threshold;
 use super::types::DeEsserPluginParams;
-use crate::params::PARAMS as DE;
+use crate::params::{
+    default_attack_ms, default_frequency, default_mix, default_q, default_ratio,
+    default_release_ms, default_threshold, PARAMS as DE,
+};
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, BiquadBank, BiquadFilterType};
 use sotf_host::analyzer::RealTimeCache;
@@ -116,13 +113,13 @@ impl DeEsserPlugin {
                 .collect(),
 
             param_mix: ParameterId::from("mix"),
-            mix: 1.0,
+            mix: default_mix(),
             mix_smoother: Smoother::new(1.0, 5.0, sr),
 
             param_attack: ParameterId::from("attack"),
-            attack_ms: default_attack(),
+            attack_ms: default_attack_ms(),
             param_release: ParameterId::from("release"),
-            release_ms: default_release(),
+            release_ms: default_release_ms(),
 
             monitoring_gr: vec![0.0; channels],
             cache: RealTimeCache::new(DeEsserData::new(channels)),

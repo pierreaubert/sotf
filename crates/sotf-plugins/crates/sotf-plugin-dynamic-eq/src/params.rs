@@ -165,7 +165,7 @@ pub struct BandParams {
     pub band_ratio: f64,
     #[serde(default = "d_active")]
     pub active: bool,
-    #[serde(default)]
+    #[serde(default = "d_solo")]
     pub solo: bool,
 }
 
@@ -187,6 +187,9 @@ fn d_band_ratio() -> f64 {
 fn d_active() -> bool {
     pk(BAND_PARAMS, "active").default_bool()
 }
+fn d_solo() -> bool {
+    pk(BAND_PARAMS, "solo").default_bool()
+}
 
 impl Default for BandParams {
     fn default() -> Self {
@@ -197,7 +200,7 @@ impl Default for BandParams {
             band_threshold: d_band_threshold(),
             band_ratio: d_band_ratio(),
             active: d_active(),
-            solo: false,
+            solo: d_solo(),
         }
     }
 }
@@ -255,6 +258,65 @@ fn d_mix() -> f64 {
 fn d_bands() -> Vec<BandParams> {
     let n = d_num_bands() as usize;
     (0..n).map(|_| BandParams::default()).collect()
+}
+
+// ============================================================================
+// Public default helpers for runtime plugin parameter structs
+// ============================================================================
+
+/// Defaults for `DynamicEqPluginParams`.
+pub fn default_num_bands() -> usize {
+    d_num_bands() as usize
+}
+pub fn default_threshold() -> f32 {
+    d_threshold() as f32
+}
+pub fn default_ratio() -> f32 {
+    d_ratio() as f32
+}
+pub fn default_attack_ms() -> f32 {
+    d_attack() as f32
+}
+pub fn default_release_ms() -> f32 {
+    d_release() as f32
+}
+pub fn default_knee() -> f32 {
+    d_knee() as f32
+}
+pub fn default_link_channels() -> bool {
+    d_link_channels()
+}
+pub fn default_mix() -> f32 {
+    d_mix() as f32
+}
+pub fn default_bands() -> Vec<crate::dyn_eq_band_params::DynEqBandParams> {
+    let n = default_num_bands();
+    (0..n)
+        .map(|_| crate::dyn_eq_band_params::DynEqBandParams::default())
+        .collect()
+}
+
+/// Defaults for `DynEqBandParams`.
+pub fn default_frequency() -> f32 {
+    d_frequency() as f32
+}
+pub fn default_q() -> f32 {
+    d_q() as f32
+}
+pub fn default_gain() -> f32 {
+    d_gain() as f32
+}
+pub fn default_band_threshold() -> f32 {
+    d_band_threshold() as f32
+}
+pub fn default_band_ratio() -> f32 {
+    d_band_ratio() as f32
+}
+pub fn default_active() -> bool {
+    d_active()
+}
+pub fn default_solo() -> bool {
+    d_solo()
 }
 
 impl Default for Params {

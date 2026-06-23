@@ -201,6 +201,32 @@ fn d_mix() -> f64 {
     pk(PARAMS, "mix").default_f64()
 }
 
+// Public default helpers for the runtime parameter struct.
+pub fn default_fft_size_index() -> usize {
+    d_fft_size()
+}
+pub fn default_threshold_db() -> f32 {
+    d_threshold() as f32
+}
+pub fn default_ratio() -> f32 {
+    d_ratio() as f32
+}
+pub fn default_attack_ms() -> f32 {
+    d_attack() as f32
+}
+pub fn default_release_ms() -> f32 {
+    d_release() as f32
+}
+pub fn default_knee_db() -> f32 {
+    d_knee() as f32
+}
+pub fn default_spectral_smoothing() -> f32 {
+    d_spectral_smoothing() as f32
+}
+pub fn default_mix() -> f32 {
+    d_mix() as f32
+}
+
 impl Default for Params {
     fn default() -> Self {
         Self {

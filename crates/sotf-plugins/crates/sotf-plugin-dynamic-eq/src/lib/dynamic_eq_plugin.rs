@@ -1,20 +1,13 @@
-use super::default::default_attack;
-use super::default::default_band_frequency;
-use super::default::default_band_gain;
-use super::default::default_band_q;
-use super::default::default_knee;
-use super::default::default_link_channels;
-use super::default::default_mix;
-use super::default::default_num_bands;
-use super::default::default_ratio;
-use super::default::default_release;
-use super::default::default_threshold;
+use crate::params::{
+    default_attack_ms, default_frequency, default_gain, default_knee, default_link_channels,
+    default_mix, default_num_bands, default_q, default_ratio, default_release_ms, default_threshold,
+    BAND_PARAMS, MAX_BANDS, PARAMS as DQ,
+};
 use super::dyn_eq_band::DynEqBand;
 use super::dynamic_eq_data::DynamicEqData;
 use super::dynamic_eq_plugin_params::DynamicEqPluginParams;
 use super::misc::DB_CONVERSION_FACTOR;
 use super::misc::EPSILON;
-use crate::params::{BAND_PARAMS, MAX_BANDS, PARAMS as DQ};
 use math_audio_dsp::fast_math::fast_log10;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::ParamType;
@@ -76,17 +69,17 @@ impl DynamicEqPlugin {
     pub fn new(channels: usize) -> Self {
         let sr = 44100u32;
         let num_bands = default_num_bands();
-        let attack = default_attack();
-        let release = default_release();
+        let attack = default_attack_ms();
+        let release = default_release_ms();
 
         let bands: Vec<DynEqBand> = (0..MAX_BANDS)
             .map(|_| {
                 DynEqBand::new(
                     channels,
                     sr,
-                    default_band_frequency(),
-                    default_band_q(),
-                    default_band_gain(),
+                    default_frequency(),
+                    default_q(),
+                    default_gain(),
                     attack,
                     release,
                 )

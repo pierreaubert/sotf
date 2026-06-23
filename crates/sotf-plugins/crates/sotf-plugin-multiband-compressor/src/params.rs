@@ -9,6 +9,7 @@
 //! `Params` struct or `PluginParamDef` impl here.
 
 use sotf_host::multiband_global_params;
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::param_specs::ParamSpec;
 use sotf_host::plugin_layout::*;
 
@@ -371,6 +372,111 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     ],
     dynamic_sections: &[],
 };
+
+// ============================================================================
+// Public default helpers for runtime parameter structs
+// ============================================================================
+
+pub fn default_num_bands() -> usize {
+    pk(GLOBAL_PARAMS, "num_bands").default_usize()
+}
+
+pub fn default_crossover_preset() -> i32 {
+    pk(GLOBAL_PARAMS, "crossover_preset").default_i32()
+}
+
+pub fn default_crossover_frequencies() -> Vec<f32> {
+    vec![
+        pk(GLOBAL_PARAMS, "crossover_freq_1").default_f64() as f32,
+        pk(GLOBAL_PARAMS, "crossover_freq_2").default_f64() as f32,
+        pk(GLOBAL_PARAMS, "crossover_freq_3").default_f64() as f32,
+        pk(GLOBAL_PARAMS, "crossover_freq_4").default_f64() as f32,
+    ]
+}
+
+pub fn default_threshold_db() -> f32 {
+    pk(PARAMS, "threshold").default_f64() as f32
+}
+
+pub fn default_ratio() -> f32 {
+    pk(PARAMS, "ratio").default_f64() as f32
+}
+
+pub fn default_attack_ms() -> f32 {
+    pk(PARAMS, "attack").default_f64() as f32
+}
+
+pub fn default_release_ms() -> f32 {
+    pk(PARAMS, "release").default_f64() as f32
+}
+
+pub fn default_knee_db() -> f32 {
+    pk(PARAMS, "knee").default_f64() as f32
+}
+
+pub fn default_link_channels() -> bool {
+    pk(PARAMS, "link_channels").default_bool()
+}
+
+pub fn default_mix() -> f32 {
+    pk(PARAMS, "mix").default_f64() as f32
+}
+
+pub fn default_per_band_lookahead_ms() -> f32 {
+    pk(GLOBAL_PARAMS, "per_band_lookahead_ms").default_f64() as f32
+}
+
+pub fn default_ms_mode() -> bool {
+    pk(GLOBAL_PARAMS, "ms_mode").default_bool()
+}
+
+pub fn default_sidechain_tilt_db() -> f32 {
+    pk(GLOBAL_PARAMS, "sidechain_tilt_db").default_f64() as f32
+}
+
+pub fn default_link_amount() -> f32 {
+    pk(GLOBAL_PARAMS, "link_amount").default_f64() as f32
+}
+
+pub fn default_makeup_gain() -> Option<f32> {
+    None
+}
+
+pub fn default_auto_makeup() -> Option<bool> {
+    None
+}
+
+pub fn default_measured_auto_makeup() -> Option<bool> {
+    None
+}
+
+pub fn default_sidechain_hpf_hz() -> Option<f32> {
+    None
+}
+
+pub fn default_sidechain_hpf_order() -> Option<String> {
+    None
+}
+
+pub fn default_detection_mode() -> Option<String> {
+    None
+}
+
+pub fn default_lookahead_ms() -> Option<f32> {
+    None
+}
+
+pub fn default_program_dependent_release() -> Option<bool> {
+    None
+}
+
+pub fn default_sidechain_external() -> Option<bool> {
+    None
+}
+
+pub fn default_active() -> bool {
+    pk(BAND_TEMPLATE, "active").default_bool()
+}
 
 // ============================================================================
 // Tests

@@ -1,8 +1,6 @@
 #![allow(clippy::duplicate_mod)]
 pub mod params;
 
-#[path = "lib/default.rs"]
-mod default;
 #[path = "lib/dyn_eq_band.rs"]
 mod dyn_eq_band;
 #[path = "lib/dyn_eq_band_params.rs"]

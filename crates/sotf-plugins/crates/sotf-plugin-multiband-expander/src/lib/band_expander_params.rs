@@ -1,4 +1,4 @@
-use super::default::default_true;
+use crate::params::default_active;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,7 +15,7 @@ pub struct BandExpanderParams {
     pub auto_makeup: bool,
     #[serde(default)]
     pub measured_auto_makeup: bool,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_active")]
     pub active: bool,
     pub solo: bool,
     pub bypass: bool,

@@ -6,8 +6,6 @@ mod consts;
 mod de_esser_data;
 #[path = "lib/de_esser_plugin.rs"]
 mod de_esser_plugin;
-#[path = "lib/default.rs"]
-mod default;
 #[cfg(test)]
 #[path = "lib/tests.rs"]
 mod tests;

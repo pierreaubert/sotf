@@ -3,8 +3,6 @@ pub mod params;
 
 #[path = "lib/consts.rs"]
 mod consts;
-#[path = "lib/default.rs"]
-mod default;
 #[path = "lib/misc.rs"]
 mod misc;
 #[cfg(test)]

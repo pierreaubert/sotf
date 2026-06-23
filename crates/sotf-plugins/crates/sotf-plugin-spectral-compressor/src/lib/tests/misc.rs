@@ -1,7 +1,5 @@
 use sotf_host :: parameters :: { ParameterId , ParameterValue } ;
 use sotf_host :: plugin :: { ProcessContext } ;
-use super::super::default;
-use super::super::params;
 use super::super::spectral_compressor_plugin::SpectralCompressorPlugin;
 use super::super::spectral_compressor_plugin_params::SpectralCompressorPluginParams;
     use super::super::*;

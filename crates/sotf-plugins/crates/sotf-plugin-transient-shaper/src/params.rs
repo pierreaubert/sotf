@@ -124,6 +124,24 @@ fn d_mix() -> f64 {
     pk(PARAMS, "mix").default_f64()
 }
 
+/// Public default helpers used by `TransientShaperPluginParams` so its serde
+/// defaults come from the same `PARAMS` array used by `PluginParamDef`.
+pub fn default_attack() -> f32 {
+    d_attack() as f32
+}
+pub fn default_sustain() -> f32 {
+    d_sustain() as f32
+}
+pub fn default_sensitivity_db() -> f32 {
+    d_sensitivity() as f32
+}
+pub fn default_output_gain_db() -> f32 {
+    d_output_gain() as f32
+}
+pub fn default_mix() -> f32 {
+    d_mix() as f32
+}
+
 impl Default for Params {
     fn default() -> Self {
         Self {

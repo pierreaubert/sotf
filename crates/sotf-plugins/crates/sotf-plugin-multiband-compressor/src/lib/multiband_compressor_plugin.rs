@@ -2,7 +2,9 @@ use super::band_compressor_params::BandCompressorParams;
 use super::multiband_compressor_data::MultibandCompressorData;
 use super::types::BandCompressor;
 use super::types::MultibandCompressorPluginParams;
-use crate::params::{BAND_TEMPLATE as MCB, GLOBAL_PARAMS as MC};
+use crate::params::{
+    BAND_TEMPLATE as MCB, DETECTION_MODES, GLOBAL_PARAMS as MC, HPF_ORDERS, PARAMS as SC,
+};
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_host::analyzer::RealTimeCache;
@@ -186,13 +188,21 @@ impl MultibandCompressorPlugin {
             ms_mode: params.ms_mode,
             sidechain_tilt_db: params.sidechain_tilt_db,
             link_amount: params.link_amount.clamp(0.0, 1.0),
-            sidechain_hpf_hz: params.sidechain_hpf_hz.unwrap_or(80.0),
+            sidechain_hpf_hz: params
+                .sidechain_hpf_hz
+                .unwrap_or_else(|| pk(SC, "sidechain_hpf_hz").default_f64() as f32),
             sidechain_hpf_order: params
                 .sidechain_hpf_order
-                .unwrap_or_else(|| "2nd".to_string()),
-            detection_mode: params.detection_mode.unwrap_or_else(|| "peak".to_string()),
-            program_dependent_release: params.program_dependent_release.unwrap_or(false),
-            sidechain_external: params.sidechain_external.unwrap_or(false),
+                .unwrap_or_else(|| HPF_ORDERS[0].to_string()),
+            detection_mode: params
+                .detection_mode
+                .unwrap_or_else(|| DETECTION_MODES[0].to_string()),
+            program_dependent_release: params
+                .program_dependent_release
+                .unwrap_or_else(|| pk(SC, "program_dependent_release").default_bool()),
+            sidechain_external: params
+                .sidechain_external
+                .unwrap_or_else(|| pk(SC, "sidechain_external").default_bool()),
             sidechain_tilt_biquads: Vec::new(),
             band_params,
             crossover_points: Vec::new(),
