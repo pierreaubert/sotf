@@ -1,3 +1,19 @@
+# [Unreleased]
+
+## Changed
+
+- Default gain smoothing time is now 10 ms (from `params::PARAMS`) instead of the
+  previous 20 ms hard-coded in `GainPlugin::new`.
+
+## Added
+
+- Backward-compatible convenience constructors: `GainPlugin::new(channels, gain_db)`
+  and `GainPlugin::new_per_channel(channel_gains)`. They delegate to the
+  `_with_smoothing` variants using the canonical default smoothing time.
+- `GainPlugin::new_per_channel_with_smoothing(channel_gains, smoothing_ms)` for
+  per-channel construction with an explicit smoothing time.
+- `sotf_plugin_gain::params::default_smoothing_ms()` exposes the canonical default.
+
 # 0.5.6
 
 ## Fixes

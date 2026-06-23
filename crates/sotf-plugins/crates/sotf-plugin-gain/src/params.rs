@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
+use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -76,6 +76,11 @@ fn d_gain_db() -> f64 {
 }
 fn d_smoothing_ms() -> f64 {
     pk(PARAMS, "smoothing_ms").default_f64()
+}
+
+/// Canonical default smoothing time for the gain plugin (milliseconds).
+pub fn default_smoothing_ms() -> f32 {
+    d_smoothing_ms() as f32
 }
 
 impl Default for Params {

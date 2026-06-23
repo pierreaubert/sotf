@@ -511,7 +511,7 @@ pub(super) fn build_rack_mode_plugins(
                     plugin.settings = PluginSettings::Gain {
                         channels,
                         gain_db: plugins.gain.gain_db as f64,
-                        smoothing_ms: 20.0,
+                        smoothing_ms: plugins.gain.smoothing_ms as f64,
                     };
                 }
                 log::info!("Rack: Added Gain plugin ({:.1} dB)", plugins.gain.gain_db);

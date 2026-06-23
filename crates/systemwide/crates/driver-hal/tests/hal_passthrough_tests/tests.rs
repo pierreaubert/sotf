@@ -1,6 +1,7 @@
 use super::misc::generate_test_audio;
 use super::types::create_mock_shared_memory;
 use driver_hal::SharedAudioBuffer;
+use sotf_plugins::param_specs::gain::default_smoothing_ms;
 use sotf_plugins::{
     BiquadFilterConfig, EqPlugin, EqPluginParams, ParametricPluginAdapter, Plugin, ProcessContext,
 };
@@ -286,6 +287,7 @@ fn test_volume_control_per_channel() {
     // Left channel: 0dB (unity), Right channel: -6dB (half)
     let params = GainPluginParams {
         gain_db: 0.0,
+        smoothing_ms: default_smoothing_ms(),
         channel_gains: vec![0.0, -6.0],
     };
     let mut plugin = ParametricPluginAdapter::new(
@@ -343,6 +345,7 @@ fn test_volume_control_multichannel() {
     let channel_gains = vec![0.0, -3.0, -6.0, -12.0, -9.0, -9.0];
     let params = GainPluginParams {
         gain_db: 0.0,
+        smoothing_ms: default_smoothing_ms(),
         channel_gains: channel_gains.clone(),
     };
     let mut plugin = ParametricPluginAdapter::new(

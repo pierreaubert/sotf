@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `--gain-smoothing-ms` now defaults to 10 ms (the gain plugin param-spec default)
+  instead of the previous 20 ms.
+
 ## [0.5.21] - 2025-05-13
 
 ### Added

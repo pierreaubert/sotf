@@ -19,8 +19,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GainPluginParams {
+    /// Global gain in dB.
     #[serde(default = "default_gain_db")]
     pub gain_db: f32,
+    /// Gain-change smoothing time in milliseconds.
+    #[serde(default = "default_smoothing_ms")]
+    pub smoothing_ms: f32,
+    /// Per-channel gains in dB. When empty, `gain_db` is applied to all channels.
     #[serde(default)]
     pub channel_gains: Vec<f32>,
 }
@@ -28,6 +33,8 @@ pub struct GainPluginParams {
 fn default_gain_db() -> f32 {
     pk(GN, "gain_db").default_f64() as f32
 }
+
+pub use crate::params::default_smoothing_ms;
 
 pub struct GainPlugin {
     channels: usize,
@@ -46,8 +53,10 @@ pub struct GainPlugin {
 }
 
 impl GainPlugin {
+    /// Create a gain plugin in global-gain mode using the canonical default
+    /// smoothing time from `params::PARAMS`.
     pub fn new(channels: usize, gain_db: f32) -> Self {
-        Self::with_smoothing(channels, gain_db, 20.0)
+        Self::with_smoothing(channels, gain_db, default_smoothing_ms())
     }
 
     pub fn with_smoothing(channels: usize, gain_db: f32, smoothing_ms: f32) -> Self {
@@ -79,7 +88,16 @@ impl GainPlugin {
             .collect()
     }
 
+    /// Create a per-channel gain plugin using the canonical default smoothing
+    /// time from `params::PARAMS`.
     pub fn new_per_channel(channel_gains: Vec<f32>) -> Result<Self, String> {
+        Self::new_per_channel_with_smoothing(channel_gains, default_smoothing_ms())
+    }
+
+    pub fn new_per_channel_with_smoothing(
+        channel_gains: Vec<f32>,
+        smoothing_ms: f32,
+    ) -> Result<Self, String> {
         if channel_gains.is_empty() {
             return Err("Empty".into());
         }
@@ -88,26 +106,30 @@ impl GainPlugin {
         let sr = 48000;
         let cgs: Vec<Smoother> = channel_gains
             .iter()
-            .map(|&db| Smoother::new(Self::db_to_linear(db), 20.0, sr))
+            .map(|&db| Smoother::new(Self::db_to_linear(db), smoothing_ms, sr))
             .collect();
         Ok(Self {
             channels,
             sample_rate: sr,
             global_gain_db: 0.0,
-            global_gain_smoother: Smoother::new(1.0, 20.0, sr),
+            global_gain_smoother: Smoother::new(1.0, smoothing_ms, sr),
             channel_gains_db: channel_gains,
             channel_gains_smoothers: cgs,
             param_gain_db: ParameterId::from("gain_db"),
             param_smoothing_ms: ParameterId::from("smoothing_ms"),
             channel_param_keys: Self::build_channel_param_keys(channels),
             cached_gains: vec![0.0; channels],
-            smoothing_ms: 20.0,
+            smoothing_ms,
         })
     }
 
     pub fn from_params(channels: usize, params: GainPluginParams) -> Result<Self, String> {
         if params.channel_gains.is_empty() {
-            Ok(Self::new(channels, params.gain_db))
+            Ok(Self::with_smoothing(
+                channels,
+                params.gain_db,
+                params.smoothing_ms,
+            ))
         } else {
             let actual = params.channel_gains.len();
             if actual != channels {
@@ -115,7 +137,7 @@ impl GainPlugin {
                     "channel_gains length mismatch: expected {channels}, got {actual}"
                 ));
             }
-            Self::new_per_channel(params.channel_gains)
+            Self::new_per_channel_with_smoothing(params.channel_gains, params.smoothing_ms)
         }
     }
 
@@ -516,6 +538,7 @@ mod tests {
     fn test_from_params_mismatch_error_is_descriptive() {
         let params = GainPluginParams {
             gain_db: 0.0,
+            smoothing_ms: default_smoothing_ms(),
             channel_gains: vec![0.0, 0.0, 0.0], // 3 channels
         };
         match GainPlugin::from_params(2, params) {
@@ -539,7 +562,7 @@ mod tests {
     /// new rate (a gain change converges within expected time).
     #[test]
     fn test_sample_rate_deferred_initialization() {
-        let mut p = GainPlugin::with_smoothing(1, 0.0, 20.0);
+        let mut p = GainPlugin::with_smoothing(1, 0.0, default_smoothing_ms());
         // Initialize at 96000 Hz
         p.plugin_initialize(96000).unwrap();
 
@@ -547,7 +570,7 @@ mod tests {
         p.set_gain_db(-6.0);
         let target_linear = GainPlugin::db_to_linear(-6.0);
 
-        // At 96000 Hz with 20ms smoothing, we need ~5*tau = ~100ms = 9600 samples
+        // At 96000 Hz with default smoothing, we need ~5*tau = ~100ms = 9600 samples
         // to converge. Process 200ms worth of samples to be safe.
         let num_frames = 19200; // 200ms at 96kHz
         let input = vec![1.0f32; num_frames];
@@ -574,7 +597,7 @@ mod tests {
 
     #[test]
     fn test_channel_gain_before_initialize_uses_host_sample_rate_after_initialize() {
-        let mut p = GainPlugin::with_smoothing(1, 0.0, 20.0);
+        let mut p = GainPlugin::with_smoothing(1, 0.0, default_smoothing_ms());
         p.set_channel_gain_db(0, -6.0).unwrap();
         p.plugin_initialize(96000).unwrap();
 
@@ -865,6 +888,31 @@ mod tests {
         assert_eq!(
             p.parametric_get_parameter(&ParameterId::from("gain_db_1")),
             Some(ParameterValue::Float(-3.0))
+        );
+    }
+
+    /// Default values for gain and smoothing must come from the canonical
+    /// PARAMS spec, not from hard-coded literals.
+    #[test]
+    fn test_default_values_come_from_params_spec() {
+        let p = GainPlugin::new(2, 0.0);
+        assert!(
+            (p.gain_db() - pk(GN, "gain_db").default_f64() as f32).abs() < 1e-6,
+            "default gain_db should come from PARAMS"
+        );
+        assert!(
+            (p.smoothing_ms - pk(GN, "smoothing_ms").default_f64() as f32).abs() < 1e-6,
+            "default smoothing_ms should come from PARAMS"
+        );
+
+        let params: GainPluginParams = serde_json::from_str("{}").unwrap();
+        assert!(
+            (params.gain_db - pk(GN, "gain_db").default_f64() as f32).abs() < 1e-6,
+            "deserialized default gain_db should come from PARAMS"
+        );
+        assert!(
+            (params.smoothing_ms - pk(GN, "smoothing_ms").default_f64() as f32).abs() < 1e-6,
+            "deserialized default smoothing_ms should come from PARAMS"
         );
     }
 }

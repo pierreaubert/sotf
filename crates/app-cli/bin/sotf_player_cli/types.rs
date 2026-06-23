@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use sotf_plugins::param_specs::{find_by_key as pk, gain::PARAMS as GAIN_PARAMS};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, clap::Args)]
@@ -285,8 +286,20 @@ pub(super) struct GainArgs {
     pub(super) enabled: bool,
 
     /// Gain in dB (-60 to +20)
-    #[arg(id = "gain_db", long = "gain-db", default_value = "0.0")]
+    #[arg(
+        id = "gain_db",
+        long = "gain-db",
+        default_value_t = pk(GAIN_PARAMS, "gain_db").default_f64() as f32
+    )]
     pub(super) gain_db: f32,
+
+    /// Gain smoothing time in ms
+    #[arg(
+        id = "gain_smoothing_ms",
+        long = "gain-smoothing-ms",
+        default_value_t = pk(GAIN_PARAMS, "smoothing_ms").default_f64() as f32
+    )]
+    pub(super) smoothing_ms: f32,
 }
 
 #[derive(Debug, Clone, clap::Args)]

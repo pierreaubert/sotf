@@ -189,6 +189,7 @@ pub(super) fn create_gain_plugin_config(args: &GainArgs) -> Result<PluginConfig,
         plugin_type: "gain".to_string(),
         parameters: json!({
             "gain_db": args.gain_db,
+            "smoothing_ms": args.smoothing_ms,
         }),
     })
 }

@@ -15,14 +15,15 @@ Data flow: Global gain OR per-channel gains -> `Smoother` for click-free transit
 **Key types:**
 
 - `GainPlugin` -- Main plugin implementing `ParametricPlugin`. Supports two modes: global gain (single value) or per-channel gains (independent per channel).
-- `GainPluginParams` -- Serde config: `gain_db` (global), `channel_gains` (per-channel, optional).
-- Uses `Smoother` for all gain transitions (default 20ms smoothing time).
+- `GainPluginParams` -- Serde config: `gain_db` (global), `smoothing_ms` (transition time), `channel_gains` (per-channel, optional).
+- Uses `Smoother` for all gain transitions. Default smoothing time is taken from `params::PARAMS` (currently 10 ms).
 
 ## Key Public API
 
-- `GainPlugin::new(channels, gain_db) -> Self` -- Global gain mode (`lib.rs`)
+- `GainPlugin::new(channels, gain_db) -> Self` -- Global gain mode with default smoothing (`lib.rs`)
 - `GainPlugin::with_smoothing(channels, gain_db, smoothing_ms) -> Self` -- Custom smoothing time (`lib.rs`)
-- `GainPlugin::new_per_channel(channel_gains) -> Result<Self, String>` -- Per-channel mode (`lib.rs`)
+- `GainPlugin::new_per_channel(channel_gains) -> Result<Self, String>` -- Per-channel mode with default smoothing (`lib.rs`)
+- `GainPlugin::new_per_channel_with_smoothing(channel_gains, smoothing_ms) -> Result<Self, String>` -- Per-channel mode with custom smoothing (`lib.rs`)
 - `GainPlugin::from_params(channels, params) -> Result<Self, String>` -- From JSON config (`lib.rs`)
 - `set_gain_db(db)`, `set_gain_linear(g)`, `set_channel_gains(dbs)`, `set_channel_gain_db(ch, db)` -- Runtime parameter updates
 - Implements `ParametricPlugin` trait; host-facing `Plugin` is provided by `ParametricPluginAdapter<GainPlugin>`
@@ -34,6 +35,13 @@ Data flow: Global gain OR per-channel gains -> `Smoother` for click-free transit
 ```bash
 cargo test -p sotf-plugin-gain
 ```
+
+## Behavior changes
+
+- The default gain smoothing time changed from 20 ms (old hard-coded value in
+  `GainPlugin::new`) to 10 ms (the value declared in `params::PARAMS`).
+  `GainPlugin::new` and `GainPlugin::new_per_channel` now use this canonical
+  default; use `with_smoothing` / `new_per_channel_with_smoothing` to override it.
 
 ## Important Notes
 
