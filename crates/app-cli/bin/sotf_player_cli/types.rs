@@ -1,5 +1,10 @@
 use clap::{Parser, Subcommand};
-use sotf_plugins::param_specs::{find_by_key as pk, gain::PARAMS as GAIN_PARAMS};
+use sotf_plugins::param_specs::{
+    find_by_key as pk,
+    gain::PARAMS as GAIN_PARAMS,
+    gate::PARAMS as GATE_PARAMS,
+    limiter::PARAMS as LIMITER_PARAMS,
+};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, clap::Args)]
@@ -419,32 +424,48 @@ pub(super) struct GateArgs {
     #[arg(
         id = "gate_threshold_db",
         long = "gate-threshold-db",
-        default_value = "-40.0"
+        default_value_t = pk(GATE_PARAMS, "threshold").default_f64() as f32
     )]
     pub(super) threshold_db: f32,
 
     /// Gate ratio (1.0 to 100.0)
-    #[arg(id = "gate_ratio", long = "gate-ratio", default_value = "10.0")]
+    #[arg(
+        id = "gate_ratio",
+        long = "gate-ratio",
+        default_value_t = pk(GATE_PARAMS, "ratio").default_f64() as f32
+    )]
     pub(super) ratio: f32,
 
     /// Gate attack time in ms (0.1 to 50)
-    #[arg(id = "gate_attack_ms", long = "gate-attack-ms", default_value = "1.0")]
+    #[arg(
+        id = "gate_attack_ms",
+        long = "gate-attack-ms",
+        default_value_t = pk(GATE_PARAMS, "attack").default_f64() as f32
+    )]
     pub(super) attack_ms: f32,
 
     /// Gate hold time in ms (0 to 1000)
-    #[arg(id = "gate_hold_ms", long = "gate-hold-ms", default_value = "10.0")]
+    #[arg(
+        id = "gate_hold_ms",
+        long = "gate-hold-ms",
+        default_value_t = pk(GATE_PARAMS, "hold").default_f64() as f32
+    )]
     pub(super) hold_ms: f32,
 
     /// Gate release time in ms (10 to 2000)
     #[arg(
         id = "gate_release_ms",
         long = "gate-release-ms",
-        default_value = "100.0"
+        default_value_t = pk(GATE_PARAMS, "release").default_f64() as f32
     )]
     pub(super) release_ms: f32,
 
     /// Gate wet/dry mix (0.0 to 1.0)
-    #[arg(id = "gate_mix", long = "gate-mix", default_value = "1.0")]
+    #[arg(
+        id = "gate_mix",
+        long = "gate-mix",
+        default_value_t = pk(GATE_PARAMS, "mix").default_f64() as f32
+    )]
     pub(super) mix: f32,
 
     /// Disable gate channel linking (channels linked by default)
@@ -459,27 +480,36 @@ pub(super) struct GateArgs {
     #[arg(
         id = "gate_sidechain_hpf_hz",
         long = "gate-sidechain-hpf-hz",
-        default_value = "0.0"
+        default_value_t = pk(GATE_PARAMS, "sidechain_hpf_hz").default_f64() as f32
     )]
     pub(super) sidechain_hpf_hz: f32,
 
     /// Gate range in dB (0 to 80)
-    #[arg(long = "gate-range-db", default_value = "80.0")]
+    #[arg(
+        long = "gate-range-db",
+        default_value_t = pk(GATE_PARAMS, "range_db").default_f64() as f32
+    )]
     pub(super) range_db: f32,
 
     /// Gate hysteresis in dB (0 to 12)
-    #[arg(long = "gate-hysteresis-db", default_value = "0.0")]
+    #[arg(
+        long = "gate-hysteresis-db",
+        default_value_t = pk(GATE_PARAMS, "hysteresis_db").default_f64() as f32
+    )]
     pub(super) hysteresis_db: f32,
 
     /// Gate knee width in dB (0 to 20)
-    #[arg(long = "gate-knee-db", default_value = "0.0")]
+    #[arg(
+        long = "gate-knee-db",
+        default_value_t = pk(GATE_PARAMS, "knee_db").default_f64() as f32
+    )]
     pub(super) knee_db: f32,
 
     /// Gate lookahead time in ms (0 to 20)
     #[arg(
         id = "gate_lookahead_ms",
         long = "gate-lookahead-ms",
-        default_value = "0.0"
+        default_value_t = pk(GATE_PARAMS, "lookahead_ms").default_f64() as f32
     )]
     pub(super) lookahead_ms: f32,
 }
@@ -494,7 +524,7 @@ pub(super) struct LimiterArgs {
     #[arg(
         id = "limiter_threshold_db",
         long = "limiter-threshold-db",
-        default_value = "-0.1"
+        default_value_t = pk(LIMITER_PARAMS, "threshold").default_f64() as f32
     )]
     pub(super) threshold_db: f32,
 
@@ -502,7 +532,7 @@ pub(super) struct LimiterArgs {
     #[arg(
         id = "limiter_release_ms",
         long = "limiter-release-ms",
-        default_value = "50.0"
+        default_value_t = pk(LIMITER_PARAMS, "release").default_f64() as f32
     )]
     pub(super) release_ms: f32,
 
@@ -510,24 +540,34 @@ pub(super) struct LimiterArgs {
     #[arg(
         id = "limiter_lookahead_ms",
         long = "limiter-lookahead-ms",
-        default_value = "5.0"
+        default_value_t = pk(LIMITER_PARAMS, "lookahead").default_f64() as f32
     )]
     pub(super) lookahead_ms: f32,
 
     /// Enable soft-knee limiting
-    #[arg(long = "limiter-soft", default_value_t = false)]
+    #[arg(long = "limiter-soft", default_value_t = pk(LIMITER_PARAMS, "soft").default_bool())]
     pub(super) soft: bool,
 
     /// Limiter wet/dry mix (0.0 to 1.0)
-    #[arg(id = "limiter_mix", long = "limiter-mix", default_value = "1.0")]
+    #[arg(
+        id = "limiter_mix",
+        long = "limiter-mix",
+        default_value_t = pk(LIMITER_PARAMS, "mix").default_f64() as f32
+    )]
     pub(super) mix: f32,
 
     /// Enable limiter true-peak detection
-    #[arg(long = "limiter-true-peak", default_value_t = false)]
+    #[arg(
+        long = "limiter-true-peak",
+        default_value_t = pk(LIMITER_PARAMS, "true_peak").default_bool()
+    )]
     pub(super) true_peak: bool,
 
     /// Enable limiter dual-release (adaptive fast/slow release)
-    #[arg(long = "limiter-dual-release", default_value_t = false)]
+    #[arg(
+        long = "limiter-dual-release",
+        default_value_t = pk(LIMITER_PARAMS, "dual_release").default_bool()
+    )]
     pub(super) dual_release: bool,
 }
 

@@ -1,7 +1,5 @@
 pub mod params;
 
-#[path = "lib/default.rs"]
-mod default;
 #[path = "lib/limiter_plugin.rs"]
 mod limiter_plugin;
 #[path = "lib/misc.rs"]

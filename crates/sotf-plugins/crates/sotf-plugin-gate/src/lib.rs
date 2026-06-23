@@ -2,8 +2,6 @@ pub mod params;
 
 #[path = "lib/consts.rs"]
 mod consts;
-#[path = "lib/default.rs"]
-mod default;
 #[path = "lib/gate_data.rs"]
 mod gate_data;
 #[path = "lib/gate_plugin.rs"]

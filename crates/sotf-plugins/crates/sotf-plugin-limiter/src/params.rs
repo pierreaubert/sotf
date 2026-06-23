@@ -186,6 +186,39 @@ fn d_mix() -> f64 {
     pk(PARAMS, "mix").default_f64()
 }
 
+/// Public default helpers used by `LimiterPluginParams` so its serde defaults
+/// come from the same `PARAMS` array used by `PluginParamDef`.
+pub fn default_threshold_db() -> f32 {
+    d_threshold() as f32
+}
+pub fn default_release_ms() -> f32 {
+    d_release() as f32
+}
+pub fn default_lookahead_ms() -> f32 {
+    d_lookahead() as f32
+}
+pub fn default_soft() -> bool {
+    d_soft()
+}
+pub fn default_true_peak() -> bool {
+    d_true_peak()
+}
+pub fn default_isp_mode() -> bool {
+    d_isp_mode()
+}
+pub fn default_dual_release() -> bool {
+    d_dual_release()
+}
+pub fn default_mix() -> f32 {
+    d_mix() as f32
+}
+pub fn default_link_amount() -> f32 {
+    d_link_amount() as f32
+}
+pub fn default_feed_forward() -> bool {
+    d_feed_forward()
+}
+
 impl Default for Params {
     fn default() -> Self {
         Self {

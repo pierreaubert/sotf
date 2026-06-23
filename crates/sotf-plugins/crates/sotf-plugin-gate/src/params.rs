@@ -270,6 +270,54 @@ fn d_lookahead_ms() -> f64 {
     pk(PARAMS, "lookahead_ms").default_f64()
 }
 
+/// Public default helpers used by `GatePluginParams` so its serde defaults
+/// come from the same `PARAMS` array used by `PluginParamDef`.
+pub fn default_threshold_db() -> f32 {
+    d_threshold() as f32
+}
+pub fn default_ratio() -> f32 {
+    d_ratio() as f32
+}
+pub fn default_attack_ms() -> f32 {
+    d_attack() as f32
+}
+pub fn default_hold_ms() -> f32 {
+    d_hold() as f32
+}
+pub fn default_release_ms() -> f32 {
+    d_release() as f32
+}
+pub fn default_mix() -> f32 {
+    d_mix() as f32
+}
+pub fn default_link_channels() -> bool {
+    d_link_channels()
+}
+pub fn default_sidechain_hpf_hz() -> f32 {
+    d_sidechain_hpf_hz() as f32
+}
+pub fn default_sidechain_hpf_order() -> String {
+    d_sidechain_hpf_order()
+}
+pub fn default_detection_mode() -> String {
+    d_detection_mode()
+}
+pub fn default_sidechain_external() -> bool {
+    d_sidechain_external()
+}
+pub fn default_range_db() -> f32 {
+    d_range_db() as f32
+}
+pub fn default_hysteresis_db() -> f32 {
+    d_hysteresis_db() as f32
+}
+pub fn default_knee_db() -> f32 {
+    d_knee_db() as f32
+}
+pub fn default_lookahead_ms() -> f32 {
+    d_lookahead_ms() as f32
+}
+
 impl Default for Params {
     fn default() -> Self {
         Self {
