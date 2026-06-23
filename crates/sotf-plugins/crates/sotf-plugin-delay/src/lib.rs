@@ -3,8 +3,6 @@ pub mod params;
 
 #[path = "lib/allpass_state.rs"]
 mod allpass_state;
-#[path = "lib/default.rs"]
-mod default;
 #[path = "lib/delay_plugin.rs"]
 mod delay_plugin;
 #[path = "lib/misc.rs"]

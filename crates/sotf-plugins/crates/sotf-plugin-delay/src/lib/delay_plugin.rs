@@ -1,6 +1,6 @@
 use super::allpass_state::AllpassState;
-use super::misc::MAX_DELAY_MS;
 use super::misc::parse_channel_delay_id;
+use super::misc::MAX_DELAY_MS;
 use super::types::DelayPluginParams;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
@@ -311,7 +311,10 @@ impl ParametricInPlacePlugin for DelayPlugin {
         );
         if self.is_per_channel() {
             for (ch, &ms) in self.channel_delays_ms.iter().enumerate() {
-                values.insert(ParameterId::from(format!("delay_ms_{ch}")), ParameterValue::Float(ms));
+                values.insert(
+                    ParameterId::from(format!("delay_ms_{ch}")),
+                    ParameterValue::Float(ms),
+                );
             }
         }
         values

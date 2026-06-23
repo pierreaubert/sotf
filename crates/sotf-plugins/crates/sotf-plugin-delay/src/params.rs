@@ -10,7 +10,7 @@
 //! Nothing else needs to change.
 
 use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
+use sotf_host::param_specs::{find_by_key as pk, ParamSpec};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
 
@@ -146,6 +146,28 @@ fn d_allpass_feedback() -> bool {
 }
 fn d_allpass_coeff() -> f64 {
     pk(PARAMS, "allpass_coeff").default_f64()
+}
+
+pub fn default_delay_ms() -> f32 {
+    d_delay_ms() as f32
+}
+pub fn default_feedback() -> f32 {
+    d_feedback() as f32
+}
+pub fn default_mix() -> f32 {
+    d_mix() as f32
+}
+pub fn default_lfo_rate_hz() -> f32 {
+    d_lfo_rate_hz() as f32
+}
+pub fn default_lfo_depth_ms() -> f32 {
+    d_lfo_depth_ms() as f32
+}
+pub fn default_allpass_feedback() -> bool {
+    d_allpass_feedback()
+}
+pub fn default_allpass_coeff() -> f32 {
+    d_allpass_coeff() as f32
 }
 
 impl Default for Params {
