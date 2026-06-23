@@ -1,8 +1,8 @@
+use super::dyn_eq_band_params::DynEqBandParams;
 use crate::params::{
     default_attack_ms, default_bands, default_knee, default_link_channels, default_mix,
     default_num_bands, default_ratio, default_release_ms, default_threshold,
 };
-use super::dyn_eq_band_params::DynEqBandParams;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,7 +62,10 @@ mod tests {
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64() as f32);
         assert_eq!(p.bands.len(), p.num_bands);
         let band = &p.bands[0];
-        assert_eq!(band.frequency, pk(BAND_PARAMS, "frequency").default_f64() as f32);
+        assert_eq!(
+            band.frequency,
+            pk(BAND_PARAMS, "frequency").default_f64() as f32
+        );
         assert_eq!(band.q, pk(BAND_PARAMS, "q").default_f64() as f32);
         assert_eq!(band.gain, pk(BAND_PARAMS, "gain").default_f64() as f32);
         assert_eq!(

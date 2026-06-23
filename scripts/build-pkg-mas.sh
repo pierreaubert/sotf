@@ -38,10 +38,15 @@ MACOS_SANDBOX_HELPER_NAME="sotf-macos-sandbox-helper"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+
 # ---- Version (from workspace Cargo.toml) ----
-VERSION=$(grep -m1 '^version = ' "$PROJECT_ROOT/Cargo.toml" \
-    | sed 's/version = "\(.*\)"/\1/')
-[ -n "$VERSION" ] || { echo "ERROR: Could not extract version from Cargo.toml" >&2; exit 1; }
+VERSION=$(sotf_version "$PROJECT_ROOT")
+if [ -z "$VERSION" ]; then
+    echo "ERROR: Could not extract version from Cargo.toml" >&2
+    exit 1
+fi
 
 # ---- Defaults ----
 ARCH="arm64"

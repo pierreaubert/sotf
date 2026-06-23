@@ -20,6 +20,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+
 CARGO_TOML="$PROJECT_ROOT/Cargo.toml"
 APPX_MANIFEST="$PROJECT_ROOT/builds/windows/AppxManifest.xml"
 SITE_PACKAGE_JSON="$PROJECT_ROOT/site/package.json"
@@ -35,7 +38,7 @@ case "${1:-}" in
         ;;
 esac
 
-VERSION=$(grep -m1 '^version = ' "$CARGO_TOML" | sed 's/version = "\(.*\)"/\1/')
+VERSION=$(sotf_version "$PROJECT_ROOT")
 if [ -z "$VERSION" ]; then
     echo "ERROR: Could not extract version from $CARGO_TOML" >&2
     exit 1

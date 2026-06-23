@@ -1,7 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use sotf_host::{
-    AutoGainLoudnessType, AutoGainParams, MultichannelAutoGain,
-};
+use sotf_host::{AutoGainLoudnessType, AutoGainParams, MultichannelAutoGain};
 
 fn enabled_params() -> AutoGainParams {
     AutoGainParams {

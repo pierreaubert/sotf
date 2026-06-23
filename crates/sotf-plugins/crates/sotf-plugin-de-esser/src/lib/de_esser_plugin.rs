@@ -4,8 +4,8 @@ use super::consts::FIXED_KNEE_DB;
 use super::de_esser_data::DeEsserData;
 use super::types::DeEsserPluginParams;
 use crate::params::{
-    default_attack_ms, default_frequency, default_mix, default_q, default_ratio,
-    default_release_ms, default_threshold, PARAMS as DE,
+    PARAMS as DE, default_attack_ms, default_frequency, default_mix, default_q, default_ratio,
+    default_release_ms, default_threshold,
 };
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, BiquadBank, BiquadFilterType};

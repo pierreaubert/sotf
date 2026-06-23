@@ -351,7 +351,11 @@ impl PlayerView {
                     .align(StackAlign::Center)
                     // Left section: Track info text (hidden on narrow screens)
                     .when(show_track_info, |el| {
-                        el.child(self.render_footer_track_info(&translations, window_width_rems, cx))
+                        el.child(self.render_footer_track_info(
+                            &translations,
+                            window_width_rems,
+                            cx,
+                        ))
                     })
                     // Center section: Transport + waveform
                     .child(self.render_footer_center(show_waveform, cx))

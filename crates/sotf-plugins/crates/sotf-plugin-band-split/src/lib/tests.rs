@@ -440,11 +440,8 @@ fn test_set_parameter_unknown_returns_error() {
     let mut p = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
     p.initialize(48000).unwrap();
     assert!(
-        p.set_parameter(
-            ParameterId::from("not_a_param"),
-            ParameterValue::Float(1.0),
-        )
-        .is_err()
+        p.set_parameter(ParameterId::from("not_a_param"), ParameterValue::Float(1.0),)
+            .is_err()
     );
 }
 

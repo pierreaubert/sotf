@@ -361,7 +361,11 @@ mod tests {
     #[test]
     fn diagnostic_parameters_include_connection_and_backpressure() {
         let plugin = make_test_plugin();
-        let ids: Vec<String> = plugin.parameters().iter().map(|p| p.id.to_string()).collect();
+        let ids: Vec<String> = plugin
+            .parameters()
+            .iter()
+            .map(|p| p.id.to_string())
+            .collect();
         assert!(ids.contains(&"is_connected".to_string()));
         assert!(ids.contains(&"is_backpressured".to_string()));
     }

@@ -9,7 +9,7 @@ use sotf_host::db_to_linear;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_plugin::ParametricPlugin;
 use sotf_host::plugin::ProcessContext;
-use sotf_plugin_gain::{default_smoothing_ms, GainPlugin, GainPluginParams};
+use sotf_plugin_gain::{GainPlugin, GainPluginParams, default_smoothing_ms};
 
 const SR: u32 = 48000;
 const FRAMES: usize = 512;
@@ -314,48 +314,60 @@ fn set_unknown_parameter_fails() {
 fn set_gain_out_of_range_fails() {
     let mut plugin = GainPlugin::new(2, 0.0);
     plugin.plugin_initialize(SR).unwrap();
-    assert!(plugin
-        .parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(21.0))
-        .is_err());
-    assert!(plugin
-        .parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-61.0))
-        .is_err());
+    assert!(
+        plugin
+            .parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(21.0))
+            .is_err()
+    );
+    assert!(
+        plugin
+            .parametric_set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-61.0))
+            .is_err()
+    );
 }
 
 #[test]
 fn set_smoothing_out_of_range_fails() {
     let mut plugin = GainPlugin::new(2, 0.0);
     plugin.plugin_initialize(SR).unwrap();
-    assert!(plugin
-        .parametric_set_parameter(
-            ParameterId::from("smoothing_ms"),
-            ParameterValue::Float(201.0)
-        )
-        .is_err());
-    assert!(plugin
-        .parametric_set_parameter(
-            ParameterId::from("smoothing_ms"),
-            ParameterValue::Float(-1.0)
-        )
-        .is_err());
+    assert!(
+        plugin
+            .parametric_set_parameter(
+                ParameterId::from("smoothing_ms"),
+                ParameterValue::Float(201.0)
+            )
+            .is_err()
+    );
+    assert!(
+        plugin
+            .parametric_set_parameter(
+                ParameterId::from("smoothing_ms"),
+                ParameterValue::Float(-1.0)
+            )
+            .is_err()
+    );
 }
 
 #[test]
 fn set_non_finite_gain_fails() {
     let mut plugin = GainPlugin::new(2, 0.0);
     plugin.plugin_initialize(SR).unwrap();
-    assert!(plugin
-        .parametric_set_parameter(
-            ParameterId::from("gain_db"),
-            ParameterValue::Float(f32::NAN)
-        )
-        .is_err());
-    assert!(plugin
-        .parametric_set_parameter(
-            ParameterId::from("gain_db"),
-            ParameterValue::Float(f32::INFINITY)
-        )
-        .is_err());
+    assert!(
+        plugin
+            .parametric_set_parameter(
+                ParameterId::from("gain_db"),
+                ParameterValue::Float(f32::NAN)
+            )
+            .is_err()
+    );
+    assert!(
+        plugin
+            .parametric_set_parameter(
+                ParameterId::from("gain_db"),
+                ParameterValue::Float(f32::INFINITY)
+            )
+            .is_err()
+    );
 }
 
 #[test]

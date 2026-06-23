@@ -1,13 +1,13 @@
-use crate::params::{
-    default_attack_ms, default_frequency, default_gain, default_knee, default_link_channels,
-    default_mix, default_num_bands, default_q, default_ratio, default_release_ms, default_threshold,
-    BAND_PARAMS, MAX_BANDS, PARAMS as DQ,
-};
 use super::dyn_eq_band::DynEqBand;
 use super::dynamic_eq_data::DynamicEqData;
 use super::dynamic_eq_plugin_params::DynamicEqPluginParams;
 use super::misc::DB_CONVERSION_FACTOR;
 use super::misc::EPSILON;
+use crate::params::{
+    BAND_PARAMS, MAX_BANDS, PARAMS as DQ, default_attack_ms, default_frequency, default_gain,
+    default_knee, default_link_channels, default_mix, default_num_bands, default_q, default_ratio,
+    default_release_ms, default_threshold,
+};
 use math_audio_dsp::fast_math::fast_log10;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::ParamType;

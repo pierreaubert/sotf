@@ -1,11 +1,11 @@
 use super::super::{AudioFrame, DecoderCommand, DecoderMessage, DecoderResponse, ThreadEvent};
+#[cfg(all(target_os = "macos", feature = "hal"))]
+use super::consts::HAL_RECONNECT_INTERVAL;
+use super::consts::send_or_interrupt;
 use super::consts::{
     DECODER_LOCAL_FRAME_CAPACITY, DECODER_LOCAL_FRAME_POOL_SIZE, MAX_ENGINE_SAMPLE_CAPACITY,
     MAX_RESAMPLE_OUTPUT_SAMPLES, MAX_RESAMPLE_STAGING_SAMPLES,
 };
-#[cfg(all(target_os = "macos", feature = "hal"))]
-use super::consts::HAL_RECONNECT_INTERVAL;
-use super::consts::send_or_interrupt;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use super::hal_input_guard_trip::guard_hal_input_block;
 #[cfg(all(target_os = "macos", feature = "hal"))]

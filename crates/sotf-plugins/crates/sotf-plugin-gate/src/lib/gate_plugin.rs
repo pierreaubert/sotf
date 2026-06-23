@@ -3,7 +3,7 @@ use super::consts::EPSILON;
 use super::consts::MAX_LOOKAHEAD_MS;
 use super::gate_data::GateData;
 use super::types::GatePluginParams;
-use crate::params::{default_range_db, PARAMS as GT};
+use crate::params::{PARAMS as GT, default_range_db};
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, peq_butterworth_highpass};
 use sotf_host::analyzer::RealTimeCache;

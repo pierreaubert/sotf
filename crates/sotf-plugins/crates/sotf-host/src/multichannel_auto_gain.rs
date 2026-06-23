@@ -94,7 +94,8 @@ impl MultichannelAutoGain {
         }
 
         self.fill_meter_buffer(output, num_frames, out_ch, speaker_config);
-        self.inner.measure_output(&self.meter_buf[..num_frames * 2])?;
+        self.inner
+            .measure_output(&self.meter_buf[..num_frames * 2])?;
 
         for frame in 0..num_frames {
             let gain = self.inner.next_gain_linear();

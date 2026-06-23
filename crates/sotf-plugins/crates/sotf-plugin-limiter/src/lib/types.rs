@@ -47,7 +47,10 @@ mod tests {
         assert_eq!(p.dual_release, pk(PARAMS, "dual_release").default_bool());
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64() as f32);
         assert_eq!(p.feed_forward, pk(PARAMS, "feed_forward").default_bool());
-        assert_eq!(p.link_amount, pk(PARAMS, "link_amount").default_f64() as f32);
+        assert_eq!(
+            p.link_amount,
+            pk(PARAMS, "link_amount").default_f64() as f32
+        );
     }
 }
 

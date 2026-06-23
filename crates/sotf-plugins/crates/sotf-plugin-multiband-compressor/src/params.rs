@@ -9,8 +9,8 @@
 //! `Params` struct or `PluginParamDef` impl here.
 
 use sotf_host::multiband_global_params;
-use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::param_specs::ParamSpec;
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::plugin_layout::*;
 
 // ============================================================================

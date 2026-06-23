@@ -10,146 +10,26 @@
 #![allow(unused_imports)]
 #![allow(unused_macros)]
 
+// Device discovery and engine test harness helpers are maintained in
+// `sotf-testkit` so they can be reused by other crates. Re-export them here
+// to keep existing `common::*` call sites working.
+pub use sotf_testkit::engine::{
+    find_virtual_device, get_virtual_device, require_virtual_device, test_engine_config,
+    test_engine_config_with,
+};
 pub use sotf_testkit::find_device;
+pub use sotf_testkit::skip_without_device;
 
 use hound::{WavSpec, WavWriter};
 use sotf_audio::engine::EngineConfig;
-use std::sync::OnceLock;
 use tempfile::NamedTempFile;
 
-/// Virtual audio device names to try (in order of preference)
-/// BlackHole is preferred (most commonly installed), then SotF HAL driver
-const VIRTUAL_DEVICES: &[&str] = &[
-    "BlackHole 2ch",
-    "BlackHole 16ch",
-    "BlackHole 64ch",
-    "SotF Virtual Audio",
-];
-
-/// Cached virtual device name (checked once per test run)
-static VIRTUAL_DEVICE: OnceLock<Option<String>> = OnceLock::new();
-
-/// Find an available virtual audio device.
-///
-/// Checks `AEQ_E2E_DEVICE` env var first (allows overriding the device),
-/// then auto-detects BlackHole or SotF HAL driver.
-pub fn find_virtual_device() -> Option<String> {
-    use cpal::traits::{DeviceTrait, HostTrait};
-
-    let host = cpal::default_host();
-    let devices: Vec<String> = host
-        .output_devices()
-        .map(|devices| {
-            devices
-                .filter_map(|device| {
-                    device
-                        .description()
-                        .ok()
-                        .map(|description| description.name().to_string())
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // Allow explicit override via environment variable, but only if the
-    // requested device is visible to cpal in this test process.
-    if let Ok(device) = std::env::var("AEQ_E2E_DEVICE")
-        && !device.is_empty()
-    {
-        if let Some(actual_name) = devices
-            .iter()
-            .find(|name| *name == &device || name.contains(&device))
-        {
-            return Some(actual_name.clone());
-        }
-
-        eprintln!(
-            "AEQ_E2E_DEVICE='{}' is not available to cpal; available output devices: {}",
-            device,
-            if devices.is_empty() {
-                "<none>".to_string()
-            } else {
-                devices.join(", ")
-            }
-        );
-        return None;
-    }
-
-    for virtual_name in VIRTUAL_DEVICES {
-        for name in &devices {
-            if name.contains(virtual_name) {
-                return Some(name.clone());
-            }
-        }
-    }
-
-    None
-}
-
-/// Get the cached virtual device name, or `None` if unavailable.
-pub fn get_virtual_device() -> Option<String> {
-    VIRTUAL_DEVICE.get_or_init(find_virtual_device).clone()
-}
-
-/// Skip the current test if no virtual audio device is available.
-///
-/// Prints a diagnostic message so the skip is visible in test output,
-/// similar to `#[ignore]` but detected at runtime.
-///
-/// Usage:
-/// ```ignore
-/// #[test]
-/// #[serial]
-/// fn my_audio_test() {
-///     skip_without_device!();
-///     // ... rest of the test
-/// }
-/// ```
-macro_rules! skip_without_device {
-    () => {
-        match $crate::common::get_virtual_device() {
-            Some(_) => {}
-            None => {
-                eprintln!(
-                    "SKIPPED: {} — no virtual audio device found (install BlackHole or set AEQ_E2E_DEVICE)",
-                    module_path!()
-                );
-                return;
-            }
-        }
-    };
-}
-pub(crate) use skip_without_device;
-
-/// Get the virtual device name, panicking if not available.
-///
-/// Prefer `skip_without_device!()` in tests instead. This function is kept
-/// for call sites that genuinely need a device name and cannot skip.
-pub fn require_virtual_device() -> String {
-    get_virtual_device().expect(
-        "\n\n\
-        ╔═══════════════════════════════════════════════════════════════════════╗\n\
-        ║  AUDIO ENGINE TESTS REQUIRE A VIRTUAL AUDIO DEVICE                    ║\n\
-        ╠═══════════════════════════════════════════════════════════════════════╣\n\
-        ║  No virtual audio device found (BlackHole or SotF HAL).               ║\n\
-        ║                                                                       ║\n\
-        ║  Tests use virtual devices to avoid playing sound on real speakers.   ║\n\
-        ║                                                                       ║\n\
-        ║  Options:                                                             ║\n\
-        ║  1. Install BlackHole: brew install blackhole-2ch                     ║\n\
-        ║     or from: https://existential.audio/blackhole/                     ║\n\
-        ║  2. Install the SotF HAL driver                                       ║\n\
-        ║  3. Set AEQ_E2E_DEVICE='Your Device Name' to use a specific device   ║\n\
-        ╚═══════════════════════════════════════════════════════════════════════╝\n\n",
-    )
-}
-
-/// Backwards compatibility alias for require_virtual_device
+/// Backwards compatibility alias for `require_virtual_device`.
 pub fn require_blackhole_device() -> String {
     require_virtual_device()
 }
 
-/// Find an available BlackHole device (legacy alias)
+/// Find an available BlackHole device (legacy alias).
 pub fn find_blackhole_device() -> Option<String> {
     find_virtual_device()
 }
@@ -160,7 +40,7 @@ pub fn virtual_device_option() -> Option<String> {
     get_virtual_device()
 }
 
-/// Backwards compatibility alias
+/// Backwards compatibility alias.
 pub fn blackhole_device_option() -> Option<String> {
     virtual_device_option()
 }
@@ -174,27 +54,6 @@ pub fn try_test_engine_config() -> Option<EngineConfig> {
     config.output_device = Some(device);
     config.allow_virtual_output = true;
     Some(config)
-}
-
-/// Create an EngineConfig configured for testing with a virtual audio device.
-///
-/// Panics if no virtual device is available. Prefer `try_test_engine_config()`
-/// combined with `skip_without_device!()` in tests.
-pub fn test_engine_config() -> EngineConfig {
-    let mut config = EngineConfig::default();
-    config.output_device = Some(require_virtual_device());
-    config.allow_virtual_output = true;
-    config
-}
-
-/// Create an EngineConfig with specific settings, using a virtual audio device.
-pub fn test_engine_config_with<F>(configure: F) -> EngineConfig
-where
-    F: FnOnce(&mut EngineConfig),
-{
-    let mut config = test_engine_config();
-    configure(&mut config);
-    config
 }
 
 /// Helper to create a test WAV file with a sine wave

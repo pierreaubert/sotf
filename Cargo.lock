@@ -9476,7 +9476,6 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "signal-hook 0.4.4",
- "sofa-reader 0.1.6 (git+https://github.com/pierreaubert/sofa-reader)",
  "sotf-iamf",
  "sotf-midi",
  "sotf-plugin-ambisonics",

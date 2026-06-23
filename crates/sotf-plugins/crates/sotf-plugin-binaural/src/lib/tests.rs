@@ -1533,10 +1533,7 @@ fn test_head_yaw_background_update_changes_state() {
     };
 
     let freq_size = 1024 / 2 + 1;
-    let initial_filters = vec![
-        vec![Complex::new(0.0, 0.0); freq_size * 2];
-        2
-    ];
+    let initial_filters = vec![vec![Complex::new(0.0, 0.0); freq_size * 2]; 2];
     let initial_state = Arc::new(BinauralState {
         hrtf_filters_freq: initial_filters,
         diffuse_field_eq_filter: None,

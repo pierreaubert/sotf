@@ -299,7 +299,11 @@ fn get_unknown_parameter_returns_none() {
 #[test]
 fn parameter_list_contains_frequency_and_mode() {
     let plugin = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
-    let ids: Vec<_> = plugin.parameters().iter().map(|p| p.id.to_string()).collect();
+    let ids: Vec<_> = plugin
+        .parameters()
+        .iter()
+        .map(|p| p.id.to_string())
+        .collect();
     assert!(ids.contains(&"frequency".to_string()));
     assert!(ids.contains(&"mode".to_string()));
 }

@@ -450,11 +450,13 @@ impl DawHost {
             );
             return Ok(plugin);
         }
-        Ok(Box::new(crate::oversampling::AutoOversampledPlugin::new_with_max_frames(
-            plugin,
-            factor,
-            Self::MAX_BLOCK_FRAMES,
-        )?))
+        Ok(Box::new(
+            crate::oversampling::AutoOversampledPlugin::new_with_max_frames(
+                plugin,
+                factor,
+                Self::MAX_BLOCK_FRAMES,
+            )?,
+        ))
     }
 
     /// Add a sidechain edge: the output of `from` is routed as sidechain input
@@ -527,11 +529,7 @@ impl DawHost {
                             vec![0.0f32; Self::MAX_BLOCK_FRAMES * node.input_channels()],
                         )
                     } else {
-                        (
-                            Vec::new(),
-                            Vec::new(),
-                            Vec::new(),
-                        )
+                        (Vec::new(), Vec::new(), Vec::new())
                     }
                 })
                 .collect(),
@@ -968,11 +966,7 @@ impl DawHost {
         val: super::super::parameters::ParameterValue,
     ) -> Result<(), String> {
         let &nid = self.chain_nodes.get(index).ok_or("oob")?;
-        self.queue_node_parameter(
-            nid,
-            super::super::parameters::ParameterId::from(id),
-            val,
-        )
+        self.queue_node_parameter(nid, super::super::parameters::ParameterId::from(id), val)
     }
 
     /// Queue a parameter change for audio-thread application at `sample_offset`

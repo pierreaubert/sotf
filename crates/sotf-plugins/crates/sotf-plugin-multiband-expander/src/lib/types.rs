@@ -1,9 +1,9 @@
 use super::band_expander_params::BandExpanderParams;
 use crate::params::{
-    default_attack_ms, default_auto_makeup, default_crossover_frequencies, default_crossover_preset,
-    default_detection_mode, default_hold_ms, default_hysteresis_db, default_knee_db,
-    default_link_channels, default_lookahead_ms, default_measured_auto_makeup, default_mix,
-    default_num_bands, default_processing_mode, default_range_db, default_ratio,
+    default_attack_ms, default_auto_makeup, default_crossover_frequencies,
+    default_crossover_preset, default_detection_mode, default_hold_ms, default_hysteresis_db,
+    default_knee_db, default_link_channels, default_lookahead_ms, default_measured_auto_makeup,
+    default_mix, default_num_bands, default_processing_mode, default_range_db, default_ratio,
     default_release_ms, default_sidechain_hpf_hz, default_threshold_db,
 };
 use serde::{Deserialize, Serialize};
@@ -99,7 +99,10 @@ mod tests {
     #[test]
     fn deserialize_empty_json_uses_param_specs_defaults() {
         let p: MultibandExpanderPluginParams = serde_json::from_str("{}").unwrap();
-        assert_eq!(p.num_bands, pk(GLOBAL_PARAMS, "num_bands").default_f64() as usize);
+        assert_eq!(
+            p.num_bands,
+            pk(GLOBAL_PARAMS, "num_bands").default_f64() as usize
+        );
         assert_eq!(
             p.crossover_preset,
             pk(GLOBAL_PARAMS, "crossover_preset").default_f64() as i32
@@ -119,14 +122,23 @@ mod tests {
         assert_eq!(p.release_ms, pk(PARAMS, "release").default_f64() as f32);
         assert_eq!(p.knee_db, pk(PARAMS, "knee").default_f64() as f32);
         assert_eq!(p.range_db, pk(PARAMS, "range").default_f64() as f32);
-        assert_eq!(p.hysteresis_db, pk(PARAMS, "hysteresis").default_f64() as f32);
+        assert_eq!(
+            p.hysteresis_db,
+            pk(PARAMS, "hysteresis").default_f64() as f32
+        );
         assert_eq!(p.hold_ms, pk(PARAMS, "hold").default_f64() as f32);
         assert_eq!(p.link_channels, pk(PARAMS, "link_channels").default_bool());
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64() as f32);
         assert_eq!(p.detection_mode, DETECTION_MODES[0]);
-        assert_eq!(p.lookahead_ms, pk(PARAMS, "lookahead_ms").default_f64() as f32);
+        assert_eq!(
+            p.lookahead_ms,
+            pk(PARAMS, "lookahead_ms").default_f64() as f32
+        );
         assert_eq!(p.processing_mode, "time_domain");
-        assert_eq!(p.auto_makeup, Some(pk(PARAMS, "auto_makeup").default_bool()));
+        assert_eq!(
+            p.auto_makeup,
+            Some(pk(PARAMS, "auto_makeup").default_bool())
+        );
         assert_eq!(
             p.measured_auto_makeup,
             Some(pk(PARAMS, "measured_auto_makeup").default_bool())

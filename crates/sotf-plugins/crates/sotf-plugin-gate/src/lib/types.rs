@@ -71,8 +71,14 @@ mod tests {
             pk(PARAMS, "sidechain_external").default_bool()
         );
         assert_eq!(p.range_db, pk(PARAMS, "range_db").default_f64() as f32);
-        assert_eq!(p.hysteresis_db, pk(PARAMS, "hysteresis_db").default_f64() as f32);
+        assert_eq!(
+            p.hysteresis_db,
+            pk(PARAMS, "hysteresis_db").default_f64() as f32
+        );
         assert_eq!(p.knee_db, pk(PARAMS, "knee_db").default_f64() as f32);
-        assert_eq!(p.lookahead_ms, pk(PARAMS, "lookahead_ms").default_f64() as f32);
+        assert_eq!(
+            p.lookahead_ms,
+            pk(PARAMS, "lookahead_ms").default_f64() as f32
+        );
     }
 }

@@ -47,7 +47,11 @@ fn channel_counts_match_constructor() {
 #[test]
 fn parameters_include_routing_params() {
     let plugin = MatrixPlugin::new(2, 2);
-    let ids: Vec<String> = plugin.parameters().iter().map(|p| p.id.to_string()).collect();
+    let ids: Vec<String> = plugin
+        .parameters()
+        .iter()
+        .map(|p| p.id.to_string())
+        .collect();
 
     assert!(ids.contains(&"gain".to_string()));
     assert!(ids.contains(&"preset".to_string()));

@@ -1,6 +1,6 @@
 use super::PluginFuzzer;
-use rand::rngs::StdRng;
 use rand::Rng;
+use rand::rngs::StdRng;
 use sotf_plugins::param_specs::gain::default_smoothing_ms;
 use sotf_plugins::{GainPlugin, GainPluginParams, ParametricPluginAdapter, Plugin};
 

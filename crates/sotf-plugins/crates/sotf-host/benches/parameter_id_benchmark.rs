@@ -1,9 +1,7 @@
 // Benchmark for ParameterId clone cost and automation-event application.
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use sotf_host::{
-    Parameter, ParameterId, ParameterValue, Plugin, PluginInfo, ProcessContext,
-};
+use sotf_host::{Parameter, ParameterId, ParameterValue, Plugin, PluginInfo, ProcessContext};
 use std::hint::black_box;
 
 /// Minimal gain plugin for benchmarking the automation path.
@@ -35,7 +33,9 @@ impl Plugin for GainPlugin {
         vec![Parameter::new_float("gain", "Gain", 1.0, 0.0, 4.0)]
     }
     fn set_parameter(&mut self, id: ParameterId, val: ParameterValue) -> Result<(), String> {
-        if id.as_str() == "gain" && let ParameterValue::Float(v) = val {
+        if id.as_str() == "gain"
+            && let ParameterValue::Float(v) = val
+        {
             self.gain = v;
             return Ok(());
         }
@@ -48,7 +48,12 @@ impl Plugin for GainPlugin {
             None
         }
     }
-    fn process(&mut self, input: &[f32], output: &mut [f32], ctx: &ProcessContext) -> Result<usize, String> {
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        ctx: &ProcessContext,
+    ) -> Result<usize, String> {
         for (o, &i) in output.iter_mut().zip(input.iter()) {
             *o = i * self.gain;
         }
@@ -92,7 +97,11 @@ fn benchmark_automation_event(c: &mut Criterion) {
                 .set_parameter(black_box(id.clone()), ParameterValue::Float(-12.0))
                 .unwrap();
             plugin
-                .process(black_box(&input), black_box(&mut output), black_box(&context))
+                .process(
+                    black_box(&input),
+                    black_box(&mut output),
+                    black_box(&context),
+                )
                 .unwrap();
         });
     });
@@ -100,5 +109,9 @@ fn benchmark_automation_event(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, benchmark_parameter_id_clone, benchmark_automation_event);
+criterion_group!(
+    benches,
+    benchmark_parameter_id_clone,
+    benchmark_automation_event
+);
 criterion_main!(benches);

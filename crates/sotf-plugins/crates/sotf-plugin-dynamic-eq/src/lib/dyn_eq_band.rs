@@ -1,5 +1,5 @@
-use crate::params::{default_band_ratio, default_band_threshold};
 use super::misc::bandpass_edges;
+use crate::params::{default_band_ratio, default_band_threshold};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_host::dynamics_core::DynamicsCore;
 use sotf_host::dynamics_core::DynamicsMode;

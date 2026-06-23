@@ -1,8 +1,6 @@
 use super::home_album_ext::HomeAlbumExt;
 use crate::ui::PlayerView;
-use crate::ui::{
-    ALBUM_CARD_GAP_REMS, ALBUM_CARD_WIDTH_REMS, estimate_grid_dimensions,
-};
+use crate::ui::{ALBUM_CARD_GAP_REMS, ALBUM_CARD_WIDTH_REMS, estimate_grid_dimensions};
 use sotf_audio_player::Album;
 use std::sync::Arc;
 

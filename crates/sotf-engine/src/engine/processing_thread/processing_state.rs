@@ -569,13 +569,10 @@ pub(super) fn run_processing_thread(
                                 Err(_) => {
                                     // Fallback if recycle queue is empty (ramp-up or stall).
                                     // Pop a pre-sized spare first; only allocate as a last resort.
-                                    state
-                                        .recycle_fallback_pool
-                                        .pop()
-                                        .unwrap_or_else(|| {
-                                            state.recycle_miss_count += 1;
-                                            Vec::with_capacity(actual_output_samples)
-                                        })
+                                    state.recycle_fallback_pool.pop().unwrap_or_else(|| {
+                                        state.recycle_miss_count += 1;
+                                        Vec::with_capacity(actual_output_samples)
+                                    })
                                 }
                             };
                             buf.extend_from_slice(&process_buffer[..actual_output_samples]);

@@ -1,7 +1,7 @@
 use sotf_host::parametric_plugin::ParametricPlugin;
 use sotf_host::plugin::ProcessContext;
-use sotf_host::{run_standard_tests, CountingAlloc, ParametricPluginAdapter};
-use sotf_plugin_gain::{default_smoothing_ms, GainPlugin, GainPluginParams};
+use sotf_host::{CountingAlloc, ParametricPluginAdapter, run_standard_tests};
+use sotf_plugin_gain::{GainPlugin, GainPluginParams, default_smoothing_ms};
 
 #[global_allocator]
 static A: CountingAlloc = CountingAlloc;

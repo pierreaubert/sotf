@@ -4,9 +4,9 @@ use crate::params::{
     default_crossover_preset, default_detection_mode, default_knee_db, default_link_amount,
     default_link_channels, default_lookahead_ms, default_makeup_gain, default_measured_auto_makeup,
     default_mix, default_ms_mode, default_num_bands, default_per_band_lookahead_ms,
-    default_program_dependent_release, default_ratio, default_release_ms, default_sidechain_external,
-    default_sidechain_hpf_hz, default_sidechain_hpf_order, default_sidechain_tilt_db,
-    default_threshold_db,
+    default_program_dependent_release, default_ratio, default_release_ms,
+    default_sidechain_external, default_sidechain_hpf_hz, default_sidechain_hpf_order,
+    default_sidechain_tilt_db, default_threshold_db,
 };
 use serde::{Deserialize, Serialize};
 

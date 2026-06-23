@@ -30,8 +30,14 @@ mod tests {
         let p: TransientShaperPluginParams = serde_json::from_str("{}").unwrap();
         assert_eq!(p.attack, pk(PARAMS, "attack").default_f64() as f32);
         assert_eq!(p.sustain, pk(PARAMS, "sustain").default_f64() as f32);
-        assert_eq!(p.sensitivity_db, pk(PARAMS, "sensitivity").default_f64() as f32);
-        assert_eq!(p.output_gain_db, pk(PARAMS, "output_gain").default_f64() as f32);
+        assert_eq!(
+            p.sensitivity_db,
+            pk(PARAMS, "sensitivity").default_f64() as f32
+        );
+        assert_eq!(
+            p.output_gain_db,
+            pk(PARAMS, "output_gain").default_f64() as f32
+        );
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64() as f32);
     }
 }

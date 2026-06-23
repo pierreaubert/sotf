@@ -46,8 +46,11 @@ DAEMON_BUNDLE_ID="org.spinorama.sotf-daemon"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+
 # Extract version from root Cargo.toml
-VERSION=$(grep -m1 '^version = ' "$PROJECT_ROOT/Cargo.toml" | sed -E 's/version = "(.*)"/\1/')
+VERSION=$(sotf_version "$PROJECT_ROOT")
 if [ -z "$VERSION" ]; then
     echo "ERROR: Could not extract version from Cargo.toml"
     exit 1

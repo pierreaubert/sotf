@@ -141,8 +141,8 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
             self.process_in_place_f64_with_scratch(output, context)
         } else {
             output[..input.len()].copy_from_slice(input);
-            let frames = self
-                .process_in_place_f64_with_scratch(&mut output[..input.len()], context)?;
+            let frames =
+                self.process_in_place_f64_with_scratch(&mut output[..input.len()], context)?;
             for frame in 0..frames {
                 let src = frame * in_ch;
                 let dst = frame * out_ch;

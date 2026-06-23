@@ -1,6 +1,6 @@
 use super::allpass_state::AllpassState;
-use super::misc::parse_channel_delay_id;
 use super::misc::MAX_DELAY_MS;
+use super::misc::parse_channel_delay_id;
 use super::types::DelayPluginParams;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;

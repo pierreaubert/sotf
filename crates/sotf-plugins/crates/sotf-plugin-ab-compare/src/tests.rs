@@ -17,10 +17,7 @@ fn test_bypass_mode() {
     let mut plugin = ABComparePlugin::new(2).unwrap();
     plugin.initialize(48000).unwrap();
     plugin
-        .set_parameter(
-            ParameterId::from("bypass"),
-            ParameterValue::Bool(true),
-        )
+        .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
         .unwrap();
 
     let input = vec![1.0, 0.5, 0.8, 0.3]; // 2 frames, 2 channels
@@ -157,10 +154,7 @@ fn test_binary_mode() {
 
     // Switch to B
     plugin
-        .set_parameter(
-            ParameterId::from("selected_path"),
-            ParameterValue::Int(1),
-        )
+        .set_parameter(ParameterId::from("selected_path"), ParameterValue::Int(1))
         .unwrap();
 
     let value = plugin.get_parameter(&ParameterId::from("selected_path"));
@@ -436,18 +430,12 @@ fn test_auto_gain_parameter_loudness_type() {
 
     // Set to ShortTerm (1)
     plugin
-        .set_parameter(
-            ParameterId::from("loudness_type"),
-            ParameterValue::Int(1),
-        )
+        .set_parameter(ParameterId::from("loudness_type"), ParameterValue::Int(1))
         .unwrap();
 
     // Set back to Momentary (0)
     plugin
-        .set_parameter(
-            ParameterId::from("loudness_type"),
-            ParameterValue::Int(0),
-        )
+        .set_parameter(ParameterId::from("loudness_type"), ParameterValue::Int(0))
         .unwrap();
 
     // Should not panic
@@ -818,10 +806,7 @@ fn test_binary_mode_mix_transition() {
     let mut plugin = ABComparePlugin::from_params(2, params).unwrap();
     plugin.initialize(48000).unwrap();
     plugin
-        .set_parameter(
-            ParameterId::from("selected_path"),
-            ParameterValue::Int(1),
-        )
+        .set_parameter(ParameterId::from("selected_path"), ParameterValue::Int(1))
         .unwrap();
     let input = vec![1.0_f32; 4800 * 2];
     let mut output = vec![0.0_f32; 4800 * 2];
@@ -834,10 +819,7 @@ fn test_binary_mode_mix_transition() {
 #[test]
 fn test_validate_parameter_unknown() {
     let plugin = ABComparePlugin::new(2).unwrap();
-    let res = plugin.validate_parameter(
-        &ParameterId::from("unknown"),
-        &ParameterValue::Float(0.0),
-    );
+    let res = plugin.validate_parameter(&ParameterId::from("unknown"), &ParameterValue::Float(0.0));
     assert!(res.is_err());
 }
 
@@ -1089,7 +1071,6 @@ fn test_process_empty_path_fast() {
 #[test]
 fn test_validate_parameter_known() {
     let plugin = ABComparePlugin::new(2).unwrap();
-    let res =
-        plugin.validate_parameter(&ParameterId::from("mix"), &ParameterValue::Float(0.0));
+    let res = plugin.validate_parameter(&ParameterId::from("mix"), &ParameterValue::Float(0.0));
     assert!(res.is_ok());
 }

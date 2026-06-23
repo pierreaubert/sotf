@@ -55,7 +55,11 @@ fn parameters_include_global_and_band_params() {
     };
     let plugin = FirDesignerPlugin::from_params(1, SAMPLE_RATE, params).unwrap();
 
-    let ids: Vec<String> = plugin.parametric_parameters().iter().map(|p| p.id.to_string()).collect();
+    let ids: Vec<String> = plugin
+        .parametric_parameters()
+        .iter()
+        .map(|p| p.id.to_string())
+        .collect();
 
     assert!(ids.contains(&"num_filters".to_string()));
     assert!(ids.contains(&"fir_length".to_string()));

@@ -557,28 +557,31 @@ fn test_parameter_validation() {
     p.initialize(48000).unwrap();
 
     // LFO rate out of range should fail
-    assert!(p
-        .set_parameter(
+    assert!(
+        p.set_parameter(
             ParameterId::from("lfo_rate_hz"),
             ParameterValue::Float(15.0)
         )
-        .is_err());
+        .is_err()
+    );
 
     // LFO depth out of range should fail
-    assert!(p
-        .set_parameter(
+    assert!(
+        p.set_parameter(
             ParameterId::from("lfo_depth_ms"),
             ParameterValue::Float(10.0)
         )
-        .is_err());
+        .is_err()
+    );
 
     // Wrong type should fail
-    assert!(p
-        .set_parameter(
+    assert!(
+        p.set_parameter(
             ParameterId::from("allpass_feedback"),
             ParameterValue::Float(1.0)
         )
-        .is_err());
+        .is_err()
+    );
 }
 
 /// process_in_place smoke test with a known impulse and no feedback.
@@ -671,18 +674,20 @@ fn test_set_parameter_rejects_non_finite() {
     let mut p = DelayPlugin::new(1, 20.0, 0.0, 0.0);
     p.initialize(48000).unwrap();
 
-    assert!(p
-        .set_parameter(
+    assert!(
+        p.set_parameter(
             ParameterId::from("delay_ms"),
             ParameterValue::Float(f32::NAN)
         )
-        .is_err());
-    assert!(p
-        .set_parameter(
+        .is_err()
+    );
+    assert!(
+        p.set_parameter(
             ParameterId::from("delay_ms"),
             ParameterValue::Float(f32::INFINITY)
         )
-        .is_err());
+        .is_err()
+    );
 }
 
 /// process_in_place with zero frames returns 0 and leaves the buffer untouched.
@@ -780,9 +785,10 @@ fn test_set_parameter_per_channel_invalid_id_errors() {
     let mut p = DelayPlugin::new(2, 10.0, 0.0, 0.0);
     p.initialize(48000).unwrap();
     // Not in per-channel mode: delay_ms_0 is not a valid parameter
-    assert!(p
-        .set_parameter(ParameterId::from("delay_ms_0"), ParameterValue::Float(5.0))
-        .is_err());
+    assert!(
+        p.set_parameter(ParameterId::from("delay_ms_0"), ParameterValue::Float(5.0))
+            .is_err()
+    );
 }
 
 #[test]
@@ -851,18 +857,20 @@ fn test_set_parameter_allpass_coeff_boundaries() {
     );
 
     // Out of range should be rejected by validation
-    assert!(p
-        .set_parameter(
+    assert!(
+        p.set_parameter(
             ParameterId::from("allpass_coeff"),
             ParameterValue::Float(1.5)
         )
-        .is_err());
-    assert!(p
-        .set_parameter(
+        .is_err()
+    );
+    assert!(
+        p.set_parameter(
             ParameterId::from("allpass_coeff"),
             ParameterValue::Float(-0.5)
         )
-        .is_err());
+        .is_err()
+    );
 }
 
 #[test]
@@ -915,10 +923,11 @@ fn test_set_parameter_per_channel_rejects_non_finite() {
     let mut p = DelayPlugin::new_per_channel(vec![5.0]).unwrap();
     p.initialize(48000).unwrap();
 
-    assert!(p
-        .set_parameter(
+    assert!(
+        p.set_parameter(
             ParameterId::from("delay_ms_0"),
             ParameterValue::Float(f32::NAN)
         )
-        .is_err());
+        .is_err()
+    );
 }

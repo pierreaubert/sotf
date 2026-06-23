@@ -446,6 +446,12 @@ fn in_place_adapter_f64_reuses_scratch_and_produces_correct_output() {
     assert_eq!(result, 128);
     for (i, &s) in output.iter().enumerate() {
         let expected = (i as f64 * 0.01) * 2.0;
-        assert!((s - expected).abs() < 1e-6, "sample {}: got {}, expected {}", i, s, expected);
+        assert!(
+            (s - expected).abs() < 1e-6,
+            "sample {}: got {}, expected {}",
+            i,
+            s,
+            expected
+        );
     }
 }

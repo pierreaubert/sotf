@@ -4,9 +4,7 @@
 // under various configurations and workloads.
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use sotf_host::{
-    ParameterId, ParameterValue, Plugin, ProcessContext,
-};
+use sotf_host::{ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugin_binaural::{BinauralDecoderPlugin, RoomModel};
 use std::hint::black_box;
 use std::time::Duration;
@@ -290,9 +288,7 @@ fn bench_head_tracking(c: &mut Criterion) {
 
         // Steady-state warm-up.
         for _ in 0..10 {
-            decoder
-                .process(&input, &mut output, &context)
-                .unwrap();
+            decoder.process(&input, &mut output, &context).unwrap();
         }
 
         // Alternate yaw between two large angles on every measured iteration so
