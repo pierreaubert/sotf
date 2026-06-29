@@ -70,7 +70,7 @@ pub(super) fn partition_main_groups(
 }
 
 /// Detect a "mode selector" pattern in `layout.main`:
-/// the first untitled `ControlGroup` containing a single `ButtonSet`
+/// the first untitled `ControlGroup` containing a single choice control
 /// whose bound param is a `Choice`. The labels of that Choice are
 /// matched (case-insensitive) against later group titles to determine
 /// which groups are mutually exclusive.
@@ -83,14 +83,12 @@ pub(super) fn detect_mode_selector(
             continue;
         }
         let spec = &group.controls[0];
-        let labels = match spec.control_type {
-            ControlType::ButtonSet { labels } => labels,
+        let param = params.get(spec.param_index)?;
+        let labels = match (spec.control_type, param.param_type) {
+            (ControlType::ButtonSet { labels }, ParamType::Choice { .. }) => labels,
+            (ControlType::Selector, ParamType::Choice { labels, .. }) => labels,
             _ => continue,
         };
-        let param = params.get(spec.param_index)?;
-        if !matches!(param.param_type, ParamType::Choice { .. }) {
-            continue;
-        }
         // Confirm at least one later group title matches a label — otherwise
         // this isn't really a mode selector and we should leave the layout alone.
         let aliases_any_group = layout.main.iter().enumerate().any(|(j, g)| {

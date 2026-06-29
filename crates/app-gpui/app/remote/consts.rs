@@ -252,6 +252,15 @@ impl App {
         Ok(id)
     }
 
+    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+    pub fn add_remote_server_from_qr_image_file(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<String, String> {
+        let payload = decode_sotf_api_qr_image_file(path)?;
+        self.add_remote_server_from_qr_payload(&payload)
+    }
+
     pub fn update_manual_remote_server_name(&mut self, name: impl Into<String>) {
         self.remote.set_manual_server_name(name);
     }
@@ -887,6 +896,30 @@ impl App {
             let _ = (server_id, library_version);
         }
     }
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+fn decode_sotf_api_qr_image_file(path: &std::path::Path) -> Result<String, String> {
+    let image = image::open(path)
+        .map_err(|err| format!("Could not open QR image '{}': {err}", path.display()))?
+        .to_luma8();
+    let mut prepared = rqrr::PreparedImage::prepare(image);
+    let grids = prepared.detect_grids();
+    if grids.is_empty() {
+        return Err("No QR code was found in the selected image.".to_string());
+    }
+
+    let mut last_error = None;
+    for grid in grids {
+        match grid.decode() {
+            Ok((_metadata, payload)) => return Ok(payload),
+            Err(err) => last_error = Some(err.to_string()),
+        }
+    }
+
+    Err(last_error
+        .map(|err| format!("Could not decode the QR code: {err}"))
+        .unwrap_or_else(|| "Could not decode the QR code.".to_string()))
 }
 
 fn probe_remote_server_public(api_base_url: &str) -> RemoteServerProbeStatus {

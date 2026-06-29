@@ -1595,10 +1595,14 @@ fn test_asymmetric_spectral_norm_scales_columns_not_rows() {
 #[test]
 fn test_param_value_roundtrip() {
     let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48000).unwrap();
-    for i in 0..27 {
+    for i in 0..28 {
+        if i == 16 {
+            assert!(plugin.param_value(i).is_none());
+            continue;
+        }
         let original = plugin.param_value(i).unwrap();
         // Bool params encode as 0.0/1.0; adding 1.0 would break the threshold logic.
-        let is_bool = matches!(i, 13 | 14 | 15 | 20 | 21 | 22 | 23);
+        let is_bool = matches!(i, 13 | 14 | 15 | 21 | 22 | 23 | 24);
         if is_bool {
             plugin.set_param_value(i, 1.0);
             assert!((plugin.param_value(i).unwrap() - 1.0).abs() < 1e-6);
@@ -1611,7 +1615,7 @@ fn test_param_value_roundtrip() {
         plugin.set_param_value(i, original);
         assert!((plugin.param_value(i).unwrap() - original).abs() < 1e-6);
     }
-    assert!(plugin.param_value(27).is_none());
+    assert!(plugin.param_value(28).is_none());
 }
 
 #[test]
@@ -2224,7 +2228,7 @@ fn test_xtc_set_head_model() {
     let id = ParameterId::from("head_model");
     let val = ParameterValue::Int(1);
     plugin.set_parameter(id.clone(), val).unwrap();
-    assert_eq!(plugin.param_value(26), Some(1.0));
+    assert_eq!(plugin.param_value(27), Some(1.0));
 }
 
 /// Test that image source model produces 6 reflection paths for a known geometry

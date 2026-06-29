@@ -34,11 +34,63 @@ use gpui::*;
 use gpui_audio_kit::PotentiometerSize;
 use gpui_px::{ChartTheme, ScaleType, line};
 use math_audio_iir_fir::BiquadFilterType;
-use sotf_audio_player::EQFilter;
+use sotf_audio_player::{EQFilter, PluginSettings};
 use sotf_audio_player_midi::mapping::MidiOverlay;
-use sotf_plugins::param_specs::{eq::BAND_TEMPLATE as EQ, find_by_key as pk};
+use sotf_plugins::param_specs::{
+    eq::BAND_TEMPLATE as EQ, eq::GLOBAL_PARAMS as EQ_GLOBAL, find_by_key as pk,
+    fir_designer::PARAMS as FIR_PARAMS, linear_phase_eq::PARAMS as LP_PARAMS,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
+
+#[derive(Clone, Copy)]
+struct EqBandIndexing {
+    stride: usize,
+    frequency: usize,
+    q: usize,
+    gain: usize,
+    filter_type: usize,
+    active: Option<usize>,
+}
+
+impl EqBandIndexing {
+    const STANDARD: Self = Self {
+        stride: 4,
+        frequency: 0,
+        q: 1,
+        gain: 2,
+        filter_type: 3,
+        active: None,
+    };
+    const FIR: Self = Self {
+        stride: 5,
+        frequency: 1,
+        q: 2,
+        gain: 3,
+        filter_type: 0,
+        active: Some(4),
+    };
+
+    fn param(self, band_idx: usize, local_idx: usize) -> usize {
+        band_idx * self.stride + local_idx
+    }
+}
+
+#[derive(Clone, Copy)]
+enum EqGlobalControl {
+    StandardMaxFilters,
+    StandardTdf2,
+    StandardTopology,
+    LpNumFilters,
+    LpFirLength,
+    LpAutoGain,
+    LpMix,
+    FirNumFilters,
+    FirLength,
+    FirPhaseMode,
+    FirAutoGain,
+    FirMix,
+}
 
 /// Render EQ frequency response using gpui-px with draggable control points
 ///
@@ -48,6 +100,7 @@ fn render_eq_visualization(
     plugin_idx: usize,
     filters: &[EQFilter],
     selected_band: Option<usize>,
+    indexing: EqBandIndexing,
     theme: &Theme,
     width: f32,
 ) -> impl IntoElement {
@@ -289,10 +342,11 @@ fn render_eq_visualization(
 
                         entity_left.update(cx, |state, cx| {
                             state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                            // Update Q (param index = band_idx * 4 + 1)
-                            state
-                                .app
-                                .set_plugin_param(plugin_idx, band_idx * 4 + 1, new_q);
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                indexing.param(band_idx, indexing.q),
+                                new_q,
+                            );
                             cx.notify();
                         });
                         // window.refresh(); // Not needed with cx.notify()
@@ -365,10 +419,11 @@ fn render_eq_visualization(
 
                         entity_right.update(cx, |state, cx| {
                             state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                            // Update Q (param index = band_idx * 4 + 1)
-                            state
-                                .app
-                                .set_plugin_param(plugin_idx, band_idx * 4 + 1, new_q);
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                indexing.param(band_idx, indexing.q),
+                                new_q,
+                            );
                             cx.notify();
                         });
                         // window.refresh();
@@ -402,22 +457,19 @@ fn render_eq_visualization(
                         entity_click.update(cx, |state, cx| {
                             state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                             state.app.plugin_state.selected_eq_band = band_idx;
-                            // Reset frequency to 1000 Hz
                             state.app.set_plugin_param(
                                 plugin_idx,
-                                band_idx * 4,
+                                indexing.param(band_idx, indexing.frequency),
                                 pk(EQ, "freq").default_f64(),
                             );
-                            // Reset Q to 1.0
                             state.app.set_plugin_param(
                                 plugin_idx,
-                                band_idx * 4 + 1,
+                                indexing.param(band_idx, indexing.q),
                                 pk(EQ, "q").default_f64(),
                             );
-                            // Reset gain to 0.0 dB
                             state.app.set_plugin_param(
                                 plugin_idx,
-                                band_idx * 4 + 2,
+                                indexing.param(band_idx, indexing.gain),
                                 pk(EQ, "gain").default_f64(),
                             );
                             cx.notify();
@@ -487,14 +539,16 @@ fn render_eq_visualization(
 
                 entity.update(cx, |state, cx| {
                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                    // Update frequency (param index = band_idx * 4 + 0)
-                    state
-                        .app
-                        .set_plugin_param(plugin_idx, band_idx * 4, new_freq);
-                    // Update gain (param index = band_idx * 4 + 2)
-                    state
-                        .app
-                        .set_plugin_param(plugin_idx, band_idx * 4 + 2, new_gain);
+                    state.app.set_plugin_param(
+                        plugin_idx,
+                        indexing.param(band_idx, indexing.frequency),
+                        new_freq,
+                    );
+                    state.app.set_plugin_param(
+                        plugin_idx,
+                        indexing.param(band_idx, indexing.gain),
+                        new_gain,
+                    );
                     cx.notify();
                 });
                 // window.refresh();
@@ -594,10 +648,20 @@ pub fn render_eq_plugin(
     } else {
         None
     };
+    let is_fir_mode = matches!(&state.mode, EqViewMode::FirDesigner { .. });
+    let is_lp_mode = matches!(
+        &state.mode,
+        EqViewMode::LinearPhase { .. } | EqViewMode::FirDesigner { .. }
+    );
+    let indexing = if is_lp_mode {
+        EqBandIndexing::FIR
+    } else {
+        EqBandIndexing::STANDARD
+    };
 
     // Compute selected param for editing mode
     let highlight_band_idx = if state.is_editing {
-        Some(state.selected_param / 4)
+        Some(state.selected_param / indexing.stride)
     } else {
         Some(selected_band_idx)
     };
@@ -623,16 +687,13 @@ pub fn render_eq_plugin(
             plugin_idx,
             display_filters,
             highlight_band_idx,
+            indexing,
             theme,
             graph_width,
         ));
 
     // Clone values needed for closures
     let channels = state.channels;
-    let is_lp_mode = matches!(
-        state.mode,
-        EqViewMode::LinearPhase { .. } | EqViewMode::FirDesigner { .. }
-    );
     // Linear-phase EQ is global-only; force the toggle off so the renderer's
     // downstream logic doesn't try to surface per-channel data we don't have.
     let per_channel_mode = if is_lp_mode {
@@ -1004,7 +1065,7 @@ pub fn render_eq_plugin(
             let Some(filter) = selected_filter else {
                 return d;
             };
-            let base_param_idx = selected_band_idx * 4;
+            let base_param_idx = selected_band_idx * indexing.stride;
             let midi_overlay = state.midi_overlay;
 
             d.child(
@@ -1032,14 +1093,13 @@ pub fn render_eq_plugin(
                                             .text_color(theme.text_muted)
                                             .child("Type"),
                                     )
-                                    .child(render_topology_controls(
-                                        &ds,
-                                        entity.clone(),
-                                        plugin_idx,
-                                        selected_band_idx,
-                                        filter,
-                                        theme,
-                                    )),
+                                    .when(!is_lp_mode, |row| {
+                                        row.child(render_standard_eq_algorithm_pill(
+                                            &ds,
+                                            state.topology,
+                                            theme,
+                                        ))
+                                    }),
                             )
                             .child(render_filter_type_selector(
                                 &ds,
@@ -1047,7 +1107,7 @@ pub fn render_eq_plugin(
                                 plugin_idx,
                                 &filter.filter_type,
                                 selected_band_idx,
-                                base_param_idx + 3,
+                                base_param_idx + indexing.filter_type,
                                 None,
                                 theme,
                             )),
@@ -1067,7 +1127,7 @@ pub fn render_eq_plugin(
                                 pk(EQ, "freq").min_f64(),
                                 pk(EQ, "freq").max_f64(),
                                 "Hz",
-                                base_param_idx,
+                                base_param_idx + indexing.frequency,
                                 state.selected_param,
                                 state.is_editing,
                                 midi_overlay,
@@ -1082,7 +1142,7 @@ pub fn render_eq_plugin(
                                 pk(EQ, "q").min_f64(),
                                 pk(EQ, "q").max_f64(),
                                 "",
-                                base_param_idx + 1,
+                                base_param_idx + indexing.q,
                                 state.selected_param,
                                 state.is_editing,
                                 midi_overlay,
@@ -1097,18 +1157,30 @@ pub fn render_eq_plugin(
                                 pk(EQ, "gain").min_f64(),
                                 pk(EQ, "gain").max_f64(),
                                 "dB",
-                                base_param_idx + 2,
+                                base_param_idx + indexing.gain,
                                 state.selected_param,
                                 state.is_editing,
                                 midi_overlay,
                                 theme,
-                            )),
+                            ))
+                            .children(indexing.active.map(|active_local_idx| {
+                                render_eq_active_toggle(
+                                    &ds,
+                                    entity.clone(),
+                                    plugin_idx,
+                                    filter,
+                                    base_param_idx + active_local_idx,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    theme,
+                                )
+                            })),
                     ),
             )
         });
 
     // Optional linear-phase info header — shown only for the LP variant.
-    let fir_summary = match state.mode {
+    let fir_summary = match &state.mode {
         EqViewMode::LinearPhase {
             latency_samples,
             latency_ms,
@@ -1116,12 +1188,12 @@ pub fn render_eq_plugin(
             auto_gain,
             mix,
         } => Some((
-            latency_samples,
-            latency_ms,
-            fir_length,
+            *latency_samples,
+            *latency_ms,
+            *fir_length,
             "Linear",
-            auto_gain,
-            mix,
+            *auto_gain,
+            *mix,
         )),
         EqViewMode::FirDesigner {
             latency_samples,
@@ -1131,12 +1203,12 @@ pub fn render_eq_plugin(
             auto_gain,
             mix,
         } => Some((
-            latency_samples,
-            latency_ms,
-            fir_length,
-            phase_mode,
-            auto_gain,
-            mix,
+            *latency_samples,
+            *latency_ms,
+            *fir_length,
+            *phase_mode,
+            *auto_gain,
+            *mix,
         )),
         EqViewMode::Standard => None,
     };
@@ -1153,17 +1225,81 @@ pub fn render_eq_plugin(
                 .rounded(ds.r_md)
                 .text_size(ds.text_sm)
                 .text_color(theme.text_secondary)
-                .child(format!("Filters: {}", state.num_filters))
-                .child(format!("FIR length: {fir_length}"))
-                .child(format!("Phase: {phase_mode}"))
+                .child(render_eq_global_stepper(
+                    &ds,
+                    entity.clone(),
+                    plugin_idx,
+                    if is_fir_mode {
+                        EqGlobalControl::FirNumFilters
+                    } else {
+                        EqGlobalControl::LpNumFilters
+                    },
+                    "Filters",
+                    state.num_filters.to_string(),
+                    theme,
+                ))
+                .child(render_eq_global_stepper(
+                    &ds,
+                    entity.clone(),
+                    plugin_idx,
+                    if is_fir_mode {
+                        EqGlobalControl::FirLength
+                    } else {
+                        EqGlobalControl::LpFirLength
+                    },
+                    "FIR length",
+                    fir_length.to_string(),
+                    theme,
+                ))
+                .child(if is_fir_mode {
+                    render_eq_global_toggle(
+                        &ds,
+                        entity.clone(),
+                        plugin_idx,
+                        EqGlobalControl::FirPhaseMode,
+                        "Phase",
+                        phase_mode == "Minimum",
+                        "Minimum",
+                        "Linear",
+                        theme,
+                    )
+                } else {
+                    div()
+                        .text_size(ds.text_sm)
+                        .child(format!("Phase: {phase_mode}"))
+                        .into_any_element()
+                })
                 .child(format!(
                     "Latency: {latency_samples} samples ({latency_ms:.2} ms)"
                 ))
-                .child(format!(
-                    "Auto-gain: {}",
-                    if auto_gain { "on" } else { "off" }
+                .child(render_eq_global_toggle(
+                    &ds,
+                    entity.clone(),
+                    plugin_idx,
+                    if is_fir_mode {
+                        EqGlobalControl::FirAutoGain
+                    } else {
+                        EqGlobalControl::LpAutoGain
+                    },
+                    "Auto-gain",
+                    auto_gain,
+                    "On",
+                    "Off",
+                    theme,
                 ))
-                .child(format!("Mix: {:.0}%", mix * 100.0))
+                .child(render_eq_global_stepper(
+                    &ds,
+                    entity.clone(),
+                    plugin_idx,
+                    if is_fir_mode {
+                        EqGlobalControl::FirMix
+                    } else {
+                        EqGlobalControl::LpMix
+                    },
+                    "Mix",
+                    format!("{:.0}%", mix * 100.0),
+                    theme,
+                ))
         },
     );
     let lp_analysis = fir_summary.map(
@@ -1180,12 +1316,7 @@ pub fn render_eq_plugin(
     );
 
     // Algorithm info bar for Standard EQ
-    let eq_header = if matches!(state.mode, EqViewMode::Standard) {
-        let topo_label = if state.topology > 0.5 {
-            "SVF"
-        } else {
-            "Biquad"
-        };
+    let eq_header = if matches!(&state.mode, EqViewMode::Standard) {
         Some(
             div()
                 .flex()
@@ -1198,9 +1329,37 @@ pub fn render_eq_plugin(
                 .rounded(ds.r_md)
                 .text_size(ds.text_sm)
                 .text_color(theme.text_secondary)
-                .child(format!("Filters: {}", state.num_filters))
-                .child(format!("Topology: {topo_label}"))
-                .child(format!("TDF-II: {}", if state.tdf2 { "on" } else { "off" })),
+                .child(render_eq_global_stepper(
+                    &ds,
+                    entity.clone(),
+                    plugin_idx,
+                    EqGlobalControl::StandardMaxFilters,
+                    "Filters",
+                    state.num_filters.to_string(),
+                    theme,
+                ))
+                .child(render_eq_global_toggle(
+                    &ds,
+                    entity.clone(),
+                    plugin_idx,
+                    EqGlobalControl::StandardTopology,
+                    "Topology",
+                    state.topology > 0.5,
+                    "SVF",
+                    "Biquad",
+                    theme,
+                ))
+                .child(render_eq_global_toggle(
+                    &ds,
+                    entity.clone(),
+                    plugin_idx,
+                    EqGlobalControl::StandardTdf2,
+                    "TDF-II",
+                    state.tdf2,
+                    "On",
+                    "Off",
+                    theme,
+                )),
         )
     } else {
         None
@@ -1305,138 +1464,249 @@ fn render_lp_analysis_card(
         )
 }
 
-/// Render topology controls for an EQ band: a cycling label that switches
-/// Biquad → Warped → Kautz, plus a contextual secondary control that only
-/// makes sense for the current topology (lambda preset for Warped, +/-
-/// section buttons for Kautz). Biquads still render the topology pill so the
-/// user can opt into a different runtime when authoring by hand.
-fn render_topology_controls(
+fn render_standard_eq_algorithm_pill(d: &Ds, topology: f64, theme: &Theme) -> impl IntoElement {
+    div()
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .text_size(d.text_xs)
+        .font_weight(FontWeight::SEMIBOLD)
+        .rounded(d.r_sm)
+        .bg(theme.background_secondary)
+        .text_color(theme.text_secondary)
+        .child(if topology > 0.5 { "SVF" } else { "Biquad" })
+}
+
+fn render_eq_active_toggle(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
-    band_idx: usize,
     filter: &EQFilter,
+    param_idx: usize,
+    selected_param: usize,
+    is_editing: bool,
     theme: &Theme,
 ) -> AnyElement {
-    use sotf_audio::plugins::EqFilterTopology;
-
-    let label = match filter.topology {
-        EqFilterTopology::Biquad => "IIR",
-        EqFilterTopology::WarpedBiquad => "Warp",
-        EqFilterTopology::KautzFilter => "Kautz",
-    };
-
-    let pill = {
-        let entity_topology = entity.clone();
-        div()
-            .px(d.pad_y)
-            .py(d.pad_y_half)
-            .text_size(d.text_xs)
-            .font_weight(FontWeight::SEMIBOLD)
-            .rounded(d.r_sm)
-            .cursor_pointer()
-            .bg(theme.background_secondary)
-            .text_color(theme.text_primary)
-            .hover(|s| s.bg(theme.surface_hover))
-            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                entity_topology.update(cx, |state, _| {
-                    state.app.cycle_eq_filter_topology(plugin_idx, band_idx);
-                });
-            })
-            .child(label)
-    };
-
-    let secondary: AnyElement = match filter.topology {
-        EqFilterTopology::Biquad => div().into_any_element(),
-        EqFilterTopology::WarpedBiquad => {
-            let lambda_text = filter
-                .lambda
-                .map(|v| format!("λ={v:.2}"))
-                .unwrap_or_else(|| "λ=auto".to_string());
-            let entity_lambda = entity.clone();
+    let active = !filter.muted;
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(d.grid)
+        .rounded(d.r_md)
+        .when(selected_param == param_idx && is_editing, |el| {
+            el.border_1().border_color(theme.accent)
+        })
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .text_color(theme.text_muted)
+                .child("Active"),
+        )
+        .child(
             div()
                 .px(d.pad_y)
                 .py(d.pad_y_half)
                 .text_size(d.text_xs)
+                .font_weight(FontWeight::SEMIBOLD)
                 .rounded(d.r_sm)
                 .cursor_pointer()
-                .bg(theme.background_secondary)
-                .text_color(theme.text_secondary)
-                .hover(|s| s.bg(theme.surface_hover))
+                .when(active, |el| {
+                    el.bg(theme.accent).text_color(theme.text_on_accent)
+                })
+                .when(!active, |el| {
+                    el.bg(theme.background_secondary)
+                        .text_color(theme.text_secondary)
+                        .hover(|s| s.bg(theme.surface_hover))
+                })
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                    entity_lambda.update(cx, |state, _| {
-                        state.app.cycle_eq_filter_lambda(plugin_idx, band_idx);
+                    entity.update(cx, |state, _| {
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            param_idx,
+                            if active { 0.0 } else { 1.0 },
+                        );
                     });
                 })
-                .child(lambda_text)
-                .into_any_element()
-        }
-        EqFilterTopology::KautzFilter => {
-            let count = filter.kautz_sections.len();
-            let pole_freq = filter.frequency;
-            let q = filter.q;
-            let gain = filter.gain_db;
-            let entity_add = entity.clone();
-            let entity_remove = entity.clone();
-            div()
-                .flex()
-                .items_center()
-                .gap(d.grid)
-                .child(
-                    div()
-                        .text_size(d.text_xs)
-                        .text_color(theme.text_muted)
-                        .child(format!(
-                            "{count} section{}",
-                            if count == 1 { "" } else { "s" }
-                        )),
-                )
-                .child(
-                    div()
-                        .px(d.pad_y)
-                        .py(d.pad_y_half)
-                        .text_size(d.text_xs)
-                        .rounded(d.r_sm)
-                        .cursor_pointer()
-                        .bg(theme.background_secondary)
-                        .text_color(theme.text_primary)
-                        .hover(|s| s.bg(theme.surface_hover))
-                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                            entity_add.update(cx, |state, _| {
-                                state
-                                    .app
-                                    .add_eq_kautz_section(plugin_idx, band_idx, pole_freq, q, gain);
-                            });
-                        })
-                        .child("+"),
-                )
-                .child(
-                    div()
-                        .px(d.pad_y)
-                        .py(d.pad_y_half)
-                        .text_size(d.text_xs)
-                        .rounded(d.r_sm)
-                        .cursor_pointer()
-                        .bg(theme.background_secondary)
-                        .text_color(theme.text_primary)
-                        .hover(|s| s.bg(theme.surface_hover))
-                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                            entity_remove.update(cx, |state, _| {
-                                state.app.pop_eq_kautz_section(plugin_idx, band_idx);
-                            });
-                        })
-                        .child("-"),
-                )
-                .into_any_element()
-        }
-    };
+                .child(if active { "On" } else { "Off" }),
+        )
+        .into_any_element()
+}
 
+fn mark_eq_global_update(state: &mut AppState) {
+    state.app.plugin_state.update_state.pending_plugin_update =
+        Some(crate::app::types::PluginUpdateType::Structural);
+}
+
+fn adjust_eq_global_control(
+    entity: &Entity<AppState>,
+    plugin_idx: usize,
+    control: EqGlobalControl,
+    delta: f64,
+    cx: &mut App,
+) {
+    entity.update(cx, |state, cx| {
+        let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx) else {
+            return;
+        };
+        match (&mut plugin.settings, control) {
+            (PluginSettings::EQ { max_filters, .. }, EqGlobalControl::StandardMaxFilters) => {
+                *max_filters = ((*max_filters as i64) + delta as i64).clamp(
+                    pk(EQ_GLOBAL, "max_filters").min_f64() as i64,
+                    pk(EQ_GLOBAL, "max_filters").max_f64() as i64,
+                ) as usize;
+            }
+            (PluginSettings::EQ { tdf2, .. }, EqGlobalControl::StandardTdf2) => *tdf2 = !*tdf2,
+            (PluginSettings::EQ { topology, .. }, EqGlobalControl::StandardTopology) => {
+                *topology = if *topology > 0.5 { 0.0 } else { 1.0 };
+            }
+            (PluginSettings::LinearPhaseEq { num_filters, .. }, EqGlobalControl::LpNumFilters) => {
+                *num_filters = (*num_filters + delta).clamp(
+                    pk(LP_PARAMS, "num_filters").min_f64(),
+                    pk(LP_PARAMS, "num_filters").max_f64(),
+                );
+            }
+            (PluginSettings::LinearPhaseEq { fir_length, .. }, EqGlobalControl::LpFirLength) => {
+                *fir_length = (*fir_length + delta).clamp(
+                    pk(LP_PARAMS, "fir_length").min_f64(),
+                    pk(LP_PARAMS, "fir_length").max_f64(),
+                );
+            }
+            (PluginSettings::LinearPhaseEq { auto_gain, .. }, EqGlobalControl::LpAutoGain) => {
+                *auto_gain = !*auto_gain;
+            }
+            (PluginSettings::LinearPhaseEq { mix, .. }, EqGlobalControl::LpMix) => {
+                *mix = (*mix + delta * 0.01).clamp(
+                    pk(LP_PARAMS, "mix").min_f64(),
+                    pk(LP_PARAMS, "mix").max_f64(),
+                );
+            }
+            (PluginSettings::FirDesigner { num_filters, .. }, EqGlobalControl::FirNumFilters) => {
+                *num_filters = (*num_filters + delta).clamp(
+                    pk(FIR_PARAMS, "num_filters").min_f64(),
+                    pk(FIR_PARAMS, "num_filters").max_f64(),
+                );
+            }
+            (PluginSettings::FirDesigner { fir_length, .. }, EqGlobalControl::FirLength) => {
+                *fir_length = (*fir_length + delta).clamp(
+                    pk(FIR_PARAMS, "fir_length").min_f64(),
+                    pk(FIR_PARAMS, "fir_length").max_f64(),
+                );
+            }
+            (PluginSettings::FirDesigner { phase_mode, .. }, EqGlobalControl::FirPhaseMode) => {
+                *phase_mode = if *phase_mode > 0.5 { 0.0 } else { 1.0 };
+            }
+            (PluginSettings::FirDesigner { auto_gain, .. }, EqGlobalControl::FirAutoGain) => {
+                *auto_gain = !*auto_gain;
+            }
+            (PluginSettings::FirDesigner { mix, .. }, EqGlobalControl::FirMix) => {
+                *mix = (*mix + delta * 0.01).clamp(
+                    pk(FIR_PARAMS, "mix").min_f64(),
+                    pk(FIR_PARAMS, "mix").max_f64(),
+                );
+            }
+            _ => return,
+        }
+        mark_eq_global_update(state);
+        cx.notify();
+    });
+}
+
+fn render_eq_global_stepper(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    control: EqGlobalControl,
+    label: &'static str,
+    value: String,
+    theme: &Theme,
+) -> AnyElement {
+    let minus_entity = entity.clone();
+    let plus_entity = entity;
     div()
         .flex()
         .items_center()
         .gap(d.grid)
-        .child(pill)
-        .child(secondary)
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .rounded(d.r_sm)
+        .bg(theme.background_secondary)
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .text_color(theme.text_muted)
+                .child(label),
+        )
+        .child(
+            div()
+                .px(d.grid)
+                .cursor_pointer()
+                .text_color(theme.text_secondary)
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    adjust_eq_global_control(&minus_entity, plugin_idx, control, -1.0, cx);
+                })
+                .child("-"),
+        )
+        .child(
+            div()
+                .min_w(px(42.0))
+                .text_center()
+                .text_size(d.text_sm)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_primary)
+                .child(value),
+        )
+        .child(
+            div()
+                .px(d.grid)
+                .cursor_pointer()
+                .text_color(theme.text_secondary)
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    adjust_eq_global_control(&plus_entity, plugin_idx, control, 1.0, cx);
+                })
+                .child("+"),
+        )
+        .into_any_element()
+}
+
+fn render_eq_global_toggle(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    control: EqGlobalControl,
+    label: &'static str,
+    value: bool,
+    on_label: &'static str,
+    off_label: &'static str,
+    theme: &Theme,
+) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(d.grid)
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .rounded(d.r_sm)
+        .cursor_pointer()
+        .bg(if value {
+            theme.accent
+        } else {
+            theme.background_secondary
+        })
+        .text_color(if value {
+            theme.text_on_accent
+        } else {
+            theme.text_secondary
+        })
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            adjust_eq_global_control(&entity, plugin_idx, control, 1.0, cx);
+        })
+        .child(div().text_size(d.text_xs).child(label))
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(if value { on_label } else { off_label }),
+        )
         .into_any_element()
 }
 

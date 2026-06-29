@@ -177,25 +177,26 @@ impl PluginParamDef for Params {
             } else {
                 0.0
             }),
-            16 => Some(self.room_width_m),
-            17 => Some(self.room_depth_m),
-            18 => Some(self.wall_absorption),
-            19 => Some(self.reflection_beta_boost),
-            20 => Some(if self.bypass_xtc_filters { 1.0 } else { 0.0 }),
-            21 => Some(if self.bypass_spectral_normalization {
+            16 => None,
+            17 => Some(self.room_width_m),
+            18 => Some(self.room_depth_m),
+            19 => Some(self.wall_absorption),
+            20 => Some(self.reflection_beta_boost),
+            21 => Some(if self.bypass_xtc_filters { 1.0 } else { 0.0 }),
+            22 => Some(if self.bypass_spectral_normalization {
                 1.0
             } else {
                 0.0
             }),
-            22 => Some(if self.bypass_neumann_refinement {
+            23 => Some(if self.bypass_neumann_refinement {
                 1.0
             } else {
                 0.0
             }),
-            23 => Some(if self.auto_gain_enabled { 1.0 } else { 0.0 }),
-            24 => Some(self.auto_gain_max_db),
-            25 => Some(self.auto_gain_smoothing_ms),
-            26 => Some(self.head_model),
+            24 => Some(if self.auto_gain_enabled { 1.0 } else { 0.0 }),
+            25 => Some(self.auto_gain_max_db),
+            26 => Some(self.auto_gain_smoothing_ms),
+            27 => Some(self.head_model),
             _ => None,
         }
     }
@@ -218,17 +219,18 @@ impl PluginParamDef for Params {
             13 => self.spectral_normalization = value > 0.5,
             14 => self.pinna_model_enabled = value > 0.5,
             15 => self.room_reflections_enabled = value > 0.5,
-            16 => self.room_width_m = value,
-            17 => self.room_depth_m = value,
-            18 => self.wall_absorption = value,
-            19 => self.reflection_beta_boost = value,
-            20 => self.bypass_xtc_filters = value > 0.5,
-            21 => self.bypass_spectral_normalization = value > 0.5,
-            22 => self.bypass_neumann_refinement = value > 0.5,
-            23 => self.auto_gain_enabled = value > 0.5,
-            24 => self.auto_gain_max_db = value,
-            25 => self.auto_gain_smoothing_ms = value,
-            26 => self.head_model = value,
+            16 => {}
+            17 => self.room_width_m = value,
+            18 => self.room_depth_m = value,
+            19 => self.wall_absorption = value,
+            20 => self.reflection_beta_boost = value,
+            21 => self.bypass_xtc_filters = value > 0.5,
+            22 => self.bypass_spectral_normalization = value > 0.5,
+            23 => self.bypass_neumann_refinement = value > 0.5,
+            24 => self.auto_gain_enabled = value > 0.5,
+            25 => self.auto_gain_max_db = value,
+            26 => self.auto_gain_smoothing_ms = value,
+            27 => self.head_model = value,
             _ => {}
         }
     }

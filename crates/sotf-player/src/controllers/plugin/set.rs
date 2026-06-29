@@ -35,6 +35,42 @@ pub(super) fn set_eq_band_field_for_plugin(
     }
 }
 
+fn set_fir_eq_band_field_for_plugin(
+    filter_idx: usize,
+    field_idx: usize,
+    filters: &mut [EQFilter],
+    value: f64,
+) -> bool {
+    let Some(filter) = filters.get_mut(filter_idx) else {
+        return false;
+    };
+    match field_idx {
+        0 => {
+            let types = eq_band_types(false);
+            let type_idx = (value as usize).clamp(0, types.len() - 1);
+            filter.filter_type = types[type_idx];
+            true
+        }
+        1 => {
+            filter.frequency = value.clamp(20.0, 20_000.0);
+            true
+        }
+        2 => {
+            filter.q = value.clamp(0.1, 10.0);
+            true
+        }
+        3 => {
+            filter.gain_db = value.clamp(-24.0, 24.0);
+            true
+        }
+        4 => {
+            filter.muted = value <= 0.5;
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Set a specific parameter value. Returns true if the parameter was set.
 ///
 /// Most plugins delegate to `PluginSettings::set_param_value()` (generic path).
@@ -55,10 +91,10 @@ pub(super) fn set_plugin_param_value(
         }
         PluginSettings::LinearPhaseEq { filters, .. }
         | PluginSettings::FirDesigner { filters, .. } => {
-            let filter_idx = param_idx / 4;
-            let field_idx = param_idx % 4;
+            let filter_idx = param_idx / 5;
+            let field_idx = param_idx % 5;
 
-            set_eq_band_field_for_plugin(filter_idx, field_idx, filters, value, false)
+            set_fir_eq_band_field_for_plugin(filter_idx, field_idx, filters, value)
         }
         // === SpectrumAnalyzer: no_params_struct — not in the macro, needs manual handling ===
         PluginSettings::SpectrumAnalyzer {
@@ -71,15 +107,27 @@ pub(super) fn set_plugin_param_value(
             ..
         } => match param_idx {
             0 => {
-                *num_bins = (value as usize).clamp(10, 256);
+                use sotf_plugins::param_specs::{find_by_key as pk, spectrum::PARAMS as SP};
+                *num_bins = (value as usize).clamp(
+                    pk(SP, "num_bins").min_f64() as usize,
+                    pk(SP, "num_bins").max_f64() as usize,
+                );
                 true
             }
             1 => {
-                *min_freq = (value as f32).clamp(20.0, 20000.0);
+                use sotf_plugins::param_specs::{find_by_key as pk, spectrum::PARAMS as SP};
+                *min_freq = (value as f32).clamp(
+                    pk(SP, "min_freq").min_f64() as f32,
+                    pk(SP, "min_freq").max_f64() as f32,
+                );
                 true
             }
             2 => {
-                *max_freq = (value as f32).clamp(20.0, 20000.0);
+                use sotf_plugins::param_specs::{find_by_key as pk, spectrum::PARAMS as SP};
+                *max_freq = (value as f32).clamp(
+                    pk(SP, "max_freq").min_f64() as f32,
+                    pk(SP, "max_freq").max_f64() as f32,
+                );
                 true
             }
             3 => {
@@ -388,6 +436,61 @@ mod tests {
                 assert_eq!(filters[0].filter_type, BiquadFilterType::Lowshelf)
             }
             _ => panic!("expected EQ"),
+        }
+    }
+
+    #[test]
+    fn set_plugin_param_value_linear_phase_eq_uses_five_param_band_stride() {
+        let mut settings = PluginSettings::LinearPhaseEq {
+            filters: vec![
+                EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0),
+                EQFilter::new(BiquadFilterType::Peak, 2000.0, 1.0, 0.0),
+            ],
+            num_filters: 2.0,
+            fir_length: 1024.0,
+            auto_gain: true,
+            mix: 1.0,
+        };
+        let mut changed = false;
+
+        // Band 1 frequency is index 6: 5 params for band 0, then local field 1.
+        assert!(set_plugin_param_value(
+            &mut settings,
+            6,
+            3200.0,
+            &mut changed
+        ));
+        match settings {
+            PluginSettings::LinearPhaseEq { filters, .. } => {
+                assert_eq!(filters[0].frequency, 1000.0);
+                assert_eq!(filters[1].frequency, 3200.0);
+            }
+            _ => panic!("expected LinearPhaseEq"),
+        }
+    }
+
+    #[test]
+    fn set_plugin_param_value_fir_designer_active_field_controls_mute_state() {
+        let mut settings = PluginSettings::FirDesigner {
+            filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)],
+            num_filters: 1.0,
+            fir_length: 2048.0,
+            phase_mode: 0.0,
+            auto_gain: true,
+            mix: 1.0,
+        };
+        let mut changed = false;
+
+        assert!(set_plugin_param_value(&mut settings, 4, 0.0, &mut changed));
+        match &settings {
+            PluginSettings::FirDesigner { filters, .. } => assert!(filters[0].muted),
+            _ => panic!("expected FirDesigner"),
+        }
+
+        assert!(set_plugin_param_value(&mut settings, 4, 1.0, &mut changed));
+        match settings {
+            PluginSettings::FirDesigner { filters, .. } => assert!(!filters[0].muted),
+            _ => panic!("expected FirDesigner"),
         }
     }
 

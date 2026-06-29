@@ -6,6 +6,7 @@ use super::misc::SLIDER_HEIGHT;
 use super::misc::TRANSFER_CURVE_SIZE;
 use crate::app::AppState;
 use crate::components::design::Ds;
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -157,18 +158,13 @@ pub fn render_mb_expander_plugin(
             Some('p'),
             theme,
         ))
-        .child(render_knob(
+        .child(render_detection_mode_selector(
+            d,
             entity.clone(),
             plugin_idx,
-            "Detection",
-            state.detection_mode as f64,
-            pk(ME, "detection_mode").min_f64(),
-            pk(ME, "detection_mode").max_f64(),
-            "",
-            16,
+            state.detection_mode,
             state.selected_param,
             state.is_editing,
-            Some('d'),
             theme,
         ))
         .child(render_knob(
@@ -510,4 +506,68 @@ pub fn render_mb_expander_plugin(
             .child(center_col)
             .child(right_col),
     )
+}
+
+fn render_detection_mode_selector(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    current: i32,
+    selected_param: usize,
+    is_editing: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    let param_idx = 16;
+    div()
+        .flex()
+        .flex_col()
+        .items_stretch()
+        .gap(d.grid)
+        .w(px(130.0))
+        .rounded(d.r_md)
+        .when(selected_param == param_idx && is_editing, |el| {
+            el.border_1().border_color(theme.accent)
+        })
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .text_color(theme.text_muted)
+                .child("Detection"),
+        )
+        .child(
+            div()
+                .flex()
+                .gap(d.grid)
+                .children(
+                    ["Peak", "RMS"]
+                        .into_iter()
+                        .enumerate()
+                        .map(move |(idx, label)| {
+                            let is_active = current as usize == idx;
+                            let entity = entity.clone();
+                            div()
+                                .text_size(d.text_xs)
+                                .px(d.pad_y)
+                                .py(d.pad_y_half)
+                                .rounded(d.r_sm)
+                                .cursor_pointer()
+                                .when(is_active, |el| {
+                                    el.bg(theme.accent).text_color(theme.text_on_accent)
+                                })
+                                .when(!is_active, |el| {
+                                    el.bg(theme.background_secondary)
+                                        .text_color(theme.text_secondary)
+                                        .hover(|s| s.bg(theme.surface_hover))
+                                })
+                                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                    entity.update(cx, |state, _| {
+                                        state
+                                            .app
+                                            .set_plugin_param(plugin_idx, param_idx, idx as f64);
+                                    });
+                                })
+                                .child(label)
+                        }),
+                ),
+        )
 }

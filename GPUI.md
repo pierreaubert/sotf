@@ -44,10 +44,22 @@ Toolkit reference repo:
   conformance tools.
 - `../gpui-toolkit/crates/gpui-ios` and `../gpui-toolkit/crates/gpui-au`:
   platform backends for mobile and Audio Unit embedding.
+- `../gpui-toolkit/crates/gpui-scaffolder`: CLI for generating standalone
+  `gpui-miniapp` projects.
+- `../gpui-toolkit/crates/gpui-showcase`: standalone component gallery binary
+  for `gpui-ui-kit`.
+- `../gpui-toolkit/crates/gpui-toolkit`: aggregate crate that re-exports the
+  whole toolkit family (useful for quick prototypes, not the default for SOTF
+  production crates).
 
-SOTF depends on the `0.7` branch of `gpui-toolkit` through workspace
+SOTF depends on the `0.8` line of `gpui-toolkit` through workspace
 dependencies in the root `Cargo.toml`. Use `../gpui-toolkit` as the local source
 of truth for APIs, examples, and expected patterns.
+
+Whenever you work on SOTF GPUI code, also read `../gpui-toolkit/gpui-skill.md`.
+It contains the current toolkit-wide guidance (crate selection, rendering
+patterns, performance anti-patterns, and validation workflows) that is shared
+across this repo and downstream consumers.
 
 ## Required Priorities for Every GPUI App
 
@@ -67,6 +79,12 @@ later polish:
    - Do not scatter raw pixel constants through app UI. In `app-gpui`, follow
      `crates/app-gpui/AGENTS.md`: use `Ds::from_cx(cx)`, `spacing::*`,
      `radius::*`, or existing design-system wrappers.
+   - Run `python3 scripts/check-design-tokens.py` before committing UI changes.
+     It flags raw `px(N.0)` values and manual `Text::new(...).size().weight()`
+     chains that have semantic constructors in `gpui-ui-kit`.
+   - Prefer semantic typography constructors (`Text::caption`, `Text::eyebrow`,
+     `Text::section_header`, `Text::label`, `Heading::h1`/`h4`) over rebuilding
+     the same size/weight chain by hand.
    - Keep dense product UI calm and scannable. SOTF is an audio workstation and
      player, not a marketing page.
 
@@ -91,6 +109,55 @@ later polish:
    - Keep focus ownership clear when opening and closing overlays.
    - Use accessible labels/roles when components expose them.
    - Keyboard navigation should match visible selection state.
+
+## Performance & Correctness
+
+Both SOTF and `gpui-toolkit` have repeatedly fixed the same hot-path mistakes.
+Avoid them in new GPUI code:
+
+### Zero-copy and caching
+
+- Move data generation (paths, scales, tick arrays, spectra) out of the
+  paint/render closure and cache it in the component model.
+- Never clone the full theme inside a render loop; theme state is already
+  reference-counted (`Arc<Theme>`) in the toolkit.
+- Reuse buffers and textures rather than reallocating per frame. Per-frame
+  allocations in meters, spectrum views, and waveform renders are a common
+  source of UI jank.
+- Use `gpui-profiler` from `../gpui-toolkit` when diagnosing allocation hot
+  paths.
+
+### Animation lifetimes
+
+- Use `WeakEntity` for animation timers so closures do not keep dead views
+  alive.
+- Drive animations from background timers with a capped frame rate, not from
+  `Render`.
+
+### Focus and input stability
+
+- `focus_handle.is_focused(window)` returns `false` during
+  `RenderOnce::render()` because the old element is destroyed before the new
+  one calls `.track_focus()`. Do not gate editing state on `is_focused()` during
+  render; trust the component's internal state and use `window.on_focus_out()`
+  for blur detection.
+- GPUI dispatches action key bindings **before** `on_key_down` handlers. If the
+  app binds `-`, `enter`, or similar keys, those bindings consume keystrokes
+  before `Input`/`NumberInput` sees them. Switch the root `key_context` between
+  `"PlayerView"` and `"TextInput"` and include
+  `gpui_ui_kit::is_number_input_editing()` in the text-input-mode check.
+- Never wrap an `Input` or `NumberInput` in a parent
+  `div().on_key_down(|..| cx.stop_propagation())`. Parent capture-phase handlers
+  fire before the focused child's handler and will block all keystrokes. The
+  input components already call `cx.stop_propagation()` internally when they
+  consume a key.
+
+### Layout and state
+
+- Persist expensive interactive surfaces (e.g., `WorkflowCanvas`, complex
+  pickers) in the parent model instead of reconstructing them every render.
+- Avoid cloning full collections (queues, groups, peak-hold arrays, loudness
+  history) on every render; pass references or cache the rendered data.
 
 ## Building SOTF GPUI Apps
 
@@ -145,6 +212,10 @@ cargo check -p gpui-themes
 Showcase builds:
 
 ```bash
+# Standalone component gallery (now in its own crate)
+cargo run -p gpui-showcase --release
+
+# Family demos
 just demo-ui-kit
 just demo-builder
 just demo-component-lab

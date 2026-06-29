@@ -1,4 +1,5 @@
 use crate::driver::AppDriver;
+use gpui::{Modifiers, MouseButton};
 use sotf_audio_player_gpui::app::InputMode;
 use sotf_audio_player_gpui::app::actions::ToggleSearch;
 use std::error::Error;
@@ -18,15 +19,48 @@ impl<'a, 'b> LibraryPage<'a, 'b> {
         Ok(())
     }
 
+    pub fn click_sidebar_search(&mut self) -> Result<(), Box<dyn Error>> {
+        let bounds = self
+            .driver
+            .cx
+            .debug_bounds("nav-search")
+            .ok_or("sidebar search bounds should be available")?;
+        let center = bounds.center();
+        self.driver
+            .cx
+            .simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
+        self.driver
+            .cx
+            .simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
+        self.driver.run_until_parked();
+        Ok(())
+    }
+
     pub fn is_search_focused(&mut self) -> bool {
         self.driver
             .read_app(|app| app.ui_state.input_mode == InputMode::Search)
     }
 
+    pub fn focus_player_root(&mut self) {
+        self.driver
+            .view
+            .update(self.driver.cx, |view, window, cx| {
+                view.focus_handle.focus(window, cx);
+            })
+            .unwrap();
+        self.driver.run_until_parked();
+    }
+
     pub fn type_search_query(&mut self, query: &str) {
-        // We type one char at a time to ensure events are processed
         self.driver.simulate_keystrokes(query);
         self.driver.run_until_parked();
+    }
+
+    pub fn type_search_query_one_char_at_a_time(&mut self, query: &str) {
+        for ch in query.chars() {
+            self.driver.simulate_keystrokes(&ch.to_string());
+            self.driver.run_until_parked();
+        }
     }
 
     pub fn get_search_query(&mut self) -> String {

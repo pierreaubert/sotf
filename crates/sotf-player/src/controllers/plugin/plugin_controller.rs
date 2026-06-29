@@ -563,6 +563,14 @@ impl PluginController {
                     *ir_file = value;
                     update_needed = true;
                 }
+                PluginSettings::XTC { room_ir_file, .. } if param_idx == 16 => {
+                    if !value.is_empty() {
+                        crate::security::validate_plugin_file_path(Path::new(&value))
+                            .map_err(|e| e.to_string())?;
+                    }
+                    *room_ir_file = if value.is_empty() { None } else { Some(value) };
+                    update_needed = true;
+                }
                 PluginSettings::BinauralDecoder { sofa_file, .. } if param_idx == 0 => {
                     if !value.is_empty() {
                         crate::security::validate_plugin_file_path(Path::new(&value))
@@ -620,6 +628,14 @@ impl PluginController {
                             .map_err(|e| e.to_string())?;
                     }
                     *ir_file = value;
+                    update_needed = true;
+                }
+                PluginSettings::XTC { room_ir_file, .. } if param_idx == 16 => {
+                    if !value.is_empty() {
+                        crate::security::validate_plugin_file_path(Path::new(&value))
+                            .map_err(|e| e.to_string())?;
+                    }
+                    *room_ir_file = if value.is_empty() { None } else { Some(value) };
                     update_needed = true;
                 }
                 PluginSettings::BinauralDecoder { sofa_file, .. } if param_idx == 0 => {

@@ -37,6 +37,9 @@ pub(super) fn extract_file_paths(
                 PluginSettings::Convolution { ir_file, .. } if spec.engine_key == "ir_file" => {
                     ir_file.clone()
                 }
+                PluginSettings::XTC { room_ir_file, .. } if spec.engine_key == "room_ir_file" => {
+                    room_ir_file.clone().unwrap_or_default()
+                }
                 PluginSettings::ABCompare {
                     path_a_config,
                     path_b_config,

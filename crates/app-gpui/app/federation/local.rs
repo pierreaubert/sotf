@@ -145,25 +145,38 @@ impl App {
         self.save_federation_source_or_revert(index, previous, "rename federation source");
     }
 
-    /// Toggle MPD server enabled state and persist.
-    pub fn toggle_mpd_server(&mut self) {
-        self.federation.server_config.mpd.enabled = !self.federation.server_config.mpd.enabled;
+    /// Set MPD server enabled state and persist.
+    pub fn set_mpd_server_enabled(&mut self, enabled: bool) {
+        self.federation.server_config.mpd.enabled = enabled;
         self.save_server_config();
     }
 
-    /// Toggle DLNA server enabled state and persist.
-    pub fn toggle_dlna_server(&mut self) {
-        self.federation.server_config.dlna.enabled = !self.federation.server_config.dlna.enabled;
+    /// Set DLNA server enabled state and persist.
+    pub fn set_dlna_server_enabled(&mut self, enabled: bool) {
+        self.federation.server_config.dlna.enabled = enabled;
+        self.save_server_config();
+    }
+
+    /// Set the local SOTF API enabled state and persist.
+    pub fn set_sotf_api_enabled(&mut self, enabled: bool) {
+        self.federation.server_config.api.enabled = enabled;
+        if !enabled {
+            self.ui_state.show_sotf_api_connection_qr = false;
+        }
         self.save_server_config();
     }
 
     /// Toggle the local SOTF API connection QR. When showing the QR, make sure
-    /// the API is enabled and has a bearer token so the encoded payload is
-    /// immediately usable by remote clients.
+    /// the enabled API has a bearer token so the encoded payload is immediately
+    /// usable by remote clients.
     pub fn toggle_sotf_api_connection_qr(&mut self) -> Result<(), String> {
         if self.ui_state.show_sotf_api_connection_qr {
             self.ui_state.show_sotf_api_connection_qr = false;
             return Ok(());
+        }
+
+        if !self.federation.server_config.api.enabled {
+            return Err("Enable the SOTF API before showing its QR code.".to_string());
         }
 
         if sotf_audio_player::server::ensure_sotf_api_connection_config(

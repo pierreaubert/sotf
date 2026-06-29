@@ -168,3 +168,70 @@ async fn test_search_flow(cx: &mut gpui::TestAppContext) {
     }
     assert!(result.is_ok());
 }
+
+pub struct SearchInputKeepsFocusScenario;
+
+impl TestScenario for SearchInputKeepsFocusScenario {
+    fn name(&self) -> &'static str {
+        "Search Library Input Keeps Focus"
+    }
+
+    fn setup(&mut self, cx: &mut gpui::TestAppContext) -> Result<(), Box<dyn Error>> {
+        cx.update(|cx| {
+            cx.bind_keys(sotf_audio_player_gpui::app::keybindings::get_keybindings(
+                sotf_audio_player_gpui::app::KeymapPreset::Default,
+            ));
+        });
+        Ok(())
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        view: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut driver = AppDriver::new(cx, view);
+        driver.navigate_to(Screen::Home);
+
+        let mut page = LibraryPage::new(&mut driver);
+        page.click_sidebar_search()?;
+
+        page.type_search_query_one_char_at_a_time("s");
+        if page.get_search_query() != "s" {
+            return Err("Search query should contain the first typed letter".into());
+        }
+
+        // Regression guard for the live symptom: after the first search update,
+        // focus can end up back on the player root while Search mode remains
+        // active. The remaining keystrokes must still extend the search query.
+        page.focus_player_root();
+        page.type_search_query_one_char_at_a_time("earch");
+
+        let query = page.get_search_query();
+        if query != "search" {
+            return Err(format!(
+                "Search query should preserve every typed character. Expected 'search', got '{}'",
+                query
+            )
+            .into());
+        }
+
+        Ok(())
+    }
+
+    fn teardown(&mut self, _cx: &mut gpui::TestAppContext) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+}
+
+#[gpui::test]
+async fn test_search_input_keeps_focus_between_keystrokes(cx: &mut gpui::TestAppContext) {
+    let scenario = SearchInputKeepsFocusScenario;
+    let runner = E2ERunner::new(scenario);
+    let result = runner.run(cx).await;
+
+    if let Err(e) = &result {
+        println!("Test failed: {}", e);
+    }
+    assert!(result.is_ok());
+}

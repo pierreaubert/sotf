@@ -1336,6 +1336,12 @@ fn render_bar_meter(
                     .copied()
                     .reduce(f32::max)
                     .map(|v| v as f64)
+            } else if let Some(dd) = d.downcast_ref::<sotf_plugins::DeEsserData>() {
+                dd.gain_reduction_db
+                    .iter()
+                    .copied()
+                    .reduce(f32::max)
+                    .map(|v| v as f64)
             } else {
                 None
             }
@@ -1444,10 +1450,16 @@ fn render_file_picker(
                 .hover(|s| s.bg(theme.surface_hover))
                 .on_click(move |_, _, cx| match engine_key {
                     "sofa_file" => {
-                        cx.dispatch_action(&OpenSofaFile { plugin_idx });
+                        cx.dispatch_action(&OpenSofaFile {
+                            plugin_idx,
+                            param_idx: idx,
+                        });
                     }
-                    "ir_file" => {
-                        cx.dispatch_action(&OpenIrFile { plugin_idx });
+                    "ir_file" | "room_ir_file" => {
+                        cx.dispatch_action(&OpenIrFile {
+                            plugin_idx,
+                            param_idx: idx,
+                        });
                     }
                     _ => {
                         log::warn!("No file open action for engine_key: {}", engine_key);

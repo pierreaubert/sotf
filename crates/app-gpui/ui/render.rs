@@ -383,8 +383,55 @@ impl Render for PlayerView {
                 );
 
                 match input_mode {
-                    // Search mode now uses Input component's native text handling
-                    // No global keyboard interception needed
+                    crate::app::InputMode::Search => {
+                        // The Input component owns normal typing while it is focused.
+                        // If focus slips back to the player root while Search mode is
+                        // still active, preserve the user's keystrokes instead of
+                        // letting the visible query get stuck after the first letter.
+                        if !view.search_focus_handle.is_focused(_window) {
+                            let key = event.keystroke.key.as_str();
+                            let text = event
+                                .keystroke
+                                .key_char
+                                .as_deref()
+                                .filter(|text| !text.is_empty())
+                                .map(str::to_string)
+                                .or_else(|| (key.chars().count() == 1).then(|| key.to_string()));
+
+                            let handled = if key == "backspace" {
+                                view.state.update(cx, |state, cx| {
+                                    state.app.library_state.search_query.pop();
+                                    cx.notify();
+                                });
+                                true
+                            } else if let Some(text) = text {
+                                view.state.update(cx, |state, cx| {
+                                    let mut query = state.app.library_state.search_query.clone();
+                                    query.push_str(&text);
+                                    state.app.library_state.set_search_query(query);
+                                    if state
+                                        .app
+                                        .remote
+                                        .server_store
+                                        .selected_server_id
+                                        .is_some()
+                                    {
+                                        state.app.remote.clear_remote_album_page();
+                                        state.app.remote.refresh_requests.visible_album_page = true;
+                                    }
+                                    cx.notify();
+                                });
+                                true
+                            } else {
+                                false
+                            };
+
+                            if handled {
+                                cx.stop_propagation();
+                                view.search_focus_handle.focus(_window, cx);
+                            }
+                        }
+                    }
                     crate::app::InputMode::AddDirectory => {
                         cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_directory_input(event, cx);

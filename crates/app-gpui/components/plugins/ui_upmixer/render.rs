@@ -190,6 +190,13 @@ fn render_main_area(
         .items_start()
         .justify_center()
         .gap(d.section)
+        .child(render_speaker_config_selector(
+            d,
+            entity.clone(),
+            plugin_idx,
+            state,
+            theme,
+        ))
         // Channel Gains
         .child(
             div()
@@ -350,6 +357,55 @@ fn render_main_area(
         )
 }
 
+fn render_speaker_config_selector(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    let labels = pk(UP, "speaker_config").choice_labels();
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.grid)
+        .p(d.pad_y)
+        .bg(theme.surface)
+        .rounded(d.r_lg)
+        .child(render_section_header(d, "Output", theme))
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap(d.grid)
+                .children(labels.iter().enumerate().map(|(i, label)| {
+                    let is_active = *label == state.speaker_config;
+                    let entity = entity.clone();
+                    render_tab_button(
+                        d,
+                        match i {
+                            0 => "upmix-speaker-51",
+                            1 => "upmix-speaker-714",
+                            2 => "upmix-speaker-916",
+                            _ => "upmix-speaker-other",
+                        },
+                        label,
+                        is_active,
+                        theme,
+                    )
+                    .on_click(move |_, _, cx| {
+                        entity.update(cx, |state, _| {
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                param_idx::SPEAKER_CONFIG,
+                                i as f64,
+                            );
+                        });
+                    })
+                })),
+        )
+}
+
 /// Render the configuration row based on selected config menu item
 fn render_config_row(
     d: &Ds,
@@ -461,6 +517,20 @@ fn render_config_lfe(
                     pk(UP, "lfe_gain").max_f64(),
                     "x",
                     param_idx::LFE_GAIN,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Bandpass",
+                    state.bandpass_hz,
+                    pk(UP, "bandpass_hz").min_f64(),
+                    pk(UP, "bandpass_hz").max_f64(),
+                    "Hz",
+                    param_idx::BANDPASS_HZ,
                     state.selected_param,
                     state.is_editing,
                     None,
@@ -991,6 +1061,15 @@ fn render_config_analysis(
                     param_idx::LOW_LATENCY,
                     theme,
                 ))
+                .child(render_diag_toggle(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Binaural",
+                    state.binaural_preview,
+                    param_idx::BINAURAL_PREVIEW,
+                    theme,
+                ))
                 // Analysis: Freq Resolution selector
                 .child({
                     let freq_res = state.frequency_resolution;
@@ -1046,6 +1125,53 @@ fn render_config_analysis(
                             pk(UP, "multi_source_threshold").max_f64(),
                             "",
                             param_idx::MULTI_SOURCE_THRESHOLD,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        )),
+                )
+                // Separator
+                .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
+                .child(render_diag_toggle(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Auto Gain",
+                    state.auto_gain_enabled,
+                    param_idx::AUTO_GAIN_ENABLED,
+                    theme,
+                ))
+                .child(
+                    div()
+                        .when(!state.auto_gain_enabled, |d| d.opacity(0.3))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "AG Max",
+                            state.auto_gain_max_db,
+                            pk(UP, "auto_gain_max_db").min_f64(),
+                            pk(UP, "auto_gain_max_db").max_f64(),
+                            "dB",
+                            param_idx::AUTO_GAIN_MAX_DB,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        )),
+                )
+                .child(
+                    div()
+                        .when(!state.auto_gain_enabled, |d| d.opacity(0.3))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "AG Smooth",
+                            state.auto_gain_smoothing_ms,
+                            pk(UP, "auto_gain_smoothing_ms").min_f64(),
+                            pk(UP, "auto_gain_smoothing_ms").max_f64(),
+                            "ms",
+                            param_idx::AUTO_GAIN_SMOOTHING_MS,
                             state.selected_param,
                             state.is_editing,
                             None,

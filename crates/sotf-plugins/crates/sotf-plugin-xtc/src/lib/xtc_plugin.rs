@@ -406,33 +406,34 @@ impl XtcPlugin {
             } else {
                 0.0
             }),
-            16 => Some(self.params.room_width_m as f64),
-            17 => Some(self.params.room_depth_m as f64),
-            18 => Some(self.params.wall_absorption as f64),
-            19 => Some(self.params.reflection_beta_boost as f64),
-            20 => Some(if self.params.bypass_xtc_filters {
+            16 => None, // room_ir_file (FilePath) is handled as structural string state.
+            17 => Some(self.params.room_width_m as f64),
+            18 => Some(self.params.room_depth_m as f64),
+            19 => Some(self.params.wall_absorption as f64),
+            20 => Some(self.params.reflection_beta_boost as f64),
+            21 => Some(if self.params.bypass_xtc_filters {
                 1.0
             } else {
                 0.0
             }),
-            21 => Some(if self.params.bypass_spectral_normalization {
+            22 => Some(if self.params.bypass_spectral_normalization {
                 1.0
             } else {
                 0.0
             }),
-            22 => Some(if self.params.bypass_neumann_refinement {
+            23 => Some(if self.params.bypass_neumann_refinement {
                 1.0
             } else {
                 0.0
             }),
-            23 => Some(if self.params.auto_gain_enabled {
+            24 => Some(if self.params.auto_gain_enabled {
                 1.0
             } else {
                 0.0
             }),
-            24 => Some(self.params.auto_gain_max_db as f64),
-            25 => Some(self.params.auto_gain_smoothing_ms as f64),
-            26 => Some(self.params.head_model as f64),
+            25 => Some(self.params.auto_gain_max_db as f64),
+            26 => Some(self.params.auto_gain_smoothing_ms as f64),
+            27 => Some(self.params.head_model as f64),
             _ => None,
         }
     }
@@ -457,17 +458,18 @@ impl XtcPlugin {
             13 => self.params.spectral_normalization = value > 0.5,
             14 => self.params.pinna_model_enabled = value > 0.5,
             15 => self.params.room_reflections_enabled = value > 0.5,
-            16 => self.params.room_width_m = value as f32,
-            17 => self.params.room_depth_m = value as f32,
-            18 => self.params.wall_absorption = value as f32,
-            19 => self.params.reflection_beta_boost = value as f32,
-            20 => self.params.bypass_xtc_filters = value > 0.5,
-            21 => self.params.bypass_spectral_normalization = value > 0.5,
-            22 => self.params.bypass_neumann_refinement = value > 0.5,
-            23 => self.params.auto_gain_enabled = value > 0.5,
-            24 => self.params.auto_gain_max_db = value as f32,
-            25 => self.params.auto_gain_smoothing_ms = value as f32,
-            26 => self.params.head_model = value as usize,
+            16 => {}
+            17 => self.params.room_width_m = value as f32,
+            18 => self.params.room_depth_m = value as f32,
+            19 => self.params.wall_absorption = value as f32,
+            20 => self.params.reflection_beta_boost = value as f32,
+            21 => self.params.bypass_xtc_filters = value > 0.5,
+            22 => self.params.bypass_spectral_normalization = value > 0.5,
+            23 => self.params.bypass_neumann_refinement = value > 0.5,
+            24 => self.params.auto_gain_enabled = value > 0.5,
+            25 => self.params.auto_gain_max_db = value as f32,
+            26 => self.params.auto_gain_smoothing_ms = value as f32,
+            27 => self.params.head_model = value as usize,
             _ => {}
         }
     }
@@ -1131,14 +1133,14 @@ impl Plugin for XtcPlugin {
             10..=12 => true, // shadow + filter
             13 => true,      // spectral_normalization
             14 => true,      // pinna_model_enabled
-            15..=19 => true, // room
-            20 => {
+            15..=20 => true, // room, including room_ir_file
+            21 => {
                 // bypass_xtc_filters
                 self.dynamics.limiter_envelope = 1.0;
                 false
             }
-            21 | 22 => true, // bypass_spectral_normalization, bypass_neumann_refinement
-            23 => {
+            22 | 23 => true, // bypass_spectral_normalization, bypass_neumann_refinement
+            24 => {
                 // auto_gain_enabled
                 if self.output_channels() != 2 {
                     self.dynamics.auto_gain = None;
@@ -1158,21 +1160,21 @@ impl Plugin for XtcPlugin {
                 }
                 false
             }
-            24 => {
+            25 => {
                 // auto_gain_max_db
                 if let Some(ag) = &mut self.dynamics.auto_gain {
                     ag.set_max_gain_db(self.params.auto_gain_max_db);
                 }
                 false
             }
-            25 => {
+            26 => {
                 // auto_gain_smoothing_ms
                 if let Some(ag) = &mut self.dynamics.auto_gain {
                     ag.set_smoothing_ms(self.params.auto_gain_smoothing_ms);
                 }
                 false
             }
-            26 => true, // head_model
+            27 => true, // head_model
             _ => false,
         };
 

@@ -165,6 +165,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Room",
     )
     .doc("Include first-order reflections"),
+    ParamSpec::file_path("Room IR", "room_ir_file", "Room").doc("Optional measured room impulse response"),
     ParamSpec::float(
         "Room Width",
         "room_width_m",
@@ -275,15 +276,16 @@ pub const HEAD_MODELS: &[&str] = &["Woodworth", "Brown-Duda"];
 /// 7=beta_base, 8=beta_low_boost, 9=beta_high_boost,
 /// 10=shadow_cutoff, 11=shadow_slope, 12=max_gain,
 /// 13=spectral_norm, 14=pinna_model,
-/// 15=room_reflections, 16=room_width, 17=room_depth, 18=wall_absorption, 19=reflection_beta,
-/// 20=bypass_xtc, 21=bypass_spectral_norm, 22=bypass_neumann,
-/// 23=auto_gain, 24=ag_max, 25=ag_smoothing
+/// 15=room_reflections, 16=room_ir_file, 17=room_width, 18=room_depth,
+/// 19=wall_absorption, 20=reflection_beta,
+/// 21=bypass_xtc, 22=bypass_spectral_norm, 23=bypass_neumann,
+/// 24=auto_gain, 25=ag_max, 26=ag_smoothing, 27=head_model
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::knob(0),      // distance_m
         ControlSpec::knob(1),      // speaker_angle_deg
         ControlSpec::knob(2),      // head_radius_m
-        ControlSpec::selector(26), // head_model
+        ControlSpec::selector(27), // head_model
     ],
     main: &[
         ControlGroup {
@@ -312,21 +314,22 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlGroup {
             title: "ROOM",
             controls: &[
-                ControlSpec::toggle(15), // room_reflections
-                ControlSpec::knob(16),   // room_width
-                ControlSpec::knob(17),   // room_depth
-                ControlSpec::knob(18),   // wall_absorption
-                ControlSpec::knob(19),   // reflection_beta
+                ControlSpec::toggle(15),      // room_reflections
+                ControlSpec::file_picker(16), // room_ir_file
+                ControlSpec::knob(17),        // room_width
+                ControlSpec::knob(18),        // room_depth
+                ControlSpec::knob(19),        // wall_absorption
+                ControlSpec::knob(20),        // reflection_beta
             ],
         },
     ],
     output: &[
-        ControlSpec::toggle(20), // bypass_xtc (diagnostic)
-        ControlSpec::toggle(21), // bypass_spectral_norm (diagnostic)
-        ControlSpec::toggle(22), // bypass_neumann (diagnostic)
-        ControlSpec::toggle(23), // auto_gain
-        ControlSpec::knob(24),   // ag_max
-        ControlSpec::knob(25),   // ag_smoothing
+        ControlSpec::toggle(21), // bypass_xtc (diagnostic)
+        ControlSpec::toggle(22), // bypass_spectral_norm (diagnostic)
+        ControlSpec::toggle(23), // bypass_neumann (diagnostic)
+        ControlSpec::toggle(24), // auto_gain
+        ControlSpec::knob(25),   // ag_max
+        ControlSpec::knob(26),   // ag_smoothing
     ],
     tabs: &[TabSpec {
         name: "Head Tracking",

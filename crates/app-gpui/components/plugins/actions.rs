@@ -126,6 +126,7 @@ impl gpui::Action for ToggleUpmixerConfig {
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct OpenSofaFile {
     pub plugin_idx: usize,
+    pub param_idx: usize,
 }
 
 impl gpui::Action for OpenSofaFile {
@@ -149,6 +150,7 @@ impl gpui::Action for OpenSofaFile {
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct OpenIrFile {
     pub plugin_idx: usize,
+    pub param_idx: usize,
 }
 
 impl gpui::Action for OpenIrFile {

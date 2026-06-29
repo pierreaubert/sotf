@@ -139,10 +139,14 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[
-        ControlSpec::choice(11), // mode
-    ],
+    config: &[],
     main: &[
+        ControlGroup {
+            title: "",
+            controls: &[
+                ControlSpec::selector(11), // mode
+            ],
+        },
         ControlGroup {
             title: "ISO 226",
             controls: &[

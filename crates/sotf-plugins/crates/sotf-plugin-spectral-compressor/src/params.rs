@@ -98,7 +98,8 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 /// Spectral Compressor: idx 0=fft_size, 1=threshold, 2=ratio, 3=attack,
-/// 4=release, 5=knee, 6=spectral_smoothing, 7=mix, 8=target_mode, 9=delta_listen
+/// 4=release, 5=knee, 6=spectral_smoothing, 7=mix, 8=target_mode,
+/// 9=delta_listen, 10=adaptive_threshold, 11=adaptive_offset_db
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::selector(0), // fft_size

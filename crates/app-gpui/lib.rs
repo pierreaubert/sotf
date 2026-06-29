@@ -25,6 +25,9 @@ mod test_harness {
 
 #[cfg(not(test))]
 pub mod components;
+#[cfg(test)]
+#[path = "components/plugins/ui_eq/types.rs"]
+mod eq_compact_layout_types;
 #[cfg(all(target_os = "linux", not(test)))]
 pub mod desktop_integration;
 #[cfg(all(not(any(target_os = "ios", target_os = "tvos")), not(test)))]

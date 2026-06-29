@@ -21,6 +21,7 @@ use crate::components::icons::IconName;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
+use sotf_plugins::param_specs::{find_by_key as pk, spectrum::PARAMS as SP};
 
 // ============================================================================
 // Spectrum color adapters
@@ -158,8 +159,8 @@ pub fn render_spectrum_analyzer_plugin(
             plugin_idx,
             "Bins",
             state.num_bins as f64,
-            10.0,
-            100.0,
+            pk(SP, "num_bins").min_f64(),
+            pk(SP, "num_bins").max_f64(),
             "",
             0,
             state.selected_param,
@@ -172,8 +173,8 @@ pub fn render_spectrum_analyzer_plugin(
             plugin_idx,
             "Min Hz",
             state.min_freq as f64,
-            10.0,
-            1000.0,
+            pk(SP, "min_freq").min_f64(),
+            pk(SP, "min_freq").max_f64(),
             "Hz",
             1,
             state.selected_param,
@@ -186,8 +187,8 @@ pub fn render_spectrum_analyzer_plugin(
             plugin_idx,
             "Max Hz",
             state.max_freq as f64,
-            1000.0,
-            24000.0,
+            pk(SP, "max_freq").min_f64(),
+            pk(SP, "max_freq").max_f64(),
             "Hz",
             2,
             state.selected_param,

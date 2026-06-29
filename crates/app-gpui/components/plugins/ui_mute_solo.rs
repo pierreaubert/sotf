@@ -11,10 +11,12 @@
 
 use super::common::{render_knob, render_section_title, render_toggle};
 use crate::app::AppState;
+use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use sotf_audio_player::PluginSettings;
 use sotf_plugins::ChannelState;
 use sotf_plugins::param_specs::{channel_mute_solo::PARAMS as CMS, find_by_key as pk};
 
@@ -185,6 +187,14 @@ pub fn render_mute_solo_plugin(
                             } else {
                                 theme.text_muted
                             })
+                            .cursor_pointer()
+                            .hover(|s| s.opacity(0.85))
+                            .on_mouse_down(MouseButton::Left, {
+                                let entity = entity.clone();
+                                move |_, _, cx| {
+                                    toggle_msd_state(&entity, plugin_idx, i, MsdAction::Mute, cx);
+                                }
+                            })
                             .child("M"),
                     )
                     // Solo button
@@ -213,6 +223,14 @@ pub fn render_mute_solo_plugin(
                                 theme.background
                             } else {
                                 theme.text_muted
+                            })
+                            .cursor_pointer()
+                            .hover(|s| s.opacity(0.85))
+                            .on_mouse_down(MouseButton::Left, {
+                                let entity = entity.clone();
+                                move |_, _, cx| {
+                                    toggle_msd_state(&entity, plugin_idx, i, MsdAction::Solo, cx);
+                                }
                             })
                             .child("S"),
                     )
@@ -243,6 +261,14 @@ pub fn render_mute_solo_plugin(
                             } else {
                                 theme.text_muted
                             })
+                            .cursor_pointer()
+                            .hover(|s| s.opacity(0.85))
+                            .on_mouse_down(MouseButton::Left, {
+                                let entity = entity.clone();
+                                move |_, _, cx| {
+                                    toggle_msd_state(&entity, plugin_idx, i, MsdAction::Dim, cx);
+                                }
+                            })
                             .child("D"),
                     )
             }),
@@ -256,4 +282,40 @@ pub fn render_mute_solo_plugin(
             .child(setup_col)
             .child(center_col),
     )
+}
+
+#[derive(Clone, Copy)]
+enum MsdAction {
+    Mute,
+    Solo,
+    Dim,
+}
+
+fn toggle_msd_state(
+    entity: &Entity<AppState>,
+    plugin_idx: usize,
+    channel_idx: usize,
+    action: MsdAction,
+    cx: &mut App,
+) {
+    entity.update(cx, |state, cx| {
+        let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx) else {
+            return;
+        };
+        let PluginSettings::ChannelMuteSolo { channel_states, .. } = &mut plugin.settings else {
+            return;
+        };
+        if channel_idx >= channel_states.len() {
+            channel_states.resize(channel_idx + 1, ChannelState::default());
+        }
+        let channel = &mut channel_states[channel_idx];
+        match action {
+            MsdAction::Mute => channel.muted = !channel.muted,
+            MsdAction::Solo => channel.soloed = !channel.soloed,
+            MsdAction::Dim => channel.dimmed = !channel.dimmed,
+        }
+        state.app.plugin_state.update_state.pending_plugin_update =
+            Some(PluginUpdateType::Structural);
+        cx.notify();
+    });
 }

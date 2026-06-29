@@ -4,7 +4,7 @@ pub(super) mod param_idx {
 
     use sotf_plugins::param_specs::{index_of, upmixer::PARAMS as P};
 
-    pub const _SPEAKER_CONFIG: usize = index_of(P, "speaker_config");
+    pub const SPEAKER_CONFIG: usize = index_of(P, "speaker_config");
     pub const GAIN_FRONT_DIRECT: usize = index_of(P, "gain_front_direct");
     pub const GAIN_FRONT_AMBIENT: usize = index_of(P, "gain_front_ambient");
     pub const GAIN_REAR_AMBIENT: usize = index_of(P, "gain_rear_ambient");
@@ -18,7 +18,7 @@ pub(super) mod param_idx {
     pub const SUBHARMONIC_RELEASE_MS: usize = index_of(P, "subharmonic_release_ms");
     pub const STEREO_WIDTH: usize = index_of(P, "stereo_width");
     pub const CENTER_SPREAD: usize = index_of(P, "center_spread");
-    pub const _BANDPASS_HZ: usize = index_of(P, "bandpass_hz");
+    pub const BANDPASS_HZ: usize = index_of(P, "bandpass_hz");
     pub const ENABLE_HR_DIRECT: usize = index_of(P, "enable_hr_direct");
     pub const HR_SHARPEN: usize = index_of(P, "hr_sharpen");
     pub const AMBIENT_BOOST: usize = index_of(P, "ambient_boost");
@@ -47,6 +47,10 @@ pub(super) mod param_idx {
     pub const FREQUENCY_RESOLUTION: usize = index_of(P, "frequency_resolution");
     pub const MULTI_SOURCE_EXTRACTION: usize = index_of(P, "multi_source_extraction");
     pub const MULTI_SOURCE_THRESHOLD: usize = index_of(P, "multi_source_threshold");
+    pub const BINAURAL_PREVIEW: usize = index_of(P, "binaural_preview");
+    pub const AUTO_GAIN_ENABLED: usize = index_of(P, "auto_gain_enabled");
+    pub const AUTO_GAIN_MAX_DB: usize = index_of(P, "auto_gain_max_db");
+    pub const AUTO_GAIN_SMOOTHING_MS: usize = index_of(P, "auto_gain_smoothing_ms");
 }
 
 /// Configuration menu items

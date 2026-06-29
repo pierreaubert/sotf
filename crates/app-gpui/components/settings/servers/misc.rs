@@ -3,8 +3,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Divider, HStack, Input, InputSize, QrCode, StackSpacing,
-    Text, TextSize, TextWeight, VStack,
+    Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, Divider, HStack,
+    Input, InputSize, QrCode, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 use std::rc::Rc;
 
@@ -29,23 +29,14 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                    .child("Server"),
+                    .child("This machine serves your media"),
             )
-            .child(
-                div()
-                    .text_size(d.text_xs)
-                    .text_color(theme.text_secondary)
-                    .child("Configure how this device is shared on your network."),
-            )
-            .child(settings_section_label("This Device as Server", &theme, &d))
             // SOTF API section
             .child(self.render_sotf_api_section(&server_config, &theme, &d, cx))
             // MPD Server section
             .child(self.render_mpd_section(&server_config, &theme, &translations, &d, cx))
             // DLNA Server section
-            .child(self.render_dlna_section(&server_config, &theme, &translations, &d, cx))
-            // Pairing & mTLS trust section
-            .child(self.render_pairing_section(&theme, &d, cx))
+            .child(self.render_dlna_section(&server_config, &theme, &d, cx))
     }
 
     pub(super) fn render_sotf_api_section(
@@ -62,6 +53,8 @@ impl PlayerView {
             .auth_token
             .as_deref()
             .is_some_and(|token| !token.trim().is_empty());
+        let selected_api_state = if api.enabled { "enabled" } else { "disabled" };
+        let state_for_api_enabled = self.state.clone();
         let (show_qr, qr_data) = {
             let state = self.state.read(cx);
             (
@@ -94,6 +87,21 @@ impl PlayerView {
                     )
                     .child(div().flex_1())
                     .child(
+                        ButtonSet::new("sotf-api-enabled")
+                            .options(vec![
+                                ButtonSetOption::new("enabled", "Enable"),
+                                ButtonSetOption::new("disabled", "Disable"),
+                            ])
+                            .selected(selected_api_state)
+                            .size(ButtonSetSize::Xs)
+                            .theme(theme.to_button_set_theme())
+                            .on_change(move |value, _window, cx| {
+                                state_for_api_enabled.update(cx, |state, _cx| {
+                                    state.app.set_sotf_api_enabled(value.as_ref() == "enabled");
+                                });
+                            }),
+                    )
+                    .child(
                         Button::new(
                             "toggle-sotf-api-connection-qr",
                             if show_qr { "Hide QR" } else { "Show QR" },
@@ -105,6 +113,7 @@ impl PlayerView {
                         })
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
+                        .disabled(!api.enabled)
                         .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
                             view.state.update(cx, |state, _cx| {
                                 if let Err(err) = state.app.toggle_sotf_api_connection_qr() {
@@ -198,9 +207,11 @@ impl PlayerView {
         let port = mpd.port.to_string();
         let tls_enabled = mpd.tls_enabled;
         let has_password = mpd.password.is_some();
+        let selected_mpd_state = if mpd_enabled { "enabled" } else { "disabled" };
         let cert_auth =
             mpd.auth_mode == sotf_audio_player::federation_config::MpdAuthMode::Certificate;
 
+        let state_for_mpd_enabled = self.state.clone();
         let state_for_bind = self.state.clone();
         let state_for_port = self.state.clone();
         let state_for_pw = self.state.clone();
@@ -230,27 +241,19 @@ impl PlayerView {
                     )
                     .child(div().flex_1())
                     .child(
-                        Button::new(
-                            "toggle-mpd",
-                            if mpd_enabled {
-                                translations.settings_on
-                            } else {
-                                translations.settings_off
-                            },
-                        )
-                        .variant(if mpd_enabled {
-                            ButtonVariant::Primary
-                        } else {
-                            ButtonVariant::Secondary
-                        })
-                        .size(ButtonSize::Xs)
-                        .theme(theme.to_button_theme())
-                        .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                state.app.toggle_mpd_server();
-                            });
-                            cx.notify();
-                        })),
+                        ButtonSet::new("mpd-enabled")
+                            .options(vec![
+                                ButtonSetOption::new("enabled", "Enable"),
+                                ButtonSetOption::new("disabled", "Disable"),
+                            ])
+                            .selected(selected_mpd_state)
+                            .size(ButtonSetSize::Xs)
+                            .theme(theme.to_button_set_theme())
+                            .on_change(move |value, _window, cx| {
+                                state_for_mpd_enabled.update(cx, |state, _cx| {
+                                    state.app.set_mpd_server_enabled(value.as_ref() == "enabled");
+                                });
+                            }),
                     ),
             )
             .child(Divider::new().color(theme.border))
@@ -436,15 +439,16 @@ impl PlayerView {
         &self,
         server_config: &sotf_audio_player::federation_config::ServerConfig,
         theme: &crate::app::theme::Theme,
-        translations: &crate::app::i18n::Translations,
         d: &Ds,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let dlna = &server_config.dlna;
         let dlna_enabled = dlna.enabled;
         let friendly_name = dlna.friendly_name.clone();
         let port = dlna.port.to_string();
+        let selected_dlna_state = if dlna_enabled { "enabled" } else { "disabled" };
 
+        let state_for_dlna_enabled = self.state.clone();
         let state_for_name = self.state.clone();
         let state_for_port = self.state.clone();
 
@@ -473,29 +477,21 @@ impl PlayerView {
                     )
                     .child(div().flex_1())
                     .child(
-                        Button::new(
-                            "toggle-dlna",
-                            if dlna_enabled {
-                                translations.settings_on
-                            } else {
-                                translations.settings_off
-                            },
-                        )
-                        .variant(if dlna_enabled {
-                            ButtonVariant::Primary
-                        } else {
-                            ButtonVariant::Secondary
-                        })
-                        .size(ButtonSize::Xs)
-                        .theme(theme.to_button_theme())
-                        .on_click_event(cx.listener(
-                            move |view, _: &ClickEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    state.app.toggle_dlna_server();
+                        ButtonSet::new("dlna-enabled")
+                            .options(vec![
+                                ButtonSetOption::new("enabled", "Enable"),
+                                ButtonSetOption::new("disabled", "Disable"),
+                            ])
+                            .selected(selected_dlna_state)
+                            .size(ButtonSetSize::Xs)
+                            .theme(theme.to_button_set_theme())
+                            .on_change(move |value, _window, cx| {
+                                state_for_dlna_enabled.update(cx, |state, _cx| {
+                                    state
+                                        .app
+                                        .set_dlna_server_enabled(value.as_ref() == "enabled");
                                 });
-                                cx.notify();
-                            },
-                        )),
+                            }),
                     ),
             )
             .child(Divider::new().color(theme.border))
@@ -555,220 +551,6 @@ impl PlayerView {
                     )
                     .build(),
             )
-    }
-
-    pub(super) fn render_pairing_section(
-        &self,
-        theme: &crate::app::theme::Theme,
-        d: &Ds,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let pairing_enabled = state.app.federation.pairing_enabled;
-        let pairing_nonce = state.app.federation.pairing_nonce.clone();
-        let server_fingerprint = state.app.federation.server_fingerprint.clone();
-        let trusted_clients = state.app.federation.trusted_clients.clone();
-        let qr_data = state.app.pairing_qr_data();
-
-        let mut section = div()
-            .flex()
-            .flex_col()
-            .gap(d.gap_md)
-            .p(d.card)
-            .bg(theme.background_secondary)
-            .rounded(d.r_md)
-            .border_1()
-            .border_color(if pairing_enabled {
-                theme.accent
-            } else {
-                theme.border
-            })
-            .child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .child(
-                        Text::new("Pairing & Trust")
-                            .size(TextSize::Sm)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        Button::new("toggle-pairing", if pairing_enabled { "On" } else { "Off" })
-                            .variant(if pairing_enabled {
-                                ButtonVariant::Primary
-                            } else {
-                                ButtonVariant::Secondary
-                            })
-                            .size(ButtonSize::Xs)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(
-                                move |view, _: &ClickEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.toggle_pairing_mode();
-                                    });
-                                    cx.notify();
-                                },
-                            )),
-                    ),
-            )
-            .child(Divider::new().color(theme.border));
-
-        // Server fingerprint (always visible)
-        if let Some(fp) = &server_fingerprint {
-            let fp_short = if fp.len() > 23 {
-                format!("{}...{}", &fp[..11], &fp[fp.len() - 11..])
-            } else {
-                fp.clone()
-            };
-            section = section.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(d.gap)
-                    .child(
-                        div()
-                            .w(rems(7.5))
-                            .text_size(d.text_xs)
-                            .text_color(theme.text_secondary)
-                            .child("Fingerprint"),
-                    )
-                    .child(
-                        div()
-                            .text_size(d.text_xs)
-                            .text_color(theme.text_muted)
-                            .child(fp_short),
-                    ),
-            );
-        }
-
-        if pairing_enabled {
-            if let Some(nonce) = &pairing_nonce {
-                section = section.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(d.gap)
-                        .child(
-                            div()
-                                .w(rems(7.5))
-                                .text_size(d.text_xs)
-                                .text_color(theme.text_secondary)
-                                .child("Code"),
-                        )
-                        .child(
-                            div()
-                                .text_size(d.text_xs)
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.accent)
-                                .child(nonce.clone()),
-                        ),
-                );
-            }
-
-            if let Some(data) = &qr_data {
-                section = section.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .gap(d.gap_md)
-                        .py(d.pad_y)
-                        .child(QrCode::new(data.clone()).size(px(160.0)))
-                        .child(
-                            div()
-                                .text_size(d.text_xs)
-                                .text_color(theme.text_muted)
-                                .child("Scan with a mobile SOTF client"),
-                        ),
-                );
-            }
-        } else {
-            section = section.child(
-                div()
-                    .text_size(d.text_xs)
-                    .text_color(theme.text_muted)
-                    .child("Enable pairing to let mobile clients connect via mTLS."),
-            );
-        }
-
-        // Trusted clients list
-        if !trusted_clients.is_empty() {
-            section = section.child(Divider::new().color(theme.border));
-            section = section.child(
-                div()
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.text_secondary)
-                    .child(format!("Trusted Clients ({})", trusted_clients.len())),
-            );
-            for client in trusted_clients {
-                let fp_for_revoke = client.fingerprint.clone();
-                let fp_short = if client.fingerprint.len() > 23 {
-                    format!(
-                        "{}...{}",
-                        &client.fingerprint[..11],
-                        &client.fingerprint[client.fingerprint.len() - 11..]
-                    )
-                } else {
-                    client.fingerprint.clone()
-                };
-                section = section.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(d.gap_md)
-                        .p(d.pad_y)
-                        .bg(theme.background)
-                        .rounded(d.r_sm)
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap(d.grid)
-                                .flex_1()
-                                .child(
-                                    div()
-                                        .text_size(d.text_xs)
-                                        .text_color(theme.text_primary)
-                                        .child(client.name.clone()),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(d.text_xs)
-                                        .text_color(theme.text_muted)
-                                        .child(fp_short),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(d.text_xs)
-                                        .text_color(theme.text_secondary)
-                                        .child(format!("Paired: {}", client.paired_at)),
-                                ),
-                        )
-                        .child(
-                            Button::new(
-                                SharedString::from(format!("revoke-client-{}", client.fingerprint)),
-                                "Revoke",
-                            )
-                            .variant(ButtonVariant::Ghost)
-                            .size(ButtonSize::Xs)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(
-                                move |view, _: &ClickEvent, _window, cx| {
-                                    let fp = fp_for_revoke.clone();
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.revoke_trusted_client(&fp);
-                                    });
-                                    cx.notify();
-                                },
-                            )),
-                        ),
-                );
-            }
-        }
-
-        section
     }
 
     pub(crate) fn render_remote_sotf_section(
@@ -1016,7 +798,41 @@ impl PlayerView {
                 }))
                 .into_any_element()
         }
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        {
+            Button::new("scan-sotf-remote-qr", "Scan QR")
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                    let weak_state = view.state.downgrade();
+                    cx.spawn(async move |_, cx| {
+                        let file = rfd::AsyncFileDialog::new()
+                            .add_filter("Images", &["png", "jpg", "jpeg", "gif", "bmp", "webp"])
+                            .set_title("Select SOTF API QR Code")
+                            .pick_file()
+                            .await;
+                        let Some(file) = file else {
+                            return;
+                        };
+                        let Some(state_entity) = weak_state.upgrade() else {
+                            return;
+                        };
+                        let path = file.path().to_path_buf();
+                        state_entity.update(&mut cx.clone(), |state, cx| {
+                            if let Err(err) = state.app.add_remote_server_from_qr_image_file(&path)
+                            {
+                                state.app.ui_state.toast_message =
+                                    Some(crate::app::ToastMessage::error(err));
+                            }
+                            cx.notify();
+                        });
+                    })
+                    .detach();
+                }))
+                .into_any_element()
+        }
+        #[cfg(target_os = "tvos")]
         {
             let _ = (theme, _d, cx);
             div().into_any_element()

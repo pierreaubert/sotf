@@ -7,12 +7,20 @@ use super::*;
 #[test]
 fn param_index_coverage() {
     let p = Params::default();
-    for i in 0..PARAMS.len() {
-        assert!(
-            p.param_value(i).is_some(),
-            "param_value({}) returned None",
-            i
-        );
+    for (i, spec) in PARAMS.iter().enumerate() {
+        if matches!(spec.param_type, ParamType::FilePath) {
+            assert!(
+                p.param_value(i).is_none(),
+                "param_value({}) should return None for FilePath",
+                i
+            );
+        } else {
+            assert!(
+                p.param_value(i).is_some(),
+                "param_value({}) returned None",
+                i
+            );
+        }
     }
     assert!(
         p.param_value(PARAMS.len()).is_none(),
@@ -169,6 +177,14 @@ fn test_param_value_set_param_value_roundtrip() {
     let mut p = Params::default();
     for i in 0..PARAMS.len() {
         let spec = &PARAMS[i];
+        if matches!(spec.param_type, ParamType::FilePath) {
+            assert!(
+                p.param_value(i).is_none(),
+                "param_value({}) should return None for FilePath",
+                i
+            );
+            continue;
+        }
         let new_val = match spec.param_type {
             ParamType::Bool { .. } => 1.0,
             _ => spec.min_f64() + 0.5 * (spec.max_f64() - spec.min_f64()),

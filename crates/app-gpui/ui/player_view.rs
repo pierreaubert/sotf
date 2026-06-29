@@ -1340,6 +1340,7 @@ impl PlayerView {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let plugin_idx = action.plugin_idx;
+            let param_idx = action.param_idx;
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
@@ -1354,7 +1355,10 @@ impl PlayerView {
                     };
                     let path = file.path().to_string_lossy().to_string();
                     state_entity.update(&mut cx.clone(), |state, cx| {
-                        if let Err(e) = state.app.set_plugin_param_string(plugin_idx, 0, path) {
+                        if let Err(e) = state
+                            .app
+                            .set_plugin_param_string(plugin_idx, param_idx, path)
+                        {
                             log::error!("[GPUI] Invalid SOFA file path: {}", e);
                             state.app.ui_state.toast_message =
                                 Some(crate::app::ToastMessage::error(e));
@@ -1376,6 +1380,7 @@ impl PlayerView {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
             let plugin_idx = action.plugin_idx;
+            let param_idx = action.param_idx;
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
@@ -1390,7 +1395,10 @@ impl PlayerView {
                     };
                     let path = file.path().to_string_lossy().to_string();
                     state_entity.update(&mut cx.clone(), |state, cx| {
-                        if let Err(e) = state.app.set_plugin_param_string(plugin_idx, 0, path) {
+                        if let Err(e) = state
+                            .app
+                            .set_plugin_param_string(plugin_idx, param_idx, path)
+                        {
                             log::error!("[GPUI] Invalid IR file path: {}", e);
                             state.app.ui_state.toast_message =
                                 Some(crate::app::ToastMessage::error(e));

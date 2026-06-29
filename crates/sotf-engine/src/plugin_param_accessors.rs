@@ -307,6 +307,7 @@ impl_param_accessors! {
             head_shadow_cutoff_hz: f64, head_shadow_slope_db_per_octave: f64,
             max_gain_db: f64, spectral_normalization: bool,
             pinna_model_enabled: bool, room_reflections_enabled: bool,
+            room_ir_file: skip,
             room_width_m: f64, room_depth_m: f64, wall_absorption: f64,
             reflection_beta_boost: f64,
             bypass_xtc_filters: bool, bypass_spectral_normalization: bool,
@@ -603,10 +604,22 @@ impl_param_accessors! {
                 binaural_preview: bool,
                 auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
             ]
+        },
+        FletcherMunson {
+            params: param_specs::loudness_compensation::PARAMS,
+            layout: Some(&param_specs::loudness_compensation::LAYOUT),
+            manual: [fletcher_munson_param_value, fletcher_munson_set_param_value],
+            fields: [
+                low_freq: f64, low_gain: f64, high_freq: f64, high_gain: f64,
+                mid_enabled: bool, mid_freq: f64, mid_gain: f64, mid_q: f64,
+                auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
+                mode: usize, playback_level_db: f64, reference_level_db: f64,
+                playback_volume_db: f64,
+            ]
         }
     ];
     no_params_unit: [LoudnessMonitor];
-    no_params_struct: [Matrix, FletcherMunson]
+    no_params_struct: [Matrix]
 }
 
 mod aae;
@@ -614,6 +627,98 @@ mod aae;
 // serde-flattened sub-structs. Keeping these in one place preserves the
 // index↔field mapping from the old monolithic variant.
 impl PluginSettings {
+    fn fletcher_munson_param_value(&self, index: usize) -> Option<f64> {
+        let Self::FletcherMunson {
+            playback_volume_db,
+            reference_level_db,
+            enabled,
+            band1_freq,
+            band1_max_gain,
+            band2_q,
+            band2_max_gain: _,
+            band3_freq,
+            band3_q,
+            band3_max_gain,
+            band4_freq,
+            band4_max_gain,
+            auto_gain_enabled,
+            auto_gain_max_db,
+            auto_gain_smoothing_ms,
+            iso_226,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        match index {
+            0 => Some(*band1_freq),
+            1 => Some(*band1_max_gain),
+            2 => Some(*band4_freq),
+            3 => Some(*band4_max_gain),
+            4 => Some(b2f(*enabled)),
+            5 => Some(*band3_freq),
+            6 => Some(*band3_max_gain),
+            7 => Some((*band3_q).max(*band2_q)),
+            8 => Some(b2f(*auto_gain_enabled)),
+            9 => Some(*auto_gain_max_db),
+            10 => Some(*auto_gain_smoothing_ms),
+            11 => Some(if *auto_gain_enabled {
+                2.0
+            } else if *iso_226 {
+                1.0
+            } else {
+                0.0
+            }),
+            12 => Some(70.0),
+            13 => Some(*reference_level_db),
+            14 => Some(*playback_volume_db),
+            _ => None,
+        }
+    }
+
+    fn fletcher_munson_set_param_value(&mut self, index: usize, value: f64) {
+        let Self::FletcherMunson {
+            reference_level_db,
+            enabled,
+            band1_freq,
+            band1_max_gain,
+            band3_freq,
+            band3_q,
+            band3_max_gain,
+            band4_freq,
+            band4_max_gain,
+            auto_gain_enabled,
+            auto_gain_max_db,
+            auto_gain_smoothing_ms,
+            iso_226,
+            ..
+        } = self
+        else {
+            return;
+        };
+        let specs = param_specs::loudness_compensation::PARAMS;
+        match index {
+            0 => *band1_freq = specs[0].clamp_f64(value),
+            1 => *band1_max_gain = specs[1].clamp_f64(value),
+            2 => *band4_freq = specs[2].clamp_f64(value),
+            3 => *band4_max_gain = specs[3].clamp_f64(value),
+            4 => *enabled = f2b(value),
+            5 => *band3_freq = specs[5].clamp_f64(value),
+            6 => *band3_max_gain = specs[6].clamp_f64(value),
+            7 => *band3_q = specs[7].clamp_f64(value),
+            8 => *auto_gain_enabled = f2b(value),
+            9 => *auto_gain_max_db = specs[9].clamp_f64(value),
+            10 => *auto_gain_smoothing_ms = specs[10].clamp_f64(value),
+            11 => {
+                let mode = value as usize;
+                *iso_226 = mode == 1;
+                *auto_gain_enabled = mode == 2;
+            }
+            13 => *reference_level_db = specs[13].clamp_f64(value),
+            _ => {}
+        }
+    }
+
     fn upmixer_param_value(&self, index: usize) -> Option<f64> {
         let Self::Upmixer {
             speaker_config,

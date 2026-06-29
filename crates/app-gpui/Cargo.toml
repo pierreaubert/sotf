@@ -127,6 +127,7 @@ rustfft = { workspace = true }
 [target.'cfg(not(any(target_os = "ios", target_os = "tvos")))'.dependencies]
 sotf-media-controls = { workspace = true }    # OS media controls (MPRIS / MediaPlayer)
 rfd = { workspace = true }         # File dialogs (no backend on tvOS)
+rqrr = { workspace = true }        # QR image decoding for remote server setup
 
 [target.'cfg(all(unix, not(any(target_os = "ios", target_os = "tvos"))))'.dependencies]
 signal-hook = { workspace = true }
