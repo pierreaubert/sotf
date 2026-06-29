@@ -14,6 +14,7 @@
 // );
 
 pub mod asset_cache;
+pub mod eq_layout;
 pub mod level_meter_render;
 pub mod queue_render;
 

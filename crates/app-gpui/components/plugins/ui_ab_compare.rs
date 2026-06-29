@@ -6,7 +6,7 @@
 use crate::app::state::plugin::ABPathTarget;
 use crate::components::design::Ds;
 use crate::components::plugins::actions::{
-    ABPathAddPlugin, ABPathMovePlugin, ABPathRemovePlugin, ABPathToggleAddMenu, OpenAbConfigFile,
+    ABPathAddPlugin, ABPathMovePlugin, ABPathRemovePlugin, ABPathToggleAddMenu,
 };
 use crate::components::plugins::custom_view_registry::CustomViewRenderContext;
 use crate::components::plugins::ui_layout_renderer;
@@ -130,28 +130,6 @@ fn render_path_section(
                     .flex()
                     .items_center()
                     .gap(d.grid)
-                    .child(
-                        Button::new(SharedString::from(format!("ab-load-{path}")), "Load")
-                            .aria_label(format!("{label} config file"))
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Xs)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(
-                                move |_view, _: &ClickEvent, window, cx| {
-                                    window.dispatch_action(
-                                        Box::new(OpenAbConfigFile {
-                                            plugin_idx,
-                                            path_id: if path == 0 {
-                                                "a".to_string()
-                                            } else {
-                                                "b".to_string()
-                                            },
-                                        }),
-                                        cx,
-                                    );
-                                },
-                            )),
-                    )
                     .child(
                         Button::new(SharedString::from(format!("ab-add-{path}")), "+")
                             .aria_label("Add plugin for comparison")
