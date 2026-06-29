@@ -7,6 +7,7 @@ use sotf_audio_player_midi::mapping::MidiOverlay;
 /// `LinearPhase` reuses the same band editor for the linear-phase FIR EQ:
 /// per-channel mode is hidden (always global), and a header shows the FIR
 /// latency plus linear-phase-only controls.
+#[derive(Debug)]
 pub enum EqViewMode {
     Standard,
     LinearPhase {
@@ -38,6 +39,7 @@ pub enum EqViewMode {
 }
 
 /// State for rendering the EQ plugin
+#[derive(Debug)]
 pub struct EqRenderState<'a> {
     /// Number of channels
     pub channels: usize,
@@ -47,8 +49,11 @@ pub struct EqRenderState<'a> {
     pub channel_filters: &'a Option<Vec<Vec<EQFilter>>>,
     /// Whether to use per-channel mode
     pub per_channel_mode: bool,
+    /// Whether the user is currently dragging or editing a band
     pub is_editing: bool,
+    /// Index of the selected parameter (e.g. gain, frequency, q)
     pub selected_param: usize,
+    /// Index of the currently selected EQ band
     pub selected_band_idx: usize,
     /// MIDI overlay for displaying controller assignments on EQ bands
     pub midi_overlay: Option<&'a MidiOverlay>,
