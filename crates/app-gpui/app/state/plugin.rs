@@ -105,6 +105,10 @@ pub struct PluginUiState {
     pub rack_config_overlay_open: bool,
     /// Whether the plugin skin picker dropdown is open.
     pub rack_skin_picker_open: bool,
+    /// Compact EQ: whether the global config panel is expanded.
+    pub eq_compact_config_open: bool,
+    /// Compact EQ: whether the graph is visible in inspector mode.
+    pub eq_compact_graph_visible: bool,
 }
 
 /// GPUI-specific state for the per-plugin preset picker and destructive-action

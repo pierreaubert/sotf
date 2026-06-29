@@ -21,8 +21,7 @@ use super::eq_qhandle_drag::EqQHandleDrag;
 use super::get::get_channel_name;
 use super::get::get_filter_type_index;
 use super::misc::drag_delta_to_q_change;
-use super::types::EqRenderState;
-use super::types::EqViewMode;
+use super::types::{EqCompactLayout, EqRenderState, EqViewMode};
 use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::components::graphs::common::rgba_to_u32;
@@ -44,13 +43,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Clone, Copy)]
-struct EqBandIndexing {
-    stride: usize,
-    frequency: usize,
-    q: usize,
-    gain: usize,
-    filter_type: usize,
-    active: Option<usize>,
+pub(crate) struct EqBandIndexing {
+    pub(crate) stride: usize,
+    pub(crate) frequency: usize,
+    pub(crate) q: usize,
+    pub(crate) gain: usize,
+    pub(crate) filter_type: usize,
+    pub(crate) active: Option<usize>,
 }
 
 impl EqBandIndexing {
@@ -77,7 +76,7 @@ impl EqBandIndexing {
 }
 
 #[derive(Clone, Copy)]
-enum EqGlobalControl {
+pub(crate) enum EqGlobalControl {
     StandardMaxFilters,
     StandardTdf2,
     StandardTopology,
@@ -95,7 +94,7 @@ enum EqGlobalControl {
 /// Render EQ frequency response using gpui-px with draggable control points
 ///
 /// Shows all filter bands overlaid on a single plot with log frequency axis
-fn render_eq_visualization(
+pub(crate) fn render_eq_visualization(
     entity: Entity<AppState>,
     plugin_idx: usize,
     filters: &[EQFilter],
@@ -560,7 +559,7 @@ fn render_eq_visualization(
 
 /// Render a knob with an optional MIDI badge underneath
 #[allow(clippy::too_many_arguments)]
-fn render_eq_knob_with_midi(
+pub(crate) fn render_eq_knob_with_midi(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -607,7 +606,7 @@ pub fn render_eq_plugin(
     state: EqRenderState,
     theme: &Theme,
     cx: &mut Context<PlayerView>,
-) -> impl IntoElement {
+) -> AnyElement {
     let ds = Ds::from_cx(cx);
 
     // Read selected channel and window width from AppState
@@ -658,6 +657,7 @@ pub fn render_eq_plugin(
     } else {
         EqBandIndexing::STANDARD
     };
+    let layout = EqCompactLayout::from_width(state.available_width);
 
     // Compute selected param for editing mode
     let highlight_band_idx = if state.is_editing {
@@ -702,14 +702,15 @@ pub fn render_eq_plugin(
         state.per_channel_mode
     };
 
-    let controls_section = div()
-        .flex()
-        .flex_col()
-        .items_center() // Center band selector and knob box
-        .gap(ds.section)
-        .w_full()
-        // Channel Mode Toggle and Channel Selector — hidden in linear-phase mode
-        .when(!is_lp_mode, |container| {
+    let controls_section = if layout == EqCompactLayout::Current {
+        div()
+            .flex()
+            .flex_col()
+            .items_center() // Center band selector and knob box
+            .gap(ds.section)
+            .w_full()
+            // Channel Mode Toggle and Channel Selector — hidden in linear-phase mode
+            .when(!is_lp_mode, |container| {
             container.child({
                 let entity_clone = entity.clone();
                 let entity_clone2 = entity.clone();
@@ -1177,7 +1178,10 @@ pub fn render_eq_plugin(
                             })),
                     ),
             )
-        });
+        })
+    } else {
+        div()
+    };
 
     // Optional linear-phase info header — shown only for the LP variant.
     let fir_summary = match &state.mode {
@@ -1367,16 +1371,41 @@ pub fn render_eq_plugin(
 
     // Combine sections based on layout mode
 
-    div()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap(ds.section_xl)
-        .children(eq_header)
-        .children(lp_header)
-        .child(graph_section)
-        .children(lp_analysis)
-        .child(controls_section)
+    match layout {
+        EqCompactLayout::Current => div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(ds.section_xl)
+            .children(eq_header)
+            .children(lp_header)
+            .child(graph_section)
+            .children(lp_analysis)
+            .child(controls_section)
+            .into_any_element(),
+        EqCompactLayout::BottomStrip => super::layout_compact::render_eq_bottom_strip(
+            entity,
+            plugin_idx,
+            &state,
+            display_filters,
+            selected_band_idx,
+            indexing,
+            theme,
+            cx,
+        )
+        .into_any_element(),
+        EqCompactLayout::Inspector => super::layout_compact::render_eq_inspector(
+            entity,
+            plugin_idx,
+            &state,
+            display_filters,
+            selected_band_idx,
+            indexing,
+            theme,
+            cx,
+        )
+        .into_any_element(),
+    }
 }
 
 fn render_linear_phase_analysis(
@@ -1476,7 +1505,7 @@ fn render_standard_eq_algorithm_pill(d: &Ds, topology: f64, theme: &Theme) -> im
         .child(if topology > 0.5 { "SVF" } else { "Biquad" })
 }
 
-fn render_eq_active_toggle(
+pub(crate) fn render_eq_active_toggle(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -1611,7 +1640,7 @@ fn adjust_eq_global_control(
     });
 }
 
-fn render_eq_global_stepper(
+pub(crate) fn render_eq_global_stepper(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -1668,7 +1697,7 @@ fn render_eq_global_stepper(
         .into_any_element()
 }
 
-fn render_eq_global_toggle(
+pub(crate) fn render_eq_global_toggle(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -1711,7 +1740,7 @@ fn render_eq_global_toggle(
 }
 
 /// Render a filter type selector using exclusive buttons
-fn render_filter_type_selector(
+pub(crate) fn render_filter_type_selector(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,

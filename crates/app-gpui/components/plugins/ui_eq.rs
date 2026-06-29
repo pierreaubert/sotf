@@ -11,6 +11,7 @@ mod eq_chart_wrapper;
 mod eq_control_point_drag;
 mod eq_qhandle_drag;
 mod get;
+mod layout_compact;
 mod misc;
 mod render;
 mod types;
