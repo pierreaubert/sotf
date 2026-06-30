@@ -1,0 +1,16 @@
+# Python dependencies for sotf-player/scripts/cli.py, flux2_server.py and gemma_server.py
+
+# Audio metadata reading (optional; cli.py degrades gracefully without it)
+mutagen
+
+# Local FLUX image-generation backend (flux2_server.py)
+torch
+diffusers
+
+# Local Gemma text-generation backend (gemma_server.py)
+transformers
+accelerate
+mlx-lm; sys_platform == 'darwin'
+
+# Shared image I/O
+Pillow

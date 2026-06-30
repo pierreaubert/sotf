@@ -12,10 +12,14 @@ import base64
 import json
 import os
 import re
+import socket
+import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,11 +52,30 @@ COVER_BASENAMES = {
 }
 ART_SUBDIRS = {"art", "artwork", "cover", "covers", "scan", "scans"}
 DEFAULT_OUTPUT_NAME = "cover.png"
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 DEFAULT_IMAGE_URL = "http://192.168.1.37:9999/v1/images/generations"
 DEFAULT_COMPLETION_URL = "http://localhost:1234/api/v1/chat"
 DEFAULT_TEXT_MODEL = "google/gemma-4-12b-qat"
+DEFAULT_COMPLETION_API_FORMAT = os.environ.get("COMPLETION_API_FORMAT", "lmstudio")
+DEFAULT_LOCAL_GEMMA_MODEL = os.environ.get(
+    "LOCAL_GEMMA_MODEL", "mlx-community/gemma-4-12b-4bit"
+)
+DEFAULT_LOCAL_GEMMA_BACKEND = os.environ.get("LOCAL_GEMMA_BACKEND", "auto")
+DEFAULT_LOCAL_GEMMA_DTYPE = os.environ.get("LOCAL_GEMMA_DTYPE", "bfloat16")
+DEFAULT_LOCAL_GEMMA_DEVICE = os.environ.get("LOCAL_GEMMA_DEVICE", "")
+DEFAULT_LOCAL_GEMMA_MAX_NEW_TOKENS = int(os.environ.get("LOCAL_GEMMA_MAX_NEW_TOKENS", "512"))
 DEFAULT_IMAGE_MODEL = "zai-org/GLM-Image"
 DEFAULT_SYSTEM_PROMPT_PATH = Path("crates/sotf-player/prompts/system-prompt.md")
+DEFAULT_LOCAL_FLUX2_MODEL = os.environ.get(
+    "LOCAL_FLUX2_MODEL", "black-forest-labs/FLUX.1-schnell"
+)
+DEFAULT_LOCAL_FLUX2_DTYPE = os.environ.get("LOCAL_FLUX2_DTYPE", "bfloat16")
+DEFAULT_LOCAL_FLUX2_DEVICE = os.environ.get("LOCAL_FLUX2_DEVICE", "")
+DEFAULT_LOCAL_FLUX2_STEPS = int(os.environ.get("LOCAL_FLUX2_STEPS", "4"))
+DEFAULT_LOCAL_FLUX2_CACHE_DIR = os.environ.get(
+    "SOTF_MODEL_CACHE_DIR", str(_PROJECT_ROOT / "data_cached" / "models")
+)
 
 
 @dataclass
@@ -103,6 +126,62 @@ Examples:
         help="Text model used to expand album metadata into an image prompt",
     )
     parser.add_argument(
+        "--completion-api-format",
+        default=DEFAULT_COMPLETION_API_FORMAT,
+        choices=["auto", "lmstudio", "openai"],
+        help=(
+            "API format for the text endpoint. Defaults to LM Studio format; "
+            "use 'openai' for OpenAI-compatible chat-completions endpoints."
+        ),
+    )
+    parser.add_argument(
+        "--local-gemma-model",
+        default=DEFAULT_LOCAL_GEMMA_MODEL,
+        help="Hugging Face model id or path when auto-starting the local Gemma server",
+    )
+    parser.add_argument(
+        "--local-gemma-backend",
+        default=DEFAULT_LOCAL_GEMMA_BACKEND,
+        choices=["auto", "transformers", "mlx"],
+        help=(
+            "Inference backend for the local Gemma server. 'auto' prefers mlx "
+            "on Apple Silicon and transformers otherwise."
+        ),
+    )
+    parser.add_argument(
+        "--local-gemma-dtype",
+        default=DEFAULT_LOCAL_GEMMA_DTYPE,
+        choices=["bfloat16", "float16", "float32"],
+        help="Torch dtype for the local Gemma model",
+    )
+    parser.add_argument(
+        "--local-gemma-device",
+        default=DEFAULT_LOCAL_GEMMA_DEVICE,
+        help="Torch device for the local Gemma model (cuda/mps/cpu). Auto-detected if empty.",
+    )
+    parser.add_argument(
+        "--local-gemma-cache-dir",
+        default=DEFAULT_LOCAL_FLUX2_CACHE_DIR,
+        help="Directory for downloaded local Gemma model weights",
+    )
+    parser.add_argument(
+        "--local-gemma-max-new-tokens",
+        type=int,
+        default=DEFAULT_LOCAL_GEMMA_MAX_NEW_TOKENS,
+        help="Maximum new tokens for the local Gemma model",
+    )
+    parser.add_argument(
+        "--local-text-server-startup-timeout",
+        type=float,
+        default=float(os.environ.get("LOCAL_TEXT_SERVER_STARTUP_TIMEOUT", "600")),
+        help="Seconds to wait for the local Gemma server to become ready",
+    )
+    parser.add_argument(
+        "--no-local-text-fallback",
+        action="store_true",
+        help="Disable auto-starting the local Gemma server when the text server is unreachable",
+    )
+    parser.add_argument(
         "--completion-api-key-env",
         default="OPENAI_API_KEY",
         help="Environment variable for text model auth. Empty means no Authorization header.",
@@ -124,6 +203,7 @@ Examples:
             "cogview-4-250304",
             "cogview-4",
             "cogview-3-flash",
+            "flux2",
         ],
         help="Image model to use",
     )
@@ -142,6 +222,44 @@ Examples:
         type=float,
         default=float(os.environ.get("GLM_IMAGE_TIMEOUT", "600")),
         help="HTTP timeout in seconds",
+    )
+    parser.add_argument(
+        "--local-flux2-model",
+        default=DEFAULT_LOCAL_FLUX2_MODEL,
+        help="Diffusers model id or path when auto-starting the local FLUX server",
+    )
+    parser.add_argument(
+        "--local-flux2-dtype",
+        default=DEFAULT_LOCAL_FLUX2_DTYPE,
+        choices=["bfloat16", "float16", "float32"],
+        help="Torch dtype for the local FLUX pipeline",
+    )
+    parser.add_argument(
+        "--local-flux2-device",
+        default=DEFAULT_LOCAL_FLUX2_DEVICE,
+        help="Torch device for the local FLUX pipeline (cuda/mps/cpu). Auto-detected if empty.",
+    )
+    parser.add_argument(
+        "--local-flux2-steps",
+        type=int,
+        default=DEFAULT_LOCAL_FLUX2_STEPS,
+        help="Inference steps for the local FLUX pipeline",
+    )
+    parser.add_argument(
+        "--local-flux2-cache-dir",
+        default=DEFAULT_LOCAL_FLUX2_CACHE_DIR,
+        help="Directory for downloaded local FLUX model weights",
+    )
+    parser.add_argument(
+        "--local-server-startup-timeout",
+        type=float,
+        default=float(os.environ.get("LOCAL_SERVER_STARTUP_TIMEOUT", "600")),
+        help="Seconds to wait for the local FLUX server to become ready",
+    )
+    parser.add_argument(
+        "--no-local-fallback",
+        action="store_true",
+        help="Disable auto-starting the local FLUX server when the image server is unreachable",
     )
     parser.add_argument("-s", "--size", default="1280x1280", help="Image size")
     parser.add_argument(
@@ -372,6 +490,14 @@ def final_prompt_paragraph(text):
     return text.strip()
 
 
+def guess_completion_api_format(model: str, fmt: str) -> str:
+    if fmt != "auto":
+        return fmt
+    # Future auto-detection can go here (e.g., based on URL or model name).
+    # For now, default to the LM Studio format that sotf has historically used.
+    return "lmstudio"
+
+
 def expand_prompt(args, short_content):
     system_prompt = read_system_prompt(args.system_prompt_file)
     user_prompt = (
@@ -380,11 +506,21 @@ def expand_prompt(args, short_content):
         "The image must be square album art, visually specific, tasteful, and usable as "
         "cover artwork. Include a compact negative instruction at the end."
     )
-    payload = {
-        "model": args.completion_model,
-        "system_prompt": system_prompt,
-        "input": user_prompt,
-    }
+    fmt = guess_completion_api_format(args.completion_model, args.completion_api_format)
+    if fmt == "openai":
+        payload = {
+            "model": args.completion_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+    else:
+        payload = {
+            "model": args.completion_model,
+            "system_prompt": system_prompt,
+            "input": user_prompt,
+        }
     api_key = os.environ.get(args.completion_api_key_env, "").strip()
     response = http_json(
         args.completion_url,
@@ -400,6 +536,178 @@ def expand_prompt(args, short_content):
     if not prompt:
         return {"ok": False, "error": {"code": "EMPTY_PROMPT", "message": "text model returned no text"}}
     return {"ok": True, "prompt": prompt}
+
+
+def is_server_reachable(url: str, timeout: float = 5.0) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if host is None or port is None:
+            return False
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def start_local_flux2_server(args):
+    script = Path(__file__).with_name("flux2_server.py")
+    if not script.exists():
+        raise FileNotFoundError(f"local FLUX server script not found: {script}")
+
+    port = find_free_port()
+    local_url = f"http://127.0.0.1:{port}/v1/images/generations"
+    cmd = [
+        sys.executable,
+        str(script),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--model",
+        args.local_flux2_model,
+        "--dtype",
+        args.local_flux2_dtype,
+        "--steps",
+        str(args.local_flux2_steps),
+        "--cache-dir",
+        args.local_flux2_cache_dir,
+    ]
+    if args.local_flux2_device:
+        cmd.extend(["--device", args.local_flux2_device])
+
+    eprint(f"[cli.py] image server unreachable; starting local FLUX server: {script}")
+    eprint(f"[cli.py] model={args.local_flux2_model} dtype={args.local_flux2_dtype}")
+    proc = subprocess.Popen(cmd, stdout=None, stderr=None)
+
+    deadline = time.time() + args.local_server_startup_timeout
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(
+                f"local FLUX server exited early with code {proc.returncode}"
+            )
+        if is_server_reachable(local_url):
+            eprint(f"[cli.py] local FLUX server ready at {local_url}")
+            args.url = local_url
+            return proc
+        time.sleep(0.5)
+
+    proc.terminate()
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    raise TimeoutError(
+        f"local FLUX server failed to start within {args.local_server_startup_timeout}s"
+    )
+
+
+def start_local_gemma_server(args):
+    script = Path(__file__).with_name("gemma_server.py")
+    if not script.exists():
+        raise FileNotFoundError(f"local Gemma server script not found: {script}")
+
+    port = find_free_port()
+    local_url = f"http://127.0.0.1:{port}/api/v1/chat"
+    cmd = [
+        sys.executable,
+        str(script),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--model",
+        args.local_gemma_model,
+        "--backend",
+        args.local_gemma_backend,
+        "--dtype",
+        args.local_gemma_dtype,
+        "--max-new-tokens",
+        str(args.local_gemma_max_new_tokens),
+        "--cache-dir",
+        args.local_gemma_cache_dir,
+    ]
+    if args.local_gemma_device:
+        cmd.extend(["--device", args.local_gemma_device])
+
+    eprint(f"[cli.py] text server unreachable; starting local Gemma server: {script}")
+    eprint(f"[cli.py] model={args.local_gemma_model} dtype={args.local_gemma_dtype}")
+    proc = subprocess.Popen(cmd, stdout=None, stderr=None)
+
+    deadline = time.time() + args.local_text_server_startup_timeout
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(
+                f"local Gemma server exited early with code {proc.returncode}"
+            )
+        if is_server_reachable(local_url):
+            eprint(f"[cli.py] local Gemma server ready at {local_url}")
+            args.completion_url = local_url
+            return proc
+        time.sleep(0.5)
+
+    proc.terminate()
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    raise TimeoutError(
+        f"local Gemma server failed to start within {args.local_text_server_startup_timeout}s"
+    )
+
+
+@contextmanager
+def maybe_local_text_server(args):
+    proc = None
+    try:
+        if (
+            not args.no_local_text_fallback
+            and not args.dry_run
+            and not is_server_reachable(args.completion_url)
+        ):
+            proc = start_local_gemma_server(args)
+        yield
+    finally:
+        if proc is not None:
+            eprint("[cli.py] stopping local Gemma server")
+            proc.terminate()
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+
+
+@contextmanager
+def maybe_local_image_server(args):
+    proc = None
+    try:
+        if (
+            not args.no_local_fallback
+            and not args.dry_run
+            and args.model == "flux2"
+            and not is_server_reachable(args.url)
+        ):
+            proc = start_local_flux2_server(args)
+        yield
+    finally:
+        if proc is not None:
+            eprint("[cli.py] stopping local FLUX server")
+            proc.terminate()
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
 
 
 def generate_image(args, prompt: str):
@@ -614,12 +922,14 @@ def discover_album_candidates(paths, output_name, force):
 def run_direct_prompt(args):
     prompt = args.prompt
     if args.expand_direct_prompt:
-        expanded = expand_prompt(args, f"Album: {prompt}\nArtist: Unknown Artist")
+        with maybe_local_text_server(args):
+            expanded = expand_prompt(args, f"Album: {prompt}\nArtist: Unknown Artist")
         if not expanded["ok"]:
             json_exit({"ok": False, "error": expanded["error"]}, 1)
         prompt = expanded["prompt"]
 
-    result = generate_image(args, prompt)
+    with maybe_local_image_server(args):
+        result = generate_image(args, prompt)
     saved_file = None
     if result["ok"] and args.save:
         try:
@@ -660,80 +970,110 @@ def run_album_mode(args):
     results = []
 
     eprint(f"Found {len(candidates)} missing-art album candidates")
-    for index, candidate in enumerate(candidates, start=1):
-        eprint(f"[{index}/{len(candidates)}] {candidate.directory}")
-        if args.verbose or args.dry_run:
-            eprint(candidate.short_content)
 
-        if args.prompt:
-            prompt = args.prompt
-        else:
-            expanded = expand_prompt(args, candidate.short_content)
-            if not expanded["ok"]:
-                failed += 1
+    # Phase 1: resolve every prompt before touching the image model.
+    prepared = []
+    with maybe_local_text_server(args):
+        for index, candidate in enumerate(candidates, start=1):
+            eprint(f"[text {index}/{len(candidates)}] {candidate.directory}")
+            if args.verbose or args.dry_run:
+                eprint(candidate.short_content)
+
+            cover_txt_path = candidate.directory / "cover.txt"
+            if args.prompt:
+                prompt = args.prompt
+            elif cover_txt_path.exists() and not args.force:
+                try:
+                    prompt = cover_txt_path.read_text(encoding="utf-8").strip()
+                except Exception as error:
+                    eprint(f"  Failed to read {cover_txt_path}: {error}")
+                    prompt = ""
+                if not prompt:
+                    eprint("  cover.txt is empty; expanding prompt")
+                    prompt = None
+            else:
+                prompt = None
+
+            if prompt is None:
+                expanded = expand_prompt(args, candidate.short_content)
+                if not expanded["ok"]:
+                    failed += 1
+                    results.append(
+                        {
+                            "album": str(candidate.directory),
+                            "ok": False,
+                            "error": expanded["error"],
+                        }
+                    )
+                    eprint(f"  Prompt generation failed: {expanded['error']}")
+                    continue
+                prompt = expanded["prompt"]
+                if not args.dry_run:
+                    try:
+                        cover_txt_path.write_text(prompt, encoding="utf-8")
+                        eprint(f"  Wrote {cover_txt_path}")
+                    except Exception as error:
+                        eprint(f"  Failed to write {cover_txt_path}: {error}")
+
+            eprint(f"  Prompt: {prompt}")
+            if args.dry_run:
                 results.append(
                     {
                         "album": str(candidate.directory),
-                        "ok": False,
-                        "error": expanded["error"],
+                        "ok": True,
+                        "dry_run": True,
+                        "prompt": prompt,
+                        "output_path": str(candidate.output_path),
                     }
                 )
-                eprint(f"  Prompt generation failed: {expanded['error']}")
                 continue
-            prompt = expanded["prompt"]
 
-        eprint(f"  Prompt: {prompt}")
-        if args.dry_run:
-            results.append(
-                {
-                    "album": str(candidate.directory),
-                    "ok": True,
-                    "dry_run": True,
-                    "prompt": prompt,
-                    "output_path": str(candidate.output_path),
-                }
-            )
-            continue
+            prepared.append((candidate, prompt))
 
-        result = generate_image(args, prompt)
-        if not result["ok"]:
-            failed += 1
-            results.append(
-                {
-                    "album": str(candidate.directory),
-                    "ok": False,
-                    "prompt": prompt,
-                    "error": result["error"],
-                }
-            )
-            eprint(f"  Image generation failed: {result['error']}")
-            continue
+    # Phase 2: generate all images now that text expansion is done.
+    if not args.dry_run and prepared:
+        with maybe_local_image_server(args):
+            for index, (candidate, prompt) in enumerate(prepared, start=1):
+                eprint(f"[image {index}/{len(prepared)}] {candidate.directory}")
+                result = generate_image(args, prompt)
+                if not result["ok"]:
+                    failed += 1
+                    results.append(
+                        {
+                            "album": str(candidate.directory),
+                            "ok": False,
+                            "prompt": prompt,
+                            "error": result["error"],
+                        }
+                    )
+                    eprint(f"  Image generation failed: {result['error']}")
+                    continue
 
-        try:
-            write_image_result(result, candidate.output_path)
-        except Exception as error:
-            failed += 1
-            results.append(
-                {
-                    "album": str(candidate.directory),
-                    "ok": False,
-                    "prompt": prompt,
-                    "error": {"code": "WRITE_FAILED", "message": str(error)},
-                }
-            )
-            eprint(f"  Write failed: {error}")
-            continue
+                try:
+                    write_image_result(result, candidate.output_path)
+                except Exception as error:
+                    failed += 1
+                    results.append(
+                        {
+                            "album": str(candidate.directory),
+                            "ok": False,
+                            "prompt": prompt,
+                            "error": {"code": "WRITE_FAILED", "message": str(error)},
+                        }
+                    )
+                    eprint(f"  Write failed: {error}")
+                    continue
 
-        generated += 1
-        results.append(
-            {
-                "album": str(candidate.directory),
-                "ok": True,
-                "prompt": prompt,
-                "output_path": str(candidate.output_path),
-            }
-        )
-        eprint(f"  Wrote {candidate.output_path}")
+                generated += 1
+                results.append(
+                    {
+                        "album": str(candidate.directory),
+                        "ok": True,
+                        "prompt": prompt,
+                        "output_path": str(candidate.output_path),
+                    }
+                )
+                eprint(f"  Wrote {candidate.output_path}")
 
     json_exit(
         {
