@@ -33,7 +33,6 @@ use super::misc::{
 pub struct PlayerView {
     pub state: Entity<AppState>,
     pub focus_handle: FocusHandle,
-    pub(crate) search_focus_handle: FocusHandle,
     pub(crate) volume_focus_handle: FocusHandle,
     pub(super) last_saved_window_bounds: Option<Bounds<Pixels>>,
     /// Scroll handle for library grid view
@@ -78,14 +77,8 @@ pub struct PlayerView {
 }
 
 impl PlayerView {
-    #[doc(hidden)]
-    pub fn search_focus_handle_for_tests(&self) -> FocusHandle {
-        self.search_focus_handle.clone()
-    }
-
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
-        let search_focus_handle = cx.focus_handle();
         let volume_focus_handle = cx.focus_handle();
 
         // Initialize OS media controls (MPRIS on Linux, MediaPlayer on macOS/Windows)
@@ -269,7 +262,6 @@ impl PlayerView {
         Self {
             state,
             focus_handle,
-            search_focus_handle,
             volume_focus_handle,
             last_saved_window_bounds: None,
             grid_scroll_handle: ScrollHandle::new(),
@@ -750,10 +742,9 @@ impl PlayerView {
     pub(super) fn toggle_search(
         &mut self,
         _: &ToggleSearch,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let mut should_focus = false;
         self.state.update(cx, |state, _cx| {
             if state.app.ui_state.input_mode == crate::app::InputMode::Search {
                 log::info!("toggle_search: exiting search mode");
@@ -762,19 +753,10 @@ impl PlayerView {
                 log::info!("toggle_search: entering search mode");
                 state.app.ui_state.input_mode = crate::app::InputMode::Search;
                 state.app.library_state.search_query.clear();
-                should_focus = true;
             }
         });
 
-        if should_focus {
-            self.search_focus_handle.focus(window, cx);
-            let search_focus = self.search_focus_handle.clone();
-            window.defer(cx, move |window, cx| {
-                search_focus.focus(window, cx);
-            });
-            #[cfg(any(target_os = "ios", target_os = "tvos"))]
-            gpui_ios::show_keyboard();
-        } else {
+        if self.state.read(cx).app.ui_state.input_mode != crate::app::InputMode::Search {
             #[cfg(any(target_os = "ios", target_os = "tvos"))]
             gpui_ios::hide_keyboard();
         }

@@ -93,7 +93,7 @@ plugins-examples:
 [group('qa')]
 qa-plugins: qa-plugins-diagnostics qa-plugins-fuzzer
 
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-diagnostics:
 	cargo run --release -p sotf-plugin-ab-compare --bin qa-ab-compare --features qa
 	cargo run --release -p sotf-plugin-aec --bin qa-aec --features qa
@@ -136,10 +136,10 @@ qa-plugins-diagnostics:
 # QA FUZZER
 # ----------------------------------------------------------------------
 
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-fuzzer: qa-plugins-fuzzer-simple qa-plugins-fuzzer-1ch qa-plugins-fuzzer-2ch qa-plugins-fuzzer-6ch
 
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-fuzzer-simple:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_*.wav; do \
 		for plugin in gain eq compressor limiter gate delay loudness_monitor abcompare expander mbcomp mbexp matrix mutesolo denoiser spectrum pnd; do \
@@ -148,7 +148,7 @@ qa-plugins-fuzzer-simple:
 		done; \
 	done
 
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-fuzzer-1ch:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch1_*.wav; do \
 		for plugin in mono_to_stereo; do \
@@ -157,7 +157,7 @@ qa-plugins-fuzzer-1ch:
 		done; \
 	done
 
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-fuzzer-2ch:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch2_*.wav; do \
 		for plugin in fletcher upmixer xtc crossfeed; do \
@@ -166,7 +166,7 @@ qa-plugins-fuzzer-2ch:
 		done; \
 	done
 
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-fuzzer-6ch:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch6_*.wav; do \
 		for plugin in downmix; do \
@@ -263,7 +263,7 @@ plugins-bench-ambisonics:
 qa-plugins-formats: qa-plugins-au-validate qa-plugins-vst3-validate qa-plugins-clap-validate qa-plugins-cross-format
 
 # Validate all installed Audio Units via auval
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-au-validate:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -286,7 +286,7 @@ qa-plugins-au-validate:
 	[ "$FAILED" -eq 0 ]
 
 # Validate all VST3 plugins via pluginval
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-vst3-validate:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -317,7 +317,7 @@ qa-plugins-vst3-validate:
 	[ "$FAILED" -eq 0 ]
 
 # Validate all CLAP plugins via clap-validator
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-clap-validate:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -349,12 +349,12 @@ qa-plugins-clap-validate:
 	[ "$FAILED" -eq 0 ]
 
 # Cross-format audio comparison
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-cross-format:
 	cargo test -p plugins-bridge --test cross_format_comparison --release
 
 # VST3 stress test (pluginval at maximum strictness)
-[group('plugins')]
+[group('qa-plugins')]
 qa-plugins-vst3-stress:
 	#!/usr/bin/env bash
 	set -euo pipefail

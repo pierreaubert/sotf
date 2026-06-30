@@ -177,6 +177,7 @@ impl TestScenario for SearchInputKeepsFocusScenario {
     }
 
     fn setup(&mut self, cx: &mut gpui::TestAppContext) -> Result<(), Box<dyn Error>> {
+        gpui_ui_kit::clear_all_input_states();
         cx.update(|cx| {
             cx.bind_keys(sotf_audio_player_gpui::app::keybindings::get_keybindings(
                 sotf_audio_player_gpui::app::KeymapPreset::Default,
@@ -195,13 +196,9 @@ impl TestScenario for SearchInputKeepsFocusScenario {
 
         let mut page = LibraryPage::new(&mut driver);
         page.click_sidebar_search()?;
+        page.click_search_bar_chrome()?;
 
         page.type_search_query_one_char_at_a_time_asserting("s")?;
-
-        // Regression guard for the live symptom: after the first search update,
-        // focus can end up back on the player root while Search mode remains
-        // active. The remaining keystrokes must still extend the search query.
-        page.focus_player_root();
         page.type_search_query_one_char_at_a_time_asserting("earch")?;
 
         let query = page.get_search_query();
@@ -260,11 +257,10 @@ impl TestScenario for SearchInputAccumulatesFromLibraryTabScenario {
         let mut page = LibraryPage::new(&mut driver);
         page.click_library_search_tab()?;
         if !page.is_search_focused() {
-            return Err("Search input should be focused after opening from the library tab".into());
+            return Err("Search mode should be active after opening from the library tab".into());
         }
 
-        page.type_search_query_one_char_at_a_time_asserting("v")?;
-        page.type_search_query_without_key_char_asserting("ivaldi")?;
+        page.type_search_query_one_char_at_a_time_asserting("vivaldi")?;
 
         let query = page.get_search_query();
         if query != "vivaldi" {
@@ -286,6 +282,131 @@ impl TestScenario for SearchInputAccumulatesFromLibraryTabScenario {
 #[gpui::test]
 async fn test_search_input_accumulates_from_library_tab(cx: &mut gpui::TestAppContext) {
     let scenario = SearchInputAccumulatesFromLibraryTabScenario;
+    let runner = E2ERunner::new(scenario);
+    let result = runner.run(cx).await;
+
+    if let Err(e) = &result {
+        println!("Test failed: {}", e);
+    }
+    assert!(result.is_ok());
+}
+
+pub struct SearchInputCanBeClickedScenario;
+
+impl TestScenario for SearchInputCanBeClickedScenario {
+    fn name(&self) -> &'static str {
+        "Search Library Input Can Be Clicked"
+    }
+
+    fn setup(&mut self, cx: &mut gpui::TestAppContext) -> Result<(), Box<dyn Error>> {
+        cx.update(|cx| {
+            cx.bind_keys(sotf_audio_player_gpui::app::keybindings::get_keybindings(
+                sotf_audio_player_gpui::app::KeymapPreset::Default,
+            ));
+        });
+        Ok(())
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        view: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut driver = AppDriver::new(cx, view);
+        driver.navigate_to(Screen::Library);
+
+        let mut page = LibraryPage::new(&mut driver);
+        page.click_library_search_tab()?;
+        if page.is_input_editing() {
+            return Err("Search input should not be editing before it is clicked".into());
+        }
+        page.click_search_bar_chrome()?;
+        if !page.is_input_editing() {
+            return Err("Clicking the visible search bar should start editing the input".into());
+        }
+        page.type_search_query_one_char_at_a_time_asserting("bach")?;
+
+        let query = page.get_search_query();
+        if query != "bach" {
+            return Err(format!(
+                "Clicking the visible search input should allow typing. Expected 'bach', got '{}'",
+                query
+            )
+            .into());
+        }
+
+        Ok(())
+    }
+
+    fn teardown(&mut self, _cx: &mut gpui::TestAppContext) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+}
+
+#[gpui::test]
+async fn test_search_input_can_be_clicked(cx: &mut gpui::TestAppContext) {
+    let scenario = SearchInputCanBeClickedScenario;
+    let runner = E2ERunner::new(scenario);
+    let result = runner.run(cx).await;
+
+    if let Err(e) = &result {
+        println!("Test failed: {}", e);
+    }
+    assert!(result.is_ok());
+}
+
+pub struct SearchInputRequiresClickScenario;
+
+impl TestScenario for SearchInputRequiresClickScenario {
+    fn name(&self) -> &'static str {
+        "Search Library Input Requires Click"
+    }
+
+    fn setup(&mut self, cx: &mut gpui::TestAppContext) -> Result<(), Box<dyn Error>> {
+        gpui_ui_kit::clear_all_input_states();
+        cx.update(|cx| {
+            cx.bind_keys(sotf_audio_player_gpui::app::keybindings::get_keybindings(
+                sotf_audio_player_gpui::app::KeymapPreset::Default,
+            ));
+        });
+        Ok(())
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        view: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut driver = AppDriver::new(cx, view);
+        driver.navigate_to(Screen::Library);
+
+        let mut page = LibraryPage::new(&mut driver);
+        page.click_library_search_tab()?;
+        page.type_search_query_one_char_at_a_time("x");
+
+        let query = page.get_search_query();
+        if !query.is_empty() {
+            return Err(format!(
+                "Search query changed before the visible input was clicked. Expected empty query, got '{}'",
+                query
+            )
+            .into());
+        }
+
+        page.click_search_bar_chrome()?;
+        page.type_search_query_one_char_at_a_time_asserting("x")?;
+
+        Ok(())
+    }
+
+    fn teardown(&mut self, _cx: &mut gpui::TestAppContext) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+}
+
+#[gpui::test]
+async fn test_search_input_requires_click(cx: &mut gpui::TestAppContext) {
+    let scenario = SearchInputRequiresClickScenario;
     let runner = E2ERunner::new(scenario);
     let result = runner.run(cx).await;
 

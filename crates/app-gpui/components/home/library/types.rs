@@ -6,8 +6,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Input, InputSize, Spinner, SpinnerSize, TabItem, TabVariant,
-    Tabs, TabsTheme,
+    Button, ButtonSize, ButtonVariant, SearchBar, SearchBarSize, Spinner, SpinnerSize, TabItem,
+    TabVariant, Tabs, TabsTheme,
 };
 use std::sync::Arc;
 
@@ -237,7 +237,6 @@ impl PlayerView {
         ];
 
         let state_for_tabs = self.state.clone();
-        let search_focus_for_tabs = self.search_focus_handle.clone();
 
         div()
             .flex()
@@ -270,9 +269,8 @@ impl PlayerView {
                                 .selected_index(sort_tab_index)
                                 .variant(TabVariant::VerticalCard)
                                 .theme(tabs_theme.clone())
-                                .on_change(move |index, window, cx| {
+                                .on_change(move |index, _window, cx| {
                                     let mut left_search = false;
-                                    let mut entered_search = false;
                                     state_for_tabs.update(cx, |state, _cx| {
                                         // Handle sort order tabs (0-5)
                                         if index <= 5 {
@@ -319,18 +317,9 @@ impl PlayerView {
                                                 state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Search;
                                                 state.app.ui_state.filter_menu_open = false;
-                                                entered_search = true;
                                             }
                                         }
                                     });
-                                    if entered_search {
-                                        search_focus_for_tabs.focus(window, cx);
-                                        let search_focus_after_render =
-                                            search_focus_for_tabs.clone();
-                                        window.defer(cx, move |window, cx| {
-                                            search_focus_after_render.focus(window, cx);
-                                        });
-                                    }
                                     if left_search {
                                         #[cfg(any(target_os = "ios", target_os = "tvos"))]
                                         gpui_ios::hide_keyboard();
@@ -424,72 +413,59 @@ impl PlayerView {
                     )
                 })
                 // Search bar row (only visible when in search mode)
-                // Uses Input component's native text handling via on_text_change
                 .when(is_search_mode, |el| {
                     el.child(
                         div().flex().justify_center().mb(d.gap).child(
-                            div().w_96().child(
-                                Input::new("search-input")
-                                    .value(SharedString::from(search_query.clone()))
-                                    .placeholder("Type to search albums, artists, tracks...")
-                                    .icon_left("🔍")
-                                    .size(InputSize::Sm)
-                                    .bg_color(theme.surface)
-                                    .text_color(theme.text_primary)
-                                    .placeholder_color(theme.text_muted)
-                                    .focus_handle(self.search_focus_handle.clone())
-                                    .on_edit_start(|_window, _cx| {
-                                        #[cfg(any(target_os = "ios", target_os = "tvos"))]
-                                        gpui_ios::show_keyboard();
-                                    })
-                                    .on_edit_end(|_value, _window, _cx| {
-                                        #[cfg(any(target_os = "ios", target_os = "tvos"))]
-                                        gpui_ios::hide_keyboard();
-                                    })
-                                    .on_text_change({
-                                        let app_state = self.state.clone();
-                                        let view_handle = cx.entity().clone();
-                                        let search_focus = self.search_focus_handle.clone();
-                                        move |text, window, cx| {
-                                            app_state.update(cx, |state, _| {
-                                                state.app.library_state.set_search_query(text);
-                                                if state
-                                                    .app
-                                                    .remote
-                                                    .server_store
-                                                    .selected_server_id
-                                                    .is_some()
-                                                {
-                                                    state.app.remote.clear_remote_album_page();
+                            div()
+                                .w_96()
+                                .debug_selector(|| "library-search-bar".to_string())
+                                .child(
+                                    SearchBar::new("search-input")
+                                        .value(search_query.clone())
+                                        .placeholder("Type to search albums, artists, tracks...")
+                                        .size(SearchBarSize::Sm)
+                                        .on_change({
+                                            let app_state = self.state.clone();
+                                            let view_handle = cx.entity().clone();
+                                            move |text, _window, cx| {
+                                                app_state.update(cx, |state, _| {
                                                     state
                                                         .app
+                                                        .library_state
+                                                        .set_search_query(text.to_string());
+                                                    if state
+                                                        .app
                                                         .remote
-                                                        .refresh_requests
-                                                        .visible_album_page = true;
-                                                }
-                                                if state.app.ui_state.input_mode
-                                                    != crate::app::InputMode::Search
-                                                {
-                                                    state.app.ui_state.input_mode =
-                                                        crate::app::InputMode::Search;
-                                                }
-                                            });
-                                            let search_focus_after_render = search_focus.clone();
-                                            window.defer(cx, move |window, cx| {
-                                                search_focus_after_render.focus(window, cx);
-                                            });
-                                            view_handle.update(cx, |_, cx| cx.notify());
-                                        }
-                                    })
-                                    .on_change({
-                                        let view_handle = cx.entity().clone();
-                                        move |_text, _window, cx| {
-                                            log::info!("Search confirmed");
-                                            // Optionally we could trigger something here
-                                            view_handle.update(cx, |_, cx| cx.notify());
-                                        }
-                                    }),
-                            ),
+                                                        .server_store
+                                                        .selected_server_id
+                                                        .is_some()
+                                                    {
+                                                        state.app.remote.clear_remote_album_page();
+                                                        state
+                                                            .app
+                                                            .remote
+                                                            .refresh_requests
+                                                            .visible_album_page = true;
+                                                    }
+                                                    if state.app.ui_state.input_mode
+                                                        != crate::app::InputMode::Search
+                                                    {
+                                                        state.app.ui_state.input_mode =
+                                                            crate::app::InputMode::Search;
+                                                    }
+                                                });
+                                                view_handle.update(cx, |_, cx| cx.notify());
+                                            }
+                                        })
+                                        .on_submit({
+                                            let view_handle = cx.entity().clone();
+                                            move |_text, _window, cx| {
+                                                log::info!("Search confirmed");
+                                                // Optionally we could trigger something here
+                                                view_handle.update(cx, |_, cx| cx.notify());
+                                            }
+                                        }),
+                                ),
                         ),
                     )
                 })
