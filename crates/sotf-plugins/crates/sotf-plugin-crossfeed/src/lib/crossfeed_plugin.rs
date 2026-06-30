@@ -119,12 +119,12 @@ impl CrossfeedPlugin {
             itd_delay_l: DelayLine::new(params.itd_delay_ms, sr),
             itd_delay_r: DelayLine::new(params.itd_delay_ms, sr),
 
-            dry_l: vec![0.0; 4096],
-            dry_r: vec![0.0; 4096],
-            wet_l: vec![0.0; 4096],
-            wet_r: vec![0.0; 4096],
-            mb_bands_l: [vec![0.0; 4096], vec![0.0; 4096], vec![0.0; 4096]],
-            mb_bands_r: [vec![0.0; 4096], vec![0.0; 4096], vec![0.0; 4096]],
+            dry_l: vec![0.0; 65536],
+            dry_r: vec![0.0; 65536],
+            wet_l: vec![0.0; 65536],
+            wet_r: vec![0.0; 65536],
+            mb_bands_l: [vec![0.0; 65536], vec![0.0; 65536], vec![0.0; 65536]],
+            mb_bands_r: [vec![0.0; 65536], vec![0.0; 65536], vec![0.0; 65536]],
             mb_feed_linear: [
                 fast_pow10(params.mb_low_feed_db / 20.0),
                 fast_pow10(params.mb_mid_feed_db / 20.0),
@@ -547,7 +547,7 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
         if let Some(ag) = &mut self.auto_gain {
             ag.set_sample_rate(sr).map_err(|e| e.to_string())?;
         }
-        let cap = 16384;
+        let cap = 65536;
         self.dry_l.resize(cap, 0.0);
         self.dry_r.resize(cap, 0.0);
         self.wet_l.resize(cap, 0.0);
