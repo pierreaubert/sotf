@@ -90,6 +90,10 @@ use super::default_crossfeed_mb_mid_feed_db;
 use super::default_crossfeed_mb_mid_high_freq_hz;
 use super::default_crossfeed_meier_level;
 use super::default_crossfeed_mix;
+use super::default_crossover_fir_taps;
+use super::default_crossover_frequency;
+use super::default_crossover_output;
+use super::default_crossover_type;
 use super::default_de_esser_attack;
 use super::default_de_esser_frequency;
 use super::default_de_esser_mix;
@@ -324,6 +328,7 @@ use sotf_plugins::param_specs::channel_mute_solo as cms_specs;
 use sotf_plugins::param_specs::compressor as compressor_specs;
 use sotf_plugins::param_specs::convolution as convolution_specs;
 use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
+use sotf_plugins::param_specs::crossover as crossover_specs;
 use sotf_plugins::param_specs::de_esser as de_esser_specs;
 use sotf_plugins::param_specs::declick as declick_specs;
 use sotf_plugins::param_specs::delay as delay_specs;
@@ -1125,6 +1130,20 @@ pub enum PluginSettings {
         #[serde(default)]
         difference_mode: bool,
     },
+    Crossover {
+        /// Crossover type: "LR24" or "LinearPhase"
+        #[serde(rename = "type", default = "default_crossover_type")]
+        crossover_type: String,
+        /// Primary crossover frequency in Hz
+        #[serde(default = "default_crossover_frequency")]
+        frequency: f64,
+        /// Output mode: "lowpass", "highpass", or "both"
+        #[serde(default = "default_crossover_output")]
+        output: String,
+        /// FIR tap count for linear-phase mode
+        #[serde(default = "default_crossover_fir_taps")]
+        fir_taps: usize,
+    },
     BandSplit {
         /// Number of input channels
         #[serde(default = "default_channels")]
@@ -1458,6 +1477,7 @@ impl PluginSettings {
             Self::SpeechDenoiser { .. } => PluginType::SpeechDenoiser,
             Self::Pnd { .. } => PluginType::Pnd,
             Self::ABCompare { .. } => PluginType::ABCompare,
+            Self::Crossover { .. } => PluginType::Crossover,
             Self::BandSplit { .. } => PluginType::BandSplit,
             Self::BandMerge { .. } => PluginType::BandMerge,
             Self::Downmix { .. } => PluginType::Downmix,
@@ -1948,6 +1968,15 @@ impl PluginSettings {
                     phase_invert_a: p(ab, "phase_invert_a").default_bool(),
                     phase_invert_b: p(ab, "phase_invert_b").default_bool(),
                     difference_mode: p(ab, "difference_mode").default_bool(),
+                }
+            }
+            PluginType::Crossover => {
+                let co = crossover_specs::PARAMS;
+                Self::Crossover {
+                    crossover_type: default_crossover_type(),
+                    frequency: p(co, "frequency").default_f64(),
+                    output: default_crossover_output(),
+                    fir_taps: p(co, "fir_taps").default_usize(),
                 }
             }
             PluginType::BandSplit => Self::BandSplit {

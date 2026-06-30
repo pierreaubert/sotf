@@ -92,6 +92,7 @@ impl PluginConfigConverterRegistry {
         registry.register("speech_denoiser", effects::convert_speech_denoiser);
         registry.register("pnd", effects::convert_pnd);
         registry.register("ab_compare", effects::convert_ab_compare);
+        registry.register("crossover", spatial::convert_crossover);
         registry.register("band_split", spatial::convert_band_split);
         registry.register("band_merge", spatial::convert_band_merge);
         registry.register("downmix", spatial::convert_downmix);

@@ -78,6 +78,11 @@ pub struct PlayerView {
 }
 
 impl PlayerView {
+    #[doc(hidden)]
+    pub fn search_focus_handle_for_tests(&self) -> FocusHandle {
+        self.search_focus_handle.clone()
+    }
+
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         let search_focus_handle = cx.focus_handle();
@@ -763,6 +768,10 @@ impl PlayerView {
 
         if should_focus {
             self.search_focus_handle.focus(window, cx);
+            let search_focus = self.search_focus_handle.clone();
+            window.defer(cx, move |window, cx| {
+                search_focus.focus(window, cx);
+            });
             #[cfg(any(target_os = "ios", target_os = "tvos"))]
             gpui_ios::show_keyboard();
         } else {

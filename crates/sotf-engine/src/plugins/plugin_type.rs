@@ -28,6 +28,7 @@ pub enum PluginType {
     SpeechDenoiser,
     Pnd,
     ABCompare,
+    Crossover,
     BandSplit,
     BandMerge,
     Downmix,
@@ -75,6 +76,7 @@ impl PluginType {
             Self::SpeechDenoiser => "Speech Denoiser",
             Self::Pnd => "PND Varispeed",
             Self::ABCompare => "A/B Compare",
+            Self::Crossover => "Crossover",
             Self::BandSplit => "Band Split",
             Self::BandMerge => "Band Merge",
             Self::Downmix => "Downmix",
@@ -123,6 +125,7 @@ impl PluginType {
             Self::SpeechDenoiser => "speech_denoiser",
             Self::Pnd => "pnd",
             Self::ABCompare => "ab_compare",
+            Self::Crossover => "crossover",
             Self::BandSplit => "band_split",
             Self::BandMerge => "band_merge",
             Self::Downmix => "downmix",
@@ -170,6 +173,7 @@ impl PluginType {
             Self::SpeechDenoiser => "RNNoise voice denoiser",
             Self::Pnd => "Polyphonic note detection and varispeed correction",
             Self::ABCompare => "A/B comparison with auto-gain loudness matching",
+            Self::Crossover => "Linkwitz-Riley / linear-phase crossover",
             Self::BandSplit => "Split audio into low/high frequency bands",
             Self::BandMerge => "Merge frequency bands back together",
             Self::Downmix => "Phase-coherent surround to stereo downmix",
@@ -219,6 +223,7 @@ impl PluginType {
             Self::SpeechDenoiser,
             Self::Pnd,
             Self::ABCompare,
+            Self::Crossover,
             Self::BandSplit,
             Self::BandMerge,
             Self::Downmix,
@@ -289,6 +294,7 @@ impl PluginType {
 
             Self::AAE
             | Self::ABCompare
+            | Self::Crossover
             | Self::BandSplit
             | Self::BandMerge
             | Self::Downmix

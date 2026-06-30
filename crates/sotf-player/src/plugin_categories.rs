@@ -85,6 +85,7 @@ pub const CATEGORIES: &[PluginCategory] = &[
         name: "Routing",
         plugins: &[
             PluginType::ChannelMuteSolo,
+            PluginType::Crossover,
             PluginType::BandSplit,
             PluginType::BandMerge,
         ],
@@ -124,5 +125,23 @@ mod tests {
             assert!(!cat.name.is_empty());
             assert!(!cat.plugins.is_empty(), "{} is empty", cat.name);
         }
+    }
+
+    #[test]
+    fn all_app_facing_plugins_appear_in_a_picker_category() {
+        for plugin_type in PluginType::all() {
+            if plugin_type == PluginType::FletcherMunson {
+                continue;
+            }
+            assert!(
+                category_of(&plugin_type).is_some(),
+                "{plugin_type:?} is in PluginType::all() but missing from picker categories"
+            );
+        }
+    }
+
+    #[test]
+    fn crossover_stays_reachable_from_routing_category() {
+        assert_eq!(category_of(&PluginType::Crossover), Some("Routing"));
     }
 }

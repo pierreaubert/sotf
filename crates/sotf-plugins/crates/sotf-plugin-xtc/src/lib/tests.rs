@@ -1783,6 +1783,38 @@ fn test_rebuild_cached_parameters_includes_extra() {
 }
 
 #[test]
+fn test_all_listed_parameters_have_getter_values() {
+    let plugin = XtcPlugin::new(XtcPluginParams::default(), 48000).unwrap();
+    for parameter in plugin.parameters() {
+        assert!(
+            plugin.get_parameter(&parameter.id).is_some(),
+            "parameter '{}' listed in parameters() but get_parameter() returned None",
+            parameter.id
+        );
+    }
+}
+
+#[test]
+fn test_room_ir_file_parameter_roundtrip() {
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48000).unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("room_ir_file")),
+        Some(ParameterValue::String(String::new()))
+    );
+
+    plugin
+        .set_parameter(
+            ParameterId::from("room_ir_file"),
+            ParameterValue::String(String::new()),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("room_ir_file")),
+        Some(ParameterValue::String(String::new()))
+    );
+}
+
+#[test]
 fn test_new_invalid_fft_size_non_power_of_two() {
     let mut params = XtcPluginParams::default();
     params.fft_size = 1000;

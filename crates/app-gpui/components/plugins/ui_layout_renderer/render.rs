@@ -1,4 +1,4 @@
-use super::super::actions::{OpenIrFile, OpenSofaFile};
+use super::super::actions::{OpenAbConfigFile, OpenIrFile, OpenSofaFile};
 use super::super::common::{
     render_knob_sized, render_section_title, render_toggle, render_transfer_curve_with_level,
     render_vertical_slider_with_ticks,
@@ -23,6 +23,7 @@ use crate::app::constants::spacing;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::theme::PluginTheme;
+use crate::plugin_file_picker::{FilePickerOpenTarget, file_picker_open_target};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -209,6 +210,66 @@ pub fn render_config_controls_from_layout(
     }
 
     Some(content.into_any_element())
+}
+
+/// Render explicit bottom tabs from a plugin's declarative layout.
+///
+/// Custom plugin views use this for layout-declared supplemental controls
+/// while keeping their bespoke main surface.
+#[allow(clippy::too_many_arguments)]
+pub fn render_tabs_from_layout(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    settings: &PluginSettings,
+    is_editing: bool,
+    selected_param: usize,
+    plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    available_width: f32,
+    theme: &Theme,
+) -> AnyElement {
+    let Some(layout) = settings.layout() else {
+        return div().into_any_element();
+    };
+    if layout.tabs.is_empty() {
+        return div().into_any_element();
+    }
+
+    let params = settings.param_specs();
+    let values: Vec<f64> = (0..params.len())
+        .map(|i| settings.param_value(i).unwrap_or(0.0))
+        .collect();
+    let file_paths = extract_file_paths(params, settings);
+    let solved = solve_layout(layout.column_constraints, available_width);
+
+    let mut container = div().flex().flex_col().gap(d.gap);
+    for tab in collect_all_tabs(layout, &solved, &[]) {
+        container = container.child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .child(render_section_title(d, tab.name, theme))
+                .child(render_layout_tab_content(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    tab.content,
+                    layout,
+                    params,
+                    &values,
+                    &file_paths,
+                    is_editing,
+                    selected_param,
+                    &solved,
+                    plugin_data,
+                    theme,
+                    None,
+                )),
+        );
+    }
+
+    container.into_any_element()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1448,20 +1509,26 @@ fn render_file_picker(
                 )))
                 .cursor_pointer()
                 .hover(|s| s.bg(theme.surface_hover))
-                .on_click(move |_, _, cx| match engine_key {
-                    "sofa_file" => {
+                .on_click(move |_, _, cx| match file_picker_open_target(engine_key) {
+                    Some(FilePickerOpenTarget::Sofa) => {
                         cx.dispatch_action(&OpenSofaFile {
                             plugin_idx,
                             param_idx: idx,
                         });
                     }
-                    "ir_file" | "room_ir_file" => {
+                    Some(FilePickerOpenTarget::Ir) => {
                         cx.dispatch_action(&OpenIrFile {
                             plugin_idx,
                             param_idx: idx,
                         });
                     }
-                    _ => {
+                    Some(FilePickerOpenTarget::AbConfig(path_id)) => {
+                        cx.dispatch_action(&OpenAbConfigFile {
+                            plugin_idx,
+                            path_id: path_id.to_string(),
+                        });
+                    }
+                    None => {
                         log::warn!("No file open action for engine_key: {}", engine_key);
                     }
                 })

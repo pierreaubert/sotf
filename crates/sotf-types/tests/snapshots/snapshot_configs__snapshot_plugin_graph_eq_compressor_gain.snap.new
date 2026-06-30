@@ -1,0 +1,54 @@
+---
+source: crates/sotf-types/tests/snapshot_configs.rs
+assertion_line: 89
+expression: graph
+---
+{
+  "nodes": [
+    {
+      "id": 0,
+      "plugin_type": "eq",
+      "parameters": {
+        "filters": [
+          {
+            "filter_type": "peak",
+            "frequency": 1000.0,
+            "q": 1.5,
+            "gain_db": 3.0
+          }
+        ]
+      },
+      "input_channels": 2
+    },
+    {
+      "id": 1,
+      "plugin_type": "compressor",
+      "parameters": {
+        "threshold_db": -12.0,
+        "ratio": 4.0,
+        "attack_ms": 10.0,
+        "release_ms": 100.0,
+        "makeup_db": 0.0
+      },
+      "input_channels": 2
+    },
+    {
+      "id": 2,
+      "plugin_type": "gain",
+      "parameters": {
+        "gain_db": -6.0
+      },
+      "input_channels": 2
+    }
+  ],
+  "edges": [
+    {
+      "from_node": 0,
+      "to_node": 1
+    },
+    {
+      "from_node": 1,
+      "to_node": 2
+    }
+  ]
+}

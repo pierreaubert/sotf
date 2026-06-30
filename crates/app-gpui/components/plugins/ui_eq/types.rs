@@ -69,4 +69,3 @@ pub struct EqRenderState<'a> {
     /// Available width in pixels for responsive compact-layout selection
     pub available_width: f32,
 }
-

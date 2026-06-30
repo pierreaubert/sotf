@@ -36,7 +36,7 @@ pub(super) fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::SpeechDenoiser => theme.info,
         PluginType::Pnd => theme.info,
         PluginType::ABCompare => theme.warning, // A/B Compare - use warning color
-        PluginType::BandSplit | PluginType::BandMerge => theme.accent, // Band processing - use accent
+        PluginType::Crossover | PluginType::BandSplit | PluginType::BandMerge => theme.accent,
         PluginType::Downmix => theme.accent,
         PluginType::MonoToStereo => theme.accent,
         PluginType::Crossfeed => theme.accent,
@@ -62,6 +62,7 @@ pub(super) fn plugin_max_ports(plugin_type: &PluginType) -> (Option<usize>, Opti
         PluginType::Upmixer | PluginType::AAE => (Some(2), Some(MAX_WORKFLOW_PORTS)),
         PluginType::BinauralDecoder | PluginType::Downmix => (Some(MAX_WORKFLOW_PORTS), Some(2)),
         PluginType::MonoToStereo => (Some(1), Some(2)),
+        PluginType::Crossover => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
         PluginType::BandSplit => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
         PluginType::BandMerge => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
         PluginType::Matrix => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
@@ -115,6 +116,8 @@ pub(super) fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) 
         PluginType::Matrix => (2, 2),
         // A/B Compare: stereo in/out
         PluginType::ABCompare => (2, 2),
+        // Crossover: stereo in, stereo/frequency-band out depending on mode.
+        PluginType::Crossover => (2, 4),
         // Band Split: 2 in, 4 out (2 bands x 2 channels)
         PluginType::BandSplit => (2, 4),
         // Band Merge: 4 in, 2 out (2 bands x 2 channels merged back)

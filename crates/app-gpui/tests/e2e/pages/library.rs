@@ -36,9 +36,38 @@ impl<'a, 'b> LibraryPage<'a, 'b> {
         Ok(())
     }
 
+    pub fn click_library_search_tab(&mut self) -> Result<(), Box<dyn Error>> {
+        let bounds = self
+            .driver
+            .cx
+            .debug_bounds("tab-search")
+            .ok_or("library search tab bounds should be available")?;
+        let center = bounds.center();
+        self.driver
+            .cx
+            .simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
+        self.driver
+            .cx
+            .simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
+        self.driver.run_until_parked();
+        Ok(())
+    }
+
     pub fn is_search_focused(&mut self) -> bool {
         self.driver
             .read_app(|app| app.ui_state.input_mode == InputMode::Search)
+            && self
+                .driver
+                .view
+                .read_with(self.driver.cx, |view, _cx| {
+                    view.search_focus_handle_for_tests()
+                })
+                .map(|search_focus| {
+                    self.driver.cx.update(|window, cx| {
+                        search_focus.is_focused(window) || search_focus.contains_focused(window, cx)
+                    })
+                })
+                .unwrap_or(false)
     }
 
     pub fn focus_player_root(&mut self) {
@@ -61,6 +90,58 @@ impl<'a, 'b> LibraryPage<'a, 'b> {
             self.driver.simulate_keystrokes(&ch.to_string());
             self.driver.run_until_parked();
         }
+    }
+
+    pub fn type_search_query_one_char_at_a_time_asserting(
+        &mut self,
+        query: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut expected = self.get_search_query();
+        for ch in query.chars() {
+            self.driver.simulate_keystrokes(&ch.to_string());
+            self.driver.run_until_parked();
+            expected.push(ch);
+
+            let actual = self.get_search_query();
+            if actual != expected {
+                return Err(format!(
+                    "Search query lost typed characters after '{}'. Expected '{}', got '{}'",
+                    ch, expected, actual
+                )
+                .into());
+            }
+
+            if !self.is_search_focused() {
+                return Err(format!(
+                    "Search mode ended after typing '{}'; query is '{}'",
+                    ch, actual
+                )
+                .into());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn type_search_query_without_key_char_asserting(
+        &mut self,
+        query: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut expected = self.get_search_query();
+        for ch in query.chars() {
+            self.driver.simulate_key_without_key_char(ch);
+            self.driver.run_until_parked();
+            expected.push(ch);
+
+            let actual = self.get_search_query();
+            if actual != expected {
+                return Err(format!(
+                    "Search query ignored printable key without key_char after '{}'. Expected '{}', got '{}'",
+                    ch, expected, actual
+                )
+                .into());
+            }
+        }
+        Ok(())
     }
 
     pub fn get_search_query(&mut self) -> String {

@@ -237,6 +237,7 @@ impl PlayerView {
         ];
 
         let state_for_tabs = self.state.clone();
+        let search_focus_for_tabs = self.search_focus_handle.clone();
 
         div()
             .flex()
@@ -269,8 +270,9 @@ impl PlayerView {
                                 .selected_index(sort_tab_index)
                                 .variant(TabVariant::VerticalCard)
                                 .theme(tabs_theme.clone())
-                                .on_change(move |index, _window, cx| {
+                                .on_change(move |index, window, cx| {
                                     let mut left_search = false;
+                                    let mut entered_search = false;
                                     state_for_tabs.update(cx, |state, _cx| {
                                         // Handle sort order tabs (0-5)
                                         if index <= 5 {
@@ -317,9 +319,18 @@ impl PlayerView {
                                                 state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Search;
                                                 state.app.ui_state.filter_menu_open = false;
+                                                entered_search = true;
                                             }
                                         }
                                     });
+                                    if entered_search {
+                                        search_focus_for_tabs.focus(window, cx);
+                                        let search_focus_after_render =
+                                            search_focus_for_tabs.clone();
+                                        window.defer(cx, move |window, cx| {
+                                            search_focus_after_render.focus(window, cx);
+                                        });
+                                    }
                                     if left_search {
                                         #[cfg(any(target_os = "ios", target_os = "tvos"))]
                                         gpui_ios::hide_keyboard();
@@ -438,7 +449,8 @@ impl PlayerView {
                                     .on_text_change({
                                         let app_state = self.state.clone();
                                         let view_handle = cx.entity().clone();
-                                        move |text, _window, cx| {
+                                        let search_focus = self.search_focus_handle.clone();
+                                        move |text, window, cx| {
                                             app_state.update(cx, |state, _| {
                                                 state.app.library_state.set_search_query(text);
                                                 if state
@@ -461,6 +473,10 @@ impl PlayerView {
                                                     state.app.ui_state.input_mode =
                                                         crate::app::InputMode::Search;
                                                 }
+                                            });
+                                            let search_focus_after_render = search_focus.clone();
+                                            window.defer(cx, move |window, cx| {
+                                                search_focus_after_render.focus(window, cx);
                                             });
                                             view_handle.update(cx, |_, cx| cx.notify());
                                         }

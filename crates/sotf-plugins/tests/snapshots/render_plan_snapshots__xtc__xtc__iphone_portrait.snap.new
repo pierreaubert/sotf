@@ -1,0 +1,366 @@
+---
+source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 80
+expression: plan
+---
+{
+  "plugin_type": "xtc",
+  "width": 390.0,
+  "design_language": "neutral",
+  "corner_radius_md": 8.0,
+  "min_touch_target": 32.0,
+  "toggle_variant": "capsule",
+  "label_position": "below",
+  "orientation": "vertical",
+  "knob_size": "xs",
+  "group_direction": "column",
+  "slider_height": 120.0,
+  "show_visualizations": false,
+  "columns_visible": [
+    "main"
+  ],
+  "columns_collapsed": [
+    "config",
+    "output"
+  ],
+  "config_controls": [
+    {
+      "param_index": 0,
+      "param_name": "Distance",
+      "control_type": "knob",
+      "unit": "m",
+      "range": [
+        0.5,
+        10.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 1,
+      "param_name": "Speaker Angle",
+      "control_type": "knob",
+      "unit": "°",
+      "range": [
+        10.0,
+        90.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 2,
+      "param_name": "Head Radius",
+      "control_type": "knob",
+      "unit": "m",
+      "range": [
+        0.05,
+        0.12
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 27,
+      "param_name": "Head Model",
+      "control_type": "selector",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    }
+  ],
+  "main_groups": [
+    {
+      "title": "BETA",
+      "controls": [
+        {
+          "param_index": 7,
+          "param_name": "Beta Base",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0001,
+            0.1
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 8,
+          "param_name": "Beta Low Boost",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            30.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 9,
+          "param_name": "Beta High Boost",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            30.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "title": "SHADOW",
+      "controls": [
+        {
+          "param_index": 10,
+          "param_name": "Shadow Cutoff",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            1000.0,
+            10000.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 11,
+          "param_name": "Shadow Slope",
+          "control_type": "knob",
+          "unit": "dB/oct",
+          "range": [
+            0.0,
+            12.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 12,
+          "param_name": "Max Gain",
+          "control_type": "knob",
+          "unit": "dB",
+          "range": [
+            3.0,
+            30.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "title": "ADVANCED",
+      "controls": [
+        {
+          "param_index": 13,
+          "param_name": "Spectral Norm",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 14,
+          "param_name": "Pinna Model",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
+    {
+      "title": "ROOM",
+      "controls": [
+        {
+          "param_index": 15,
+          "param_name": "Room Reflections",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 16,
+          "param_name": "Room IR",
+          "control_type": "file_picker",
+          "unit": "",
+          "range": null,
+          "read_only": false
+        },
+        {
+          "param_index": 17,
+          "param_name": "Room Width",
+          "control_type": "knob",
+          "unit": "m",
+          "range": [
+            2.0,
+            10.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 18,
+          "param_name": "Room Depth",
+          "control_type": "knob",
+          "unit": "m",
+          "range": [
+            2.0,
+            15.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 19,
+          "param_name": "Wall Absorption",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 20,
+          "param_name": "Reflection Beta",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            1.0,
+            10.0
+          ],
+          "read_only": false
+        }
+      ]
+    }
+  ],
+  "output_controls": [
+    {
+      "param_index": 21,
+      "param_name": "Bypass XTC Filters",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 22,
+      "param_name": "Bypass Spectral Norm",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 23,
+      "param_name": "Bypass Neumann",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 24,
+      "param_name": "Auto Gain",
+      "control_type": "toggle",
+      "unit": "",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 25,
+      "param_name": "AG Max",
+      "control_type": "knob",
+      "unit": "dB",
+      "range": [
+        0.0,
+        24.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 26,
+      "param_name": "AG Smoothing",
+      "control_type": "knob",
+      "unit": "ms",
+      "range": [
+        10.0,
+        500.0
+      ],
+      "read_only": false
+    }
+  ],
+  "tabs": [
+    {
+      "name": "Head Tracking",
+      "controls": [
+        {
+          "param_index": 3,
+          "param_name": "Head Offset X",
+          "control_type": "knob",
+          "unit": "m",
+          "range": [
+            -0.5,
+            0.5
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 4,
+          "param_name": "Head Offset Z",
+          "control_type": "knob",
+          "unit": "m",
+          "range": [
+            -0.5,
+            0.5
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 5,
+          "param_name": "Head Yaw",
+          "control_type": "knob",
+          "unit": "°",
+          "range": [
+            -90.0,
+            90.0
+          ],
+          "read_only": false
+        },
+        {
+          "param_index": 6,
+          "param_name": "Head Tracking Smooth",
+          "control_type": "knob",
+          "unit": "s",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false
+        }
+      ]
+    }
+  ],
+  "viz_slots": [],
+  "dynamic_sections": []
+}

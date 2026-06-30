@@ -1126,6 +1126,10 @@ impl PlayerView {
                 state.app.library_state.search_query.clear();
             });
             search_focus.focus(window, cx);
+            let search_focus_after_render = search_focus.clone();
+            window.defer(cx, move |window, cx| {
+                search_focus_after_render.focus(window, cx);
+            });
             #[cfg(any(target_os = "ios", target_os = "tvos"))]
             gpui_ios::show_keyboard();
         })

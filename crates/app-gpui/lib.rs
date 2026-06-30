@@ -16,6 +16,7 @@
 pub mod asset_cache;
 pub mod eq_layout;
 pub mod level_meter_render;
+pub mod plugin_file_picker;
 pub mod queue_render;
 
 #[cfg(test)]

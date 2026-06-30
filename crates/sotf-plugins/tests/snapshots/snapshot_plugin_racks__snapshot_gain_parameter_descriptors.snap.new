@@ -1,0 +1,79 @@
+---
+source: crates/sotf-plugins/tests/snapshot_plugin_racks.rs
+assertion_line: 76
+expression: params
+---
+[
+  {
+    "id": "gain_db",
+    "name": "Gain",
+    "description": null,
+    "group": "General",
+    "importance": "Useful",
+    "default_value": {
+      "Float": 0.0
+    },
+    "min_value": {
+      "Float": -60.0
+    },
+    "max_value": {
+      "Float": 20.0
+    },
+    "unit": "",
+    "logarithmic": false
+  },
+  {
+    "id": "smoothing_ms",
+    "name": "Smoothing",
+    "description": null,
+    "group": "General",
+    "importance": "Useful",
+    "default_value": {
+      "Float": 10.0
+    },
+    "min_value": {
+      "Float": 0.0
+    },
+    "max_value": {
+      "Float": 100.0
+    },
+    "unit": "",
+    "logarithmic": false
+  },
+  {
+    "id": "gain_db_0",
+    "name": "Gain Ch 1",
+    "description": null,
+    "group": "General",
+    "importance": "Useful",
+    "default_value": {
+      "Float": 0.0
+    },
+    "min_value": {
+      "Float": -60.0
+    },
+    "max_value": {
+      "Float": 20.0
+    },
+    "unit": "",
+    "logarithmic": false
+  },
+  {
+    "id": "gain_db_1",
+    "name": "Gain Ch 2",
+    "description": null,
+    "group": "General",
+    "importance": "Useful",
+    "default_value": {
+      "Float": 0.0
+    },
+    "min_value": {
+      "Float": -60.0
+    },
+    "max_value": {
+      "Float": 20.0
+    },
+    "unit": "",
+    "logarithmic": false
+  }
+]

@@ -370,6 +370,16 @@ impl_param_accessors! {
             phase_invert_a: bool, phase_invert_b: bool, difference_mode: bool,
         ]
     },
+    Crossover {
+        params: param_specs::crossover::PARAMS,
+        layout: Some(&param_specs::crossover::LAYOUT),
+        fields: [
+            crossover_type: [str crossover_plugin_type_to_index, index_to_crossover_plugin_type],
+            frequency: f64,
+            output: [str crossover_output_to_index, index_to_crossover_output],
+            fir_taps: usize,
+        ]
+    },
     BandSplit {
         params: param_specs::band_split::PARAMS,
         layout: Some(&param_specs::band_split::LAYOUT),
@@ -875,7 +885,10 @@ use aae::aae_speaker_config_to_index;
 use ambisonics::ambisonics_layout_to_index;
 use crossfeed::crossfeed_mode_to_index;
 use crossfeed::crossfeed_preset_to_index;
+use crossover::crossover_output_to_index;
+use crossover::crossover_plugin_type_to_index;
 use crossover::crossover_type_to_index;
+use crossover::index_to_crossover_plugin_type;
 use de::de_esser_mode_to_index;
 use detection::detection_mode_to_index;
 use hpf::hpf_order_to_index;
@@ -884,6 +897,7 @@ use index::index_to_aae_speaker_config;
 use index::index_to_ambisonics_layout;
 use index::index_to_crossfeed_mode;
 use index::index_to_crossfeed_preset;
+use index::index_to_crossover_output;
 use index::index_to_crossover_type;
 use index::index_to_de_esser_mode;
 use index::index_to_detection_mode;

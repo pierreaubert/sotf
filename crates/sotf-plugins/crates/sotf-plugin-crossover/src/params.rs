@@ -5,6 +5,7 @@
 //! truth for the audio thread; this module mirrors the user-visible surface.
 
 use sotf_host::param_specs::ParamSpec;
+use sotf_host::plugin_layout::*;
 
 pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::choice("Type", "type", 0, &["LR24", "LinearPhase"], "General")
@@ -36,28 +37,27 @@ pub const PARAMS: &[ParamSpec] = &[
         .structural()
         .setup()
         .doc("FIR length for linear-phase mode (odd values are rounded up)"),
-    ParamSpec::float(
-        "Frequency 2",
-        "frequency_2",
-        1000.0,
-        20.0,
-        20000.0,
-        1.0,
-        "Hz",
-        "Multi-way",
-    )
-    .setup()
-    .doc("Second crossover frequency for 3-way/4-way operation"),
-    ParamSpec::float(
-        "Frequency 3",
-        "frequency_3",
-        1000.0,
-        20.0,
-        20000.0,
-        1.0,
-        "Hz",
-        "Multi-way",
-    )
-    .setup()
-    .doc("Third crossover frequency for 4-way operation"),
 ];
+
+/// Crossover: idx 0=type, 1=frequency, 2=mode, 3=fir_taps.
+pub const LAYOUT: PluginLayout = PluginLayout {
+    config: &[
+        ControlSpec::button_set(0, &["LR24", "LinearPhase"]),
+        ControlSpec::button_set(2, &["Lowpass", "Highpass", "Both"]),
+    ],
+    main: &[ControlGroup {
+        title: "CROSSOVER",
+        controls: &[ControlSpec::knob_large(1)],
+    }],
+    output: &[],
+    tabs: &[TabSpec {
+        name: "Linear Phase",
+        controls: &[ControlSpec::knob(3)],
+    }],
+    visualizations: &[],
+    column_constraints: &[
+        ColumnConstraint::config(170.0, 0.65),
+        ColumnConstraint::main(340.0),
+    ],
+    dynamic_sections: &[],
+};

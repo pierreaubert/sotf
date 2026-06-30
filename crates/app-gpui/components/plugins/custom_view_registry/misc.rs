@@ -32,6 +32,7 @@ pub fn plugin_type_key(settings: &PluginSettings) -> &'static str {
         PluginSettings::Downmix { .. } => "downmix",
         PluginSettings::MonoToStereo { .. } => "mono_to_stereo",
         PluginSettings::ABCompare { .. } => "ab_compare",
+        PluginSettings::Crossover { .. } => "crossover",
         PluginSettings::AmbisonicsDecoder { .. } => "ambisonics",
         PluginSettings::Beamformer { .. } => "beamformer",
         PluginSettings::Aec { .. } => "aec",

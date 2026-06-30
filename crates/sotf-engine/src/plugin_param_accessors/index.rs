@@ -72,6 +72,15 @@ pub(super) fn index_to_crossover_type(index: f64) -> String {
     crossover_types().get(idx).unwrap_or(&"LR24").to_string()
 }
 
+pub(super) fn index_to_crossover_output(index: f64) -> String {
+    match index as usize {
+        1 => "highpass",
+        2 => "both",
+        _ => "lowpass",
+    }
+    .to_string()
+}
+
 pub(super) fn index_to_spectral_tilt(index: f64) -> SpectralTiltCorrection {
     match index as usize {
         0 => SpectralTiltCorrection::None,

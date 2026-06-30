@@ -1,6 +1,8 @@
 use crate::pages::headphone::HeadphoneEqPage;
 use crate::pages::spinorama::SpinoramaPage;
-use gpui::{Context, VisualTestContext, WindowHandle};
+use gpui::{
+    Context, KeyDownEvent, Keystroke, Modifiers, PlatformInput, VisualTestContext, WindowHandle,
+};
 use sotf_audio_player_gpui::app::{App, AppState, Screen, SettingsTab};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
@@ -94,6 +96,26 @@ impl<'a> AppDriver<'a> {
 
     pub fn simulate_keystrokes(&mut self, keystrokes: &str) {
         self.cx.simulate_keystrokes(keystrokes);
+    }
+
+    pub fn simulate_key_without_key_char(&mut self, key: char) {
+        let keystroke = Keystroke {
+            modifiers: Modifiers::default(),
+            key: key.to_string(),
+            key_char: None,
+        };
+        self.view
+            .update(self.cx, |_view, window, cx| {
+                window.dispatch_event(
+                    PlatformInput::KeyDown(KeyDownEvent {
+                        keystroke,
+                        is_held: false,
+                        prefer_character_input: false,
+                    }),
+                    cx,
+                );
+            })
+            .unwrap();
     }
 
     pub fn run_until_parked(&mut self) {

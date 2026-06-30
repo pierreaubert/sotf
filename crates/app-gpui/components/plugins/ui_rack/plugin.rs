@@ -57,6 +57,7 @@ pub(crate) fn plugin_description(plugin_type: &PluginType) -> &'static str {
         PluginType::SpeechDenoiser => "RNNoise voice denoiser",
         PluginType::Pnd => "Perceptual noise diffusion",
         PluginType::ABCompare => "A/B comparison between two signal paths",
+        PluginType::Crossover => "Linkwitz-Riley / linear-phase crossover",
         PluginType::BandSplit => "Split signal into frequency bands",
         PluginType::BandMerge => "Merge frequency bands back together",
         PluginType::Downmix => "Downmix multichannel to stereo",

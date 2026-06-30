@@ -134,3 +134,28 @@ fn spectrum_tilt_params_do_not_emit_engine_updates() {
     assert_eq!(settings.engine_param_at(tilt_correction_idx), None);
     assert_eq!(settings.engine_param_at(tilt_reference_idx), None);
 }
+
+#[test]
+fn crossover_is_exposed_with_editable_layout_and_dsp_config() {
+    assert!(
+        PluginType::all().contains(&PluginType::Crossover),
+        "Crossover must stay in the app-facing plugin inventory"
+    );
+
+    let settings = PluginSettings::default_for(&PluginType::Crossover);
+    let layout = settings
+        .layout()
+        .expect("Crossover must have an editable declarative layout");
+    assert!(layout.validate(settings.param_specs().len(), "Crossover").is_empty());
+    assert!(
+        layout
+            .validate_coverage(settings.param_specs(), "Crossover")
+            .is_empty(),
+        "Crossover layout must expose every declared parameter"
+    );
+
+    let config = settings.to_plugin_config(48_000.0);
+    assert_eq!(config.plugin_type, "crossover");
+    sotf_plugins::create_plugin(&config.plugin_type, &config.parameters, 2, 48_000)
+        .expect("Crossover settings must create the DSP plugin");
+}

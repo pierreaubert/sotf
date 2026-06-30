@@ -57,6 +57,17 @@ pub fn render_ab_compare(
             ctx.available_width,
             ctx.theme,
         ))
+        .child(ui_layout_renderer::render_tabs_from_layout(
+            &d,
+            ctx.entity.clone(),
+            plugin_idx,
+            ctx.settings,
+            ctx.is_editing,
+            ctx.selected_param,
+            ctx.plugin_data.as_ref(),
+            ctx.available_width,
+            ctx.theme,
+        ))
         .child(
             div()
                 .flex()
@@ -126,29 +137,23 @@ fn render_path_section(
                     ))),
             )
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(d.grid)
-                    .child(
-                        Button::new(SharedString::from(format!("ab-add-{path}")), "+")
-                            .aria_label("Add plugin for comparison")
-                            .variant(if add_menu_open {
-                                ButtonVariant::Primary
-                            } else {
-                                ButtonVariant::Secondary
-                            })
-                            .size(ButtonSize::Xs)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(
-                                move |_view, _: &ClickEvent, window, cx| {
-                                    window.dispatch_action(
-                                        Box::new(ABPathToggleAddMenu { plugin_idx, path }),
-                                        cx,
-                                    );
-                                },
-                            )),
-                    ),
+                div().flex().items_center().gap(d.grid).child(
+                    Button::new(SharedString::from(format!("ab-add-{path}")), "+")
+                        .aria_label("Add plugin for comparison")
+                        .variant(if add_menu_open {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Secondary
+                        })
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .on_click_event(cx.listener(move |_view, _: &ClickEvent, window, cx| {
+                            window.dispatch_action(
+                                Box::new(ABPathToggleAddMenu { plugin_idx, path }),
+                                cx,
+                            );
+                        })),
+                ),
             ),
     );
 

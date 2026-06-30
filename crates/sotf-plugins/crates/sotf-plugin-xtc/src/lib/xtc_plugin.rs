@@ -1055,6 +1055,22 @@ impl Plugin for XtcPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
+        if id.as_str() == "room_ir_file" {
+            let v = value
+                .as_string()
+                .ok_or_else(|| "room_ir_file must be a string".to_string())?;
+            if v.is_empty() {
+                self.params.room_ir_file = None;
+            } else {
+                if !std::path::Path::new(v).exists() {
+                    return Err(format!("Room IR file not found: {}", v));
+                }
+                self.params.room_ir_file = Some(v.to_string());
+            }
+            self.update_filters(false);
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
         if id.as_str() == "source_mode" {
             let v = value
                 .as_string()
@@ -1197,6 +1213,11 @@ impl Plugin for XtcPlugin {
         if id.as_str() == "hrtf_file" {
             return Some(ParameterValue::String(
                 self.params.hrtf_file.clone().unwrap_or_default(),
+            ));
+        }
+        if id.as_str() == "room_ir_file" {
+            return Some(ParameterValue::String(
+                self.params.room_ir_file.clone().unwrap_or_default(),
             ));
         }
         if id.as_str() == "source_mode" {

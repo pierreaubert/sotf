@@ -18,6 +18,7 @@ use sotf_plugins::param_specs::channel_mute_solo as cms_specs;
 use sotf_plugins::param_specs::compressor as compressor_specs;
 use sotf_plugins::param_specs::convolution as convolution_specs;
 use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
+use sotf_plugins::param_specs::crossover as crossover_specs;
 use sotf_plugins::param_specs::de_esser as de_esser_specs;
 use sotf_plugins::param_specs::declick as declick_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
@@ -307,6 +308,13 @@ sotf_plugins::serde_param_default! {
 sotf_plugins::serde_param_default! {
     band_split_specs::PARAMS;
     fn default_band_split_crossover_type() -> String = "crossover_type";
+}
+sotf_plugins::serde_param_default! {
+    crossover_specs::PARAMS;
+    fn default_crossover_type() -> String = "type";
+    fn default_crossover_frequency() -> f64 = "frequency";
+    fn default_crossover_output() -> String = "mode";
+    fn default_crossover_fir_taps() -> usize = "fir_taps";
 }
 sotf_plugins::serde_param_default! {
     band_merge_specs::PARAMS;

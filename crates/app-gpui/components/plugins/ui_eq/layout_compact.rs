@@ -4,8 +4,8 @@
 //! - `render_eq_inspector`: scrollable band list; graph optional.
 
 use crate::app::AppState;
-use crate::components::design::Ds;
 use crate::components::PluginEditingManager;
+use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -14,9 +14,9 @@ use sotf_audio_player::EQFilter;
 use sotf_plugins::param_specs::{eq::BAND_TEMPLATE as EQ, find_by_key as pk};
 
 use super::render::{
-    render_eq_active_toggle, render_eq_global_stepper, render_eq_global_toggle,
-    render_eq_knob_with_midi, render_eq_visualization, render_filter_type_selector,
-    EqBandIndexing, EqGlobalControl,
+    EqBandIndexing, EqGlobalControl, render_eq_active_toggle, render_eq_global_stepper,
+    render_eq_global_toggle, render_eq_knob_with_midi, render_eq_visualization,
+    render_filter_type_selector,
 };
 use super::types::{EqRenderState, EqViewMode};
 
@@ -35,21 +35,33 @@ pub(crate) fn render_eq_bottom_strip(
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let d = Ds::from_cx(cx);
-    let config_open = entity.read(cx).app.plugin_state.plugin_ui_state.eq_compact_config_open;
+    let config_open = entity
+        .read(cx)
+        .app
+        .plugin_state
+        .plugin_ui_state
+        .eq_compact_config_open;
 
-    let mut root = div()
-        .flex()
-        .flex_col()
-        .gap(d.section)
-        .size_full();
+    let mut root = div().flex().flex_col().gap(d.section).size_full();
 
     root = root.child(render_compact_global_bar(
-        &d, entity.clone(), plugin_idx, state, false, theme, cx,
+        &d,
+        entity.clone(),
+        plugin_idx,
+        state,
+        false,
+        theme,
+        cx,
     ));
 
     if config_open {
         root = root.child(render_compact_config_panel(
-            &d, entity.clone(), plugin_idx, state, theme, cx,
+            &d,
+            entity.clone(),
+            plugin_idx,
+            state,
+            theme,
+            cx,
         ));
     }
 
@@ -85,7 +97,12 @@ pub(crate) fn render_eq_bottom_strip(
             theme,
         ));
     }
-    strip = strip.child(render_add_band_button(&d, entity.clone(), plugin_idx, theme));
+    strip = strip.child(render_add_band_button(
+        &d,
+        entity.clone(),
+        plugin_idx,
+        theme,
+    ));
     root = root.child(strip);
 
     if let Some(filter) = display_filters.get(selected_band_idx) {
@@ -117,22 +134,39 @@ pub(crate) fn render_eq_inspector(
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let d = Ds::from_cx(cx);
-    let graph_visible = entity.read(cx).app.plugin_state.plugin_ui_state.eq_compact_graph_visible;
-    let config_open = entity.read(cx).app.plugin_state.plugin_ui_state.eq_compact_config_open;
+    let graph_visible = entity
+        .read(cx)
+        .app
+        .plugin_state
+        .plugin_ui_state
+        .eq_compact_graph_visible;
+    let config_open = entity
+        .read(cx)
+        .app
+        .plugin_state
+        .plugin_ui_state
+        .eq_compact_config_open;
 
-    let mut root = div()
-        .flex()
-        .flex_col()
-        .gap(d.section)
-        .size_full();
+    let mut root = div().flex().flex_col().gap(d.section).size_full();
 
     root = root.child(render_compact_global_bar(
-        &d, entity.clone(), plugin_idx, state, true, theme, cx,
+        &d,
+        entity.clone(),
+        plugin_idx,
+        state,
+        true,
+        theme,
+        cx,
     ));
 
     if config_open {
         root = root.child(render_compact_config_panel(
-            &d, entity.clone(), plugin_idx, state, theme, cx,
+            &d,
+            entity.clone(),
+            plugin_idx,
+            state,
+            theme,
+            cx,
         ));
     }
 
@@ -182,7 +216,12 @@ pub(crate) fn render_eq_inspector(
                 theme,
             ));
         }
-        list = list.child(render_add_band_button(&d, entity.clone(), plugin_idx, theme));
+        list = list.child(render_add_band_button(
+            &d,
+            entity.clone(),
+            plugin_idx,
+            theme,
+        ));
         root = root.child(list);
     }
 
@@ -199,8 +238,18 @@ fn render_compact_global_bar(
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
-    let config_open = entity.read(cx).app.plugin_state.plugin_ui_state.eq_compact_config_open;
-    let graph_visible = entity.read(cx).app.plugin_state.plugin_ui_state.eq_compact_graph_visible;
+    let config_open = entity
+        .read(cx)
+        .app
+        .plugin_state
+        .plugin_ui_state
+        .eq_compact_config_open;
+    let graph_visible = entity
+        .read(cx)
+        .app
+        .plugin_state
+        .plugin_ui_state
+        .eq_compact_graph_visible;
 
     let mode_label = match state.mode {
         EqViewMode::Standard => "EQ",
@@ -229,12 +278,22 @@ fn render_compact_global_bar(
                         .text_color(theme.text_primary)
                         .child(mode_label),
                 )
-                .child(config_toggle_button(d, entity.clone(), plugin_idx, config_open, theme)),
+                .child(config_toggle_button(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    config_open,
+                    theme,
+                )),
         );
 
     if show_graph_toggle {
         let graph_entity = entity.clone();
-        let label = if graph_visible { "Graph ■" } else { "Graph □" };
+        let label = if graph_visible {
+            "Graph ■"
+        } else {
+            "Graph □"
+        };
         bar = bar.child(
             div()
                 .px(d.pad_y)
@@ -243,11 +302,21 @@ fn render_compact_global_bar(
                 .font_weight(FontWeight::SEMIBOLD)
                 .rounded(d.r_sm)
                 .cursor_pointer()
-                .when(graph_visible, |d| d.bg(theme.accent).text_color(theme.text_on_accent))
-                .when(!graph_visible, |d| d.bg(theme.background_secondary).text_color(theme.text_secondary).hover(|s| s.bg(theme.surface_hover)))
+                .when(graph_visible, |d| {
+                    d.bg(theme.accent).text_color(theme.text_on_accent)
+                })
+                .when(!graph_visible, |d| {
+                    d.bg(theme.background_secondary)
+                        .text_color(theme.text_secondary)
+                        .hover(|s| s.bg(theme.surface_hover))
+                })
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     graph_entity.update(cx, |state, cx| {
-                        let visible = &mut state.app.plugin_state.plugin_ui_state.eq_compact_graph_visible;
+                        let visible = &mut state
+                            .app
+                            .plugin_state
+                            .plugin_ui_state
+                            .eq_compact_graph_visible;
                         *visible = !*visible;
                         cx.notify();
                     });
@@ -291,67 +360,96 @@ fn render_compact_config_panel(
                 .flex()
                 .items_center()
                 .gap(d.grid)
-                .child(mode_pill(d, "All Channels", !per_channel, theme, move |_, _, cx| {
-                    all_entity.update(cx, |state, cx| {
-                        state.app.set_eq_per_channel_mode(plugin_idx, false);
-                        cx.notify();
-                    });
-                }))
-                .child(mode_pill(d, "Per Channel", per_channel, theme, move |_, _, cx| {
-                    per_entity.update(cx, |state, cx| {
-                        state.app.set_eq_per_channel_mode(plugin_idx, true);
-                        cx.notify();
-                    });
-                })),
+                .child(mode_pill(
+                    d,
+                    "All Channels",
+                    !per_channel,
+                    theme,
+                    move |_, _, cx| {
+                        all_entity.update(cx, |state, cx| {
+                            state.app.set_eq_per_channel_mode(plugin_idx, false);
+                            cx.notify();
+                        });
+                    },
+                ))
+                .child(mode_pill(
+                    d,
+                    "Per Channel",
+                    per_channel,
+                    theme,
+                    move |_, _, cx| {
+                        per_entity.update(cx, |state, cx| {
+                            state.app.set_eq_per_channel_mode(plugin_idx, true);
+                            cx.notify();
+                        });
+                    },
+                )),
         );
 
         if state.per_channel_mode {
             let selected_channel = entity.read(cx).app.plugin_state.selected_eq_channel;
             let channel_entity = entity.clone();
-            col = col.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(d.grid)
-                    .children((0..state.channels).map(|ch| {
-                        let entity = channel_entity.clone();
-                        let is_selected = ch == selected_channel;
-                        mode_pill(d, channel_label(ch, state.channels), is_selected, theme, move |_, _, cx| {
+            col = col.child(div().flex().items_center().gap(d.grid).children(
+                (0..state.channels).map(|ch| {
+                    let entity = channel_entity.clone();
+                    let is_selected = ch == selected_channel;
+                    mode_pill(
+                        d,
+                        channel_label(ch, state.channels),
+                        is_selected,
+                        theme,
+                        move |_, _, cx| {
                             entity.update(cx, |state, cx| {
                                 state.app.plugin_state.selected_eq_channel = ch;
                                 cx.notify();
                             });
-                        })
-                    })),
-            );
+                        },
+                    )
+                }),
+            ));
         }
     }
 
     // Global controls based on EQ variant
     match &state.mode {
         EqViewMode::Standard => {
-            col = col
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap(d.gap)
-                        .child(render_eq_global_stepper(
-                            d, entity.clone(), plugin_idx,
-                            EqGlobalControl::StandardMaxFilters,
-                            "Filters", state.num_filters.to_string(), theme,
-                        ))
-                        .child(render_eq_global_toggle(
-                            d, entity.clone(), plugin_idx,
-                            EqGlobalControl::StandardTopology,
-                            "Topology", state.topology > 0.5, "SVF", "Biquad", theme,
-                        ))
-                        .child(render_eq_global_toggle(
-                            d, entity.clone(), plugin_idx,
-                            EqGlobalControl::StandardTdf2,
-                            "TDF-II", state.tdf2, "On", "Off", theme,
-                        )),
-                );
+            col = col.child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(d.gap)
+                    .child(render_eq_global_stepper(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        EqGlobalControl::StandardMaxFilters,
+                        "Filters",
+                        state.num_filters.to_string(),
+                        theme,
+                    ))
+                    .child(render_eq_global_toggle(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        EqGlobalControl::StandardTopology,
+                        "Topology",
+                        state.topology > 0.5,
+                        "SVF",
+                        "Biquad",
+                        theme,
+                    ))
+                    .child(render_eq_global_toggle(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        EqGlobalControl::StandardTdf2,
+                        "TDF-II",
+                        state.tdf2,
+                        "On",
+                        "Off",
+                        theme,
+                    )),
+            );
         }
         EqViewMode::LinearPhase {
             latency_samples,
@@ -368,31 +466,51 @@ fn render_compact_config_panel(
                         .flex_wrap()
                         .gap(d.gap)
                         .child(render_eq_global_stepper(
-                            d, entity.clone(), plugin_idx,
+                            d,
+                            entity.clone(),
+                            plugin_idx,
                             EqGlobalControl::LpNumFilters,
-                            "Filters", state.num_filters.to_string(), theme,
+                            "Filters",
+                            state.num_filters.to_string(),
+                            theme,
                         ))
                         .child(render_eq_global_stepper(
-                            d, entity.clone(), plugin_idx,
+                            d,
+                            entity.clone(),
+                            plugin_idx,
                             EqGlobalControl::LpFirLength,
-                            "FIR length", fir_length.to_string(), theme,
+                            "FIR length",
+                            fir_length.to_string(),
+                            theme,
                         ))
                         .child(render_eq_global_toggle(
-                            d, entity.clone(), plugin_idx,
+                            d,
+                            entity.clone(),
+                            plugin_idx,
                             EqGlobalControl::LpAutoGain,
-                            "Auto-gain", *auto_gain, "On", "Off", theme,
+                            "Auto-gain",
+                            *auto_gain,
+                            "On",
+                            "Off",
+                            theme,
                         ))
                         .child(render_eq_global_stepper(
-                            d, entity.clone(), plugin_idx,
+                            d,
+                            entity.clone(),
+                            plugin_idx,
                             EqGlobalControl::LpMix,
-                            "Mix", format!("{:.0}%", mix * 100.0), theme,
+                            "Mix",
+                            format!("{:.0}%", mix * 100.0),
+                            theme,
                         )),
                 )
                 .child(
                     div()
                         .text_size(d.text_xs)
                         .text_color(theme.text_muted)
-                        .child(format!("Latency: {latency_samples} samples ({latency_ms:.2} ms)")),
+                        .child(format!(
+                            "Latency: {latency_samples} samples ({latency_ms:.2} ms)"
+                        )),
                 );
         }
         EqViewMode::FirDesigner {
@@ -411,36 +529,62 @@ fn render_compact_config_panel(
                         .flex_wrap()
                         .gap(d.gap)
                         .child(render_eq_global_stepper(
-                            d, entity.clone(), plugin_idx,
+                            d,
+                            entity.clone(),
+                            plugin_idx,
                             EqGlobalControl::FirNumFilters,
-                            "Filters", state.num_filters.to_string(), theme,
+                            "Filters",
+                            state.num_filters.to_string(),
+                            theme,
                         ))
                         .child(render_eq_global_stepper(
-                            d, entity.clone(), plugin_idx,
+                            d,
+                            entity.clone(),
+                            plugin_idx,
                             EqGlobalControl::FirLength,
-                            "FIR length", fir_length.to_string(), theme,
+                            "FIR length",
+                            fir_length.to_string(),
+                            theme,
                         ))
                         .child(render_eq_global_toggle(
-                            d, entity.clone(), plugin_idx,
+                            d,
+                            entity.clone(),
+                            plugin_idx,
                             EqGlobalControl::FirPhaseMode,
-                            "Phase", *phase_mode == "Minimum", "Minimum", "Linear", theme,
+                            "Phase",
+                            *phase_mode == "Minimum",
+                            "Minimum",
+                            "Linear",
+                            theme,
                         ))
                         .child(render_eq_global_toggle(
-                            d, entity.clone(), plugin_idx,
+                            d,
+                            entity.clone(),
+                            plugin_idx,
                             EqGlobalControl::FirAutoGain,
-                            "Auto-gain", *auto_gain, "On", "Off", theme,
+                            "Auto-gain",
+                            *auto_gain,
+                            "On",
+                            "Off",
+                            theme,
                         ))
                         .child(render_eq_global_stepper(
-                            d, entity.clone(), plugin_idx,
+                            d,
+                            entity.clone(),
+                            plugin_idx,
                             EqGlobalControl::FirMix,
-                            "Mix", format!("{:.0}%", mix * 100.0), theme,
+                            "Mix",
+                            format!("{:.0}%", mix * 100.0),
+                            theme,
                         )),
                 )
                 .child(
                     div()
                         .text_size(d.text_xs)
                         .text_color(theme.text_muted)
-                        .child(format!("Latency: {latency_samples} samples ({latency_ms:.2} ms)")),
+                        .child(format!(
+                            "Latency: {latency_samples} samples ({latency_ms:.2} ms)"
+                        )),
                 );
         }
     }
@@ -489,7 +633,11 @@ fn render_compact_band_card(
                 cx.notify();
             });
         })
-        .child(div().child(format!("#{} {}", band_idx + 1, filter.filter_type.short_name())))
+        .child(div().child(format!(
+            "#{} {}",
+            band_idx + 1,
+            filter.filter_type.short_name()
+        )))
         .child(
             div()
                 .text_size(d.text_xs)
@@ -552,25 +700,49 @@ fn render_compact_band_editor(
                 .gap(d.gap)
                 .justify_center()
                 .child(render_eq_knob_with_midi(
-                    d, entity.clone(), plugin_idx, "Freq",
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Freq",
                     filter.frequency,
-                    pk(EQ, "freq").min_f64(), pk(EQ, "freq").max_f64(), "Hz",
+                    pk(EQ, "freq").min_f64(),
+                    pk(EQ, "freq").max_f64(),
+                    "Hz",
                     base_param_idx + indexing.frequency,
-                    state.selected_param, state.is_editing, midi_overlay, theme,
+                    state.selected_param,
+                    state.is_editing,
+                    midi_overlay,
+                    theme,
                 ))
                 .child(render_eq_knob_with_midi(
-                    d, entity.clone(), plugin_idx, "Q",
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Q",
                     filter.q,
-                    pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64(), "",
+                    pk(EQ, "q").min_f64(),
+                    pk(EQ, "q").max_f64(),
+                    "",
                     base_param_idx + indexing.q,
-                    state.selected_param, state.is_editing, midi_overlay, theme,
+                    state.selected_param,
+                    state.is_editing,
+                    midi_overlay,
+                    theme,
                 ))
                 .child(render_eq_knob_with_midi(
-                    d, entity.clone(), plugin_idx, "Gain",
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Gain",
                     filter.gain_db,
-                    pk(EQ, "gain").min_f64(), pk(EQ, "gain").max_f64(), "dB",
+                    pk(EQ, "gain").min_f64(),
+                    pk(EQ, "gain").max_f64(),
+                    "dB",
                     base_param_idx + indexing.gain,
-                    state.selected_param, state.is_editing, midi_overlay, theme,
+                    state.selected_param,
+                    state.is_editing,
+                    midi_overlay,
+                    theme,
                 )),
         );
 
@@ -583,7 +755,11 @@ fn render_compact_band_editor(
             .gap(d.gap)
             .justify_center()
             .child(small_action_button(
-                d, "M", filter.muted, theme.error, theme,
+                d,
+                "M",
+                filter.muted,
+                theme.error,
+                theme,
                 move |_, _, cx| {
                     mute_entity.update(cx, |state, cx| {
                         state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
@@ -595,7 +771,11 @@ fn render_compact_band_editor(
                 },
             ))
             .child(small_action_button(
-                d, "S", filter.solo, theme.success, theme,
+                d,
+                "S",
+                filter.solo,
+                theme.success,
+                theme,
                 move |_, _, cx| {
                     solo_entity.update(cx, |state, cx| {
                         state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
@@ -644,7 +824,13 @@ fn render_compact_inspector_row(
         .bg(theme.background_secondary)
         .rounded(d.r_md)
         .child(render_compact_band_card(
-            d, entity.clone(), plugin_idx, band_idx, filter, false, theme,
+            d,
+            entity.clone(),
+            plugin_idx,
+            band_idx,
+            filter,
+            false,
+            theme,
         ))
         .child(render_compact_band_editor(
             d, entity, plugin_idx, band_idx, filter, indexing, state, theme,
@@ -701,8 +887,7 @@ where
         .rounded(d.r_sm)
         .cursor_pointer()
         .when(selected, |div| {
-            div.bg(theme.accent)
-                .text_color(theme.text_on_accent)
+            div.bg(theme.accent).text_color(theme.text_on_accent)
         })
         .when(!selected, |div| {
             div.bg(theme.background_secondary)
@@ -728,11 +913,21 @@ fn config_toggle_button(
         .font_weight(FontWeight::SEMIBOLD)
         .rounded(d.r_sm)
         .cursor_pointer()
-        .when(open, |div| div.bg(theme.accent).text_color(theme.text_on_accent))
-        .when(!open, |div| div.bg(theme.background_secondary).text_color(theme.text_secondary).hover(|s| s.bg(theme.surface_hover)))
+        .when(open, |div| {
+            div.bg(theme.accent).text_color(theme.text_on_accent)
+        })
+        .when(!open, |div| {
+            div.bg(theme.background_secondary)
+                .text_color(theme.text_secondary)
+                .hover(|s| s.bg(theme.surface_hover))
+        })
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             entity.update(cx, |state, cx| {
-                let open = &mut state.app.plugin_state.plugin_ui_state.eq_compact_config_open;
+                let open = &mut state
+                    .app
+                    .plugin_state
+                    .plugin_ui_state
+                    .eq_compact_config_open;
                 *open = !*open;
                 cx.notify();
             });
@@ -759,7 +954,11 @@ where
         .flex()
         .items_center()
         .justify_center()
-        .bg(if active { active_color } else { theme.background_secondary })
+        .bg(if active {
+            active_color
+        } else {
+            theme.background_secondary
+        })
         .border(px(1.0))
         .border_color(if active { active_color } else { theme.border })
         .text_size(d.text_xs)
@@ -770,7 +969,13 @@ where
         } else {
             theme.text_muted
         })
-        .hover(|s| s.bg(if active { active_color } else { theme.surface_hover }))
+        .hover(|s| {
+            s.bg(if active {
+                active_color
+            } else {
+                theme.surface_hover
+            })
+        })
         .on_mouse_down(MouseButton::Left, on_click)
         .child(label)
 }

@@ -519,6 +519,7 @@ impl PlayerView {
                 vec![
                     (PluginType::Matrix, "Matrix"),
                     (PluginType::ABCompare, "A/B"),
+                    (PluginType::Crossover, "Crossover"),
                 ],
             ),
         ];

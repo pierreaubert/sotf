@@ -367,6 +367,29 @@ pub fn convert_band_split(settings: &PluginSettings, _sample_rate: f64) -> Optio
     ))
 }
 
+pub fn convert_crossover(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
+    let PluginSettings::Crossover {
+        crossover_type,
+        frequency,
+        output,
+        fir_taps,
+    } = settings
+    else {
+        return None;
+    };
+
+    Some(PluginConfig::new(
+        "crossover",
+        json!({
+            "type": crossover_type,
+            "frequency": frequency,
+            "output": output,
+            "extra_frequencies": [],
+            "fir_taps": fir_taps,
+        }),
+    ))
+}
+
 pub fn convert_band_merge(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
     let PluginSettings::BandMerge { channels, bands } = settings else {
         return None;

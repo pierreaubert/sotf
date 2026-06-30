@@ -15,8 +15,11 @@ use sotf_audio_player_gpui::components::plugins::common::{
 };
 use sotf_audio_player_gpui::components::{settings_tab_icon_name, settings_tab_label};
 use sotf_audio_player_gpui::i18n::{Language, Translations};
+use sotf_audio_player_gpui::plugin_file_picker::{FilePickerOpenTarget, file_picker_open_target};
 use sotf_audio_player_gpui::theme::{Theme, ThemeId};
 use sotf_audio_player_gpui::{InputMode, Screen, SettingsTab};
+use sotf_plugins::param_specs::{self, ParamType};
+use sotf_plugins::plugin_layout::ControlType;
 use std::path::Path;
 
 #[test]
@@ -28,6 +31,59 @@ fn test_typography_rems_platform_presets_affect_type_scale() {
     assert!(apple.text_sm.0 > neutral.text_sm.0);
     assert!(apple.text_lg.0 > neutral.text_lg.0);
     assert!(material.text_lg.0 > neutral.text_lg.0);
+}
+
+#[test]
+fn test_plugin_file_picker_keys_have_open_targets() {
+    assert_eq!(
+        file_picker_open_target("sofa_file"),
+        Some(FilePickerOpenTarget::Sofa)
+    );
+    assert_eq!(
+        file_picker_open_target("ir_file"),
+        Some(FilePickerOpenTarget::Ir)
+    );
+    assert_eq!(
+        file_picker_open_target("room_ir_file"),
+        Some(FilePickerOpenTarget::Ir)
+    );
+    assert_eq!(
+        file_picker_open_target("path_a_config"),
+        Some(FilePickerOpenTarget::AbConfig("a"))
+    );
+    assert_eq!(
+        file_picker_open_target("path_b_config"),
+        Some(FilePickerOpenTarget::AbConfig("b"))
+    );
+}
+
+#[test]
+fn test_ab_compare_paths_tab_declares_actionable_file_pickers() {
+    let params = param_specs::ab_compare::PARAMS;
+    let paths_tab = param_specs::ab_compare::LAYOUT
+        .tabs
+        .iter()
+        .find(|tab| tab.name == "Paths")
+        .expect("A/B Compare must expose its config loaders in a Paths tab");
+
+    let file_picker_keys: Vec<&'static str> = paths_tab
+        .controls
+        .iter()
+        .filter(|control| matches!(control.control_type, ControlType::FilePicker))
+        .map(|control| params[control.param_index].engine_key)
+        .collect();
+
+    assert_eq!(file_picker_keys, vec!["path_a_config", "path_b_config"]);
+    for key in file_picker_keys {
+        assert!(
+            matches!(params.iter().find(|param| param.engine_key == key), Some(param) if matches!(param.param_type, ParamType::FilePath)),
+            "{key} must remain a FilePath parameter"
+        );
+        assert!(
+            file_picker_open_target(key).is_some(),
+            "{key} must have a GPUI open action"
+        );
+    }
 }
 
 #[test]
