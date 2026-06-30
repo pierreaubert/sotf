@@ -74,11 +74,11 @@ impl StreamingService for SpotifyService {
         let credentials =
             librespot_core::authentication::Credentials::with_password(&username, &password);
 
-        // We need a tokio runtime for librespot's async session
+        let session = librespot_core::Session::new(session_config, None);
+
+        // We need a tokio runtime for librespot's async connection.
         let rt = tokio::runtime::Handle::try_current()
             .map_err(|e| ServiceError::Other(format!("No tokio runtime: {}", e)))?;
-
-        let session = rt.block_on(librespot_core::Session::new(session_config, None));
 
         rt.block_on(session.connect(credentials, false))
             .map_err(|e| ServiceError::AuthError(format!("Spotify login failed: {}", e)))?;

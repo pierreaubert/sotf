@@ -6,6 +6,7 @@ use super::api::api_media_auth_valid;
 use super::api::api_response_status;
 use super::consts::API_MAX_BODY_BYTES;
 use super::consts::API_MAX_REQUEST_BYTES;
+use super::consts::API_REQUEST_READ_TIMEOUT;
 use super::handle::handle_sotf_api_request;
 use super::misc::find_header_end;
 use super::misc::log_sotf_api_request;
@@ -19,6 +20,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::time::timeout;
 
 pub(super) async fn write_sotf_api_response(
     stream: &mut TcpStream,
@@ -102,9 +104,9 @@ pub(super) async fn read_api_request(stream: &mut TcpStream) -> Result<ApiReques
             }
             let required = header_end + content_length;
             while buf.len() < required {
-                let read = stream
-                    .read(&mut chunk)
+                let read = timeout(API_REQUEST_READ_TIMEOUT, stream.read(&mut chunk))
                     .await
+                    .map_err(|_| "timed out reading request body".to_string())?
                     .map_err(|e| format!("read request body: {e}"))?;
                 if read == 0 {
                     return Err("connection closed before request body completed".to_string());
@@ -117,9 +119,9 @@ pub(super) async fn read_api_request(stream: &mut TcpStream) -> Result<ApiReques
             return parse_api_request(&buf[..required], header_end);
         }
 
-        let read = stream
-            .read(&mut chunk)
+        let read = timeout(API_REQUEST_READ_TIMEOUT, stream.read(&mut chunk))
             .await
+            .map_err(|_| "timed out reading request headers".to_string())?
             .map_err(|e| format!("read request: {e}"))?;
         if read == 0 {
             return Err("connection closed before request headers completed".to_string());

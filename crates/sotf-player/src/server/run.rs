@@ -1,3 +1,5 @@
+use super::api::api_error_response;
+use super::consts::API_MAX_CONCURRENT_CONNECTIONS;
 use super::dlna::dlna_advertised_ipv4;
 use super::dlna::dlna_server_url_for_bind;
 use super::dlna_library_adapter::DlnaLibraryAdapter;
@@ -21,6 +23,7 @@ use sotf_dlna::{DlnaDevice, DlnaMediaServer, MediaServerAdapter};
 use sotf_mpd::{MpdServer, PlayerAdapter};
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 
 pub(super) async fn run_sotf_api_server(
     settings: SotfApiSettings,
@@ -29,6 +32,7 @@ pub(super) async fn run_sotf_api_server(
     mut cancel: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
     let auth_token = validate_sotf_api_token(&settings)?;
+    let connection_slots = Arc::new(Semaphore::new(API_MAX_CONCURRENT_CONNECTIONS));
 
     loop {
         tokio::select! {
@@ -38,11 +42,19 @@ pub(super) async fn run_sotf_api_server(
                 }
             }
             accepted = listener.accept() => {
-                let (stream, peer_addr) = accepted.map_err(|e| format!("accept: {e}"))?;
+                let (mut stream, peer_addr) = accepted.map_err(|e| format!("accept: {e}"))?;
+                let Ok(slot) = Arc::clone(&connection_slots).try_acquire_owned() else {
+                    log::warn!("[server] rejecting SOTF API connection from {peer_addr}: connection limit reached");
+                    let response = api_error_response(503, "too many concurrent connections");
+                    let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, &response).await;
+                    let _ = tokio::io::AsyncWriteExt::shutdown(&mut stream).await;
+                    continue;
+                };
                 let state = Arc::clone(&state);
                 let settings = settings.clone();
                 let auth_token = auth_token.clone();
                 tokio::spawn(async move {
+                    let _slot = slot;
                     handle_sotf_api_connection(stream, peer_addr, state, settings, auth_token)
                         .await;
                 });

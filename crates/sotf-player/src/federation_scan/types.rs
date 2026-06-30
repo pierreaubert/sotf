@@ -48,18 +48,11 @@ pub fn merge_albums_to_db(
         }
     };
 
-    // Clear previous data for this source before full resync
-    if let Err(e) = db.remove_exclusive_federation_tracks(source_id) {
-        log::warn!("Failed to remove exclusive federation tracks: {e}");
-    }
-    if let Err(e) = db.clear_federation_source_data(source_id) {
-        log::warn!("Failed to clear federation source data: {e}");
-    }
-    if let Err(e) = db.remove_orphaned_tracks() {
-        log::warn!("Failed to remove orphaned tracks: {e}");
-    }
-    if let Err(e) = db.remove_orphaned_albums() {
-        log::warn!("Failed to remove orphaned albums: {e}");
+    // Full resync starts by unmerging only this source. Local tracks and tracks
+    // mirrored by other sources stay attached; synthetic tracks exclusive to the
+    // source are removed before the fresh provider snapshot is merged.
+    if let Err(e) = db.unmerge_federation_source(source_id) {
+        log::warn!("Failed to unmerge previous federation data for {source_id}: {e}");
     }
 
     let mut album_count = 0;

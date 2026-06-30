@@ -1,4 +1,3 @@
-use crate::service::*;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -11,12 +10,16 @@ pub(super) struct TidalSession {
 
 #[derive(Deserialize)]
 pub(super) struct TidalDeviceAuth {
+    #[serde(rename = "deviceCode")]
+    pub(super) device_code: String,
     #[serde(rename = "userCode")]
     pub(super) user_code: String,
     #[serde(rename = "verificationUri")]
     pub(super) verification_uri: String,
     #[serde(rename = "verificationUriComplete")]
     pub(super) verification_uri_complete: Option<String>,
+    #[serde(rename = "expiresIn", default)]
+    pub(super) expires_in: u64,
 }
 
 #[derive(Deserialize)]
@@ -62,4 +65,12 @@ pub(super) struct TidalArtist {
 pub(super) struct TidalStreamInfo {
     pub(super) url: String,
     pub(super) codec: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct TidalTokenResponse {
+    #[serde(rename = "access_token")]
+    pub(super) access_token: String,
+    #[serde(rename = "refresh_token")]
+    pub(super) refresh_token: Option<String>,
 }

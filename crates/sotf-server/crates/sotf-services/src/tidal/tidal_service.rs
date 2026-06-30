@@ -11,25 +11,39 @@ use super::types::TidalDeviceAuth;
 use super::types::TidalSearchResult;
 use super::types::TidalSession;
 use super::types::TidalStreamInfo;
+use super::types::TidalTokenResponse;
 use super::types::TidalTrack;
 use crate::service::{redact_secret, *};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+#[derive(Debug, Clone)]
+pub(super) struct PendingTidalDeviceAuth {
+    pub(super) device_code: String,
+    pub(super) verification_message: String,
+    pub(super) expires_at: Instant,
+}
 
 pub struct TidalService {
     pub(super) client: reqwest::Client,
     pub(super) rt: Arc<AsyncRuntime>,
     pub(super) client_id: String,
+    pub(super) api_base: String,
+    pub(super) auth_base: String,
     pub(super) access_token: Option<String>,
     #[allow(dead_code)]
     pub(super) refresh_token: Option<String>,
     pub(super) country_code: String,
     pub(super) quality: AudioQuality,
+    pub(super) pending_device_auth: Option<PendingTidalDeviceAuth>,
 }
 
 impl std::fmt::Debug for TidalService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TidalService")
             .field("client_id", &redact_secret(&self.client_id))
+            .field("api_base", &self.api_base)
+            .field("auth_base", &self.auth_base)
             .field(
                 "access_token",
                 &self.access_token.as_deref().map(redact_secret),
@@ -40,6 +54,7 @@ impl std::fmt::Debug for TidalService {
             )
             .field("country_code", &self.country_code)
             .field("quality", &self.quality)
+            .field("pending_device_auth", &self.pending_device_auth.is_some())
             .finish()
     }
 }
@@ -59,11 +74,17 @@ impl TidalService {
                 .build()
                 .expect("Failed to create HTTP client"),
             rt: Arc::new(rt),
-            client_id: DEFAULT_CLIENT_ID.to_string(),
+            client_id: std::env::var("TIDAL_CLIENT_ID")
+                .ok()
+                .filter(|id| !id.trim().is_empty())
+                .unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string()),
+            api_base: API_BASE.to_string(),
+            auth_base: AUTH_BASE.to_string(),
             access_token: None,
             refresh_token: None,
             country_code: "US".to_string(),
             quality: AudioQuality::Lossless,
+            pending_device_auth: None,
         }
     }
 
@@ -82,6 +103,16 @@ impl TidalService {
         self
     }
 
+    pub fn with_api_base(mut self, api_base: &str) -> Self {
+        self.api_base = api_base.trim_end_matches('/').to_string();
+        self
+    }
+
+    pub fn with_auth_base(mut self, auth_base: &str) -> Self {
+        self.auth_base = auth_base.trim_end_matches('/').to_string();
+        self
+    }
+
     /// Issue a GET to `path` (relative to `API_BASE`) with bearer auth and the
     /// configured country code, returning the response asynchronously.
     pub(super) async fn api_get_async(
@@ -93,7 +124,7 @@ impl TidalService {
             .as_ref()
             .ok_or_else(|| ServiceError::AuthError("Not authenticated".to_string()))?;
 
-        let url = format!("{}{}", API_BASE, path);
+        let url = format!("{}{}", self.api_base, path);
         self.client
             .get(&url)
             .bearer_auth(token)
@@ -161,39 +192,95 @@ impl StreamingService for TidalService {
                 let rt = self.rt.clone();
                 let client = self.client.clone();
                 let client_id = self.client_id.clone();
-                rt.block_on(async move {
-                    let resp = client
-                        .post(format!("{}/device_authorization", AUTH_BASE))
-                        .form(&[
-                            ("client_id", client_id.as_str()),
-                            ("scope", "r_usr+w_usr+w_sub"),
-                        ])
-                        .send()
-                        .await
-                        .map_err(|e| ServiceError::NetworkError(e.to_string()))?;
+                let auth_base = self.auth_base.clone();
 
-                    if !resp.status().is_success() {
-                        let status = resp.status();
-                        let body = resp.text().await.unwrap_or_default();
-                        let body = truncate_for_log(&body, 512);
-                        return Err(ServiceError::AuthError(format!(
-                            "Device code request failed: HTTP {} ({})",
-                            status, body
-                        )));
+                if let Some(pending) = self.pending_device_auth.clone() {
+                    if Instant::now() >= pending.expires_at {
+                        self.pending_device_auth = None;
+                        return Err(ServiceError::AuthError(
+                            "Tidal device authorization expired; request a new device code"
+                                .to_string(),
+                        ));
                     }
 
-                    let device_auth: TidalDeviceAuth = read_bounded_json(resp).await?;
+                    let token_result: Result<TidalTokenResponse, ServiceError> =
+                        rt.block_on(async move {
+                            let resp = client
+                                .post(format!("{}/token", auth_base))
+                                .form(&[
+                                    ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+                                    ("device_code", pending.device_code.as_str()),
+                                    ("client_id", client_id.as_str()),
+                                ])
+                                .send()
+                                .await
+                                .map_err(|e| ServiceError::NetworkError(e.to_string()))?;
 
-                    // Return the verification URL for the user to visit.
-                    Err(ServiceError::AuthError(format!(
+                            if resp.status().is_success() {
+                                return read_bounded_json(resp).await;
+                            }
+
+                            let status = resp.status();
+                            let body = resp.text().await.unwrap_or_default();
+                            let body = truncate_for_log(&body, 512);
+                            Err(ServiceError::AuthError(format!(
+                                "{}. Waiting for Tidal device authorization: HTTP {} ({})",
+                                pending.verification_message, status, body
+                            )))
+                        });
+
+                    match token_result {
+                        Ok(tokens) => {
+                            self.access_token = Some(tokens.access_token);
+                            self.refresh_token = tokens.refresh_token;
+                            self.pending_device_auth = None;
+                            Ok(())
+                        }
+                        Err(err) => Err(err),
+                    }
+                } else {
+                    let auth_base = self.auth_base.clone();
+                    let device_auth = rt.block_on(async move {
+                        let resp = client
+                            .post(format!("{}/device_authorization", auth_base))
+                            .form(&[
+                                ("client_id", client_id.as_str()),
+                                ("scope", "r_usr+w_usr+w_sub"),
+                            ])
+                            .send()
+                            .await
+                            .map_err(|e| ServiceError::NetworkError(e.to_string()))?;
+
+                        if !resp.status().is_success() {
+                            let status = resp.status();
+                            let body = resp.text().await.unwrap_or_default();
+                            let body = truncate_for_log(&body, 512);
+                            return Err(ServiceError::AuthError(format!(
+                                "Device code request failed: HTTP {} ({})",
+                                status, body
+                            )));
+                        }
+
+                        let device_auth: TidalDeviceAuth = read_bounded_json(resp).await?;
+                        Ok(device_auth)
+                    })?;
+
+                    let verification_url = device_auth
+                        .verification_uri_complete
+                        .clone()
+                        .unwrap_or_else(|| device_auth.verification_uri.clone());
+                    let verification_message = format!(
                         "Visit {} and enter code: {}",
-                        device_auth
-                            .verification_uri_complete
-                            .as_deref()
-                            .unwrap_or(&device_auth.verification_uri),
-                        device_auth.user_code
-                    )))
-                })
+                        verification_url, device_auth.user_code
+                    );
+                    self.pending_device_auth = Some(PendingTidalDeviceAuth {
+                        device_code: device_auth.device_code,
+                        verification_message: verification_message.clone(),
+                        expires_at: Instant::now()
+                            + Duration::from_secs(device_auth.expires_in.max(60)),
+                    });
+                    Err(ServiceError::AuthError(verification_message))
+                }
             }
             _ => Err(ServiceError::AuthError(
                 "Tidal supports AccessToken or DeviceCode credentials".to_string(),
@@ -213,10 +300,11 @@ impl StreamingService for TidalService {
             .clone();
 
         let rt = self.rt.clone();
+        let api_base = self.api_base.clone();
         rt.block_on(async {
             let resp = self
                 .client
-                .get(format!("{}/search/tracks", API_BASE))
+                .get(format!("{}/search/tracks", api_base))
                 .bearer_auth(&token)
                 .query(&[
                     ("query", query),
@@ -264,10 +352,11 @@ impl StreamingService for TidalService {
             .clone();
 
         let rt = self.rt.clone();
+        let api_base = self.api_base.clone();
         rt.block_on(async {
             let resp = self
                 .client
-                .get(format!("{}/search/albums", API_BASE))
+                .get(format!("{}/search/albums", api_base))
                 .bearer_auth(&token)
                 .query(&[
                     ("query", query),
@@ -355,12 +444,13 @@ impl StreamingService for TidalService {
         let rt = self.rt.clone();
         let client = self.client.clone();
         let country_code = self.country_code.clone();
+        let api_base = self.api_base.clone();
         let track_id_owned = track_id.to_string();
         rt.block_on(async move {
             let resp = client
                 .get(format!(
                     "{}/tracks/{}/urlpostpaywall",
-                    API_BASE, track_id_owned
+                    api_base, track_id_owned
                 ))
                 .bearer_auth(&token)
                 .query(&[

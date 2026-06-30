@@ -71,7 +71,9 @@ impl MusicDatabase {
                     t.isrc, t.album_artist, t.ensemble, t.edition,
                     COALESCE(t.is_favorite, 0), t.uuid,
                     (SELECT ts.audio_source_json FROM track_sources ts
-                     WHERE ts.track_id = t.id AND ts.audio_source_json IS NOT NULL
+                     WHERE t.path LIKE 'federation:%'
+                       AND ts.track_id = t.id
+                       AND ts.audio_source_json IS NOT NULL
                      LIMIT 1)
              FROM tracks t
              WHERE t.album_id = ?1

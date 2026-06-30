@@ -1,5 +1,5 @@
 use crate::federation_config::{FederationSourceEntry, SourceConnectionConfig};
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use serde_json;
 use sotf_federation::{ProviderAlbum, ProviderTrack};
 
@@ -266,66 +266,15 @@ impl MusicDatabase {
 
         let now = super::current_timestamp();
 
-        // Serialize AudioSource to JSON for storage
         let audio_source_json = serde_json::to_string(&track.audio_source)
             .map_err(|e| format!("serialize audio source: {e}"))?;
 
-        // Use external_id as path for federation tracks (they don't have local paths)
-        let path_str = format!("federation:{}:{}", source_id, track.external_id);
-
-        // Insert or update track.
-        // file_mtime=0 and scanned_at=now are required by NOT NULL constraints
-        // but are meaningless for federation tracks.
-        self.conn
-            .execute(
-                "INSERT INTO tracks (album_id, path, title, artist, album_artist,
-                                track_number, disc_number, duration_secs,
-                                channels, sample_rate, bit_depth,
-                                genre, composer,
-                                file_mtime, scanned_at, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 0, ?14, ?14, ?14)
-             ON CONFLICT(path) DO UPDATE SET
-                 album_id = excluded.album_id,
-                 title = excluded.title,
-                 artist = excluded.artist,
-                 album_artist = excluded.album_artist,
-                 track_number = excluded.track_number,
-                 disc_number = excluded.disc_number,
-                 duration_secs = excluded.duration_secs,
-                 channels = excluded.channels,
-                 sample_rate = excluded.sample_rate,
-                 bit_depth = excluded.bit_depth,
-                 genre = excluded.genre,
-                 composer = excluded.composer,
-                 updated_at = excluded.updated_at",
-                params![
-                    album_id,
-                    &path_str,
-                    &track.title,
-                    &track.artist,
-                    &track.album_artist,
-                    track.track_number.map(|n| n as i64),
-                    track.disc_number.map(|n| n as i64),
-                    track.duration_secs.map(|d| d as i64),
-                    track.channels.map(|c| c as i64),
-                    track.sample_rate.map(|r| r as i64),
-                    track.bit_depth.map(|b| b as i64),
-                    &track.genre,
-                    &track.composer,
-                    now,
-                ],
-            )
-            .map_err(|e| format!("merge_federation_track: {e}"))?;
-
-        // Get track ID
-        let track_id: i64 = self
-            .conn
-            .query_row(
-                "SELECT id FROM tracks WHERE path = ?1",
-                params![&path_str],
-                |row| row.get(0),
-            )
-            .map_err(|e| format!("get track id: {e}"))?;
+        let track_id = match self.find_matching_track_for_federation_merge(album_id, track)? {
+            Some(track_id) => track_id,
+            None => {
+                self.insert_or_update_synthetic_federation_track(album_id, source_id, track, now)?
+            }
+        };
 
         // Insert track source junction
         self.conn
@@ -345,6 +294,99 @@ impl MusicDatabase {
             .map_err(|e| format!("merge_federation_track source: {e}"))?;
 
         Ok(track_id)
+    }
+
+    fn find_matching_track_for_federation_merge(
+        &self,
+        album_id: i64,
+        track: &ProviderTrack,
+    ) -> Result<Option<i64>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id FROM tracks
+                 WHERE album_id = ?1
+                   AND COALESCE(track_number, -1) = COALESCE(?2, -1)
+                   AND COALESCE(disc_number, -1) = COALESCE(?3, -1)
+                   AND lower(COALESCE(title, '')) = lower(?4)
+                 ORDER BY CASE WHEN path LIKE 'federation:%' THEN 1 ELSE 0 END, id
+                 LIMIT 1",
+            )
+            .map_err(|e| format!("prepare federation track match: {e}"))?;
+
+        let track_id = stmt
+            .query_row(
+                params![
+                    album_id,
+                    track.track_number.map(|n| n as i64),
+                    track.disc_number.map(|n| n as i64),
+                    track.title.trim(),
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("find federation track match: {e}"))?;
+
+        Ok(track_id)
+    }
+
+    fn insert_or_update_synthetic_federation_track(
+        &self,
+        album_id: i64,
+        source_id: &str,
+        track: &ProviderTrack,
+        now: i64,
+    ) -> Result<i64, String> {
+        let path_str = format!("federation:{}:{}", source_id, track.external_id);
+
+        self.conn
+            .execute(
+                "INSERT INTO tracks (album_id, path, title, artist, album_artist,
+                                track_number, disc_number, duration_secs,
+                                channels, sample_rate, bit_depth,
+                                genre, composer,
+                                file_mtime, scanned_at, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 0, ?14, ?14, ?14)
+                 ON CONFLICT(path) DO UPDATE SET
+                     album_id = excluded.album_id,
+                     title = excluded.title,
+                     artist = excluded.artist,
+                     album_artist = excluded.album_artist,
+                     track_number = excluded.track_number,
+                     disc_number = excluded.disc_number,
+                     duration_secs = excluded.duration_secs,
+                     channels = excluded.channels,
+                     sample_rate = excluded.sample_rate,
+                     bit_depth = excluded.bit_depth,
+                     genre = excluded.genre,
+                     composer = excluded.composer,
+                     updated_at = excluded.updated_at",
+                params![
+                    album_id,
+                    &path_str,
+                    &track.title,
+                    &track.artist,
+                    &track.album_artist,
+                    track.track_number.map(|n| n as i64),
+                    track.disc_number.map(|n| n as i64),
+                    track.duration_secs.map(|d| d as i64),
+                    track.channels.map(|c| c as i64),
+                    track.sample_rate.map(|r| r as i64),
+                    track.bit_depth.map(|b| b as i64),
+                    &track.genre,
+                    &track.composer,
+                    now,
+                ],
+            )
+            .map_err(|e| format!("merge_federation_track: {e}"))?;
+
+        self.conn
+            .query_row(
+                "SELECT id FROM tracks WHERE path = ?1",
+                params![&path_str],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("get federation track id: {e}"))
     }
 
     /// Update the availability state of a federation source.
@@ -441,5 +483,37 @@ impl MusicDatabase {
             .map_err(|e| format!("clear album_sources: {e}"))?;
 
         Ok(())
+    }
+
+    pub fn unmerge_federation_source(&self, source_id: &str) -> Result<(usize, usize), String> {
+        let db_source_id = match self.get_federation_source_db_id(source_id)? {
+            Some(id) => id,
+            None => return Ok((0, 0)),
+        };
+
+        self.clear_federation_source_data(source_id)?;
+
+        let removed_tracks = self
+            .conn
+            .execute(
+                "DELETE FROM tracks WHERE path LIKE 'federation:%'
+                 AND id NOT IN (SELECT DISTINCT track_id FROM track_sources)",
+                [],
+            )
+            .map_err(|e| format!("unmerge federation tracks: {e}"))?;
+
+        let removed_albums = self
+            .conn
+            .execute(
+                "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks)",
+                [],
+            )
+            .map_err(|e| format!("unmerge federation albums: {e}"))?;
+
+        log::info!(
+            "Unmerged federation source {source_id} (db id {db_source_id}): removed {removed_tracks} synthetic tracks and {removed_albums} orphan albums"
+        );
+
+        Ok((removed_tracks, removed_albums))
     }
 }
