@@ -925,16 +925,16 @@ impl AudioDaemon {
 
     pub(super) async fn handle_set_encryption(&self, enabled: bool) -> Response {
         let mut key_manager = self.key_manager.lock();
-        #[cfg(all(target_os = "macos", feature = "hal"))]
-        let previous_enabled = key_manager.is_enabled();
         key_manager.set_enabled(enabled);
 
-        // On macOS with HAL, update shared memory encryption flag
+        // On macOS with HAL, update shared memory encryption flag if the HAL
+        // shared memory is available. Missing shared memory is normal when the
+        // HAL driver is not currently running; the daemon-side encryption state
+        // remains set and will be synced when the driver reconnects.
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             if let Err(e) = Self::apply_encryption_to_shared_memory(&key_manager, true) {
-                key_manager.set_enabled(previous_enabled);
-                return Response::err(e);
+                log::warn!("Failed to sync encryption state to shared memory (HAL may not be running): {}", e);
             }
         }
 
@@ -960,11 +960,13 @@ impl AudioDaemon {
 
         match key_manager.force_rotate() {
             Ok(()) => {
-                // On macOS with HAL, update shared memory fingerprint
+                // On macOS with HAL, update shared memory fingerprint if the HAL
+                // shared memory is available. Missing shared memory is normal when
+                // the HAL driver is not currently running.
                 #[cfg(all(target_os = "macos", feature = "hal"))]
                 {
                     if let Err(e) = Self::apply_encryption_to_shared_memory(&key_manager, true) {
-                        return Response::err(e);
+                        log::warn!("Failed to sync rotated encryption key to shared memory (HAL may not be running): {}", e);
                     }
                 }
 
