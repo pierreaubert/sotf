@@ -19,6 +19,8 @@ dev-api = []
 hal = ["sotf-engine/hal"]
 streaming = ["sotf-engine/streaming"]
 hls = ["streaming", "sotf-engine/hls"]
+tidal = ["dep:sotf-services", "sotf-services/tidal"]
+spotify = ["dep:sotf-services", "sotf-services/spotify"]
 
 [lib]
 name = "sotf_audio_player"
@@ -42,6 +44,7 @@ sotf-mpd = { workspace = true, features = ["tls"] }
 sotf-dlna = { workspace = true }
 sotf-federation = { workspace = true }
 sotf-tls = { workspace = true }
+sotf-services = { workspace = true, optional = true }
 tokio-rustls = { workspace = true }
 
 # math

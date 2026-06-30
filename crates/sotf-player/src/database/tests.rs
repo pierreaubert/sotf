@@ -2,6 +2,9 @@ use super::misc::backup_existing_database;
 use super::misc::prune_old_backups;
 use super::misc::sha256_of_file;
 use super::music_database::MusicDatabase;
+use crate::federation_config::{FederationSourceEntry, SourceConnectionConfig};
+use sotf_audio::decoder::AudioSource;
+use sotf_federation::{ProviderAlbum, ProviderTrack};
 use std::path::{Path, PathBuf};
 
 fn fresh_config_test_dir(name: &str) -> std::path::PathBuf {
@@ -170,6 +173,102 @@ fn test_remove_directory_cleans_up_albums() {
     );
 
     // Cleanup
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn federation_merge_attaches_remote_source_to_matching_local_track_and_unmerges_cleanly() {
+    let dir = std::env::temp_dir().join("sotf_test_federation_smart_merge");
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("test.sqlite");
+    let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();
+
+    db.save_albums(&[crate::library::Album {
+        title: "Kind of Blue".to_string(),
+        tracks: vec![crate::library::Track {
+            path: PathBuf::from("/music/kind-of-blue/01-so-what.flac"),
+            title: Some("So What".to_string()),
+            artist: Some("Miles Davis".to_string()),
+            album_artist: Some("Miles Davis".to_string()),
+            track_number: Some(1),
+            disc_number: Some(1),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }])
+    .unwrap();
+
+    let source = FederationSourceEntry {
+        source_id: "peer:studio".to_string(),
+        display_name: "Studio".to_string(),
+        priority: 10,
+        is_enabled: true,
+        connection: SourceConnectionConfig::Peer {
+            host: "studio.local".to_string(),
+            port: 8732,
+            accepted_fingerprint: None,
+            auth_token: None,
+        },
+        is_available: Some(true),
+    };
+    db.save_federation_source(&source).unwrap();
+
+    let remote_album = ProviderAlbum {
+        external_id: "album-remote".to_string(),
+        title: "Kind of Blue".to_string(),
+        artist: "Miles Davis".to_string(),
+        year: Some(1959),
+        album_art_url: None,
+        tracks: vec![ProviderTrack {
+            external_id: "track-remote".to_string(),
+            title: "So What".to_string(),
+            artist: Some("Miles Davis".to_string()),
+            album_artist: Some("Miles Davis".to_string()),
+            track_number: Some(1),
+            disc_number: Some(1),
+            duration_secs: Some(545.0),
+            genre: None,
+            composer: None,
+            channels: Some(2),
+            sample_rate: Some(44_100),
+            bit_depth: Some(16),
+            audio_source: AudioSource::Url {
+                url: "http://studio.local:8732/api/v1/media/track-remote?token=redacted"
+                    .to_string(),
+                format_hint: Some("flac".to_string()),
+                seekable: true,
+            },
+        }],
+    };
+
+    let album_id = db
+        .merge_federation_album(&source.source_id, &remote_album)
+        .unwrap();
+    db.merge_federation_track(&source.source_id, album_id, &remote_album.tracks[0])
+        .unwrap();
+
+    let loaded = db.load_library().unwrap();
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].tracks.len(), 1);
+    assert_eq!(
+        loaded[0].tracks[0].path,
+        PathBuf::from("/music/kind-of-blue/01-so-what.flac")
+    );
+    assert!(loaded[0].tracks[0].source.is_none());
+
+    let (removed_tracks, removed_albums) = db.unmerge_federation_source(&source.source_id).unwrap();
+    assert_eq!(removed_tracks, 0);
+    assert_eq!(removed_albums, 0);
+
+    let loaded = db.load_library().unwrap();
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].tracks.len(), 1);
+    assert_eq!(
+        loaded[0].tracks[0].audio_source(),
+        AudioSource::File(PathBuf::from("/music/kind-of-blue/01-so-what.flac"))
+    );
+
     std::fs::remove_dir_all(&dir).ok();
 }
 

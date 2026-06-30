@@ -1206,6 +1206,18 @@ impl PlayerView {
 
         let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
 
+        let source = match sotf_audio_player::resolve_service_stream_from_env(source) {
+            Ok(source) => source,
+            Err(err) => {
+                log::error!("Failed to resolve service stream: {}", err);
+                state.app.playback.is_playing = false;
+                state
+                    .app
+                    .record_playback_error(format!("Resolve service stream failed: {}", err));
+                return;
+            }
+        };
+
         let play_result = {
             let mut player = state.player.lock();
             if prefer_smooth_switch && position.is_none() {

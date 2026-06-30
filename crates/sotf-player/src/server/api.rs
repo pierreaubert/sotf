@@ -659,6 +659,7 @@ pub(super) fn api_status_text(status: u16) -> &'static str {
         405 => "Method Not Allowed",
         416 => "Range Not Satisfiable",
         500 => "Internal Server Error",
+        503 => "Service Unavailable",
         _ => "Error",
     }
 }

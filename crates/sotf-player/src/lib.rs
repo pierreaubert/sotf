@@ -46,6 +46,7 @@ pub use autoeq as room_eq;
 pub mod library_stats;
 pub mod security;
 pub mod server;
+pub mod service_streams;
 pub mod sotf_api_client;
 pub mod sotf_remote;
 pub mod sotf_server_event;
@@ -78,6 +79,7 @@ pub use plugin_graph::{
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
 };
 pub use queue::{Queue, QueueItem};
+pub use service_streams::{ServiceStreamResolveError, resolve_service_stream_from_env};
 pub use sotf_remote::{
     SotfRemoteAuthToken, SotfRemoteConnection, SotfRemoteConnectionInfo, SotfRemoteServer,
     SotfRemoteServerStore, SotfRemoteSnapshot, SotfRemoteTransportCommand,
