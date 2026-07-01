@@ -3,7 +3,7 @@ use super::super::split::{split_and_normalize_genres, split_metadata_value};
 use super::super::{MusicDatabase, current_timestamp};
 use crate::library::{Album, Track, normalize_waveform_samples};
 use rusqlite::{Result as SqlResult, TransactionBehavior, params};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 impl MusicDatabase {
@@ -595,6 +595,74 @@ impl MusicDatabase {
 
         // Final progress report
         progress_callback(total, total);
+
+        Ok(count)
+    }
+
+    /// Remove tracks whose paths are not present in `discovered_paths`.
+    ///
+    /// This is the scan-time counterpart to `clean_missing_files`. It first
+    /// checks membership in the in-memory set of paths discovered during the
+    /// forward directory walk. For paths that do not match exactly, it falls
+    /// back to `path.exists()` to avoid deleting tracks whose stored path
+    /// differs from the walked path (symlinks, mount-point aliases, etc.).
+    pub fn clean_missing_files_against_paths(
+        &mut self,
+        discovered_paths: &HashSet<PathBuf>,
+    ) -> SqlResult<usize> {
+        // Collect all tracks first to avoid borrowing issues.
+        let tracks: Vec<(i64, String)> = {
+            let mut stmt = self.conn.prepare("SELECT id, path FROM tracks")?;
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<SqlResult<Vec<_>>>()?
+        };
+
+        let mut to_delete = Vec::new();
+        let mut exact_matches = 0usize;
+        let mut path_mismatches = 0usize;
+        let mut logged_mismatches = 0usize;
+        for (id, path_str) in tracks {
+            let path = Path::new(&path_str);
+            if discovered_paths.contains(path) {
+                exact_matches += 1;
+            } else if path.exists() {
+                // The file is still on disk, but its stored path does not match
+                // the path produced by this scan. Keep it, but log a sample of
+                // mismatches so we can diagnose path-normalisation issues.
+                path_mismatches += 1;
+                if logged_mismatches < 5 {
+                    log::warn!(
+                        "[scan] path mismatch: db path '{}' was not found in discovered set but still exists on disk",
+                        path_str
+                    );
+                    logged_mismatches += 1;
+                }
+            } else {
+                to_delete.push(id);
+            }
+        }
+
+        log::info!(
+            "[scan] reverse cleanup: {} exact matches, {} path mismatches, {} missing",
+            exact_matches,
+            path_mismatches,
+            to_delete.len()
+        );
+
+        let count = to_delete.len();
+        if count > 0 {
+            let tx = self
+                .conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            for id in to_delete {
+                tx.execute("DELETE FROM tracks WHERE id = ?1", params![id])?;
+            }
+            tx.execute(
+                "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks)",
+                [],
+            )?;
+            tx.commit()?;
+        }
 
         Ok(count)
     }

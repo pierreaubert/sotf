@@ -38,9 +38,9 @@ def parse_args():
     )
     parser.add_argument(
         "--dtype",
-        default="bfloat16",
+        default="float16",
         choices=["bfloat16", "float16", "float32"],
-        help="Torch dtype for the pipeline",
+        help="Torch dtype for the pipeline. float16 is recommended for MPS (Apple Silicon).",
     )
     parser.add_argument(
         "--device",
@@ -97,10 +97,26 @@ def load_pipeline(args):
         file=sys.stderr,
     )
     print(f"[flux2_server] cache dir: {cache_dir}", file=sys.stderr)
+
     pipe = FluxPipeline.from_pretrained(
         args.model, torch_dtype=dtype, cache_dir=str(cache_dir)
     )
     pipe = pipe.to(device)
+
+    # VAE slicing/tiling reduces peak memory and can improve throughput on
+    # GPUs with limited VRAM (especially relevant for MPS/Mac).
+    try:
+        pipe.enable_vae_slicing()
+        pipe.enable_vae_tiling()
+    except Exception:
+        pass
+
+    # Verify where the transformer actually landed.
+    transformer_device = getattr(pipe.transformer, "device", None)
+    print(
+        f"[flux2_server] transformer device: {transformer_device}",
+        file=sys.stderr,
+    )
     print("[flux2_server] ready", file=sys.stderr)
     return pipe
 
@@ -168,6 +184,10 @@ def make_handler(pipe, args):
 
 
 def main():
+    # Allow MPS to fall back to CPU for unsupported ops instead of crashing.
+    # Must be set before torch/diffusers are imported.
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
     args = parse_args()
     pipe = load_pipeline(args)
     server = HTTPServer((args.host, args.port), make_handler(pipe, args))

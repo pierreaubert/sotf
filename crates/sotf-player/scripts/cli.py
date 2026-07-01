@@ -59,7 +59,7 @@ DEFAULT_COMPLETION_URL = "http://localhost:1234/api/v1/chat"
 DEFAULT_TEXT_MODEL = "google/gemma-4-12b-qat"
 DEFAULT_COMPLETION_API_FORMAT = os.environ.get("COMPLETION_API_FORMAT", "lmstudio")
 DEFAULT_LOCAL_GEMMA_MODEL = os.environ.get(
-    "LOCAL_GEMMA_MODEL", "mlx-community/gemma-4-12b-4bit"
+    "LOCAL_GEMMA_MODEL", "mlx-community/Qwen3.5-9B-4bit"
 )
 DEFAULT_LOCAL_GEMMA_BACKEND = os.environ.get("LOCAL_GEMMA_BACKEND", "auto")
 DEFAULT_LOCAL_GEMMA_DTYPE = os.environ.get("LOCAL_GEMMA_DTYPE", "bfloat16")
@@ -70,12 +70,22 @@ DEFAULT_SYSTEM_PROMPT_PATH = Path("crates/sotf-player/prompts/system-prompt.md")
 DEFAULT_LOCAL_FLUX2_MODEL = os.environ.get(
     "LOCAL_FLUX2_MODEL", "black-forest-labs/FLUX.1-schnell"
 )
-DEFAULT_LOCAL_FLUX2_DTYPE = os.environ.get("LOCAL_FLUX2_DTYPE", "bfloat16")
+DEFAULT_LOCAL_FLUX2_DTYPE = os.environ.get("LOCAL_FLUX2_DTYPE", "float16")
 DEFAULT_LOCAL_FLUX2_DEVICE = os.environ.get("LOCAL_FLUX2_DEVICE", "")
 DEFAULT_LOCAL_FLUX2_STEPS = int(os.environ.get("LOCAL_FLUX2_STEPS", "4"))
 DEFAULT_LOCAL_FLUX2_CACHE_DIR = os.environ.get(
     "SOTF_MODEL_CACHE_DIR", str(_PROJECT_ROOT / "data_cached" / "models")
 )
+DEFAULT_MFLUX_MODEL_PATH = os.environ.get(
+    "SOTF_MFLUX_MODEL_PATH",
+    "dhairyashil/FLUX.1-schnell-mflux-v0.6.2-4bit",
+)
+DEFAULT_MFLUX_BASE_MODEL = os.environ.get("SOTF_MFLUX_BASE_MODEL", "schnell")
+# (base_model, model_path_or_repo) for each MFLUX-backed CLI choice.
+MFLUX_MODELS = {
+    "flux2-mlx": ("schnell", DEFAULT_MFLUX_MODEL_PATH),
+    "flux2-mlx-dev": ("dev", "black-forest-labs/FLUX.1-dev"),
+}
 
 
 @dataclass
@@ -137,7 +147,7 @@ Examples:
     parser.add_argument(
         "--local-gemma-model",
         default=DEFAULT_LOCAL_GEMMA_MODEL,
-        help="Hugging Face model id or path when auto-starting the local Gemma server",
+        help="Hugging Face model id or path when auto-starting the local text-generation server",
     )
     parser.add_argument(
         "--local-gemma-backend",
@@ -204,8 +214,10 @@ Examples:
             "cogview-4",
             "cogview-3-flash",
             "flux2",
+            "flux2-mlx",
+            "flux2-mlx-dev",
         ],
-        help="Image model to use",
+        help="Image model to use. 'flux2-mlx' uses MFLUX (MLX-native FLUX) on Apple Silicon.",
     )
     parser.add_argument(
         "--url",
@@ -220,8 +232,8 @@ Examples:
     parser.add_argument(
         "--timeout",
         type=float,
-        default=float(os.environ.get("GLM_IMAGE_TIMEOUT", "600")),
-        help="HTTP timeout in seconds",
+        default=float(os.environ.get("GLM_IMAGE_TIMEOUT", "1800")),
+        help="HTTP timeout in seconds. Local FLUX generation on MPS can be slow, so the default is generous.",
     )
     parser.add_argument(
         "--local-flux2-model",
@@ -232,7 +244,7 @@ Examples:
         "--local-flux2-dtype",
         default=DEFAULT_LOCAL_FLUX2_DTYPE,
         choices=["bfloat16", "float16", "float32"],
-        help="Torch dtype for the local FLUX pipeline",
+        help="Torch dtype for the local FLUX pipeline. float16 is recommended for MPS (Apple Silicon).",
     )
     parser.add_argument(
         "--local-flux2-device",
@@ -249,6 +261,47 @@ Examples:
         "--local-flux2-cache-dir",
         default=DEFAULT_LOCAL_FLUX2_CACHE_DIR,
         help="Directory for downloaded local FLUX model weights",
+    )
+    parser.add_argument(
+        "--local-mflux-model-path",
+        default=DEFAULT_MFLUX_MODEL_PATH,
+        help="MFLUX model repo id or local path for --model flux2-mlx / flux2-mlx-dev",
+    )
+    parser.add_argument(
+        "--local-mflux-base-model",
+        default=DEFAULT_MFLUX_BASE_MODEL,
+        choices=["schnell", "dev", "dev-kontext", "krea-dev", "flux2-klein-4b", "flux2-klein-9b"],
+        help="MFLUX base model configuration",
+    )
+    parser.add_argument(
+        "--local-mflux-steps",
+        type=int,
+        default=int(os.environ.get("LOCAL_MFLUX_STEPS", "4")),
+        help="Inference steps for the local MFLUX pipeline",
+    )
+    parser.add_argument(
+        "--local-mflux-guidance",
+        type=float,
+        default=float(os.environ.get("LOCAL_MFLUX_GUIDANCE", "3.5")),
+        help="Guidance scale for the local MFLUX pipeline (ignored for schnell)",
+    )
+    parser.add_argument(
+        "--local-mflux-quantize",
+        type=int,
+        default=int(os.environ["LOCAL_MFLUX_QUANTIZE"])
+        if os.environ.get("LOCAL_MFLUX_QUANTIZE")
+        else None,
+        help="Runtime quantization bits for MFLUX (3/4/6/8); omit for pre-quantized models",
+    )
+    parser.add_argument(
+        "--local-mflux-low-ram",
+        action="store_true",
+        help="Reduce MFLUX peak memory by releasing components after use",
+    )
+    parser.add_argument(
+        "--local-mflux-cache-dir",
+        default=DEFAULT_LOCAL_FLUX2_CACHE_DIR,
+        help="Directory for downloaded MFLUX model weights",
     )
     parser.add_argument(
         "--local-server-startup-timeout",
@@ -504,7 +557,8 @@ def expand_prompt(args, short_content):
         "Create one text-to-image prompt from this album metadata.\n\n"
         f"{short_content}\n\n"
         "The image must be square album art, visually specific, tasteful, and usable as "
-        "cover artwork. Include a compact negative instruction at the end."
+        "cover artwork. Include a compact negative instruction at the end. "
+        "Output only the final image prompt, with no explanations, reasoning, or commentary."
     )
     fmt = guess_completion_api_format(args.completion_model, args.completion_api_format)
     if fmt == "openai":
@@ -640,13 +694,19 @@ def start_local_gemma_server(args):
 
     eprint(f"[cli.py] text server unreachable; starting local Gemma server: {script}")
     eprint(f"[cli.py] model={args.local_gemma_model} dtype={args.local_gemma_dtype}")
-    proc = subprocess.Popen(cmd, stdout=None, stderr=None)
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
 
     deadline = time.time() + args.local_text_server_startup_timeout
     while time.time() < deadline:
-        if proc.poll() is not None:
+        code = proc.poll()
+        if code is not None:
+            output = proc.stdout.read() if proc.stdout else ""
+            if output:
+                eprint(output)
             raise RuntimeError(
-                f"local Gemma server exited early with code {proc.returncode}"
+                f"local Gemma server exited early with code {code}"
             )
         if is_server_reachable(local_url):
             eprint(f"[cli.py] local Gemma server ready at {local_url}")
@@ -687,21 +747,85 @@ def maybe_local_text_server(args):
                 proc.wait()
 
 
+def start_local_mflux_server(args):
+    script = Path(__file__).with_name("mflux_server.py")
+    if not script.exists():
+        raise FileNotFoundError(f"local MFLUX server script not found: {script}")
+
+    port = find_free_port()
+    local_url = f"http://127.0.0.1:{port}/v1/images/generations"
+    base_model, model_path = MFLUX_MODELS.get(
+        args.model, (args.local_mflux_base_model, args.local_mflux_model_path)
+    )
+    cmd = [
+        sys.executable,
+        str(script),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--model-path",
+        model_path,
+        "--base-model",
+        base_model,
+        "--steps",
+        str(args.local_mflux_steps),
+        "--guidance",
+        str(args.local_mflux_guidance),
+        "--cache-dir",
+        args.local_mflux_cache_dir,
+    ]
+    if args.local_mflux_low_ram:
+        cmd.append("--low-ram")
+    if args.local_mflux_quantize is not None:
+        cmd.extend(["--quantize", str(args.local_mflux_quantize)])
+
+    eprint(f"[cli.py] image server unreachable; starting local MFLUX server: {script}")
+    eprint(f"[cli.py] model={model_path} base={base_model}")
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
+
+    deadline = time.time() + args.local_server_startup_timeout
+    while time.time() < deadline:
+        code = proc.poll()
+        if code is not None:
+            output = proc.stdout.read() if proc.stdout else ""
+            if output:
+                eprint(output)
+            raise RuntimeError(
+                f"local MFLUX server exited early with code {code}"
+            )
+        if is_server_reachable(local_url):
+            eprint(f"[cli.py] local MFLUX server ready at {local_url}")
+            args.url = local_url
+            return proc
+        time.sleep(0.5)
+
+    proc.terminate()
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    raise TimeoutError(
+        f"local MFLUX server failed to start within {args.local_server_startup_timeout}s"
+    )
+
+
 @contextmanager
 def maybe_local_image_server(args):
     proc = None
     try:
-        if (
-            not args.no_local_fallback
-            and not args.dry_run
-            and args.model == "flux2"
-            and not is_server_reachable(args.url)
-        ):
-            proc = start_local_flux2_server(args)
+        if not args.no_local_fallback and not args.dry_run and not is_server_reachable(args.url):
+            if args.model == "flux2":
+                proc = start_local_flux2_server(args)
+            elif args.model in MFLUX_MODELS:
+                proc = start_local_mflux_server(args)
         yield
     finally:
         if proc is not None:
-            eprint("[cli.py] stopping local FLUX server")
+            eprint("[cli.py] stopping local image server")
             proc.terminate()
             try:
                 proc.wait(timeout=30)

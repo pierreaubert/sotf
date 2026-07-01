@@ -431,6 +431,34 @@ fn test_generate_thumbnail_handles_misnamed_jpeg() {
 }
 
 #[test]
+fn test_generate_thumbnail_quarantines_corrupt_image() {
+    use std::fs;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let cover_path = temp_dir.path().join("cover.jpg");
+
+    // Write bytes that are not a valid JPEG.
+    fs::write(&cover_path, b"not a valid jpeg").unwrap();
+
+    let thumbnail = super::consts::generate_thumbnail(&cover_path);
+    assert!(
+        thumbnail.is_none(),
+        "thumbnail generation should fail for corrupt data"
+    );
+    assert!(
+        !cover_path.exists(),
+        "corrupt cover file should be moved away"
+    );
+
+    let bak_path = temp_dir.path().join("cover.jpg.bak");
+    assert!(
+        bak_path.exists(),
+        "corrupt cover file should be quarantined as cover.jpg.bak"
+    );
+}
+
+#[test]
 fn test_clean_album_title_edge_cases() {
     // Empty string
     assert_eq!(clean_album_title(""), "");

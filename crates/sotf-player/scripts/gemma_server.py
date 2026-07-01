@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Local Gemma text-generation server for cli.py.
+Local text-generation server for cli.py.
 
-Loads a Gemma causal-LM via Transformers or mlx-lm and exposes a POST
-/api/v1/chat endpoint compatible with the LM Studio format used by cli.py:
+Loads a causal-LM via Transformers or mlx-lm and exposes a POST /api/v1/chat
+endpoint compatible with the LM Studio format used by cli.py:
 
   {"model": "...", "system_prompt": "...", "input": "..."}
 
@@ -22,7 +22,7 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 DEFAULT_MODEL = os.environ.get(
-    "SOTF_GEMMA_MODEL", "mlx-community/gemma-4-12b-4bit"
+    "SOTF_GEMMA_MODEL", "mlx-community/Qwen3.5-9B-4bit"
 )
 DEFAULT_CACHE_DIR = os.environ.get(
     "SOTF_MODEL_CACHE_DIR", str(_PROJECT_ROOT / "data_cached" / "models")
@@ -31,7 +31,7 @@ DEFAULT_CACHE_DIR = os.environ.get(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Local Gemma text-generation server for cli.py"
+        description="Local text-generation server for cli.py"
     )
     parser.add_argument("--host", default="127.0.0.1", help="Bind host")
     parser.add_argument("--port", type=int, default=0, help="Bind port (0 = auto)")
@@ -181,9 +181,10 @@ def build_prompt(tokenizer, system_prompt: str, user_input: str) -> str:
     chat_template = getattr(tokenizer, "chat_template", None)
     if chat_template is not None:
         try:
-            return tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
+            kwargs = {"tokenize": False, "add_generation_prompt": True}
+            if "enable_thinking" in chat_template:
+                kwargs["enable_thinking"] = False
+            return tokenizer.apply_chat_template(messages, **kwargs)
         except Exception:
             pass
 
@@ -246,6 +247,9 @@ def make_handler_transformers(model, tokenizer, device, args):
 
 def make_handler_mlx(model, tokenizer, args):
     from mlx_lm import generate
+    from mlx_lm.sample_utils import make_sampler
+
+    sampler = make_sampler(0.7, 0.9)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -274,8 +278,7 @@ def make_handler_mlx(model, tokenizer, args):
                     tokenizer,
                     prompt=prompt,
                     max_tokens=args.max_new_tokens,
-                    temp=0.7,
-                    top_p=0.9,
+                    sampler=sampler,
                 )
                 text = text.strip()
 

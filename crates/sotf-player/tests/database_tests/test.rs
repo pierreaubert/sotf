@@ -2,6 +2,7 @@ use super::fixtures;
 /// Integration tests for MusicDatabase
 use sotf_audio_player::database::MusicDatabase;
 use sotf_audio_player::{Album, Track};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 /// Helper function to create a test track with minimal fields
@@ -434,6 +435,45 @@ fn test_clean_missing_files() {
     assert_eq!(removed, 1, "Should have removed 1 track");
 
     // Verify library now has only 1 album
+    let loaded = db.load_library().expect("Failed to load library");
+    assert_eq!(loaded.len(), 1, "Should have 1 album left");
+    assert_eq!(loaded[0].artist(), "Artist 1");
+}
+
+#[test]
+fn test_clean_missing_files_against_paths() {
+    let temp_dir = super::fixtures::copy_demo_files_to_temp(&["classical.wav", "jazz.wav"]);
+    let (_db_temp, db_path) = super::fixtures::temp_database();
+    let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();
+
+    let classical_path = temp_dir.path().join("classical.wav");
+    let jazz_path = temp_dir.path().join("jazz.wav");
+
+    let albums = vec![
+        test_album(
+            "Album 1",
+            Some(2024),
+            vec![test_track(classical_path.clone(), "Track 1", "Artist 1")],
+        ),
+        test_album(
+            "Album 2",
+            Some(2024),
+            vec![test_track(jazz_path.clone(), "Track 2", "Artist 2")],
+        ),
+    ];
+
+    db.save_albums(&albums).expect("Failed to save albums");
+
+    // Remove jazz.wav from disk so it is genuinely missing.
+    std::fs::remove_file(&jazz_path).expect("Failed to remove jazz.wav");
+
+    // Simulate a scan that only sees the classical file.
+    let discovered = HashSet::from([classical_path.clone()]);
+    let removed = db
+        .clean_missing_files_against_paths(&discovered)
+        .expect("Failed to clean missing files against paths");
+    assert_eq!(removed, 1, "Should have removed 1 track");
+
     let loaded = db.load_library().expect("Failed to load library");
     assert_eq!(loaded.len(), 1, "Should have 1 album left");
     assert_eq!(loaded[0].artist(), "Artist 1");

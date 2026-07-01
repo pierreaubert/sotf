@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// File extensions that the library should import as playable local audio.
 ///
@@ -35,6 +35,36 @@ pub(super) const ALBUM_ART_FILENAMES: &[&str] = &[
 /// Thumbnail size in pixels (160x160 for crisp display on high-DPI screens)
 pub(super) const THUMBNAIL_SIZE: u32 = 160;
 
+/// Move a corrupt image file aside by appending `.bak` to its name.
+///
+/// If `<path>.bak` already exists, appends `.bak.1`, `.bak.2`, etc.
+/// Returns the path the file was moved to, or `None` if the move failed.
+fn move_to_bak(path: &Path) -> Option<PathBuf> {
+    let mut dest = path.as_os_str().to_os_string();
+    dest.push(".bak");
+    let mut dest = PathBuf::from(dest);
+
+    let mut counter = 1;
+    while dest.exists() {
+        let mut candidate = path.as_os_str().to_os_string();
+        candidate.push(format!(".bak.{}", counter));
+        dest = PathBuf::from(candidate);
+        counter += 1;
+    }
+
+    if let Err(e) = std::fs::rename(path, &dest) {
+        log::warn!(
+            "Failed to move corrupt image {} to {}: {}",
+            path.display(),
+            dest.display(),
+            e
+        );
+        return None;
+    }
+
+    Some(dest)
+}
+
 /// Generate a PNG thumbnail from an image file
 ///
 /// PNG format is used instead of JPEG for several reasons:
@@ -54,11 +84,17 @@ pub(super) fn generate_thumbnail(image_path: &Path) -> Option<Vec<u8>> {
             Ok(img) => img,
             Err(e) => {
                 log::warn!("Failed to decode image {}: {}", image_path.display(), e);
+                if let Some(backup) = move_to_bak(image_path) {
+                    log::info!("Moved corrupt image to {}", backup.display());
+                }
                 return None;
             }
         },
         Err(e) => {
             log::warn!("Failed to open image {}: {}", image_path.display(), e);
+            if let Some(backup) = move_to_bak(image_path) {
+                log::info!("Moved corrupt image to {}", backup.display());
+            }
             return None;
         }
     };

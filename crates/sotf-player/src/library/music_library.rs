@@ -27,7 +27,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 use walkdir::WalkDir;
 
 #[derive(Debug, Default)]
@@ -561,6 +561,13 @@ impl MusicLibrary {
         let mut dir_stats: HashMap<PathBuf, (usize, std::collections::HashSet<String>)> =
             HashMap::new();
 
+        // Collect every supported audio file seen on disk so the reverse pass
+        // can delete DB tracks that no longer exist without calling
+        // `path.exists()` once per track.
+        let mut discovered_paths: HashSet<PathBuf> = HashSet::new();
+
+        let scan_start = Instant::now();
+
         // Log directories being scanned
         log::info!(
             "Scanning {} directories: {:?}",
@@ -590,6 +597,7 @@ impl MusicLibrary {
                 &mut album_map,
                 incremental,
                 &mut dir_stats,
+                &mut discovered_paths,
                 cancellation_token.clone(),
                 pause_flag.clone(),
                 total_tracks,
@@ -611,25 +619,40 @@ impl MusicLibrary {
 
         // Final progress report
         progress_callback(total_tracks, album_map.len());
+        log::info!(
+            "[scan] forward directory walk finished in {} ms ({} tracks, {} albums)",
+            scan_start.elapsed().as_millis(),
+            total_tracks,
+            album_map.len()
+        );
+        log::info!("[scan] configured directories: {:?}", self.directories.iter().map(|d| d.path.clone()).collect::<Vec<_>>());
+        for (i, path) in discovered_paths.iter().take(3).enumerate() {
+            log::info!("[scan] discovered sample [{}]: {}", i, path.display());
+        }
 
         if let Some(db) = &mut self.db {
-            let missing = db.clean_missing_files()?;
-            if missing > 0 {
-                log::info!("Removed {missing} missing tracks from the library before scan merge");
-            }
+            let t0 = Instant::now();
+            let missing = db.clean_missing_files_against_paths(&discovered_paths)?;
+            log::info!(
+                "[scan] clean missing files took {} ms (removed {})",
+                t0.elapsed().as_millis(),
+                missing
+            );
 
+            let t0 = Instant::now();
             let unsupported = db.clean_unsupported_extensions(SUPPORTED_AUDIO_EXTENSIONS)?;
-            if unsupported > 0 {
-                log::info!(
-                    "Removed {unsupported} tracks with unsupported extensions from the library before scan merge"
-                );
-            }
+            log::info!(
+                "[scan] clean unsupported extensions took {} ms (removed {})",
+                t0.elapsed().as_millis(),
+                unsupported
+            );
         }
 
         // Merge with existing albums if we have a database
         if let Some(db) = &self.db
             && incremental
         {
+            let t0 = Instant::now();
             progress_callback(total_tracks, album_map.len());
             // Load existing albums from database
             let existing_albums = db.load_library()?;
@@ -679,12 +702,14 @@ impl MusicLibrary {
                     }
                 }
             }
+            log::info!("[scan] merge with existing albums took {} ms", t0.elapsed().as_millis());
         }
 
         self.albums = album_map.into_values().collect();
         progress_callback(total_tracks, self.albums.len());
 
         // Sort tracks within each album and generate album art thumbnails
+        let t0 = Instant::now();
         for album in &mut self.albums {
             if album.tracks.is_empty() {
                 log::warn!("Found empty album (no tracks): {}", album.title);
@@ -700,13 +725,20 @@ impl MusicLibrary {
                 album.dynamic_range = Some(sum / gains.len() as f64);
             }
         }
+        log::info!(
+            "[scan] album post-processing took {} ms",
+            t0.elapsed().as_millis()
+        );
 
         // Sort albums by artist (computed from tracks) and title
+        let t0 = Instant::now();
         self.albums
             .sort_by(|a, b| a.artist().cmp(&b.artist()).then(a.title.cmp(&b.title)));
+        log::info!("[scan] sort albums took {} ms", t0.elapsed().as_millis());
 
         // Compute directory stats from the final album set, after incremental
         // scans have merged skipped DB tracks back in.
+        let t0 = Instant::now();
         dir_stats = compute_directory_stats(&self.albums);
         for dir_info in &mut self.directories {
             let (tracks, albums) = compute_aggregate_stats_for_path(&dir_info.path, &dir_stats);
@@ -717,6 +749,10 @@ impl MusicLibrary {
             dir_info.subdirectories.clear();
             dir_info.children_loaded = false;
         }
+        log::info!(
+            "[scan] directory stats computation took {} ms",
+            t0.elapsed().as_millis()
+        );
 
         // Update the stats cache for lazy loading
         self.dir_stats_cache = dir_stats;
@@ -724,32 +760,45 @@ impl MusicLibrary {
         // Save to database if available
         if let Some(db) = &mut self.db {
             progress_callback(total_tracks, self.albums.len());
+
+            let t0 = Instant::now();
             db.save_albums(&self.albums)?;
+            log::info!("[scan] save albums took {} ms", t0.elapsed().as_millis());
 
             // Sync FTS index to ensure search works correctly after scan
             // This rebuilds the FTS index from the current database state
+            let t0 = Instant::now();
             if let Err(e) = db.sync_fts_index() {
                 log::warn!("Failed to sync FTS index after scan: {}", e);
             }
+            log::info!("[scan] sync FTS index took {} ms", t0.elapsed().as_millis());
 
             // Record scan history for each directory
+            let t0 = Instant::now();
             for dir_info in &self.directories {
                 db.record_scan(&dir_info.path, dir_info.file_count, dir_info.album_count)?;
             }
+            log::info!(
+                "[scan] record scan history took {} ms",
+                t0.elapsed().as_millis()
+            );
 
             // Checkpoint the WAL to prevent unbounded growth during scanning.
             // Without this, the WAL grows indefinitely when other connections
             // (e.g., the TUI read connection) hold read snapshots.
+            let t0 = Instant::now();
             if let Err(e) = db.checkpoint_wal() {
                 log::warn!("Failed to checkpoint WAL after scan: {}", e);
             }
+            log::info!("[scan] checkpoint WAL took {} ms", t0.elapsed().as_millis());
         }
 
         log::info!(
-            "Scan complete: {} tracks ({} scanned), {} albums",
+            "Scan complete: {} tracks ({} scanned), {} albums, total {} ms",
             total_tracks,
             scanned_tracks,
-            self.albums.len()
+            self.albums.len(),
+            scan_start.elapsed().as_millis()
         );
 
         // Log album titles for debugging (at debug level to avoid spam)
@@ -801,12 +850,14 @@ impl MusicLibrary {
         Ok(removed)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn scan_directory<F>(
         &self,
         dir: &Path,
         album_map: &mut HashMap<String, Album>,
         incremental: bool,
         dir_stats: &mut HashMap<PathBuf, (usize, std::collections::HashSet<String>)>,
+        discovered_paths: &mut HashSet<PathBuf>,
         cancellation_token: Option<Arc<AtomicBool>>,
         pause_flag: Option<Arc<AtomicBool>>,
         progress_base_tracks: usize,
@@ -860,6 +911,12 @@ impl MusicLibrary {
                 if is_supported_audio_extension(&ext) {
                     total_tracks += 1;
                     progress_callback(progress_base_tracks + total_tracks, album_map.len());
+
+                    // Record that this file still exists on disk. The reverse
+                    // cleanup pass uses this set to delete DB tracks that were
+                    // not seen during the directory walk, avoiding one
+                    // `path.exists()` syscall per track.
+                    discovered_paths.insert(path.to_path_buf());
 
                     // Update stats for the parent directory of this file.
                     // Album keys are stitched in below (post-scan) once each

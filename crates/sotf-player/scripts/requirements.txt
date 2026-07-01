@@ -1,4 +1,4 @@
-# Python dependencies for sotf-player/scripts/cli.py, flux2_server.py and gemma_server.py
+# Python dependencies for sotf-player/scripts/cli.py, flux2_server.py, mflux_server.py and gemma_server.py
 
 # Audio metadata reading (optional; cli.py degrades gracefully without it)
 mutagen
@@ -7,7 +7,10 @@ mutagen
 torch
 diffusers
 
-# Local Gemma text-generation backend (gemma_server.py)
+# Local MLX image-generation backend (mflux_server.py)
+mflux
+
+# Local text-generation backend (gemma_server.py)
 transformers
 accelerate
 mlx-lm; sys_platform == 'darwin'
