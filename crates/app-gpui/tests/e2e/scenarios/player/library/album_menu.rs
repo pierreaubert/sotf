@@ -7,8 +7,9 @@
 //! - Keyboard shortcuts 'a' and Enter work
 
 use crate::driver::AppDriver;
+use crate::pages::library::LibraryPage;
 use crate::runner::{E2ERunner, TestScenario};
-use gpui::{TestAppContext, VisualTestContext, WindowHandle};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle};
 use sotf_audio_player::{Album, Track};
 use sotf_audio_player_gpui::InputMode;
 use sotf_audio_player_gpui::app::{ContextMenuState, ContextMenuType, Screen};
@@ -288,6 +289,331 @@ impl TestScenario for AlbumNoDuplicateScenario {
     }
 }
 
+/// Clicks the actual rendered context-menu items and verifies they execute.
+pub struct AlbumContextMenuClickScenario;
+
+impl TestScenario for AlbumContextMenuClickScenario {
+    fn name(&self) -> &'static str {
+        "Album Context Menu Click"
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        view: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut driver = AppDriver::new(cx, view);
+
+        // Inject a test album backed by a real temp file so add_album_to_queue succeeds.
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let track_path = tmp_dir.path().join("track.flac");
+        std::fs::write(&track_path, b"fake").unwrap();
+
+        let album = Album {
+            id: Some(1),
+            title: "Test Album".to_string(),
+            year: Some(2024),
+            tracks: vec![Track {
+                path: track_path,
+                title: Some("Test Track".to_string()),
+                ..Default::default()
+            }],
+            album_art_path: None,
+            album_art_thumbnail: None,
+            play_count: 0,
+            edition: None,
+            dynamic_range: None,
+            is_favorite: false,
+            uuid: None,
+        };
+
+        driver.update_app(|app, _| {
+            app.library_state.library.albums = vec![album];
+            app.library_state.invalidate_cache();
+            app.library_state.ensure_cache_valid();
+            app.invalidate_library_stats();
+        });
+
+        driver.navigate_to(Screen::Library);
+        driver.run_until_parked();
+
+        driver.update_app(|app, _| {
+            app.library_state.selected_index = 0;
+        });
+        driver.run_until_parked();
+
+        // Enter search mode, focus the search input, and type a query that matches.
+        // This reproduces the post-search-fix state in which the menu regressed.
+        {
+            let mut page = LibraryPage::new(&mut driver);
+            page.click_library_search_tab()?;
+            page.click_search_bar_chrome()?;
+            page.type_search_query_one_char_at_a_time("test");
+        }
+
+        // Open the context menu by right-clicking the first album card.
+        let wrapper_bounds = driver
+            .cx
+            .debug_bounds("library-album-wrapper-0")
+            .ok_or("Album wrapper should be rendered")?;
+        let wrapper_center = wrapper_bounds.center();
+        driver.cx.simulate_mouse_down(
+            wrapper_center,
+            MouseButton::Right,
+            Modifiers::default(),
+        );
+        driver
+            .cx
+            .simulate_mouse_up(wrapper_center, MouseButton::Right, Modifiers::default());
+        driver.run_until_parked();
+
+        let menu_visible = driver.read_app(|app| app.ui_state.context_menu.is_some());
+        if !menu_visible {
+            return Err("Context menu should appear after right-clicking an album".into());
+        }
+
+        // Click the rendered "Add to Queue" menu item.
+        let bounds = driver
+            .cx
+            .debug_bounds("menu-item-add-to-queue")
+            .ok_or("Add to Queue menu item should be rendered")?;
+        let center = bounds.center();
+        driver
+            .cx
+            .simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
+        driver
+            .cx
+            .simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
+        driver.run_until_parked();
+
+        let queue_len = driver.read_app(|app| app.queue_state.len());
+        if queue_len == 0 {
+            return Err("Add to Queue menu item should add the album to the queue".into());
+        }
+
+        let menu_closed = driver.read_app(|app| app.ui_state.context_menu.is_none());
+        if !menu_closed {
+            return Err("Context menu should close after Add to Queue".into());
+        }
+
+        let menu_item_gone = driver.cx.debug_bounds("menu-item-add-to-queue").is_none();
+        if !menu_item_gone {
+            return Err("Rendered context menu should disappear after Add to Queue".into());
+        }
+
+        let is_playing = driver.read_app(|app| app.playback.is_playing);
+        if is_playing {
+            return Err("Add to Queue should not start playback".into());
+        }
+
+        // Clear queue and reopen menu to test Play Now.
+        driver.update_app(|app, _| {
+            app.queue_state.clear();
+            app.queue_state.expanded.clear();
+            app.playback.is_playing = false;
+            app.playback.current_queue_index = None;
+        });
+        driver.run_until_parked();
+
+        // Right-click the album again to reopen the context menu.
+        driver.cx.simulate_mouse_down(
+            wrapper_center,
+            MouseButton::Right,
+            Modifiers::default(),
+        );
+        driver
+            .cx
+            .simulate_mouse_up(wrapper_center, MouseButton::Right, Modifiers::default());
+        driver.run_until_parked();
+
+        let menu_visible = driver.read_app(|app| app.ui_state.context_menu.is_some());
+        if !menu_visible {
+            return Err("Context menu should reappear for Play Now test".into());
+        }
+
+        let bounds = driver
+            .cx
+            .debug_bounds("menu-item-play-now")
+            .ok_or("Play Now menu item should be rendered")?;
+        let center = bounds.center();
+        driver
+            .cx
+            .simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
+        driver
+            .cx
+            .simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
+        driver.run_until_parked();
+
+        let queue_len = driver.read_app(|app| app.queue_state.len());
+        if queue_len == 0 {
+            return Err("Play Now menu item should add the album to the queue".into());
+        }
+
+        let is_playing = driver.read_app(|app| app.playback.is_playing);
+        if !is_playing {
+            return Err("Play Now menu item should start playback".into());
+        }
+
+        println!("Album context menu click test passed!");
+        Ok(())
+    }
+}
+
+/// Activates the context menu via keyboard after using the search box.
+/// This reproduces the regression where the search Input keeps focus and
+/// intercepts the 'a' / Enter shortcuts that should trigger menu actions.
+pub struct AlbumContextMenuKeyboardAfterSearchScenario;
+
+impl TestScenario for AlbumContextMenuKeyboardAfterSearchScenario {
+    fn name(&self) -> &'static str {
+        "Album Context Menu Keyboard After Search"
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        view: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut driver = AppDriver::new(cx, view);
+
+        // Inject a test album backed by a real temp file so add_album_to_queue succeeds.
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let track_path = tmp_dir.path().join("track.flac");
+        std::fs::write(&track_path, b"fake").unwrap();
+
+        let album = Album {
+            id: Some(1),
+            title: "Test Album".to_string(),
+            year: Some(2024),
+            tracks: vec![Track {
+                path: track_path.clone(),
+                title: Some("Test Track".to_string()),
+                ..Default::default()
+            }],
+            album_art_path: None,
+            album_art_thumbnail: None,
+            play_count: 0,
+            edition: None,
+            dynamic_range: None,
+            is_favorite: false,
+            uuid: None,
+        };
+
+        driver.update_app(|app, _| {
+            app.library_state.library.albums = vec![album];
+            app.library_state.invalidate_cache();
+            app.library_state.ensure_cache_valid();
+            app.invalidate_library_stats();
+        });
+
+        driver.navigate_to(Screen::Library);
+        driver.run_until_parked();
+
+        driver.update_app(|app, _| {
+            app.library_state.selected_index = 0;
+        });
+        driver.run_until_parked();
+
+        // Enter search mode, focus the search input, and type a query that matches.
+        {
+            let mut page = LibraryPage::new(&mut driver);
+            page.click_library_search_tab()?;
+            page.click_search_bar_chrome()?;
+            page.type_search_query_one_char_at_a_time("test");
+        }
+
+        // Open the context menu by right-clicking the first album card.
+        let wrapper_bounds = driver
+            .cx
+            .debug_bounds("library-album-wrapper-0")
+            .ok_or("Album wrapper should be rendered")?;
+        let wrapper_center = wrapper_bounds.center();
+        driver.cx.simulate_mouse_down(
+            wrapper_center,
+            MouseButton::Right,
+            Modifiers::default(),
+        );
+        driver
+            .cx
+            .simulate_mouse_up(wrapper_center, MouseButton::Right, Modifiers::default());
+        driver.run_until_parked();
+
+        let input_mode = driver.read_app(|app| app.ui_state.input_mode);
+        if !matches!(input_mode, InputMode::ContextMenu) {
+            return Err("Input mode should be ContextMenu after right-click".into());
+        }
+
+        // After opening the context menu, the search input must no longer be
+        // in editing mode so that menu keyboard shortcuts ('a', Enter) are
+        // routed to the menu instead of the search input.
+        if gpui_ui_kit::is_input_editing() {
+            return Err(
+                "Search input is still editing after context menu opened; keyboard shortcuts will not work".into(),
+            );
+        }
+
+        // Press 'a' to add the album to the queue.
+        driver.simulate_keystrokes("a");
+        driver.run_until_parked();
+
+        let queue_len = driver.read_app(|app| app.queue_state.len());
+        if queue_len == 0 {
+            return Err("Pressing 'a' in album context menu should add the album to the queue".into());
+        }
+
+        let menu_closed = driver.read_app(|app| app.ui_state.context_menu.is_none());
+        if !menu_closed {
+            return Err("Context menu should close after pressing 'a'".into());
+        }
+
+        let is_playing = driver.read_app(|app| app.playback.is_playing);
+        if is_playing {
+            return Err("Add to Queue should not start playback".into());
+        }
+
+        // Clear queue and reopen menu to test Play Now via Enter.
+        driver.update_app(|app, _| {
+            app.queue_state.clear();
+            app.queue_state.expanded.clear();
+            app.playback.is_playing = false;
+            app.playback.current_queue_index = None;
+        });
+        driver.run_until_parked();
+
+        driver.cx.simulate_mouse_down(
+            wrapper_center,
+            MouseButton::Right,
+            Modifiers::default(),
+        );
+        driver
+            .cx
+            .simulate_mouse_up(wrapper_center, MouseButton::Right, Modifiers::default());
+        driver.run_until_parked();
+
+        let input_mode = driver.read_app(|app| app.ui_state.input_mode);
+        if !matches!(input_mode, InputMode::ContextMenu) {
+            return Err("Input mode should be ContextMenu for Play Now test".into());
+        }
+
+        // Press Enter to play the album now.
+        driver.simulate_keystrokes("enter");
+        driver.run_until_parked();
+
+        let queue_len = driver.read_app(|app| app.queue_state.len());
+        if queue_len == 0 {
+            return Err("Pressing Enter in album context menu should add the album to the queue".into());
+        }
+
+        let is_playing = driver.read_app(|app| app.playback.is_playing);
+        if !is_playing {
+            return Err("Pressing Enter in album context menu should start playback".into());
+        }
+
+        println!("Album context menu keyboard-after-search test passed!");
+        Ok(())
+    }
+}
+
 #[gpui::test]
 async fn test_album_context_menu(cx: &mut TestAppContext) {
     let scenario = AlbumContextMenuScenario;
@@ -312,5 +638,35 @@ async fn test_album_no_duplicate_in_queue(cx: &mut TestAppContext) {
     assert!(
         result.is_ok(),
         "Album no duplicate test failed: should not add album twice"
+    );
+}
+
+#[gpui::test]
+async fn test_album_context_menu_click(cx: &mut TestAppContext) {
+    let scenario = AlbumContextMenuClickScenario;
+    let runner = E2ERunner::new(scenario);
+    let result = runner.run(cx).await;
+
+    if let Err(e) = &result {
+        println!("Test failed: {}", e);
+    }
+    assert!(
+        result.is_ok(),
+        "Album context menu click test failed: menu item click should enqueue or play album"
+    );
+}
+
+#[gpui::test]
+async fn test_album_context_menu_keyboard_after_search(cx: &mut TestAppContext) {
+    let scenario = AlbumContextMenuKeyboardAfterSearchScenario;
+    let runner = E2ERunner::new(scenario);
+    let result = runner.run(cx).await;
+
+    if let Err(e) = &result {
+        println!("Test failed: {}", e);
+    }
+    assert!(
+        result.is_ok(),
+        "Album context menu keyboard-after-search test failed: keyboard shortcuts should work after searching"
     );
 }

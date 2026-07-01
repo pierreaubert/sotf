@@ -57,10 +57,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .filter_module("symphonia_core", log::LevelFilter::Warn)
                 .init();
         } else {
-            env_logger::init();
+            env_logger::Builder::from_default_env()
+                .filter_level(log::LevelFilter::Info)
+                .filter_module("symphonia_core", log::LevelFilter::Warn)
+                .init();
         }
     } else {
-        env_logger::init();
+        env_logger::Builder::from_default_env()
+            .filter_level(log::LevelFilter::Info)
+            .filter_module("symphonia_core", log::LevelFilter::Warn)
+            .init();
     }
 
     if args.qr {

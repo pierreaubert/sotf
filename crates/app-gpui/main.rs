@@ -90,20 +90,20 @@ fn main() {
             env_logger::Builder::from_default_env()
                 .target(env_logger::Target::Pipe(Box::new(log_file)))
                 .filter_level(log::LevelFilter::Debug)
-                .filter_module("symphonia_core", log::LevelFilter::Debug)
+                .filter_module("symphonia_core", log::LevelFilter::Warn)
                 .init();
         } else {
             // Fallback to stderr if file cannot be opened
             env_logger::Builder::from_default_env()
                 .filter_level(log::LevelFilter::Debug)
-                .filter_module("symphonia_core", log::LevelFilter::Debug)
+                .filter_module("symphonia_core", log::LevelFilter::Warn)
                 .init();
         }
     } else {
         // Fallback to stderr if path cannot be determined
         env_logger::Builder::from_default_env()
             .filter_level(log::LevelFilter::Debug)
-            .filter_module("symphonia_core", log::LevelFilter::Debug)
+            .filter_module("symphonia_core", log::LevelFilter::Warn)
             .init();
     }
 

@@ -626,6 +626,7 @@ impl PlayerView {
             };
 
             let state_entity = self.state.clone();
+            let view_entity = cx.entity().clone();
 
             div()
                 .absolute()
@@ -744,6 +745,10 @@ impl PlayerView {
                                     _ => {}
                                 }
                             });
+                            // The PlayerView does not observe AppState, so event handlers that
+                            // mutate state must notify the view explicitly to render the update
+                            // (e.g. menu closing, queue length changing) immediately.
+                            view_entity.update(cx, |_, cx| cx.notify());
                         }),
                 )
         } else {

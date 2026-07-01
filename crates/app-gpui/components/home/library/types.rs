@@ -1778,6 +1778,7 @@ impl PlayerView {
 
             let album_card = div()
                 .id(("album-wrapper", idx))
+                .debug_selector(move || format!("library-album-wrapper-{}", idx))
                 .on_click(cx.listener(move |view, event: &ClickEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
                         state.app.library_state.selected_index = idx;
@@ -1798,7 +1799,7 @@ impl PlayerView {
                 }))
                 .on_mouse_up(
                     MouseButton::Right,
-                    cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
+                    cx.listener(move |view, event: &MouseUpEvent, window, cx| {
                         view.state.update(cx, |state, _cx| {
                             use crate::app::InputMode;
                             state.app.library_state.selected_index = idx;
@@ -1810,6 +1811,9 @@ impl PlayerView {
                                 item_index: idx,
                             });
                         });
+                        // Move focus to the player root so the search input (if active)
+                        // does not keep intercepting keyboard events while the menu is open.
+                        view.focus_handle.focus(window, cx);
                         cx.notify();
                     }),
                 )

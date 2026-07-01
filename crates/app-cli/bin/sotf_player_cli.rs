@@ -39,7 +39,7 @@ fn main() {
     let mut builder = env_logger::Builder::from_default_env();
     builder
         .filter_level(log::LevelFilter::Debug)
-        .filter_module("symphonia_core", log::LevelFilter::Debug);
+        .filter_module("symphonia_core", log::LevelFilter::Warn);
     match OpenOptions::new().create(true).append(true).open(&log_path) {
         Ok(log_file) => {
             builder.target(env_logger::Target::Pipe(Box::new(log_file)));
