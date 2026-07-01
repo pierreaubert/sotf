@@ -165,11 +165,36 @@ impl MusicDatabase {
 
     /// Save albums and tracks to database
     pub fn save_albums(&mut self, albums: &[Album]) -> SqlResult<()> {
+        self.save_albums_inner(albums, None).map(|_| ())
+    }
+
+    /// Save only tracks that were decoded during an incremental scan.
+    ///
+    /// `albums` must be the complete post-scan library so the album row for
+    /// each changed track is written with up-to-date album metadata.
+    pub fn save_album_changes(
+        &mut self,
+        albums: &[Album],
+        changed_paths: &HashSet<PathBuf>,
+    ) -> SqlResult<usize> {
+        if changed_paths.is_empty() {
+            return Ok(0);
+        }
+
+        self.save_albums_inner(albums, Some(changed_paths))
+    }
+
+    fn save_albums_inner(
+        &mut self,
+        albums: &[Album],
+        changed_paths: Option<&HashSet<PathBuf>>,
+    ) -> SqlResult<usize> {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let now = current_timestamp();
         let mut album_key_counts: HashMap<(String, String), usize> = HashMap::new();
+        let mut saved_tracks = 0usize;
 
         for album in albums {
             *album_key_counts
@@ -178,6 +203,12 @@ impl MusicDatabase {
         }
 
         for album in albums {
+            if changed_paths
+                .is_some_and(|paths| !album.tracks.iter().any(|track| paths.contains(&track.path)))
+            {
+                continue;
+            }
+
             // Compute artist from tracks for backwards compatibility with old schema
             // (old schema has artist column with UNIQUE(artist, title) constraint)
             let mut album_artist = album.artist();
@@ -226,6 +257,10 @@ impl MusicDatabase {
 
             // Insert or update tracks (now including artist)
             for track in &album.tracks {
+                if changed_paths.is_some_and(|paths| !paths.contains(&track.path)) {
+                    continue;
+                }
+
                 let file_mtime = get_file_mtime(&track.path).unwrap_or(0);
                 let path_str = track.path.to_string_lossy().to_string();
                 let waveform = track.waveform.as_deref().map(|samples| &samples[..]);
@@ -389,6 +424,8 @@ impl MusicDatabase {
                         )?;
                     }
                 }
+
+                saved_tracks += 1;
             }
         }
 
@@ -399,7 +436,7 @@ impl MusicDatabase {
         )?;
 
         tx.commit()?;
-        Ok(())
+        Ok(saved_tracks)
     }
 
     /// Record a scan in the scan history

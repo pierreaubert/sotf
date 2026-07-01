@@ -1704,6 +1704,31 @@ impl PlayerView {
             .into_any_element()
     }
 
+    /// Open the album context menu at the given window position and move focus
+    /// to the player root so keyboard shortcuts reach the menu instead of any
+    /// active text input (e.g. the search box).
+    fn open_album_context_menu(
+        &mut self,
+        idx: usize,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            use crate::app::InputMode;
+            state.app.library_state.selected_index = idx;
+            state.app.ui_state.input_mode = InputMode::ContextMenu;
+            state.app.ui_state.context_menu = Some(crate::app::ContextMenuState {
+                menu_type: crate::app::ContextMenuType::Album,
+                position_x: position.x.into(),
+                position_y: position.y.into(),
+                item_index: idx,
+            });
+        });
+        self.focus_handle.focus(window, cx);
+        cx.notify();
+    }
+
     /// Render album grid view with thumbnails
     pub(crate) fn render_library_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
@@ -1779,7 +1804,15 @@ impl PlayerView {
             let album_card = div()
                 .id(("album-wrapper", idx))
                 .debug_selector(move || format!("library-album-wrapper-{}", idx))
-                .on_click(cx.listener(move |view, event: &ClickEvent, _window, cx| {
+                .on_click(cx.listener(move |view, event: &ClickEvent, window, cx| {
+                    // Control-click on macOS should open the context menu even on a
+                    // one-button mouse / Magic Mouse where a native right click may
+                    // not be generated.
+                    if event.modifiers().control {
+                        view.open_album_context_menu(idx, event.position(), window, cx);
+                        return;
+                    }
+
                     view.state.update(cx, |state, _cx| {
                         state.app.library_state.selected_index = idx;
                     });
@@ -1800,21 +1833,7 @@ impl PlayerView {
                 .on_mouse_up(
                     MouseButton::Right,
                     cx.listener(move |view, event: &MouseUpEvent, window, cx| {
-                        view.state.update(cx, |state, _cx| {
-                            use crate::app::InputMode;
-                            state.app.library_state.selected_index = idx;
-                            state.app.ui_state.input_mode = InputMode::ContextMenu;
-                            state.app.ui_state.context_menu = Some(crate::app::ContextMenuState {
-                                menu_type: crate::app::ContextMenuType::Album,
-                                position_x: event.position.x.into(),
-                                position_y: event.position.y.into(),
-                                item_index: idx,
-                            });
-                        });
-                        // Move focus to the player root so the search input (if active)
-                        // does not keep intercepting keyboard events while the menu is open.
-                        view.focus_handle.focus(window, cx);
-                        cx.notify();
+                        view.open_album_context_menu(idx, event.position, window, cx);
                     }),
                 )
                 .child(

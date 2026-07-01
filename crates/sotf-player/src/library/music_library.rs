@@ -625,7 +625,13 @@ impl MusicLibrary {
             total_tracks,
             album_map.len()
         );
-        log::info!("[scan] configured directories: {:?}", self.directories.iter().map(|d| d.path.clone()).collect::<Vec<_>>());
+        log::info!(
+            "[scan] configured directories: {:?}",
+            self.directories
+                .iter()
+                .map(|d| d.path.clone())
+                .collect::<Vec<_>>()
+        );
         for (i, path) in discovered_paths.iter().take(3).enumerate() {
             log::info!("[scan] discovered sample [{}]: {}", i, path.display());
         }
@@ -648,6 +654,11 @@ impl MusicLibrary {
             );
         }
 
+        let mut changed_paths: HashSet<PathBuf> = album_map
+            .values()
+            .flat_map(|album| album.tracks.iter().map(|track| track.path.clone()))
+            .collect();
+
         // Merge with existing albums if we have a database
         if let Some(db) = &self.db
             && incremental
@@ -656,15 +667,11 @@ impl MusicLibrary {
             progress_callback(total_tracks, album_map.len());
             // Load existing albums from database
             let existing_albums = db.load_library()?;
-            let scanned_paths: HashSet<PathBuf> = album_map
-                .values()
-                .flat_map(|album| album.tracks.iter().map(|track| track.path.clone()))
-                .collect();
 
             // Merge existing albums that weren't updated
             for mut existing_album in existing_albums {
                 existing_album.tracks.retain(|track| {
-                    is_supported_audio_path(&track.path) && !scanned_paths.contains(&track.path)
+                    is_supported_audio_path(&track.path) && !changed_paths.contains(&track.path)
                 });
                 if existing_album.tracks.is_empty() {
                     continue;
@@ -702,7 +709,10 @@ impl MusicLibrary {
                     }
                 }
             }
-            log::info!("[scan] merge with existing albums took {} ms", t0.elapsed().as_millis());
+            log::info!(
+                "[scan] merge with existing albums took {} ms",
+                t0.elapsed().as_millis()
+            );
         }
 
         self.albums = album_map.into_values().collect();
@@ -715,8 +725,19 @@ impl MusicLibrary {
                 log::warn!("Found empty album (no tracks): {}", album.title);
             }
             album.sort_tracks();
+
+            let previous_art_path = album.album_art_path.clone();
+            let previous_art_thumbnail = album.album_art_thumbnail.clone();
+
             // Find album art and generate thumbnail if not already present
             find_and_generate_album_thumbnail(album);
+            if incremental
+                && (album.album_art_path != previous_art_path
+                    || album.album_art_thumbnail != previous_art_thumbnail)
+                && let Some(track) = album.tracks.first()
+            {
+                changed_paths.insert(track.path.clone());
+            }
 
             // Calculate dynamic range (average replay gain)
             let gains: Vec<f64> = album.tracks.iter().filter_map(|t| t.replay_gain).collect();
@@ -762,16 +783,31 @@ impl MusicLibrary {
             progress_callback(total_tracks, self.albums.len());
 
             let t0 = Instant::now();
-            db.save_albums(&self.albums)?;
-            log::info!("[scan] save albums took {} ms", t0.elapsed().as_millis());
+            let saved_tracks = if incremental {
+                db.save_album_changes(&self.albums, &changed_paths)?
+            } else {
+                db.save_albums(&self.albums)?;
+                self.albums.iter().map(|album| album.tracks.len()).sum()
+            };
+            log::info!(
+                "[scan] save albums took {} ms (wrote {} tracks)",
+                t0.elapsed().as_millis(),
+                saved_tracks
+            );
 
-            // Sync FTS index to ensure search works correctly after scan
-            // This rebuilds the FTS index from the current database state
-            let t0 = Instant::now();
-            if let Err(e) = db.sync_fts_index() {
-                log::warn!("Failed to sync FTS index after scan: {}", e);
+            if incremental {
+                log::info!(
+                    "[scan] skipped full FTS rebuild for incremental scan; SQLite triggers updated changed rows"
+                );
+            } else {
+                // Sync FTS index to ensure search works correctly after scan.
+                // Full scans rewrite every row, so rebuild once from the final state.
+                let t0 = Instant::now();
+                if let Err(e) = db.sync_fts_index() {
+                    log::warn!("Failed to sync FTS index after scan: {}", e);
+                }
+                log::info!("[scan] sync FTS index took {} ms", t0.elapsed().as_millis());
             }
-            log::info!("[scan] sync FTS index took {} ms", t0.elapsed().as_millis());
 
             // Record scan history for each directory
             let t0 = Instant::now();

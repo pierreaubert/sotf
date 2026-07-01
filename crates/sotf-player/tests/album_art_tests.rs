@@ -1,8 +1,36 @@
 use sotf_audio_player::MusicLibrary;
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 
 mod fixtures;
+
+fn write_minimal_wav(path: &std::path::Path) {
+    let channels = 2u16;
+    let sample_rate = 44_100u32;
+    let bits_per_sample = 16u16;
+    let samples_per_channel = 8u32;
+    let bytes_per_sample = (bits_per_sample / 8) as u32;
+    let data_size = samples_per_channel * channels as u32 * bytes_per_sample;
+    let byte_rate = sample_rate * channels as u32 * bytes_per_sample;
+    let block_align = channels * (bits_per_sample / 8);
+
+    let mut file = std::fs::File::create(path).expect("create wav");
+    file.write_all(b"RIFF").unwrap();
+    file.write_all(&(36 + data_size).to_le_bytes()).unwrap();
+    file.write_all(b"WAVE").unwrap();
+    file.write_all(b"fmt ").unwrap();
+    file.write_all(&16u32.to_le_bytes()).unwrap();
+    file.write_all(&1u16.to_le_bytes()).unwrap();
+    file.write_all(&channels.to_le_bytes()).unwrap();
+    file.write_all(&sample_rate.to_le_bytes()).unwrap();
+    file.write_all(&byte_rate.to_le_bytes()).unwrap();
+    file.write_all(&block_align.to_le_bytes()).unwrap();
+    file.write_all(&bits_per_sample.to_le_bytes()).unwrap();
+    file.write_all(b"data").unwrap();
+    file.write_all(&data_size.to_le_bytes()).unwrap();
+    file.write_all(&vec![0u8; data_size as usize]).unwrap();
+}
 
 #[test]
 fn test_album_art_discovery_and_thumbnail_generation() {
@@ -138,10 +166,11 @@ fn test_album_art_discovered_on_incremental_rescan() {
     let (_temp_db_dir, db_path) = fixtures::temp_database();
     let music_dir = tempfile::TempDir::new().unwrap();
     let music_path = music_dir.path();
+    let disc_path = music_path.join("CD1");
+    fs::create_dir(&disc_path).unwrap();
 
-    // Copy audio file, no artwork yet
-    let demo_file = fixtures::get_demo_file("rock.wav");
-    fs::copy(&demo_file, music_path.join("rock.wav")).unwrap();
+    // Create audio with no embedded artwork.
+    write_minimal_wav(&disc_path.join("rock.wav"));
 
     let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
     library.add_directory(music_path.to_path_buf()).unwrap();
@@ -179,6 +208,22 @@ fn test_album_art_discovered_on_incremental_rescan() {
         "cover.jpg"
     );
     assert!(album.album_art_thumbnail.is_some());
+
+    let mut reloaded = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    reloaded
+        .load_from_database()
+        .expect("Failed to reload library");
+    let reloaded_album = &reloaded.albums[0];
+    assert_eq!(
+        reloaded_album
+            .album_art_path
+            .as_ref()
+            .unwrap()
+            .file_name()
+            .unwrap(),
+        "cover.jpg"
+    );
+    assert!(reloaded_album.album_art_thumbnail.is_some());
 }
 
 #[test]

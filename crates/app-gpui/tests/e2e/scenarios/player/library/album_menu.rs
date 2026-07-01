@@ -614,6 +614,102 @@ impl TestScenario for AlbumContextMenuKeyboardAfterSearchScenario {
     }
 }
 
+/// Control-click (macOS one-button / Magic Mouse) opens the album context menu.
+pub struct AlbumContextMenuControlClickScenario;
+
+impl TestScenario for AlbumContextMenuControlClickScenario {
+    fn name(&self) -> &'static str {
+        "Album Context Menu Control Click"
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        view: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut driver = AppDriver::new(cx, view);
+
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let track_path = tmp_dir.path().join("track.flac");
+        std::fs::write(&track_path, b"fake").unwrap();
+
+        let album = Album {
+            id: Some(1),
+            title: "Test Album".to_string(),
+            year: Some(2024),
+            tracks: vec![Track {
+                path: track_path,
+                title: Some("Test Track".to_string()),
+                ..Default::default()
+            }],
+            album_art_path: None,
+            album_art_thumbnail: None,
+            play_count: 0,
+            edition: None,
+            dynamic_range: None,
+            is_favorite: false,
+            uuid: None,
+        };
+
+        driver.update_app(|app, _| {
+            app.library_state.library.albums = vec![album];
+            app.library_state.invalidate_cache();
+            app.library_state.ensure_cache_valid();
+            app.invalidate_library_stats();
+        });
+
+        driver.navigate_to(Screen::Library);
+        driver.run_until_parked();
+
+        driver.update_app(|app, _| {
+            app.library_state.selected_index = 0;
+        });
+        driver.run_until_parked();
+
+        // Open the context menu with Control+Left click (macOS one-button mouse).
+        let wrapper_bounds = driver
+            .cx
+            .debug_bounds("library-album-wrapper-0")
+            .ok_or("Album wrapper should be rendered")?;
+        let wrapper_center = wrapper_bounds.center();
+        driver.cx.simulate_mouse_down(
+            wrapper_center,
+            MouseButton::Left,
+            gpui::Modifiers::control(),
+        );
+        driver
+            .cx
+            .simulate_mouse_up(wrapper_center, MouseButton::Left, gpui::Modifiers::control());
+        driver.run_until_parked();
+
+        let menu_visible = driver.read_app(|app| app.ui_state.context_menu.is_some());
+        if !menu_visible {
+            return Err("Context menu should appear after Control-click".into());
+        }
+
+        let bounds = driver
+            .cx
+            .debug_bounds("menu-item-add-to-queue")
+            .ok_or("Add to Queue menu item should be rendered")?;
+        let center = bounds.center();
+        driver
+            .cx
+            .simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
+        driver
+            .cx
+            .simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
+        driver.run_until_parked();
+
+        let queue_len = driver.read_app(|app| app.queue_state.len());
+        if queue_len == 0 {
+            return Err("Add to Queue should work after Control-click menu".into());
+        }
+
+        println!("Album context menu Control-click test passed!");
+        Ok(())
+    }
+}
+
 #[gpui::test]
 async fn test_album_context_menu(cx: &mut TestAppContext) {
     let scenario = AlbumContextMenuScenario;
@@ -668,5 +764,20 @@ async fn test_album_context_menu_keyboard_after_search(cx: &mut TestAppContext) 
     assert!(
         result.is_ok(),
         "Album context menu keyboard-after-search test failed: keyboard shortcuts should work after searching"
+    );
+}
+
+#[gpui::test]
+async fn test_album_context_menu_control_click(cx: &mut TestAppContext) {
+    let scenario = AlbumContextMenuControlClickScenario;
+    let runner = E2ERunner::new(scenario);
+    let result = runner.run(cx).await;
+
+    if let Err(e) = &result {
+        println!("Test failed: {}", e);
+    }
+    assert!(
+        result.is_ok(),
+        "Album context menu Control-click test failed: Control+Left click should open the menu"
     );
 }

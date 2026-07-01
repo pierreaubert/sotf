@@ -2,9 +2,29 @@ use super::fixtures;
 use super::misc::test_track;
 use super::write::write_minimal_wav;
 /// Integration tests for MusicLibrary scanning and directory management
+use rusqlite::Connection;
 use sotf_audio_player::database::MusicDatabase;
 use sotf_audio_player::{Album, MusicLibrary};
+use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
+
+fn track_write_times(db_path: &Path) -> Vec<(String, i64, i64)> {
+    let conn = Connection::open(db_path).unwrap();
+    let mut stmt = conn
+        .prepare("SELECT path, scanned_at, updated_at FROM tracks ORDER BY path")
+        .unwrap();
+    stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })
+    .unwrap()
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap()
+}
 
 #[test]
 fn test_create_library_with_database() {
@@ -225,6 +245,47 @@ fn test_incremental_scan_skips_unchanged_files() {
     assert_eq!(
         first_album_count, second_album_count,
         "Incremental scan should find same number of albums"
+    );
+}
+
+#[test]
+fn test_incremental_scan_does_not_rewrite_unchanged_tracks() {
+    let temp_music = tempfile::TempDir::new().unwrap();
+    let first_path = temp_music.path().join("first.wav");
+    let second_path = temp_music.path().join("second.wav");
+    write_minimal_wav(&first_path);
+    write_minimal_wav(&second_path);
+
+    let (_temp_dir, db_path) = super::fixtures::temp_database();
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    library
+        .add_directory(temp_music.path().to_path_buf())
+        .unwrap();
+
+    library.scan().expect("initial full scan");
+    let initial_write_times = track_write_times(&db_path);
+    assert_eq!(initial_write_times.len(), 2);
+
+    std::thread::sleep(Duration::from_millis(1100));
+    library
+        .scan_incremental(true)
+        .expect("no-op incremental scan");
+    assert_eq!(
+        track_write_times(&db_path),
+        initial_write_times,
+        "no-op incremental scan should not update unchanged track rows"
+    );
+
+    let new_path = temp_music.path().join("newtrack.wav");
+    write_minimal_wav(&new_path);
+    library
+        .scan_incremental(true)
+        .expect("incremental scan with a new track");
+
+    let db = MusicDatabase::open_for_testing(&db_path).unwrap();
+    assert!(
+        !db.search_library("newtrack").unwrap().is_empty(),
+        "incremental scan should keep FTS searchable without a full rebuild"
     );
 }
 
