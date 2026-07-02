@@ -18,4 +18,5 @@ mod types;
 
 pub use misc::*;
 pub use plugin_controller::*;
+pub use set::set_plugin_param_value;
 pub use types::*;
