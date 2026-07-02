@@ -137,7 +137,7 @@ pub(super) struct DenoiserTonalTransient {
 pub(super) struct DenoiserIo {
     pub input_buffer: Vec<f32>, // Interleaved input accumulator
     pub input_buffer_fill: usize,
-    pub temp_input_block: Vec<f32>, // Pre-allocated block for FFT input
+    pub temp_input_block: Vec<f32>, // Pre-allocated scratch for FFT input and PND de-interleave
     pub output_accumulator: Vec<Vec<f32>>, // [channels][ring_capacity]
     pub output_ring_mask: usize,    // ring_capacity - 1 (for & masking)
     pub output_read_pos: usize,     // read position in ring
@@ -234,6 +234,8 @@ impl DenoiserPlugin {
         let ring_capacity = Self::output_ring_capacity_for_fft(fft_size);
         let output_accumulator = vec![vec![0.0_f32; ring_capacity]; channels];
         let time_out_channels = vec![vec![0.0_f32; fft_size]; channels];
+        let temp_input_block_len =
+            (fft_size * channels).max(Self::prepared_in_place_frames_for_fft(fft_size));
 
         // PND Analyzers for polyphonic detection
         let pnd_analyzers = (0..channels)
@@ -364,7 +366,7 @@ impl DenoiserPlugin {
             io: DenoiserIo {
                 input_buffer,
                 input_buffer_fill: 0,
-                temp_input_block: vec![0.0_f32; fft_size * channels],
+                temp_input_block: vec![0.0_f32; temp_input_block_len],
                 output_accumulator,
                 output_ring_mask: ring_capacity - 1,
                 output_read_pos: 0,

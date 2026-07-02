@@ -120,6 +120,21 @@ fn test_low_latency_accepts_warm_4096_frame_in_place_blocks() {
 }
 
 #[test]
+fn test_mono_pnd_accepts_4096_frame_in_place_block() {
+    let mut params = DenoiserPluginParams::default();
+    params.polyphonic_detection = true;
+    let mut plugin = DenoiserPlugin::from_params(1, params);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let num_frames = 4096;
+    let mut input = make_test_signal(num_frames, 1, 1000.0);
+    let context = ProcessContext::new(SAMPLE_RATE, num_frames);
+
+    let processed = plugin.process_in_place(&mut input, &context).unwrap();
+    assert_eq!(processed, num_frames);
+}
+
+#[test]
 fn test_latency() {
     let plugin = DenoiserPlugin::new(2, false);
     assert_eq!(plugin.latency_samples(), 2048);
