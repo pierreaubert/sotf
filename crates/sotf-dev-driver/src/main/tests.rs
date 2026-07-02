@@ -1,4 +1,5 @@
 use super::misc::DEFAULT_DEV_API_URL;
+use super::misc::expand_env_vars;
 use super::misc::focus_action_name;
 use super::misc::resolve_base_url;
 use super::misc::strip_comment;
@@ -194,4 +195,10 @@ fn urlencode_safe_chars() {
     assert_eq!(urlencode("playback.volume"), "playback.volume");
     assert_eq!(urlencode("a b"), "a%20b");
     assert_eq!(urlencode("a&b"), "a%26b");
+}
+
+#[test]
+fn env_var_expansion() {
+    unsafe { std::env::set_var("SOTF_TEST_X", "/tmp/qa") };
+    assert_eq!(expand_env_vars("plugin_chain_save $SOTF_TEST_X/gain.json"), "plugin_chain_save /tmp/qa/gain.json");
 }

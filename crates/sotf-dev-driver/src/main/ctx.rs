@@ -32,7 +32,8 @@ pub(crate) fn run_script(script: &PathBuf, url: &str, verbose: bool) -> Result<(
 
     for (lineno, raw) in source.lines().enumerate() {
         let lineno = lineno + 1;
-        let line = strip_comment(raw).trim();
+        let expanded = crate::misc::expand_env_vars(raw);
+        let line = strip_comment(&expanded).trim();
         if line.is_empty() {
             continue;
         }
