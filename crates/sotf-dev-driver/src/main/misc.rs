@@ -35,6 +35,13 @@ pub(super) fn strip_comment(line: &str) -> &str {
 }
 
 pub fn expand_env_vars(line: &str) -> String {
+    expand_env_vars_with(line, |name| std::env::var(name))
+}
+
+pub fn expand_env_vars_with(
+    line: &str,
+    lookup: impl Fn(&str) -> Result<String, std::env::VarError>,
+) -> String {
     let mut out = String::with_capacity(line.len());
     let mut chars = line.char_indices().peekable();
     while let Some((i, ch)) = chars.next() {
@@ -50,7 +57,7 @@ pub fn expand_env_vars(line: &str) -> String {
                 }
             };
             let name = &line[start..end];
-            match std::env::var(name) {
+            match lookup(name) {
                 Ok(val) => out.push_str(&val),
                 Err(_) => out.push_str(&line[i..end]),
             }
