@@ -347,10 +347,9 @@ impl LoudnessCompensationPlugin {
     /// Called at parameter-change time only, never in the hot path.
     pub(super) fn rebuild_iso_filters(&mut self) {
         let sr = self.sample_rate as f64;
-        self.iso_deltas = compute_iso226_delta(
-            self.playback_level_db as f64,
-            self.reference_level_db as f64,
-        );
+        let playback_phon = (self.playback_level_db as f64).clamp(20.0, 90.0);
+        let reference_phon = (self.reference_level_db as f64).clamp(20.0, 90.0);
+        self.iso_deltas = compute_iso226_delta(playback_phon, reference_phon);
 
         for ch in 0..self.num_channels {
             if self.iso_filters[ch].len() == ISO_FILTER_COUNT {
@@ -485,6 +484,10 @@ impl LoudnessCompensationPlugin {
         }
         p.rebuild_filters();
         p.rebuild_iso_filters();
+        if p.mode_index == 2 {
+            p.last_auto_volume_db = f32::MIN;
+            p.maybe_rebuild_auto_filters();
+        }
         p.rebuild_cached_parameters();
         Ok(p)
     }

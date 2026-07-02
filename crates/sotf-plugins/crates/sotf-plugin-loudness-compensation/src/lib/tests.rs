@@ -1,5 +1,6 @@
 use super::consts::ISO_FILTER_COUNT;
 use super::loudness_compensation_plugin::LoudnessCompensationPlugin;
+use super::types::LoudnessCompensationPluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
@@ -325,6 +326,57 @@ fn test_get_parameter_new_fields() {
         p.get_parameter(&ParameterId::from("playback_volume_db")),
         Some(ParameterValue::Float(0.0))
     );
+}
+
+#[test]
+fn test_params_default_uses_spec_defaults() {
+    let params = LoudnessCompensationPluginParams::default();
+
+    assert_eq!(params.low_freq, 100.0);
+    assert_eq!(params.high_freq, 8000.0);
+    assert_eq!(params.mid_q, 0.707);
+    assert_eq!(params.auto_gain_max_db, 12.0);
+    assert_eq!(params.auto_gain_smoothing_ms, 100.0);
+    assert_eq!(params.playback_level_db, 70.0);
+    assert_eq!(params.reference_level_db, 83.0);
+    assert_eq!(params.playback_volume_db, 0.0);
+}
+
+#[test]
+fn test_auto_mode_from_default_params_processes_finite_at_low_volume() {
+    let params = LoudnessCompensationPluginParams {
+        mode: 2,
+        playback_volume_db: -55.4,
+        reference_level_db: 60.7,
+        ..Default::default()
+    };
+    let mut p = LoudnessCompensationPlugin::from_params(2, params).unwrap();
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+    let nf = 512;
+    let ctx = ProcessContext::new(48000, nf);
+    let mut buffer = vec![0.1; nf * 2];
+    p.process_in_place(&mut buffer, &ctx).unwrap();
+
+    assert!(buffer.iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
+fn test_iso_rebuild_clamps_out_of_range_levels_to_finite_filters() {
+    let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+    ParametricInPlacePlugin::initialize(&mut p, 48000).unwrap();
+    p.set_parameter(ParameterId::from("mode"), ParameterValue::Int(1))
+        .unwrap();
+    p.playback_level_db = 0.0;
+    p.reference_level_db = 100.0;
+    p.rebuild_iso_filters();
+
+    let nf = 512;
+    let ctx = ProcessContext::new(48000, nf);
+    let mut buffer = vec![0.1; nf];
+    p.process_in_place(&mut buffer, &ctx).unwrap();
+
+    assert!(buffer.iter().all(|sample| sample.is_finite()));
 }
 
 #[test]
