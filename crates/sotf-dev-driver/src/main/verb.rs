@@ -7,6 +7,7 @@ use super::parse::parse_dev_response;
 use super::types::Ctx;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
+use serde_json::json;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -149,4 +150,67 @@ pub(super) fn verb_focus(rest: &str, ctx: &Ctx) -> Result<()> {
     }
     let action_name = focus_action_name(target)?;
     verb_action(&action_name, ctx)
+}
+
+pub(super) fn verb_plugin_add(rest: &str, ctx: &Ctx) -> Result<()> {
+    let plugin_type = rest.trim();
+    if plugin_type.is_empty() {
+        bail!("plugin_add needs a plugin type");
+    }
+    let body = json!({ "name": "PluginAdd", "payload": { "plugin_type": plugin_type } });
+    post_dev_json(ctx, "/action", &body, "plugin_add")?;
+    Ok(())
+}
+
+pub(super) fn verb_plugin_remove(rest: &str, ctx: &Ctx) -> Result<()> {
+    let index: usize = rest.trim().parse().context("plugin_remove needs an index")?;
+    let body = json!({ "name": "PluginRemove", "payload": { "index": index } });
+    post_dev_json(ctx, "/action", &body, "plugin_remove")?;
+    Ok(())
+}
+
+pub(super) fn verb_plugin_count(_rest: &str, ctx: &Ctx) -> Result<Value> {
+    verb_query("plugins.count", ctx)
+}
+
+pub(super) fn verb_plugin_param_count(rest: &str, ctx: &Ctx) -> Result<Value> {
+    let index: usize = rest.trim().parse().context("plugin_param_count needs an index")?;
+    verb_query(&format!("plugins.plugin.{index}.param_count"), ctx)
+}
+
+pub(super) fn verb_plugin_param_set(rest: &str, ctx: &Ctx) -> Result<()> {
+    let mut parts = rest.split_whitespace();
+    let index: usize = parts.next().ok_or_else(|| anyhow!("plugin_param_set needs index"))?.parse()?;
+    let param_index: usize = parts.next().ok_or_else(|| anyhow!("plugin_param_set needs param_index"))?.parse()?;
+    let value: f64 = parts.next().ok_or_else(|| anyhow!("plugin_param_set needs value"))?.parse()?;
+    let body = json!({ "name": "PluginSetParam", "payload": { "index": index, "param_index": param_index, "value": value } });
+    post_dev_json(ctx, "/action", &body, "plugin_param_set")?;
+    Ok(())
+}
+
+pub(super) fn verb_plugin_param_get(rest: &str, ctx: &Ctx) -> Result<Value> {
+    let mut parts = rest.split_whitespace();
+    let index: usize = parts.next().ok_or_else(|| anyhow!("plugin_param_get needs index"))?.parse()?;
+    let param_index: usize = parts.next().ok_or_else(|| anyhow!("plugin_param_get needs param_index"))?.parse()?;
+    verb_query(&format!("plugins.plugin.{index}.param.{param_index}.value"), ctx)
+}
+
+pub(super) fn verb_plugin_chain_save(rest: &str, ctx: &Ctx) -> Result<()> {
+    let path = rest.trim();
+    if path.is_empty() {
+        bail!("plugin_chain_save needs a path");
+    }
+    let body = json!({ "name": "PluginChainSave", "payload": { "path": path } });
+    post_dev_json(ctx, "/action", &body, "plugin_chain_save")?;
+    Ok(())
+}
+
+pub(super) fn verb_plugin_chain_load(rest: &str, ctx: &Ctx) -> Result<()> {
+    let path = rest.trim();
+    if path.is_empty() {
+        bail!("plugin_chain_load needs a path");
+    }
+    let body = json!({ "name": "PluginChainLoad", "payload": { "path": path } });
+    post_dev_json(ctx, "/action", &body, "plugin_chain_load")?;
+    Ok(())
 }
