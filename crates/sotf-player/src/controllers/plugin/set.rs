@@ -75,7 +75,7 @@ fn set_fir_eq_band_field_for_plugin(
 ///
 /// Most plugins delegate to `PluginSettings::set_param_value()` (generic path).
 /// Only plugins with side effects beyond simple field updates have manual arms.
-pub(super) fn set_plugin_param_value(
+pub(crate) fn set_plugin_param_value(
     settings: &mut PluginSettings,
     param_idx: usize,
     value: f64,

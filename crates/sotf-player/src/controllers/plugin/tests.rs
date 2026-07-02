@@ -361,6 +361,24 @@ fn move_user_plugin_by_index_swaps_two_user_plugins() {
 }
 
 #[cfg(feature = "dev-api")]
+mod plugin_action_tests {
+    use super::super::dev_api::actions::plugin_action;
+    use crate::plugin_graph::PluginGraph;
+    use serde_json::json;
+
+    #[test]
+    fn plugin_action_add_and_remove() {
+        let mut graph = PluginGraph::with_default_rack();
+        let before = graph.len();
+        let idx = graph.user_plugin_insert_index();
+        plugin_action(&mut graph, "PluginAdd", Some(json!({"plugin_type":"Gain"}))).unwrap();
+        assert_eq!(graph.len(), before + 1);
+        plugin_action(&mut graph, "PluginRemove", Some(json!({"index": idx}))).unwrap();
+        assert_eq!(graph.len(), before);
+    }
+}
+
+#[cfg(feature = "dev-api")]
 mod plugin_query_tests {
     use super::super::dev_api::queries::plugin_query;
     use crate::plugin_graph::PluginGraph;

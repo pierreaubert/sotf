@@ -4,4 +4,5 @@
 //! queries about the current plugin graph without duplicating logic in each
 //! app shell.
 
+pub mod actions;
 pub mod queries;
