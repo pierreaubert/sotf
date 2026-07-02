@@ -359,3 +359,82 @@ fn move_user_plugin_by_index_swaps_two_user_plugins() {
     assert_eq!(order_after[2], order_before[3]);
     assert_eq!(order_after[3], order_before[2]);
 }
+
+#[cfg(feature = "dev-api")]
+mod plugin_query_tests {
+    use super::super::dev_api::queries::plugin_query;
+    use crate::plugin_graph::PluginGraph;
+
+    #[test]
+    fn plugin_query_count_empty_graph() {
+        let graph = PluginGraph::with_default_rack();
+        let value = plugin_query(&graph, "plugins.count").unwrap();
+        assert!(value.as_u64().unwrap() > 0); // default rack has permanent nodes
+    }
+
+    #[test]
+    fn plugin_query_list_contains_default_rack_plugins() {
+        let graph = PluginGraph::with_default_rack();
+        let value = plugin_query(&graph, "plugins.list").unwrap();
+        let list = value.as_array().unwrap();
+        assert_eq!(list.len(), graph.len());
+        assert_eq!(list[0]["type"], "Loudness Monitor");
+        assert_eq!(list[1]["type"], "Gain");
+    }
+
+    #[test]
+    fn plugin_query_plugin_type() {
+        let graph = PluginGraph::with_default_rack();
+        let value = plugin_query(&graph, "plugins.plugin.1.type").unwrap();
+        assert_eq!(value.as_str().unwrap(), "Gain");
+    }
+
+    #[test]
+    fn plugin_query_plugin_param_count() {
+        let graph = PluginGraph::with_default_rack();
+        let value = plugin_query(&graph, "plugins.plugin.1.param_count").unwrap();
+        assert_eq!(value.as_u64().unwrap(), 2);
+    }
+
+    #[test]
+    fn plugin_query_param_properties() {
+        let graph = PluginGraph::with_default_rack();
+        assert_eq!(
+            plugin_query(&graph, "plugins.plugin.1.param.0.name")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "Gain"
+        );
+        assert_eq!(
+            plugin_query(&graph, "plugins.plugin.1.param.0.type")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "float"
+        );
+        assert_eq!(
+            plugin_query(&graph, "plugins.plugin.1.param.0.min")
+                .unwrap()
+                .as_f64()
+                .unwrap(),
+            -60.0
+        );
+        assert_eq!(
+            plugin_query(&graph, "plugins.plugin.1.param.0.max")
+                .unwrap()
+                .as_f64()
+                .unwrap(),
+            20.0
+        );
+    }
+
+    #[test]
+    fn plugin_query_unknown_path_errors() {
+        let graph = PluginGraph::with_default_rack();
+        assert!(plugin_query(&graph, "plugins.foo").is_err());
+        assert!(plugin_query(&graph, "plugins.plugin.99.type").is_err());
+        assert!(plugin_query(&graph, "plugins.plugin.1.param.99.name").is_err());
+        assert!(plugin_query(&graph, "plugins.plugin.1.param.0.xyz").is_err());
+    }
+}

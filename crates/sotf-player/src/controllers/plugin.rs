@@ -7,6 +7,8 @@
 pub use super::plugin_param_map::param_index_to_engine_param;
 
 mod adjust;
+#[cfg(feature = "dev-api")]
+pub mod dev_api;
 mod misc;
 mod plugin_controller;
 mod set;
