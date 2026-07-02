@@ -170,6 +170,9 @@ pub(super) fn dispatch_action(
     window: AnyWindowHandle,
     cx: &mut App,
 ) -> Result<()> {
+    if dispatch_plugin_action(name, payload.clone(), window, cx)? {
+        return Ok(());
+    }
     if dispatch_metadata_action(name, payload.clone(), window, cx)? {
         return Ok(());
     }
@@ -189,6 +192,27 @@ pub(super) fn dispatch_action(
         })
         .map_err(|e| anyhow!("window.update failed: {e:#}"))?;
     Ok(())
+}
+
+fn dispatch_plugin_action(
+    name: &str,
+    payload: Option<Value>,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Result<bool> {
+    use sotf_audio_player::controllers::plugin::dev_api::actions::plugin_action;
+    let handled = matches!(
+        name,
+        "PluginAdd" | "PluginRemove" | "PluginToggle" | "PluginMoveUp" | "PluginMoveDown"
+            | "PluginSetParam" | "PluginSetParamString" | "PluginChainSave" | "PluginChainLoad"
+    );
+    if !handled {
+        return Ok(false);
+    }
+    with_app_state(window, cx, |state| {
+        plugin_action(&mut state.app.plugin_state.graph, name, payload)
+    })?;
+    Ok(true)
 }
 
 fn dispatch_metadata_action(
