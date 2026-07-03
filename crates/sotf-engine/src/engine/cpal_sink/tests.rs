@@ -26,6 +26,16 @@ fn stream_error_callbacks_gate_event_formatting() {
 }
 
 #[test]
+fn equal_channel_f32_output_clamps_after_volume() {
+    let source = include_str!("build.rs");
+
+    assert!(
+        source.contains("apply_volume_clamp(data, &state_clone);"),
+        "equal-channel f32 CPAL output must clamp after volume"
+    );
+}
+
+#[test]
 fn playback_buffer_capacity_uses_configured_buffer_ms() {
     assert_eq!(playback_buffer_capacity(48_000, 2, 200), 19_200);
 }
