@@ -42,6 +42,7 @@ use sotf_plugins::param_specs::{
 };
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 #[derive(Clone, Copy)]
 pub(crate) struct EqBandIndexing {
@@ -100,6 +101,26 @@ fn format_eq_frequency_label(freq: f64) -> String {
     } else {
         format!("{freq:.0}")
     }
+}
+
+fn eq_frequency_points() -> &'static [f64] {
+    static EQ_FREQUENCY_POINTS: OnceLock<Vec<f64>> = OnceLock::new();
+    EQ_FREQUENCY_POINTS
+        .get_or_init(|| {
+            const NUM_POINTS: usize = 240;
+            let min_freq = 20.0_f64;
+            let max_freq = 20000.0_f64;
+            let log_min = min_freq.ln();
+            let log_max = max_freq.ln();
+
+            (0..NUM_POINTS)
+                .map(|i| {
+                    let t = i as f64 / (NUM_POINTS - 1) as f64;
+                    (log_min + t * (log_max - log_min)).exp()
+                })
+                .collect()
+        })
+        .as_slice()
 }
 
 fn render_band_frequency_guide(
@@ -578,19 +599,7 @@ pub(crate) fn render_eq_visualization_sized(
     // Calculate dynamic y-axis range based on filter gains
     let (min_db, max_db) = calculate_dynamic_y_range(filters);
 
-    // Generate frequency points (logarithmically spaced from 20Hz to 20kHz)
-    let num_points = 240;
-    let min_freq = 20.0_f64;
-    let max_freq = 20000.0_f64;
-
-    let freq_points: Vec<f64> = (0..num_points)
-        .map(|i| {
-            let t = i as f64 / (num_points - 1) as f64;
-            let log_min = min_freq.ln();
-            let log_max = max_freq.ln();
-            (log_min + t * (log_max - log_min)).exp()
-        })
-        .collect();
+    let freq_points = eq_frequency_points();
 
     // Calculate combined response as primary series
     let combined_response: Vec<f64> = freq_points
@@ -617,7 +626,7 @@ pub(crate) fn render_eq_visualization_sized(
         let c = theme.text_muted;
         ((c.r * 255.0) as u32) << 16 | ((c.g * 255.0) as u32) << 8 | (c.b * 255.0) as u32
     };
-    let mut chart_builder = line(&freq_points, &combined_response)
+    let mut chart_builder = line(freq_points, &combined_response)
         .x_scale(ScaleType::Log)
         .y_scale(ScaleType::Linear)
         .x_label("Frequency (Hz)")

@@ -15,12 +15,12 @@ impl PlayerView {
                 crate::ui::layout_tree::solve_app_layout(w, h, layout),
             )
         };
-        let library_node = solved.find("library").unwrap();
-        let rack_node = solved.find("rack").unwrap();
-        let library_visible = library_node.visible;
-        let rack_visible = rack_node.visible;
-        let library_width = library_node.width;
-        let rack_width = rack_node.width;
+        let library_node = solved.find("library");
+        let rack_node = solved.find("rack");
+        let library_visible = library_node.is_some_and(|node| node.visible);
+        let rack_visible = rack_node.is_some_and(|node| node.visible);
+        let library_width = library_node.map(|node| node.width).unwrap_or(0.0);
+        let rack_width = rack_node.map(|node| node.width).unwrap_or(0.0);
         let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
         let divider_theme = PaneDividerTheme {
@@ -301,12 +301,12 @@ impl PlayerView {
                 crate::ui::layout_tree::solve_app_layout(w, h, layout),
             )
         };
-        let library_node = solved.find("library").unwrap();
-        let rack_node = solved.find("rack").unwrap();
-        let library_visible = library_node.visible;
-        let rack_visible = rack_node.visible;
-        let library_height = library_node.height;
-        let rack_height = rack_node.height;
+        let library_node = solved.find("library");
+        let rack_node = solved.find("rack");
+        let library_visible = library_node.is_some_and(|node| node.visible);
+        let rack_visible = rack_node.is_some_and(|node| node.visible);
+        let library_height = library_node.map(|node| node.height).unwrap_or(0.0);
+        let rack_height = rack_node.map(|node| node.height).unwrap_or(0.0);
         let rack_mode = crate::ui::layout_tree::solved_rack_display_mode(&solved);
 
         let divider_theme = PaneDividerTheme {

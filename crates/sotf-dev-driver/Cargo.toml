@@ -1,6 +1,6 @@
 [package]
 name = "sotf-dev-driver"
-version.workspace = true
+version = "0.8.2"
 authors.workspace = true
 edition.workspace = true
 description = "Drives sotf-gpui's dev-api over HTTP from line-based scenario scripts"

@@ -65,6 +65,12 @@ use crate::ui::PlayerView;
 use custom_view_registry::{CustomViewRenderContext, GpuiViewRegistry};
 use gpui::*;
 use sotf_audio_player::{PluginGraph, PluginSettings};
+use std::sync::OnceLock;
+
+fn gpui_view_registry() -> &'static GpuiViewRegistry {
+    static GPUI_VIEW_REGISTRY: OnceLock<GpuiViewRegistry> = OnceLock::new();
+    GPUI_VIEW_REGISTRY.get_or_init(GpuiViewRegistry::new)
+}
 
 /// Render plugin-specific content based on plugin type.
 ///
@@ -153,7 +159,7 @@ pub fn render_plugin_content(
     let chassis_theme = plugin_theme.apply_to(theme);
 
     // Check if this plugin has a registered custom view
-    let registry = GpuiViewRegistry::new();
+    let registry = gpui_view_registry();
     let type_key = custom_view_registry::plugin_type_key(settings);
 
     let content = if let Some(render_fn) = registry.get(type_key) {

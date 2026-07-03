@@ -22,6 +22,59 @@ use sotf_plugins::param_specs::{self, ParamType};
 use sotf_plugins::plugin_layout::ControlType;
 use std::path::Path;
 
+fn app_source(relative: &str) -> String {
+    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(relative))
+        .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
+}
+
+#[test]
+fn plugin_rendering_uses_cached_registry_and_safe_layout_slots() {
+    let plugins = app_source("components/plugins/mod.rs");
+    assert!(
+        plugins.contains("static GPUI_VIEW_REGISTRY")
+            || plugins.contains("OnceLock<GpuiViewRegistry>"),
+        "plugin renderer should cache the custom view registry"
+    );
+    assert!(
+        !plugins.contains("let registry = GpuiViewRegistry::new();"),
+        "plugin renderer must not construct GpuiViewRegistry per render"
+    );
+
+    let layout = app_source("ui/three_panel_layout.rs");
+    assert!(
+        !layout.contains(".unwrap()"),
+        "three-panel rendering must not panic when a solved layout slot is missing"
+    );
+}
+
+#[test]
+fn dev_api_compile_guard_is_active_for_release_builds() {
+    let lib = app_source("lib.rs");
+    assert!(
+        lib.contains("#[cfg(all(feature = \"dev-api\", not(debug_assertions)))]")
+            && lib.contains("compile_error!("),
+        "release builds must not compile the dev API"
+    );
+    assert!(
+        !lib.contains("// #[cfg(all(feature = \"dev-api\", not(debug_assertions)))]"),
+        "dev-api release compile guard must not be commented out"
+    );
+}
+
+#[test]
+fn eq_renderer_caches_static_frequency_grid() {
+    let eq_render = app_source("components/plugins/ui_eq/render.rs");
+    assert!(
+        eq_render.contains("static EQ_FREQUENCY_POINTS")
+            && eq_render.contains("eq_frequency_points()"),
+        "EQ renderer should reuse the log-spaced frequency grid"
+    );
+    assert!(
+        !eq_render.contains("let freq_points: Vec<f64> = (0..num_points)"),
+        "EQ renderer must not rebuild the static frequency grid every render"
+    );
+}
+
 #[test]
 fn test_typography_rems_platform_presets_affect_type_scale() {
     let neutral = typography_rems_from_rules(&DesignSystem::neutral().typography);
