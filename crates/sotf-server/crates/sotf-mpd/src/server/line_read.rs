@@ -3,7 +3,7 @@ use super::misc::execute_command_list;
 use super::misc::redact_for_log;
 use super::misc::wait_for_cancel;
 use super::types::LineRead;
-use crate::handler::{PlayerAdapter, handle_command};
+use crate::handler::{MpdStatus, PlayerAdapter, handle_command};
 use crate::protocol::{self, MPD_VERSION, MpdCommand};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
@@ -48,6 +48,120 @@ where
     match String::from_utf8(buf) {
         Ok(s) => LineRead::Line(s),
         Err(_) => LineRead::InvalidUtf8,
+    }
+}
+
+fn idle_subsystem_requested(requested: &[String], subsystem: &str) -> bool {
+    requested.is_empty()
+        || requested
+            .iter()
+            .any(|item| item.eq_ignore_ascii_case(subsystem))
+}
+
+fn idle_changed_subsystems(
+    before: &MpdStatus,
+    after: &MpdStatus,
+    requested: &[String],
+) -> Vec<&'static str> {
+    let mut changed = Vec::new();
+    if idle_subsystem_requested(requested, "mixer") && before.volume != after.volume {
+        changed.push("mixer");
+    }
+    if idle_subsystem_requested(requested, "playlist")
+        && (before.playlist_length != after.playlist_length
+            || before.playlist_version != after.playlist_version)
+    {
+        changed.push("playlist");
+    }
+    if idle_subsystem_requested(requested, "options")
+        && (before.repeat != after.repeat
+            || before.random != after.random
+            || before.single != after.single
+            || before.consume != after.consume)
+    {
+        changed.push("options");
+    }
+    if idle_subsystem_requested(requested, "player")
+        && (before.state != after.state
+            || before.song != after.song
+            || before.songid != after.songid
+            || before.duration != after.duration
+            || before.audio != after.audio)
+    {
+        changed.push("player");
+    }
+    changed
+}
+
+async fn handle_idle<R, W>(
+    reader: &mut BufReader<R>,
+    writer: &mut W,
+    adapter: &Arc<dyn PlayerAdapter>,
+    cancel: &tokio::sync::watch::Receiver<bool>,
+    requested: &[String],
+) -> Result<bool, String>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let initial = adapter.status();
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+
+    loop {
+        tokio::select! {
+            read_outcome = read_line_bounded(reader, MAX_LINE_BYTES) => {
+                match read_outcome {
+                    LineRead::Eof => return Ok(false),
+                    LineRead::TooLong => {
+                        let err = protocol::MpdError::new(protocol::MpdErrorCode::Arg, "input", "line too long");
+                        writer.write_all(err.format().as_bytes()).await.map_err(|e| e.to_string())?;
+                        return Ok(false);
+                    }
+                    LineRead::InvalidUtf8 => {
+                        let err = protocol::MpdError::new(protocol::MpdErrorCode::Arg, "input", "invalid UTF-8");
+                        writer.write_all(err.format().as_bytes()).await.map_err(|e| e.to_string())?;
+                    }
+                    LineRead::Line(line) => {
+                        if line.is_empty() {
+                            continue;
+                        }
+                        match protocol::parse_command(&line) {
+                            Ok(MpdCommand::NoIdle) => {
+                                writer.write_all(b"OK\n").await.map_err(|e| e.to_string())?;
+                                return Ok(true);
+                            }
+                            Ok(_) => {
+                                let err = protocol::MpdError::new(
+                                    protocol::MpdErrorCode::PlayerSync,
+                                    "idle",
+                                    "only noidle is allowed while idle is pending",
+                                );
+                                writer.write_all(err.format().as_bytes()).await.map_err(|e| e.to_string())?;
+                            }
+                            Err(err) => {
+                                writer.write_all(err.format().as_bytes()).await.map_err(|e| e.to_string())?;
+                            }
+                        }
+                    }
+                }
+            }
+            _ = wait_for_cancel(cancel) => return Ok(false),
+            _ = interval.tick() => {
+                let current = adapter.status();
+                let changed = idle_changed_subsystems(&initial, &current, requested);
+                if !changed.is_empty() {
+                    let mut response = String::new();
+                    for subsystem in changed {
+                        response.push_str("changed: ");
+                        response.push_str(subsystem);
+                        response.push('\n');
+                    }
+                    response.push_str("OK\n");
+                    writer.write_all(response.as_bytes()).await.map_err(|e| e.to_string())?;
+                    return Ok(true);
+                }
+            }
+        }
     }
 }
 
@@ -218,6 +332,13 @@ where
         // Handle close
         if matches!(cmd, MpdCommand::Close) {
             break;
+        }
+
+        if let MpdCommand::Idle(subsystems) = &cmd {
+            if !handle_idle(&mut reader, &mut writer, &adapter, &cancel, subsystems).await? {
+                break;
+            }
+            continue;
         }
 
         // Execute single command

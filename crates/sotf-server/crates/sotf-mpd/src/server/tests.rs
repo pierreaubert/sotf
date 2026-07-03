@@ -1,3 +1,4 @@
+use super::line_read::handle_session;
 use super::line_read::read_line_bounded;
 use super::misc::MAX_LINE_BYTES;
 use super::misc::execute_command_list;
@@ -6,7 +7,8 @@ use super::types::LineRead;
 use crate::handler::PlayerAdapter;
 use crate::protocol::MpdCommand;
 use std::sync::Arc;
-use tokio::io::BufReader;
+use std::sync::atomic::{AtomicU8, Ordering};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
 use crate::handler::*;
 use crate::protocol::FilterExpr;
@@ -90,6 +92,99 @@ impl PlayerAdapter for DummyAdapter {
     }
     fn add_id(&self, _uri: &str, _pos: Option<u32>) -> Result<u32, String> {
         Ok(42)
+    }
+    fn delete(&self, _pos: u32) -> Result<(), String> {
+        Ok(())
+    }
+    fn clear(&self) -> Result<(), String> {
+        Ok(())
+    }
+    fn search(&self, _filters: &[FilterExpr], _exact: bool) -> Vec<MpdSongInfo> {
+        vec![]
+    }
+    fn list_tag(&self, _tag: &str, _filters: &[FilterExpr]) -> Vec<String> {
+        vec![]
+    }
+    fn lsinfo(&self, _path: Option<&str>) -> Vec<MpdDirEntry> {
+        vec![]
+    }
+}
+
+struct IdleAdapter {
+    volume: AtomicU8,
+}
+
+impl IdleAdapter {
+    fn new(volume: u8) -> Self {
+        Self {
+            volume: AtomicU8::new(volume),
+        }
+    }
+}
+
+impl PlayerAdapter for IdleAdapter {
+    fn play(&self, _pos: Option<u32>) -> Result<(), String> {
+        Ok(())
+    }
+    fn pause(&self, _state: Option<bool>) -> Result<(), String> {
+        Ok(())
+    }
+    fn stop(&self) -> Result<(), String> {
+        Ok(())
+    }
+    fn next(&self) -> Result<(), String> {
+        Ok(())
+    }
+    fn previous(&self) -> Result<(), String> {
+        Ok(())
+    }
+    fn seek_pos(&self, _pos: u32, _time: f64) -> Result<(), String> {
+        Ok(())
+    }
+    fn seek_cur(&self, _time: f64) -> Result<(), String> {
+        Ok(())
+    }
+    fn set_volume(&self, vol: u8) -> Result<(), String> {
+        self.volume.store(vol, Ordering::SeqCst);
+        Ok(())
+    }
+    fn volume_change(&self, delta: i8) -> Result<(), String> {
+        let current = self.volume.load(Ordering::SeqCst) as i16;
+        self.volume
+            .store((current + delta as i16).clamp(0, 100) as u8, Ordering::SeqCst);
+        Ok(())
+    }
+    fn status(&self) -> MpdStatus {
+        MpdStatus {
+            volume: self.volume.load(Ordering::SeqCst),
+            repeat: false,
+            random: false,
+            single: false,
+            consume: false,
+            state: MpdPlayState::Stop,
+            song: None,
+            songid: None,
+            elapsed: 0.0,
+            duration: 0.0,
+            audio: None,
+            playlist_length: 0,
+            playlist_version: 0,
+        }
+    }
+    fn current_song(&self) -> Option<MpdSongInfo> {
+        None
+    }
+    fn playlist_info(&self, _range: Option<(u32, Option<u32>)>) -> Vec<MpdSongInfo> {
+        vec![]
+    }
+    fn playlist_song_by_id(&self, _id: u32) -> Option<MpdSongInfo> {
+        None
+    }
+    fn add(&self, _uri: &str) -> Result<(), String> {
+        Ok(())
+    }
+    fn add_id(&self, _uri: &str, _pos: Option<u32>) -> Result<u32, String> {
+        Ok(1)
     }
     fn delete(&self, _pos: u32) -> Result<(), String> {
         Ok(())
@@ -193,6 +288,74 @@ fn format_outcome(r: &LineRead) -> String {
         LineRead::TooLong => "TooLong".into(),
         LineRead::InvalidUtf8 => "InvalidUtf8".into(),
     }
+}
+
+async fn read_client_chunk<R: tokio::io::AsyncRead + Unpin>(reader: &mut R) -> String {
+    let mut buf = vec![0; 1024];
+    let n = tokio::time::timeout(std::time::Duration::from_secs(1), reader.read(&mut buf))
+        .await
+        .unwrap()
+        .unwrap();
+    String::from_utf8_lossy(&buf[..n]).to_string()
+}
+
+#[tokio::test]
+async fn test_idle_waits_until_noidle() {
+    let (client, server) = tokio::io::duplex(1024);
+    let (mut client_reader, mut client_writer) = tokio::io::split(client);
+    let (server_reader, server_writer) = tokio::io::split(server);
+    let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    let adapter: Arc<dyn PlayerAdapter> = Arc::new(IdleAdapter::new(50));
+
+    let server_task = tokio::spawn(handle_session(
+        server_reader,
+        server_writer,
+        adapter,
+        cancel_rx,
+        None,
+    ));
+
+    assert!(read_client_chunk(&mut client_reader).await.starts_with("OK MPD "));
+    client_writer.write_all(b"idle player\n").await.unwrap();
+    let pending = tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        read_client_chunk(&mut client_reader),
+    )
+    .await;
+    assert!(pending.is_err(), "idle should wait until noidle or a change");
+
+    client_writer.write_all(b"noidle\n").await.unwrap();
+    assert_eq!(read_client_chunk(&mut client_reader).await, "OK\n");
+    client_writer.write_all(b"close\n").await.unwrap();
+    server_task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn test_idle_reports_mixer_change() {
+    let (client, server) = tokio::io::duplex(1024);
+    let (mut client_reader, mut client_writer) = tokio::io::split(client);
+    let (server_reader, server_writer) = tokio::io::split(server);
+    let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    let adapter = Arc::new(IdleAdapter::new(50));
+    let server_adapter: Arc<dyn PlayerAdapter> = adapter.clone();
+
+    let server_task = tokio::spawn(handle_session(
+        server_reader,
+        server_writer,
+        server_adapter,
+        cancel_rx,
+        None,
+    ));
+
+    assert!(read_client_chunk(&mut client_reader).await.starts_with("OK MPD "));
+    client_writer.write_all(b"idle mixer\n").await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    adapter.volume.store(51, Ordering::SeqCst);
+
+    let response = read_client_chunk(&mut client_reader).await;
+    assert_eq!(response, "changed: mixer\nOK\n");
+    client_writer.write_all(b"close\n").await.unwrap();
+    server_task.await.unwrap().unwrap();
 }
 
 // ===== Regression: password lines are redacted before logging =====

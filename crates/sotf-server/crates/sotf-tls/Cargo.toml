@@ -1,6 +1,6 @@
 [package]
 name = "sotf-tls"
-version.workspace = true
+version = "0.8.2"
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
