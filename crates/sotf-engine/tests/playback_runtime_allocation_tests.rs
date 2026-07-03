@@ -93,12 +93,8 @@ fn assert_zero_alloc(
     let report = harness.write(frame);
 
     let allocations = ALLOC_COUNT.load(Ordering::SeqCst);
-    // The system allocator may lazily initialize per-thread bookkeeping on the
-    // first allocation of a given size/arena in a fresh test thread. Tolerate a
-    // tiny number of such one-off allocations while still catching regressions
-    // that allocate per-frame.
-    assert!(
-        allocations <= 5,
+    assert_eq!(
+        allocations, 0,
         "{label} allocated {allocations} times in playback frame hot path"
     );
     assert_eq!(
