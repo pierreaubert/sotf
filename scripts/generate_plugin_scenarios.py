@@ -51,8 +51,13 @@ def plugin_list(base: str) -> list[dict]:
 
 
 def find_insert_index(base: str) -> int:
-    """Add and remove a probe plugin to discover the user-plugin insert index."""
+    """Add and remove a probe plugin to discover the user-plugin insert index.
+
+    The user-plugin rack is cleared first so pre-existing plugins do not shift
+    the detected index.
+    """
     probe_type = "Gain"
+    action(base, "PluginClear", {})
     before = {entry["index"]: entry for entry in plugin_list(base)}
     action(base, "PluginAdd", {"plugin_type": probe_type})
     after = plugin_list(base)
