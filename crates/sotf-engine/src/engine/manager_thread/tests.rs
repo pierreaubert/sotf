@@ -59,6 +59,63 @@ fn test_config_error_is_error_trait() {
 }
 
 #[test]
+fn plugin_host_builds_are_handed_to_named_worker_threads() {
+    let apply = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/engine/manager_thread/apply.rs"),
+    )
+    .unwrap();
+
+    assert!(apply.contains("build_plugin_update_host_on_worker"));
+    assert!(apply.contains("build_plugin_graph_host_on_worker"));
+    assert!(apply.contains(".name(\"sotf-plugin-host-builder\".to_string())"));
+    assert!(apply.contains(".name(\"sotf-plugin-graph-builder\".to_string())"));
+}
+
+#[test]
+fn audio_engine_cached_reads_do_not_use_command_lock() {
+    let audio_engine = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/engine/audio_engine.rs"),
+    )
+    .unwrap();
+
+    for method in [
+        "pub fn get_state(&self)",
+        "pub fn get_playback_state(&self)",
+        "pub fn get_cached_plugin_data(",
+    ] {
+        let start = audio_engine.find(method).expect(method);
+        let body = &audio_engine[start..audio_engine[start..].find("\n    }").unwrap() + start];
+        assert!(
+            !body.contains("command_lock"),
+            "{method} should stay a cached/lock-free read path"
+        );
+        assert!(
+            !body.contains("ManagerCommand::"),
+            "{method} should not contend on the manager command response path"
+        );
+    }
+}
+
+#[test]
+fn macos_playback_realtime_priority_uses_time_constraint_policy() {
+    let rt_priority = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/engine/rt_priority.rs"),
+    )
+    .unwrap();
+
+    assert!(rt_priority.contains("fn set_time_constraint_priority_macos()"));
+    assert!(rt_priority.contains("thread_policy_set"));
+    assert!(rt_priority.contains("THREAD_TIME_CONSTRAINT_POLICY"));
+    assert!(
+        rt_priority.contains("RtPriority::Playback => match set_time_constraint_priority_macos()")
+    );
+    assert!(rt_priority.contains("RtPriority::Processing => set_qos_priority_macos(level)"));
+    assert!(rt_priority.contains("falling back to QoS"));
+    assert!(rt_priority.contains("QOS_CLASS_USER_INTERACTIVE"));
+    assert!(!rt_priority.contains("requires approval before adding new unsafe FFI"));
+}
+
+#[test]
 fn validate_gapless_source_does_not_open_urls_on_manager_thread() {
     let source = crate::decoder::AudioSource::Url {
         url: "http://127.0.0.1:9/unreachable.wav".to_string(),

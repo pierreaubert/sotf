@@ -11,8 +11,51 @@ use crate::engine::processing_thread::{
     build_plugin_graph_host_with_policy, build_plugin_host_with_policy,
 };
 use arc_swap::ArcSwap;
+use sotf_plugins::PluginHost;
 use sotf_types::EngineOversamplingPolicy;
 use std::sync::Arc;
+
+fn build_plugin_update_host_on_worker(
+    plugins: Vec<super::super::PluginConfig>,
+    sample_rate: u32,
+    input_channels: usize,
+    oversampling_policy: EngineOversamplingPolicy,
+) -> Result<(PluginHost, Vec<String>), String> {
+    std::thread::Builder::new()
+        .name("sotf-plugin-host-builder".to_string())
+        .spawn(move || {
+            build_plugin_host_with_policy(
+                &plugins,
+                sample_rate,
+                input_channels,
+                oversampling_policy,
+            )
+        })
+        .map_err(|e| format!("failed to spawn plugin host builder: {e}"))?
+        .join()
+        .map_err(|_| "plugin host builder panicked".to_string())?
+}
+
+fn build_plugin_graph_host_on_worker(
+    graph_config: super::super::types::PluginGraphConfig,
+    sample_rate: u32,
+    input_channels: usize,
+    oversampling_policy: EngineOversamplingPolicy,
+) -> Result<(PluginHost, Vec<String>), String> {
+    std::thread::Builder::new()
+        .name("sotf-plugin-graph-builder".to_string())
+        .spawn(move || {
+            build_plugin_graph_host_with_policy(
+                &graph_config,
+                sample_rate,
+                input_channels,
+                oversampling_policy,
+            )
+        })
+        .map_err(|e| format!("failed to spawn plugin graph builder: {e}"))?
+        .join()
+        .map_err(|_| "plugin graph builder panicked".to_string())?
+}
 
 /// Apply a plugin update with proper synchronization and rollback on failure.
 /// Waits for confirmation from processing thread and updates playback thread if needed.
@@ -39,18 +82,18 @@ pub(in crate::engine::manager_thread) fn apply_plugin_update(
         sample_rate
     );
 
-    // Build the plugin host locally (this blocks ManagerThread, preventing UI updates but saving audio thread)
-
-    // In a future improvement, this could be done in a spawned thread, but we need to handle the result asynchronously.
-
     let start_build = std::time::Instant::now();
 
-    log::debug!("[Manager Thread] Building plugin host locally...");
+    log::debug!("[Manager Thread] Building plugin host on worker thread...");
 
-    let host_result =
-        build_plugin_host_with_policy(&plugins, sample_rate, input_channels, oversampling_policy);
-    let (host, build_warnings) = host_result.map_err(|e| {
-        log::error!("[Manager Thread] Local build failed: {}", e);
+    let (host, build_warnings) = build_plugin_update_host_on_worker(
+        plugins.clone(),
+        sample_rate,
+        input_channels,
+        oversampling_policy,
+    )
+    .map_err(|e| {
+        log::error!("[Manager Thread] Worker build failed: {}", e);
         ConfigError::ProcessingError { reason: e }
     })?;
 
@@ -69,7 +112,7 @@ pub(in crate::engine::manager_thread) fn apply_plugin_update(
     }
 
     log::debug!(
-        "[Manager Thread] Local build successful in {:?}, output channels: {}",
+        "[Manager Thread] Worker build successful in {:?}, output channels: {}",
         start_build.elapsed(),
         host.output_channels()
     );
@@ -210,13 +253,13 @@ pub(in crate::engine::manager_thread) fn apply_plugin_graph_update(
         sample_rate
     );
 
-    let host_result = build_plugin_graph_host_with_policy(
-        &graph_config,
+    let (host, build_warnings) = build_plugin_graph_host_on_worker(
+        graph_config.clone(),
         sample_rate,
         input_channels,
         oversampling_policy,
-    );
-    let (host, build_warnings) = host_result.map_err(|e| {
+    )
+    .map_err(|e| {
         log::error!("[Manager Thread] Graph build failed: {}", e);
         ConfigError::ProcessingError { reason: e }
     })?;

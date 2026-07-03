@@ -1,5 +1,17 @@
 # 1.0.29 (unreleased)
 
+## Release P1 engine hardening
+
+- Plugin-chain and plugin-graph host construction now runs on named builder
+  threads before the processing-thread host swap, keeping the expensive build
+  work off the manager thread while preserving existing ACK/rollback ordering.
+- Playback audio threads on macOS now try `THREAD_TIME_CONSTRAINT_POLICY`
+  first and fall back to user-interactive QoS if the kernel rejects the
+  request; processing threads keep the safer QoS path.
+- Added regression coverage that cached engine reads avoid the manager
+  command-lock path and that playback priority uses the macOS
+  time-constraint policy path.
+
 ## Playback device selection
 
 - Explicitly selected virtual/loopback output devices are now honored instead
