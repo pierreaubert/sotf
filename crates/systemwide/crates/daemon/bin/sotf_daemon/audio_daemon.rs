@@ -563,6 +563,7 @@ impl AudioDaemon {
             plan.runtime_plugins.clone(),
             plan.spec.output_channels,
             driver_sample_rate,
+            driver_buffer_frames,
             plan.spec.input_channels,
         );
         drop(manager);

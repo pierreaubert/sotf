@@ -156,7 +156,7 @@ pub(super) fn reconfigure_audio_pipeline(
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
     system_state: &Arc<Mutex<SystemwideState>>,
     hal_sample_rate: u32,
-    _buffer_frames: u32,
+    hal_buffer_frames: u32,
     input_channels: usize,
 ) -> Result<PipelineReconfigureOutcome, String> {
     let plan = {
@@ -198,6 +198,7 @@ pub(super) fn reconfigure_audio_pipeline(
         plan.runtime_plugins.clone(),
         plan.spec.output_channels,
         hal_sample_rate,
+        hal_buffer_frames,
         plan.spec.input_channels,
     ) {
         Ok(_) => {
