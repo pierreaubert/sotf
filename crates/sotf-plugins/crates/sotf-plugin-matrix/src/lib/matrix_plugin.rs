@@ -604,7 +604,7 @@ impl Plugin for MatrixPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        Ok(())
+        Err(format!("Unknown parameter: {}", id))
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
@@ -1364,13 +1364,13 @@ mod tests {
     }
 
     #[test]
-    fn test_set_parameter_unknown_returns_ok() {
+    fn test_set_parameter_unknown_returns_error() {
         let mut plugin = MatrixPlugin::new(2, 2);
-        // Unknown parameters fall through to Ok(())
         let result = plugin.set_parameter(
             ParameterId::from("totally_unknown_param"),
             ParameterValue::Float(1.0),
         );
-        assert!(result.is_ok());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown parameter"));
     }
 }

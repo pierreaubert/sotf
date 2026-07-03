@@ -195,33 +195,36 @@ impl Plugin for AmbisonicsDecoderPlugin {
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         match id.as_str() {
             "order" => {
-                if let ParameterValue::Int(v) = value {
-                    let new_order = (v as usize).clamp(1, super::spherical_harmonics::MAX_ORDER);
-                    if new_order != self.order {
-                        self.order = new_order;
-                        self.rebuild_decode_matrix()
-                            .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
-                        self.rebuild_cached_parameters();
-                    }
+                let ParameterValue::Int(v) = value else {
+                    return Err("order must be an integer".to_string());
+                };
+                let new_order = (v as usize).clamp(1, super::spherical_harmonics::MAX_ORDER);
+                if new_order != self.order {
+                    self.order = new_order;
+                    self.rebuild_decode_matrix()
+                        .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
+                    self.rebuild_cached_parameters();
                 }
             }
             "target_layout" => {
-                if let ParameterValue::String(ref layout) = value
-                    && *layout != self.target_layout
-                {
-                    if get_speaker_config(layout).is_none() {
+                let ParameterValue::String(layout) = value else {
+                    return Err("target_layout must be a string".to_string());
+                };
+                if layout != self.target_layout {
+                    if get_speaker_config(&layout).is_none() {
                         return Err(format!("Unknown speaker layout '{layout}'"));
                     }
-                    self.target_layout = layout.clone();
+                    self.target_layout = layout;
                     self.rebuild_decode_matrix()
                         .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
                     self.rebuild_cached_parameters();
                 }
             }
             "max_re_weighting" => {
-                if let ParameterValue::Bool(v) = value
-                    && v != self.max_re_weighting
-                {
+                let ParameterValue::Bool(v) = value else {
+                    return Err("max_re_weighting must be a boolean".to_string());
+                };
+                if v != self.max_re_weighting {
                     self.max_re_weighting = v;
                     self.rebuild_decode_matrix()
                         .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
@@ -229,16 +232,17 @@ impl Plugin for AmbisonicsDecoderPlugin {
                 }
             }
             "dual_band" => {
-                if let ParameterValue::Bool(v) = value
-                    && v != self.dual_band
-                {
+                let ParameterValue::Bool(v) = value else {
+                    return Err("dual_band must be a boolean".to_string());
+                };
+                if v != self.dual_band {
                     self.dual_band = v;
                     self.rebuild_decode_matrix()
                         .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
                     self.rebuild_cached_parameters();
                 }
             }
-            _ => {}
+            _ => return Err(format!("Unknown parameter: {}", id)),
         }
         Ok(())
     }
@@ -577,6 +581,17 @@ mod tests {
     fn test_latency() {
         let plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
         assert_eq!(plugin.latency_samples(), 0);
+    }
+
+    #[test]
+    fn test_set_parameter_unknown_returns_error() {
+        let mut plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
+        let result = plugin.set_parameter(
+            ParameterId::from("totally_unknown_param"),
+            ParameterValue::Float(1.0),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown parameter"));
     }
 
     #[test]

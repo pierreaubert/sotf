@@ -178,47 +178,6 @@ fn all_plugins_instantiate_with_defaults() {
 /// current value. Each entry is `(plugin_type, param_id, reason)`.
 const KNOWN_ROUNDTRIP_FAILURES: &[(&str, &str, &str)] = &[
     (
-        "saturation",
-        "dc_blocker",
-        "get_parameter returns Bool but set_parameter expects Float/Int",
-    ),
-    (
-        "saturation",
-        "use_adaa",
-        "get_parameter returns Bool but set_parameter expects Float/Int",
-    ),
-    (
-        "loudness_compensation",
-        "auto_gain_smoothing_ms",
-        "default 0 is below parameter minimum 1",
-    ),
-    (
-        "fletcher_munson",
-        "low_freq",
-        "default 0 is below minimum 20",
-    ),
-    (
-        "fletcher_munson",
-        "high_freq",
-        "default 0 is below minimum 2000",
-    ),
-    (
-        "fletcher_munson",
-        "mid_freq",
-        "default 0 is below minimum 500",
-    ),
-    ("fletcher_munson", "mid_q", "default 0 is below minimum 0.1"),
-    (
-        "fletcher_munson",
-        "auto_gain_smoothing_ms",
-        "default 0 is below minimum 1",
-    ),
-    (
-        "fletcher_munson",
-        "playback_level_db",
-        "default 0 is below minimum 40",
-    ),
-    (
         "resampler",
         "ratio",
         "ratio cannot be changed when dynamic_ratio is disabled",
@@ -227,11 +186,6 @@ const KNOWN_ROUNDTRIP_FAILURES: &[(&str, &str, &str)] = &[
         "band_merge",
         "reconstruction_error_db",
         "parameter is reported but not accepted by set_parameter",
-    ),
-    (
-        "binaural_decoder",
-        "sofa_file",
-        "get_parameter returns String but set_parameter expects FilePath",
     ),
 ];
 
@@ -303,7 +257,7 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
 /// New plugin types should reject unknown parameters; this list only documents
 /// existing behavior so the cross-cutting test stays green while fixes are
 /// planned per-plugin.
-const KNOWN_TO_ACCEPT_UNKNOWN_PARAMS: &[&str] = &["matrix", "ambisonics_decoder"];
+const KNOWN_TO_ACCEPT_UNKNOWN_PARAMS: &[&str] = &[];
 
 /// Plugins that produce non-finite output when driven with the default test
 /// signal. These still participate in instantiation and parameter round-trip

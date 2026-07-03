@@ -115,16 +115,6 @@ fn default_params(plugin_type: &str) -> serde_json::Value {
 /// Each entry is `(plugin_type, param_id, reason)`.
 const SKIPPED_PARAMETERS: &[(&str, &str, &str)] = &[
     (
-        "saturation",
-        "dc_blocker",
-        "parameter reports Bool but the plugin expects a numeric value",
-    ),
-    (
-        "saturation",
-        "use_adaa",
-        "parameter reports Bool but the plugin expects a numeric value",
-    ),
-    (
         "resampler",
         "ratio",
         "ratio is fixed when dynamic_ratio is disabled in the factory default",
