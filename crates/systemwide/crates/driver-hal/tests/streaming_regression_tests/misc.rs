@@ -88,6 +88,10 @@ fn daemon_reconfiguration_uses_negotiated_hal_format() {
         "reconfiguration must accept the negotiated HAL sample rate by name"
     );
     assert!(
+        source.contains("hal_buffer_frames: u32"),
+        "reconfiguration must accept the negotiated HAL buffer size by name"
+    );
+    assert!(
         body.contains("start_hal_playback_with_driver_config("),
         "reconfiguration must use the explicit driver-format startup path"
     );
@@ -96,8 +100,61 @@ fn daemon_reconfiguration_uses_negotiated_hal_format() {
         "reconfiguration must pass the negotiated HAL sample rate to the engine"
     );
     assert!(
+        body.contains("hal_buffer_frames,"),
+        "reconfiguration must pass the negotiated HAL buffer size to the engine"
+    );
+    assert!(
         !body.contains("start_hal_playback(output_device"),
         "reconfiguration must not fall back to the 48 kHz default HAL startup path"
+    );
+}
+
+#[test]
+fn swift_encrypted_ioproc_uses_preallocated_buffers_and_atomic_counter() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SharedMemory.swift");
+    let bridge =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/BridgingHeader.h");
+    let write_audio = function_body(&source, "func writeAudio(");
+    let read_audio = function_body(&source, "func readAudio(");
+
+    assert!(
+        bridge.contains("sotf_atomic_fetch_add_u64"),
+        "frame counter increments should use the C11 atomic bridge"
+    );
+    assert!(
+        write_audio.contains("sotf_atomic_fetch_add_u64"),
+        "encrypted writes must not use deprecated OSAtomicAdd64"
+    );
+    assert!(!write_audio.contains("OSAtomicAdd64"));
+    assert!(
+        source.contains("encryptedPayloadScratch") && source.contains("encryptedHeaderScratch"),
+        "encrypted IO should reuse preallocated scratch buffers"
+    );
+    assert!(
+        source.contains(
+            "let mappedAudioBytes = max(audioSize, max(0, memorySize - alignedHeaderSize))"
+        ) && source
+            .contains("encryptedPayloadScratch = [UInt8](repeating: 0, count: mappedAudioBytes)"),
+        "encrypted scratch must be sized from the mapped daemon capacity, not only the startup stream size"
+    );
+    assert!(
+        !write_audio.contains("[UInt8](repeating: 0"),
+        "encrypted write path must not allocate byte arrays in the IOProc"
+    );
+    assert!(
+        !read_audio.contains("[UInt8](repeating: 0"),
+        "encrypted read path must not allocate byte arrays in the IOProc"
+    );
+    assert!(
+        !read_audio.contains("Array(payload["),
+        "encrypted read path must decrypt from preallocated storage without slicing allocation"
+    );
+    assert!(
+        read_audio.contains("record.totalBytes <= encryptedPayloadScratch.count")
+            && read_audio
+                .contains("header.pointee.readPosition = readPos + UInt64(record.floatCount)"),
+        "oversized encrypted records should be consumed so the daemon does not retry the same bad record forever"
     );
 }
 
