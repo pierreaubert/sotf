@@ -46,14 +46,16 @@ fn parameters_include_global_and_band_params() {
     let params = plugin.parametric_parameters();
     let ids: Vec<&str> = params.iter().map(|p| p.id.as_str()).collect();
 
-    assert!(ids.contains(&"auto_gain_enabled"));
-    assert!(ids.contains(&"oversampling"));
+    assert!(ids.contains(&"max_filters"));
     assert!(ids.contains(&"tdf2"));
     assert!(ids.contains(&"topology"));
     assert!(ids.contains(&"band_0_freq"));
     assert!(ids.contains(&"band_0_q"));
     assert!(ids.contains(&"band_0_gain"));
+    assert!(ids.contains(&"band_0_filter_type"));
     assert!(ids.contains(&"band_0_order"));
+    assert!(!ids.contains(&"auto_gain_enabled"));
+    assert!(!ids.contains(&"oversampling"));
 }
 
 // ----------------------------------------------------------------------------
@@ -239,14 +241,11 @@ fn parameter_roundtrip_global_params() {
     );
 
     plugin
-        .parametric_set_parameter(
-            ParameterId::from("topology"),
-            ParameterValue::String("SVF".to_string()),
-        )
+        .parametric_set_parameter(ParameterId::from("topology"), ParameterValue::Int(1))
         .unwrap();
     assert_eq!(
         plugin.parametric_get_parameter(&ParameterId::from("topology")),
-        Some(ParameterValue::String("SVF".to_string()))
+        Some(ParameterValue::Int(1))
     );
 
     plugin

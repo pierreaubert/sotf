@@ -14,7 +14,9 @@ use super::types::BandTransition;
 use super::types::BiquadFilterConfig;
 use super::types::EqFilterTopology;
 use super::types::EqPluginParams;
-use math_audio_iir_fir::{Biquad, BiquadCoefficients, SvfFilter, SvfFilterType};
+use math_audio_iir_fir::{
+    Biquad, BiquadCoefficients, BiquadFilterType, SvfFilter, SvfFilterType,
+};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData};
 use sotf_host::oversampling::Oversampler;
@@ -29,6 +31,35 @@ use sotf_host::plugin::{
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use std::any::Any;
 use std::sync::Arc;
+
+const MAX_FILTERS: i32 = 20;
+
+fn filter_type_index(filter_type: BiquadFilterType) -> i32 {
+    match filter_type {
+        BiquadFilterType::Peak | BiquadFilterType::PeakMatched => 0,
+        BiquadFilterType::Lowshelf | BiquadFilterType::LowshelfOrf => 1,
+        BiquadFilterType::Highshelf | BiquadFilterType::HighshelfOrf => 2,
+        BiquadFilterType::Lowpass => 3,
+        BiquadFilterType::Highpass | BiquadFilterType::HighpassVariableQ => 4,
+        BiquadFilterType::Bandpass => 5,
+        BiquadFilterType::Notch => 6,
+        BiquadFilterType::AllPass => 7,
+    }
+}
+
+fn filter_type_from_index(index: i32) -> Option<BiquadFilterType> {
+    match index {
+        0 => Some(BiquadFilterType::Peak),
+        1 => Some(BiquadFilterType::Lowshelf),
+        2 => Some(BiquadFilterType::Highshelf),
+        3 => Some(BiquadFilterType::Lowpass),
+        4 => Some(BiquadFilterType::Highpass),
+        5 => Some(BiquadFilterType::Bandpass),
+        6 => Some(BiquadFilterType::Notch),
+        7 => Some(BiquadFilterType::AllPass),
+        _ => None,
+    }
+}
 
 pub struct EqPlugin {
     pub(super) num_channels: usize,
@@ -55,6 +86,8 @@ pub struct EqPlugin {
     /// Filter topology: 0 = Biquad (default), 1 = SVF (zero-delay feedback).
     /// When SVF is selected, `svf_filters` is used instead of `filters`.
     pub(super) topology: usize,
+    /// Host-visible structural band budget.
+    pub(super) max_filters: i32,
     /// SVF filter banks: svf_filters[channel][band] — single SVF per band (no cascading).
     /// Only populated when topology == 1.
     pub(super) svf_filters: Vec<Vec<SvfFilter>>,
@@ -90,6 +123,7 @@ impl EqPlugin {
             use_tdf2: false,
             oversampler: None,
             topology: 0,
+            max_filters: MAX_FILTERS,
             svf_filters: Vec::new(),
             advanced_filters: (0..num_channels).map(|_| Vec::new()).collect(),
         };
@@ -144,20 +178,17 @@ impl EqPlugin {
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
         let mut params = vec![
-            Parameter::new_bool(
-                "auto_gain_enabled",
-                "Auto Gain",
-                self.auto_gain.is_enabled(),
-            ),
-            Parameter::new_int("oversampling", "OS", self.oversampling_factor as i32, 1, 4)
-                .with_description("Oversampling factor: 1 (off), 2 (2x), 4 (4x)"),
+            Parameter::new_int("max_filters", "Max Filters", self.max_filters, 1, MAX_FILTERS)
+                .with_description("Maximum number of EQ bands"),
             Parameter::new_bool("tdf2", "TDF-II", self.use_tdf2).with_description(
                 "Use Transposed Direct Form II for better numerical stability at high Q",
             ),
-            Parameter::new_string(
+            Parameter::new_int(
                 "topology",
                 "Topology",
-                if self.topology == 1 { "SVF" } else { "Biquad" }.to_string(),
+                self.topology as i32,
+                0,
+                1,
             )
             .with_description("Filter topology: Biquad or SVF (zero-delay feedback)"),
         ];
@@ -199,6 +230,16 @@ impl EqPlugin {
                         .with_group(&group),
                     );
                     let order = self.band_orders.get(i).copied().unwrap_or(2);
+                    params.push(
+                        Parameter::new_int(
+                            &format!("band_{}_filter_type", i),
+                            "Type",
+                            filter_type_index(f.filter_type),
+                            0,
+                            7,
+                        )
+                        .with_group(&group),
+                    );
                     params.push(
                         Parameter::new_int(
                             &format!("band_{}_order", i),
@@ -246,6 +287,7 @@ impl EqPlugin {
             use_tdf2: false,
             oversampler: None,
             topology: 0,
+            max_filters: MAX_FILTERS,
             svf_filters: Vec::new(),
             advanced_filters: (0..num_channels).map(|_| Vec::new()).collect(),
         };
@@ -337,6 +379,7 @@ impl EqPlugin {
                 use_tdf2: false,
                 oversampler: None,
                 topology: 0,
+                max_filters: MAX_FILTERS,
                 svf_filters: Vec::new(),
                 advanced_filters,
             }
@@ -379,6 +422,7 @@ impl EqPlugin {
                 use_tdf2: false,
                 oversampler: None,
                 topology: 0,
+                max_filters: MAX_FILTERS,
                 svf_filters: Vec::new(),
                 advanced_filters,
             }
@@ -790,6 +834,16 @@ impl EqPlugin {
                 self.apply_sample_rate_to_filters(self.sample_rate as f64);
             }
             self.rebuild_cached_parameters();
+        } else if name == "max_filters" {
+            let value = value.as_int().unwrap_or(MAX_FILTERS);
+            if !(1..=MAX_FILTERS).contains(&value) {
+                return Err(format!(
+                    "Invalid max_filters {}: must be between 1 and {}",
+                    value, MAX_FILTERS
+                ));
+            }
+            self.max_filters = value;
+            self.rebuild_cached_parameters();
         } else if name == "tdf2" {
             let enabled = value.as_bool().unwrap_or(false);
             self.use_tdf2 = enabled;
@@ -803,7 +857,9 @@ impl EqPlugin {
             }
             self.rebuild_cached_parameters();
         } else if name == "topology" {
-            let new_topo = if let Some(s) = value.as_string() {
+            let new_topo = if let Some(v) = value.as_int() {
+                v.clamp(0, 1) as usize
+            } else if let Some(s) = value.as_string() {
                 match s {
                     "SVF" | "svf" => 1,
                     _ => 0,
@@ -870,10 +926,19 @@ impl EqPlugin {
                     "q" => Parameter::new_float("q", "Q", 1.0, Q_MIN, Q_MAX).validate(&value)?,
                     "gain" => Parameter::new_float("gain", "Gain", 0.0, GAIN_MIN, GAIN_MAX)
                         .validate(&value)?,
+                    "filter_type" => {
+                        let index = value.as_int().unwrap_or(0);
+                        if filter_type_from_index(index).is_none() {
+                            return Err(format!(
+                                "Invalid filter_type {}: must be between 0 and 7",
+                                index
+                            ));
+                        }
+                    }
                     _ => return Err(format!("Unknown field: {}", field)),
                 }
 
-                if let Some(v) = value.as_float() {
+                if let Some(v) = value.as_float().or_else(|| value.as_int().map(|v| v as f32)) {
                     if !v.is_finite() {
                         return Err("Value is not finite".into());
                     }
@@ -908,14 +973,19 @@ impl EqPlugin {
                             let mut q = primary.q;
                             let total_gain: f64 = stages.iter().map(|s| s.db_gain).sum();
                             let mut new_total_gain = total_gain;
+                            let mut ft = primary.filter_type;
                             match field {
                                 "freq" => freq = v as f64,
                                 "q" => q = v as f64,
                                 "gain" => new_total_gain = v as f64,
+                                "filter_type" => {
+                                    if let Some(filter_type) = filter_type_from_index(v as i32) {
+                                        ft = filter_type;
+                                    }
+                                }
                                 _ => {}
                             }
                             let gain_per_stage = new_total_gain / num_stages as f64;
-                            let ft = primary.filter_type;
                             let srate = primary.srate;
 
                             if num_stages == 1 {
@@ -972,12 +1042,12 @@ impl EqPlugin {
             Some(ParameterValue::Bool(self.auto_gain.is_enabled()))
         } else if name == "oversampling" {
             Some(ParameterValue::Int(self.oversampling_factor as i32))
+        } else if name == "max_filters" {
+            Some(ParameterValue::Int(self.max_filters))
         } else if name == "tdf2" {
             Some(ParameterValue::Bool(self.use_tdf2))
         } else if name == "topology" {
-            Some(ParameterValue::String(
-                if self.topology == 1 { "SVF" } else { "Biquad" }.to_string(),
-            ))
+            Some(ParameterValue::Int(self.topology as i32))
         } else if let Some(rest) = name.strip_prefix("band_") {
             // Parse "band_N_field" without heap allocation.
             // Find the next '_' to split index from field.
@@ -994,6 +1064,9 @@ impl EqPlugin {
                             let total: f64 = stages.iter().map(|s| s.db_gain).sum();
                             Some(ParameterValue::Float(total as f32))
                         }
+                        "filter_type" => Some(ParameterValue::Int(filter_type_index(
+                            primary.filter_type,
+                        ))),
                         "order" => {
                             let order = self.band_orders.get(b_idx).copied().unwrap_or(2);
                             Some(ParameterValue::Int(order as i32))

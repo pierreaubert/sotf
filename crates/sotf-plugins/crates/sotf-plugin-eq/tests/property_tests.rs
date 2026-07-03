@@ -83,11 +83,10 @@ proptest! {
         let mut plugin = EqPlugin::new(2, vec![]);
         plugin.plugin_initialize(48000).unwrap();
 
-        let name = if topo == 1 { "SVF" } else { "Biquad" };
-        plugin.parametric_set_parameter(ParameterId::from("topology"), ParameterValue::String(name.to_string())).unwrap();
+        plugin.parametric_set_parameter(ParameterId::from("topology"), ParameterValue::Int(topo as i32)).unwrap();
         let got = plugin.parametric_get_parameter(&ParameterId::from("topology"));
 
-        prop_assert_eq!(got, Some(ParameterValue::String(name.to_string())),
+        prop_assert_eq!(got, Some(ParameterValue::Int(topo as i32)),
             "topology set->get should round-trip");
     }
 

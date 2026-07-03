@@ -3,9 +3,11 @@ use super::types::BiquadFilterConfig;
 use super::types::EqFilterTopology;
 use super::types::EqPluginParams;
 use super::types::KautzSectionConfig;
+use crate::params::{BAND_TEMPLATE, GLOBAL_PARAMS};
 use math_audio_iir_fir::Biquad;
 use math_audio_iir_fir::BiquadFilterType;
 use sotf_host::SignalGen;
+use sotf_host::parameters::Parameter;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_plugin::{ParameterSet, ParametricPlugin};
 use sotf_host::plugin::ProcessContext;
@@ -23,6 +25,55 @@ fn _get_param(plugin: &EqPlugin, id: &str) -> Option<ParameterValue> {
 fn _process_in_place(plugin: &mut EqPlugin, buffer: &mut [f32], context: &ProcessContext) -> usize {
     let input = buffer.to_vec();
     plugin.process(&input, buffer, context).unwrap()
+}
+
+fn param_by_id<'a>(params: &'a [Parameter], id: &str) -> &'a Parameter {
+    params
+        .iter()
+        .find(|p| p.id.as_str() == id)
+        .unwrap_or_else(|| panic!("missing parameter {id}"))
+}
+
+#[test]
+fn test_parameter_schema_matches_eq_specs() {
+    let p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )],
+    );
+    let params = p.parameter_schema();
+
+    for spec in GLOBAL_PARAMS {
+        param_by_id(&params, spec.engine_key);
+    }
+    for spec in BAND_TEMPLATE {
+        param_by_id(&params, &format!("band_0_{}", spec.engine_key));
+    }
+
+    assert_eq!(
+        p.parametric_get_parameter(&ParameterId::from("max_filters")),
+        Some(ParameterValue::Int(20))
+    );
+    assert_eq!(
+        p.parametric_get_parameter(&ParameterId::from("topology")),
+        Some(ParameterValue::Int(0))
+    );
+    assert_eq!(
+        p.parametric_get_parameter(&ParameterId::from("band_0_filter_type")),
+        Some(ParameterValue::Int(0))
+    );
+
+    assert!(
+        params
+            .iter()
+            .all(|p| p.id.as_str() != "auto_gain_enabled" && p.id.as_str() != "oversampling"),
+        "EQ schema should not expose params absent from params.rs"
+    );
 }
 
 #[test]
@@ -353,8 +404,14 @@ fn test_oversampling_parameter_set_get() {
     let mut p = EqPlugin::new(2, vec![]);
     p.plugin_initialize(48000).unwrap();
 
-    // Default is 1 (no oversampling)
-    assert_eq!(_get_param(&p, "oversampling"), Some(ParameterValue::Int(1)));
+    // Default is 1 (no oversampling). Oversampling remains a legacy direct
+    // control, but is no longer exposed through current_values().
+    assert_eq!(p.oversampling_factor, 1);
+    assert_eq!(
+        p.parametric_get_parameter(&ParameterId::from("oversampling")),
+        Some(ParameterValue::Int(1))
+    );
+    assert_eq!(_get_param(&p, "oversampling"), None);
 
     // Set to 2x
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
@@ -974,10 +1031,12 @@ fn test_set_parameter_auto_gain_roundtrip() {
         ParameterValue::Bool(false),
     )
     .unwrap();
+    assert!(!p.auto_gain.is_enabled());
     assert_eq!(
-        _get_param(&p, "auto_gain_enabled"),
+        p.parametric_get_parameter(&ParameterId::from("auto_gain_enabled")),
         Some(ParameterValue::Bool(false))
     );
+    assert_eq!(_get_param(&p, "auto_gain_enabled"), None);
 
     // Enable
     p.parametric_set_parameter(
@@ -985,10 +1044,12 @@ fn test_set_parameter_auto_gain_roundtrip() {
         ParameterValue::Bool(true),
     )
     .unwrap();
+    assert!(p.auto_gain.is_enabled());
     assert_eq!(
-        _get_param(&p, "auto_gain_enabled"),
+        p.parametric_get_parameter(&ParameterId::from("auto_gain_enabled")),
         Some(ParameterValue::Bool(true))
     );
+    assert_eq!(_get_param(&p, "auto_gain_enabled"), None);
 }
 
 #[test]
@@ -1459,9 +1520,13 @@ fn test_parametric_plugin_schema_matches_in_place_params() {
     let parametric_ids: Vec<&str> = parametric_params.iter().map(|p| p.id.as_str()).collect();
 
     assert_eq!(schema_ids, parametric_ids);
-    assert!(schema_ids.contains(&"auto_gain_enabled"));
+    assert!(schema_ids.contains(&"max_filters"));
+    assert!(schema_ids.contains(&"topology"));
     assert!(schema_ids.contains(&"band_0_freq"));
     assert!(schema_ids.contains(&"band_0_gain"));
+    assert!(schema_ids.contains(&"band_0_filter_type"));
+    assert!(!schema_ids.contains(&"auto_gain_enabled"));
+    assert!(!schema_ids.contains(&"oversampling"));
 }
 
 #[test]
@@ -1471,8 +1536,8 @@ fn test_parametric_plugin_current_values_roundtrip() {
     let values = plugin.current_values();
 
     assert_eq!(
-        values.get(&ParameterId::from("auto_gain_enabled")),
-        Some(&ParameterValue::Bool(false))
+        values.get(&ParameterId::from("max_filters")),
+        Some(&ParameterValue::Int(20))
     );
     assert_eq!(
         values.get(&ParameterId::from("band_0_freq")),
@@ -1482,6 +1547,12 @@ fn test_parametric_plugin_current_values_roundtrip() {
         values.get(&ParameterId::from("band_0_gain")),
         Some(&ParameterValue::Float(6.0))
     );
+    assert_eq!(
+        values.get(&ParameterId::from("band_0_filter_type")),
+        Some(&ParameterValue::Int(0))
+    );
+    assert!(!values.contains_key(&ParameterId::from("auto_gain_enabled")));
+    assert!(!values.contains_key(&ParameterId::from("oversampling")));
 }
 
 #[test]
