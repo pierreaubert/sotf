@@ -142,6 +142,8 @@ final class SharedAudioBuffer {
 
     /// Total capacity in samples
     private var audioCapacity: Int = 0
+    private var encryptedPayloadScratch: [UInt8] = []
+    private var encryptedHeaderScratch: [UInt8] = []
 
     /// Whether we're connected to shared memory
     var isConnected: Bool {
@@ -246,6 +248,9 @@ final class SharedAudioBuffer {
             return false
         }
         memorySize = Int(statBuf.st_size)
+        let mappedAudioBytes = max(audioSize, max(0, memorySize - alignedHeaderSize))
+        encryptedPayloadScratch = [UInt8](repeating: 0, count: mappedAudioBytes)
+        encryptedHeaderScratch = [UInt8](repeating: 0, count: kEncryptedRecordHeaderBytes)
 
         // Map memory
         sharedMemory = mmap(nil, memorySize, PROT_READ | PROT_WRITE, MAP_SHARED, fileDescriptor, 0)
@@ -477,11 +482,14 @@ final class SharedAudioBuffer {
                 let sampleCount = frameCount * channelCount
                 let ciphertextLen = sampleCount * MemoryLayout<Float>.size + 16
                 let totalBytes = kEncryptedRecordHeaderBytes + ciphertextLen
-                var payload = [UInt8](repeating: 0, count: totalBytes)
+                guard totalBytes <= encryptedPayloadScratch.count else {
+                    header.pointee.encryptionOverflowCount += 1
+                    return 0
+                }
 
-                let frameCounter = UInt64(OSAtomicAdd64(1, &header.pointee.frameCounter))
+                let frameCounter = sotf_atomic_fetch_add_u64(&header.pointee.frameCounter, 1)
                 guard writeEncryptedRecordHeader(
-                    &payload,
+                    &encryptedPayloadScratch,
                     sampleCount: sampleCount,
                     frameCounter: frameCounter,
                     ciphertextLen: ciphertextLen
@@ -489,7 +497,7 @@ final class SharedAudioBuffer {
                     return 0
                 }
 
-                let bytesWritten = payload.withUnsafeMutableBytes { rawBuffer -> Int in
+                let bytesWritten = encryptedPayloadScratch.withUnsafeMutableBytes { rawBuffer -> Int in
                     guard let baseAddress = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                         return 0
                     }
@@ -502,7 +510,11 @@ final class SharedAudioBuffer {
                 }
 
                 if bytesWritten == ciphertextLen {
-                    return writeRawBytes(payload, originalFrameCount: frameCount)
+                    return writeRawBytes(
+                        encryptedPayloadScratch,
+                        byteCount: totalBytes,
+                        originalFrameCount: frameCount
+                    )
                 }
             }
             // If encryption enabled but failed, write silence or return 0
@@ -567,14 +579,14 @@ final class SharedAudioBuffer {
     }
 
     /// Helper to write raw bytes (ciphertext) to ring buffer
-    private func writeRawBytes(_ bytes: [UInt8], originalFrameCount: Int) -> Int {
+    private func writeRawBytes(_ bytes: [UInt8], byteCount: Int, originalFrameCount: Int) -> Int {
         guard let header = header, let audioData = audioData else { return 0 }
         if header.pointee.configuring != 0 {
             return 0
         }
         
         // Calculate required space in floats (rounded up)
-        let floatCount = (bytes.count + 3) / 4
+        let floatCount = (byteCount + 3) / 4
         guard floatCount > 0, audioCapacity > 0 else { return 0 }
 
         if floatCount > audioCapacity {
@@ -604,8 +616,8 @@ final class SharedAudioBuffer {
         let firstPartFloats = min(floatCount, audioCapacity - writeIndex)
         let firstPartBytes = firstPartFloats * 4
         
-        let bytesToWriteFirst = min(bytes.count, firstPartBytes)
-        let bytesToWriteSecond = bytes.count - bytesToWriteFirst
+        let bytesToWriteFirst = min(byteCount, firstPartBytes)
+        let bytesToWriteSecond = byteCount - bytesToWriteFirst
         
         bytes.withUnsafeBufferPointer { ptr in
             guard let base = ptr.baseAddress else { return }
@@ -648,10 +660,14 @@ final class SharedAudioBuffer {
                 let available = Int(writePos - readPos)
 
                 if available >= kEncryptedRecordHeaderFloats {
-                    var headerBytes = [UInt8](repeating: 0, count: kEncryptedRecordHeaderBytes)
-                    copyRawBytes(at: readPos, into: &headerBytes, floatCount: kEncryptedRecordHeaderFloats)
+                    copyRawBytes(
+                        at: readPos,
+                        into: &encryptedHeaderScratch,
+                        byteCount: kEncryptedRecordHeaderBytes,
+                        floatCount: kEncryptedRecordHeaderFloats
+                    )
 
-                    guard let record = parseEncryptedRecordHeader(headerBytes) else {
+                    guard let record = parseEncryptedRecordHeader(encryptedHeaderScratch) else {
                         OSMemoryBarrier()
                         header.pointee.readPosition = writePos
                         memset(buffer, 0, requestedSampleCount * MemoryLayout<Float>.size)
@@ -659,13 +675,23 @@ final class SharedAudioBuffer {
                     }
 
                     if record.floatCount <= available && record.sampleCount <= requestedSampleCount {
-                        var payload = [UInt8](repeating: 0, count: record.totalBytes)
-                        copyRawBytes(at: readPos, into: &payload, floatCount: record.floatCount)
+                        guard record.totalBytes <= encryptedPayloadScratch.count else {
+                            OSMemoryBarrier()
+                            header.pointee.readPosition = readPos + UInt64(record.floatCount)
+                            memset(buffer, 0, requestedSampleCount * MemoryLayout<Float>.size)
+                            return 0
+                        }
+                        copyRawBytes(
+                            at: readPos,
+                            into: &encryptedPayloadScratch,
+                            byteCount: record.totalBytes,
+                            floatCount: record.floatCount
+                        )
 
-                        let ciphertext = Array(payload[kEncryptedRecordHeaderBytes..<(kEncryptedRecordHeaderBytes + record.ciphertextLen)])
-                        let decryptedCount = ciphertext.withUnsafeBufferPointer { ptr in
+                        let decryptedCount = encryptedPayloadScratch.withUnsafeBufferPointer { ptr in
+                            guard let base = ptr.baseAddress else { return 0 }
                             return cipher.decryptFromBuffer(
-                                ptr.baseAddress!,
+                                base.advanced(by: kEncryptedRecordHeaderBytes),
                                 ciphertextLen: record.ciphertextLen,
                                 frameCounter: record.frameCounter,
                                 output: buffer
@@ -739,15 +765,16 @@ final class SharedAudioBuffer {
     }
 
     /// Helper to read raw bytes (ciphertext) from ring buffer
-    private func copyRawBytes(at position: UInt64, into buffer: inout [UInt8], floatCount: Int) {
+    private func copyRawBytes(at position: UInt64, into buffer: inout [UInt8], byteCount: Int, floatCount: Int) {
         guard let audioData = audioData else { return }
+        guard byteCount <= buffer.count else { return }
 
         let readIndex = Int(position % UInt64(audioCapacity))
         let firstPartFloats = min(floatCount, audioCapacity - readIndex)
         let firstPartBytes = firstPartFloats * MemoryLayout<Float>.size
 
-        let bytesToReadFirst = min(buffer.count, firstPartBytes)
-        let bytesToReadSecond = buffer.count - bytesToReadFirst
+        let bytesToReadFirst = min(byteCount, firstPartBytes)
+        let bytesToReadSecond = byteCount - bytesToReadFirst
 
         buffer.withUnsafeMutableBufferPointer { ptr in
             guard let base = ptr.baseAddress else { return }
@@ -766,7 +793,7 @@ final class SharedAudioBuffer {
         guard let header = header else { return }
         
         let readPos = header.pointee.readPosition
-        copyRawBytes(at: readPos, into: &buffer, floatCount: floatCount)
+        copyRawBytes(at: readPos, into: &buffer, byteCount: buffer.count, floatCount: floatCount)
 
         OSMemoryBarrier()
         header.pointee.readPosition = readPos + UInt64(floatCount)
