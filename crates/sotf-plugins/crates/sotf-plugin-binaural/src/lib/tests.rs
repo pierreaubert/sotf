@@ -1161,6 +1161,34 @@ fn test_set_parameter_hrtf_file_empty_clears_path() {
 }
 
 #[test]
+fn test_set_parameter_sofa_file_roundtrips_as_file_path_string() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.config.sample_rate = 0;
+    plugin
+        .set_parameter(
+            ParameterId::from("sofa_file"),
+            ParameterValue::String("/tmp/test.sofa".to_string()),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("sofa_file")),
+        Some(ParameterValue::String("/tmp/test.sofa".to_string()))
+    );
+}
+
+#[test]
 fn test_set_parameter_hrtf_database_dir_empty() {
     let mut plugin = BinauralDecoderPlugin::new(
         2,

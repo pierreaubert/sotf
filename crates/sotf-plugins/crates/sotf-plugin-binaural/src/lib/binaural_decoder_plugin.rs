@@ -1129,10 +1129,10 @@ impl Plugin for BinauralDecoderPlugin {
             self.rebuild_cached_parameters();
             return Ok(());
         }
-        if id.as_str() == "hrtf_file" {
+        if id.as_str() == "sofa_file" || id.as_str() == "hrtf_file" {
             let path_str = val
                 .as_string()
-                .ok_or_else(|| "hrtf_file must be a string".to_string())?
+                .ok_or_else(|| format!("{} must be a string", id.as_str()))?
                 .to_string();
             let new_path = if path_str.is_empty() {
                 None
