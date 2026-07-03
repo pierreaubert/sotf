@@ -1,9 +1,10 @@
 use super::super::common::{render_knob_sized, render_midi_badge, render_midi_page_indicator};
 use super::calculate::calculate_band_response;
 use super::calculate::calculate_dynamic_y_range;
-use super::calculate::calculate_plot_width;
+use super::calculate::calculate_plot_width_without_legend;
 use super::calculate::calculate_response_at_freq;
 use super::consts::BAND_COLOR_FALLBACK;
+use super::consts::CHART_BOTTOM_MARGIN;
 use super::consts::CHART_HEIGHT;
 use super::consts::CONTROL_POINT_RADIUS;
 use super::consts::MAX_FREQ;
@@ -11,10 +12,10 @@ use super::consts::MIN_FREQ;
 use super::consts::Q_BAR_HEIGHT;
 use super::consts::Q_HANDLE_RADIUS;
 use super::consts::freq_to_x;
-use super::consts::gain_to_y;
+use super::consts::gain_to_y_with_height;
 use super::consts::q_to_bar_width;
 use super::consts::x_to_freq;
-use super::consts::y_to_gain;
+use super::consts::y_to_gain_with_height;
 use super::eq_chart_wrapper::EqChartWrapper;
 use super::eq_control_point_drag::EqControlPointDrag;
 use super::eq_qhandle_drag::EqQHandleDrag;
@@ -91,6 +92,453 @@ pub(crate) enum EqGlobalControl {
     FirMix,
 }
 
+fn format_eq_frequency_label(freq: f64) -> String {
+    if freq >= 10_000.0 {
+        format!("{:.0}k", freq / 1_000.0)
+    } else if freq >= 1_000.0 {
+        format!("{:.1}k", freq / 1_000.0)
+    } else {
+        format!("{freq:.0}")
+    }
+}
+
+fn render_band_frequency_guide(
+    freq: f64,
+    x: f32,
+    color: Rgba,
+    selected: bool,
+    chart_height: f32,
+    theme: &Theme,
+) -> Vec<AnyElement> {
+    const LABEL_WIDTH: f32 = 56.0;
+    const LABEL_TOP: f32 = 2.0;
+    const GUIDE_TOP: f32 = 24.0;
+    const DASH_HEIGHT: f32 = 4.0;
+    const DASH_GAP: f32 = 4.0;
+
+    let label = format_eq_frequency_label(freq);
+    let guide_height = chart_height - CHART_BOTTOM_MARGIN - GUIDE_TOP;
+    let dash_count = (guide_height / (DASH_HEIGHT + DASH_GAP)).floor().max(1.0) as usize;
+    let guide_color = Rgba {
+        a: if selected { 0.6 } else { 0.35 },
+        ..color
+    };
+    let label_bg = Rgba {
+        a: if selected { 0.9 } else { 0.72 },
+        ..theme.plugin_palette.eq_curve_colors.background
+    };
+
+    let label = div()
+        .absolute()
+        .left(px(x - LABEL_WIDTH / 2.0))
+        .top(px(LABEL_TOP))
+        .w(px(LABEL_WIDTH))
+        .text_center()
+        .px(px(3.0))
+        .py(px(1.0))
+        .rounded(px(4.0))
+        .bg(label_bg)
+        .text_size(px(10.0))
+        .font_weight(if selected {
+            FontWeight::BOLD
+        } else {
+            FontWeight::SEMIBOLD
+        })
+        .text_color(if selected { theme.text_primary } else { color })
+        .child(label)
+        .into_any_element();
+
+    let guide = div()
+        .absolute()
+        .left(px(x))
+        .top(px(GUIDE_TOP))
+        .w(px(1.0))
+        .h(px(guide_height))
+        .flex()
+        .flex_col()
+        .gap(px(DASH_GAP))
+        .children((0..dash_count).map(move |_| {
+            div()
+                .w(px(1.0))
+                .h(px(DASH_HEIGHT))
+                .bg(guide_color)
+                .into_any_element()
+        }))
+        .into_any_element();
+
+    vec![guide, label]
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_eq_channel_toolbar(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    channels: usize,
+    selected_channel: usize,
+    per_channel_mode: bool,
+    theme: &Theme,
+) -> AnyElement {
+    let all_entity = entity.clone();
+    let per_entity = entity.clone();
+
+    div()
+        .w_full()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .justify_center()
+        .gap(d.gap)
+        .px(d.pad_x)
+        .py(d.pad_y_half)
+        .child(render_eq_mode_button(
+            d,
+            "All",
+            !per_channel_mode,
+            theme,
+            move |_, _, cx| {
+                all_entity.update(cx, |state, cx| {
+                    state.app.set_eq_per_channel_mode(plugin_idx, false);
+                    cx.notify();
+                });
+            },
+        ))
+        .child(render_eq_mode_button(
+            d,
+            "Per Ch",
+            per_channel_mode,
+            theme,
+            move |_, _, cx| {
+                per_entity.update(cx, |state, cx| {
+                    state.app.set_eq_per_channel_mode(plugin_idx, true);
+                    cx.notify();
+                });
+            },
+        ))
+        .when(per_channel_mode, |row| {
+            row.child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(d.grid)
+                    .children((0..channels).map(|ch| {
+                        let entity = entity.clone();
+                        render_eq_mode_button(
+                            d,
+                            get_channel_name(ch, channels),
+                            selected_channel == ch,
+                            theme,
+                            move |_, _, cx| {
+                                entity.update(cx, |state, cx| {
+                                    state.app.plugin_state.selected_eq_channel = ch;
+                                    cx.notify();
+                                });
+                            },
+                        )
+                    })),
+            )
+        })
+        .into_any_element()
+}
+
+fn render_eq_mode_button<F>(
+    d: &Ds,
+    label: impl Into<SharedString>,
+    selected: bool,
+    theme: &Theme,
+    on_click: F,
+) -> impl IntoElement
+where
+    F: Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+{
+    div()
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .text_size(d.text_xs)
+        .font_weight(FontWeight::SEMIBOLD)
+        .rounded(d.r_sm)
+        .cursor_pointer()
+        .when(selected, |el| {
+            el.bg(theme.accent).text_color(theme.text_on_accent)
+        })
+        .when(!selected, |el| {
+            el.bg(theme.background_secondary)
+                .text_color(theme.text_secondary)
+                .hover(|s| s.bg(theme.surface_hover))
+        })
+        .on_mouse_down(MouseButton::Left, on_click)
+        .child(label.into())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_eq_property_strip(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    filter: Option<&EQFilter>,
+    band_idx: usize,
+    indexing: EqBandIndexing,
+    state: &EqRenderState,
+    is_lp_mode: bool,
+    theme: &Theme,
+) -> AnyElement {
+    let Some(filter) = filter else {
+        return div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .py(d.pad_y)
+            .text_size(d.text_sm)
+            .text_color(theme.text_muted)
+            .child("No bands")
+            .into_any_element();
+    };
+
+    let base_param_idx = band_idx * indexing.stride;
+    let midi_overlay = state.midi_overlay;
+    let mute_entity = entity.clone();
+    let solo_entity = entity.clone();
+    let add_entity = entity.clone();
+
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .justify_between()
+        .gap(d.gap)
+        .px(d.pad_x)
+        .py(d.pad_y)
+        .bg(theme.surface)
+        .rounded(d.r_md)
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.grid)
+                .min_w(rems(10.0))
+                .child(
+                    div()
+                        .text_size(d.text_xs)
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(theme.text_primary)
+                        .child(format!(
+                            "#{} {}",
+                            band_idx + 1,
+                            filter.filter_type.short_name()
+                        )),
+                )
+                .child(
+                    div()
+                        .text_size(d.text_xs)
+                        .text_color(theme.text_muted)
+                        .child(format!(
+                            "{:.0} Hz  {:+.1} dB  Q {:.2}",
+                            filter.frequency, filter.gain_db, filter.q
+                        )),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap(d.grid)
+                .child(render_filter_type_selector(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    &filter.filter_type,
+                    band_idx,
+                    base_param_idx + indexing.filter_type,
+                    None,
+                    theme,
+                ))
+                .when(!is_lp_mode, |row| {
+                    row.child(render_standard_eq_algorithm_pill(d, state.topology, theme))
+                }),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .justify_center()
+                .gap(d.gap)
+                .child(render_eq_knob_with_midi(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Freq",
+                    filter.frequency,
+                    pk(EQ, "freq").min_f64(),
+                    pk(EQ, "freq").max_f64(),
+                    "Hz",
+                    base_param_idx + indexing.frequency,
+                    state.selected_param,
+                    state.is_editing,
+                    midi_overlay,
+                    theme,
+                ))
+                .child(render_eq_knob_with_midi(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Gain",
+                    filter.gain_db,
+                    pk(EQ, "gain").min_f64(),
+                    pk(EQ, "gain").max_f64(),
+                    "dB",
+                    base_param_idx + indexing.gain,
+                    state.selected_param,
+                    state.is_editing,
+                    midi_overlay,
+                    theme,
+                ))
+                .child(render_eq_knob_with_midi(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Q",
+                    filter.q,
+                    pk(EQ, "q").min_f64(),
+                    pk(EQ, "q").max_f64(),
+                    "",
+                    base_param_idx + indexing.q,
+                    state.selected_param,
+                    state.is_editing,
+                    midi_overlay,
+                    theme,
+                ))
+                .children(indexing.active.map(|active_local_idx| {
+                    render_eq_active_toggle(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        filter,
+                        base_param_idx + active_local_idx,
+                        state.selected_param,
+                        state.is_editing,
+                        theme,
+                    )
+                })),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(d.grid)
+                .child(render_eq_action_button(
+                    d,
+                    "M",
+                    filter.muted,
+                    theme.error,
+                    theme,
+                    move |_, _, cx| {
+                        mute_entity.update(cx, |state, cx| {
+                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                            if let Err(e) = state.app.toggle_eq_band_mute(band_idx) {
+                                log::warn!("Failed to toggle EQ band mute: {}", e);
+                            }
+                            cx.notify();
+                        });
+                    },
+                ))
+                .child(render_eq_action_button(
+                    d,
+                    "S",
+                    filter.solo,
+                    theme.success,
+                    theme,
+                    move |_, _, cx| {
+                        solo_entity.update(cx, |state, cx| {
+                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                            if let Err(e) = state.app.toggle_eq_band_solo(band_idx) {
+                                log::warn!("Failed to toggle EQ band solo: {}", e);
+                            }
+                            cx.notify();
+                        });
+                    },
+                ))
+                .child(render_eq_add_button(d, add_entity, plugin_idx, theme)),
+        )
+        .into_any_element()
+}
+
+fn render_eq_action_button<F>(
+    d: &Ds,
+    label: &'static str,
+    active: bool,
+    active_color: Rgba,
+    theme: &Theme,
+    on_click: F,
+) -> impl IntoElement
+where
+    F: Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+{
+    div()
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .text_size(d.text_xs)
+        .font_weight(FontWeight::BOLD)
+        .rounded(d.r_sm)
+        .cursor_pointer()
+        .bg(if active {
+            active_color
+        } else {
+            theme.background_secondary
+        })
+        .text_color(if active {
+            theme.text_on_accent
+        } else {
+            theme.text_secondary
+        })
+        .border_1()
+        .border_color(if active { active_color } else { theme.border })
+        .hover(|s| {
+            s.bg(if active {
+                active_color
+            } else {
+                theme.surface_hover
+            })
+        })
+        .on_mouse_down(MouseButton::Left, on_click)
+        .child(label)
+}
+
+fn render_eq_add_button(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .id("eq-add-band")
+        .key_context("plugin-control")
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .text_size(d.text_xs)
+        .font_weight(FontWeight::BOLD)
+        .rounded(d.r_sm)
+        .cursor_pointer()
+        .bg(theme.success)
+        .text_color(theme.text_on_accent)
+        .hover(|s| s.opacity(0.8))
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            entity.update(cx, |state, cx| {
+                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                if let Err(e) = state.app.add_eq_band() {
+                    log::warn!("Failed to add EQ band: {}", e);
+                }
+                cx.notify();
+            });
+        })
+        .child("+")
+}
+
 /// Render EQ frequency response using gpui-px with draggable control points
 ///
 /// Shows all filter bands overlaid on a single plot with log frequency axis
@@ -102,6 +550,30 @@ pub(crate) fn render_eq_visualization(
     indexing: EqBandIndexing,
     theme: &Theme,
     width: f32,
+) -> impl IntoElement {
+    render_eq_visualization_sized(
+        entity,
+        plugin_idx,
+        filters,
+        selected_band,
+        indexing,
+        theme,
+        width,
+        CHART_HEIGHT,
+    )
+}
+
+/// Render EQ frequency response using gpui-px with a caller-supplied height.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_eq_visualization_sized(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    filters: &[EQFilter],
+    selected_band: Option<usize>,
+    indexing: EqBandIndexing,
+    theme: &Theme,
+    width: f32,
+    chart_height: f32,
 ) -> impl IntoElement {
     // Calculate dynamic y-axis range based on filter gains
     let (min_db, max_db) = calculate_dynamic_y_range(filters);
@@ -136,36 +608,9 @@ pub(crate) fn render_eq_visualization(
         legend_text_color: theme.text_secondary,
     };
 
-    // Build labels first so we can calculate plot width accurately
-    let mut labels: Vec<String> = vec!["Combined".to_string()];
-    for (i, filter) in filters.iter().enumerate() {
-        let is_muted = filter.muted;
-        let is_soloed = filter.solo;
-        let any_soloed = filters.iter().any(|f| f.solo);
-
-        let status = if is_muted && is_soloed {
-            " (muted+solo)"
-        } else if is_muted {
-            " (muted)"
-        } else if is_soloed {
-            " (solo)"
-        } else if any_soloed {
-            " (silent)"
-        } else {
-            ""
-        };
-
-        labels.push(format!(
-            "#{} - {} @ {}Hz{}",
-            i + 1,
-            filter.filter_type.short_name(),
-            filter.frequency as i32,
-            status
-        ));
-    }
-
-    // Calculate plot width using the same algorithm as gpui-px
-    let plot_width = calculate_plot_width(width, labels.iter().map(|s| s.as_str()));
+    // Match gpui-px chart margins with the legend hidden. Band identity is
+    // shown in the graph overlay instead of a right-side legend column.
+    let plot_width = calculate_plot_width_without_legend(width);
 
     // Convert combined line color to u32
     let text_muted_u32 = {
@@ -179,10 +624,9 @@ pub(crate) fn render_eq_visualization(
         .y_label("dB (SPL)")
         .x_range(MIN_FREQ, MAX_FREQ)
         .y_range(min_db, max_db) // Dynamic Y range based on filter gains
-        .size(width, 300.0)
+        .size(width, chart_height)
         .color(text_muted_u32) // Combined response line
         .stroke_width(2.5)
-        .label("Combined")
         .theme(chart_theme);
 
     // Add each filter band as an additional series
@@ -207,11 +651,13 @@ pub(crate) fn render_eq_visualization(
         let stroke = if is_selected { 2.0 } else { 1.5 };
         let opacity = if effective_muted { 0.2 } else { opacity };
 
-        // Use pre-computed label
-        let label = labels[i + 1].clone();
-
-        chart_builder =
-            chart_builder.add_series(&band_response, Some(label), color, stroke, opacity);
+        chart_builder = chart_builder.add_series(
+            &band_response,
+            Option::<String>::None,
+            color,
+            stroke,
+            opacity,
+        );
     }
 
     // Build the chart element
@@ -219,7 +665,7 @@ pub(crate) fn render_eq_visualization(
         Ok(chart) => chart.into_any_element(),
         Err(_) => div()
             .w(px(width))
-            .h(px(CHART_HEIGHT))
+            .h(px(chart_height))
             .flex()
             .items_center()
             .justify_center()
@@ -246,9 +692,18 @@ pub(crate) fn render_eq_visualization(
 
         // Calculate position
         let x = freq_to_x(filter.frequency, plot_width);
-        let y = gain_to_y(filter.gain_db, min_db, max_db);
+        let y = gain_to_y_with_height(filter.gain_db, min_db, max_db, chart_height);
 
         let band_idx = i;
+
+        control_points.extend(render_band_frequency_guide(
+            filter.frequency,
+            x,
+            rgba_color,
+            is_selected,
+            chart_height,
+            theme,
+        ));
 
         // Control point circle
         let border_color = if is_selected {
@@ -508,7 +963,7 @@ pub(crate) fn render_eq_visualization(
         .id("eq-chart-container")
         .relative()
         .w(px(width))
-        .h(px(CHART_HEIGHT))
+        .h(px(chart_height))
         .child(chart_element)
         .children(control_points)
         .on_drag_move::<EqControlPointDrag>({
@@ -531,7 +986,8 @@ pub(crate) fn render_eq_visualization(
                 // Convert directly to freq/gain (no delta calculation needed)
                 // Use wider range for dragging to allow extending beyond current view
                 let new_freq = x_to_freq(x_px, plot_width).clamp(MIN_FREQ, MAX_FREQ);
-                let new_gain = y_to_gain(y_px, min_db, max_db).clamp(-24.0, 24.0);
+                let new_gain =
+                    y_to_gain_with_height(y_px, min_db, max_db, chart_height).clamp(-24.0, 24.0);
 
                 let plugin_idx = drag_data.plugin_idx;
                 let band_idx = drag_data.band_idx;
@@ -609,10 +1065,9 @@ pub fn render_eq_plugin(
 ) -> AnyElement {
     let ds = Ds::from_cx(cx);
 
-    // Read selected channel and window width from AppState
+    // Read selected channel from AppState
     let app_state = entity.read(cx);
     let selected_eq_channel = app_state.app.plugin_state.selected_eq_channel;
-    let window_width = app_state.app.ui_state.window_width;
     let _ = app_state;
 
     // Determine which filters to display based on mode
@@ -666,16 +1121,9 @@ pub fn render_eq_plugin(
         Some(selected_band_idx)
     };
 
-    // Calculate graph width dynamically based on estimated legend space
-    // Worst case legend label: "#10 - HS @ 20000Hz (muted+solo)" ≈ 35 chars
-    const CHAR_WIDTH_PX: f32 = 7.5;
-    const LEGEND_LABEL_CHARS: f32 = 35.0;
-    const LEGEND_PADDING_PX: f32 = 60.0; // margins, color swatch, etc.
-    let estimated_legend_width = LEGEND_LABEL_CHARS * CHAR_WIDTH_PX + LEGEND_PADDING_PX;
-
-    // Use window width as chart width upper bound (GPUI flex constrains to actual container)
-    let base_available_width = window_width.max(800.0);
-    let graph_width = base_available_width - estimated_legend_width;
+    // The graph is the primary control surface; band guides render on top of
+    // it instead of reserving a legend column.
+    let graph_width = state.available_width.max(800.0);
 
     // Build the UI - graph uses most of the horizontal space
     let graph_section = div()
@@ -701,8 +1149,19 @@ pub fn render_eq_plugin(
     } else {
         state.per_channel_mode
     };
+    let channel_toolbar = (!is_lp_mode).then(|| {
+        render_eq_channel_toolbar(
+            &ds,
+            entity.clone(),
+            plugin_idx,
+            channels,
+            selected_eq_channel,
+            per_channel_mode,
+            theme,
+        )
+    });
 
-    let controls_section = if layout == EqCompactLayout::Current {
+    let _legacy_controls_section = if layout == EqCompactLayout::Current {
         div()
             .flex()
             .flex_col()
@@ -1188,6 +1647,21 @@ pub fn render_eq_plugin(
     } else {
         div()
     };
+    let controls_section = if layout == EqCompactLayout::Current {
+        render_eq_property_strip(
+            &ds,
+            entity.clone(),
+            plugin_idx,
+            selected_filter,
+            selected_band_idx,
+            indexing,
+            &state,
+            is_lp_mode,
+            theme,
+        )
+    } else {
+        div().into_any_element()
+    };
 
     // Optional linear-phase info header — shown only for the LP variant.
     let fir_summary = match &state.mode {
@@ -1385,6 +1859,7 @@ pub fn render_eq_plugin(
             .gap(ds.section_xl)
             .children(eq_header)
             .children(lp_header)
+            .children(channel_toolbar)
             .child(graph_section)
             .children(lp_analysis)
             .child(controls_section)

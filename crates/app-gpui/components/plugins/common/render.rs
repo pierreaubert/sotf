@@ -15,6 +15,56 @@ use gpui_audio_kit::{
 use gpui_ui_kit::{Toggle, ToggleStyle};
 use sotf_audio_player_midi::PhysicalControlKind;
 use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static WARNED_INVALID_AUDIO_CONTROL_RANGE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy)]
+struct SanitizedControlRange {
+    value: f64,
+    min: f64,
+    max: f64,
+}
+
+fn sanitize_audio_control_range(
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+) -> SanitizedControlRange {
+    let (mut normalized_min, mut normalized_max) = if min.is_finite() && max.is_finite() {
+        (min.min(max), min.max(max))
+    } else if value.is_finite() {
+        (value - 1.0, value + 1.0)
+    } else {
+        (0.0, 1.0)
+    };
+
+    if normalized_min == normalized_max {
+        let pad = normalized_min.abs().max(1.0) * 0.01;
+        normalized_min -= pad;
+        normalized_max += pad;
+    }
+
+    let normalized_value = if value.is_finite() {
+        value.clamp(normalized_min, normalized_max)
+    } else {
+        normalized_min
+    };
+
+    let changed = normalized_value != value || normalized_min != min || normalized_max != max;
+    if changed && !WARNED_INVALID_AUDIO_CONTROL_RANGE.swap(true, Ordering::Relaxed) {
+        log::warn!(
+            "Invalid audio control range for '{label}': value={value}, min={min}, max={max}; using value={normalized_value}, min={normalized_min}, max={normalized_max}"
+        );
+    }
+
+    SanitizedControlRange {
+        value: normalized_value,
+        min: normalized_min,
+        max: normalized_max,
+    }
+}
 
 /// Render a parameter row with name, value, and optional range hint.
 ///
@@ -455,6 +505,11 @@ pub fn render_vertical_slider_sized(
     theme: &Theme,
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
+    let control_range = sanitize_audio_control_range(label, value, min, max);
+    let value = control_range.value;
+    let min = control_range.min;
+    let max = control_range.max;
+
     let mut slider = VerticalSlider::new(("slider", plugin_idx * 1000 + idx))
         .value(value)
         .min(min)
@@ -534,6 +589,11 @@ pub fn render_vertical_slider_with_ticks(
     theme: &Theme,
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
+    let control_range = sanitize_audio_control_range(label, value, min, max);
+    let value = control_range.value;
+    let min = control_range.min;
+    let max = control_range.max;
+
     let mut slider = VerticalSlider::new(("slider-ticks", plugin_idx * 1000 + idx))
         .value(value)
         .min(min)
@@ -941,6 +1001,10 @@ pub fn render_knob_sized(
     theme: &Theme,
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
+    let control_range = sanitize_audio_control_range(label, value, min, max);
+    let value = control_range.value;
+    let min = control_range.min;
+    let max = control_range.max;
 
     // Determine scale type based on unit (Hz parameters use logarithmic scale)
     let scale = if unit == "Hz" {

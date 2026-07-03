@@ -399,6 +399,7 @@ pub(super) fn render_upmixer(
                 loudness_info,
                 spatial_spider,
             },
+            ctx.available_width,
             ctx.theme,
             ctx.plugin_theme,
         )

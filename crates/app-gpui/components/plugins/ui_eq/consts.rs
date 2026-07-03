@@ -133,16 +133,26 @@ pub fn x_to_freq(x: f32, plot_width: f32) -> f64 {
 
 /// Convert gain (dB) to y pixel position with dynamic range
 pub fn gain_to_y(gain_db: f64, min_db: f64, max_db: f64) -> f32 {
+    gain_to_y_with_height(gain_db, min_db, max_db, CHART_HEIGHT)
+}
+
+/// Convert gain (dB) to y pixel position for a chart with custom height.
+pub fn gain_to_y_with_height(gain_db: f64, min_db: f64, max_db: f64, height: f32) -> f32 {
     // gpui-px calculates plot_height = height - margin_top(10) - margin_bottom(30)
     // but renders the plot starting at y=0 (no actual top margin offset)
-    let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
+    let plot_height = height - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
     let t = (max_db - gain_db) / (max_db - min_db);
     CHART_TOP_MARGIN + (t as f32) * plot_height
 }
 
 /// Convert y pixel position to gain (dB) with dynamic range
 pub fn y_to_gain(y: f32, min_db: f64, max_db: f64) -> f64 {
-    let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
+    y_to_gain_with_height(y, min_db, max_db, CHART_HEIGHT)
+}
+
+/// Convert y pixel position to gain (dB) for a chart with custom height.
+pub fn y_to_gain_with_height(y: f32, min_db: f64, max_db: f64, height: f32) -> f64 {
+    let plot_height = height - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
     let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
     max_db - t * (max_db - min_db)
 }

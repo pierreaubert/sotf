@@ -1,4 +1,4 @@
-use super::super::common::{render_knob, render_vertical_slider_with_ticks};
+use super::super::common::render_knob;
 use super::misc::CONFIG_ITEMS;
 use super::misc::param_idx;
 use super::types::UpmixerRenderState;
@@ -10,7 +10,7 @@ use crate::components::plugins::theme::PluginTheme;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, StackSpacing, Toggle, ToggleStyle, VStack};
+use gpui_ui_kit::{HStack, Slider, SliderSize, StackSpacing, Toggle, ToggleStyle, VStack};
 use sotf_plugins::param_specs::{ParamCategory, find_by_key as pk, upmixer::PARAMS as UP};
 
 /// Render the upmixer plugin controls
@@ -19,6 +19,7 @@ pub fn render_upmixer_plugin(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: UpmixerRenderState,
+    available_width: f32,
     theme: &Theme,
     plugin_theme: &PluginTheme,
 ) -> impl IntoElement {
@@ -30,12 +31,33 @@ pub fn render_upmixer_plugin(
     // chassis palette. Same trick as ui_layout_renderer.
     let chassis_theme = plugin_theme.apply_to(theme);
     let theme = &chassis_theme;
+    let layout = UpmixerLayout::from_width(available_width);
 
-    // Main area: Channel Gains + Spatial Controls side by side (centered)
-    let main_area = render_main_area(d, entity.clone(), plugin_idx, &state, theme);
+    let main_area = match layout {
+        UpmixerLayout::Wide => {
+            render_main_area(d, entity.clone(), plugin_idx, &state, theme).into_any_element()
+        }
+        UpmixerLayout::Medium => render_medium_area(
+            d,
+            entity.clone(),
+            plugin_idx,
+            selected_config,
+            &state,
+            theme,
+        )
+        .into_any_element(),
+        UpmixerLayout::Narrow => render_narrow_area(
+            d,
+            entity.clone(),
+            plugin_idx,
+            selected_config,
+            &state,
+            theme,
+        )
+        .into_any_element(),
+    };
 
-    // Tab bar below main area
-    let tab_bar = render_tab_bar(d, entity.clone(), selected_config, theme);
+    let tab_bar = render_tab_bar(d, entity.clone(), selected_config, layout, true, theme);
 
     // Configuration row: conditional on selected_config (1-7)
     let config_row = render_config_row(
@@ -46,12 +68,6 @@ pub fn render_upmixer_plugin(
         &state,
         theme,
     );
-
-    // Permanent spatial-spider graph row, always visible below the tabs.
-    // The Spatial tab itself hosts the controls (mode toggles + ref-channel
-    // selector); switching to other tabs leaves the graph in place so the
-    // user can keep watching the field while editing parameters elsewhere.
-    let spider_graph_row = render_spider_graph_row(d, &state, theme);
 
     div()
         .w_full()
@@ -66,13 +82,32 @@ pub fn render_upmixer_plugin(
             VStack::new()
                 .spacing(StackSpacing::Xs)
                 .child(main_area)
-                .child(tab_bar)
-                .when((1..=9).contains(&selected_config), |el| {
-                    el.child(config_row)
-                })
-                .child(spider_graph_row)
+                .when(layout == UpmixerLayout::Wide, |el| el.child(tab_bar))
+                .when(
+                    layout == UpmixerLayout::Wide && (1..=9).contains(&selected_config),
+                    |el| el.child(config_row),
+                )
                 .build(),
         )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UpmixerLayout {
+    Wide,
+    Medium,
+    Narrow,
+}
+
+impl UpmixerLayout {
+    fn from_width(width: f32) -> Self {
+        if width >= 900.0 {
+            Self::Wide
+        } else if width >= 600.0 {
+            Self::Medium
+        } else {
+            Self::Narrow
+        }
+    }
 }
 
 /// Render an underline tab button
@@ -129,13 +164,17 @@ fn render_tab_bar(
     d: &Ds,
     entity: Entity<AppState>,
     selected_config: usize,
+    layout: UpmixerLayout,
+    allow_toggle_off: bool,
     theme: &Theme,
 ) -> impl IntoElement {
     div()
         .flex()
+        .flex_wrap()
         .items_end()
         .justify_center()
         .w_full()
+        .when(layout == UpmixerLayout::Narrow, |el| el.justify_start())
         .border_b_1()
         .border_color(theme.border)
         .children(CONFIG_ITEMS.iter().enumerate().map(|(i, label)| {
@@ -163,7 +202,7 @@ fn render_tab_bar(
             .on_click(move |_, _window, cx| {
                 entity.update(cx, |state, cx| {
                     state.app.plugin_ui.upmixer_tab =
-                        if state.app.plugin_ui.upmixer_tab == config_idx {
+                        if allow_toggle_off && state.app.plugin_ui.upmixer_tab == config_idx {
                             0
                         } else {
                             config_idx
@@ -174,7 +213,7 @@ fn render_tab_bar(
         }))
 }
 
-/// Render the main area: Channel Gains + Spatial Controls side by side
+/// Render the main area: spatial field first, compact primary controls below.
 fn render_main_area(
     d: &Ds,
     entity: Entity<AppState>,
@@ -186,10 +225,121 @@ fn render_main_area(
         .w_full()
         .min_w_0()
         .flex()
-        .flex_wrap()
-        .items_start()
-        .justify_center()
-        .gap(d.section)
+        .flex_col()
+        .gap(d.gap_md)
+        .child(render_upmixer_header(
+            d,
+            entity.clone(),
+            plugin_idx,
+            state,
+            theme,
+        ))
+        .child(
+            div()
+                .w_full()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(d.gap)
+                .child(render_spider_graph_row(d, state, theme))
+                .child(render_primary_control_strip(
+                    d, entity, plugin_idx, state, theme,
+                ))
+                .p(d.pad_y)
+                .bg(theme.surface)
+                .rounded(d.r_lg),
+        )
+}
+
+/// Render the medium main area: speaker field with a side inspector.
+fn render_medium_area(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    selected_config: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    let focused_config = focused_config_index(selected_config);
+
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .gap(d.gap_md)
+        .child(render_upmixer_header(
+            d,
+            entity.clone(),
+            plugin_idx,
+            state,
+            theme,
+        ))
+        .child(
+            div()
+                .w_full()
+                .min_w_0()
+                .flex()
+                .flex_wrap()
+                .gap(d.gap)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(rems(22.0))
+                        .p(d.pad_y)
+                        .bg(theme.surface)
+                        .rounded(d.r_lg)
+                        .child(render_spider_graph_row(d, state, theme)),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(d.gap)
+                        .flex_1()
+                        .min_w(rems(18.0))
+                        .p(d.pad_y)
+                        .bg(theme.surface)
+                        .rounded(d.r_lg)
+                        .child(render_section_header(d, "Primary", theme))
+                        .child(render_tab_bar(
+                            d,
+                            entity.clone(),
+                            focused_config,
+                            UpmixerLayout::Medium,
+                            false,
+                            theme,
+                        ))
+                        .child(render_compact_config_content(
+                            d,
+                            entity.clone(),
+                            plugin_idx,
+                            focused_config,
+                            state,
+                            theme,
+                        )),
+                ),
+        )
+        .child(render_upmixer_summary_strip(d, state, theme))
+}
+
+/// Render the narrow main area: stacked field and immediately reachable primary lanes.
+fn render_narrow_area(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    selected_config: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    let focused_config = focused_config_index(selected_config);
+
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .gap(d.gap)
         .child(render_speaker_config_selector(
             d,
             entity.clone(),
@@ -197,164 +347,1122 @@ fn render_main_area(
             state,
             theme,
         ))
-        // Channel Gains
+        .child(render_spider_controls(
+            d,
+            entity.clone(),
+            plugin_idx,
+            state,
+            theme,
+        ))
         .child(
             div()
+                .w_full()
                 .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(d.gap)
-                .child(render_section_header(d, "Channel Gains", theme))
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .justify_center()
-                        .gap(d.gap)
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Mains",
-                            state.gain_front_direct,
-                            pk(UP, "gain_front_direct").min_f64(),
-                            pk(UP, "gain_front_direct").max_f64(),
-                            "x",
-                            param_idx::GAIN_FRONT_DIRECT,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('m'),
-                            180.0,
-                            theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Center",
-                            state.gain_front_ambient,
-                            pk(UP, "gain_front_ambient").min_f64(),
-                            pk(UP, "gain_front_ambient").max_f64(),
-                            "x",
-                            param_idx::GAIN_FRONT_AMBIENT,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('c'),
-                            180.0,
-                            theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Surr",
-                            state.gain_rear_ambient,
-                            pk(UP, "gain_rear_ambient").min_f64(),
-                            pk(UP, "gain_rear_ambient").max_f64(),
-                            "x",
-                            param_idx::GAIN_REAR_AMBIENT,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('s'),
-                            180.0,
-                            theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Top",
-                            state.height_gain,
-                            pk(UP, "height_gain").min_f64(),
-                            pk(UP, "height_gain").max_f64(),
-                            "x",
-                            param_idx::HEIGHT_GAIN,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('t'),
-                            180.0,
-                            theme,
-                        )),
-                )
                 .p(d.pad_y)
                 .bg(theme.surface)
-                .rounded(d.r_lg),
+                .rounded(d.r_lg)
+                .child(render_spider_graph_row(d, state, theme)),
         )
-        // Spatial Controls
+        .child(render_tab_bar(
+            d,
+            entity.clone(),
+            focused_config,
+            UpmixerLayout::Narrow,
+            false,
+            theme,
+        ))
         .child(
             div()
+                .w_full()
                 .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(d.gap)
-                .child(render_section_header(d, "Spatial Controls", theme))
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .justify_center()
-                        .gap(d.gap)
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Width",
-                            state.stereo_width,
-                            pk(UP, "stereo_width").min_f64(),
-                            pk(UP, "stereo_width").max_f64(),
-                            "",
-                            param_idx::STEREO_WIDTH,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('w'),
-                            180.0,
-                            theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Spread",
-                            state.center_spread,
-                            pk(UP, "center_spread").min_f64(),
-                            pk(UP, "center_spread").max_f64(),
-                            "",
-                            param_idx::CENTER_SPREAD,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            180.0,
-                            theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Bleed",
-                            state.surround_direct_bleed,
-                            pk(UP, "surround_direct_bleed").min_f64(),
-                            pk(UP, "surround_direct_bleed").max_f64(),
-                            "",
-                            param_idx::SURROUND_DIRECT_BLEED,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            180.0,
-                            theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Reflect",
-                            state.rear_late_reflection,
-                            pk(UP, "rear_late_reflection").min_f64(),
-                            pk(UP, "rear_late_reflection").max_f64(),
-                            "",
-                            param_idx::REAR_LATE_REFLECTION,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            180.0,
-                            theme,
-                        )),
-                )
                 .p(d.pad_y)
                 .bg(theme.surface)
-                .rounded(d.r_lg),
+                .rounded(d.r_lg)
+                .child(render_compact_config_content(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    focused_config,
+                    state,
+                    theme,
+                )),
         )
+        .child(render_upmixer_summary_strip(d, state, theme))
+}
+
+fn focused_config_index(selected_config: usize) -> usize {
+    if (1..=CONFIG_ITEMS.len()).contains(&selected_config) {
+        selected_config
+    } else {
+        1
+    }
+}
+
+fn render_compact_config_content(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    selected_config: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> AnyElement {
+    match selected_config {
+        1 => render_compact_lane_group(
+            d,
+            "LFE & Bass",
+            vec![
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "SubHarmonic",
+                    state.enable_subharmonic_synth,
+                    param_idx::ENABLE_SUBHARMONIC_SYNTH,
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "LFE Cut",
+                    state.lfe_cutoff_hz,
+                    "lfe_cutoff_hz",
+                    param_idx::LFE_CUTOFF_HZ,
+                    "Hz",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "LFE Gain",
+                    state.lfe_gain,
+                    "lfe_gain",
+                    param_idx::LFE_GAIN,
+                    "x",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Bandpass",
+                    state.bandpass_hz,
+                    "bandpass_hz",
+                    param_idx::BANDPASS_HZ,
+                    "Hz",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Sub Gain",
+                    state.subharmonic_gain,
+                    "subharmonic_gain",
+                    param_idx::SUBHARMONIC_GAIN,
+                    "x",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Sub Freq",
+                    state.subharmonic_freq_hz,
+                    "subharmonic_freq_hz",
+                    param_idx::SUBHARMONIC_FREQ_HZ,
+                    "Hz",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Attack",
+                    state.subharmonic_attack_ms,
+                    "subharmonic_attack_ms",
+                    param_idx::SUBHARMONIC_ATTACK_MS,
+                    "ms",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity,
+                    plugin_idx,
+                    state,
+                    "Release",
+                    state.subharmonic_release_ms,
+                    "subharmonic_release_ms",
+                    param_idx::SUBHARMONIC_RELEASE_MS,
+                    "ms",
+                    theme,
+                ),
+            ],
+            theme,
+        )
+        .into_any_element(),
+        2 => render_compact_lane_group(
+            d,
+            "Dialogue",
+            vec![
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Weight",
+                    state.dialogue_weight,
+                    "dialogue_weight",
+                    param_idx::DIALOGUE_WEIGHT,
+                    "",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Voice Lo",
+                    state.voice_freq_min_hz,
+                    "voice_freq_min_hz",
+                    param_idx::VOICE_FREQ_MIN_HZ,
+                    "Hz",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Voice Hi",
+                    state.voice_freq_max_hz,
+                    "voice_freq_max_hz",
+                    param_idx::VOICE_FREQ_MAX_HZ,
+                    "Hz",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Centroid",
+                    state.dialogue_centroid_weight,
+                    "dialogue_centroid_weight",
+                    param_idx::DIALOGUE_CENTROID_WEIGHT,
+                    "",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Variance",
+                    state.dialogue_variance_weight,
+                    "dialogue_variance_weight",
+                    param_idx::DIALOGUE_VARIANCE_WEIGHT,
+                    "",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity,
+                    plugin_idx,
+                    state,
+                    "Coherence",
+                    state.dialogue_coherence_weight,
+                    "dialogue_coherence_weight",
+                    param_idx::DIALOGUE_COHERENCE_WEIGHT,
+                    "",
+                    theme,
+                ),
+            ],
+            theme,
+        )
+        .into_any_element(),
+        3 => render_compact_lane_group(
+            d,
+            "Ambient",
+            vec![
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Ambient",
+                    state.ambient_boost,
+                    "ambient_boost",
+                    param_idx::AMBIENT_BOOST,
+                    "x",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Rear Amb",
+                    state.rear_ambient_boost,
+                    "rear_ambient_boost",
+                    param_idx::REAR_AMBIENT_BOOST,
+                    "x",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Reflect",
+                    state.rear_late_reflection,
+                    "rear_late_reflection",
+                    param_idx::REAR_LATE_REFLECTION,
+                    "",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity,
+                    plugin_idx,
+                    state,
+                    "Safety",
+                    state.safety_cap_db,
+                    "safety_cap_db",
+                    param_idx::SAFETY_CAP_DB,
+                    "dB",
+                    theme,
+                ),
+            ],
+            theme,
+        )
+        .into_any_element(),
+        4 => render_compact_lane_group(
+            d,
+            "Height",
+            vec![
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Top Gain",
+                    state.height_gain,
+                    "height_gain",
+                    param_idx::HEIGHT_GAIN,
+                    "x",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "HF Cap",
+                    state.height_hf_cap_hz,
+                    "height_hf_cap_hz",
+                    param_idx::HEIGHT_HF_CAP_HZ,
+                    "Hz",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Transient",
+                    state.height_transient_reduction,
+                    "height_transient_reduction",
+                    param_idx::HEIGHT_TRANSIENT_REDUCTION,
+                    "",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity,
+                    plugin_idx,
+                    state,
+                    "Direct Leak",
+                    state.height_direct_leak,
+                    "height_direct_leak",
+                    param_idx::HEIGHT_DIRECT_LEAK,
+                    "",
+                    theme,
+                ),
+            ],
+            theme,
+        )
+        .into_any_element(),
+        5 => render_compact_lane_group(
+            d,
+            "HR Direct",
+            vec![
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "HR Direct",
+                    state.enable_hr_direct,
+                    param_idx::ENABLE_HR_DIRECT,
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity,
+                    plugin_idx,
+                    state,
+                    "Sharpen",
+                    state.hr_sharpen,
+                    "hr_sharpen",
+                    param_idx::HR_SHARPEN,
+                    "",
+                    theme,
+                ),
+            ],
+            theme,
+        )
+        .into_any_element(),
+        6 => render_compact_lane_group(
+            d,
+            "Decorrelation",
+            vec![
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Mode",
+                    state.decorrelation_mode as f64,
+                    "decorrelation_mode",
+                    param_idx::DECORRELATION_MODE,
+                    "",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "LFO",
+                    state.decorrelation_lfo_rate_hz,
+                    "decorrelation_lfo_rate_hz",
+                    param_idx::DECORRELATION_LFO_RATE_HZ,
+                    "Hz",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Velvet",
+                    state.velvet_noise_duration_ms,
+                    "velvet_noise_duration_ms",
+                    param_idx::VELVET_NOISE_DURATION_MS,
+                    "ms",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity,
+                    plugin_idx,
+                    state,
+                    "Density",
+                    state.velvet_noise_density,
+                    "velvet_noise_density",
+                    param_idx::VELVET_NOISE_DENSITY,
+                    "",
+                    theme,
+                ),
+            ],
+            theme,
+        )
+        .into_any_element(),
+        7 => render_compact_lane_group(
+            d,
+            "Analysis",
+            vec![
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Low Latency",
+                    state.low_latency,
+                    param_idx::LOW_LATENCY,
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Resolution",
+                    state.frequency_resolution as f64,
+                    "frequency_resolution",
+                    param_idx::FREQUENCY_RESOLUTION,
+                    "",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Multi Src",
+                    state.multi_source_threshold,
+                    "multi_source_threshold",
+                    param_idx::MULTI_SOURCE_THRESHOLD,
+                    "",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
+                    "Auto Max",
+                    state.auto_gain_max_db,
+                    "auto_gain_max_db",
+                    param_idx::AUTO_GAIN_MAX_DB,
+                    "dB",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity,
+                    plugin_idx,
+                    state,
+                    "Smooth",
+                    state.auto_gain_smoothing_ms,
+                    "auto_gain_smoothing_ms",
+                    param_idx::AUTO_GAIN_SMOOTHING_MS,
+                    "ms",
+                    theme,
+                ),
+            ],
+            theme,
+        )
+        .into_any_element(),
+        8 => render_compact_lane_group(
+            d,
+            "Diagnostic",
+            vec![
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Bypass All",
+                    state.bypass_all_processing,
+                    param_idx::BYPASS_ALL_PROCESSING,
+                    theme,
+                ),
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Bypass Decorr",
+                    state.bypass_decorrelation,
+                    param_idx::BYPASS_DECORRELATION,
+                    theme,
+                ),
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Bypass Trans",
+                    state.bypass_transient_detection,
+                    param_idx::BYPASS_TRANSIENT_DETECTION,
+                    theme,
+                ),
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "ML Detect",
+                    state.enable_ml_detection,
+                    param_idx::ENABLE_ML_DETECTION,
+                    theme,
+                ),
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Multi Source",
+                    state.multi_source_extraction,
+                    param_idx::MULTI_SOURCE_EXTRACTION,
+                    theme,
+                ),
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Binaural",
+                    state.binaural_preview,
+                    param_idx::BINAURAL_PREVIEW,
+                    theme,
+                ),
+                render_compact_toggle_row(
+                    d,
+                    entity,
+                    plugin_idx,
+                    "Auto Gain",
+                    state.auto_gain_enabled,
+                    param_idx::AUTO_GAIN_ENABLED,
+                    theme,
+                ),
+            ],
+            theme,
+        )
+        .into_any_element(),
+        9 => div()
+            .flex()
+            .flex_col()
+            .gap(d.gap)
+            .child(render_section_header(d, "Spatial", theme))
+            .child(render_spider_controls(d, entity, plugin_idx, state, theme))
+            .into_any_element(),
+        _ => div().into_any_element(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compact_lane(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    label: &'static str,
+    value: f64,
+    param_key: &'static str,
+    param_idx: usize,
+    unit: &'static str,
+    theme: &Theme,
+) -> AnyElement {
+    render_control_lane(
+        d,
+        entity,
+        plugin_idx,
+        ControlLaneSpec {
+            label,
+            value,
+            min: pk(UP, param_key).min_f64(),
+            max: pk(UP, param_key).max_f64(),
+            unit,
+            param_idx,
+            selected_param: state.selected_param,
+            is_editing: state.is_editing,
+        },
+        theme,
+    )
+}
+
+fn render_compact_lane_group(
+    d: &Ds,
+    label: &'static str,
+    lanes: Vec<AnyElement>,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.grid)
+        .min_w_0()
+        .child(render_section_header(d, label, theme))
+        .child(div().flex().flex_col().gap(d.grid).children(lanes))
+}
+
+fn render_compact_toggle_row(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &'static str,
+    checked: bool,
+    param_idx: usize,
+    theme: &Theme,
+) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(d.gap)
+        .min_w(rems(14.0))
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .rounded(d.r_sm)
+        .bg(theme.surface)
+        .border_1()
+        .border_color(theme.border)
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_secondary)
+                .child(label),
+        )
+        .child(
+            Toggle::new(("upmix-compact-toggle", plugin_idx * 1000 + param_idx))
+                .checked(checked)
+                .style(ToggleStyle::Segmented)
+                .theme(theme.to_toggle_theme())
+                .on_change(move |new_value, _, cx| {
+                    entity.update(cx, |state, _| {
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            param_idx,
+                            if new_value { 1.0 } else { 0.0 },
+                        );
+                    });
+                }),
+        )
+        .into_any_element()
+}
+
+fn render_upmixer_header(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .justify_between()
+        .gap(d.gap)
+        .child(render_speaker_config_selector(
+            d,
+            entity.clone(),
+            plugin_idx,
+            state,
+            theme,
+        ))
+        .child(render_spider_controls(d, entity, plugin_idx, state, theme))
+}
+
+fn render_upmixer_summary_strip(
+    d: &Ds,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_wrap()
+        .gap(d.grid)
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .bg(theme.surface)
+        .rounded(d.r_md)
+        .child(render_summary_chip(
+            d,
+            "Out",
+            state.speaker_config.to_string(),
+            theme,
+        ))
+        .child(render_summary_chip(
+            d,
+            "Width",
+            format_compact_value(state.stereo_width, ""),
+            theme,
+        ))
+        .child(render_summary_chip(
+            d,
+            "Center",
+            format_compact_value(state.center_spread, ""),
+            theme,
+        ))
+        .child(render_summary_chip(
+            d,
+            "Rear",
+            format_compact_value(state.gain_rear_ambient, "x"),
+            theme,
+        ))
+        .child(render_summary_chip(
+            d,
+            "Top",
+            format_compact_value(state.height_gain, "x"),
+            theme,
+        ))
+        .child(render_summary_chip(
+            d,
+            "LFE",
+            format_compact_value(state.lfe_gain, "x"),
+            theme,
+        ))
+        .child(render_summary_chip(
+            d,
+            "Cap",
+            format_compact_value(state.safety_cap_db, "dB"),
+            theme,
+        ))
+}
+
+fn render_summary_chip(
+    d: &Ds,
+    label: &'static str,
+    value: impl Into<SharedString>,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(3.0))
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .rounded(d.r_sm)
+        .bg(theme.background_secondary)
+        .text_size(d.text_xs)
+        .child(
+            div()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_muted)
+                .child(label),
+        )
+        .child(div().text_color(theme.text_primary).child(value.into()))
+}
+
+fn render_spider_controls(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> AnyElement {
+    use crate::components::plugins::spatial_spider::{
+        SpatialSpiderSnapshot, render_spatial_spider_controls, resolve_speaker_config,
+    };
+
+    let snapshot = SpatialSpiderSnapshot {
+        loudness: state.loudness_info.clone(),
+        ui: state.spatial_spider.clone(),
+    };
+    let cfg_opt = resolve_speaker_config(&snapshot, Some(state.speaker_config));
+    render_spatial_spider_controls(d, entity, plugin_idx, &snapshot, cfg_opt, theme)
+}
+
+fn render_primary_control_strip(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .flex_wrap()
+        .gap(d.gap)
+        .child(render_control_group(
+            d,
+            "Gains",
+            vec![
+                render_control_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "Mains",
+                        value: state.gain_front_direct,
+                        min: pk(UP, "gain_front_direct").min_f64(),
+                        max: pk(UP, "gain_front_direct").max_f64(),
+                        unit: "x",
+                        param_idx: param_idx::GAIN_FRONT_DIRECT,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    theme,
+                ),
+                render_control_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "Center",
+                        value: state.gain_front_ambient,
+                        min: pk(UP, "gain_front_ambient").min_f64(),
+                        max: pk(UP, "gain_front_ambient").max_f64(),
+                        unit: "x",
+                        param_idx: param_idx::GAIN_FRONT_AMBIENT,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    theme,
+                ),
+                render_control_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "Surr",
+                        value: state.gain_rear_ambient,
+                        min: pk(UP, "gain_rear_ambient").min_f64(),
+                        max: pk(UP, "gain_rear_ambient").max_f64(),
+                        unit: "x",
+                        param_idx: param_idx::GAIN_REAR_AMBIENT,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    theme,
+                ),
+                render_control_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "Top",
+                        value: state.height_gain,
+                        min: pk(UP, "height_gain").min_f64(),
+                        max: pk(UP, "height_gain").max_f64(),
+                        unit: "x",
+                        param_idx: param_idx::HEIGHT_GAIN,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    theme,
+                ),
+                render_control_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "LFE",
+                        value: state.lfe_gain,
+                        min: pk(UP, "lfe_gain").min_f64(),
+                        max: pk(UP, "lfe_gain").max_f64(),
+                        unit: "x",
+                        param_idx: param_idx::LFE_GAIN,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    theme,
+                ),
+                render_control_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "Safety",
+                        value: state.safety_cap_db,
+                        min: pk(UP, "safety_cap_db").min_f64(),
+                        max: pk(UP, "safety_cap_db").max_f64(),
+                        unit: "dB",
+                        param_idx: param_idx::SAFETY_CAP_DB,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    theme,
+                ),
+            ],
+            theme,
+        ))
+        .child(render_control_group(
+            d,
+            "Space",
+            vec![
+                render_control_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "Width",
+                        value: state.stereo_width,
+                        min: pk(UP, "stereo_width").min_f64(),
+                        max: pk(UP, "stereo_width").max_f64(),
+                        unit: "",
+                        param_idx: param_idx::STEREO_WIDTH,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    theme,
+                ),
+                render_control_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "Spread",
+                        value: state.center_spread,
+                        min: pk(UP, "center_spread").min_f64(),
+                        max: pk(UP, "center_spread").max_f64(),
+                        unit: "",
+                        param_idx: param_idx::CENTER_SPREAD,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    theme,
+                ),
+                render_control_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "Bleed",
+                        value: state.surround_direct_bleed,
+                        min: pk(UP, "surround_direct_bleed").min_f64(),
+                        max: pk(UP, "surround_direct_bleed").max_f64(),
+                        unit: "",
+                        param_idx: param_idx::SURROUND_DIRECT_BLEED,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    theme,
+                ),
+                render_control_lane(
+                    d,
+                    entity,
+                    plugin_idx,
+                    ControlLaneSpec {
+                        label: "Reflect",
+                        value: state.rear_late_reflection,
+                        min: pk(UP, "rear_late_reflection").min_f64(),
+                        max: pk(UP, "rear_late_reflection").max_f64(),
+                        unit: "",
+                        param_idx: param_idx::REAR_LATE_REFLECTION,
+                        selected_param: state.selected_param,
+                        is_editing: state.is_editing,
+                    },
+                    theme,
+                ),
+            ],
+            theme,
+        ))
+}
+
+fn render_control_group(
+    d: &Ds,
+    label: &'static str,
+    lanes: Vec<AnyElement>,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.grid)
+        .flex_1()
+        .min_w(rems(16.0))
+        .child(render_section_header(d, label, theme))
+        .child(div().flex().flex_wrap().gap(d.grid).children(lanes))
+}
+
+struct ControlLaneSpec {
+    label: &'static str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &'static str,
+    param_idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+}
+
+fn render_control_lane(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    spec: ControlLaneSpec,
+    theme: &Theme,
+) -> AnyElement {
+    let is_selected = spec.selected_param == spec.param_idx && spec.is_editing;
+    let value = spec.value.clamp(spec.min, spec.max);
+    let slider_width = 132.0;
+    let value_label = format_compact_value(value, spec.unit);
+
+    div()
+        .flex()
+        .items_center()
+        .gap(d.grid)
+        .min_w(rems(14.0))
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .rounded(d.r_sm)
+        .bg(if is_selected {
+            theme.accent_muted
+        } else {
+            theme.surface
+        })
+        .border_1()
+        .border_color(if is_selected {
+            theme.accent
+        } else {
+            theme.border
+        })
+        .child(
+            div()
+                .min_w(rems(3.8))
+                .text_size(d.text_xs)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_secondary)
+                .child(spec.label),
+        )
+        .child(
+            Slider::new(("upmix-lane", plugin_idx * 1000 + spec.param_idx))
+                .value(value as f32)
+                .range(spec.min as f32, spec.max as f32)
+                .width(slider_width)
+                .size(SliderSize::Sm)
+                .theme(theme.to_slider_theme())
+                .aria_label(format!("{} {}", spec.label, value_label))
+                .on_drag_start({
+                    let entity = entity.clone();
+                    move |_, _, _, cx| {
+                        entity.update(cx, |state, _| {
+                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                            state.app.plugin_state.plugin_param_selection = spec.param_idx;
+                        });
+                    }
+                })
+                .on_change({
+                    let entity = entity.clone();
+                    move |new_value, _, cx| {
+                        entity.update(cx, |state, _| {
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                spec.param_idx,
+                                new_value as f64,
+                            );
+                        });
+                    }
+                })
+                .on_reset(move |_, cx| {
+                    entity.update(cx, |state, _| {
+                        state.app.reset_plugin_param(plugin_idx, spec.param_idx);
+                    });
+                }),
+        )
+        .child(
+            div()
+                .min_w(rems(3.2))
+                .text_align(TextAlign::Right)
+                .text_size(d.text_xs)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_primary)
+                .child(value_label),
+        )
+        .into_any_element()
+}
+
+fn format_compact_value(value: f64, unit: &str) -> String {
+    if unit == "Hz" {
+        format!("{value:.0}Hz")
+    } else if unit.is_empty() {
+        format!("{value:.2}")
+    } else if unit == "dB" {
+        format!("{value:+.1}dB")
+    } else {
+        format!("{value:.2}{unit}")
+    }
 }
 
 fn render_speaker_config_selector(
@@ -415,7 +1523,27 @@ fn render_config_row(
     state: &UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let content: AnyElement = match selected_config {
+    let content = render_config_content(d, entity, plugin_idx, selected_config, state, theme);
+
+    div()
+        .w_full()
+        .p(d.pad_x)
+        .bg(theme.background_secondary)
+        .rounded(d.r_lg)
+        .border_1()
+        .border_color(theme.border)
+        .child(content)
+}
+
+fn render_config_content(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    selected_config: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> AnyElement {
+    match selected_config {
         1 => render_config_lfe(d, entity, plugin_idx, state, theme).into_any_element(),
         2 => render_config_dialogue(d, entity, plugin_idx, state, theme).into_any_element(),
         3 => render_config_ambient(d, entity, plugin_idx, state, theme).into_any_element(),
@@ -426,16 +1554,7 @@ fn render_config_row(
         8 => render_config_diagnostic(d, entity, plugin_idx, state, theme).into_any_element(),
         9 => render_config_spatial(d, entity, plugin_idx, state, theme).into_any_element(),
         _ => div().into_any_element(),
-    };
-
-    div()
-        .w_full()
-        .p(d.pad_x)
-        .bg(theme.background_secondary)
-        .rounded(d.r_lg)
-        .border_1()
-        .border_color(theme.border)
-        .child(content)
+    }
 }
 
 /// Render a section header

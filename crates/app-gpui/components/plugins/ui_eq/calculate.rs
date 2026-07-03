@@ -99,3 +99,8 @@ pub fn calculate_plot_width<'a>(chart_width: f32, labels: impl Iterator<Item = &
     // Final plot width
     (chart_width - CHART_LEFT_MARGIN - CHART_RIGHT_MARGIN - width_for_legend).max(0.0)
 }
+
+/// Calculate the plot width when the chart legend is hidden.
+pub fn calculate_plot_width_without_legend(chart_width: f32) -> f32 {
+    (chart_width - CHART_LEFT_MARGIN - CHART_RIGHT_MARGIN).max(0.0)
+}

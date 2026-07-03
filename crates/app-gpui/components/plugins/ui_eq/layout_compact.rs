@@ -1,7 +1,7 @@
 //! Compact EQ layouts for small windows.
 //!
-//! - `render_eq_bottom_strip`: graph on top, horizontal band strip + inline editor below.
-//! - `render_eq_inspector`: scrollable band list; graph optional.
+//! - `render_eq_bottom_strip`: medium workbench with a vertical band rail, graph, and property strip.
+//! - `render_eq_inspector`: narrow drawer with graph, selected-band editor, and bottom band chips.
 
 use crate::app::AppState;
 use crate::components::PluginEditingManager;
@@ -11,18 +11,16 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::EQFilter;
-use sotf_plugins::param_specs::{eq::BAND_TEMPLATE as EQ, find_by_key as pk};
 
 use super::render::{
-    EqBandIndexing, EqGlobalControl, render_eq_active_toggle, render_eq_global_stepper,
-    render_eq_global_toggle, render_eq_knob_with_midi, render_eq_visualization,
-    render_filter_type_selector,
+    EqBandIndexing, EqGlobalControl, render_eq_global_stepper, render_eq_global_toggle,
+    render_eq_property_strip, render_eq_visualization_sized,
 };
 use super::types::{EqRenderState, EqViewMode};
 
 const COMPACT_GRAPH_HEIGHT: f32 = 200.0;
 
-/// Bottom-strip layout: graph on top, band cards below, selected band expands inline.
+/// Medium layout: graph workbench with a vertical band rail and one property strip.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_eq_bottom_strip(
     entity: Entity<AppState>,
@@ -65,63 +63,74 @@ pub(crate) fn render_eq_bottom_strip(
         ));
     }
 
+    let selected_channel = entity.read(cx).app.plugin_state.selected_eq_channel;
+    let is_lp_mode = matches!(
+        state.mode,
+        EqViewMode::LinearPhase { .. } | EqViewMode::FirDesigner { .. }
+    );
+
+    if !is_lp_mode {
+        root = root.child(super::render::render_eq_channel_toolbar(
+            &d,
+            entity.clone(),
+            plugin_idx,
+            state.channels,
+            selected_channel,
+            state.per_channel_mode,
+            theme,
+        ));
+    }
+
+    let graph_width = (state.available_width - 104.0).max(360.0);
     root = root.child(
         div()
-            .h(px(COMPACT_GRAPH_HEIGHT))
-            .child(render_eq_visualization(
+            .id("eq-medium-workbench")
+            .flex()
+            .items_stretch()
+            .gap(d.gap)
+            .min_h(px(COMPACT_GRAPH_HEIGHT + 24.0))
+            .child(render_medium_band_rail(
+                &d,
                 entity.clone(),
                 plugin_idx,
                 display_filters,
-                Some(selected_band_idx),
-                indexing,
+                selected_band_idx,
                 theme,
-                state.available_width,
-            )),
+            ))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h(px(COMPACT_GRAPH_HEIGHT + 24.0))
+                    .child(render_eq_visualization_sized(
+                        entity.clone(),
+                        plugin_idx,
+                        display_filters,
+                        Some(selected_band_idx),
+                        indexing,
+                        theme,
+                        graph_width,
+                        COMPACT_GRAPH_HEIGHT + 24.0,
+                    )),
+            ),
     );
 
-    let mut strip = div()
-        .id("eq-bottom-strip")
-        .flex()
-        .gap(d.gap)
-        .overflow_x_scroll()
-        .px(d.pad_x);
-
-    for (i, filter) in display_filters.iter().enumerate() {
-        strip = strip.child(render_compact_band_card(
-            &d,
-            entity.clone(),
-            plugin_idx,
-            i,
-            filter,
-            i == selected_band_idx,
-            theme,
-        ));
-    }
-    strip = strip.child(render_add_band_button(
+    root = root.child(render_eq_property_strip(
         &d,
-        entity.clone(),
+        entity,
         plugin_idx,
+        display_filters.get(selected_band_idx),
+        selected_band_idx,
+        indexing,
+        state,
+        is_lp_mode,
         theme,
     ));
-    root = root.child(strip);
-
-    if let Some(filter) = display_filters.get(selected_band_idx) {
-        root = root.child(render_compact_band_editor(
-            &d,
-            entity.clone(),
-            plugin_idx,
-            selected_band_idx,
-            filter,
-            indexing,
-            state,
-            theme,
-        ));
-    }
 
     root
 }
 
-/// Inspector layout: vertical band list; graph toggled on/off.
+/// Narrow layout: selected-band drawer plus a compact chip carousel.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_eq_inspector(
     entity: Entity<AppState>,
@@ -134,18 +143,17 @@ pub(crate) fn render_eq_inspector(
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let d = Ds::from_cx(cx);
-    let graph_visible = entity
-        .read(cx)
-        .app
-        .plugin_state
-        .plugin_ui_state
-        .eq_compact_graph_visible;
     let config_open = entity
         .read(cx)
         .app
         .plugin_state
         .plugin_ui_state
         .eq_compact_config_open;
+    let selected_channel = entity.read(cx).app.plugin_state.selected_eq_channel;
+    let is_lp_mode = matches!(
+        state.mode,
+        EqViewMode::LinearPhase { .. } | EqViewMode::FirDesigner { .. }
+    );
 
     let mut root = div().flex().flex_col().gap(d.section).size_full();
 
@@ -154,7 +162,7 @@ pub(crate) fn render_eq_inspector(
         entity.clone(),
         plugin_idx,
         state,
-        true,
+        false,
         theme,
         cx,
     ));
@@ -170,62 +178,238 @@ pub(crate) fn render_eq_inspector(
         ));
     }
 
-    if graph_visible {
-        root = root.child(
+    if !is_lp_mode {
+        root = root.child(super::render::render_eq_channel_toolbar(
+            &d,
+            entity.clone(),
+            plugin_idx,
+            state.channels,
+            selected_channel,
+            state.per_channel_mode,
+            theme,
+        ));
+    }
+
+    root = root
+        .child(
             div()
+                .id("eq-narrow-graph")
                 .h(px(COMPACT_GRAPH_HEIGHT))
-                .child(render_eq_visualization(
+                .child(render_eq_visualization_sized(
                     entity.clone(),
                     plugin_idx,
                     display_filters,
                     Some(selected_band_idx),
                     indexing,
                     theme,
-                    state.available_width,
+                    state.available_width.max(320.0),
+                    COMPACT_GRAPH_HEIGHT,
                 )),
-        );
-        if let Some(filter) = display_filters.get(selected_band_idx) {
-            root = root.child(render_compact_band_editor(
-                &d,
-                entity.clone(),
-                plugin_idx,
-                selected_band_idx,
-                filter,
-                indexing,
-                state,
-                theme,
-            ));
-        }
-    } else {
-        let mut list = div()
-            .id("eq-inspector-list")
-            .flex()
-            .flex_col()
-            .gap(d.gap)
-            .overflow_y_scroll()
-            .px(d.pad_x);
-        for (i, filter) in display_filters.iter().enumerate() {
-            list = list.child(render_compact_inspector_row(
-                &d,
-                entity.clone(),
-                plugin_idx,
-                i,
-                filter,
-                indexing,
-                state,
-                theme,
-            ));
-        }
-        list = list.child(render_add_band_button(
+        )
+        .child(render_eq_property_strip(
             &d,
             entity.clone(),
             plugin_idx,
+            display_filters.get(selected_band_idx),
+            selected_band_idx,
+            indexing,
+            state,
+            is_lp_mode,
+            theme,
+        ))
+        .child(render_narrow_band_strip(
+            &d,
+            entity,
+            plugin_idx,
+            display_filters,
+            selected_band_idx,
             theme,
         ));
-        root = root.child(list);
-    }
 
     root
+}
+
+fn render_medium_band_rail(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    display_filters: &[EQFilter],
+    selected_band_idx: usize,
+    theme: &Theme,
+) -> impl IntoElement {
+    let mut rail = div()
+        .id("eq-band-rail")
+        .flex()
+        .flex_col()
+        .gap(d.grid)
+        .min_w(rems(5.25))
+        .max_w(rems(5.25))
+        .p(d.grid)
+        .overflow_y_scroll()
+        .bg(theme.surface)
+        .rounded(d.r_md);
+
+    for (i, filter) in display_filters.iter().enumerate() {
+        rail = rail.child(render_rail_band_button(
+            d,
+            entity.clone(),
+            plugin_idx,
+            i,
+            filter,
+            i == selected_band_idx,
+            theme,
+        ));
+    }
+
+    rail.child(render_add_band_button(d, entity, plugin_idx, theme))
+}
+
+fn render_narrow_band_strip(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    display_filters: &[EQFilter],
+    selected_band_idx: usize,
+    theme: &Theme,
+) -> impl IntoElement {
+    let mut strip = div()
+        .id("eq-bottom-strip")
+        .flex()
+        .items_center()
+        .gap(d.grid)
+        .overflow_x_scroll()
+        .px(d.pad_x)
+        .py(d.pad_y_half)
+        .bg(theme.surface)
+        .rounded(d.r_md);
+
+    for (i, filter) in display_filters.iter().enumerate() {
+        strip = strip.child(render_narrow_band_chip(
+            d,
+            entity.clone(),
+            plugin_idx,
+            i,
+            filter,
+            i == selected_band_idx,
+            theme,
+        ));
+    }
+
+    strip.child(render_add_band_button(d, entity, plugin_idx, theme))
+}
+
+fn render_rail_band_button(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    band_idx: usize,
+    filter: &EQFilter,
+    selected: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    let entity_clone = entity.clone();
+    div()
+        .id(("eq-band-rail-button", band_idx))
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(px(2.0))
+        .px(d.grid)
+        .py(d.pad_y_half)
+        .rounded(d.r_sm)
+        .cursor_pointer()
+        .when(selected, |div| {
+            div.bg(theme.accent)
+                .text_color(theme.text_on_accent)
+                .font_weight(FontWeight::SEMIBOLD)
+        })
+        .when(!selected, |div| {
+            div.bg(theme.background_secondary)
+                .text_color(theme.text_secondary)
+                .hover(|s| s.bg(theme.surface_hover))
+        })
+        .when(filter.muted, |div| div.opacity(0.5))
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            entity_clone.update(cx, |state, cx| {
+                state.app.plugin_state.selected_eq_band = band_idx;
+                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                cx.notify();
+            });
+        })
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .child(format!("#{}", band_idx + 1)),
+        )
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .child(filter.filter_type.short_name()),
+        )
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .text_color(if selected {
+                    theme.text_on_accent
+                } else {
+                    theme.text_muted
+                })
+                .child(compact_freq(filter.frequency)),
+        )
+}
+
+fn render_narrow_band_chip(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    band_idx: usize,
+    filter: &EQFilter,
+    selected: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    let entity_clone = entity.clone();
+    div()
+        .id(("eq-band-chip", band_idx))
+        .flex()
+        .items_center()
+        .gap(d.grid)
+        .px(d.pad_y)
+        .py(d.pad_y_half)
+        .min_w(rems(5.5))
+        .rounded(d.r_sm)
+        .cursor_pointer()
+        .when(selected, |div| {
+            div.bg(theme.accent)
+                .text_color(theme.text_on_accent)
+                .font_weight(FontWeight::SEMIBOLD)
+        })
+        .when(!selected, |div| {
+            div.bg(theme.background_secondary)
+                .text_color(theme.text_secondary)
+                .hover(|s| s.bg(theme.surface_hover))
+        })
+        .when(filter.muted, |div| div.opacity(0.5))
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            entity_clone.update(cx, |state, cx| {
+                state.app.plugin_state.selected_eq_band = band_idx;
+                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                cx.notify();
+            });
+        })
+        .child(format!(
+            "#{} {} {}",
+            band_idx + 1,
+            filter.filter_type.short_name(),
+            compact_freq(filter.frequency)
+        ))
+}
+
+fn compact_freq(freq: f64) -> String {
+    if freq >= 1000.0 {
+        format!("{:.1}k", freq / 1000.0)
+    } else {
+        format!("{freq:.0}")
+    }
 }
 
 /// Slim top bar shared by both compact layouts.
@@ -592,251 +776,6 @@ fn render_compact_config_panel(
     col
 }
 
-/// Compact clickable card for one band in the bottom strip.
-fn render_compact_band_card(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    band_idx: usize,
-    filter: &EQFilter,
-    selected: bool,
-    theme: &Theme,
-) -> impl IntoElement {
-    let entity_clone = entity.clone();
-    let is_muted = filter.muted;
-    div()
-        .id(("eq-band-card", band_idx))
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap(d.grid)
-        .px(d.pad_x)
-        .py(d.pad_y)
-        .min_w(px(80.0))
-        .rounded(d.r_md)
-        .cursor_pointer()
-        .when(selected, |div| {
-            div.bg(theme.accent)
-                .text_color(theme.text_on_accent)
-                .font_weight(FontWeight::SEMIBOLD)
-        })
-        .when(!selected, |div| {
-            div.bg(theme.background_secondary)
-                .text_color(theme.text_secondary)
-                .hover(|s| s.bg(theme.surface_hover))
-        })
-        .when(is_muted, |div| div.opacity(0.5))
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            entity_clone.update(cx, |state, cx| {
-                state.app.plugin_state.selected_eq_band = band_idx;
-                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                cx.notify();
-            });
-        })
-        .child(div().child(format!(
-            "#{} {}",
-            band_idx + 1,
-            filter.filter_type.short_name()
-        )))
-        .child(
-            div()
-                .text_size(d.text_xs)
-                .child(format!("{:.0}Hz", filter.frequency)),
-        )
-        .child(
-            div()
-                .text_size(d.text_xs)
-                .child(format!("{:+.1}dB", filter.gain_db)),
-        )
-}
-
-/// Full inline editor for a single band (used by bottom strip and graph overlay).
-#[allow(clippy::too_many_arguments)]
-fn render_compact_band_editor(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    band_idx: usize,
-    filter: &EQFilter,
-    indexing: EqBandIndexing,
-    state: &EqRenderState,
-    theme: &Theme,
-) -> impl IntoElement {
-    let base_param_idx = band_idx * indexing.stride;
-    let midi_overlay = state.midi_overlay;
-
-    let mut editor = div()
-        .flex()
-        .flex_col()
-        .gap(d.gap)
-        .p(d.pad_x)
-        .bg(theme.background_secondary)
-        .rounded(d.r_md)
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .child(
-                    div()
-                        .text_size(d.text_xs)
-                        .text_color(theme.text_muted)
-                        .child(format!("Band {}", band_idx + 1)),
-                )
-                .child(render_filter_type_selector(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    &filter.filter_type,
-                    band_idx,
-                    base_param_idx + indexing.filter_type,
-                    None,
-                    theme,
-                )),
-        )
-        .child(
-            div()
-                .flex()
-                .gap(d.gap)
-                .justify_center()
-                .child(render_eq_knob_with_midi(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Freq",
-                    filter.frequency,
-                    pk(EQ, "freq").min_f64(),
-                    pk(EQ, "freq").max_f64(),
-                    "Hz",
-                    base_param_idx + indexing.frequency,
-                    state.selected_param,
-                    state.is_editing,
-                    midi_overlay,
-                    theme,
-                ))
-                .child(render_eq_knob_with_midi(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Q",
-                    filter.q,
-                    pk(EQ, "q").min_f64(),
-                    pk(EQ, "q").max_f64(),
-                    "",
-                    base_param_idx + indexing.q,
-                    state.selected_param,
-                    state.is_editing,
-                    midi_overlay,
-                    theme,
-                ))
-                .child(render_eq_knob_with_midi(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Gain",
-                    filter.gain_db,
-                    pk(EQ, "gain").min_f64(),
-                    pk(EQ, "gain").max_f64(),
-                    "dB",
-                    base_param_idx + indexing.gain,
-                    state.selected_param,
-                    state.is_editing,
-                    midi_overlay,
-                    theme,
-                )),
-        );
-
-    // Mute / Solo buttons
-    let mute_entity = entity.clone();
-    let solo_entity = entity.clone();
-    editor = editor.child(
-        div()
-            .flex()
-            .gap(d.gap)
-            .justify_center()
-            .child(small_action_button(
-                d,
-                "M",
-                filter.muted,
-                theme.error,
-                theme,
-                move |_, _, cx| {
-                    mute_entity.update(cx, |state, cx| {
-                        state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                        if let Err(e) = state.app.toggle_eq_band_mute(band_idx) {
-                            log::warn!("Failed to toggle EQ band mute: {}", e);
-                        }
-                        cx.notify();
-                    });
-                },
-            ))
-            .child(small_action_button(
-                d,
-                "S",
-                filter.solo,
-                theme.success,
-                theme,
-                move |_, _, cx| {
-                    solo_entity.update(cx, |state, cx| {
-                        state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                        if let Err(e) = state.app.toggle_eq_band_solo(band_idx) {
-                            log::warn!("Failed to toggle EQ band solo: {}", e);
-                        }
-                        cx.notify();
-                    });
-                },
-            )),
-    );
-
-    if let Some(active_local_idx) = indexing.active {
-        editor = editor.child(render_eq_active_toggle(
-            d,
-            entity,
-            plugin_idx,
-            filter,
-            base_param_idx + active_local_idx,
-            state.selected_param,
-            state.is_editing,
-            theme,
-        ));
-    }
-
-    editor
-}
-
-/// One self-contained row in the inspector list (card + inline editor).
-#[allow(clippy::too_many_arguments)]
-fn render_compact_inspector_row(
-    d: &Ds,
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    band_idx: usize,
-    filter: &EQFilter,
-    indexing: EqBandIndexing,
-    state: &EqRenderState,
-    theme: &Theme,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(d.gap)
-        .p(d.pad_x)
-        .bg(theme.background_secondary)
-        .rounded(d.r_md)
-        .child(render_compact_band_card(
-            d,
-            entity.clone(),
-            plugin_idx,
-            band_idx,
-            filter,
-            false,
-            theme,
-        ))
-        .child(render_compact_band_editor(
-            d, entity, plugin_idx, band_idx, filter, indexing, state, theme,
-        ))
-}
-
 /// "+" button to add a band.
 fn render_add_band_button(
     d: &Ds,
@@ -933,51 +872,6 @@ fn config_toggle_button(
             });
         })
         .child("Config ⚙")
-}
-
-/// Small circular M/S action button.
-fn small_action_button<F>(
-    d: &Ds,
-    label: &'static str,
-    active: bool,
-    active_color: Rgba,
-    theme: &Theme,
-    on_click: F,
-) -> impl IntoElement
-where
-    F: Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
-{
-    div()
-        .w(px(28.0))
-        .h(px(24.0))
-        .rounded(d.r_sm)
-        .flex()
-        .items_center()
-        .justify_center()
-        .bg(if active {
-            active_color
-        } else {
-            theme.background_secondary
-        })
-        .border(px(1.0))
-        .border_color(if active { active_color } else { theme.border })
-        .text_size(d.text_xs)
-        .font_weight(FontWeight::BOLD)
-        .cursor_pointer()
-        .text_color(if active {
-            theme.text_on_accent
-        } else {
-            theme.text_muted
-        })
-        .hover(|s| {
-            s.bg(if active {
-                active_color
-            } else {
-                theme.surface_hover
-            })
-        })
-        .on_mouse_down(MouseButton::Left, on_click)
-        .child(label)
 }
 
 /// Helper: readable label for a channel index.
