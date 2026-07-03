@@ -216,11 +216,11 @@ fn test_get_parameter_sota_params() {
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("dc_blocker")),
-        Some(ParameterValue::Float(1.0))
+        Some(ParameterValue::Bool(true))
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("use_adaa")),
-        Some(ParameterValue::Float(1.0))
+        Some(ParameterValue::Bool(true))
     );
 }
 
@@ -359,10 +359,10 @@ fn test_get_parameter_after_from_params() {
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("dc_blocker")),
-        Some(ParameterValue::Float(0.0))
+        Some(ParameterValue::Bool(false))
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("use_adaa")),
-        Some(ParameterValue::Float(0.0))
+        Some(ParameterValue::Bool(false))
     );
 }

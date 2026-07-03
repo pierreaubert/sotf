@@ -118,11 +118,39 @@ fn boolean_state_from_params() {
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("dc_blocker")),
-        Some(ParameterValue::Float(0.0))
+        Some(ParameterValue::Bool(false))
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("use_adaa")),
-        Some(ParameterValue::Float(0.0))
+        Some(ParameterValue::Bool(false))
+    );
+}
+
+#[test]
+fn legacy_float_booleans_are_accepted() {
+    let mut plugin = SaturationPlugin::from_params(
+        1,
+        SaturationPluginParams {
+            dc_blocker_enabled: true,
+            use_adaa: false,
+            ..Default::default()
+        },
+    );
+
+    plugin
+        .set_parameter(ParameterId::from("dc_blocker"), ParameterValue::Float(0.0))
+        .unwrap();
+    plugin
+        .set_parameter(ParameterId::from("use_adaa"), ParameterValue::Float(1.0))
+        .unwrap();
+
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dc_blocker")),
+        Some(ParameterValue::Bool(false))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("use_adaa")),
+        Some(ParameterValue::Bool(true))
     );
 }
 

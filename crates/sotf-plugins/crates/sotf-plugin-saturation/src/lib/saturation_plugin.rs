@@ -366,6 +366,12 @@ impl SaturationPlugin {
 
     /// Backward-compatible parameter validation.
     pub fn validate_parameter(&self, id: &ParameterId, value: &ParameterValue) -> PluginResult<()> {
+        if (id == &self.param_dc_blocker || id == &self.param_use_adaa)
+            && parameter_value_as_legacy_bool(value).is_some()
+        {
+            return Ok(());
+        }
+
         if let Some(param) = self.parameters().iter().find(|p| &p.id == id) {
             param.validate(value).map_err(|e| format!("{}: {}", id, e))
         } else {
@@ -438,11 +444,11 @@ impl ParametricInPlacePlugin for SaturationPlugin {
         );
         values.insert(
             self.param_dc_blocker.clone(),
-            ParameterValue::Float(if self.dc_blocker_enabled { 1.0 } else { 0.0 }),
+            ParameterValue::Bool(self.dc_blocker_enabled),
         );
         values.insert(
             self.param_use_adaa.clone(),
-            ParameterValue::Float(if self.use_adaa { 1.0 } else { 0.0 }),
+            ParameterValue::Bool(self.use_adaa),
         );
         values
     }
@@ -550,9 +556,13 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                     }
                 }
             } else if id == self.param_dc_blocker {
-                self.dc_blocker_enabled = value.as_float().unwrap_or(1.0) > 0.5;
+                if let Some(enabled) = parameter_value_as_legacy_bool(&value) {
+                    self.dc_blocker_enabled = enabled;
+                }
             } else if id == self.param_use_adaa {
-                self.use_adaa = value.as_float().unwrap_or(1.0) > 0.5;
+                if let Some(enabled) = parameter_value_as_legacy_bool(&value) {
+                    self.use_adaa = enabled;
+                }
             } else {
                 return Err(format!("Unknown parameter: {id}"));
             }
@@ -844,5 +854,14 @@ impl ParametricInPlacePlugin for SaturationPlugin {
             2 => Some(4),
             _ => None,
         }
+    }
+}
+
+fn parameter_value_as_legacy_bool(value: &ParameterValue) -> Option<bool> {
+    match value {
+        ParameterValue::Bool(enabled) => Some(*enabled),
+        ParameterValue::Float(v) if v.is_finite() => Some(*v > 0.5),
+        ParameterValue::Int(v) => Some(*v != 0),
+        _ => None,
     }
 }
