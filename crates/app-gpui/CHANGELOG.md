@@ -1,5 +1,14 @@
 # 0.6.6 (unreleased)
 
+## Plugin UI P1 hardening
+
+- Added regression coverage that the Channel Mute/Solo plugin's M/S/D controls
+  are wired to left-click handlers and mark plugin updates as structural.
+- The EQ renderer now caches curve and per-band response data behind a keyed
+  render cache instead of rebuilding response vectors inline every render.
+- Upmixer config-tab metadata is now reused from static render metadata, and
+  plugin UI tests guard the `Ds` design-token audit for fixed geometry.
+
 ## Remote SOTF connections and local-library cleanup
 
 - Remote SOTF Players now live under Settings > Connections, accept API URLs

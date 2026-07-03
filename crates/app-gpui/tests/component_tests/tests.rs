@@ -76,6 +76,77 @@ fn eq_renderer_caches_static_frequency_grid() {
 }
 
 #[test]
+fn eq_renderer_uses_curve_render_cache_helper() {
+    let eq_render = app_source("components/plugins/ui_eq/render.rs");
+    assert!(
+        eq_render.contains("struct EqCurveRenderCache")
+            && eq_render.contains("fn get_or_build(")
+            && eq_render.contains("eq_curve_cache()")
+            && eq_render.contains(".lock()")
+            && eq_render.contains("cache.get_or_build(filters, freq_points)")
+            && eq_render.contains("filter.topology")
+            && eq_render.contains(".lambda")
+            && eq_render.contains("filter.kautz_sections"),
+        "EQ curve and band-response data should be built through a cache helper"
+    );
+    assert!(
+        !eq_render.contains("let combined_response: Vec<f64> = freq_points"),
+        "EQ renderer must not allocate combined response data inline every render"
+    );
+}
+
+#[test]
+fn upmixer_renderer_uses_static_config_metadata() {
+    let upmixer = app_source("components/plugins/ui_upmixer/render.rs");
+    assert!(
+        upmixer.contains("static UPMIXER_CONFIG_SPECS")
+            && upmixer.contains("upmixer_config_specs()"),
+        "upmixer renderer should reuse static config tab metadata"
+    );
+    assert!(
+        !upmixer.contains("CONFIG_ITEMS.iter().enumerate().map(|(i, label)|"),
+        "upmixer renderer must not rebuild tab ids and labels ad hoc every render"
+    );
+}
+
+#[test]
+fn plugin_ui_p1_hardcoded_pixels_are_documented_or_tokenized() {
+    for relative in [
+        "components/plugins/ui_eq/render.rs",
+        "components/plugins/ui_upmixer/render.rs",
+    ] {
+        let source = app_source(relative);
+        assert!(
+            source.contains("Ds") && source.contains("d."),
+            "{relative} should use the app design-token shim for spacing and sizing"
+        );
+        assert!(
+            source.contains("intentional:") || source.contains("CHART_"),
+            "{relative} should document domain-specific fixed geometry that cannot be a design token"
+        );
+    }
+}
+
+#[test]
+fn channel_mute_solo_buttons_have_click_handlers() {
+    let mute_solo = app_source("components/plugins/ui_mute_solo.rs");
+    assert!(
+        mute_solo
+            .matches(".on_mouse_down(MouseButton::Left")
+            .count()
+            >= 3,
+        "channel mute/solo/dim controls must be clickable"
+    );
+    assert!(mute_solo.contains("MsdAction::Mute"));
+    assert!(mute_solo.contains("MsdAction::Solo"));
+    assert!(mute_solo.contains("MsdAction::Dim"));
+    assert!(
+        mute_solo.contains("pending_plugin_update"),
+        "channel mute/solo/dim clicks must schedule plugin graph reconfiguration"
+    );
+}
+
+#[test]
 fn test_typography_rems_platform_presets_affect_type_scale() {
     let neutral = typography_rems_from_rules(&DesignSystem::neutral().typography);
     let apple = typography_rems_from_rules(&DesignSystem::apple_hig().typography);

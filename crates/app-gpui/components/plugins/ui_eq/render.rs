@@ -42,7 +42,7 @@ use sotf_plugins::param_specs::{
 };
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Clone, Copy)]
 pub(crate) struct EqBandIndexing {
@@ -121,6 +121,90 @@ fn eq_frequency_points() -> &'static [f64] {
                 .collect()
         })
         .as_slice()
+}
+
+#[derive(Clone)]
+struct EqCurveRenderData {
+    combined_response: Vec<f64>,
+    band_responses: Vec<Vec<f64>>,
+}
+
+struct EqCurveRenderCache {
+    signature: String,
+    data: EqCurveRenderData,
+}
+
+impl EqCurveRenderCache {
+    fn empty() -> Self {
+        Self {
+            signature: String::new(),
+            data: EqCurveRenderData {
+                combined_response: Vec::new(),
+                band_responses: Vec::new(),
+            },
+        }
+    }
+
+    fn get_or_build(&mut self, filters: &[EQFilter], freq_points: &[f64]) -> EqCurveRenderData {
+        let signature = eq_curve_signature(filters, freq_points.len());
+        if self.signature != signature {
+            self.data = EqCurveRenderData {
+                combined_response: freq_points
+                    .iter()
+                    .map(|&freq| calculate_response_at_freq(filters, freq))
+                    .collect(),
+                band_responses: filters
+                    .iter()
+                    .map(|filter| {
+                        freq_points
+                            .iter()
+                            .map(|&freq| calculate_band_response(filter, freq))
+                            .collect()
+                    })
+                    .collect(),
+            };
+            self.signature = signature;
+        }
+        self.data.clone()
+    }
+}
+
+fn eq_curve_cache() -> &'static Mutex<EqCurveRenderCache> {
+    static EQ_CURVE_RENDER_CACHE: OnceLock<Mutex<EqCurveRenderCache>> = OnceLock::new();
+    EQ_CURVE_RENDER_CACHE.get_or_init(|| Mutex::new(EqCurveRenderCache::empty()))
+}
+
+fn eq_curve_signature(filters: &[EQFilter], freq_count: usize) -> String {
+    let mut signature = String::with_capacity(filters.len() * 64);
+    signature.push_str(&freq_count.to_string());
+    for filter in filters {
+        use std::fmt::Write;
+        let _ = write!(
+            signature,
+            "|{:?}:{:x}:{:x}:{:x}:{}:{}:{:?}:{}",
+            filter.filter_type,
+            filter.frequency.to_bits(),
+            filter.q.to_bits(),
+            filter.gain_db.to_bits(),
+            filter.muted,
+            filter.solo,
+            filter.topology,
+            filter
+                .lambda
+                .map(|lambda| lambda.to_bits().to_string())
+                .unwrap_or_default()
+        );
+        for section in &filter.kautz_sections {
+            let _ = write!(
+                signature,
+                ":k{:x},{:x},{:x}",
+                section.pole_freq.to_bits(),
+                section.q.to_bits(),
+                section.gain.to_bits()
+            );
+        }
+    }
+    signature
 }
 
 fn render_band_frequency_guide(
@@ -601,11 +685,12 @@ pub(crate) fn render_eq_visualization_sized(
 
     let freq_points = eq_frequency_points();
 
-    // Calculate combined response as primary series
-    let combined_response: Vec<f64> = freq_points
-        .iter()
-        .map(|&freq| calculate_response_at_freq(filters, freq))
-        .collect();
+    let curve_data = {
+        let mut cache = eq_curve_cache()
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        cache.get_or_build(filters, freq_points)
+    };
 
     // Create chart theme from app theme
     let chart_theme = ChartTheme {
@@ -626,7 +711,7 @@ pub(crate) fn render_eq_visualization_sized(
         let c = theme.text_muted;
         ((c.r * 255.0) as u32) << 16 | ((c.g * 255.0) as u32) << 8 | (c.b * 255.0) as u32
     };
-    let mut chart_builder = line(freq_points, &combined_response)
+    let mut chart_builder = line(freq_points, &curve_data.combined_response)
         .x_scale(ScaleType::Log)
         .y_scale(ScaleType::Linear)
         .x_label("Frequency (Hz)")
@@ -640,11 +725,6 @@ pub(crate) fn render_eq_visualization_sized(
 
     // Add each filter band as an additional series
     for (i, filter) in filters.iter().enumerate() {
-        let band_response: Vec<f64> = freq_points
-            .iter()
-            .map(|&freq| calculate_band_response(filter, freq))
-            .collect();
-
         let color = theme
             .plugin_palette
             .band_colors
@@ -661,7 +741,7 @@ pub(crate) fn render_eq_visualization_sized(
         let opacity = if effective_muted { 0.2 } else { opacity };
 
         chart_builder = chart_builder.add_series(
-            &band_response,
+            &curve_data.band_responses[i],
             Option::<String>::None,
             color,
             stroke,

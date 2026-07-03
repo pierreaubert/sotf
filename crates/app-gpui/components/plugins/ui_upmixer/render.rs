@@ -13,6 +13,43 @@ use gpui::*;
 use gpui_ui_kit::{HStack, Slider, SliderSize, StackSpacing, Toggle, ToggleStyle, VStack};
 use sotf_plugins::param_specs::{ParamCategory, find_by_key as pk, upmixer::PARAMS as UP};
 
+struct UpmixerConfigSpec {
+    label: &'static str,
+    id: &'static str,
+    config_idx: usize,
+}
+
+static UPMIXER_CONFIG_SPECS: std::sync::OnceLock<Vec<UpmixerConfigSpec>> =
+    std::sync::OnceLock::new();
+
+fn upmixer_config_specs() -> &'static [UpmixerConfigSpec] {
+    UPMIXER_CONFIG_SPECS
+        .get_or_init(|| {
+            const IDS: [&str; 9] = [
+                "cfg-lfe",
+                "cfg-dialogue",
+                "cfg-ambient",
+                "cfg-height",
+                "cfg-hr-direct",
+                "cfg-decorr",
+                "cfg-analysis",
+                "cfg-diagnostic",
+                "cfg-spatial",
+            ];
+            CONFIG_ITEMS
+                .iter()
+                .zip(IDS)
+                .enumerate()
+                .map(|(i, (label, id))| UpmixerConfigSpec {
+                    label,
+                    id,
+                    config_idx: i + 1,
+                })
+                .collect()
+        })
+        .as_slice()
+}
+
 /// Render the upmixer plugin controls
 pub fn render_upmixer_plugin(
     d: &Ds,
@@ -177,39 +214,23 @@ fn render_tab_bar(
         .when(layout == UpmixerLayout::Narrow, |el| el.justify_start())
         .border_b_1()
         .border_color(theme.border)
-        .children(CONFIG_ITEMS.iter().enumerate().map(|(i, label)| {
-            let config_idx = i + 1; // 1-indexed
+        .children(upmixer_config_specs().iter().map(|spec| {
+            let config_idx = spec.config_idx;
             let is_active = selected_config == config_idx;
             let entity = entity.clone();
-            render_tab_button(
-                d,
-                match i {
-                    0 => "cfg-lfe",
-                    1 => "cfg-dialogue",
-                    2 => "cfg-ambient",
-                    3 => "cfg-height",
-                    4 => "cfg-hr-direct",
-                    5 => "cfg-decorr",
-                    6 => "cfg-analysis",
-                    7 => "cfg-diagnostic",
-                    8 => "cfg-spatial",
-                    _ => "cfg-unknown",
+            render_tab_button(d, spec.id, spec.label, is_active, theme).on_click(
+                move |_, _window, cx| {
+                    entity.update(cx, |state, cx| {
+                        state.app.plugin_ui.upmixer_tab =
+                            if allow_toggle_off && state.app.plugin_ui.upmixer_tab == config_idx {
+                                0
+                            } else {
+                                config_idx
+                            };
+                        cx.notify();
+                    });
                 },
-                label,
-                is_active,
-                theme,
             )
-            .on_click(move |_, _window, cx| {
-                entity.update(cx, |state, cx| {
-                    state.app.plugin_ui.upmixer_tab =
-                        if allow_toggle_off && state.app.plugin_ui.upmixer_tab == config_idx {
-                            0
-                        } else {
-                            config_idx
-                        };
-                    cx.notify();
-                });
-            })
         }))
 }
 
