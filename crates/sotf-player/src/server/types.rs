@@ -6,6 +6,7 @@ pub(super) struct ApiRequest {
     pub(super) body: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub(super) struct ApiMediaSource {
     pub(super) path: std::path::PathBuf,
     pub(super) mime_type: String,

@@ -3,7 +3,6 @@ use super::consts::API_LIBRARY_MAX_LIMIT;
 use super::misc::hex_prefix;
 use super::misc::is_safe_media_id;
 use super::misc::media_track_id;
-use super::misc::mime_type_for_path;
 use super::misc::normalize_certificate_fingerprint;
 use super::misc::sanitize_pairing_client_name;
 use super::mpd::mpd_song_json;
@@ -15,26 +14,21 @@ use super::types::ApiLibraryAlbumSort;
 use super::types::ApiMediaSource;
 use super::types::ApiRequest;
 use crate::sotf_server_event::SotfServerEvent;
+use crate::{PluginController, PluginGraph, PluginType};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sotf_mpd::PlayerAdapter;
 use std::sync::Arc;
 
 pub(super) fn api_media_source(state: &Arc<ServerState>, track_id: &str) -> Option<ApiMediaSource> {
+    let library_version = state
+        .library_version
+        .load(std::sync::atomic::Ordering::Relaxed);
     let library = state.library.lock();
-    for album in &library.albums {
-        for (index, track) in album.tracks.iter().enumerate() {
-            if api_track_id(track, album, index) == track_id
-                || media_track_id(track, album, index) == track_id
-            {
-                return Some(ApiMediaSource {
-                    path: track.path.clone(),
-                    mime_type: mime_type_for_path(&track.path).to_string(),
-                });
-            }
-        }
-    }
-    None
+    state
+        .media_source_index
+        .lock()
+        .lookup(&library, library_version, track_id)
 }
 
 pub fn api_parse_range_header(
@@ -89,8 +83,9 @@ pub(super) fn api_capabilities_json() -> Value {
             "library_search": false,
             "media_range": true,
             "events": true,
-            "outputs": false,
-            "plugin_presets": false,
+            "outputs": true,
+            "plugin_graph": true,
+            "plugin_presets": true,
             "room_eq": false,
             "headphone_eq": false,
             "pairing": true,
@@ -104,6 +99,9 @@ pub(super) fn api_capabilities_json() -> Value {
             "queue": "/api/v1/queue",
             "library_albums": "/api/v1/library/albums",
             "media": "/api/v1/media/{track_id}",
+            "outputs": "/api/v1/outputs",
+            "plugin_graph": "/api/v1/plugin-graph",
+            "plugin_presets": "/api/v1/plugin-presets",
         },
     })
 }
@@ -156,6 +154,53 @@ pub(super) fn api_queue_json(adapter: &MpdPlayerAdapter) -> Value {
         .map(mpd_song_json)
         .collect();
     json!({ "items": songs })
+}
+
+pub(super) fn api_outputs_json(state: &Arc<ServerState>) -> Value {
+    let devices = sotf_audio::devices::get_audio_devices().unwrap_or_default();
+    let engine_state = state.player.lock().get_engine_state();
+    json!({
+        "outputs": devices.get("output").cloned().unwrap_or_default(),
+        "selected_output": engine_state.playback_output_device,
+        "output_access": engine_state.output_access_status,
+    })
+}
+
+pub(super) fn api_plugin_graph_json(_state: &Arc<ServerState>) -> Value {
+    let graph = PluginGraph::new();
+    json!({
+        "nodes": graph.nodes,
+        "special_nodes": graph.special_nodes,
+        "connections": graph.connections,
+        "canvas": {
+            "offset": graph.canvas_offset,
+            "zoom": graph.canvas_zoom,
+        },
+        "read_only": true,
+    })
+}
+
+pub(super) fn api_plugin_presets_json(path: &str) -> Result<Value, String> {
+    if let Some(plugin_type) = api_query_param(path, "plugin_type") {
+        let plugin_type = PluginType::from_name(&plugin_type)
+            .ok_or_else(|| format!("unknown plugin type: {plugin_type}"))?;
+        return Ok(json!({
+            "plugin_type": plugin_type.wire_name(),
+            "presets": PluginController::list_plugin_presets(&plugin_type),
+        }));
+    }
+
+    let plugin_types: Vec<_> = PluginType::all()
+        .into_iter()
+        .map(|plugin_type| {
+            json!({
+                "plugin_type": plugin_type.wire_name(),
+                "display_name": plugin_type.name(),
+                "presets": PluginController::list_plugin_presets(&plugin_type),
+            })
+        })
+        .collect();
+    Ok(json!({ "plugin_types": plugin_types }))
 }
 
 pub(super) fn api_library_albums_json(

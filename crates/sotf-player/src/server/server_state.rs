@@ -1,4 +1,5 @@
 use super::generate::generate_pairing_nonce;
+use super::media_index::MediaSourceIndex;
 use crate::federation_config::{self, ServerConfig};
 use crate::library::MusicLibrary;
 use crate::library_scanner::{LibraryScanMessage, LibraryScanner};
@@ -15,6 +16,7 @@ use std::time::Duration;
 pub(super) struct ServerState {
     pub(super) player: Mutex<Player>,
     pub(super) library: Mutex<MusicLibrary>,
+    pub(super) media_source_index: Mutex<MediaSourceIndex>,
     pub(super) queue: Mutex<Queue>,
     /// Playlist version counter — incremented on every queue mutation.
     pub(super) playlist_version: std::sync::atomic::AtomicU32,
@@ -48,6 +50,11 @@ impl ServerState {
         let library_version = self.library_version.fetch_add(1, Ordering::Relaxed) + 1;
         self.broadcast(SotfServerEvent::LibraryChanged { library_version });
         library_version
+    }
+
+    #[cfg(test)]
+    pub(super) fn media_source_index_rebuilds_for_test(&self) -> usize {
+        self.media_source_index.lock().rebuilds()
     }
 
     /// Notify remote clients about library scanner progress.

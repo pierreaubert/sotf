@@ -1,5 +1,21 @@
 # 0.5.123 (unreleased)
 
+## Server media lookup cache
+
+- The SOTF API media-source endpoint now uses a library-versioned media-source
+  index instead of scanning every album and track on each lookup. Both canonical
+  `uuid:{id}` track IDs and legacy `track-{id}` media IDs are indexed, and the
+  cache rebuilds only after the library version changes.
+- SOTF API capabilities now explicitly advertise `outputs`, `plugin_graph`, and
+  `plugin_presets`; the server exposes read-only `/api/v1/outputs`,
+  `/api/v1/plugin-graph`, and `/api/v1/plugin-presets` endpoints.
+- MPD status audio format now uses the current track's bit depth and channel
+  count when available instead of always reporting `16:2`.
+- Added source-contract coverage that SOTF HTTP responses continue to document
+  `Connection: close`, Spotify/Tidal service streams stay feature-gated, HTTP
+  media reconnect does not sleep on the decoder read thread, and MPD httpd
+  startup does not use a fixed 200 ms sleep.
+
 ## Remote connection credentials and server-mode defaults
 
 - Added a shared remote-token store for platforms without system Keychain

@@ -1,6 +1,7 @@
 use super::server_state::ServerState;
 use super::track::flatten_queue_tracks;
 use super::track::track_to_song_info;
+use crate::library::Track;
 use crate::sotf_server_event::SotfServerEvent;
 use sotf_mpd::{FilterExpr, MpdDirEntry, MpdPlayState, MpdSongInfo, MpdStatus, PlayerAdapter};
 use std::sync::Arc;
@@ -176,10 +177,8 @@ impl PlayerAdapter for MpdPlayerAdapter {
             .map(|item| item.album.tracks.len() as u32)
             .sum();
 
-        let duration = queue
-            .current_track()
-            .and_then(|t| t.duration_secs)
-            .unwrap_or(0) as f64;
+        let current_track = queue.current_track();
+        let duration = current_track.and_then(|t| t.duration_secs).unwrap_or(0) as f64;
 
         MpdStatus {
             volume: (player.get_volume() * 100.0) as u8,
@@ -192,7 +191,7 @@ impl PlayerAdapter for MpdPlayerAdapter {
             songid: song,
             elapsed: playback.position_secs,
             duration,
-            audio: playback.sample_rate.map(|sr| format!("{}:16:2", sr)),
+            audio: mpd_audio_format(playback.sample_rate, current_track),
             playlist_length,
             playlist_version: self
                 .state
@@ -408,5 +407,40 @@ impl PlayerAdapter for MpdPlayerAdapter {
                 }
             }
         }
+    }
+}
+
+pub(super) fn mpd_audio_format(sample_rate: Option<u32>, track: Option<&Track>) -> Option<String> {
+    let sample_rate = sample_rate?;
+    let bit_depth = track.and_then(|track| track.bit_depth).unwrap_or(16);
+    let channels = track.and_then(|track| track.channels).unwrap_or(2);
+    Some(format!("{sample_rate}:{bit_depth}:{channels}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mpd_audio_format_uses_track_bit_depth_and_channels() {
+        let track = Track {
+            bit_depth: Some(24),
+            channels: Some(6),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            mpd_audio_format(Some(96_000), Some(&track)),
+            Some("96000:24:6".to_string())
+        );
+    }
+
+    #[test]
+    fn mpd_audio_format_falls_back_when_metadata_is_missing() {
+        assert_eq!(
+            mpd_audio_format(Some(44_100), None),
+            Some("44100:16:2".to_string())
+        );
+        assert_eq!(mpd_audio_format(None, None), None);
     }
 }

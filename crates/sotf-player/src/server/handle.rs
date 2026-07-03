@@ -11,7 +11,10 @@ use super::api::api_jump_queue_album;
 use super::api::api_library_album_artwork_response;
 use super::api::api_library_album_tracks_json;
 use super::api::api_library_albums_json;
+use super::api::api_outputs_json;
 use super::api::api_pairing_complete;
+use super::api::api_plugin_graph_json;
+use super::api::api_plugin_presets_json;
 use super::api::api_queue_json;
 use super::api::api_state_json;
 use super::api_request::read_api_request;
@@ -185,6 +188,12 @@ pub(super) fn handle_sotf_api_request(
         }
         ("GET", "/api/v1/state") => api_json_response(200, api_state_json(state, &adapter)),
         ("GET", "/api/v1/queue") => api_json_response(200, api_queue_json(&adapter)),
+        ("GET", "/api/v1/outputs") => api_json_response(200, api_outputs_json(state)),
+        ("GET", "/api/v1/plugin-graph") => api_json_response(200, api_plugin_graph_json(state)),
+        ("GET", "/api/v1/plugin-presets") => match api_plugin_presets_json(&request.path) {
+            Ok(body) => api_json_response(200, body),
+            Err(err) => api_error_response(400, &err),
+        },
         ("GET", "/api/v1/library/albums") => match api_library_albums_json(state, &request.path) {
             Ok(body) => api_json_response(200, body),
             Err(err) => api_error_response(400, &err),

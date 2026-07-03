@@ -10,7 +10,7 @@ use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderValue, RANGE};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use symphonia_core::io::MediaSource;
 
 /// HTTP media source that implements Symphonia's `MediaSource` trait.
@@ -50,6 +50,10 @@ pub struct HttpMediaSource {
     pub(super) content_type: Option<String>,
     /// Reusable temporary buffer for fill_buffer (avoids per-call allocation).
     pub(super) tmp_buf: Vec<u8>,
+    /// Next time the decoder thread may attempt a reconnect without blocking.
+    pub(super) next_reconnect_at: Option<Instant>,
+    /// Current reconnect attempt count for exponential backoff scheduling.
+    pub(super) reconnect_attempts: usize,
 }
 
 impl HttpMediaSource {
@@ -88,6 +92,8 @@ impl HttpMediaSource {
             buffer_len: 0,
             content_type: None,
             tmp_buf: vec![0u8; 8192],
+            next_reconnect_at: None,
+            reconnect_attempts: 0,
         };
 
         source.connect(0)?;
@@ -181,41 +187,56 @@ impl HttpMediaSource {
     /// Attempt to reconnect with exponential backoff.
     pub(super) fn reconnect(&mut self) -> io::Result<()> {
         let offset = self.position;
-        let mut delay_ms = INITIAL_BACKOFF_MS;
-
-        for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
-            log::warn!(
-                "[HttpMediaSource] Reconnection attempt {}/{} at offset {} (backoff {}ms)",
-                attempt,
-                MAX_RECONNECT_ATTEMPTS,
-                offset,
-                delay_ms,
-            );
-            std::thread::sleep(Duration::from_millis(delay_ms));
-
-            match self.connect(offset) {
-                Ok(()) => {
-                    log::info!("[HttpMediaSource] Reconnected successfully");
-                    return Ok(());
-                }
-                Err(e) => {
-                    log::warn!(
-                        "[HttpMediaSource] Reconnection attempt {} failed: {}",
-                        attempt,
-                        e
-                    );
-                    delay_ms *= 2;
-                }
-            }
+        if let Some(next) = self.next_reconnect_at
+            && Instant::now() < next
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "HTTP reconnect backoff is pending",
+            ));
         }
 
-        Err(io::Error::new(
-            io::ErrorKind::ConnectionAborted,
-            format!(
-                "Failed to reconnect after {} attempts",
-                MAX_RECONNECT_ATTEMPTS
-            ),
-        ))
+        if self.reconnect_attempts >= MAX_RECONNECT_ATTEMPTS as usize {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                format!(
+                    "Failed to reconnect after {} attempts",
+                    MAX_RECONNECT_ATTEMPTS
+                ),
+            ));
+        }
+
+        self.reconnect_attempts += 1;
+        log::warn!(
+            "[HttpMediaSource] Reconnection attempt {}/{} at offset {}",
+            self.reconnect_attempts,
+            MAX_RECONNECT_ATTEMPTS,
+            offset,
+        );
+
+        match self.connect(offset) {
+            Ok(()) => {
+                self.reconnect_attempts = 0;
+                self.next_reconnect_at = None;
+                log::info!("[HttpMediaSource] Reconnected successfully");
+                Ok(())
+            }
+            Err(e) => {
+                log::warn!(
+                    "[HttpMediaSource] Reconnection attempt {} failed: {}",
+                    self.reconnect_attempts,
+                    e
+                );
+                self.schedule_reconnect();
+                Err(e)
+            }
+        }
+    }
+
+    fn schedule_reconnect(&mut self) {
+        let shift = self.reconnect_attempts.saturating_sub(1).min(10) as u32;
+        let delay_ms = INITIAL_BACKOFF_MS.saturating_mul(2_u64.saturating_pow(shift));
+        self.next_reconnect_at = Some(Instant::now() + Duration::from_millis(delay_ms));
     }
 
     pub(super) fn parse_icy_metaint(headers: &HeaderMap<HeaderValue>) -> usize {

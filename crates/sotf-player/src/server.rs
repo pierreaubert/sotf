@@ -11,6 +11,7 @@ mod dlna;
 mod dlna_library_adapter;
 mod generate;
 mod handle;
+mod media_index;
 mod misc;
 mod mpd;
 mod mpd_player_adapter;

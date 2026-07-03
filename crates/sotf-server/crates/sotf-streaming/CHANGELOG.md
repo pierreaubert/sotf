@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `HttpMediaSource` reconnect now schedules exponential backoff without sleeping
+  on the decoder read thread.
+- MPD httpd stream startup now retries readiness with bounded short attempts
+  instead of sleeping for a fixed 200 ms before connecting.
+
 ## [0.1.0] - 2025-05-13
 
 ### Added

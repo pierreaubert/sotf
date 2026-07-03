@@ -235,6 +235,9 @@ pub struct MpdStreamSource {
     inner: HttpMediaSource,
 }
 
+const MPD_HTTPD_READY_ATTEMPTS: usize = 8;
+const MPD_HTTPD_RETRY_DELAY_MS: u64 = 25;
+
 impl MpdStreamSource {
     /// Open an MPD stream source from an `mpd-stream://` URL.
     ///
@@ -247,13 +250,9 @@ impl MpdStreamSource {
         // Tell MPD to play the track
         prepare_mpd_playback(&parsed)?;
 
-        // Small delay to let MPD start producing audio to the httpd output
-        std::thread::sleep(Duration::from_millis(200));
-
         // Connect to the httpd stream
         let stream_url = format!("http://{}:{}/", parsed.host, parsed.httpd_port);
-        let (http_source, metadata_rx) =
-            HttpMediaSource::open(&stream_url).map_err(|e| format!("httpd stream: {e}"))?;
+        let (http_source, metadata_rx) = open_httpd_stream_with_retry(&stream_url)?;
 
         Ok((Self { inner: http_source }, metadata_rx))
     }
@@ -262,6 +261,30 @@ impl MpdStreamSource {
     pub fn format_hint(&self) -> Option<String> {
         self.inner.format_hint()
     }
+}
+
+fn open_httpd_stream_with_retry(
+    stream_url: &str,
+) -> Result<(HttpMediaSource, mpsc::Receiver<StreamMetadata>), String> {
+    let mut last_err = None;
+    for attempt in 1..=MPD_HTTPD_READY_ATTEMPTS {
+        match HttpMediaSource::open(stream_url) {
+            Ok(source) => return Ok(source),
+            Err(err) => {
+                last_err = Some(err);
+                if attempt < MPD_HTTPD_READY_ATTEMPTS {
+                    std::thread::sleep(Duration::from_millis(MPD_HTTPD_RETRY_DELAY_MS));
+                }
+            }
+        }
+    }
+
+    Err(format!(
+        "httpd stream: {}",
+        last_err
+            .map(|err| err.to_string())
+            .unwrap_or_else(|| "not ready".to_string())
+    ))
 }
 
 impl Read for MpdStreamSource {

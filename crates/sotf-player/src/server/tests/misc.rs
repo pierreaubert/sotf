@@ -131,6 +131,7 @@ fn sotf_api_capabilities_are_public_and_media_aware() {
     let state = Arc::new(ServerState {
         player: Mutex::new(Player::new()),
         library: Mutex::new(MusicLibrary::default()),
+        media_source_index: Mutex::new(Default::default()),
         queue: Mutex::new(Queue::new()),
         playlist_version: std::sync::atomic::AtomicU32::new(1),
         library_version: std::sync::atomic::AtomicU64::new(1),
@@ -163,6 +164,7 @@ pub(super) fn test_state() -> Arc<ServerState> {
     Arc::new(ServerState {
             player: Mutex::new(Player::new()),
             library: Mutex::new(MusicLibrary::default()),
+            media_source_index: Mutex::new(Default::default()),
             queue: Mutex::new(Queue::new()),
             playlist_version: std::sync::atomic::AtomicU32::new(1),
             library_version: std::sync::atomic::AtomicU64::new(1),

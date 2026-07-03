@@ -3,6 +3,7 @@ use super::api::api_clear_queue;
 use super::api::api_header;
 use super::api::api_json_response;
 use super::api::api_media_auth_valid;
+use super::api::api_media_source;
 use super::api::api_parse_library_album_query;
 use super::api::api_parse_range_header;
 use super::api::api_response_status;
@@ -246,10 +247,44 @@ fn sotf_api_media_range_parser_handles_common_forms() {
 }
 
 #[test]
+fn sotf_api_media_source_uses_cached_lookup_until_library_changes() {
+    let state = misc::test_state();
+    let track_path = std::path::PathBuf::from("/music/cached.flac");
+    state.library.lock().albums = vec![crate::library::Album {
+        title: "Cached Album".to_string(),
+        uuid: Some("album-cache".to_string()),
+        tracks: vec![crate::library::Track {
+            path: track_path.clone(),
+            uuid: Some("track-cache".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }];
+
+    let source = api_media_source(&state, "uuid:track-cache").expect("cached track source");
+    assert_eq!(source.path, track_path);
+    assert_eq!(state.media_source_index_rebuilds_for_test(), 1);
+
+    let source = api_media_source(&state, "track-track-cache").expect("legacy media track id");
+    assert_eq!(source.path, track_path);
+    assert_eq!(
+        state.media_source_index_rebuilds_for_test(),
+        1,
+        "unchanged library version should not rescan albums/tracks"
+    );
+
+    state.mark_library_changed();
+    let source = api_media_source(&state, "uuid:track-cache").expect("rebuilt track source");
+    assert_eq!(source.path, track_path);
+    assert_eq!(state.media_source_index_rebuilds_for_test(), 2);
+}
+
+#[test]
 fn broadcast_events_on_volume_change() {
     let state = Arc::new(ServerState {
         player: Mutex::new(Player::new()),
         library: Mutex::new(MusicLibrary::default()),
+        media_source_index: Mutex::new(Default::default()),
         queue: Mutex::new(Queue::new()),
         playlist_version: std::sync::atomic::AtomicU32::new(1),
         library_version: std::sync::atomic::AtomicU64::new(1),
@@ -281,6 +316,7 @@ fn broadcast_events_on_queue_clear() {
     let state = Arc::new(ServerState {
         player: Mutex::new(Player::new()),
         library: Mutex::new(MusicLibrary::default()),
+        media_source_index: Mutex::new(Default::default()),
         queue: Mutex::new(Queue::new()),
         playlist_version: std::sync::atomic::AtomicU32::new(1),
         library_version: std::sync::atomic::AtomicU64::new(1),
@@ -383,6 +419,116 @@ fn sotf_api_http_playback_endpoints_round_trip() {
 
         stop_test_api_server(shutdown_tx, server_handle).await;
     });
+}
+
+#[test]
+fn sotf_api_capabilities_advertise_p1_server_surfaces() {
+    let state = test_state();
+    let request = ApiRequest {
+        method: "GET".to_string(),
+        path: "/api/v1/capabilities".to_string(),
+        headers: Vec::new(),
+        body: Vec::new(),
+    };
+
+    let response =
+        handle_sotf_api_request(request, &state, &api_settings(Some("secret")), "secret");
+    let response = String::from_utf8(response).unwrap();
+
+    assert!(response.starts_with("HTTP/1.1 200 OK"));
+    assert!(response.contains("\"outputs\":true"));
+    assert!(response.contains("\"plugin_graph\":true"));
+    assert!(response.contains("\"plugin_presets\":true"));
+    assert!(response.contains("Connection: close"));
+}
+
+#[test]
+fn sotf_api_output_plugin_graph_and_preset_endpoints_exist() {
+    let state = test_state();
+
+    for (path, expected) in [
+        ("/api/v1/outputs", "\"outputs\""),
+        ("/api/v1/plugin-graph", "\"nodes\""),
+        ("/api/v1/plugin-presets", "\"plugin_types\""),
+    ] {
+        let request = ApiRequest {
+            method: "GET".to_string(),
+            path: path.to_string(),
+            headers: auth_header(),
+            body: Vec::new(),
+        };
+        let response =
+            handle_sotf_api_request(request, &state, &api_settings(Some("secret")), "secret");
+        let response = String::from_utf8(response).unwrap();
+        assert!(
+            response.starts_with("HTTP/1.1 200 OK"),
+            "{path}: {response}"
+        );
+        assert!(response.contains(expected), "{path}: {response}");
+        assert!(response.contains("Connection: close"));
+    }
+}
+
+#[test]
+fn sotf_api_plugin_presets_supports_filter_and_errors_on_unknown_plugin() {
+    let state = test_state();
+
+    let request = ApiRequest {
+        method: "GET".to_string(),
+        path: "/api/v1/plugin-presets?plugin_type=eq".to_string(),
+        headers: auth_header(),
+        body: Vec::new(),
+    };
+    let response =
+        handle_sotf_api_request(request, &state, &api_settings(Some("secret")), "secret");
+    let response = String::from_utf8(response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+    assert!(response.contains("\"plugin_type\":\"eq\""), "{response}");
+    assert!(!response.contains("\"plugin_types\""), "{response}");
+
+    let request = ApiRequest {
+        method: "GET".to_string(),
+        path: "/api/v1/plugin-presets?plugin_type=definitely_not_a_plugin".to_string(),
+        headers: auth_header(),
+        body: Vec::new(),
+    };
+    let response =
+        handle_sotf_api_request(request, &state, &api_settings(Some("secret")), "secret");
+    let response = String::from_utf8(response).unwrap();
+    assert!(
+        response.starts_with("HTTP/1.1 400 Bad Request"),
+        "{response}"
+    );
+    assert!(response.contains("unknown plugin type"), "{response}");
+}
+
+#[test]
+fn client_server_p1_source_contracts_are_gated_or_nonblocking() {
+    let service_streams = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/service_streams.rs"),
+    )
+    .unwrap();
+    assert!(service_streams.contains("#[cfg(feature = \"tidal\")]"));
+    assert!(service_streams.contains("#[cfg(not(feature = \"tidal\"))]"));
+    assert!(service_streams.contains("#[cfg(feature = \"spotify\")]"));
+    assert!(service_streams.contains("#[cfg(not(feature = \"spotify\"))]"));
+
+    let streaming_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../sotf-server/crates/sotf-streaming/src");
+    let http_source =
+        std::fs::read_to_string(streaming_root.join("http_source/http_media_source.rs")).unwrap();
+    assert!(
+        http_source.contains("fn schedule_reconnect")
+            && !http_source.contains("std::thread::sleep(Duration::from_millis(delay_ms));"),
+        "HttpMediaSource reconnect must not sleep on the decoder read thread"
+    );
+
+    let mpd_source = std::fs::read_to_string(streaming_root.join("mpd_source.rs")).unwrap();
+    assert!(
+        mpd_source.contains("open_httpd_stream_with_retry")
+            && !mpd_source.contains("from_millis(200)"),
+        "MPD stream startup must retry readiness instead of sleeping a fixed 200 ms"
+    );
 }
 
 #[test]

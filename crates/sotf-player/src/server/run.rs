@@ -127,6 +127,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(ServerState {
         player: Mutex::new(player),
         library: Mutex::new(library),
+        media_source_index: Mutex::new(Default::default()),
         queue: Mutex::new(Queue::new()),
         playlist_version: std::sync::atomic::AtomicU32::new(1),
         library_version: std::sync::atomic::AtomicU64::new(1),
