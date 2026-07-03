@@ -412,16 +412,11 @@ pub(super) fn update_plugin_data_cache(
             false
         }
     } else {
-        // Defensive bootstrap (should not happen after init because the spare
-        // is pre-sized at build time). Count it so diagnostics can spot it.
+        // Defensive miss (should not happen after init because the spare is
+        // pre-sized at build time). Count and skip rather than allocating on
+        // the processing hot path.
         state.cache_fallback_count += 1;
-        let mut new_cache = vec![None; plugin_count];
-        for &i in analyzer_indices {
-            new_cache[i] = state.host.get_plugin_data(i);
-        }
-        let old_arc = plugin_data_cache.swap(Arc::new(new_cache));
-        state.spare_cache_arc = Some(old_arc);
-        true
+        false
     }
 }
 

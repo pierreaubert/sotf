@@ -83,6 +83,19 @@ fn decoder_frame_buffer_handoff_has_no_allocation_fallback() {
 }
 
 #[test]
+fn ensure_buffer_len_errors_instead_of_growing_capacity() {
+    let mut buffer = Vec::with_capacity(4);
+
+    DecoderState::ensure_buffer_len(&mut buffer, 4).unwrap();
+    assert_eq!(buffer.len(), 4);
+    assert_eq!(buffer.capacity(), 4);
+
+    let err = DecoderState::ensure_buffer_len(&mut buffer, 5).unwrap_err();
+    assert!(err.contains("too small"));
+    assert_eq!(buffer.capacity(), 4);
+}
+
+#[test]
 fn hal_input_reloads_stale_cipher_before_reading() {
     let source = include_str!("decoder_state.rs");
     let reload_call = source

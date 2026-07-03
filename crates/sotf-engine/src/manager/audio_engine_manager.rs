@@ -425,6 +425,7 @@ impl AudioEngineManager {
             plugins,
             output_channels,
             sample_rate,
+            1024,
             2,
         )
     }
@@ -436,14 +437,17 @@ impl AudioEngineManager {
         plugins: Vec<PluginConfig>,
         output_channels: usize,
         sample_rate: u32,
+        buffer_frames: u32,
         input_channels: usize,
     ) -> AudioDecoderResult<()> {
         let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         let input_channels = input_channels.max(1);
+        let frame_size = buffer_frames.max(1) as usize;
 
         log::debug!(
-            "[AudioEngineManager] Starting driver playback at {}Hz, {} input channels",
+            "[AudioEngineManager] Starting driver playback at {}Hz, {} frames, {} input channels",
             sample_rate,
+            frame_size,
             input_channels
         );
 
@@ -452,7 +456,7 @@ impl AudioEngineManager {
         let muted = self.current_muted.load(Ordering::Relaxed);
         let config = EngineConfig {
             version: 2,
-            frame_size: 1024,
+            frame_size,
             buffer_ms: 200, // 200ms latency
             output_sample_rate: sample_rate,
             input_channels,
@@ -519,6 +523,7 @@ impl AudioEngineManager {
         plugins: Vec<PluginConfig>,
         output_channels: usize,
         sample_rate: u32,
+        buffer_frames: u32,
         input_channels: usize,
     ) -> AudioDecoderResult<()> {
         self.start_driver_playback_with_driver_config(
@@ -526,6 +531,7 @@ impl AudioEngineManager {
             plugins,
             output_channels,
             sample_rate,
+            buffer_frames,
             input_channels,
         )
     }

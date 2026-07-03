@@ -461,6 +461,36 @@ fn plugin_cache_update_skips_under_ui_contention_without_fallback() {
     );
 }
 
+/// If the spare cache Arc is unexpectedly missing, the processing hot path
+/// must skip this frame rather than allocate a replacement cache.
+#[test]
+fn plugin_cache_update_skips_missing_spare_without_allocating() {
+    let sample_rate = 48_000;
+    let config = PluginConfig::new("spectrum_analyzer", serde_json::json!(null));
+    let (mut host, warnings) = build_plugin_host(std::slice::from_ref(&config), sample_rate, 2)
+        .expect("spectrum analyzer host should build");
+    assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+    host.build().expect("host should build");
+
+    let plugin_count = host.plugin_count();
+
+    let mut state = ProcessingState::new(
+        host.output_channels(),
+        sample_rate,
+        #[cfg(feature = "streaming")]
+        None,
+    );
+    state.host = host;
+    state.spare_cache_arc = None;
+
+    let plugin_data_cache: PluginDataCache =
+        Arc::new(ArcSwap::from_pointee(vec![None; plugin_count]));
+
+    assert!(!update_plugin_data_cache(&mut state, &plugin_data_cache));
+    assert_eq!(state.cache_fallback_count, 1);
+    assert!(state.spare_cache_arc.is_none());
+}
+
 #[test]
 fn processing_thread_idle_wait_blocks_instead_of_micro_spinning() {
     let source = include_str!("processing_state.rs");

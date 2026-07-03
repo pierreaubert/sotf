@@ -18,6 +18,7 @@ mod cancel_next;
 mod get_plugin_data;
 mod get_position;
 mod get_state;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod maintain_isolated_external_plugin_workers;
 mod mute;
 mod pause;
@@ -39,6 +40,7 @@ pub use cancel_next::CancelNextCommand;
 pub use get_plugin_data::GetPluginDataCommand;
 pub use get_position::GetPositionCommand;
 pub use get_state::GetStateCommand;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use maintain_isolated_external_plugin_workers::MaintainIsolatedExternalPluginWorkersCommand;
 pub use mute::MuteCommand;
 pub use pause::PauseCommand;
