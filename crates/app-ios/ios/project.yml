@@ -7,7 +7,7 @@ options:
 
 settings:
   base:
-    SWIFT_OBJC_BRIDGING_HEADER: SotFApp/BridgingHeader.h
+    SWIFT_OBJC_BRIDGING_HEADER: SotFPlayer/BridgingHeader.h
     # Only build for arm64 (our Rust lib is arm64-only)
     EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
 
@@ -16,11 +16,15 @@ targets:
     type: application
     platform: iOS
     sources:
-      - SotFApp
+      - SotFPlayer
+    preBuildScripts:
+      - name: Build Rust static library
+        script: ./build-rust.sh
+        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.sotf
-        INFOPLIST_FILE: SotFApp/Info.plist
+        INFOPLIST_FILE: SotFPlayer/Info.plist
         SWIFT_VERSION: "5.10"
         LIBRARY_SEARCH_PATHS:
           - "$(PROJECT_DIR)/lib"

@@ -17,6 +17,19 @@ echo "=== Building SotF iOS static library ==="
 echo "  Workspace: $WORKSPACE_ROOT"
 echo "  iOS dir:   $IOS_DIR"
 
+CARGO_BIN="${CARGO:-}"
+if [ -z "$CARGO_BIN" ]; then
+    if command -v cargo >/dev/null 2>&1; then
+        CARGO_BIN="$(command -v cargo)"
+    elif [ -x "$HOME/.cargo/bin/cargo" ]; then
+        CARGO_BIN="$HOME/.cargo/bin/cargo"
+    else
+        echo "error: cargo not found on PATH or at \$HOME/.cargo/bin/cargo" >&2
+        echo "       Install Rust or set CARGO=/path/to/cargo before running this script." >&2
+        exit 127
+    fi
+fi
+
 # Determine Rust target from Xcode environment or default to simulator
 if [ "${PLATFORM_NAME:-}" = "iphoneos" ]; then
     RUST_TARGET="aarch64-apple-ios"
@@ -32,15 +45,16 @@ fi
 
 echo "  Target:    $RUST_TARGET"
 echo "  Profile:   $PROFILE"
+echo "  Cargo:     $CARGO_BIN"
 
 # Build the static library
 cd "$WORKSPACE_ROOT"
 
 if [ "$PROFILE" = "release" ]; then
-    cargo build -p sotf-ios --target "$RUST_TARGET" --release
+    "$CARGO_BIN" build -p sotf-ios --target "$RUST_TARGET" --release
     LIB_DIR="target/$RUST_TARGET/release"
 else
-    cargo build -p sotf-ios --target "$RUST_TARGET"
+    "$CARGO_BIN" build -p sotf-ios --target "$RUST_TARGET"
     LIB_DIR="target/$RUST_TARGET/debug"
 fi
 

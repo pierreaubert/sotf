@@ -79,15 +79,28 @@ class AudioManager: NSObject {
 
         switch reason {
         case .oldDeviceUnavailable:
-            // Headphones unplugged or Bluetooth disconnected → pause (Apple HIG)
-            NSLog("[AudioManager] Route changed: device unavailable — pausing")
-            sotf_ios_audio_route_changed()
+            if shouldPauseForUnavailableRoute(notification: notification) {
+                NSLog("[AudioManager] Route changed: wired headphones unavailable — pausing")
+                sotf_ios_audio_route_changed()
+            } else {
+                NSLog("[AudioManager] Route changed: device unavailable — continuing playback")
+            }
 
         case .newDeviceAvailable:
             NSLog("[AudioManager] Route changed: new device available")
 
         default:
             NSLog("[AudioManager] Route changed: reason=\(reason.rawValue)")
+        }
+    }
+
+    private func shouldPauseForUnavailableRoute(notification: Notification) -> Bool {
+        guard let previousRoute = notification.userInfo?[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription else {
+            return false
+        }
+
+        return previousRoute.outputs.contains { output in
+            output.portType == .headphones || output.portType == .headsetMic
         }
     }
 
