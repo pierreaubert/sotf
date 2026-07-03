@@ -3,7 +3,7 @@
 use crate::PluginType;
 use crate::controllers::plugin::set::set_plugin_param_value;
 use crate::plugin_graph::PluginGraph;
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 use std::path::Path;
 
@@ -66,14 +66,17 @@ pub fn plugin_action(graph: &mut PluginGraph, name: &str, payload: Option<Value>
             let idx = payload_u64(&payload, "index")? as usize;
             let param_idx = payload_u64(&payload, "param_index")? as usize;
             let value = payload_f64(&payload, "value")?;
+            let plugin = graph
+                .get_plugin_mut(idx)
+                .ok_or_else(|| anyhow!("plugin index {idx} out of range"))?;
             let mut channel_count_changed = false;
-            if let Some(plugin) = graph.get_plugin_mut(idx) {
-                set_plugin_param_value(
-                    &mut plugin.settings,
-                    param_idx,
-                    value,
-                    &mut channel_count_changed,
-                );
+            if !set_plugin_param_value(
+                &mut plugin.settings,
+                param_idx,
+                value,
+                &mut channel_count_changed,
+            ) {
+                bail!("failed to set plugin {idx} param {param_idx} to {value}");
             }
             if channel_count_changed {
                 graph.update_channel_dependent_plugins();
@@ -84,9 +87,10 @@ pub fn plugin_action(graph: &mut PluginGraph, name: &str, payload: Option<Value>
             let idx = payload_u64(&payload, "index")? as usize;
             let param_idx = payload_u64(&payload, "param_index")? as usize;
             let value = payload_str(&payload, "value")?.to_string();
-            if let Some(plugin) = graph.get_plugin_mut(idx) {
-                set_string_param(&mut plugin.settings, param_idx, value)?;
-            }
+            let plugin = graph
+                .get_plugin_mut(idx)
+                .ok_or_else(|| anyhow!("plugin index {idx} out of range"))?;
+            set_string_param(&mut plugin.settings, param_idx, value)?;
             graph.update_channel_dependent_plugins();
             Ok(())
         }

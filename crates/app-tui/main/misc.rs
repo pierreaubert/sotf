@@ -444,10 +444,13 @@ pub(super) fn dispatch_tui_action(
             let idx = payload_u64(payload.as_ref(), "index")? as usize;
             let param_idx = payload_u64(payload.as_ref(), "param_index")? as usize;
             let value = payload_str(&payload, "value")?.to_string();
-            if let Some(plugin) = app.plugin_rack.graph.get_plugin_mut(idx) {
-                // Reuse logic from Task 2; consider exposing a shared helper
-                sotf_audio_player::controllers::plugin::dev_api::actions::set_string_param(&mut plugin.settings, param_idx, value)?;
-            }
+            let plugin = app
+                .plugin_rack
+                .graph
+                .get_plugin_mut(idx)
+                .ok_or_else(|| anyhow::anyhow!("plugin index {idx} out of range"))?;
+            // Reuse logic from Task 2; consider exposing a shared helper
+            sotf_audio_player::controllers::plugin::dev_api::actions::set_string_param(&mut plugin.settings, param_idx, value)?;
             app.plugin_rack.graph.update_channel_dependent_plugins();
             app.request_plugin_update();
             return Ok(());
