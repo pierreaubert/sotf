@@ -16,6 +16,10 @@ fn daemon_source() -> String {
     .join("\n")
 }
 
+fn configbar_source() -> &'static str {
+    include_str!("../configbar/src/ConfigBar.swift")
+}
+
 #[test]
 fn test_audio_engine_manager_state_reporting() {
     let manager = AudioEngineManager::new();
@@ -38,6 +42,29 @@ fn test_audio_engine_manager_state_reporting() {
 
     // Verify volume is preserved even if engine is not running
     assert_eq!(manager.get_volume(), 0.5);
+}
+
+#[test]
+fn configbar_daemon_cleanup_is_not_forceful_or_fuzzy() {
+    let source = configbar_source();
+    let cleanup_start = source
+        .find("private func terminateExistingDaemons")
+        .or_else(|| source.find("private func killExistingDaemons"))
+        .expect("ConfigBar should have daemon cleanup helper");
+    let cleanup_body = &source[cleanup_start..];
+    let cleanup_body = cleanup_body
+        .split("private func removeStaleSockets")
+        .next()
+        .unwrap_or(cleanup_body);
+
+    assert!(
+        !cleanup_body.contains("\"-9\"") && !cleanup_body.contains("\"-f\""),
+        "ConfigBar daemon cleanup must not use destructive fuzzy pkill -9 -f"
+    );
+    assert!(
+        cleanup_body.contains("\"-TERM\"") && cleanup_body.contains("\"-x\""),
+        "ConfigBar daemon cleanup should request exact-name TERM shutdown"
+    );
 }
 
 #[test]

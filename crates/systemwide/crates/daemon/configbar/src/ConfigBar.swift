@@ -817,21 +817,22 @@ class DaemonManager {
         print("DaemonManager: Using daemon path: \(daemonPath)")
     }
 
-    /// Kill any existing sotf-daemon processes (not managed by us)
-    private func killExistingDaemons() {
-        // Find and kill any existing sotf-daemon or sotf_daemon processes
+    /// Ask any existing sotf-daemon processes not managed by this toolbar to exit.
+    private func terminateExistingDaemons() {
+        // Match exact binary names only; fuzzy process matching can terminate
+        // unrelated commands that happen to mention sotf-daemon in arguments.
         let processNames = ["sotf-daemon", "sotf_daemon"]
 
         for processName in processNames {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-            task.arguments = ["-9", "-f", processName]
+            task.arguments = ["-TERM", "-x", processName]
 
             do {
                 try task.run()
                 task.waitUntilExit()
                 if task.terminationStatus == 0 {
-                    print("DaemonManager: Killed existing \(processName) process(es)")
+                    print("DaemonManager: Requested existing \(processName) process(es) to exit")
                     // Give the OS a moment to clean up
                     usleep(100000) // 100ms
                 }
@@ -859,8 +860,8 @@ class DaemonManager {
             return
         }
 
-        // Kill any existing daemon processes not managed by us
-        killExistingDaemons()
+        // Ask any existing daemon processes not managed by us to exit.
+        terminateExistingDaemons()
         removeStaleSockets()
 
         // Check if daemon exists

@@ -516,6 +516,16 @@ mod ipc_safety_tests {
             IpcLine::TooLarge
         );
     }
+
+    #[test]
+    fn daemon_ipc_client_path_sets_idle_timeout() {
+        let source = include_str!("audio_daemon.rs");
+        assert!(source.contains("set_read_timeout(Some(std::time::Duration::from_secs("));
+        assert!(source.contains("IPC_CLIENT_IDLE_TIMEOUT_SECS"));
+        assert!(source.contains("std::io::ErrorKind::TimedOut"));
+        assert!(source.contains("Closing idle IPC client after read timeout"));
+    }
+
     /// `Command::name()` must stay in sync with `#[serde(rename)]`,
     /// because `peer_allows_command` matches on these exact strings.
     #[test]

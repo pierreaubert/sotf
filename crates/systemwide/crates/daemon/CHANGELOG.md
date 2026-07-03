@@ -1,5 +1,16 @@
 # Unreleased
 
+## Daemon startup cleanup
+
+- ConfigBar startup cleanup now asks existing `sotf-daemon` processes to exit
+  with an exact-name `TERM` signal instead of using destructive fuzzy
+  `pkill -9 -f` matching.
+- Added regression coverage to keep the toolbar cleanup path non-forceful and
+  exact-name matched.
+- Daemon IPC clients now get a bounded idle read timeout, and timeout/`WouldBlock`
+  reads close the client instead of letting an idle socket block the client
+  handler indefinitely.
+
 ## HAL channel capacity
 
 - The Systemwide HAL path now carries the requested input channel count through

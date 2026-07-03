@@ -1,5 +1,13 @@
 # Unreleased
 
+## Encrypted HAL passthrough coverage
+
+- Added an encrypted shared-memory passthrough regression that writes and reads
+  a full frame block through `SharedAudioBuffer` with `AudioCipher` and verifies
+  bit-exact recovery.
+- Added a source guard that the Swift HAL encryption round-trip remains part of
+  the cross-language encryption test suite.
+
 ## COM lifetime and CoreAudio object notifications
 
 - Fixed the Swift HAL COM `QueryInterface` / `AddRef` / `Release` balance so

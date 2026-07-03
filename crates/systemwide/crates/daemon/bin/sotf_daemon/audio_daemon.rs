@@ -935,7 +935,10 @@ impl AudioDaemon {
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             if let Err(e) = Self::apply_encryption_to_shared_memory(&key_manager, true) {
-                log::warn!("Failed to sync encryption state to shared memory (HAL may not be running): {}", e);
+                log::warn!(
+                    "Failed to sync encryption state to shared memory (HAL may not be running): {}",
+                    e
+                );
             }
         }
 
@@ -967,7 +970,10 @@ impl AudioDaemon {
                 #[cfg(all(target_os = "macos", feature = "hal"))]
                 {
                     if let Err(e) = Self::apply_encryption_to_shared_memory(&key_manager, true) {
-                        log::warn!("Failed to sync rotated encryption key to shared memory (HAL may not be running): {}", e);
+                        log::warn!(
+                            "Failed to sync rotated encryption key to shared memory (HAL may not be running): {}",
+                            e
+                        );
                     }
                 }
 
@@ -1068,6 +1074,11 @@ impl AudioDaemon {
     }
 
     pub(super) fn handle_client(&self, mut stream: UnixStream, peer_class: PeerClass) {
+        if let Err(e) = stream.set_read_timeout(Some(std::time::Duration::from_secs(
+            super::consts::IPC_CLIENT_IDLE_TIMEOUT_SECS,
+        ))) {
+            log::warn!("Failed to set IPC client idle timeout: {}", e);
+        }
         let reader_stream = match stream.try_clone() {
             Ok(s) => s,
             Err(e) => {
@@ -1095,6 +1106,19 @@ impl AudioDaemon {
                         log::error!("Failed to write response: {}", e);
                         break;
                     }
+                }
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    log::debug!("Closing idle IPC client after read timeout");
+                    break;
+                }
+                Err(e) => {
+                    log::warn!("IPC client read failed: {}", e);
+                    break;
                 }
                 Ok(IpcLine::Line(command_line)) => {
                     let response = match serde_json::from_str::<Command>(&command_line) {
@@ -1132,10 +1156,6 @@ impl AudioDaemon {
                         log::error!("Failed to write response: {}", e);
                         break;
                     }
-                }
-                Err(e) => {
-                    log::error!("Failed to read from client: {}", e);
-                    break;
                 }
             }
         }

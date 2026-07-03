@@ -50,6 +50,47 @@ fn test_hal_shared_memory_passthrough_bit_exact() {
 }
 
 #[test]
+fn test_hal_encrypted_shared_memory_passthrough_bit_exact() {
+    let sample_rate = 48000;
+    let buffer_frames = 512;
+    let channel_count = 2;
+
+    let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+    let key = driver_hal::generate_key();
+    let cipher = driver_hal::AudioCipher::new(&key);
+    buffer.set_key_fingerprint(*cipher.fingerprint());
+    buffer.set_encrypted(true);
+
+    let input_audio =
+        generate_test_audio(buffer_frames as usize, channel_count as usize, sample_rate);
+
+    let frames_written = buffer.write_audio_encrypted(&input_audio, &cipher);
+    assert_eq!(frames_written, buffer_frames as usize);
+
+    let mut output_audio = vec![0.0f32; input_audio.len()];
+    let frames_read = buffer.read_audio_encrypted(&mut output_audio, &cipher);
+    assert_eq!(frames_read, buffer_frames as usize);
+
+    for (i, (input, output)) in input_audio.iter().zip(output_audio.iter()).enumerate() {
+        assert_eq!(
+            input.to_bits(),
+            output.to_bits(),
+            "encrypted passthrough mismatch at sample {i}"
+        );
+    }
+}
+
+#[test]
+fn swift_hal_encryption_tests_are_part_of_cross_language_passthrough_suite() {
+    let swift_tests = include_str!("../../swift/Sources/Tests.swift");
+    assert!(swift_tests.contains("testEncryptionRoundTrip"));
+    assert!(swift_tests.contains("AudioCipher(keyBytes:"));
+    assert!(swift_tests.contains("cipher.encrypt(samples:"));
+    assert!(swift_tests.contains("cipher.decrypt(ciphertext:"));
+}
+
+#[test]
 fn test_hal_with_eq_zero_gain_passthrough() {
     // This test simulates the full pipeline:
     // 1. Audio data in shared memory
