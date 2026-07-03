@@ -402,6 +402,10 @@ pub(super) fn dispatch_tui_action(
     use sotf_audio_player_tui::app::{MetadataEditorState, Screen};
 
     match name {
+        "PluginClear" => {
+            app.clear_plugins();
+            return Ok(());
+        }
         "PluginAdd" => {
             let plugin_type = payload_str(&payload, "plugin_type")?;
             let ty = sotf_audio_player::PluginType::from_name(plugin_type)

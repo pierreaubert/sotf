@@ -13,6 +13,7 @@ use super::verb::verb_key;
 use super::verb::verb_plugin_add;
 use super::verb::verb_plugin_chain_load;
 use super::verb::verb_plugin_chain_save;
+use super::verb::verb_plugin_clear;
 use super::verb::verb_plugin_count;
 use super::verb::verb_plugin_param_count;
 use super::verb::verb_plugin_param_get;
@@ -76,6 +77,7 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         "elements" => verb_elements(ctx),
         "plugin_add" => verb_plugin_add(rest, ctx),
         "plugin_remove" => verb_plugin_remove(rest, ctx),
+        "plugin_clear" => verb_plugin_clear(rest, ctx),
         "plugin_count" => verb_plugin_count(rest, ctx).map(|v| println!("    -> {v}")),
         "plugin_param_count" => verb_plugin_param_count(rest, ctx).map(|v| println!("    -> {v}")),
         "plugin_param_set" => verb_plugin_param_set(rest, ctx),

@@ -90,6 +90,11 @@ pub fn plugin_action(graph: &mut PluginGraph, name: &str, payload: Option<Value>
             graph.update_channel_dependent_plugins();
             Ok(())
         }
+        "PluginClear" => {
+            graph.clear_user_plugins().map_err(|e| anyhow!(e))?;
+            graph.update_channel_dependent_plugins();
+            Ok(())
+        }
         "PluginChainSave" => {
             let path = payload_str(&payload, "path")?;
             let path = Path::new(path);

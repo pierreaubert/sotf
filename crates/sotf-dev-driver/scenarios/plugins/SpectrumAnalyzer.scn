@@ -1,0 +1,25 @@
+# SpectrumAnalyzer plugin lifecycle scenario
+focus plugins
+plugin_clear
+plugin_add SpectrumAnalyzer
+assert plugins.count > 0
+assert plugins.plugin.2.type == "SpectrumAnalyzer"
+
+# 6 parameter(s)
+plugin_param_set 2 0 41.6
+plugin_param_set 2 1 37.0
+plugin_param_set 2 2 10115.0
+plugin_param_set 2 3 0.3
+plugin_param_set 2 4 1.0
+plugin_param_set 2 5 1.0
+
+# Save, remove, reload
+plugin_chain_save $SOTF_QA_DIR/SpectrumAnalyzer.json
+plugin_remove 2
+assert plugins.plugin.2.type != "SpectrumAnalyzer"
+plugin_chain_load $SOTF_QA_DIR/SpectrumAnalyzer.json
+assert plugins.plugin.2.type == "SpectrumAnalyzer"
+
+# Delete and verify cleanup
+plugin_remove 2
+assert plugins.plugin.2.type != "SpectrumAnalyzer"

@@ -24,6 +24,7 @@ pub fn plugin_query(graph: &PluginGraph, path: &str) -> Result<Value> {
                             "type": plugin.plugin_type().name(),
                             "enabled": plugin.enabled,
                             "param_count": crate::get_param_count(&plugin.settings),
+                            "permanent": plugin.permanent,
                         })
                     })
                 })

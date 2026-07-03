@@ -1,0 +1,47 @@
+# XTC plugin lifecycle scenario
+focus plugins
+plugin_clear
+plugin_add XTC
+assert plugins.count > 0
+assert plugins.plugin.2.type == "XTC"
+
+# 28 parameter(s)
+plugin_param_set 2 0 3.35
+plugin_param_set 2 1 34.0
+plugin_param_set 2 2 0.07100000000000001
+plugin_param_set 2 3 -0.2
+plugin_param_set 2 4 -0.2
+plugin_param_set 2 5 -36.0
+plugin_param_set 2 6 0.3
+plugin_param_set 2 7 0.03007
+plugin_param_set 2 8 9.0
+plugin_param_set 2 9 9.0
+plugin_param_set 2 10 3700.0
+plugin_param_set 2 11 3.5999999999999996
+plugin_param_set 2 12 11.1
+plugin_param_set 2 13 1.0
+plugin_param_set 2 14 1.0
+plugin_param_set 2 15 1.0
+# skipping file parameter 16: Room IR
+plugin_param_set 2 17 4.4
+plugin_param_set 2 18 5.9
+plugin_param_set 2 19 0.3
+plugin_param_set 2 20 3.6999999999999997
+plugin_param_set 2 21 1.0
+plugin_param_set 2 22 1.0
+plugin_param_set 2 23 1.0
+plugin_param_set 2 24 1.0
+plugin_param_set 2 25 7.199999999999999
+plugin_param_set 2 26 157.0
+plugin_param_set 2 27 1.0
+
+# Save, remove, reload
+plugin_chain_save $SOTF_QA_DIR/XTC.json
+plugin_remove 2
+assert plugins.plugin.2.type != "XTC"
+plugin_chain_load $SOTF_QA_DIR/XTC.json
+assert plugins.plugin.2.type == "XTC"
+
+# Delete and verify cleanup
+plugin_remove 2
+assert plugins.plugin.2.type != "XTC"

@@ -697,6 +697,21 @@ impl PluginGraph {
         Ok(())
     }
 
+    /// Remove every non-permanent (user) plugin from the linear chain.
+    pub fn clear_user_plugins(&mut self) -> Result<(), String> {
+        let user_ids: Vec<GraphNodeId> = self
+            .plugins_linear()
+            .into_iter()
+            .flatten()
+            .filter(|n| n.role == NodeRole::User && !n.plugin.permanent)
+            .map(|n| n.id)
+            .collect();
+        for id in user_ids {
+            self.remove_user_plugin(id)?;
+        }
+        Ok(())
+    }
+
     /// Swap a user plugin with its predecessor in the linear chain.
     pub fn move_user_plugin_up(&mut self, node_id: GraphNodeId) -> Result<(), String> {
         self.move_user_plugin(node_id, -1)

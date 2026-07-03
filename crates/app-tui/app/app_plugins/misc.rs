@@ -26,6 +26,17 @@ impl App {
         self.request_plugin_update();
     }
 
+    pub fn clear_plugins(&mut self) {
+        let _ = self.plugin_rack.graph.clear_user_plugins();
+        if self.plugin_rack.selected_index >= self.plugin_rack.graph.len()
+            && self.plugin_rack.selected_index > 0
+        {
+            self.plugin_rack.selected_index = self.plugin_rack.graph.len().saturating_sub(1);
+        }
+        self.plugin_rack.graph.update_channel_dependent_plugins();
+        self.request_plugin_update();
+    }
+
     pub fn remove_plugin(&mut self, index: usize) {
         self.plugin_rack.graph.remove_plugin_by_index(index).ok();
         if self.plugin_rack.selected_index >= self.plugin_rack.graph.len()

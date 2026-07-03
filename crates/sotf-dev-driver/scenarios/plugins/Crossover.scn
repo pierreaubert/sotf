@@ -1,0 +1,23 @@
+# Crossover plugin lifecycle scenario
+focus plugins
+plugin_clear
+plugin_add Crossover
+assert plugins.count > 0
+assert plugins.plugin.2.type == "Crossover"
+
+# 4 parameter(s)
+plugin_param_set 2 0 1.0
+plugin_param_set 2 1 6014.0
+plugin_param_set 2 2 1.0
+plugin_param_set 2 3 4937.2
+
+# Save, remove, reload
+plugin_chain_save $SOTF_QA_DIR/Crossover.json
+plugin_remove 2
+assert plugins.plugin.2.type != "Crossover"
+plugin_chain_load $SOTF_QA_DIR/Crossover.json
+assert plugins.plugin.2.type == "Crossover"
+
+# Delete and verify cleanup
+plugin_remove 2
+assert plugins.plugin.2.type != "Crossover"

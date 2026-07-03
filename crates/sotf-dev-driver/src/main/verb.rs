@@ -169,6 +169,12 @@ pub(super) fn verb_plugin_remove(rest: &str, ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn verb_plugin_clear(_rest: &str, ctx: &Ctx) -> Result<()> {
+    let body = json!({ "name": "PluginClear", "payload": {} });
+    post_dev_json(ctx, "/action", &body, "plugin_clear")?;
+    Ok(())
+}
+
 pub(super) fn verb_plugin_count(_rest: &str, ctx: &Ctx) -> Result<Value> {
     verb_query("plugins.count", ctx)
 }
