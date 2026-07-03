@@ -234,8 +234,16 @@ fn main() {
                 cx.text_system().add_fonts(font_data).unwrap();
             }
 
-            // Load configuration to get language, keymap preset, and window geometry
-            let config = Config::load().ok();
+            // Load configuration to get language, keymap preset, and window geometry.
+            let config_path_exists =
+                sotf_audio_player::config::get_gpui_state_path().is_some_and(|path| path.exists());
+            let mut config = Config::load().ok();
+            #[cfg(feature = "dev-api")]
+            if qa_mode && !config_path_exists {
+                if let Some(config) = config.as_mut() {
+                    config.release_channel = ReleaseChannel::Alpha;
+                }
+            }
             let (language, keymap_preset, release_channel) = config
                 .as_ref()
                 .map(|c| (c.language, c.keymap_preset, c.release_channel))
@@ -400,6 +408,14 @@ fn main() {
                         "[startup] load_config: {:.1}ms",
                         t0.elapsed().as_secs_f64() * 1000.0
                     );
+                    #[cfg(feature = "dev-api")]
+                    if qa_mode {
+                        temp_app.tutorial.completed = true;
+                        temp_app.ui_state.input_mode =
+                            sotf_audio_player_gpui::app::InputMode::Normal;
+                        temp_app.ui_state.startup_db_check_done = true;
+                        temp_app.library_view.loading_initial_data = false;
+                    }
 
                     let player = Player::new();
                     // Apply loaded volume to player

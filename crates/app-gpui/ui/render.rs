@@ -252,6 +252,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_room_eq))
             .on_action(cx.listener(Self::switch_to_headphone_eq))
             .on_action(cx.listener(Self::switch_to_spinorama))
+            .on_action(cx.listener(Self::switch_to_spectrum))
             .on_action(cx.listener(Self::open_config))
             .on_action(cx.listener(Self::quit_app))
             .on_action(cx.listener(Self::cycle_theme))

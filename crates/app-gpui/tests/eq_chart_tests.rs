@@ -3,8 +3,9 @@
 use math_audio_iir_fir::BiquadFilterType;
 use sotf_audio_player::EQFilter;
 use sotf_audio_player_gpui::{
-    CHART_BOTTOM_MARGIN, CHART_LEFT_MARGIN, CHART_TOP_MARGIN, GPUI_PX_MARGIN_TOP, MAX_FREQ,
-    MIN_FREQ, Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH, calculate_band_response, calculate_plot_width,
+    CHART_BOTTOM_MARGIN, CHART_LEFT_MARGIN, CHART_RIGHT_MARGIN, CHART_TOP_MARGIN,
+    GPUI_PX_MARGIN_TOP, MAX_FREQ, MIN_FREQ, Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH,
+    calculate_band_response, calculate_plot_width, calculate_plot_width_without_legend,
     calculate_response_at_freq, drag_delta_to_q_change, freq_to_x, gain_to_y,
     get_filter_type_index, q_to_bar_width, x_to_freq, y_to_gain,
 };
@@ -238,6 +239,27 @@ fn test_calculate_plot_width() {
         plot_width_long > 0.0,
         "Plot width should be positive: {}",
         plot_width_long
+    );
+}
+
+#[test]
+fn test_calculate_plot_width_without_legend() {
+    let chart_width = 800.0;
+    let labels = ["Combined", "#10 - PK @ 20000Hz (muted+solo)"];
+    let legend_plot_width = calculate_plot_width(chart_width, labels.iter().copied());
+    let no_legend_plot_width = calculate_plot_width_without_legend(chart_width);
+
+    assert!(
+        no_legend_plot_width > legend_plot_width,
+        "Hidden legend should leave more graph width: no_legend={} legend={}",
+        no_legend_plot_width,
+        legend_plot_width
+    );
+    assert!(
+        (no_legend_plot_width - (chart_width - CHART_LEFT_MARGIN - CHART_RIGHT_MARGIN)).abs()
+            < 0.01,
+        "No-legend width should only reserve chart margins: {}",
+        no_legend_plot_width
     );
 }
 

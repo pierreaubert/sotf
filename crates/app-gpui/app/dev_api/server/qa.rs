@@ -13,6 +13,47 @@ use gpui::{AnyWindowHandle, App};
 use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 use std::path::PathBuf;
 
+pub(super) fn qa_seed(
+    payload: serde_json::Value,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Result<()> {
+    let library_dirs = payload
+        .get("library_dirs")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| anyhow!("seed payload needs `library_dirs` array"))?;
+
+    let mut dirs = Vec::with_capacity(library_dirs.len());
+    for value in library_dirs {
+        let dir = value
+            .as_str()
+            .ok_or_else(|| anyhow!("library_dirs entries must be strings"))?;
+        let dir = PathBuf::from(dir);
+        if !dir.is_dir() {
+            return Err(anyhow!(
+                "seed library directory does not exist: {}",
+                dir.display()
+            ));
+        }
+        dirs.push(dir);
+    }
+
+    with_app_state(window, cx, |state| {
+        for dir in dirs {
+            state.app.add_directory_quiet(dir);
+        }
+        state
+            .app
+            .library_state
+            .scan()
+            .map_err(|err| anyhow!("scanning seeded library directories: {err}"))?;
+        state.app.invalidate_library_stats();
+        state.app.ui_state.current_screen = crate::app::Screen::Library;
+        state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+        Ok(())
+    })
+}
+
 pub(super) fn qa_room_eq(
     payload: serde_json::Value,
     window: AnyWindowHandle,

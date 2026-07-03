@@ -12,13 +12,15 @@ use super::post::post_click;
 use super::post::post_key;
 use super::post::post_qa_room_eq;
 use super::post::post_qa_room_eq_export_json;
+use super::post::post_qa_seed;
 use super::post::post_quit;
 use super::qa::qa_room_eq;
 use super::qa::qa_room_eq_export_json;
+use super::qa::qa_seed;
 use super::types::HttpRequest;
 use super::with::health_payload;
 use super::with::with_app_state;
-use crate::app::{InputMode, MetadataEditorState, Screen};
+use crate::app::{InputMode, MetadataEditorState, Screen, SettingsTab};
 use anyhow::{Result, anyhow};
 use gpui::{
     AnyWindowHandle, App, AsyncApp, Keystroke, MouseButton, MouseDownEvent, MouseUpEvent,
@@ -97,6 +99,14 @@ pub(super) fn process_command(cmd: DevCommand, window: AnyWindowHandle, cx: &mut
                 cx.quit();
                 Ok(())
             });
+            let dev_reply = match result {
+                Ok(()) => DevReply::ok(),
+                Err(e) => DevReply::err(format!("{e:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::QaSeed { payload, reply } => {
+            let result = cx.update(|cx| qa_seed(payload, window, cx));
             let dev_reply = match result {
                 Ok(()) => DevReply::ok(),
                 Err(e) => DevReply::err(format!("{e:#}")),
@@ -198,6 +208,16 @@ fn dispatch_metadata_action(
     cx: &mut App,
 ) -> Result<bool> {
     match name {
+        "SettingsSetTab" => {
+            let tab = parse_settings_tab(payload_str(&payload, "tab")?)?;
+            with_app_state(window, cx, |state| {
+                state.app.ui_state.current_screen = Screen::Settings;
+                state.app.ui_state.active_settings_tab = tab;
+                state.app.ui_state.input_mode = InputMode::Normal;
+                Ok(())
+            })?;
+            Ok(true)
+        }
         "MetadataSeedAlbum" => {
             with_app_state(window, cx, |state| {
                 state.app.library_state.library.albums =
@@ -328,6 +348,22 @@ fn dispatch_metadata_action(
     }
 }
 
+fn parse_settings_tab(value: &str) -> Result<SettingsTab> {
+    match value {
+        "Library" => Ok(SettingsTab::Library),
+        "Theme" => Ok(SettingsTab::Theme),
+        "Language" => Ok(SettingsTab::Language),
+        "Keybindings" => Ok(SettingsTab::Keybindings),
+        "AudioDevice" => Ok(SettingsTab::AudioDevice),
+        "Misc" => Ok(SettingsTab::Misc),
+        "Federation" => Ok(SettingsTab::Federation),
+        "Servers" => Ok(SettingsTab::Servers),
+        "Metadata" => Ok(SettingsTab::Metadata),
+        "ReleaseChannel" => Ok(SettingsTab::ReleaseChannel),
+        other => Err(anyhow!("unknown settings tab `{other}`")),
+    }
+}
+
 fn payload_str<'a>(payload: &'a Option<Value>, key: &str) -> Result<&'a str> {
     payload
         .as_ref()
@@ -431,6 +467,10 @@ pub(super) fn dispatch_request(req: &HttpRequest, tx: &mpsc::Sender<DevCommand>)
             (status, r.to_json())
         }),
         ("POST", "/quit") => post_quit(tx).map(|r| {
+            let status = if r.ok { 200 } else { 500 };
+            (status, r.to_json())
+        }),
+        ("POST", "/qa/seed") => post_qa_seed(&req.body, tx).map(|r| {
             let status = if r.ok { 200 } else { 500 };
             (status, r.to_json())
         }),

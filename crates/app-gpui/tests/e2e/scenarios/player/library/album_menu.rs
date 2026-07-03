@@ -357,11 +357,9 @@ impl TestScenario for AlbumContextMenuClickScenario {
             .debug_bounds("library-album-wrapper-0")
             .ok_or("Album wrapper should be rendered")?;
         let wrapper_center = wrapper_bounds.center();
-        driver.cx.simulate_mouse_down(
-            wrapper_center,
-            MouseButton::Right,
-            Modifiers::default(),
-        );
+        driver
+            .cx
+            .simulate_mouse_down(wrapper_center, MouseButton::Right, Modifiers::default());
         driver
             .cx
             .simulate_mouse_up(wrapper_center, MouseButton::Right, Modifiers::default());
@@ -416,11 +414,9 @@ impl TestScenario for AlbumContextMenuClickScenario {
         driver.run_until_parked();
 
         // Right-click the album again to reopen the context menu.
-        driver.cx.simulate_mouse_down(
-            wrapper_center,
-            MouseButton::Right,
-            Modifiers::default(),
-        );
+        driver
+            .cx
+            .simulate_mouse_down(wrapper_center, MouseButton::Right, Modifiers::default());
         driver
             .cx
             .simulate_mouse_up(wrapper_center, MouseButton::Right, Modifiers::default());
@@ -528,11 +524,9 @@ impl TestScenario for AlbumContextMenuKeyboardAfterSearchScenario {
             .debug_bounds("library-album-wrapper-0")
             .ok_or("Album wrapper should be rendered")?;
         let wrapper_center = wrapper_bounds.center();
-        driver.cx.simulate_mouse_down(
-            wrapper_center,
-            MouseButton::Right,
-            Modifiers::default(),
-        );
+        driver
+            .cx
+            .simulate_mouse_down(wrapper_center, MouseButton::Right, Modifiers::default());
         driver
             .cx
             .simulate_mouse_up(wrapper_center, MouseButton::Right, Modifiers::default());
@@ -558,7 +552,9 @@ impl TestScenario for AlbumContextMenuKeyboardAfterSearchScenario {
 
         let queue_len = driver.read_app(|app| app.queue_state.len());
         if queue_len == 0 {
-            return Err("Pressing 'a' in album context menu should add the album to the queue".into());
+            return Err(
+                "Pressing 'a' in album context menu should add the album to the queue".into(),
+            );
         }
 
         let menu_closed = driver.read_app(|app| app.ui_state.context_menu.is_none());
@@ -580,11 +576,9 @@ impl TestScenario for AlbumContextMenuKeyboardAfterSearchScenario {
         });
         driver.run_until_parked();
 
-        driver.cx.simulate_mouse_down(
-            wrapper_center,
-            MouseButton::Right,
-            Modifiers::default(),
-        );
+        driver
+            .cx
+            .simulate_mouse_down(wrapper_center, MouseButton::Right, Modifiers::default());
         driver
             .cx
             .simulate_mouse_up(wrapper_center, MouseButton::Right, Modifiers::default());
@@ -601,7 +595,9 @@ impl TestScenario for AlbumContextMenuKeyboardAfterSearchScenario {
 
         let queue_len = driver.read_app(|app| app.queue_state.len());
         if queue_len == 0 {
-            return Err("Pressing Enter in album context menu should add the album to the queue".into());
+            return Err(
+                "Pressing Enter in album context menu should add the album to the queue".into(),
+            );
         }
 
         let is_playing = driver.read_app(|app| app.playback.is_playing);
@@ -677,9 +673,11 @@ impl TestScenario for AlbumContextMenuControlClickScenario {
             MouseButton::Left,
             gpui::Modifiers::control(),
         );
-        driver
-            .cx
-            .simulate_mouse_up(wrapper_center, MouseButton::Left, gpui::Modifiers::control());
+        driver.cx.simulate_mouse_up(
+            wrapper_center,
+            MouseButton::Left,
+            gpui::Modifiers::control(),
+        );
         driver.run_until_parked();
 
         let menu_visible = driver.read_app(|app| app.ui_state.context_menu.is_some());

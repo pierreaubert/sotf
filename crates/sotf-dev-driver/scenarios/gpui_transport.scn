@@ -6,15 +6,19 @@
 focus       library
 assert      screen.focused == "Library"
 assert      playback.is_playing == false
+assert      queue.length == 0
+
+# The suite seeds demo audio for this scenario. Add the selected album before
+# testing PlayPause; empty-queue PlayPause is intentionally a no-op.
+action      AddToQueue
+wait_until  queue.length > 0 timeout=2s
 
 # Playback controls.
 action      PlayPause
-sleep       100ms
-assert      playback.is_playing == true
+wait_until  playback.is_playing == true timeout=2s
 
 action      Stop
-sleep       100ms
-assert      playback.is_playing == false
+wait_until  playback.is_playing == false timeout=2s
 
 action      NextTrack
 sleep       100ms

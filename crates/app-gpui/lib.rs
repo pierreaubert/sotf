@@ -142,7 +142,7 @@ pub use sotf_audio_player::autoeq::{classify_channel_eq_filters, upsert_named_ro
 pub use components::plugins::ui_eq::{
     CHART_BOTTOM_MARGIN, CHART_HEIGHT, CHART_LEFT_MARGIN, CHART_RIGHT_MARGIN, CHART_TOP_MARGIN,
     GPUI_PX_MARGIN_TOP, MAX_FREQ, MIN_FREQ, Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH, SAMPLE_RATE,
-    calculate_band_response, calculate_plot_width, calculate_response_at_freq,
-    drag_delta_to_q_change, freq_to_x, gain_to_y, get_filter_type_index, q_to_bar_width, x_to_freq,
-    y_to_gain,
+    calculate_band_response, calculate_plot_width, calculate_plot_width_without_legend,
+    calculate_response_at_freq, drag_delta_to_q_change, freq_to_x, gain_to_y,
+    get_filter_type_index, q_to_bar_width, x_to_freq, y_to_gain,
 };

@@ -98,6 +98,11 @@ pub enum DevCommand {
     },
     /// Gracefully quit the app.
     Quit { reply: mpsc::SyncSender<DevReply> },
+    /// Seed the app library from deterministic QA fixture directories.
+    QaSeed {
+        payload: serde_json::Value,
+        reply: mpsc::SyncSender<DevReply>,
+    },
     /// Load deterministic RoomEQ recording fixture data and optionally start
     /// the real optimizer.
     QaRoomEq {

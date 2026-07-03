@@ -28,6 +28,7 @@ tags = ["gpui"]
 name = "gpui-transport"
 path = "crates/sotf-dev-driver/scenarios/gpui_transport.scn"
 timeout = "10s"
+seed_demo_audio = true
 tags = ["gpui"]
 
 # ── Screens ─────────────────────────────────────────────────────────────────

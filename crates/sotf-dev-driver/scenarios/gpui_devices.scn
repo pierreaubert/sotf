@@ -3,7 +3,8 @@
 # Covers: SwitchToDevices
 
 focus       devices
-assert      screen.focused == "Devices"
+assert      screen.focused == "Settings"
+assert      settings.active_tab == "AudioDevice"
 
 # Return to library.
 focus       library

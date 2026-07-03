@@ -13,7 +13,7 @@ query       settings.language
 query       settings.font_scale
 
 # ── Theme tab ───────────────────────────────────────────────────────────────
-click       settings.tab.Theme
+action      SettingsSetTab {"tab":"Theme"}
 sleep       200ms
 assert      settings.active_tab == "Theme"
 
@@ -27,7 +27,7 @@ sleep       100ms
 query       settings.theme
 
 # ── Language tab ────────────────────────────────────────────────────────────
-click       settings.tab.Language
+action      SettingsSetTab {"tab":"Language"}
 sleep       200ms
 assert      settings.active_tab == "Language"
 
@@ -40,12 +40,12 @@ sleep       100ms
 query       settings.language
 
 # ── Keybindings tab ─────────────────────────────────────────────────────────
-click       settings.tab.Keybindings
+action      SettingsSetTab {"tab":"Keybindings"}
 sleep       200ms
 assert      settings.active_tab == "Keybindings"
 
 # ── Audio Device tab ────────────────────────────────────────────────────────
-click       settings.tab.AudioDevice
+action      SettingsSetTab {"tab":"AudioDevice"}
 sleep       200ms
 assert      settings.active_tab == "AudioDevice"
 
@@ -54,7 +54,7 @@ query       audio.output_device_count
 query       audio.input_device_count
 
 # ── Misc tab (plugins / performance) ────────────────────────────────────────
-click       settings.tab.Misc
+action      SettingsSetTab {"tab":"Misc"}
 sleep       200ms
 assert      settings.active_tab == "Misc"
 
@@ -72,17 +72,17 @@ sleep       100ms
 assert      settings.font_scale == 1.0
 
 # ── Federation tab ──────────────────────────────────────────────────────────
-click       settings.tab.Federation
+action      SettingsSetTab {"tab":"Federation"}
 sleep       200ms
 assert      settings.active_tab == "Federation"
 
 # ── Servers tab ─────────────────────────────────────────────────────────────
-click       settings.tab.Servers
+action      SettingsSetTab {"tab":"Servers"}
 sleep       200ms
 assert      settings.active_tab == "Servers"
 
 # ── Release Channel tab ─────────────────────────────────────────────────────
-click       settings.tab.ReleaseChannel
+action      SettingsSetTab {"tab":"ReleaseChannel"}
 sleep       200ms
 assert      settings.active_tab == "ReleaseChannel"
 

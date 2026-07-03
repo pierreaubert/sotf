@@ -95,4 +95,13 @@ impl PlayerView {
     ) {
         self.switch_screen_with_trigger(Screen::HeadphoneEq, "SwitchToHeadphoneEQ", cx);
     }
+
+    fn switch_to_spectrum(
+        &mut self,
+        _: &SwitchToSpectrum,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.switch_screen_with_trigger(Screen::Spectrum, "SwitchToSpectrum", cx);
+    }
 }
