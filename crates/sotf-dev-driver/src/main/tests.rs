@@ -1,4 +1,5 @@
 use super::misc::DEFAULT_DEV_API_URL;
+use super::misc::expand_env_vars_with;
 use super::misc::focus_action_name;
 use super::misc::resolve_base_url;
 use super::misc::strip_comment;
@@ -194,4 +195,14 @@ fn urlencode_safe_chars() {
     assert_eq!(urlencode("playback.volume"), "playback.volume");
     assert_eq!(urlencode("a b"), "a%20b");
     assert_eq!(urlencode("a&b"), "a%26b");
+}
+
+#[test]
+fn env_var_expansion() {
+    let mut vars = std::collections::HashMap::new();
+    vars.insert("SOTF_TEST_X".to_string(), "/tmp/qa".to_string());
+    let result = expand_env_vars_with("plugin_chain_save $SOTF_TEST_X/gain.json", |name| {
+        vars.get(name).cloned().ok_or(std::env::VarError::NotPresent)
+    });
+    assert_eq!(result, "plugin_chain_save /tmp/qa/gain.json");
 }

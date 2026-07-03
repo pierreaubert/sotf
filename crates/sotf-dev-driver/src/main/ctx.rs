@@ -10,6 +10,15 @@ use super::verb::verb_elements;
 use super::verb::verb_export_room_eq_json;
 use super::verb::verb_focus;
 use super::verb::verb_key;
+use super::verb::verb_plugin_add;
+use super::verb::verb_plugin_chain_load;
+use super::verb::verb_plugin_chain_save;
+use super::verb::verb_plugin_clear;
+use super::verb::verb_plugin_count;
+use super::verb::verb_plugin_param_count;
+use super::verb::verb_plugin_param_get;
+use super::verb::verb_plugin_param_set;
+use super::verb::verb_plugin_remove;
 use super::verb::verb_query;
 use super::verb::verb_wait_until;
 use anyhow::{Context, Result, bail};
@@ -32,7 +41,9 @@ pub(crate) fn run_script(script: &PathBuf, url: &str, verbose: bool) -> Result<(
 
     for (lineno, raw) in source.lines().enumerate() {
         let lineno = lineno + 1;
-        let line = strip_comment(raw).trim();
+        let line = strip_comment(raw);
+        let expanded = crate::misc::expand_env_vars(line);
+        let line = expanded.trim();
         if line.is_empty() {
             continue;
         }
@@ -65,6 +76,15 @@ fn execute(line: &str, ctx: &Ctx) -> Result<()> {
         "click" => verb_click(rest, ctx),
         "export_room_eq_json" | "export_roomeq_json" => verb_export_room_eq_json(rest, ctx),
         "elements" => verb_elements(ctx),
+        "plugin_add" => verb_plugin_add(rest, ctx),
+        "plugin_remove" => verb_plugin_remove(rest, ctx),
+        "plugin_clear" => verb_plugin_clear(rest, ctx),
+        "plugin_count" => verb_plugin_count(rest, ctx).map(|v| println!("    -> {v}")),
+        "plugin_param_count" => verb_plugin_param_count(rest, ctx).map(|v| println!("    -> {v}")),
+        "plugin_param_set" => verb_plugin_param_set(rest, ctx),
+        "plugin_param_get" => verb_plugin_param_get(rest, ctx).map(|v| println!("    -> {v}")),
+        "plugin_chain_save" => verb_plugin_chain_save(rest, ctx),
+        "plugin_chain_load" => verb_plugin_chain_load(rest, ctx),
         other => bail!("unknown verb `{other}`"),
     }
 }

@@ -1,0 +1,66 @@
+# Upmixer plugin lifecycle scenario
+focus plugins
+plugin_clear
+plugin_add Upmixer
+assert plugins.count > 0
+assert plugins.plugin.2.type == "Upmixer"
+
+# 47 parameter(s)
+plugin_param_set 2 0 1.0
+plugin_param_set 2 1 0.6
+plugin_param_set 2 2 0.6
+plugin_param_set 2 3 0.6
+plugin_param_set 2 4 0.6
+plugin_param_set 2 5 0.6
+plugin_param_set 2 6 68.0
+plugin_param_set 2 7 1.0
+plugin_param_set 2 8 0.3
+plugin_param_set 2 9 38.0
+plugin_param_set 2 10 30.7
+plugin_param_set 2 11 157.0
+plugin_param_set 2 12 0.3
+plugin_param_set 2 13 0.3
+plugin_param_set 2 14 210.0
+plugin_param_set 2 15 1.0
+plugin_param_set 2 16 0.3
+plugin_param_set 2 17 0.95
+plugin_param_set 2 18 1.0
+plugin_param_set 2 19 0.307
+plugin_param_set 2 20 37.0
+plugin_param_set 2 21 1850.0
+plugin_param_set 2 22 11600.0
+plugin_param_set 2 23 0.3
+plugin_param_set 2 24 0.15
+plugin_param_set 2 25 0.3
+plugin_param_set 2 26 1.6
+plugin_param_set 2 27 0.15
+plugin_param_set 2 28 0.3
+plugin_param_set 2 29 380.0
+plugin_param_set 2 30 2900.0
+plugin_param_set 2 31 0.3
+plugin_param_set 2 32 0.3
+plugin_param_set 2 33 0.3
+plugin_param_set 2 34 0.8999999999999999
+plugin_param_set 2 35 1.0
+plugin_param_set 2 36 1.0
+plugin_param_set 2 37 1.0
+plugin_param_set 2 38 1.0
+plugin_param_set 2 39 1.0
+plugin_param_set 2 40 1.0
+plugin_param_set 2 41 1.0
+plugin_param_set 2 42 0.185
+plugin_param_set 2 43 1.0
+plugin_param_set 2 44 1.0
+plugin_param_set 2 45 7.199999999999999
+plugin_param_set 2 46 157.0
+
+# Save, remove, reload
+plugin_chain_save $SOTF_QA_DIR/Upmixer.json
+plugin_remove 2
+assert plugins.plugin.2.type != "Upmixer"
+plugin_chain_load $SOTF_QA_DIR/Upmixer.json
+assert plugins.plugin.2.type == "Upmixer"
+
+# Delete and verify cleanup
+plugin_remove 2
+assert plugins.plugin.2.type != "Upmixer"

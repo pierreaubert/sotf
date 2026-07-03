@@ -1,6 +1,7 @@
 use super::super::app_impl::{App, get_param_count};
 use super::super::types::InputMode;
 use sotf_audio_player::PluginType;
+use sotf_audio_player::controllers::plugin::set_plugin_param_value;
 use sotf_audio_player::ui_params::TuiEditablePlugin;
 
 impl App {
@@ -21,6 +22,17 @@ impl App {
             .insert_plugin(insert_idx, plugin_type)
             .ok();
         // Update BinauralDecoder input channels after adding
+        self.plugin_rack.graph.update_channel_dependent_plugins();
+        self.request_plugin_update();
+    }
+
+    pub fn clear_plugins(&mut self) {
+        let _ = self.plugin_rack.graph.clear_user_plugins();
+        if self.plugin_rack.selected_index >= self.plugin_rack.graph.len()
+            && self.plugin_rack.selected_index > 0
+        {
+            self.plugin_rack.selected_index = self.plugin_rack.graph.len().saturating_sub(1);
+        }
         self.plugin_rack.graph.update_channel_dependent_plugins();
         self.request_plugin_update();
     }
@@ -148,6 +160,29 @@ impl App {
             self.plugin_rack.graph.update_channel_dependent_plugins();
         }
 
+        success
+    }
+
+    /// Set a plugin parameter directly by index.
+    /// Returns true if the parameter was set successfully.
+    pub fn set_plugin_param(&mut self, index: usize, param_index: usize, value: f64) -> bool {
+        let mut channel_count_changed = false;
+        let success = if let Some(plugin) = self.plugin_rack.graph.get_plugin_mut(index) {
+            set_plugin_param_value(
+                &mut plugin.settings,
+                param_index,
+                value,
+                &mut channel_count_changed,
+            )
+        } else {
+            false
+        };
+        if channel_count_changed {
+            self.plugin_rack.graph.update_channel_dependent_plugins();
+        }
+        if success {
+            self.request_plugin_update();
+        }
         success
     }
 
@@ -473,6 +508,27 @@ impl App {
         }
     }
 
+    /// Save the current plugin chain to the given path.
+    pub fn save_plugins_to_path(&mut self, path: &std::path::Path) -> Result<(), String> {
+        let dir = path.parent().ok_or("path has no parent")?;
+        let file = path.file_stem().and_then(|s| s.to_str()).ok_or("invalid filename")?;
+        self.plugin_rack.graph.save_to_file(dir, file).map_err(|e| e.to_string())?;
+        self.plugin_rack.last_loaded_preset = Some(path.file_name().unwrap().to_string_lossy().to_string());
+        Ok(())
+    }
+
+    /// Load a plugin chain from the given path.
+    /// Returns any load warnings (skipped plugin descriptions).
+    pub fn load_plugins_from_path(&mut self, path: &std::path::Path) -> Result<Vec<String>, String> {
+        let dir = path.parent().ok_or("path has no parent")?;
+        let file = path.file_stem().and_then(|s| s.to_str()).ok_or("invalid filename")?;
+        let warnings = self.plugin_rack.graph.load_from_file(dir, file).map_err(|e| e.to_string())?;
+        self.plugin_rack.graph.update_channel_dependent_plugins();
+        self.request_plugin_update();
+        self.plugin_rack.last_loaded_preset = Some(path.file_name().unwrap().to_string_lossy().to_string());
+        Ok(warnings)
+    }
+
     /// Refresh the list of available plugin presets from the config directory
     pub fn refresh_plugin_presets(&mut self) {
         self.plugin_rack.available_presets.clear();
@@ -595,5 +651,71 @@ impl App {
                 self.plugin_rack.selected_preset_index
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::Theme;
+    use sotf_audio_player::PluginSettings;
+    use std::path::Path;
+
+    fn test_app() -> App {
+        App::new(Theme::default(), true)
+    }
+
+    #[test]
+    fn set_plugin_param_updates_gain_plugin() {
+        let mut app = test_app();
+        // The default rack places a Gain (ReplayGain) plugin at index 1.
+        assert!(app.set_plugin_param(1, 0, -6.0));
+        let plugin = app.plugin_rack.graph.get_plugin(1).unwrap();
+        assert!(matches!(plugin.settings, PluginSettings::Gain { gain_db, .. } if (gain_db - -6.0).abs() < 0.01));
+        assert!(app.plugin_rack.needs_update);
+    }
+
+    #[test]
+    fn set_plugin_param_returns_false_for_invalid_index() {
+        let mut app = test_app();
+        assert!(!app.set_plugin_param(999, 0, 0.0));
+        assert!(!app.plugin_rack.needs_update);
+    }
+
+    #[test]
+    fn save_and_load_plugins_to_path_roundtrip() {
+        let mut app = test_app();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test-chain.json");
+
+        app.save_plugins_to_path(&path).expect("save should succeed");
+        assert_eq!(
+            app.plugin_rack.last_loaded_preset,
+            Some("test-chain.json".to_string())
+        );
+
+        let mut app2 = test_app();
+        let warnings = app2
+            .load_plugins_from_path(&path)
+            .expect("load should succeed");
+        assert!(warnings.is_empty(), "roundtrip should not skip plugins");
+        assert_eq!(app2.plugin_rack.graph.len(), app.plugin_rack.graph.len());
+        assert_eq!(
+            app2.plugin_rack.last_loaded_preset,
+            Some("test-chain.json".to_string())
+        );
+        assert!(app2.plugin_rack.needs_update);
+    }
+
+    #[test]
+    fn save_plugins_to_path_rejects_empty_path() {
+        let mut app = test_app();
+        assert!(app.save_plugins_to_path(Path::new("")).is_err());
+    }
+
+    #[test]
+    fn load_plugins_from_path_rejects_empty_path() {
+        let mut app = test_app();
+        assert!(app.load_plugins_from_path(Path::new("")).is_err());
     }
 }

@@ -402,6 +402,73 @@ pub(super) fn dispatch_tui_action(
     use sotf_audio_player_tui::app::{MetadataEditorState, Screen};
 
     match name {
+        "PluginClear" => {
+            app.clear_plugins();
+            return Ok(());
+        }
+        "PluginAdd" => {
+            let plugin_type = payload_str(&payload, "plugin_type")?;
+            let ty = sotf_audio_player::PluginType::from_name(plugin_type)
+                .ok_or_else(|| anyhow::anyhow!("unknown plugin type `{plugin_type}`"))?;
+            app.add_plugin(&ty);
+            return Ok(());
+        }
+        "PluginRemove" => {
+            let idx = payload_u64(payload.as_ref(), "index")? as usize;
+            app.remove_plugin(idx);
+            return Ok(());
+        }
+        "PluginToggle" => {
+            let idx = payload_u64(payload.as_ref(), "index")? as usize;
+            app.toggle_plugin(idx);
+            return Ok(());
+        }
+        "PluginMoveUp" => {
+            let idx = payload_u64(payload.as_ref(), "index")? as usize;
+            app.move_plugin_up(idx);
+            return Ok(());
+        }
+        "PluginMoveDown" => {
+            let idx = payload_u64(payload.as_ref(), "index")? as usize;
+            app.move_plugin_down(idx);
+            return Ok(());
+        }
+        "PluginSetParam" => {
+            let idx = payload_u64(payload.as_ref(), "index")? as usize;
+            let param_idx = payload_u64(payload.as_ref(), "param_index")? as usize;
+            let value = payload_f64(payload.as_ref(), "value")?;
+            app.set_plugin_param(idx, param_idx, value);
+            return Ok(());
+        }
+        "PluginSetParamString" => {
+            let idx = payload_u64(payload.as_ref(), "index")? as usize;
+            let param_idx = payload_u64(payload.as_ref(), "param_index")? as usize;
+            let value = payload_str(&payload, "value")?.to_string();
+            let plugin = app
+                .plugin_rack
+                .graph
+                .get_plugin_mut(idx)
+                .ok_or_else(|| anyhow::anyhow!("plugin index {idx} out of range"))?;
+            // Reuse logic from Task 2; consider exposing a shared helper
+            sotf_audio_player::controllers::plugin::dev_api::actions::set_string_param(&mut plugin.settings, param_idx, value)?;
+            app.plugin_rack.graph.update_channel_dependent_plugins();
+            app.request_plugin_update();
+            return Ok(());
+        }
+        "PluginChainSave" => {
+            let path = std::path::Path::new(payload_str(&payload, "path")?);
+            app.save_plugins_to_path(path).map_err(|e| anyhow::anyhow!(e))?;
+            return Ok(());
+        }
+        "PluginChainLoad" => {
+            let path = std::path::Path::new(payload_str(&payload, "path")?);
+            app.load_plugins_from_path(path).map_err(|e| anyhow::anyhow!(e))?;
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    match name {
         "PlayPause" => {
             app.playback.is_playing = !app.playback.is_playing;
         }
@@ -576,6 +643,22 @@ fn payload_string(payload: Option<&serde_json::Value>, key: &str, default: &str)
         .and_then(serde_json::Value::as_str)
         .map(str::to_string)
         .or_else(|| Some(default.to_string()))
+}
+
+#[cfg(feature = "dev-api")]
+fn payload_u64(payload: Option<&serde_json::Value>, key: &str) -> anyhow::Result<u64> {
+    payload
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| anyhow::anyhow!("payload needs u64 `{key}`"))
+}
+
+#[cfg(feature = "dev-api")]
+fn payload_f64(payload: Option<&serde_json::Value>, key: &str) -> anyhow::Result<f64> {
+    payload
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| anyhow::anyhow!("payload needs f64 `{key}`"))
 }
 
 #[cfg(feature = "dev-api")]

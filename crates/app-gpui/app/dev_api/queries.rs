@@ -186,6 +186,14 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "audio.output_device_count" => json!(app.audio_device_state.output_devices.len()),
         "audio.input_device_count" => json!(app.audio_device_state.input_devices.len()),
 
+        // Plugin chain state
+        other if other.starts_with("plugins.") => {
+            sotf_audio_player::controllers::plugin::dev_api::queries::plugin_query(
+                &app.plugin_state.graph,
+                other,
+            )?
+        }
+
         other => return Err(anyhow!("unknown query path: `{other}`")),
     })
 }

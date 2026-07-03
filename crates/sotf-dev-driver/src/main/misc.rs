@@ -34,6 +34,40 @@ pub(super) fn strip_comment(line: &str) -> &str {
     line
 }
 
+pub fn expand_env_vars(line: &str) -> String {
+    expand_env_vars_with(line, |name| std::env::var(name))
+}
+
+pub fn expand_env_vars_with(
+    line: &str,
+    lookup: impl Fn(&str) -> Result<String, std::env::VarError>,
+) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.char_indices().peekable();
+    while let Some((i, ch)) = chars.next() {
+        if ch == '$' {
+            let start = i + 1;
+            let end = loop {
+                match chars.peek() {
+                    Some((_, c)) if c.is_alphanumeric() || *c == '_' => {
+                        chars.next();
+                    }
+                    Some((j, _)) => break *j,
+                    None => break line.len(),
+                }
+            };
+            let name = &line[start..end];
+            match lookup(name) {
+                Ok(val) => out.push_str(&val),
+                Err(_) => out.push_str(&line[i..end]),
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 pub(super) fn split2(s: &str) -> (&str, &str) {
     match s.find(char::is_whitespace) {
         Some(i) => (&s[..i], s[i..].trim_start()),
