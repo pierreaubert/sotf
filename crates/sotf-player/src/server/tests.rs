@@ -22,6 +22,7 @@ use super::sotf::sotf_api_connection_qr_payload;
 use super::sotf::sotf_api_server_url_for_bind;
 use super::types::ApiRequest;
 use crate::federation_config::{ServerConfig, SotfApiSettings};
+use crate::library::DirectoryInfo;
 use crate::library::MusicLibrary;
 use crate::player::Player;
 use crate::queue::Queue;
@@ -39,6 +40,7 @@ mod read;
 
 use auth::auth_get;
 use auth::auth_header;
+use auth::auth_post;
 use misc::api_settings;
 use misc::stop_test_api_server;
 use misc::test_state;
@@ -252,6 +254,7 @@ fn broadcast_events_on_volume_change() {
         playlist_version: std::sync::atomic::AtomicU32::new(1),
         library_version: std::sync::atomic::AtomicU64::new(1),
         events: crate::sotf_server_event::new_event_broadcaster(64),
+        library_scan_active: std::sync::atomic::AtomicBool::new(false),
         pairing_mode: std::sync::atomic::AtomicBool::new(false),
         pairing_nonce: parking_lot::Mutex::new(String::new()),
         trusted_clients: parking_lot::Mutex::new(
@@ -282,6 +285,7 @@ fn broadcast_events_on_queue_clear() {
         playlist_version: std::sync::atomic::AtomicU32::new(1),
         library_version: std::sync::atomic::AtomicU64::new(1),
         events: crate::sotf_server_event::new_event_broadcaster(64),
+        library_scan_active: std::sync::atomic::AtomicBool::new(false),
         pairing_mode: std::sync::atomic::AtomicBool::new(false),
         pairing_nonce: parking_lot::Mutex::new(String::new()),
         trusted_clients: parking_lot::Mutex::new(
@@ -341,6 +345,144 @@ fn sotf_api_serves_parallel_clients_while_sse_client_is_connected() {
 }
 
 #[test]
+fn sotf_api_http_playback_endpoints_round_trip() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = test_state();
+        let (addr, shutdown_tx, server_handle) =
+            match try_spawn_test_api_server(Arc::clone(&state)).await {
+                Ok(server) => server,
+                Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+                Err(err) => panic!("failed to bind test API server: {err}"),
+            };
+
+        let volume =
+            read_http_response(addr, auth_post("/api/v1/volume", r#"{"volume":37}"#)).await;
+        assert!(volume.starts_with("HTTP/1.1 200 OK"));
+        assert!(volume.contains("\"command\":\"volume\""));
+
+        for (path, command) in [
+            ("/api/v1/pause", "pause"),
+            ("/api/v1/resume", "resume"),
+            ("/api/v1/stop", "stop"),
+        ] {
+            let response = read_http_response(addr, auth_post(path, "{}")).await;
+            assert!(
+                response.starts_with("HTTP/1.1 200 OK"),
+                "{path}: {response}"
+            );
+            assert!(
+                response.contains(&format!("\"command\":\"{command}\"")),
+                "{path}: {response}"
+            );
+        }
+
+        let state_response = read_http_response(addr, auth_get("/api/v1/state")).await;
+        assert!(state_response.starts_with("HTTP/1.1 200 OK"));
+        assert!(state_response.contains("\"volume\":37"));
+
+        stop_test_api_server(shutdown_tx, server_handle).await;
+    });
+}
+
+#[test]
+fn sotf_api_http_queue_endpoints_round_trip() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = test_state();
+        {
+            let mut library = state.library.lock();
+            library.albums.push(crate::library::Album {
+                id: Some(42),
+                title: "Socket Album".to_string(),
+                tracks: vec![crate::library::Track {
+                    title: Some("Socket Track".to_string()),
+                    album_artist: Some("Socket Artist".to_string()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            });
+        }
+
+        let (addr, shutdown_tx, server_handle) =
+            match try_spawn_test_api_server(Arc::clone(&state)).await {
+                Ok(server) => server,
+                Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+                Err(err) => panic!("failed to bind test API server: {err}"),
+            };
+
+        let add = read_http_response(
+            addr,
+            auth_post(
+                "/api/v1/queue/add-album",
+                r#"{"album_id":"id:42","play_now":false}"#,
+            ),
+        )
+        .await;
+        assert!(add.starts_with("HTTP/1.1 200 OK"));
+        assert!(add.contains("\"command\":\"queue.add-album\""));
+
+        let queue = read_http_response(addr, auth_get("/api/v1/queue")).await;
+        assert!(queue.starts_with("HTTP/1.1 200 OK"));
+        assert!(queue.contains("Socket Album"));
+
+        let clear = read_http_response(addr, auth_post("/api/v1/queue/clear", "{}")).await;
+        assert!(clear.starts_with("HTTP/1.1 200 OK"));
+        assert!(clear.contains("\"command\":\"queue.clear\""));
+
+        stop_test_api_server(shutdown_tx, server_handle).await;
+    });
+}
+
+#[test]
+fn sotf_api_http_media_range_and_auth_round_trip() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = test_state();
+        let temp = tempfile::tempdir().unwrap();
+        let media_path = temp.path().join("track.raw");
+        std::fs::write(&media_path, b"0123456789").unwrap();
+        {
+            let mut library = state.library.lock();
+            library.albums.push(crate::library::Album {
+                id: Some(7),
+                title: "Media Album".to_string(),
+                tracks: vec![crate::library::Track {
+                    path: media_path,
+                    title: Some("Media Track".to_string()),
+                    uuid: Some("media-track".to_string()),
+                    album_artist: Some("Media Artist".to_string()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            });
+        }
+
+        let (addr, shutdown_tx, server_handle) =
+            match try_spawn_test_api_server(Arc::clone(&state)).await {
+                Ok(server) => server,
+                Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+                Err(err) => panic!("failed to bind test API server: {err}"),
+            };
+
+        let unauthorized =
+            read_http_response(addr, "GET /api/v1/media/uuid:media-track HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".to_string()).await;
+        assert!(unauthorized.starts_with("HTTP/1.1 401 Unauthorized"));
+
+        let partial = read_http_response(
+            addr,
+            "GET /api/v1/media/uuid:media-track?token=secret HTTP/1.1\r\nHost: localhost\r\nRange: bytes=2-5\r\nConnection: close\r\n\r\n".to_string(),
+        )
+        .await;
+        assert!(partial.starts_with("HTTP/1.1 206 Partial Content"));
+        assert!(partial.contains("Content-Range: bytes 2-5/10"));
+        assert!(partial.ends_with("2345"));
+
+        stop_test_api_server(shutdown_tx, server_handle).await;
+    });
+}
+
+#[test]
 fn sotf_api_broadcasts_events_to_multiple_sse_clients() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
@@ -366,6 +508,102 @@ fn sotf_api_broadcasts_events_to_multiple_sse_clients() {
         drop(second);
         stop_test_api_server(shutdown_tx, server_handle).await;
     });
+}
+
+#[test]
+fn sotf_api_emits_library_changed_when_library_version_advances() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = test_state();
+        let (addr, shutdown_tx, server_handle) =
+            match try_spawn_test_api_server(Arc::clone(&state)).await {
+                Ok(server) => server,
+                Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+                Err(err) => panic!("failed to bind test API server: {err}"),
+            };
+
+        let mut client = connect_sse_client(addr).await;
+        let version = state.mark_library_changed();
+
+        let event = read_until(&mut client, "event: library_changed").await;
+        assert!(event.contains(&format!("\"library_version\":{version}")));
+
+        drop(client);
+        stop_test_api_server(shutdown_tx, server_handle).await;
+    });
+}
+
+#[test]
+fn sotf_api_emits_scanner_progress_updates() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = test_state();
+        let (addr, shutdown_tx, server_handle) =
+            match try_spawn_test_api_server(Arc::clone(&state)).await {
+                Ok(server) => server,
+                Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+                Err(err) => panic!("failed to bind test API server: {err}"),
+            };
+
+        let mut client = connect_sse_client(addr).await;
+        state.report_scanner_progress(3, 9);
+
+        let event = read_until(&mut client, "event: scanner_progress").await;
+        assert!(event.contains("\"done\":3"));
+        assert!(event.contains("\"total\":9"));
+
+        drop(client);
+        stop_test_api_server(shutdown_tx, server_handle).await;
+    });
+}
+
+#[test]
+fn sotf_api_library_scan_requires_configured_directories() {
+    let state = test_state();
+    let request = ApiRequest {
+        method: "POST".to_string(),
+        path: "/api/v1/library/scan".to_string(),
+        headers: auth_header(),
+        body: b"{}".to_vec(),
+    };
+
+    let response =
+        handle_sotf_api_request(request, &state, &api_settings(Some("secret")), "secret");
+    let response = String::from_utf8(response).unwrap();
+
+    assert_eq!(api_response_status(response.as_bytes()), Some(409));
+    assert!(response.contains("no library directories configured"));
+}
+
+#[test]
+fn sotf_api_library_scan_rejects_overlapping_scans() {
+    let state = test_state();
+    state.library.lock().directories.push(DirectoryInfo {
+        path: std::env::temp_dir(),
+        file_count: 0,
+        album_count: 0,
+        last_scanned: None,
+        expanded: false,
+        subdirectories: Vec::new(),
+        children_loaded: true,
+    });
+    state
+        .library_scan_active
+        .store(true, std::sync::atomic::Ordering::Release);
+
+    let request = ApiRequest {
+        method: "POST".to_string(),
+        path: "/api/v1/library/scan".to_string(),
+        headers: auth_header(),
+        body: br#"{"force":true}"#.to_vec(),
+    };
+
+    let response =
+        handle_sotf_api_request(request, &state, &api_settings(Some("secret")), "secret");
+    let response = String::from_utf8(response).unwrap();
+
+    assert_eq!(api_response_status(response.as_bytes()), Some(409));
+    assert!(response.contains("library scan already running"));
 }
 
 #[test]

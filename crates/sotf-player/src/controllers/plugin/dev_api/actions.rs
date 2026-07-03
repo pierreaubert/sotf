@@ -24,25 +24,19 @@ pub fn plugin_action(graph: &mut PluginGraph, name: &str, payload: Option<Value>
             let ty = PluginType::from_name(plugin_type)
                 .ok_or_else(|| anyhow!("unknown plugin type `{plugin_type}`"))?;
             let idx = graph.user_plugin_insert_index();
-            graph
-                .insert_plugin(idx, &ty)
-                .map_err(|e| anyhow!(e))?;
+            graph.insert_plugin(idx, &ty).map_err(|e| anyhow!(e))?;
             graph.update_channel_dependent_plugins();
             Ok(())
         }
         "PluginRemove" => {
             let idx = payload_u64(&payload, "index")? as usize;
-            graph
-                .remove_plugin_by_index(idx)
-                .map_err(|e| anyhow!(e))?;
+            graph.remove_plugin_by_index(idx).map_err(|e| anyhow!(e))?;
             graph.update_channel_dependent_plugins();
             Ok(())
         }
         "PluginToggle" => {
             let idx = payload_u64(&payload, "index")? as usize;
-            graph
-                .toggle_plugin_by_index(idx)
-                .map_err(|e| anyhow!(e))?;
+            graph.toggle_plugin_by_index(idx).map_err(|e| anyhow!(e))?;
             graph.update_channel_dependent_plugins();
             Ok(())
         }
@@ -109,7 +103,9 @@ pub fn plugin_action(graph: &mut PluginGraph, name: &str, payload: Option<Value>
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .ok_or_else(|| anyhow!("invalid filename"))?;
-            graph.save_to_file(dir, file).map_err(|e| anyhow!(e.to_string()))?;
+            graph
+                .save_to_file(dir, file)
+                .map_err(|e| anyhow!(e.to_string()))?;
             Ok(())
         }
         "PluginChainLoad" => {
@@ -193,7 +189,7 @@ pub fn set_string_param(
         _ => {
             return Err(anyhow!(
                 "param {param_idx} is not a string parameter for this plugin"
-            ))
+            ));
         }
     }
     Ok(())

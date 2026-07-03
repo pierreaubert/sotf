@@ -135,6 +135,7 @@ fn sotf_api_capabilities_are_public_and_media_aware() {
         playlist_version: std::sync::atomic::AtomicU32::new(1),
         library_version: std::sync::atomic::AtomicU64::new(1),
         events: crate::sotf_server_event::new_event_broadcaster(64),
+        library_scan_active: std::sync::atomic::AtomicBool::new(false),
         pairing_mode: std::sync::atomic::AtomicBool::new(false),
         pairing_nonce: parking_lot::Mutex::new(String::new()),
         trusted_clients: parking_lot::Mutex::new(
@@ -149,6 +150,8 @@ fn sotf_api_capabilities_are_public_and_media_aware() {
     assert!(response.starts_with("HTTP/1.1 200 OK"));
     assert!(response.contains("\"media_range\":true"));
     assert!(response.contains("\"events\":true"));
+    assert!(response.contains("\"pairing\":true"));
+    assert!(response.contains("\"library_search\":false"));
 }
 
 pub(super) fn test_state() -> Arc<ServerState> {
@@ -164,6 +167,7 @@ pub(super) fn test_state() -> Arc<ServerState> {
             playlist_version: std::sync::atomic::AtomicU32::new(1),
             library_version: std::sync::atomic::AtomicU64::new(1),
             events: crate::sotf_server_event::new_event_broadcaster(64),
+            library_scan_active: std::sync::atomic::AtomicBool::new(false),
             pairing_mode: std::sync::atomic::AtomicBool::new(false),
             pairing_nonce: parking_lot::Mutex::new(String::new()),
             trusted_clients: parking_lot::Mutex::new(

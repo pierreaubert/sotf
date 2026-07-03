@@ -1,12 +1,15 @@
 use super::generate::generate_pairing_nonce;
 use crate::federation_config::{self, ServerConfig};
 use crate::library::MusicLibrary;
+use crate::library_scanner::{LibraryScanMessage, LibraryScanner};
 use crate::player::Player;
 use crate::queue::Queue;
 use crate::sotf_server_event::{EventBroadcaster, SotfServerEvent};
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 /// Shared state for the headless server adapters.
 pub(super) struct ServerState {
@@ -19,6 +22,8 @@ pub(super) struct ServerState {
     pub(super) library_version: std::sync::atomic::AtomicU64,
     /// Broadcast channel for server-sent events.
     pub(super) events: EventBroadcaster,
+    /// Prevents overlapping library scans from racing database reloads/events.
+    pub(super) library_scan_active: AtomicBool,
     /// Whether pairing mode is currently open.
     pub(super) pairing_mode: std::sync::atomic::AtomicBool,
     /// Pairing nonce/short code — valid only while pairing_mode is true.
@@ -36,6 +41,101 @@ impl ServerState {
     /// Silently ignored if there are no active subscribers.
     pub(super) fn broadcast(&self, event: SotfServerEvent) {
         let _ = self.events.send(event);
+    }
+
+    /// Advance the library cache version and notify remote clients.
+    pub(super) fn mark_library_changed(&self) -> u64 {
+        let library_version = self.library_version.fetch_add(1, Ordering::Relaxed) + 1;
+        self.broadcast(SotfServerEvent::LibraryChanged { library_version });
+        library_version
+    }
+
+    /// Notify remote clients about library scanner progress.
+    pub(super) fn report_scanner_progress(&self, done: usize, total: usize) {
+        self.broadcast(SotfServerEvent::ScannerProgress { done, total });
+    }
+
+    /// Reload the durable library and notify remote clients that caches are stale.
+    pub(super) fn reload_library_from_database(&self) -> Result<u64, String> {
+        let mut library =
+            MusicLibrary::with_database().map_err(|e| format!("failed to open library DB: {e}"))?;
+        library
+            .load_from_database()
+            .map_err(|e| format!("failed to reload library DB: {e}"))?;
+        *self.library.lock() = library;
+        Ok(self.mark_library_changed())
+    }
+
+    /// Start a background library scan and bridge scanner messages to SSE.
+    pub(super) fn start_library_scan(state: &Arc<Self>, force: bool) -> Result<(), String> {
+        let directories: Vec<_> = state
+            .library
+            .lock()
+            .directories
+            .iter()
+            .map(|directory| directory.path.clone())
+            .collect();
+        if directories.is_empty() {
+            return Err("no library directories configured".to_string());
+        }
+
+        state
+            .library_scan_active
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| "library scan already running".to_string())?;
+
+        let state_for_thread = Arc::clone(state);
+        std::thread::Builder::new()
+            .name("sotf-library-scan-events".to_string())
+            .spawn(move || {
+                let scanner = if force {
+                    LibraryScanner::start_force(directories)
+                } else {
+                    LibraryScanner::start(directories)
+                };
+
+                loop {
+                    while let Some(message) = scanner.try_recv() {
+                        if state_for_thread.handle_library_scan_message(message) {
+                            state_for_thread
+                                .library_scan_active
+                                .store(false, Ordering::Release);
+                            return;
+                        }
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            })
+            .map_err(|e| {
+                state.library_scan_active.store(false, Ordering::Release);
+                format!("failed to start library scan event bridge: {e}")
+            })?;
+
+        Ok(())
+    }
+
+    fn handle_library_scan_message(&self, message: LibraryScanMessage) -> bool {
+        match message {
+            LibraryScanMessage::Progress {
+                tracks,
+                total_files,
+                ..
+            } => {
+                self.report_scanner_progress(tracks, total_files.max(tracks));
+                false
+            }
+            LibraryScanMessage::Complete { tracks, .. } => {
+                self.report_scanner_progress(tracks, tracks);
+                if let Err(err) = self.reload_library_from_database() {
+                    self.broadcast(SotfServerEvent::Error { message: err });
+                }
+                true
+            }
+            LibraryScanMessage::Error { message } => {
+                self.broadcast(SotfServerEvent::Error { message });
+                true
+            }
+        }
     }
 
     /// Generate a fresh pairing nonce.

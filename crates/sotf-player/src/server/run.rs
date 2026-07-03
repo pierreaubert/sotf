@@ -131,6 +131,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
         playlist_version: std::sync::atomic::AtomicU32::new(1),
         library_version: std::sync::atomic::AtomicU64::new(1),
         events: event_broadcaster,
+        library_scan_active: std::sync::atomic::AtomicBool::new(false),
         pairing_mode: std::sync::atomic::AtomicBool::new(false),
         pairing_nonce: parking_lot::Mutex::new(String::new()),
         trusted_clients: parking_lot::Mutex::new(trusted_clients),

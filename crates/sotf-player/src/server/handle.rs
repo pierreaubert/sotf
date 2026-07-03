@@ -189,6 +189,23 @@ pub(super) fn handle_sotf_api_request(
             Ok(body) => api_json_response(200, body),
             Err(err) => api_error_response(400, &err),
         },
+        ("POST", "/api/v1/library/reload") => match state.reload_library_from_database() {
+            Ok(library_version) => api_json_response(
+                200,
+                json!({ "ok": true, "library_version": library_version }),
+            ),
+            Err(err) => api_error_response(500, &err),
+        },
+        ("POST", "/api/v1/library/scan") => {
+            let force = api_json_body(&request)
+                .ok()
+                .and_then(|body| body.get("force").and_then(Value::as_bool))
+                .unwrap_or(false);
+            match ServerState::start_library_scan(state, force) {
+                Ok(()) => api_json_response(202, json!({ "ok": true, "scan_started": true })),
+                Err(err) => api_error_response(409, &err),
+            }
+        }
         ("POST", "/api/v1/play") => api_command_response("play", adapter.play(None)),
         ("POST", "/api/v1/pause") => api_command_response("pause", adapter.pause(Some(true))),
         ("POST", "/api/v1/resume") => api_command_response("resume", adapter.pause(Some(false))),
