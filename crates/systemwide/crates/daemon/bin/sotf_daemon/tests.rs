@@ -1,5 +1,5 @@
 #![allow(clippy::field_reassign_with_default)]
-use super::audio_daemon::AudioDaemon;
+use super::audio_daemon::{AudioDaemon, pipeline_timing_after_config_request};
 use super::command::Command;
 use super::configured::configured_output_device_from_value;
 use super::consts::{MAX_HAL_CHANNELS, MAX_IPC_COMMAND_BYTES};
@@ -751,6 +751,35 @@ mod ipc_safety_tests {
         );
         assert!(supervisor.input_loudness_index().is_none());
         assert!(supervisor.output_loudness_index().is_none());
+    }
+
+    #[test]
+    fn negotiated_driver_timing_overrides_requested_pipeline_timing() {
+        let result = driver_common::ConfigResult::negotiated(44_100, 256, 6);
+
+        assert_eq!(
+            pipeline_timing_after_config_request(&result, 48_000, 512),
+            (44_100, 256)
+        );
+        assert_eq!(
+            pipeline_timing_after_config_request(
+                &driver_common::ConfigResult::Accepted,
+                48_000,
+                512
+            ),
+            (48_000, 512)
+        );
+    }
+
+    #[test]
+    fn apply_pipeline_plan_starts_engine_with_negotiated_timing() {
+        let source = include_str!("audio_daemon.rs");
+        assert!(
+            source.contains(
+                "effective_driver_sample_rate,\n            effective_driver_buffer_frames,"
+            ),
+            "HAL playback restart must use negotiated driver timing"
+        );
     }
 
     #[test]

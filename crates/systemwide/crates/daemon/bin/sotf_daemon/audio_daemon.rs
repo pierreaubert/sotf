@@ -39,6 +39,23 @@ use std::io::{BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 
+pub(super) fn pipeline_timing_after_config_request(
+    result: &driver_common::ConfigResult,
+    requested_sample_rate: u32,
+    requested_buffer_frames: u32,
+) -> (u32, u32) {
+    match result {
+        driver_common::ConfigResult::Negotiated {
+            actual_rate,
+            actual_frames,
+            ..
+        } => (*actual_rate, *actual_frames),
+        driver_common::ConfigResult::Accepted | driver_common::ConfigResult::Error(_) => {
+            (requested_sample_rate, requested_buffer_frames)
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct AudioDaemon {
     pub(super) manager: Arc<Mutex<AudioEngineManager>>,
@@ -522,6 +539,9 @@ impl AudioDaemon {
             let _ = manager.stop();
         }
 
+        let mut effective_driver_sample_rate = driver_sample_rate;
+        let mut effective_driver_buffer_frames = driver_buffer_frames;
+
         if driver_status.driver_installed
             && driver_status.channel_count != plan.spec.input_channels as u32
         {
@@ -534,6 +554,12 @@ impl AudioDaemon {
             match result {
                 driver_common::ConfigResult::Accepted
                 | driver_common::ConfigResult::Negotiated { .. } => {
+                    (effective_driver_sample_rate, effective_driver_buffer_frames) =
+                        pipeline_timing_after_config_request(
+                            &result,
+                            driver_sample_rate,
+                            driver_buffer_frames,
+                        );
                     log::info!(
                         "HAL input channel count set to {} via driver config",
                         plan.spec.input_channels
@@ -550,7 +576,7 @@ impl AudioDaemon {
             "Loading driver plugin chain: {} user plugins + 2 monitors = {} total, {}Hz {}ch input, {} output channels, device: {:?}",
             plan.spec.user_plugins.len(),
             plan.runtime_plugins.len(),
-            driver_sample_rate,
+            effective_driver_sample_rate,
             plan.spec.input_channels,
             plan.spec.output_channels,
             plan.spec.output_device
@@ -562,8 +588,8 @@ impl AudioDaemon {
             plan.spec.output_device.clone(),
             plan.runtime_plugins.clone(),
             plan.spec.output_channels,
-            driver_sample_rate,
-            driver_buffer_frames,
+            effective_driver_sample_rate,
+            effective_driver_buffer_frames,
             plan.spec.input_channels,
         );
         drop(manager);
