@@ -566,7 +566,13 @@ impl MultibandCompressorPlugin {
                 }
                 6 => {
                     // threshold changed
-                    self.threshold_smoother.set_target(self.threshold_db);
+                    if self.cache_update_counter == 0
+                        && self.band_levels_db.iter().all(|level| *level <= -119.0)
+                    {
+                        self.threshold_smoother.reset(self.threshold_db);
+                    } else {
+                        self.threshold_smoother.set_target(self.threshold_db);
+                    }
                 }
                 8 | 9 => {
                     // attack or release changed

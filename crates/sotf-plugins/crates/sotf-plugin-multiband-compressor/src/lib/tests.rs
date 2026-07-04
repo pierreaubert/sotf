@@ -869,6 +869,18 @@ fn test_set_parameter_mix_and_threshold_update_smoothers() {
 }
 
 #[test]
+fn test_initial_threshold_automation_seeds_smoother_current_value() {
+    let mut p = MultibandCompressorPlugin::new(1);
+    p.initialize(48000).unwrap();
+
+    p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(0.0))
+        .unwrap();
+
+    assert!((p.threshold_smoother.current() - 0.0).abs() < 1e-6);
+    assert!((p.threshold_smoother.target() - 0.0).abs() < 1e-6);
+}
+
+#[test]
 fn test_set_parameter_per_band_lookahead_updates_buffers() {
     let mut p = MultibandCompressorPlugin::with_params(
         2,
