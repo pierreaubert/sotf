@@ -870,11 +870,11 @@ impl PlayerView {
             Some(crate::app::state::app::RemoteServerProbeStatus::Testing) => {
                 ("testing".to_string(), theme.warning)
             }
-            Some(crate::app::state::app::RemoteServerProbeStatus::Reachable { .. }) => {
-                (probe_status.as_ref().unwrap().label(), theme.success)
+            Some(status @ crate::app::state::app::RemoteServerProbeStatus::Reachable { .. }) => {
+                (status.label(), theme.success)
             }
-            Some(crate::app::state::app::RemoteServerProbeStatus::Failed(_)) => {
-                (probe_status.as_ref().unwrap().label(), theme.error)
+            Some(status @ crate::app::state::app::RemoteServerProbeStatus::Failed(_)) => {
+                (status.label(), theme.error)
             }
             None => ("untested".to_string(), theme.text_muted),
         };

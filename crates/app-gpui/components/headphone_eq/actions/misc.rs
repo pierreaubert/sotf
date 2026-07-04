@@ -538,19 +538,37 @@ impl PlayerView {
 
         static HEADPHONES_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
             std::sync::Mutex::new(None);
-        *HEADPHONES_RESULT.lock().unwrap() = None;
+        if let Ok(mut result) = HEADPHONES_RESULT.lock() {
+            *result = None;
+        } else {
+            self.state.update(cx, |state, _cx| {
+                let headphone_eq = &mut state.app.measurement_state.headphone_eq_state;
+                headphone_eq.loading_headphones = false;
+                headphone_eq.model.error_message =
+                    Some("Headphone fetch state is unavailable".to_string());
+            });
+            cx.notify();
+            return;
+        }
 
         std::thread::spawn(|| {
             let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
             let result = rt.block_on(async { autoeq::fetch_available_headphones().await });
-            *HEADPHONES_RESULT.lock().unwrap() = Some(result.map_err(|e| e.to_string()));
+            if let Ok(mut slot) = HEADPHONES_RESULT.lock() {
+                *slot = Some(result.map_err(|e| e.to_string()));
+            } else {
+                log::error!("Headphone fetch result state is unavailable");
+            }
         });
 
         let weak_state = self.state.downgrade();
         cx.spawn(async move |_, cx| {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
-                let result = HEADPHONES_RESULT.lock().unwrap().take();
+                let result = match HEADPHONES_RESULT.lock() {
+                    Ok(mut slot) => slot.take(),
+                    Err(_) => Some(Err("Headphone fetch state is unavailable".to_string())),
+                };
                 if let Some(result) = result {
                     let Some(state_entity) = weak_state.upgrade() else {
                         break;
@@ -661,7 +679,18 @@ impl PlayerView {
         static DOWNLOAD_RESULT: std::sync::Mutex<
             Option<Result<(String, Vec<(f64, f64)>), String>>,
         > = std::sync::Mutex::new(None);
-        *DOWNLOAD_RESULT.lock().unwrap() = None;
+        if let Ok(mut result) = DOWNLOAD_RESULT.lock() {
+            *result = None;
+        } else {
+            self.state.update(cx, |state, _cx| {
+                let headphone_eq = &mut state.app.measurement_state.headphone_eq_state;
+                headphone_eq.loading_download = false;
+                headphone_eq.model.error_message =
+                    Some("Headphone download state is unavailable".to_string());
+            });
+            cx.notify();
+            return;
+        }
 
         let headphone_for_thread = headphone_name.clone();
         std::thread::spawn(move || {
@@ -681,14 +710,21 @@ impl PlayerView {
 
                 Ok::<(String, Vec<(f64, f64)>), String>((csv_path, curve_data))
             });
-            *DOWNLOAD_RESULT.lock().unwrap() = Some(result);
+            if let Ok(mut slot) = DOWNLOAD_RESULT.lock() {
+                *slot = Some(result);
+            } else {
+                log::error!("Headphone download result state is unavailable");
+            }
         });
 
         let weak_state = self.state.downgrade();
         cx.spawn(async move |_, cx| {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
-                let result = DOWNLOAD_RESULT.lock().unwrap().take();
+                let result = match DOWNLOAD_RESULT.lock() {
+                    Ok(mut slot) => slot.take(),
+                    Err(_) => Some(Err("Headphone download state is unavailable".to_string())),
+                };
                 if let Some(result) = result {
                     let Some(state_entity) = weak_state.upgrade() else {
                         break;

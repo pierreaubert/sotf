@@ -20,6 +20,7 @@ use sotf_audio_player_gpui::theme::{Theme, ThemeId};
 use sotf_audio_player_gpui::{InputMode, Screen, SettingsTab};
 use sotf_plugins::param_specs::{self, ParamType};
 use sotf_plugins::plugin_layout::ControlType;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 fn app_source(relative: &str) -> String {
@@ -92,6 +93,66 @@ fn eq_renderer_uses_curve_render_cache_helper() {
     assert!(
         !eq_render.contains("let combined_response: Vec<f64> = freq_points"),
         "EQ renderer must not allocate combined response data inline every render"
+    );
+}
+
+#[test]
+fn app_gpui_unwrap_expect_production_audit_is_current() {
+    fn visit_rs_files(path: &Path, files: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(path).unwrap_or_else(|err| {
+            panic!("failed to read {}: {err}", path.display());
+        }) {
+            let entry = entry.unwrap_or_else(|err| panic!("failed to read dir entry: {err}"));
+            let path = entry.path();
+            if path.is_dir() {
+                visit_rs_files(&path, files);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                files.push(path);
+            }
+        }
+    }
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for dir in ["app", "components", "ui"] {
+        visit_rs_files(&root.join(dir), &mut files);
+    }
+
+    let mut actual = BTreeMap::new();
+    for file in files {
+        let relative = file
+            .strip_prefix(root)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let source = std::fs::read_to_string(&file)
+            .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"));
+        let count = source.matches(".unwrap()").count() + source.matches(".expect(").count();
+        if count > 0 {
+            actual.insert(relative, count);
+        }
+    }
+
+    let expected = BTreeMap::from([
+        ("app/cast.rs".to_string(), 2),
+        ("app/dev_api/server/parse.rs".to_string(), 1),
+        ("app/federation/local.rs".to_string(), 2),
+        ("app/midi_input.rs".to_string(), 3),
+        ("app/remote/consts.rs".to_string(), 5),
+        ("components/headphone_eq/actions/misc.rs".to_string(), 2),
+        ("components/plugins/spatial_spider/data.rs".to_string(), 13),
+        (
+            "components/plugins/ui_layout_renderer/render.rs".to_string(),
+            1,
+        ),
+        ("components/spinorama_eq/misc.rs".to_string(), 1),
+        ("components/spinorama_eq/types.rs".to_string(), 1),
+    ]);
+
+    assert_eq!(
+        actual, expected,
+        "app-gpui unwrap/expect audit changed; replace user-triggerable sites \
+         with graceful handling or update this baseline with a reason"
     );
 }
 

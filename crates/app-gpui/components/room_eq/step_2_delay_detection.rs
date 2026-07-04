@@ -44,8 +44,7 @@ impl PlayerView {
                 .color(theme.text_secondary),
             );
 
-        if has_results {
-            let results = dd.results.as_ref().unwrap();
+        if let Some(results) = dd.results.as_ref().filter(|_| has_results) {
             let live_align = dd.edited_alignment_delays_ms();
             let mut has_low_delay = false;
 

@@ -323,10 +323,9 @@ impl PlayerView {
                     ),
             )
             // Diagnostic steps (shown after a test with diagnostic results)
-            .when(diagnostic.is_some(), {
+            .when_some(diagnostic, {
                 let theme = theme.clone();
-                move |card| {
-                    let diag = diagnostic.as_ref().unwrap();
+                move |card, diag| {
                     let mut steps_col = div()
                         .flex()
                         .flex_col()

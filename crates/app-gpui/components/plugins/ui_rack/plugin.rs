@@ -1890,8 +1890,7 @@ impl PlayerView {
             .flex_col()
             .min_h(rems(21.875))
             .min_h_0()
-            .when(has_plugin, |el| {
-                let plugin = plugin_data.clone().unwrap();
+            .when_some(plugin_data, |el, plugin| {
                 let is_editing = editing_idx.is_some();
                 el.child({
                     // Calculate output channels based on plugin chain for conditional divider
@@ -2054,8 +2053,9 @@ impl PlayerView {
                                             } else if selected_idx == monitor_indices[0] {
                                                 // First monitor - show input levels
                                                 state.app.playback.input_loudness_info.clone()
-                                            } else if selected_idx
-                                                == *monitor_indices.last().unwrap()
+                                            } else if monitor_indices
+                                                .last()
+                                                .is_some_and(|last| selected_idx == *last)
                                             {
                                                 // Last monitor - show output levels
                                                 state.app.playback.loudness_info.clone()
