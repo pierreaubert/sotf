@@ -293,7 +293,7 @@ fn playback_buffer_capacity_rounds_up_after_channel_scaling() {
 
 #[test]
 fn playback_ring_space_gate_clamps_to_buffer_capacity() {
-    assert_eq!(minimum_ring_space_required(512, 2, 4096), 2048);
+    assert_eq!(minimum_ring_space_required(512, 2, 4096), 1024);
     assert_eq!(minimum_ring_space_required(4096, 2, 96), 96);
     assert_eq!(minimum_ring_space_required(usize::MAX, 2, 96), 96);
 }

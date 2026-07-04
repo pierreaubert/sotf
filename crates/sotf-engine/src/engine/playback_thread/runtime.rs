@@ -1325,8 +1325,5 @@ pub(super) fn minimum_ring_space_required(
     channels: usize,
     buffer_capacity: usize,
 ) -> usize {
-    frame_size
-        .saturating_mul(channels)
-        .saturating_mul(2)
-        .min(buffer_capacity)
+    frame_size.saturating_mul(channels).min(buffer_capacity)
 }
