@@ -1149,12 +1149,12 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
                     .title("Suggestions (spinorama.org)"),
             );
         f.render_widget(suggestions, inner[4]);
-    } else if let Some(ref err) = s.save_error {
+    } else if let Some(ref err) = s.save.error {
         let err_para = Paragraph::new(err.as_str())
             .style(Style::default().fg(app.theme.accent_error))
             .block(Block::default().borders(Borders::ALL).title("Error"));
         f.render_widget(err_para, inner[4]);
-    } else if s.save_success {
+    } else if s.save.success {
         let ok = Paragraph::new(" Recordings saved successfully!")
             .style(Style::default().fg(app.theme.accent_success))
             .block(Block::default().borders(Borders::ALL).title("Status"));

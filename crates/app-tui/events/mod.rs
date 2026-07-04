@@ -79,6 +79,7 @@ pub fn handle_events(
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => Ok(Some(AppEvent::Key(key))),
             Event::Resize(_, _) => Ok(Some(AppEvent::Resize)),
+            Event::Mouse(_) => Ok(None), // Mouse support is explicitly deferred for this release.
             _ => Ok(None),
         }
     } else {
@@ -117,6 +118,21 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         | InputMode::ConfigureServers
         | InputMode::ConfigureMetadataServices => conf::handle_configure_mode(app, key),
         InputMode::Normal => handle_normal_mode(app, key),
+    }
+}
+
+#[cfg(test)]
+mod p1_event_policy_tests {
+    #[test]
+    fn mouse_support_is_explicitly_deferred() {
+        let source = include_str!("mod.rs");
+        let production_source = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("source before tests");
+        assert!(production_source.contains("Event::Mouse(_) => Ok(None)"));
+        assert!(production_source.contains("Mouse support is explicitly deferred"));
+        assert!(!production_source.contains("EnableMouseCapture"));
     }
 }
 

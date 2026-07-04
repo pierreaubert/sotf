@@ -443,26 +443,26 @@ fn federation_add_source_workflow() {
     app.configure_sub_screen = ConfigureSubScreen::FederationSources;
     app.input_mode = InputMode::ConfigureFederationSources;
 
-    assert_eq!(app.federation_state.mode, FederationMode::List);
-    assert!(app.federation_state.sources.is_empty());
+    assert_eq!(app.federation.state.mode, FederationMode::List);
+    assert!(app.federation.state.sources.is_empty());
 
     // Enter add mode
     send_keys(&mut app, &[KeyCode::Char('a')]);
-    assert_eq!(app.federation_state.mode, FederationMode::AddSource);
+    assert_eq!(app.federation.state.mode, FederationMode::AddSource);
 
     // Confirm source type -> enters EditSource mode with a new source
     send_keys(&mut app, &[KeyCode::Enter]);
-    assert_eq!(app.federation_state.mode, FederationMode::EditSource);
-    assert!(app.federation_state.edit.is_some());
+    assert_eq!(app.federation.state.mode, FederationMode::EditSource);
+    assert!(app.federation.state.edit.is_some());
 
     // Edit the display name (it follows the connection fields)
     {
-        let edit = app.federation_state.edit.as_mut().unwrap();
+        let edit = app.federation.state.edit.as_mut().unwrap();
         edit.selected_field = edit.source.connection.field_names().len();
     }
     send_keys(&mut app, &[KeyCode::Enter]);
-    assert!(app.federation_state.edit.as_ref().unwrap().editing_value);
-    app.federation_state
+    assert!(app.federation.state.edit.as_ref().unwrap().editing_value);
+    app.federation.state
         .edit
         .as_mut()
         .unwrap()
@@ -470,13 +470,13 @@ fn federation_add_source_workflow() {
         .clear();
     type_text(&mut app, "My Source");
     send_keys(&mut app, &[KeyCode::Enter]);
-    assert!(!app.federation_state.edit.as_ref().unwrap().editing_value);
+    assert!(!app.federation.state.edit.as_ref().unwrap().editing_value);
 
     // Save and return to list
     send_keys(&mut app, &[KeyCode::Char('s')]);
-    assert_eq!(app.federation_state.mode, FederationMode::List);
-    assert_eq!(app.federation_state.sources.len(), 1);
-    assert_eq!(app.federation_state.sources[0].display_name, "My Source");
+    assert_eq!(app.federation.state.mode, FederationMode::List);
+    assert_eq!(app.federation.state.sources.len(), 1);
+    assert_eq!(app.federation.state.sources[0].display_name, "My Source");
 }
 
 // ── State persistence ───────────────────────────────────────────────────────

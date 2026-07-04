@@ -8,7 +8,7 @@ use sotf_audio_player::federation_config::{
 };
 
 pub(super) fn handle_federation_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match app.federation_state.mode {
+    match app.federation.state.mode {
         FederationMode::List => handle_list_mode(app, key),
         FederationMode::EditSource => handle_edit_mode(app, key),
         FederationMode::AddSource => handle_add_mode(app, key),
@@ -16,7 +16,7 @@ pub(super) fn handle_federation_keys(app: &mut App, key: KeyEvent) -> Option<Pla
 }
 
 fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    let state = &mut app.federation_state;
+    let state = &mut app.federation.state;
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Configure;
@@ -76,7 +76,7 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 }
 
 fn handle_edit_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    let state = &mut app.federation_state;
+    let state = &mut app.federation.state;
     let Some(edit) = &mut state.edit else {
         state.mode = FederationMode::List;
         return None;
@@ -145,7 +145,7 @@ fn handle_edit_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 }
 
 fn handle_add_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    let state = &mut app.federation_state;
+    let state = &mut app.federation.state;
     let idx = ADD_SOURCE_TYPE_IDX.load(std::sync::atomic::Ordering::Relaxed);
 
     match key.code {
@@ -189,7 +189,7 @@ fn uuid_short() -> String {
 }
 
 fn test_federation_source(app: &mut App) {
-    let state = &mut app.federation_state;
+    let state = &mut app.federation.state;
     let source_idx = state.selected_idx;
     let source = match state.sources.get(source_idx) {
         Some(s) => s.clone(),
@@ -206,7 +206,7 @@ fn test_federation_source(app: &mut App) {
         .insert(source_id.clone(), ConnectionStatus::Testing);
 
     let (tx, rx) = std::sync::mpsc::channel();
-    app.federation_receivers.test = Some(rx);
+    app.federation.receivers.test = Some(rx);
 
     std::thread::spawn(move || {
         let status = sotf_audio_player::federation_scan::run_connection_diagnostic(&source);
@@ -215,12 +215,12 @@ fn test_federation_source(app: &mut App) {
 }
 
 fn scan_federation_source(app: &mut App) {
-    if app.federation_receivers.scan.is_some() {
+    if app.federation.receivers.scan.is_some() {
         app.ui.status_message = Some("A federation scan is already running.".to_string());
         return;
     }
 
-    let state = &app.federation_state;
+    let state = &app.federation.state;
     let source = match state.sources.get(state.selected_idx) {
         Some(s) => s.clone(),
         None => return,
@@ -233,7 +233,7 @@ fn scan_federation_source(app: &mut App) {
     app.ui.status_message = Some(format!("Scanning {}...", source.display_name));
 
     let (tx, rx) = std::sync::mpsc::channel();
-    app.federation_receivers.scan = Some(rx);
+    app.federation.receivers.scan = Some(rx);
 
     std::thread::Builder::new()
         .name("federation-scan".into())
@@ -275,26 +275,27 @@ async fn do_federation_scan(source: &FederationSourceEntry) -> crate::app::Feder
 /// Poll for federation scan completion. Call from the main tick loop.
 /// Returns true if the UI needs a redraw.
 pub fn poll_federation_scan(app: &mut App) -> bool {
-    let result = match &app.federation_receivers.scan {
+    let result = match &app.federation.receivers.scan {
         Some(rx) => match rx.try_recv() {
             Ok(result) => Some(result),
             Err(std::sync::mpsc::TryRecvError::Empty) => return false,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                app.federation_receivers.scan = None;
+                app.federation.receivers.scan = None;
                 return false;
             }
         },
         None => return false,
     };
 
-    app.federation_receivers.scan = None;
+    app.federation.receivers.scan = None;
 
     if let Some(result) = result {
         if let Some(ref err) = result.error {
             app.ui.status_message = Some(format!("Federation scan failed: {err}"));
             // Mark source as unavailable
             if let Some(source) = app
-                .federation_state
+                .federation
+                .state
                 .sources
                 .iter_mut()
                 .find(|s| s.source_id == result.source_id)
@@ -304,7 +305,8 @@ pub fn poll_federation_scan(app: &mut App) -> bool {
             if let Some(db) = app.library.get_database() {
                 let _ = db.set_source_availability(&result.source_id, false);
             }
-            app.federation_state
+            app.federation
+                .state
                 .statuses
                 .insert(result.source_id, ConnectionStatus::Error(err.clone()));
         } else {
@@ -314,7 +316,8 @@ pub fn poll_federation_scan(app: &mut App) -> bool {
             ));
             // Mark source as available
             if let Some(source) = app
-                .federation_state
+                .federation
+                .state
                 .sources
                 .iter_mut()
                 .find(|s| s.source_id == result.source_id)
@@ -325,7 +328,7 @@ pub fn poll_federation_scan(app: &mut App) -> bool {
                 let _ = db.set_source_availability(&result.source_id, true);
                 let _ = db.update_federation_source_sync_time(&result.source_id);
             }
-            app.federation_state.statuses.insert(
+            app.federation.state.statuses.insert(
                 result.source_id,
                 ConnectionStatus::Connected { version: None },
             );
@@ -351,14 +354,14 @@ pub fn poll_federation_scan(app: &mut App) -> bool {
 /// Poll for federation connection test completion. Call from the main tick loop.
 /// Returns true if the UI needs a redraw.
 pub fn poll_federation_test(app: &mut App) -> bool {
-    let rx = match &app.federation_receivers.test {
+    let rx = match &app.federation.receivers.test {
         Some(rx) => rx,
         None => return false,
     };
 
     match rx.try_recv() {
         Ok((sid, status)) => {
-            app.federation_receivers.test = None;
+            app.federation.receivers.test = None;
 
             let available = match &status {
                 ConnectionStatus::Connected { .. } => true,
@@ -367,7 +370,8 @@ pub fn poll_federation_test(app: &mut App) -> bool {
             };
 
             if let Some(src) = app
-                .federation_state
+                .federation
+                .state
                 .sources
                 .iter_mut()
                 .find(|s| s.source_id == sid)
@@ -379,17 +383,18 @@ pub fn poll_federation_test(app: &mut App) -> bool {
             }
 
             let should_scan_peer = available
-                && app.federation_receivers.scan.is_none()
+                && app.federation.receivers.scan.is_none()
                 && app
-                    .federation_state
+                    .federation
+                    .state
                     .sources
-                    .get(app.federation_state.selected_idx)
+                    .get(app.federation.state.selected_idx)
                     .is_some_and(|source| {
                         source.source_id == sid
                             && matches!(source.connection, SourceConnectionConfig::Peer { .. })
                     });
 
-            app.federation_state.statuses.insert(sid, status);
+            app.federation.state.statuses.insert(sid, status);
             if should_scan_peer {
                 scan_federation_source(app);
             }
@@ -397,7 +402,7 @@ pub fn poll_federation_test(app: &mut App) -> bool {
         }
         Err(std::sync::mpsc::TryRecvError::Empty) => false,
         Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-            app.federation_receivers.test = None;
+            app.federation.receivers.test = None;
             false
         }
     }

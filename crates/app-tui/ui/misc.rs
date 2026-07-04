@@ -15,6 +15,28 @@ pub(crate) fn below_title_bar(f: &Frame) -> Rect {
 
 pub(crate) const DUAL_VIEW_HEIGHT_THRESHOLD: u16 = 40;
 
+pub(crate) fn centered_modal_rect(
+    area: Rect,
+    width_percent: u16,
+    height_percent: u16,
+    min_width: u16,
+    min_height: u16,
+) -> Rect {
+    let percent_width = area.width.saturating_mul(width_percent.min(100)) / 100;
+    let percent_height = area.height.saturating_mul(height_percent.min(100)) / 100;
+    let width = percent_width.max(min_width.min(area.width)).min(area.width);
+    let height = percent_height
+        .max(min_height.min(area.height))
+        .min(area.height);
+
+    Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    }
+}
+
 pub(super) fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str)> {
     match screen {
         Screen::Loading => vec![],
@@ -95,5 +117,26 @@ pub(super) fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &
             ("↑/↓ or k/j", "Navigate output devices"),
             ("Enter/Space", "Select output device"),
         ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::centered_modal_rect;
+    use ratatui::layout::Rect;
+
+    #[test]
+    fn centered_modal_rect_clamps_to_tiny_terminal() {
+        let area = Rect {
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 8,
+        };
+        let rect = centered_modal_rect(area, 82, 82, 60, 20);
+        assert!(rect.width <= area.width);
+        assert!(rect.height <= area.height);
+        assert_eq!(rect.x, 0);
+        assert_eq!(rect.y, 0);
     }
 }

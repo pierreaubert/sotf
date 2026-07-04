@@ -2,17 +2,7 @@ use super::*;
 
 pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
     let area = f.area();
-    let modal_width = (area.width as f32 * 0.8) as u16;
-    let modal_height = (area.height as f32 * 0.8) as u16;
-    let modal_x = (area.width - modal_width) / 2;
-    let modal_y = (area.height - modal_height) / 2;
-
-    let modal_area = Rect {
-        x: modal_x,
-        y: modal_y,
-        width: modal_width,
-        height: modal_height,
-    };
+    let modal_area = centered_modal_rect(area, 80, 80, 20, 6);
 
     let title = format!(" {} ", app.file_explorer.picker_title);
     let block = Block::default()

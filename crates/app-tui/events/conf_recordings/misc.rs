@@ -309,7 +309,7 @@ pub(crate) fn save_recordings(app: &mut App) {
         app.recording.model.save_name.clone()
     };
     if name.contains('/') || name.contains('\\') {
-        app.recording.save_error = Some("Save name must not contain path separators".to_string());
+        app.recording.save.error = Some("Save name must not contain path separators".to_string());
         return;
     }
 
@@ -322,7 +322,7 @@ pub(crate) fn save_recordings(app: &mut App) {
         .collect();
 
     if completed.is_empty() {
-        app.recording.save_error = Some("No completed recordings to save".to_string());
+        app.recording.save.error = Some("No completed recordings to save".to_string());
         return;
     }
 
@@ -334,7 +334,7 @@ pub(crate) fn save_recordings(app: &mut App) {
 
     // B4: Create output directory before saving or exporting matrix WAVs.
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        app.recording.save_error = Some(format!("Cannot create directory: {}", e));
+        app.recording.save.error = Some(format!("Cannot create directory: {}", e));
         return;
     }
 
@@ -439,7 +439,7 @@ pub(crate) fn save_recordings(app: &mut App) {
     );
 
     if speakers.is_empty() {
-        app.recording.save_error = Some("No completed recordings to save".to_string());
+        app.recording.save.error = Some("No completed recordings to save".to_string());
         return;
     }
 
@@ -595,10 +595,10 @@ pub(crate) fn save_recordings(app: &mut App) {
     // runs inline. Matches the existing `poll_*` pattern used by
     // capture/probe flows. Drained by `poll_save_recordings`.
     let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
-    app.recording.save_in_progress = true;
-    app.recording.save_error = None;
-    app.recording.save_success = false;
-    app.recording.save_receiver = Some(rx);
+    app.recording.save.in_progress = true;
+    app.recording.save.error = None;
+    app.recording.save.success = false;
+    app.recording.save.receiver = Some(rx);
     if ctc_raw_fallback {
         app.recording.model.status_message =
             "Saved with measured CTC fallback; raw-sweep CTC was incomplete".to_string();

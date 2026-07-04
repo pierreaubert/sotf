@@ -182,6 +182,11 @@ pub struct FederationReceivers {
     >,
 }
 
+pub struct FederationRuntimeState {
+    pub state: super::super::types::FederationTuiState,
+    pub receivers: FederationReceivers,
+}
+
 pub struct App {
     pub library: MusicLibrary,
     pub queue: Vec<QueueEntry>,
@@ -210,9 +215,8 @@ pub struct App {
     pub headphone_eq: super::super::types::HeadphoneEqTuiState,
     pub room_eq: super::super::types::RoomEqTuiState,
     pub recording: super::super::types::RecordingTuiState,
-    pub federation_state: super::super::types::FederationTuiState,
     pub server_state: super::super::types::ServersTuiState,
-    pub federation_receivers: FederationReceivers,
+    pub federation: FederationRuntimeState,
 }
 
 impl App {
@@ -400,11 +404,13 @@ impl App {
             headphone_eq: super::super::types::HeadphoneEqTuiState::default(),
             room_eq: super::super::types::RoomEqTuiState::default(),
             recording: super::super::types::RecordingTuiState::default(),
-            federation_state: super::super::types::FederationTuiState::default(),
             server_state: load_server_tui_state(),
-            federation_receivers: FederationReceivers {
-                scan: None,
-                test: None,
+            federation: FederationRuntimeState {
+                state: super::super::types::FederationTuiState::default(),
+                receivers: FederationReceivers {
+                    scan: None,
+                    test: None,
+                },
             },
         };
 
@@ -1081,5 +1087,28 @@ impl App {
 impl Default for App {
     fn default() -> Self {
         Self::new(Theme::default(), false)
+    }
+}
+
+#[cfg(test)]
+mod p1_field_budget_tests {
+    fn struct_field_count(source: &str, struct_name: &str) -> usize {
+        let start = source
+            .find(&format!("pub struct {struct_name} {{"))
+            .expect("struct exists");
+        let body = &source[start..];
+        let body = body
+            .split_once("\n}")
+            .map(|(body, _)| body)
+            .expect("struct closes");
+        body.lines()
+            .filter(|line| line.trim_start().starts_with("pub "))
+            .count()
+    }
+
+    #[test]
+    fn app_stays_within_struct_field_budget() {
+        let source = include_str!("app.rs");
+        assert!(struct_field_count(source, "App") <= 30);
     }
 }

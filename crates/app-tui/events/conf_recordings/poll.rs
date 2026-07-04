@@ -179,32 +179,32 @@ pub fn poll_recording(app: &mut App) -> bool {
 /// Drain the background save thread's result, if any. Returns true
 /// when state changed (forces a redraw via the tick handler).
 pub fn poll_save_recordings(app: &mut App) -> bool {
-    let rx = match app.recording.save_receiver.as_ref() {
+    let rx = match app.recording.save.receiver.as_ref() {
         Some(rx) => rx,
         None => return false,
     };
     match rx.try_recv() {
         Ok(Ok(())) => {
-            app.recording.save_success = true;
-            app.recording.save_error = None;
-            app.recording.save_in_progress = false;
-            app.recording.save_receiver = None;
+            app.recording.save.success = true;
+            app.recording.save.error = None;
+            app.recording.save.in_progress = false;
+            app.recording.save.receiver = None;
             true
         }
         Ok(Err(msg)) => {
-            app.recording.save_error = Some(msg);
-            app.recording.save_success = false;
-            app.recording.save_in_progress = false;
-            app.recording.save_receiver = None;
+            app.recording.save.error = Some(msg);
+            app.recording.save.success = false;
+            app.recording.save.in_progress = false;
+            app.recording.save.receiver = None;
             true
         }
         Err(std::sync::mpsc::TryRecvError::Empty) => false,
         Err(std::sync::mpsc::TryRecvError::Disconnected) => {
             // Worker dropped its sender without sending — treat as
             // failure rather than a silent hang.
-            app.recording.save_error = Some("Save thread terminated without result".to_string());
-            app.recording.save_in_progress = false;
-            app.recording.save_receiver = None;
+            app.recording.save.error = Some("Save thread terminated without result".to_string());
+            app.recording.save.in_progress = false;
+            app.recording.save.receiver = None;
             true
         }
     }

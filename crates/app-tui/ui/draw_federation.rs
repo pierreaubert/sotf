@@ -3,7 +3,7 @@ use crate::app::{ADD_SOURCE_TYPE_IDX, FederationMode, SOURCE_TYPE_NAMES};
 use sotf_audio_player::federation_config::ConnectionStatus;
 
 pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
-    let state = &app.federation_state;
+    let state = &app.federation.state;
 
     // Check if we should show the diagnostic panel below the list
     let has_diagnostic = state
@@ -52,7 +52,7 @@ pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_source_list(f: &mut Frame, area: Rect, app: &App) {
-    let state = &app.federation_state;
+    let state = &app.federation.state;
 
     if state.sources.is_empty() {
         let text = Paragraph::new(" No sources configured. Press 'a' to add one.")
@@ -144,7 +144,7 @@ fn draw_source_list(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_edit_form(f: &mut Frame, area: Rect, app: &App) {
-    let state = &app.federation_state;
+    let state = &app.federation.state;
     let Some(edit) = &state.edit else {
         return;
     };
@@ -239,7 +239,7 @@ fn draw_add_source(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_diagnostic_panel(f: &mut Frame, area: Rect, app: &App) {
-    let state = &app.federation_state;
+    let state = &app.federation.state;
     let source = match state.sources.get(state.selected_idx) {
         Some(s) => s,
         None => return,

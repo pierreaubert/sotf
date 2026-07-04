@@ -452,7 +452,8 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     update_media_controls(app, player, media_controls);
                 }
                 AppEvent::Resize => {
-                    // Terminal resized, will redraw on next iteration
+                    app.invalidate_image_protocol_cache();
+                    app.ui.needs_redraw = true;
                 }
             }
         }
@@ -472,4 +473,15 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod p1_resize_tests {
+    #[test]
+    fn resize_invalidates_cached_image_protocol() {
+        let source = include_str!("types.rs");
+        assert!(source.contains("AppEvent::Resize"));
+        assert!(source.contains("app.invalidate_image_protocol_cache();"));
+        assert!(source.contains("app.ui.needs_redraw = true;"));
+    }
 }

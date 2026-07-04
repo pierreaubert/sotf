@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bearer token for pairing remote SOTF apps.
 
 ### Changed
+- TUI P1 hardening now keeps `App` under the struct-field budget, splits
+  recording save state out of `RecordingTuiState`, sizes album-list truncation
+  from the actual terminal width, clamps modal rectangles on tiny terminals,
+  invalidates cached album-art image protocols on resize, and explicitly
+  defers mouse support for this release.
 - Server configuration navigation now cycles through API, MPD, and DLNA
   sections, and the screen opens on the SOTF API section so the remote-app
   connection details are immediately visible.

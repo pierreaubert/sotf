@@ -99,5 +99,19 @@ mod inner {
                 .album_images
                 .get(self.library_view.selected_image_index)
         }
+
+        pub fn invalidate_image_protocol_cache(&mut self) {
+            self.library_view.image_protocol = None;
+            self.library_view.image_protocol_path = None;
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod inner {
+    use crate::app::app_impl::App;
+
+    impl App {
+        pub fn invalidate_image_protocol_cache(&mut self) {}
     }
 }

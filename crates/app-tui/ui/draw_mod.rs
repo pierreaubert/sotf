@@ -1,4 +1,4 @@
-use super::misc::get_keybindings_for_screen;
+use super::misc::{centered_modal_rect, get_keybindings_for_screen};
 pub(crate) use super::utilities::wrap_text;
 pub(crate) use crate::app::{App, MetadataEditorState, Screen};
 pub(crate) use ratatui::{
@@ -37,19 +37,8 @@ pub(crate) fn draw_help_box_with_text(f: &mut Frame, area: Rect, app: &App, text
 }
 
 pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
-    // Create a centered modal (80% width, 90% height)
     let area = f.area();
-    let modal_width = (area.width as f32 * 0.8) as u16;
-    let modal_height = (area.height as f32 * 0.9) as u16;
-    let modal_x = (area.width - modal_width) / 2;
-    let modal_y = (area.height - modal_height) / 2;
-
-    let modal_area = Rect {
-        x: modal_x,
-        y: modal_y,
-        width: modal_width,
-        height: modal_height,
-    };
+    let modal_area = centered_modal_rect(area, 80, 90, 20, 6);
 
     // Clear background
     let block = Block::default()
@@ -242,14 +231,7 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
     };
 
     let area = f.area();
-    let modal_width = (area.width as f32 * 0.82) as u16;
-    let modal_height = (area.height as f32 * 0.82) as u16;
-    let modal_area = Rect {
-        x: (area.width.saturating_sub(modal_width)) / 2,
-        y: (area.height.saturating_sub(modal_height)) / 2,
-        width: modal_width.max(60),
-        height: modal_height.max(20),
-    };
+    let modal_area = centered_modal_rect(area, 82, 82, 60, 20);
 
     f.render_widget(Clear, modal_area);
     let block = Block::default()
@@ -424,23 +406,13 @@ pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {
     if let Some(error_msg) = &app.ui.error_message {
         // Create a centered modal (60% width, auto height based on content)
         let area = f.area();
-        let modal_width = (area.width as f32 * 0.6) as u16;
+        let modal_width = (area.width.saturating_mul(60) / 100).max(1);
 
         // Calculate required height based on error message
         let max_text_width = modal_width.saturating_sub(6) as usize; // Account for borders and padding
         let wrapped_lines = wrap_text(error_msg, max_text_width);
         let content_height = wrapped_lines.len() + 6; // Message + title + instructions + padding
-        let modal_height = content_height.min(area.height.saturating_sub(4) as usize) as u16;
-
-        let modal_x = (area.width - modal_width) / 2;
-        let modal_y = (area.height - modal_height) / 2;
-
-        let modal_area = Rect {
-            x: modal_x,
-            y: modal_y,
-            width: modal_width,
-            height: modal_height,
-        };
+        let modal_area = centered_modal_rect(area, 60, 100, 20, content_height as u16);
 
         // Clear background and draw border
         let block = Block::default()

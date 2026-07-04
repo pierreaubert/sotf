@@ -1,5 +1,42 @@
 use super::*;
 
+fn album_list_inner_width(area: Rect) -> usize {
+    area.width.saturating_sub(2) as usize
+}
+
+fn play_count_suffix_width(play_count: usize) -> usize {
+    if play_count > 0 {
+        format!("  \u{1F3B5} {play_count}").chars().count()
+    } else {
+        0
+    }
+}
+
+pub(crate) fn flat_album_name_width(
+    area: Rect,
+    num_channels: usize,
+    is_favorite: bool,
+    play_count: usize,
+) -> usize {
+    let favorite_prefix = if is_favorite { 2 } else { 0 };
+    let high_channel_reserve = if num_channels > 4 { 8 } else { 0 };
+    album_list_inner_width(area)
+        .saturating_sub(
+            favorite_prefix + play_count_suffix_width(play_count) + high_channel_reserve,
+        )
+        .max(1)
+}
+
+pub(crate) fn tree_artist_name_width(area: Rect) -> usize {
+    album_list_inner_width(area).saturating_sub(2).max(1)
+}
+
+pub(crate) fn tree_album_name_width(area: Rect, play_count: usize) -> usize {
+    album_list_inner_width(area)
+        .saturating_sub(4 + play_count_suffix_width(play_count))
+        .max(1)
+}
+
 pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: bool) {
     use ratatui::widgets::StatefulWidget;
 
@@ -19,13 +56,14 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                 .iter()
                 .enumerate()
                 .map(|(i, album)| {
-                    // Clean and truncate to prevent overflow into meters column
-                    // Truncation length adjusted based on right column width and play count display
-                    // For stereo (12% right column): 90 chars is safe (reduced to make room for play count)
-                    // For 5.1 (20% right column): 75 chars to be safe
                     let raw_content = album.display_name();
                     let cleaned = clean_text(&raw_content);
-                    let max_len = if num_channels > 4 { 75 } else { 90 };
+                    let max_len = flat_album_name_width(
+                        area,
+                        num_channels,
+                        album.is_favorite,
+                        album.play_count,
+                    );
                     let content = truncate_with_ellipsis(&cleaned, max_len);
 
                     // Add favorite heart and play count to the display
@@ -93,7 +131,8 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                             let prefix = if *expanded { "▼ " } else { "▶ " };
                             // Clean artist name and truncate to prevent overflow
                             let cleaned_name = clean_text(name);
-                            let truncated_name = truncate_with_ellipsis(&cleaned_name, 95);
+                            let truncated_name =
+                                truncate_with_ellipsis(&cleaned_name, tree_artist_name_width(area));
                             let content = format!("{}{}", prefix, truncated_name);
                             let mut style = Style::default()
                                 .fg(app.theme.accent_primary)
@@ -108,7 +147,10 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                                 // Use display_name for consistency, clean and truncate
                                 let raw_album = album.display_name();
                                 let cleaned = clean_text(&raw_album);
-                                let truncated = truncate_with_ellipsis(&cleaned, 80);
+                                let truncated = truncate_with_ellipsis(
+                                    &cleaned,
+                                    tree_album_name_width(area, album.play_count),
+                                );
 
                                 // Add play count if > 0
                                 let content = if album.play_count > 0 {
@@ -164,5 +206,35 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
 
             StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{flat_album_name_width, tree_album_name_width, tree_artist_name_width};
+    use ratatui::layout::Rect;
+
+    #[test]
+    fn album_list_truncation_tracks_terminal_width() {
+        let narrow = Rect::new(0, 0, 24, 10);
+        let wide = Rect::new(0, 0, 120, 10);
+
+        assert!(
+            flat_album_name_width(narrow, 2, false, 0) < flat_album_name_width(wide, 2, false, 0)
+        );
+        assert!(tree_artist_name_width(narrow) < tree_artist_name_width(wide));
+        assert!(tree_album_name_width(narrow, 12) < tree_album_name_width(wide, 12));
+    }
+
+    #[test]
+    fn album_list_truncation_reserves_badges_and_high_channel_meter_space() {
+        let area = Rect::new(0, 0, 80, 10);
+        assert!(
+            flat_album_name_width(area, 6, true, 99) < flat_album_name_width(area, 2, false, 0)
+        );
+        assert_eq!(
+            flat_album_name_width(Rect::new(0, 0, 1, 1), 8, true, 999),
+            1
+        );
     }
 }

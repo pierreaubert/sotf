@@ -3,9 +3,19 @@ use std::collections::HashMap;
 
 /// TUI state for the Recording wizard. Holds only TUI-specific view state;
 /// all domain state lives in the embedded [`RecordingScreenModel`].
-// Note: not `Clone` because `save_receiver` (mpsc::Receiver) is not
-// `Clone`. The state is owned by `App` and accessed via `&mut`; no
-// caller needs to clone the wizard wholesale.
+// Note: not `Clone` because the nested save receiver (mpsc::Receiver) is not
+// `Clone`. The state is owned by `App` and accessed via `&mut`; no caller needs
+// to clone the wizard wholesale.
+#[derive(Debug, Default)]
+pub struct RecordingSaveTuiState {
+    pub error: Option<String>,
+    pub success: bool,
+    /// True while a background save thread is serializing and writing the JSON.
+    pub in_progress: bool,
+    /// Receiver for the background save result.
+    pub receiver: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+}
+
 #[derive(Debug)]
 pub struct RecordingTuiState {
     /// Shared, UI-agnostic Recording wizard domain model.
@@ -49,12 +59,7 @@ pub struct RecordingTuiState {
     pub selected_save_field: usize,
     /// When true, a text/number field under the save cursor is being typed.
     pub editing_save_value: bool,
-    pub save_error: Option<String>,
-    pub save_success: bool,
-    /// True while a background save thread is serializing and writing the JSON.
-    pub save_in_progress: bool,
-    /// Receiver for the background save result.
-    pub save_receiver: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+    pub save: RecordingSaveTuiState,
 }
 
 impl Default for RecordingTuiState {
@@ -84,10 +89,7 @@ impl Default for RecordingTuiState {
             editing_save_name: false,
             selected_save_field: 0,
             editing_save_value: false,
-            save_error: None,
-            save_success: false,
-            save_in_progress: false,
-            save_receiver: None,
+            save: RecordingSaveTuiState::default(),
         }
     }
 }
@@ -135,5 +137,29 @@ impl RecordingTuiState {
     /// How many fields are in the Save-step form given the current channel list.
     pub fn save_field_count(&self) -> usize {
         self.model.save_field_count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    fn struct_field_count(source: &str, struct_name: &str) -> usize {
+        let start = source
+            .find(&format!("pub struct {struct_name} {{"))
+            .expect("struct exists");
+        let body = &source[start..];
+        let body = body
+            .split_once("\n}")
+            .map(|(body, _)| body)
+            .expect("struct closes");
+        body.lines()
+            .filter(|line| line.trim_start().starts_with("pub "))
+            .count()
+    }
+
+    #[test]
+    fn recording_tui_state_is_split_below_struct_field_budget() {
+        let source = include_str!("recording_tui_state.rs");
+        assert!(source.contains("pub struct RecordingSaveTuiState"));
+        assert!(struct_field_count(source, "RecordingTuiState") <= 30);
     }
 }

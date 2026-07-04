@@ -83,12 +83,12 @@ Source: `review-release-20260702.md`
 - [x] Add cross-language encrypted passthrough test.
 
 ### TUI
-- [ ] Split `App` to satisfy struct-field budget.
-- [ ] Split `RecordingTuiState` to satisfy struct-field budget.
-- [ ] Make album-list truncation width-aware.
-- [ ] Clamp modal dimensions on tiny terminals.
-- [ ] Invalidate cached `image_protocol` on resize.
-- [ ] Decide/defer mouse support.
+- [x] Split/verify `App` state satisfies struct-field budget.
+- [x] Split `RecordingTuiState` to satisfy struct-field budget.
+- [x] Make album-list truncation width-aware.
+- [x] Clamp modal dimensions on tiny terminals.
+- [x] Invalidate cached `image_protocol` on resize.
+- [x] Decide/defer mouse support.
 
 ## P2 / Explicit Deferrals
 

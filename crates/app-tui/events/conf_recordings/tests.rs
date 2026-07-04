@@ -111,10 +111,11 @@ fn save_recordings_rejects_path_separators_in_name() {
     let mut app = make_app();
     app.recording.model.save_name = "../../evil".to_string();
     save_recordings(&mut app);
-    assert!(app.recording.save_error.is_some());
+    assert!(app.recording.save.error.is_some());
     assert!(
         app.recording
-            .save_error
+            .save
+            .error
             .as_ref()
             .unwrap()
             .contains("path separators")
@@ -126,10 +127,11 @@ fn save_recordings_rejects_backslash_in_name() {
     let mut app = make_app();
     app.recording.model.save_name = "foo\\bar".to_string();
     save_recordings(&mut app);
-    assert!(app.recording.save_error.is_some());
+    assert!(app.recording.save.error.is_some());
     assert!(
         app.recording
-            .save_error
+            .save
+            .error
             .as_ref()
             .unwrap()
             .contains("path separators")
@@ -142,10 +144,11 @@ fn save_recordings_requires_completed_channels() {
     app.recording.model.save_name = "test".to_string();
     // No completed recordings
     save_recordings(&mut app);
-    assert!(app.recording.save_error.is_some());
+    assert!(app.recording.save.error.is_some());
     assert!(
         app.recording
-            .save_error
+            .save
+            .error
             .as_ref()
             .unwrap()
             .contains("No completed")
