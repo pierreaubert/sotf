@@ -142,6 +142,7 @@ final class SharedAudioBuffer {
 
     /// Total capacity in samples
     private var audioCapacity: Int = 0
+    private var encryptedPlaintextScratch: [UInt8] = []
     private var encryptedPayloadScratch: [UInt8] = []
     private var encryptedHeaderScratch: [UInt8] = []
 
@@ -249,6 +250,7 @@ final class SharedAudioBuffer {
         }
         memorySize = Int(statBuf.st_size)
         let mappedAudioBytes = max(audioSize, max(0, memorySize - alignedHeaderSize))
+        encryptedPlaintextScratch = [UInt8](repeating: 0, count: mappedAudioBytes)
         encryptedPayloadScratch = [UInt8](repeating: 0, count: mappedAudioBytes)
         encryptedHeaderScratch = [UInt8](repeating: 0, count: kEncryptedRecordHeaderBytes)
 
@@ -505,7 +507,8 @@ final class SharedAudioBuffer {
                         buffer,
                         sampleCount: sampleCount,
                         frameCounter: frameCounter,
-                        output: baseAddress.advanced(by: kEncryptedRecordHeaderBytes)
+                        output: baseAddress.advanced(by: kEncryptedRecordHeaderBytes),
+                        plaintextScratch: &encryptedPlaintextScratch
                     )
                 }
 

@@ -85,6 +85,10 @@ fn test_hal_encrypted_shared_memory_passthrough_bit_exact() {
 fn swift_hal_encryption_tests_are_part_of_cross_language_passthrough_suite() {
     let swift_tests = include_str!("../../swift/Sources/Tests.swift");
     assert!(swift_tests.contains("testEncryptionRoundTrip"));
+    assert!(swift_tests.contains("testSharedMemoryEncryptedPassthrough"));
+    assert!(swift_tests.contains("SharedAudioBuffer()"));
+    assert!(swift_tests.contains("writeAudio("));
+    assert!(swift_tests.contains("readAudio("));
     assert!(swift_tests.contains("AudioCipher(keyBytes:"));
     assert!(swift_tests.contains("cipher.encrypt(samples:"));
     assert!(swift_tests.contains("cipher.decrypt(ciphertext:"));

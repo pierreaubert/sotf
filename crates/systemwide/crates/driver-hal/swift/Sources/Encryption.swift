@@ -20,6 +20,11 @@ import SystemConfiguration
 let kAuthTagSize = 16
 
 private func getSessionKeyPath() -> String {
+    let environment = ProcessInfo.processInfo.environment
+    if let overridePath = environment["SOTF_HAL_SESSION_KEY_PATH"], !overridePath.isEmpty {
+        return overridePath
+    }
+
     var uid: uid_t = 0
     var gid: gid_t = 0
 
@@ -96,11 +101,9 @@ final class AudioCipher {
     ///   - frameCounter: Unique counter for nonce generation
     ///   - output: Output buffer (must be at least sampleCount * 4 + 16 bytes)
     /// - Returns: Number of bytes written, or 0 on failure
-    func encryptToBuffer(_ samples: UnsafePointer<Float>, sampleCount: Int, frameCounter: UInt64, output: UnsafeMutablePointer<UInt8>) -> Int {
-        // Convert samples to bytes
+    func encryptToBuffer(_ samples: UnsafePointer<Float>, sampleCount: Int, frameCounter: UInt64, output: UnsafeMutablePointer<UInt8>, plaintextScratch: inout [UInt8]) -> Int {
         let byteCount = sampleCount * MemoryLayout<Float>.size
-        var plaintext = [UInt8](repeating: 0, count: byteCount)
-        memcpy(&plaintext, samples, byteCount)
+        guard byteCount <= plaintextScratch.count else { return 0 }
 
         // Create nonce
         var nonceBytes = [UInt8](repeating: 0, count: 12)
@@ -110,20 +113,31 @@ final class AudioCipher {
             }
         }
 
-        do {
-            let nonce = try ChaChaPoly.Nonce(data: nonceBytes)
-            let sealedBox = try ChaChaPoly.seal(plaintext, using: key, nonce: nonce)
+        return plaintextScratch.withUnsafeMutableBytes { rawScratch in
+            guard let scratchBase = rawScratch.baseAddress else { return 0 }
+            memcpy(scratchBase, samples, byteCount)
+            let plaintext = Data(bytesNoCopy: scratchBase, count: byteCount, deallocator: .none)
 
-            // Copy ciphertext and tag to output
-            let ciphertext = Array(sealedBox.ciphertext)
-            let tag = Array(sealedBox.tag)
-            memcpy(output, ciphertext, ciphertext.count)
-            memcpy(output.advanced(by: ciphertext.count), tag, tag.count)
+            do {
+                let nonce = try ChaChaPoly.Nonce(data: nonceBytes)
+                let sealedBox = try ChaChaPoly.seal(plaintext, using: key, nonce: nonce)
 
-            return ciphertext.count + tag.count
-        } catch {
-            halLog("Encryption failed: \(error)")
-            return 0
+                sealedBox.ciphertext.withUnsafeBytes { ciphertextBytes in
+                    if let ciphertextBase = ciphertextBytes.baseAddress {
+                        memcpy(output, ciphertextBase, ciphertextBytes.count)
+                    }
+                }
+                sealedBox.tag.withUnsafeBytes { tagBytes in
+                    if let tagBase = tagBytes.baseAddress {
+                        memcpy(output.advanced(by: sealedBox.ciphertext.count), tagBase, tagBytes.count)
+                    }
+                }
+
+                return sealedBox.ciphertext.count + sealedBox.tag.count
+            } catch {
+                halLog("Encryption failed: \(error)")
+                return 0
+            }
         }
     }
 
@@ -186,10 +200,17 @@ final class AudioCipher {
         do {
             let nonce = try ChaChaPoly.Nonce(data: nonceBytes)
 
-            // Split ciphertext and tag
             let ctLen = ciphertextLen - kAuthTagSize
-            let ct = Array(UnsafeBufferPointer(start: ciphertext, count: ctLen))
-            let tag = Array(UnsafeBufferPointer(start: ciphertext.advanced(by: ctLen), count: kAuthTagSize))
+            let ct = Data(
+                bytesNoCopy: UnsafeMutableRawPointer(mutating: ciphertext),
+                count: ctLen,
+                deallocator: .none
+            )
+            let tag = Data(
+                bytesNoCopy: UnsafeMutableRawPointer(mutating: ciphertext.advanced(by: ctLen)),
+                count: kAuthTagSize,
+                deallocator: .none
+            )
 
             let sealedBox = try ChaChaPoly.SealedBox(nonce: nonce, ciphertext: ct, tag: tag)
             let plaintext = try ChaChaPoly.open(sealedBox, using: key)
@@ -309,6 +330,13 @@ final class EncryptionKeyManager {
         }
 
         return false
+    }
+
+    /// Reload the key location after test or lab tooling changes the environment.
+    func reloadFromCurrentEnvironment() {
+        keyPath = getSessionKeyPath()
+        lastMtime = nil
+        loadKey()
     }
 
     /// Get the current cipher (may be nil if key not loaded)

@@ -31,6 +31,7 @@ final class HALDriverTests {
         if testEncryptionWithDifferentKeys() { passed += 1 } else { failed += 1 }
         if testEncryptionFrameCounterNonceUniqueness() { passed += 1 } else { failed += 1 }
         if testKeyManagerFingerprint() { passed += 1 } else { failed += 1 }
+        if testSharedMemoryEncryptedPassthrough() { passed += 1 } else { failed += 1 }
 
         halLog("Tests complete: \(passed) passed, \(failed) failed")
     }
@@ -302,6 +303,146 @@ final class HALDriverTests {
               cipher.decrypt(ciphertext: enc2, frameCounter: 1) == nil else {
             halLog("    FAIL: Decryption with wrong frame counter should fail")
             return false
+        }
+
+        halLog("    PASS")
+        return true
+    }
+
+    /// Test encrypted shared-memory write/read using the same Swift HAL path
+    /// that Rust consumes. The daemon-shaped memory file and key are temporary.
+    static func testSharedMemoryEncryptedPassthrough() -> Bool {
+        halLog("  Test: SharedMemory encrypted passthrough")
+
+        let fileManager = FileManager.default
+        let tempDir = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("sotf-hal-encrypted-\(UUID().uuidString)")
+        let shmPath = (tempDir as NSString).appendingPathComponent("audio.shm")
+        let keyPath = (tempDir as NSString).appendingPathComponent("session.key")
+        let sampleRate: UInt32 = 48_000
+        let bufferFrames: UInt32 = 64
+        let channelCount: UInt32 = 2
+        let audioCapacity = Int(bufferFrames) * Int(channelCount) * 8
+        let headerSize = MemoryLayout<SharedAudioHeader>.size
+        let alignedHeaderSize = (headerSize + 63) & ~63
+        let totalSize = alignedHeaderSize + audioCapacity * MemoryLayout<Float>.size
+        let keyBytes: [UInt8] = (0..<32).map { UInt8($0) }
+        let cipher = AudioCipher(keyBytes: keyBytes)
+
+        func fingerprintUInt64(_ bytes: [UInt8]) -> UInt64 {
+            var value: UInt64 = 0
+            for byte in bytes.prefix(8) {
+                value = (value << 8) | UInt64(byte)
+            }
+            return value
+        }
+
+        do {
+            try fileManager.createDirectory(
+                atPath: tempDir,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            fileManager.createFile(atPath: shmPath, contents: Data(count: totalSize))
+            try Data(keyBytes).write(to: URL(fileURLWithPath: keyPath))
+            chmod(keyPath, 0o600)
+        } catch {
+            halLog("    FAIL: setup failed: \(error)")
+            return false
+        }
+
+        setenv("SOTF_HAL_SHARED_MEMORY_PATH", shmPath, 1)
+        setenv("SOTF_HAL_SESSION_KEY_PATH", keyPath, 1)
+        defer {
+            unsetenv("SOTF_HAL_SHARED_MEMORY_PATH")
+            unsetenv("SOTF_HAL_SESSION_KEY_PATH")
+            try? fileManager.removeItem(atPath: tempDir)
+        }
+
+        var header = SharedAudioHeader(
+            magic: 0x534F5446,
+            version: 5,
+            sampleRate: sampleRate,
+            bufferFrames: bufferFrames,
+            channelCount: channelCount,
+            writePosition: 0,
+            readPosition: 0,
+            active: 1,
+            configChanged: 0,
+            driverReady: 0,
+            engineReady: 1,
+            encrypted: 1,
+            keyFingerprint: fingerprintUInt64(cipher.getFingerprint()),
+            frameCounter: 0,
+            requestedSampleRate: sampleRate,
+            requestedBufferFrames: bufferFrames,
+            actualSampleRate: sampleRate,
+            actualBufferFrames: bufferFrames,
+            configStatus: 1,
+            configSource: 2,
+            configErrorCode: 0,
+            encryptionOverflowCount: 0,
+            daemonHeartbeatMs: 0,
+            configuring: 0
+        )
+
+        let fd = Darwin.open(shmPath, O_RDWR)
+        guard fd >= 0 else {
+            halLog("    FAIL: open shared memory fixture failed")
+            return false
+        }
+        let headerWritten = withUnsafeBytes(of: &header) { bytes in
+            Darwin.write(fd, bytes.baseAddress, bytes.count)
+        }
+        Darwin.close(fd)
+        guard headerWritten == headerSize else {
+            halLog("    FAIL: header write failed")
+            return false
+        }
+
+        EncryptionKeyManager.shared.reloadFromCurrentEnvironment()
+        let sharedMemory = SharedAudioBuffer()
+        guard sharedMemory.initialize(
+            sampleRate: sampleRate,
+            bufferFrames: bufferFrames,
+            channelCount: channelCount
+        ) else {
+            halLog("    FAIL: SharedAudioBuffer.initialize failed")
+            return false
+        }
+        defer { sharedMemory.closeSharedMemory() }
+
+        let frames = Int(bufferFrames)
+        let channels = Int(channelCount)
+        var input = [Float]()
+        input.reserveCapacity(frames * channels)
+        for frame in 0..<frames {
+            input.append(sin(Float(frame) * 0.1) * 0.5)
+            input.append(cos(Float(frame) * 0.07) * 0.25)
+        }
+
+        let written = input.withUnsafeBufferPointer { ptr in
+            sharedMemory.writeAudio(ptr.baseAddress!, frameCount: frames, channelCount: channels)
+        }
+        guard written == frames else {
+            halLog("    FAIL: encrypted write returned \(written), expected \(frames)")
+            return false
+        }
+
+        var output = [Float](repeating: 0, count: input.count)
+        let read = output.withUnsafeMutableBufferPointer { ptr in
+            sharedMemory.readAudio(ptr.baseAddress!, frameCount: frames, channelCount: channels)
+        }
+        guard read == frames else {
+            halLog("    FAIL: encrypted read returned \(read), expected \(frames)")
+            return false
+        }
+
+        for i in 0..<input.count {
+            if input[i].bitPattern != output[i].bitPattern {
+                halLog("    FAIL: sample \(i) mismatch \(input[i]) vs \(output[i])")
+                return false
+            }
         }
 
         halLog("    PASS")

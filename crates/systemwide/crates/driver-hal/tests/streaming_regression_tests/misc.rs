@@ -113,10 +113,14 @@ fn daemon_reconfiguration_uses_negotiated_hal_format() {
 fn swift_encrypted_ioproc_uses_preallocated_buffers_and_atomic_counter() {
     let source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SharedMemory.swift");
+    let encryption =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/Encryption.swift");
     let bridge =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/BridgingHeader.h");
     let write_audio = function_body(&source, "func writeAudio(");
     let read_audio = function_body(&source, "func readAudio(");
+    let encrypt_to_buffer = function_body(&encryption, "func encryptToBuffer(");
+    let decrypt_from_buffer = function_body(&encryption, "func decryptFromBuffer(");
 
     assert!(
         bridge.contains("sotf_atomic_fetch_add_u64"),
@@ -149,6 +153,16 @@ fn swift_encrypted_ioproc_uses_preallocated_buffers_and_atomic_counter() {
     assert!(
         !read_audio.contains("Array(payload["),
         "encrypted read path must decrypt from preallocated storage without slicing allocation"
+    );
+    assert!(
+        !encrypt_to_buffer.contains("var plaintext = [UInt8]")
+            && !encrypt_to_buffer.contains("Array(sealedBox.ciphertext)")
+            && !encrypt_to_buffer.contains("Array(sealedBox.tag)"),
+        "encryptToBuffer is called from the IOProc and must use caller-provided scratch buffers"
+    );
+    assert!(
+        !decrypt_from_buffer.contains("Array(UnsafeBufferPointer"),
+        "decryptFromBuffer is called from the IOProc and must avoid array materialization"
     );
     assert!(
         read_audio.contains("record.totalBytes <= encryptedPayloadScratch.count")

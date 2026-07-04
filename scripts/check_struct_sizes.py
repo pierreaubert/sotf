@@ -23,6 +23,116 @@ ALLOWLIST: set[tuple[str, str]] = {
     # UI state structs that mix view + transient state; target for MVVM split.
     ("crates/app-gpui/app/state/ui.rs", "UIState"),
     ("crates/app-gpui/ui/tick.rs", "TickSnapshot"),
+    # CLI/API compatibility structs. Decompose into domain-specific option
+    # groups only when the public command/config surface can absorb it.
+    ("crates/app-cli/bin/sotf_player_cli/types.rs", "UpmixerArgs"),
+    ("crates/app-gpui/app/config.rs", "Config"),
+    ("crates/sotf-types/src/state.rs", "AudioEngineState"),
+    # App/remote state models. Planned split: transport/library/server
+    # connectivity sub-states with explicit update effects.
+    ("crates/app-gpui/app/state/app/remote_state.rs", "RemoteState"),
+    # Theme/render state bags. Planned split: palette, typography, meters,
+    # control chrome, and per-plugin render models.
+    (
+        "crates/app-gpui/components/plugins/theme/plugin_theme.rs",
+        "PluginTheme",
+    ),
+    (
+        "crates/app-gpui/components/plugins/ui_upmixer/types.rs",
+        "UpmixerRenderState",
+    ),
+    # Optimizer parameter/config DTOs mirror persisted UI/API schemas.
+    # Planned split: algorithm, loss, bounds, export, and per-domain groups.
+    (
+        "crates/sotf-player/src/autoeq/params.rs",
+        "OptimizationParamsSerializable",
+    ),
+    (
+        "crates/sotf-player/src/headphone_eq_types.rs",
+        "HeadphoneEqOptimizerConfig",
+    ),
+    (
+        "crates/sotf-player/src/room_eq_types/room_eq_optimizer_config.rs",
+        "RoomEqOptimizerConfig",
+    ),
+    (
+        "crates/sotf-player/src/spinorama_eq_types.rs",
+        "SpinoramaOptimizerConfig",
+    ),
+    # Shared UI models. Planned split: input selection, optimizer progress,
+    # preview/plot state, and export/apply state.
+    (
+        "crates/sotf-player/src/ui_models/headphone_eq.rs",
+        "HeadphoneEqScreenModel",
+    ),
+    (
+        "crates/sotf-player/src/ui_models/recording.rs",
+        "RecordingScreenModel",
+    ),
+    (
+        "crates/sotf-player/src/ui_models/room_eq.rs",
+        "RoomEqScreenModel",
+    ),
+    (
+        "crates/sotf-player/src/ui_models/spinorama_eq.rs",
+        "SpinoramaEqScreenModel",
+    ),
+    # Audio host/plugin DSP state. Planned split: immutable config, smoothed
+    # params, delay/scratch buffers, meters, and analysis caches.
+    ("crates/sotf-plugins/crates/sotf-host/src/host/daw_host.rs", "DawHost"),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-aae/src/lib/aae_plugin.rs",
+        "AaePlugin",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-ab-compare/src/lib/abcompare_plugin.rs",
+        "ABComparePlugin",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-downmix/src/lib/downmix_plugin.rs",
+        "DownmixPlugin",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-gate/src/lib/gate_plugin.rs",
+        "GatePlugin",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-limiter/src/lib/limiter_plugin.rs",
+        "LimiterPlugin",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-loudness-compensation/src/lib/loudness_compensation_plugin.rs",
+        "LoudnessCompensationPlugin",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-multiband-compressor/src/lib/multiband_compressor_plugin.rs",
+        "MultibandCompressorPlugin",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-multiband-expander/src/lib/multiband_expander_plugin.rs",
+        "MultibandExpanderPlugin",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-pnd/src/lib/pnd_plugin.rs",
+        "PndPlugin",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-saturation/src/lib/saturation_plugin.rs",
+        "SaturationPlugin",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-upmixer/src/params.rs",
+        "Params",
+    ),
+    (
+        "crates/sotf-plugins/crates/sotf-plugin-xtc/src/config.rs",
+        "XtcPluginParams",
+    ),
+    # Test fixture with many optional response toggles; keep local to tests.
+    (
+        "crates/sotf-server/crates/sotf-mpd/src/handler/tests.rs",
+        "ConfigurableAdapter",
+    ),
 }
 
 
@@ -32,6 +142,7 @@ def find_rust_files(root: Path):
         "node_modules",
         ".git",
         ".tokensave",
+        ".worktrees",
         "__pycache__",
         "3rdparties",
         ".docker-target",
