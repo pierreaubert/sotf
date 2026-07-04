@@ -1,7 +1,7 @@
+use serial_test::serial;
 use sotf_audio::engine::playback_runtime_harness::{
     FrameWriterHarness, HarnessFrameWriteOutcome, XorShift64, generated_frame,
 };
-use serial_test::serial;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 

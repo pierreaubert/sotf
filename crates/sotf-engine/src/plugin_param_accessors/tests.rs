@@ -146,7 +146,11 @@ fn crossover_is_exposed_with_editable_layout_and_dsp_config() {
     let layout = settings
         .layout()
         .expect("Crossover must have an editable declarative layout");
-    assert!(layout.validate(settings.param_specs().len(), "Crossover").is_empty());
+    assert!(
+        layout
+            .validate(settings.param_specs().len(), "Crossover")
+            .is_empty()
+    );
     assert!(
         layout
             .validate_coverage(settings.param_specs(), "Crossover")

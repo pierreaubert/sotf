@@ -1,5 +1,4 @@
 use super::super::ThreadEvent;
-use super::apply::apply_volume;
 use super::apply::apply_volume_clamp;
 use super::cpal_playback_state::CpalPlaybackState;
 use super::cpal_playback_state::read_ring_buffer;
@@ -252,7 +251,7 @@ fn process_mapped_f32_callback(
             state,
             capacity,
         );
-        apply_volume(&mut scratch[..logical_len], state);
+        apply_volume_clamp(&mut scratch[..logical_len], state);
         write_logical_to_hardware_f32(
             &scratch[..logical_len],
             &mut data[offset..offset + hardware_len],

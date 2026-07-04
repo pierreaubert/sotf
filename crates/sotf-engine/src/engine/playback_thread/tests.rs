@@ -10,6 +10,7 @@ use super::playback_state::PlaybackState;
 use super::playback_state::read_ring_buffer;
 use super::playback_state::request_flush;
 use super::runtime::minimum_ring_space_required;
+use super::runtime::should_emit_underrun_milestone;
 use cpal::SampleFormat;
 use rtrb::RingBuffer;
 use sotf_types::{OutputAccessMode, OutputAccessStatus};
@@ -198,6 +199,16 @@ fn playback_stats_publish_even_before_frames_arrive() {
             && !diagnostics_block.contains("frames_received > 0"),
         "playback stats must report callbacks/underruns during upstream starvation"
     );
+}
+
+#[test]
+fn playback_underruns_are_not_reported_during_end_of_stream_drain() {
+    assert!(should_emit_underrun_milestone(false, 1, 0));
+    assert!(should_emit_underrun_milestone(false, 100, 1));
+    assert!(!should_emit_underrun_milestone(false, 2, 1));
+    assert!(!should_emit_underrun_milestone(false, 100, 100));
+    assert!(!should_emit_underrun_milestone(true, 1, 0));
+    assert!(!should_emit_underrun_milestone(true, 200, 100));
 }
 
 #[test]

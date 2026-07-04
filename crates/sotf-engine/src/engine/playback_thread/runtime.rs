@@ -961,11 +961,11 @@ impl PlaybackRuntime {
 
     fn emit_underrun_milestone(&mut self) {
         let current_underruns = self.state.underrun_count.load(Ordering::Relaxed);
-        if current_underruns != self.recovery.last_reported_underruns
-            && (current_underruns == 1
-                || current_underruns.is_multiple_of(100)
-                || self.recovery.last_reported_underruns == 0)
-        {
+        if should_emit_underrun_milestone(
+            self.drain.end_of_stream,
+            current_underruns,
+            self.recovery.last_reported_underruns,
+        ) {
             send_playback_event(
                 &self.event_tx,
                 ThreadEvent::PlaybackUnderrun(current_underruns),
@@ -1326,4 +1326,16 @@ pub(super) fn minimum_ring_space_required(
     buffer_capacity: usize,
 ) -> usize {
     frame_size.saturating_mul(channels).min(buffer_capacity)
+}
+
+pub(super) fn should_emit_underrun_milestone(
+    end_of_stream: bool,
+    current_underruns: u64,
+    last_reported_underruns: u64,
+) -> bool {
+    if end_of_stream || current_underruns == last_reported_underruns {
+        return false;
+    }
+
+    current_underruns == 1 || current_underruns.is_multiple_of(100) || last_reported_underruns == 0
 }

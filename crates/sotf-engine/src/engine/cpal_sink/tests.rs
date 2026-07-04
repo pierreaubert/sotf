@@ -36,6 +36,16 @@ fn equal_channel_f32_output_clamps_after_volume() {
 }
 
 #[test]
+fn mapped_channel_f32_output_clamps_after_volume() {
+    let source = include_str!("build.rs");
+
+    assert!(
+        source.contains("apply_volume_clamp(&mut scratch[..logical_len], state);"),
+        "mapped-channel f32 CPAL output must clamp before hardware mapping"
+    );
+}
+
+#[test]
 fn playback_buffer_capacity_uses_configured_buffer_ms() {
     assert_eq!(playback_buffer_capacity(48_000, 2, 200), 19_200);
 }
