@@ -179,70 +179,70 @@ qa-plugins-fuzzer-6ch:
 # BENCHMARKS
 # ----------------------------------------------------------------------
 
-[group('plugins')]
+[group('bench')]
 plugins-bench: plugins-bench-all plugins-bench-allocation plugins-bench-individual
 
 # Top-level benchmarks
-[group('plugins')]
+[group('bench-plugins')]
 plugins-bench-all:
 	cargo bench -p sotf-plugins --bench all-plugins-benchmark
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-bench-allocation:
 	cargo bench -p sotf-plugins --bench allocation-benchmark
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-stress:
 	cargo run -p sotf-plugins --bin daw-scale-stress -- --quick
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-stress-full:
 	cargo run --release -p sotf-plugins --bin daw-scale-stress -- --chain mixed --mode both
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-report:
 	cd {{justfile_directory()}}/../.. && ./scripts/daw-perf-report.sh
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-scheduler-sweep:
 	cd {{justfile_directory()}}/../.. && ./scripts/daw-scheduler-sweep.sh
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-gate csv:
 	cd {{justfile_directory()}}/../.. && ./scripts/daw-perf-gate.sh {{csv}}
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-allocation-gate:
 	cargo test -p sotf-plugins --test realtime_allocation_tests
 	cargo test -p sotf-engine --test engine_allocation_tests
 	cargo test -p sotf-engine --test playback_runtime_allocation_tests
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-hotpath-audit:
 	cd {{justfile_directory()}}/../.. && ./scripts/daw-hotpath-audit.sh
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-compare baseline candidate:
 	cd {{justfile_directory()}}/../.. && ./scripts/daw-compare-csv.sh {{baseline}} {{candidate}}
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-rank csv:
 	cd {{justfile_directory()}}/../.. && ./scripts/daw-rank-csv.sh {{csv}}
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-bench-flush:
 	cargo run --release -p sotf-plugins --bin daw-scale-stress -- --focus flush --blocks 4096
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-bench-autogain:
 	cargo run --release -p sotf-plugins --bin daw-scale-stress -- --focus auto-gain --blocks 4096
 
-[group('plugins')]
+[group('bench-plugins')]
 plugins-daw-bench-scheduling:
 	cargo run --release -p sotf-plugins --bin daw-scale-stress -- --focus scheduling --mode both --tracks 64 --blocks 1024
 
 # Per-crate benchmarks
-[group('plugins')]
+[group('bench-plugins')]
 plugins-bench-individual:
 	cargo bench -p sotf-plugin-binaural --bench binaural-decoder-benchmark
 	cargo bench -p sotf-plugin-loudness-compensation --bench loudness-benchmark
@@ -250,7 +250,7 @@ plugins-bench-individual:
 	cargo bench -p sotf-plugin-xtc --bench xtc-validation-benchmark
 
 # Ambisonics requires iamf feature
-[group('plugins')]
+[group('bench-plugins')]
 plugins-bench-ambisonics:
 	cargo bench -p sotf-plugin-ambisonics --bench ambisonics-benchmark --features iamf
 

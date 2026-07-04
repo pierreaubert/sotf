@@ -14,9 +14,7 @@ use super::types::BandTransition;
 use super::types::BiquadFilterConfig;
 use super::types::EqFilterTopology;
 use super::types::EqPluginParams;
-use math_audio_iir_fir::{
-    Biquad, BiquadCoefficients, BiquadFilterType, SvfFilter, SvfFilterType,
-};
+use math_audio_iir_fir::{Biquad, BiquadCoefficients, BiquadFilterType, SvfFilter, SvfFilterType};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData};
 use sotf_host::oversampling::Oversampler;
@@ -178,19 +176,19 @@ impl EqPlugin {
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
         let mut params = vec![
-            Parameter::new_int("max_filters", "Max Filters", self.max_filters, 1, MAX_FILTERS)
-                .with_description("Maximum number of EQ bands"),
+            Parameter::new_int(
+                "max_filters",
+                "Max Filters",
+                self.max_filters,
+                1,
+                MAX_FILTERS,
+            )
+            .with_description("Maximum number of EQ bands"),
             Parameter::new_bool("tdf2", "TDF-II", self.use_tdf2).with_description(
                 "Use Transposed Direct Form II for better numerical stability at high Q",
             ),
-            Parameter::new_int(
-                "topology",
-                "Topology",
-                self.topology as i32,
-                0,
-                1,
-            )
-            .with_description("Filter topology: Biquad or SVF (zero-delay feedback)"),
+            Parameter::new_int("topology", "Topology", self.topology as i32, 0, 1)
+                .with_description("Filter topology: Biquad or SVF (zero-delay feedback)"),
         ];
 
         if !self.filters.is_empty() {
@@ -938,7 +936,10 @@ impl EqPlugin {
                     _ => return Err(format!("Unknown field: {}", field)),
                 }
 
-                if let Some(v) = value.as_float().or_else(|| value.as_int().map(|v| v as f32)) {
+                if let Some(v) = value
+                    .as_float()
+                    .or_else(|| value.as_int().map(|v| v as f32))
+                {
                     if !v.is_finite() {
                         return Err("Value is not finite".into());
                     }
@@ -1064,9 +1065,9 @@ impl EqPlugin {
                             let total: f64 = stages.iter().map(|s| s.db_gain).sum();
                             Some(ParameterValue::Float(total as f32))
                         }
-                        "filter_type" => Some(ParameterValue::Int(filter_type_index(
-                            primary.filter_type,
-                        ))),
+                        "filter_type" => {
+                            Some(ParameterValue::Int(filter_type_index(primary.filter_type)))
+                        }
                         "order" => {
                             let order = self.band_orders.get(b_idx).copied().unwrap_or(2);
                             Some(ParameterValue::Int(order as i32))
