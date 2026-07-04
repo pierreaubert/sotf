@@ -1,3 +1,19 @@
+# 0.7.9
+
+## Features
+
+- iOS support for iPad and iPhone
+- Client / Server (TUI can act as a server, and iPhone app is a client) and support TLS ; QR code allows the passing of keys between the server and the client
+- Systemwide is working well enough
+
+## Major changes
+
+Splitted again autoeq, math-audio, gpui-toolkit and soda-reader into there own set of crates.
+
+## Bug fixes
+
+- Lots and lots of them, see detailed CHANGELOG in each crate.
+
 # 0.6.8
 
 ## Features
