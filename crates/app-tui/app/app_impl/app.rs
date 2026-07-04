@@ -636,79 +636,13 @@ impl App {
         filters: &[(String, f64, f64, f64)],
         label: &str,
     ) -> Result<String, String> {
-        use math_audio_iir_fir::BiquadFilterType;
-        use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
-
-        if filters.is_empty() {
-            return Err("No optimization results to apply".to_string());
-        }
-
-        let eq_filters: Vec<EQFilter> = filters
-            .iter()
-            .map(|(ft_str, freq, q, db_gain)| {
-                let ft = match ft_str.as_str() {
-                    "Peak" => BiquadFilterType::Peak,
-                    "Lowshelf" => BiquadFilterType::Lowshelf,
-                    "Highshelf" => BiquadFilterType::Highshelf,
-                    "Lowpass" => BiquadFilterType::Lowpass,
-                    "Highpass" => BiquadFilterType::Highpass,
-                    "Bandpass" => BiquadFilterType::Bandpass,
-                    "Notch" => BiquadFilterType::Notch,
-                    "AllPass" => BiquadFilterType::AllPass,
-                    _ => BiquadFilterType::Peak,
-                };
-                EQFilter::new(ft, *freq, *q, *db_gain)
-            })
-            .collect();
-
-        let n = eq_filters.len();
-
-        // Find the last non-permanent EQ plugin
-        let eq_idx = (0..self.plugin_rack.graph.len()).rev().find(|&i| {
-            if let Some(p) = self.plugin_rack.graph.get_plugin(i) {
-                !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. })
-            } else {
-                false
-            }
-        });
-
-        let target_idx = if let Some(idx) = eq_idx {
-            idx
-        } else {
-            // No EQ plugin found — insert one at the user-plugin slot
-            let insert_at = self.plugin_rack.graph.user_plugin_insert_index();
-            self.plugin_rack
-                .graph
-                .insert_plugin(insert_at, &PluginType::EQ)
-                .ok();
-            insert_at
-        };
-
-        // Update the plugin settings
-        if let Some(plugin) = self.plugin_rack.graph.get_plugin_mut(target_idx) {
-            let channels = match &plugin.settings {
-                PluginSettings::EQ { channels, .. } => *channels,
-                _ => 2,
-            };
-            plugin.settings = PluginSettings::EQ {
-                channels,
-                filters: eq_filters,
-                channel_filters: None,
-                per_channel_mode: false,
-                max_filters: n.clamp(1, 20),
-                tdf2: false,
-                topology: 0.0,
-            };
-            plugin.enabled = true;
-        }
-
-        self.plugin_rack.graph.update_channel_dependent_plugins();
+        let message = sotf_audio_player::autoeq::apply_eq_filter_tuples_to_chain(
+            &mut self.plugin_rack.graph,
+            filters,
+            label,
+        )?;
         self.request_plugin_update();
-
-        Ok(format!(
-            "Applied {} EQ filters for '{}' to plugin slot {}",
-            n, label, target_idx
-        ))
+        Ok(message)
     }
 
     /// Apply Spinorama EQ results to the plugin chain.

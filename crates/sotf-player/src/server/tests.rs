@@ -7,6 +7,7 @@ use super::api::api_media_source;
 use super::api::api_parse_library_album_query;
 use super::api::api_parse_range_header;
 use super::api::api_response_status;
+use super::api::api_state_json;
 use super::dlna::dlna_advertised_ipv4;
 use super::dlna::dlna_server_url;
 use super::dlna::dlna_server_url_for_bind;
@@ -26,6 +27,7 @@ use super::validate::sotf_api_plaintext_warning;
 use crate::federation_config::{ServerConfig, SotfApiSettings};
 use crate::library::DirectoryInfo;
 use crate::library::MusicLibrary;
+use crate::library_stats::LibraryStats;
 use crate::player::Player;
 use crate::queue::Queue;
 use crate::sotf_server_event::SotfServerEvent;
@@ -306,6 +308,31 @@ fn sotf_api_media_source_uses_cached_lookup_until_library_changes() {
     let source = api_media_source(&state, "uuid:track-cache").expect("rebuilt track source");
     assert_eq!(source.path, track_path);
     assert_eq!(state.media_source_index_rebuilds_for_test(), 2);
+}
+
+#[test]
+fn sotf_api_state_uses_cached_library_stats() {
+    let state = misc::test_state();
+    {
+        let mut library = state.library.lock();
+        library.albums = vec![crate::library::Album {
+            title: "One Visible Track".to_string(),
+            tracks: vec![crate::library::Track::default()],
+            ..Default::default()
+        }];
+        let mut stats = LibraryStats::compute(&library.albums);
+        stats.total_tracks = 42;
+        stats.valid = true;
+        library.set_stats_cache_for_test(stats);
+    }
+
+    let adapter = MpdPlayerAdapter {
+        state: Arc::clone(&state),
+    };
+    let body = api_state_json(&state, &adapter);
+
+    assert_eq!(body["library"]["albums"], 1);
+    assert_eq!(body["library"]["tracks"], 42);
 }
 
 #[test]

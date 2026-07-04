@@ -21,6 +21,7 @@ use super::types::DirectoryInfo;
 use super::types::LibrarySortOrder;
 use super::types::load_children_from_disk;
 use crate::database::MusicDatabase;
+use crate::library_stats::LibraryStats;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -42,11 +43,36 @@ pub struct MusicLibrary {
     /// matching subdirectories, which correctly dedupes albums whose tracks
     /// span multiple subdirectories.
     pub(super) dir_stats_cache: HashMap<PathBuf, (usize, std::collections::HashSet<String>)>,
+    stats_cache: LibraryStats,
 }
 
 impl MusicLibrary {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn album_count(&self) -> usize {
+        self.albums.len()
+    }
+
+    pub fn stats(&mut self) -> &LibraryStats {
+        if !self.stats_cache.valid {
+            self.refresh_stats_cache();
+        }
+        &self.stats_cache
+    }
+
+    pub fn refresh_stats_cache(&mut self) {
+        self.stats_cache = LibraryStats::compute(&self.albums);
+    }
+
+    pub fn invalidate_stats_cache(&mut self) {
+        self.stats_cache.valid = false;
+    }
+
+    #[cfg(test)]
+    pub fn set_stats_cache_for_test(&mut self, stats: LibraryStats) {
+        self.stats_cache = stats;
     }
 
     /// Create a new library with database persistence.
@@ -144,6 +170,7 @@ impl MusicLibrary {
         if let Some(db) = &self.db {
             // Load albums
             self.albums = db.load_library()?;
+            self.stats_cache = LibraryStats::compute(&self.albums);
             let t_after_albums = std::time::Instant::now();
 
             // Clear existing directories before rebuilding from database
@@ -308,6 +335,7 @@ impl MusicLibrary {
     /// Refresh the directory stats cache (e.g., after a scan).
     pub fn refresh_dir_stats_cache(&mut self) {
         self.dir_stats_cache = compute_directory_stats(&self.albums);
+        self.refresh_stats_cache();
     }
 
     /// Get filtered, filtered, merged, and sorted albums
@@ -716,6 +744,7 @@ impl MusicLibrary {
         }
 
         self.albums = album_map.into_values().collect();
+        self.refresh_stats_cache();
         progress_callback(total_tracks, self.albums.len());
 
         // Sort tracks within each album and generate album art thumbnails
@@ -882,6 +911,7 @@ impl MusicLibrary {
         self.albums.clear();
         self.directories.clear();
         self.dir_stats_cache.clear();
+        self.invalidate_stats_cache();
 
         Ok(removed)
     }

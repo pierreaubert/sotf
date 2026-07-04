@@ -114,13 +114,10 @@ pub(super) fn api_state_json(state: &Arc<ServerState>, adapter: &MpdPlayerAdapte
         player.get_engine_state().stream_metadata
     };
     let (album_count, track_count) = {
-        let library = state.library.lock();
-        let track_count = library
-            .albums
-            .iter()
-            .map(|album| album.tracks.len())
-            .sum::<usize>();
-        (library.albums.len(), track_count)
+        let mut library = state.library.lock();
+        let album_count = library.album_count();
+        let track_count = library.stats().total_tracks;
+        (album_count, track_count)
     };
     let library_version = state
         .library_version

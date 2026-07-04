@@ -46,9 +46,9 @@ pub mod speaker;
 
 // Re-export the shared "apply Room EQ result to chain" API.
 pub use apply::{
-    GraphApplyOutcome, RackApplyOutcome, RoomEqApplyOutcome, apply_room_eq_graph_to_chain,
-    apply_room_eq_rack_to_chain, apply_room_eq_to_chain, build_ui_graph_from_config,
-    classify_channel_eq_filters, upsert_named_room_eq_plugins,
+    GraphApplyOutcome, RackApplyOutcome, RoomEqApplyOutcome, apply_eq_filter_tuples_to_chain,
+    apply_room_eq_graph_to_chain, apply_room_eq_rack_to_chain, apply_room_eq_to_chain,
+    build_ui_graph_from_config, classify_channel_eq_filters, upsert_named_room_eq_plugins,
 };
 
 // Re-export types

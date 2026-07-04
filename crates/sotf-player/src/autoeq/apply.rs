@@ -34,6 +34,148 @@ pub use types::*;
 
 use misc::derive_plugin_name;
 
+/// Convert simple EQ filter tuples and apply them to the last mutable EQ in
+/// the chain, inserting a user EQ when none exists.
+///
+/// This is the shared implementation for Spinorama/headphone EQ apply flows:
+/// UI shells collect model filters and handle their own refresh side-effects,
+/// while this function owns the graph mutation behavior.
+pub fn apply_eq_filter_tuples_to_chain(
+    graph: &mut PluginGraph,
+    filters: &[(String, f64, f64, f64)],
+    label: &str,
+) -> Result<String, String> {
+    use math_audio_iir_fir::BiquadFilterType;
+
+    if filters.is_empty() {
+        return Err("No optimization results to apply".to_string());
+    }
+
+    let eq_filters: Vec<EQFilter> = filters
+        .iter()
+        .map(|(ft_str, freq, q, db_gain)| {
+            let ft = match ft_str.as_str() {
+                "Peak" => BiquadFilterType::Peak,
+                "Lowshelf" => BiquadFilterType::Lowshelf,
+                "Highshelf" => BiquadFilterType::Highshelf,
+                "Lowpass" => BiquadFilterType::Lowpass,
+                "Highpass" => BiquadFilterType::Highpass,
+                "Bandpass" => BiquadFilterType::Bandpass,
+                "Notch" => BiquadFilterType::Notch,
+                "AllPass" => BiquadFilterType::AllPass,
+                _ => BiquadFilterType::Peak,
+            };
+            EQFilter::new(ft, *freq, *q, *db_gain)
+        })
+        .collect();
+
+    let n = eq_filters.len();
+
+    let eq_idx = (0..graph.len()).rev().find(|&i| {
+        if let Some(p) = graph.get_plugin(i) {
+            !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. })
+        } else {
+            false
+        }
+    });
+
+    let target_idx = if let Some(idx) = eq_idx {
+        idx
+    } else {
+        let insert_at = graph.user_plugin_insert_index();
+        graph.insert_plugin(insert_at, &PluginType::EQ)?;
+        insert_at
+    };
+
+    if let Some(plugin) = graph.get_plugin_mut(target_idx) {
+        let channels = match &plugin.settings {
+            PluginSettings::EQ { channels, .. } => *channels,
+            _ => 2,
+        };
+        plugin.settings = PluginSettings::EQ {
+            channels,
+            filters: eq_filters,
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: n.clamp(1, 20),
+            tdf2: false,
+            topology: 0.0,
+        };
+        plugin.enabled = true;
+    }
+
+    graph.update_channel_dependent_plugins();
+
+    Ok(format!(
+        "Applied {} EQ filters for '{}' to plugin slot {}",
+        n, label, target_idx
+    ))
+}
+
+#[cfg(test)]
+mod eq_tuple_apply_tests {
+    use super::*;
+    use crate::{PluginGraph, PluginSettings, PluginType};
+
+    #[test]
+    fn applies_filter_tuples_to_existing_user_eq() {
+        let mut graph = PluginGraph::with_default_rack();
+        let idx = graph.user_plugin_insert_index();
+        graph.insert_plugin(idx, &PluginType::EQ).unwrap();
+
+        let message = apply_eq_filter_tuples_to_chain(
+            &mut graph,
+            &[
+                ("Peak".to_string(), 125.0, 1.2, -3.0),
+                ("Highshelf".to_string(), 8_000.0, 0.7, 1.5),
+            ],
+            "speaker",
+        )
+        .unwrap();
+
+        assert!(message.contains("Applied 2 EQ filters for 'speaker'"));
+        let plugin = graph.get_plugin(idx).unwrap();
+        assert!(plugin.enabled);
+        let PluginSettings::EQ {
+            filters,
+            max_filters,
+            ..
+        } = &plugin.settings
+        else {
+            panic!("expected EQ settings");
+        };
+        assert_eq!(filters.len(), 2);
+        assert_eq!(filters[0].frequency, 125.0);
+        assert_eq!(*max_filters, 2);
+    }
+
+    #[test]
+    fn inserts_user_eq_when_chain_has_no_mutable_eq() {
+        let mut graph = PluginGraph::with_default_rack();
+
+        let message = apply_eq_filter_tuples_to_chain(
+            &mut graph,
+            &[("Notch".to_string(), 60.0, 12.0, -12.0)],
+            "hum",
+        )
+        .unwrap();
+
+        assert!(message.contains("Applied 1 EQ filters for 'hum'"));
+        let idx = graph.find_plugin_index(&PluginType::EQ).unwrap();
+        let plugin = graph.get_plugin(idx).unwrap();
+        assert!(matches!(plugin.settings, PluginSettings::EQ { .. }));
+        assert!(plugin.enabled);
+    }
+
+    #[test]
+    fn rejects_empty_filter_tuple_apply() {
+        let mut graph = PluginGraph::new();
+        let err = apply_eq_filter_tuples_to_chain(&mut graph, &[], "empty").unwrap_err();
+        assert_eq!(err, "No optimization results to apply");
+        assert_eq!(graph.len(), 0);
+    }
+}
+
 /// Apply a rack-compatible `DspChainOutput` to the chain by inserting/
 /// updating the named "Broadband EQ" and "Room EQ" plugins.
 ///

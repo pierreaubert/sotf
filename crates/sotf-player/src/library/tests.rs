@@ -5,7 +5,6 @@ use super::misc::clean_album_title;
 use super::music_library::MusicLibrary;
 use super::normalize::normalize_album_key;
 use super::track::Track;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod misc;
@@ -113,12 +112,7 @@ fn test_load_directories_from_database() {
     }
 
     // Create library with the test database
-    let mut lib = MusicLibrary {
-        directories: Vec::new(),
-        albums: Vec::new(),
-        db: Some(MusicDatabase::open_for_testing(&db_path).unwrap()),
-        dir_stats_cache: HashMap::new(),
-    };
+    let mut lib = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
 
     // Load from database
     lib.load_from_database().unwrap();
@@ -153,12 +147,7 @@ fn test_load_directories_filters_subtrees() {
     }
 
     // Create library and load from database
-    let mut lib = MusicLibrary {
-        directories: Vec::new(),
-        albums: Vec::new(),
-        db: Some(MusicDatabase::open_for_testing(&db_path).unwrap()),
-        dir_stats_cache: HashMap::new(),
-    };
+    let mut lib = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
 
     lib.load_from_database().unwrap();
 
