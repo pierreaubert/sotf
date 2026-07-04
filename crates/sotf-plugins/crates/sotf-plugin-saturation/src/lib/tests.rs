@@ -366,3 +366,29 @@ fn test_get_parameter_after_from_params() {
         Some(ParameterValue::Bool(false))
     );
 }
+
+#[test]
+fn oversize_block_is_rejected_without_growing_scratch_buffers() {
+    let params = SaturationPluginParams {
+        mode: "Soft Clip".to_string(),
+        oversampling: "Off".to_string(),
+        ..Default::default()
+    };
+    let mut plugin = SaturationPlugin::from_params(2, params);
+    plugin.initialize(48000).unwrap();
+
+    let initial_dry_len = plugin.dry_buf.len();
+    let initial_low_len = plugin.low_buf.len();
+    let initial_high_len = plugin.high_buf.len();
+    let num_frames = initial_dry_len / 2 + 1;
+    let mut buffer = vec![0.25_f32; num_frames * 2];
+
+    let err = plugin
+        .process_in_place(&mut buffer, &make_context(num_frames))
+        .expect_err("oversize audio blocks must not allocate in process_in_place");
+
+    assert!(err.contains("exceeds preallocated scratch"));
+    assert_eq!(plugin.dry_buf.len(), initial_dry_len);
+    assert_eq!(plugin.low_buf.len(), initial_low_len);
+    assert_eq!(plugin.high_buf.len(), initial_high_len);
+}

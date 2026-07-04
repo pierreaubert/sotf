@@ -651,11 +651,11 @@ impl ParametricInPlacePlugin for SaturationPlugin {
             ));
         }
 
-        // Grow all pre-allocated buffers together if host sends a larger block
         if self.dry_buf.len() < total {
-            self.dry_buf.resize(total, 0.0);
-            self.low_buf.resize(total, 0.0);
-            self.high_buf.resize(total, 0.0);
+            return Err(format!(
+                "process_in_place: block requires {total} samples, exceeds preallocated scratch capacity {}",
+                self.dry_buf.len()
+            ));
         }
 
         // Save dry signal for mix

@@ -9,7 +9,7 @@
 //! Adding a parameter: add to PARAMS, add field to Params, add match arms.
 //! Nothing else needs to change.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
 use sotf_host::plugin_params::PluginParamDef;
@@ -191,10 +191,10 @@ pub struct Params {
     pub dynamic_attack_ms: f64,
     #[serde(default = "d_dynamic_release_ms")]
     pub dynamic_release_ms: f64,
-    #[serde(default = "d_dc_blocker")]
-    pub dc_blocker: f64,
-    #[serde(default = "d_use_adaa")]
-    pub use_adaa: f64,
+    #[serde(default = "d_dc_blocker", deserialize_with = "deserialize_bool_legacy")]
+    pub dc_blocker: bool,
+    #[serde(default = "d_use_adaa", deserialize_with = "deserialize_bool_legacy")]
+    pub use_adaa: bool,
 }
 
 fn d_mode() -> f64 {
@@ -227,11 +227,28 @@ fn d_dynamic_attack_ms() -> f64 {
 fn d_dynamic_release_ms() -> f64 {
     pk(PARAMS, "dynamic_release_ms").default_f64()
 }
-fn d_dc_blocker() -> f64 {
-    pk(PARAMS, "dc_blocker").default_f64()
+fn d_dc_blocker() -> bool {
+    pk(PARAMS, "dc_blocker").default_bool()
 }
-fn d_use_adaa() -> f64 {
-    pk(PARAMS, "use_adaa").default_f64()
+fn d_use_adaa() -> bool {
+    pk(PARAMS, "use_adaa").default_bool()
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum BoolOrNumber {
+    Bool(bool),
+    Number(f64),
+}
+
+fn deserialize_bool_legacy<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match BoolOrNumber::deserialize(deserializer)? {
+        BoolOrNumber::Bool(value) => Ok(value),
+        BoolOrNumber::Number(value) => Ok(value > 0.5),
+    }
 }
 
 impl Default for Params {
@@ -275,8 +292,8 @@ impl PluginParamDef for Params {
             7 => Some(self.dynamic_amount),
             8 => Some(self.dynamic_attack_ms),
             9 => Some(self.dynamic_release_ms),
-            10 => Some(self.dc_blocker),
-            11 => Some(self.use_adaa),
+            10 => Some(if self.dc_blocker { 1.0 } else { 0.0 }),
+            11 => Some(if self.use_adaa { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -293,8 +310,8 @@ impl PluginParamDef for Params {
             7 => self.dynamic_amount = value,
             8 => self.dynamic_attack_ms = value,
             9 => self.dynamic_release_ms = value,
-            10 => self.dc_blocker = value,
-            11 => self.use_adaa = value,
+            10 => self.dc_blocker = value > 0.5,
+            11 => self.use_adaa = value > 0.5,
             _ => {}
         }
     }
@@ -348,5 +365,25 @@ mod tests {
         assert_eq!(p.oversampling, pk(PARAMS, "oversampling").default_f64());
         assert_eq!(p.output_gain, pk(PARAMS, "output_gain").default_f64());
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64());
+    }
+
+    #[test]
+    fn bool_params_serialize_as_booleans() {
+        let json = serde_json::to_value(Params::default()).unwrap();
+
+        assert_eq!(json["dc_blocker"], serde_json::Value::Bool(true));
+        assert_eq!(json["use_adaa"], serde_json::Value::Bool(true));
+    }
+
+    #[test]
+    fn bool_params_accept_legacy_numeric_presets() {
+        let p: Params = serde_json::from_value(serde_json::json!({
+            "dc_blocker": 0.0,
+            "use_adaa": 1.0,
+        }))
+        .unwrap();
+
+        assert!(!p.dc_blocker);
+        assert!(p.use_adaa);
     }
 }

@@ -291,11 +291,12 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
             return Ok(nf);
         }
 
-        // Ensure dry buffer is large enough.
-        // initialize() pre-allocates 65536*2 samples covering virtually all
-        // real-world buffer sizes; this resize is a last-resort fallback only.
         if self.dry_buf.len() < nf * 2 {
-            self.dry_buf.resize(nf * 2, 0.0);
+            return Err(format!(
+                "process_in_place: block requires {} samples, exceeds preallocated scratch capacity {}",
+                nf * 2,
+                self.dry_buf.len()
+            ));
         }
 
         // Save dry signal for mix blending only when wet/dry blend is active.

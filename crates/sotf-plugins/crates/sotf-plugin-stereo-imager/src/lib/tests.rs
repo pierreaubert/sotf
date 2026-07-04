@@ -132,6 +132,23 @@ fn test_large_buffer_no_panic() {
         .unwrap();
 }
 
+#[test]
+fn oversize_block_is_rejected_without_growing_dry_buffer() {
+    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    plugin.initialize(48000).unwrap();
+
+    let initial_len = plugin.dry_buf.len();
+    let num_frames = initial_len / 2 + 1;
+    let mut buffer = vec![0.25_f32; num_frames * 2];
+
+    let err = plugin
+        .process_in_place(&mut buffer, &make_context(num_frames))
+        .expect_err("oversize audio blocks must not allocate in process_in_place");
+
+    assert!(err.contains("exceeds preallocated scratch"));
+    assert_eq!(plugin.dry_buf.len(), initial_len);
+}
+
 /// Mix=0 (fully dry): output must be byte-for-byte identical to input.
 #[test]
 fn test_mix_zero_full_passthrough() {
