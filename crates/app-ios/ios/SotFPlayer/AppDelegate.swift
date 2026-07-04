@@ -76,13 +76,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             object: nil
         )
 
-        sotf_ios_dynamic_type_scale_changed(Self.dynamicTypeScale(for: application.preferredContentSizeCategory))
+        sotf_ios_dynamic_type_scale_changed(
+            IOSPlatformSupport.dynamicTypeScale(for: application.preferredContentSizeCategory)
+        )
         sotf_ios_low_power_mode_changed(ProcessInfo.processInfo.isLowPowerModeEnabled)
     }
 
     @objc private func handleDynamicTypeChanged(notification: Notification) {
         let category = UIApplication.shared.preferredContentSizeCategory
-        let scale = Self.dynamicTypeScale(for: category)
+        let scale = IOSPlatformSupport.dynamicTypeScale(for: category)
         NSLog("[AppDelegate] Dynamic Type changed: \(category.rawValue), scale=\(scale)")
         sotf_ios_dynamic_type_scale_changed(scale)
     }
@@ -93,23 +95,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         sotf_ios_low_power_mode_changed(enabled)
     }
 
-    private static func dynamicTypeScale(for category: UIContentSizeCategory) -> Double {
-        switch category {
-        case .extraSmall: return 0.85
-        case .small: return 0.92
-        case .medium: return 0.96
-        case .large: return 1.0
-        case .extraLarge: return 1.08
-        case .extraExtraLarge: return 1.16
-        case .extraExtraExtraLarge: return 1.24
-        case .accessibilityMedium: return 1.34
-        case .accessibilityLarge: return 1.48
-        case .accessibilityExtraLarge: return 1.62
-        case .accessibilityExtraExtraLarge: return 1.78
-        case .accessibilityExtraExtraExtraLarge: return 1.95
-        default: return 1.0
-        }
-    }
 }
 
 // MARK: - Swift functions callable from Rust
@@ -138,8 +123,7 @@ func sotfIosShowRoutePicker() {
             static var view: MPVolumeView?
         }
 
-        let routePicker = MPVolumeView(frame: CGRect(x: -1000, y: -1000, width: 44, height: 44))
-        routePicker.showsVolumeSlider = false
+        let routePicker = IOSPlatformSupport.makeHiddenRoutePickerView()
         RoutePickerHost.view = routePicker
         rootVC.view.addSubview(routePicker)
 

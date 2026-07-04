@@ -48,3 +48,15 @@ targets:
           - "-framework AudioToolbox"
           - "-lc++"
           - "-lsqlite3"
+  SotFPlayerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - SotFPlayerTests
+    dependencies:
+      - target: SotFPlayer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.sotf.tests
+        GENERATE_INFOPLIST_FILE: true
+        SWIFT_VERSION: "5.10"

@@ -96,6 +96,21 @@ fn ios_platform_hooks_cover_p1_runtime_events() {
 }
 
 #[test]
+fn ios_xctest_smoke_target_covers_platform_events() {
+    let project_yml = std::fs::read_to_string(ios_path("project.yml")).unwrap();
+    let tests = std::fs::read_to_string(ios_path("SotFPlayerTests/PlatformSmokeTests.swift"))
+        .expect("missing iOS XCTest smoke suite");
+
+    assert!(project_yml.contains("SotFPlayerTests:"));
+    assert!(project_yml.contains("type: bundle.unit-test"));
+    assert!(project_yml.contains("SotFPlayerTests"));
+    assert!(tests.contains("import XCTest"));
+    assert!(tests.contains("testDynamicTypeScaleIsMonotonic"));
+    assert!(tests.contains("testSafeAreaInsetsAreForwarded"));
+    assert!(tests.contains("testRoutePickerUsesHiddenMpVolumeView"));
+}
+
+#[test]
 fn ios_airplay_route_picker_is_exposed_to_gpui() {
     let app_delegate = std::fs::read_to_string(app_path("AppDelegate.swift")).unwrap();
     let audio_settings = std::fs::read_to_string(
