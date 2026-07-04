@@ -50,11 +50,34 @@ pub fn test_parameter_ramp(
     sample_rate: f64,
 ) {
     let channels = plugin.input_channels();
+    let output_channels = plugin.output_channels();
     let input = vec![0.5; duration_frames * channels];
-    let mut output = vec![0.0; duration_frames * plugin.output_channels()];
+    let mut output = vec![0.0; duration_frames * output_channels];
 
     // We'll process in small blocks to allow parameter updates at block boundaries
     let block_size = 64;
+    let warmup_frames = (sample_rate * 0.1).round() as usize;
+    let warmup_input = vec![0.5; block_size * channels];
+    let mut warmup_output = vec![0.0; block_size * output_channels];
+    let mut warmed_frames = 0;
+
+    plugin
+        .set_parameter(param_id.clone(), ParameterValue::Float(start_val))
+        .unwrap();
+
+    while warmed_frames < warmup_frames {
+        let num_frames = block_size.min(warmup_frames - warmed_frames);
+        let ctx = ProcessContext::new(sample_rate as u32, num_frames);
+        plugin
+            .process(
+                &warmup_input[..num_frames * channels],
+                &mut warmup_output[..num_frames * output_channels],
+                &ctx,
+            )
+            .unwrap();
+        warmed_frames += num_frames;
+    }
+
     let mut frames_processed = 0;
 
     while frames_processed < duration_frames {
@@ -72,21 +95,26 @@ pub fn test_parameter_ramp(
 
         let in_slice =
             &input[frames_processed * channels..(frames_processed + num_frames) * channels];
-        let out_slice = &mut output[frames_processed * plugin.output_channels()
-            ..(frames_processed + num_frames) * plugin.output_channels()];
+        let out_slice = &mut output[frames_processed * output_channels
+            ..(frames_processed + num_frames) * output_channels];
 
         plugin.process(in_slice, out_slice, &ctx).unwrap();
         frames_processed += num_frames;
     }
 
-    // Check for artifacts (sudden jumps in output)
-    for i in 1..output.len() {
-        let diff = (output[i] - output[i - 1]).abs();
-        assert!(
-            diff < 0.1,
-            "Artifact detected at sample {}: jump of {}",
-            i,
-            diff
-        );
+    // Check for artifacts (sudden jumps in output) per interleaved channel.
+    for frame in 1..duration_frames {
+        for ch in 0..output_channels {
+            let i = frame * output_channels + ch;
+            let prev_i = (frame - 1) * output_channels + ch;
+            let diff = (output[i] - output[prev_i]).abs();
+            assert!(
+                diff < 0.1,
+                "Artifact detected at frame {} channel {}: jump of {}",
+                frame,
+                ch,
+                diff
+            );
+        }
     }
 }

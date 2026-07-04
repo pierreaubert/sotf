@@ -20,20 +20,24 @@ expression: plan
     "output"
   ],
   "columns_collapsed": [],
-  "config_controls": [
-    {
-      "param_index": 11,
-      "param_name": "Mode",
-      "control_type": "selector",
-      "unit": "",
-      "range": [
-        0.0,
-        2.0
-      ],
-      "read_only": false
-    }
-  ],
+  "config_controls": [],
   "main_groups": [
+    {
+      "title": "",
+      "controls": [
+        {
+          "param_index": 11,
+          "param_name": "Mode",
+          "control_type": "selector",
+          "unit": "",
+          "range": [
+            0.0,
+            2.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
     {
       "title": "ISO 226",
       "controls": [

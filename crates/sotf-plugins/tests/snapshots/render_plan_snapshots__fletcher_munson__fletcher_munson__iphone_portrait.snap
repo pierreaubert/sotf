@@ -1,5 +1,6 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 65
 expression: plan
 ---
 {
@@ -21,20 +22,24 @@ expression: plan
   "columns_collapsed": [
     "output"
   ],
-  "config_controls": [
-    {
-      "param_index": 11,
-      "param_name": "Mode",
-      "control_type": "selector",
-      "unit": "",
-      "range": [
-        0.0,
-        2.0
-      ],
-      "read_only": false
-    }
-  ],
+  "config_controls": [],
   "main_groups": [
+    {
+      "title": "",
+      "controls": [
+        {
+          "param_index": 11,
+          "param_name": "Mode",
+          "control_type": "selector",
+          "unit": "",
+          "range": [
+            0.0,
+            2.0
+          ],
+          "read_only": false
+        }
+      ]
+    },
     {
       "title": "ISO 226",
       "controls": [

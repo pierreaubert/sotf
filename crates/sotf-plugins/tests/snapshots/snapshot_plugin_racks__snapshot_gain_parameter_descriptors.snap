@@ -1,6 +1,5 @@
 ---
 source: crates/sotf-plugins/tests/snapshot_plugin_racks.rs
-assertion_line: 53
 expression: params
 ---
 [
@@ -29,7 +28,7 @@ expression: params
     "group": "General",
     "importance": "Useful",
     "default_value": {
-      "Float": 20.0
+      "Float": 10.0
     },
     "min_value": {
       "Float": 0.0

@@ -57,7 +57,7 @@ expression: plan
       "read_only": false
     },
     {
-      "param_index": 26,
+      "param_index": 27,
       "param_name": "Head Model",
       "control_type": "selector",
       "unit": "",
@@ -188,6 +188,14 @@ expression: plan
         },
         {
           "param_index": 16,
+          "param_name": "Room IR",
+          "control_type": "file_picker",
+          "unit": "",
+          "range": null,
+          "read_only": false
+        },
+        {
+          "param_index": 17,
           "param_name": "Room Width",
           "control_type": "knob",
           "unit": "m",
@@ -198,7 +206,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 17,
+          "param_index": 18,
           "param_name": "Room Depth",
           "control_type": "knob",
           "unit": "m",
@@ -209,7 +217,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 18,
+          "param_index": 19,
           "param_name": "Wall Absorption",
           "control_type": "knob",
           "unit": "",
@@ -220,7 +228,7 @@ expression: plan
           "read_only": false
         },
         {
-          "param_index": 19,
+          "param_index": 20,
           "param_name": "Reflection Beta",
           "control_type": "knob",
           "unit": "",
@@ -235,7 +243,7 @@ expression: plan
   ],
   "output_controls": [
     {
-      "param_index": 20,
+      "param_index": 21,
       "param_name": "Bypass XTC Filters",
       "control_type": "toggle",
       "unit": "",
@@ -246,7 +254,7 @@ expression: plan
       "read_only": false
     },
     {
-      "param_index": 21,
+      "param_index": 22,
       "param_name": "Bypass Spectral Norm",
       "control_type": "toggle",
       "unit": "",
@@ -257,7 +265,7 @@ expression: plan
       "read_only": false
     },
     {
-      "param_index": 22,
+      "param_index": 23,
       "param_name": "Bypass Neumann",
       "control_type": "toggle",
       "unit": "",
@@ -268,7 +276,7 @@ expression: plan
       "read_only": false
     },
     {
-      "param_index": 23,
+      "param_index": 24,
       "param_name": "Auto Gain",
       "control_type": "toggle",
       "unit": "",
@@ -279,7 +287,7 @@ expression: plan
       "read_only": false
     },
     {
-      "param_index": 24,
+      "param_index": 25,
       "param_name": "AG Max",
       "control_type": "knob",
       "unit": "dB",
@@ -290,7 +298,7 @@ expression: plan
       "read_only": false
     },
     {
-      "param_index": 25,
+      "param_index": 26,
       "param_name": "AG Smoothing",
       "control_type": "knob",
       "unit": "ms",

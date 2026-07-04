@@ -516,7 +516,7 @@ pub(super) fn benchmark_loudness(c: &mut Criterion) {
             reference_level_db: 69.0,
             ..Default::default()
         };
-        let mut plugin = ParametricPluginAdapter::new(
+        let mut plugin = ParametricInPlacePluginAdapter::new(
             LoudnessCompensationPlugin::from_params(CHANNELS, params).unwrap(),
         );
         Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
