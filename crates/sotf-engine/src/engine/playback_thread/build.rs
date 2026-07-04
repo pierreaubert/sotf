@@ -1,5 +1,4 @@
 use super::super::ThreadEvent;
-use super::apply::apply_volume;
 use super::apply::apply_volume_clamp;
 use super::misc::send_playback_event;
 use super::playback_state::PlaybackState;
@@ -58,7 +57,7 @@ pub(super) fn build_output_stream_f32(
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
                 read_ring_buffer(&mut consumer, data, data.len(), &state_clone, capacity);
-                apply_volume(data, &state_clone);
+                apply_volume_clamp(data, &state_clone);
             },
             move |err| {
                 error_state

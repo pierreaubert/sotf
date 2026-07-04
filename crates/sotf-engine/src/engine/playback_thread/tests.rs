@@ -35,6 +35,16 @@ fn playback_stream_error_callbacks_gate_event_formatting() {
 }
 
 #[test]
+fn primary_f32_output_clamps_after_volume() {
+    let source = include_str!("build.rs");
+
+    assert!(
+        source.contains("apply_volume_clamp(data, &state_clone);"),
+        "primary f32 playback callback must clamp after volume before handing samples to CPAL"
+    );
+}
+
+#[test]
 fn playback_frame_writer_hot_path_has_no_logging_or_formatting() {
     let source = include_str!("frame_writer.rs");
 
