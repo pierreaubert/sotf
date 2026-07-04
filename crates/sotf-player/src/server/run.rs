@@ -11,6 +11,7 @@ use super::mpd::mpd_settings_to_config;
 use super::mpd_player_adapter::MpdPlayerAdapter;
 use super::server_state::ServerState;
 use super::server_state::build_mpd_tls_acceptor;
+use super::validate::sotf_api_plaintext_warning;
 use super::validate::validate_server_mode_config;
 use super::validate::validate_sotf_api_token;
 use crate::federation_config::{self, SotfApiSettings};
@@ -235,6 +236,10 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
                     None
                 }
             } {
+                if let Some(warning) = sotf_api_plaintext_warning(&api_config) {
+                    log::warn!("[server] {warning}");
+                    eprintln!("Warning: {warning}");
+                }
                 eprintln!(
                     "SOTF API '{}' listening on {}:{}",
                     api_config.friendly_name, api_config.bind_address, api_config.port

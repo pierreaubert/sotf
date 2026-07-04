@@ -22,6 +22,7 @@ use super::server_state::ServerState;
 use super::sotf::sotf_api_connection_qr_payload;
 use super::sotf::sotf_api_server_url_for_bind;
 use super::types::ApiRequest;
+use super::validate::sotf_api_plaintext_warning;
 use crate::federation_config::{ServerConfig, SotfApiSettings};
 use crate::library::DirectoryInfo;
 use crate::library::MusicLibrary;
@@ -94,6 +95,34 @@ fn sotf_api_server_url_includes_api_path() {
     let url = sotf_api_server_url_for_bind("192.168.1.42", 8732);
 
     assert_eq!(url, "http://192.168.1.42:8732/api/v1");
+}
+
+#[test]
+fn sotf_api_plaintext_warning_ignores_loopback_binds() {
+    let settings = SotfApiSettings {
+        enabled: true,
+        bind_address: "127.0.0.1".to_string(),
+        port: 8732,
+        friendly_name: "SOTF".to_string(),
+        auth_token: Some("secret-token".to_string()),
+    };
+
+    assert!(sotf_api_plaintext_warning(&settings).is_none());
+}
+
+#[test]
+fn sotf_api_plaintext_warning_flags_non_loopback_binds() {
+    let settings = SotfApiSettings {
+        enabled: true,
+        bind_address: "0.0.0.0".to_string(),
+        port: 8732,
+        friendly_name: "SOTF".to_string(),
+        auth_token: Some("secret-token".to_string()),
+    };
+
+    let warning = sotf_api_plaintext_warning(&settings).expect("non-loopback warning");
+    assert!(warning.contains("plaintext HTTP"));
+    assert!(warning.contains("0.0.0.0:8732"));
 }
 
 #[test]

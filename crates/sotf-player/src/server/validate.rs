@@ -1,5 +1,23 @@
 use super::misc::invalid_configured_client_fingerprints;
 use crate::federation_config::{self, ServerConfig, SotfApiSettings};
+use std::net::IpAddr;
+
+pub(super) fn sotf_api_plaintext_warning(settings: &SotfApiSettings) -> Option<String> {
+    let bind_address = settings.bind_address.trim();
+    let is_loopback_only = bind_address.eq_ignore_ascii_case("localhost")
+        || bind_address
+            .parse::<IpAddr>()
+            .is_ok_and(|addr| addr.is_loopback());
+
+    if is_loopback_only {
+        None
+    } else {
+        Some(format!(
+            "SOTF API is serving plaintext HTTP on {}:{}; restrict the bind address to loopback or use only trusted networks until TLS is enabled",
+            settings.bind_address, settings.port
+        ))
+    }
+}
 
 pub(super) fn validate_sotf_api_token(settings: &SotfApiSettings) -> Result<String, String> {
     let token = settings.auth_token.as_deref().unwrap_or_default().trim();
