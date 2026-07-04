@@ -68,8 +68,8 @@ pub async fn fetch_source_albums(
         SourceConnectionConfig::Peer {
             host,
             port,
+            accepted_fingerprint,
             auth_token,
-            ..
         } => {
             let token = auth_token
                 .as_deref()
@@ -81,8 +81,8 @@ pub async fn fetch_source_albums(
                     tracks: 0,
                     error: Some("SOTF API token is required for Peer sources".to_string()),
                 })?;
-            let client =
-                sotf_peer_client(host, *port, token).map_err(|e| FederationScanResult {
+            let client = sotf_peer_client(host, *port, token, accepted_fingerprint.as_deref())
+                .map_err(|e| FederationScanResult {
                     source_id: source_id_str.clone(),
                     albums: 0,
                     tracks: 0,

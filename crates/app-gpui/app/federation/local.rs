@@ -587,8 +587,13 @@ impl App {
 }
 
 fn local_sotf_api_base_url(settings: &SotfApiSettings) -> String {
+    let scheme = if settings.tls_enabled {
+        "https"
+    } else {
+        "http"
+    };
     format!(
-        "http://{}:{}",
+        "{scheme}://{}:{}",
         local_api_connect_host(&settings.bind_address),
         settings.port
     )

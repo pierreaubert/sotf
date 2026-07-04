@@ -24,6 +24,7 @@ pub(super) fn api_settings(token: Option<&str>) -> SotfApiSettings {
         bind_address: "127.0.0.1".to_string(),
         port: 8732,
         friendly_name: "Test SOTF".to_string(),
+        tls_enabled: false,
         auth_token: token.map(str::to_string),
     }
 }
@@ -194,6 +195,7 @@ pub(super) async fn try_spawn_test_api_server(
         api_settings(Some("secret")),
         state,
         listener,
+        None,
         shutdown_rx,
     ));
     Ok((addr, shutdown_tx, handle))

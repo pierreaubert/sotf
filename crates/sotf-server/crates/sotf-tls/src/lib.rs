@@ -8,7 +8,10 @@ pub mod trusted_clients;
 
 pub use cert_gen::fingerprint;
 pub use cert_store::CertStore;
-pub use client::{TofuVerifier, build_client_tls_config, build_client_tls_config_with_cert};
+pub use client::{
+    AutoAcceptTofuVerifier, TofuVerifier, build_auto_accept_client_tls_config_for_port,
+    build_client_tls_config, build_client_tls_config_with_cert,
+};
 pub use client_cert_gen::{
     client_cert_path, client_key_path, generate_client_cert, load_or_generate_client_cert,
 };

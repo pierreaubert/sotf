@@ -406,6 +406,10 @@ impl Drop for AirPlaySender {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     fn test_device() -> CastDevice {
         CastDevice {
@@ -416,6 +420,83 @@ mod tests {
             instance_name: String::new(),
             txt_records: HashMap::new(),
         }
+    }
+
+    fn local_test_device(port: u16) -> CastDevice {
+        CastDevice {
+            device_type: crate::CastDeviceType::AirPlay,
+            name: "Loopback AirPlay".to_string(),
+            address: Ipv4Addr::LOCALHOST,
+            port,
+            instance_name: String::new(),
+            txt_records: HashMap::new(),
+        }
+    }
+
+    fn read_rtsp_request(stream: &mut TcpStream) -> Option<(String, u32)> {
+        let mut reader = BufReader::new(stream.try_clone().ok()?);
+        let mut first_line = String::new();
+        reader.read_line(&mut first_line).ok()?;
+        if first_line.is_empty() {
+            return None;
+        }
+        let method = first_line.split_whitespace().next()?.to_string();
+        let mut cseq = 0;
+        let mut content_length = 0usize;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).ok()?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                break;
+            }
+            if let Some(value) = trimmed.strip_prefix("CSeq:") {
+                cseq = value.trim().parse().ok()?;
+            }
+            if let Some(value) = trimmed.strip_prefix("Content-Length:") {
+                content_length = value.trim().parse().unwrap_or(0);
+            }
+        }
+        if content_length > 0 {
+            let mut body = vec![0; content_length];
+            reader.read_exact(&mut body).ok()?;
+        }
+        Some((method, cseq))
+    }
+
+    fn write_rtsp_ok(stream: &mut TcpStream, cseq: u32, extra_headers: &str) {
+        let response = format!("RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\n{extra_headers}\r\n");
+        stream.write_all(response.as_bytes()).unwrap();
+        stream.flush().unwrap();
+    }
+
+    fn spawn_airplay_receiver(
+        rtp_port: u16,
+    ) -> (u16, mpsc::Receiver<String>, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(3))).ok();
+            while let Some((method, cseq)) = read_rtsp_request(&mut stream) {
+                tx.send(method.clone()).unwrap();
+                match method.as_str() {
+                    "SETUP" => write_rtsp_ok(
+                        &mut stream,
+                        cseq,
+                        &format!(
+                            "Transport: RTP/AVP/UDP;unicast;server_port={rtp_port}\r\nSession: loopback-session\r\n"
+                        ),
+                    ),
+                    _ => write_rtsp_ok(&mut stream, cseq, ""),
+                }
+                if method == "TEARDOWN" {
+                    break;
+                }
+            }
+        });
+        (port, rx, handle)
     }
 
     #[test]
@@ -449,5 +530,49 @@ mod tests {
         assert_eq!(FRAMES_PER_PACKET, 352);
         assert_eq!(BYTES_PER_FRAME, 4); // 2 channels * 2 bytes
         assert_eq!(PACKET_SIZE, 1408); // 352 * 4
+    }
+
+    #[test]
+    fn airplay_rtsp_handshake_and_rtp_packet_e2e() {
+        let rtp_socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0)).unwrap();
+        rtp_socket
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let rtp_port = rtp_socket.local_addr().unwrap().port();
+        let (rtsp_port, methods, handle) = spawn_airplay_receiver(rtp_port);
+        let mut sender = AirPlaySender::new(local_test_device(rtsp_port));
+
+        sender.connect().unwrap();
+        assert_eq!(sender.state(), AirPlayState::Connected);
+        assert_eq!(
+            methods.recv_timeout(Duration::from_secs(1)).unwrap(),
+            "ANNOUNCE"
+        );
+        assert_eq!(
+            methods.recv_timeout(Duration::from_secs(1)).unwrap(),
+            "SETUP"
+        );
+        assert_eq!(
+            methods.recv_timeout(Duration::from_secs(1)).unwrap(),
+            "RECORD"
+        );
+
+        let consumed = sender
+            .write_audio(&vec![0.25; FRAMES_PER_PACKET * CHANNELS as usize])
+            .unwrap();
+        assert_eq!(consumed, FRAMES_PER_PACKET * CHANNELS as usize);
+
+        let mut packet = vec![0u8; RTP_HEADER_SIZE + PACKET_SIZE];
+        let len = rtp_socket.recv(&mut packet).unwrap();
+        assert_eq!(len, RTP_HEADER_SIZE + PACKET_SIZE);
+        assert_eq!(packet[0], 0x80);
+        assert_eq!(packet[1], RTP_PAYLOAD_TYPE | 0x80);
+
+        sender.disconnect();
+        assert_eq!(
+            methods.recv_timeout(Duration::from_secs(1)).unwrap(),
+            "TEARDOWN"
+        );
+        handle.join().unwrap();
     }
 }

@@ -3,6 +3,10 @@ use crate::federation_config::{self, ServerConfig, SotfApiSettings};
 use std::net::IpAddr;
 
 pub(super) fn sotf_api_plaintext_warning(settings: &SotfApiSettings) -> Option<String> {
+    if settings.tls_enabled {
+        return None;
+    }
+
     let bind_address = settings.bind_address.trim();
     let is_loopback_only = bind_address.eq_ignore_ascii_case("localhost")
         || bind_address

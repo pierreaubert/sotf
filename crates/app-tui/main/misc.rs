@@ -16,10 +16,7 @@ pub(super) fn print_sotf_api_connection_qr() -> Result<(), Box<dyn std::error::E
     }
 
     let payload = sotf_audio_player::server::sotf_api_connection_qr_payload(&config.api)?;
-    let url = sotf_audio_player::server::sotf_api_server_url_for_bind(
-        &config.api.bind_address,
-        config.api.port,
-    );
+    let url = sotf_audio_player::server::sotf_api_server_url_for_settings(&config.api);
     let token = config.api.auth_token.as_deref().unwrap_or_default();
     let code = QrCode::new(payload.as_bytes())?;
     let qr = code.render::<unicode::Dense1x2>().quiet_zone(true).build();
@@ -450,19 +447,25 @@ pub(super) fn dispatch_tui_action(
                 .get_plugin_mut(idx)
                 .ok_or_else(|| anyhow::anyhow!("plugin index {idx} out of range"))?;
             // Reuse logic from Task 2; consider exposing a shared helper
-            sotf_audio_player::controllers::plugin::dev_api::actions::set_string_param(&mut plugin.settings, param_idx, value)?;
+            sotf_audio_player::controllers::plugin::dev_api::actions::set_string_param(
+                &mut plugin.settings,
+                param_idx,
+                value,
+            )?;
             app.plugin_rack.graph.update_channel_dependent_plugins();
             app.request_plugin_update();
             return Ok(());
         }
         "PluginChainSave" => {
             let path = std::path::Path::new(payload_str(&payload, "path")?);
-            app.save_plugins_to_path(path).map_err(|e| anyhow::anyhow!(e))?;
+            app.save_plugins_to_path(path)
+                .map_err(|e| anyhow::anyhow!(e))?;
             return Ok(());
         }
         "PluginChainLoad" => {
             let path = std::path::Path::new(payload_str(&payload, "path")?);
-            app.load_plugins_from_path(path).map_err(|e| anyhow::anyhow!(e))?;
+            app.load_plugins_from_path(path)
+                .map_err(|e| anyhow::anyhow!(e))?;
             return Ok(());
         }
         _ => {}

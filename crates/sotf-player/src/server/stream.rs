@@ -6,16 +6,18 @@ use super::misc::sse_event_name;
 use super::mpd_player_adapter::MpdPlayerAdapter;
 use super::server_state::ServerState;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 
-pub(super) async fn stream_api_media(
-    stream: &mut TcpStream,
+pub(super) async fn stream_api_media<S>(
+    stream: &mut S,
     method: &str,
     route: &str,
     range_header: Option<&str>,
     state: &Arc<ServerState>,
-) -> Result<(), String> {
+) -> Result<(), String>
+where
+    S: AsyncWrite + Unpin,
+{
     let track_id = route
         .strip_prefix("/api/v1/media/")
         .ok_or_else(|| "invalid media route".to_string())?;
@@ -112,12 +114,15 @@ pub(super) async fn stream_api_media(
     Ok(())
 }
 
-pub(super) async fn stream_api_media_file(
-    stream: &mut TcpStream,
+pub(super) async fn stream_api_media_file<S>(
+    stream: &mut S,
     path: &std::path::Path,
     start: u64,
     len: u64,
-) -> Result<(), String> {
+) -> Result<(), String>
+where
+    S: AsyncWrite + Unpin,
+{
     let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|err| format!("open media file: {err}"))?;
@@ -149,10 +154,13 @@ pub(super) async fn stream_api_media_file(
 ///
 /// Sends an initial state snapshot, then subscribes to the broadcast channel
 /// and forwards each event as an SSE frame until the client disconnects.
-pub(super) async fn stream_api_events(
-    stream: &mut TcpStream,
+pub(super) async fn stream_api_events<S>(
+    stream: &mut S,
     state: &Arc<ServerState>,
-) -> Result<(), String> {
+) -> Result<(), String>
+where
+    S: AsyncWrite + Unpin,
+{
     let adapter = MpdPlayerAdapter {
         state: Arc::clone(state),
     };

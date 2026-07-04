@@ -50,8 +50,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let api = &server_config.api;
-        let url =
-            sotf_audio_player::server::sotf_api_server_url_for_bind(&api.bind_address, api.port);
+        let url = sotf_audio_player::server::sotf_api_server_url_for_settings(api);
         let has_token = api
             .auth_token
             .as_deref()

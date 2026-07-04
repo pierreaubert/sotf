@@ -133,6 +133,7 @@ async fn diagnose_sotf_peer_protocol(
         } else {
             token
         },
+        accepted_fingerprint,
     ) {
         Ok(client) => client,
         Err(e) => return StepResult::Fail(format!("invalid SOTF API URL: {e}")),

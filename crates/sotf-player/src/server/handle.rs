@@ -32,23 +32,31 @@ use sotf_mpd::PlayerAdapter;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
-pub(super) async fn handle_sotf_api_connection(
-    mut stream: TcpStream,
+pub(super) async fn handle_sotf_api_connection<S>(
+    mut stream: S,
     peer_addr: SocketAddr,
     state: Arc<ServerState>,
     settings: SotfApiSettings,
     auth_token: String,
-) {
+) where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let started = Instant::now();
     match read_api_request(&mut stream).await {
         Ok(request) => {
             let method = request.method.clone();
             let path = request.path.clone();
-            if let Err(err) =
-                write_sotf_api_response(&mut stream, request, &state, &settings, &auth_token).await
+            if let Err(err) = write_sotf_api_response(
+                &mut stream,
+                peer_addr,
+                request,
+                &state,
+                &settings,
+                &auth_token,
+            )
+            .await
             {
                 log_sotf_api_request(&method, &path, peer_addr, 500, started.elapsed());
                 let response = api_error_response(500, &err);

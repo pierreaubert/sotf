@@ -11,6 +11,7 @@ use super::mpd::mpd_settings_to_config;
 use super::mpd_player_adapter::MpdPlayerAdapter;
 use super::server_state::ServerState;
 use super::server_state::build_mpd_tls_acceptor;
+use super::server_state::build_sotf_api_tls_acceptor;
 use super::validate::sotf_api_plaintext_warning;
 use super::validate::validate_server_mode_config;
 use super::validate::validate_sotf_api_token;
@@ -30,6 +31,7 @@ pub(super) async fn run_sotf_api_server(
     settings: SotfApiSettings,
     state: Arc<ServerState>,
     listener: TcpListener,
+    tls_acceptor: Option<tokio_rustls::TlsAcceptor>,
     mut cancel: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), String> {
     let auth_token = validate_sotf_api_token(&settings)?;
@@ -54,10 +56,31 @@ pub(super) async fn run_sotf_api_server(
                 let state = Arc::clone(&state);
                 let settings = settings.clone();
                 let auth_token = auth_token.clone();
+                let tls_acceptor = tls_acceptor.clone();
                 tokio::spawn(async move {
                     let _slot = slot;
-                    handle_sotf_api_connection(stream, peer_addr, state, settings, auth_token)
-                        .await;
+                    if let Some(acceptor) = tls_acceptor {
+                        match sotf_tls::tls_accept(&acceptor, stream).await {
+                            Ok(stream) => {
+                                handle_sotf_api_connection(
+                                    stream,
+                                    peer_addr,
+                                    state,
+                                    settings,
+                                    auth_token,
+                                )
+                                .await;
+                            }
+                            Err(err) => {
+                                log::warn!(
+                                    "[server] SOTF API TLS handshake from {peer_addr} failed: {err}"
+                                );
+                            }
+                        }
+                    } else {
+                        handle_sotf_api_connection(stream, peer_addr, state, settings, auth_token)
+                            .await;
+                    }
                 });
             }
         }
@@ -143,6 +166,11 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
 
     let mpd_tls_acceptor = if config.mpd.enabled && config.mpd.tls_enabled {
         Some(build_mpd_tls_acceptor(&config, &cert_store, &state)?)
+    } else {
+        None
+    };
+    let sotf_api_tls_acceptor = if config.api.enabled && config.api.tls_enabled {
+        Some(build_sotf_api_tls_acceptor(&cert_store)?)
     } else {
         None
     };
@@ -241,8 +269,15 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("Warning: {warning}");
                 }
                 eprintln!(
-                    "SOTF API '{}' listening on {}:{}",
-                    api_config.friendly_name, api_config.bind_address, api_config.port
+                    "SOTF API '{}' listening on {}:{} ({})",
+                    api_config.friendly_name,
+                    api_config.bind_address,
+                    api_config.port,
+                    if api_config.tls_enabled {
+                        "HTTPS"
+                    } else {
+                        "HTTP"
+                    }
                 );
 
                 let (api_discovery_tx, api_discovery_rx) = tokio::sync::watch::channel(false);
@@ -256,8 +291,14 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
 
                 let api_discovery_tx_on_exit = api_discovery_tx.clone();
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) =
-                        run_sotf_api_server(api_config, api_state, api_listener, cancel).await
+                    if let Err(e) = run_sotf_api_server(
+                        api_config,
+                        api_state,
+                        api_listener,
+                        sotf_api_tls_acceptor,
+                        cancel,
+                    )
+                    .await
                     {
                         log::error!("[server] SOTF API server error: {}", e);
                         eprintln!("SOTF API server error: {}", e);

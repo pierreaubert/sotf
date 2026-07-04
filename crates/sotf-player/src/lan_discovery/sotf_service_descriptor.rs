@@ -28,11 +28,16 @@ impl SotfServiceDescriptor {
         let friendly_name = settings.friendly_name.trim();
         let instance = dns_label(friendly_name, "SOTF Player");
         let host = format!("{}.local", dns_label(friendly_name, "sotf-player-host"));
+        let proto = if settings.tls_enabled {
+            "https"
+        } else {
+            "http"
+        };
         let mut txt_records = vec![
             "api=1".to_string(),
             "path=/api/v1".to_string(),
             "auth=bearer".to_string(),
-            "proto=http".to_string(),
+            format!("proto={proto}"),
             format!("name={}", txt_value(friendly_name, "SOTF Player")),
         ];
         if pairing_enabled {

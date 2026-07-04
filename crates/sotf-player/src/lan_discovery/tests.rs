@@ -16,6 +16,7 @@ fn test_settings(name: &str) -> SotfApiSettings {
         bind_address: "0.0.0.0".to_string(),
         port: 8732,
         friendly_name: name.to_string(),
+        tls_enabled: true,
         auth_token: Some("secret".to_string()),
     }
 }
@@ -124,11 +125,11 @@ fn parses_advertised_sotf_api_server() {
     assert_eq!(server.friendly_name, "Kitchen SOTF");
     assert_eq!(server.address, Ipv4Addr::new(192, 168, 1, 42));
     assert_eq!(server.port, 8732);
-    assert_eq!(server.protocol, "http");
+    assert_eq!(server.protocol, "https");
     assert_eq!(server.api_path, "/api/v1");
     assert_eq!(server.auth, "bearer");
-    assert_eq!(server.origin_url, "http://192.168.1.42:8732");
-    assert_eq!(server.api_base_url, "http://192.168.1.42:8732/api/v1");
+    assert_eq!(server.origin_url, "https://192.168.1.42:8732");
+    assert_eq!(server.api_base_url, "https://192.168.1.42:8732/api/v1");
     assert_eq!(server.txt_records.get("api").map(String::as_str), Some("1"));
 }
 

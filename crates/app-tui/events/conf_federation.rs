@@ -248,22 +248,8 @@ fn scan_federation_source(app: &mut App) {
 async fn do_federation_scan(source: &FederationSourceEntry) -> crate::app::FederationScanResult {
     use sotf_audio_player::federation_scan;
 
-    let source_id = source.source_id.clone();
     let cancel = std::sync::atomic::AtomicBool::new(false);
-
-    let albums = match federation_scan::fetch_source_albums(source).await {
-        Ok(albums) => albums,
-        Err(result) => {
-            return crate::app::FederationScanResult {
-                source_id: result.source_id,
-                albums: result.albums,
-                tracks: result.tracks,
-                error: result.error,
-            };
-        }
-    };
-
-    let result = federation_scan::merge_albums_to_db(&source_id, &albums, &cancel, None);
+    let result = federation_scan::sync_federation_source(source, &cancel, None, None).await;
     crate::app::FederationScanResult {
         source_id: result.source_id,
         albums: result.albums,

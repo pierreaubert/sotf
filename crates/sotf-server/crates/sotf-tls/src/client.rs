@@ -60,9 +60,74 @@ impl TofuVerifier {
     }
 }
 
+/// Custom certificate verifier that accepts and pins unknown certificates.
+///
+/// This is the client-side "TOFU" mode used by SOTF-to-SOTF links: the first
+/// certificate seen for `(host, port)` is persisted, and later changes are
+/// rejected as potential impersonation.
+#[derive(Debug)]
+pub struct AutoAcceptTofuVerifier {
+    store: Arc<Mutex<TofuStore>>,
+    target_port: u16,
+}
+
+impl AutoAcceptTofuVerifier {
+    /// Create a verifier that scopes TOFU entries to the given target port.
+    pub fn with_port(store: Arc<Mutex<TofuStore>>, target_port: u16) -> Self {
+        Self { store, target_port }
+    }
+}
+
 /// Error message prefix used to signal TOFU decisions to the UI layer.
 pub const TOFU_UNKNOWN_PREFIX: &str = "TOFU_UNKNOWN:";
 pub const TOFU_CHANGED_PREFIX: &str = "TOFU_CHANGED:";
+
+fn verify_tls12_signature(
+    message: &[u8],
+    cert: &CertificateDer<'_>,
+    dss: &DigitallySignedStruct,
+) -> Result<HandshakeSignatureValid, Error> {
+    // TOFU replaces CA-chain validation, NOT signature verification.
+    // We must still verify that the server possesses the private key matching
+    // the certificate.
+    let provider = rustls::crypto::CryptoProvider::get_default()
+        .ok_or_else(|| Error::General("no crypto provider installed".into()))?;
+    rustls::crypto::verify_tls12_signature(
+        message,
+        cert,
+        dss,
+        &provider.signature_verification_algorithms,
+    )
+}
+
+fn verify_tls13_signature(
+    message: &[u8],
+    cert: &CertificateDer<'_>,
+    dss: &DigitallySignedStruct,
+) -> Result<HandshakeSignatureValid, Error> {
+    let provider = rustls::crypto::CryptoProvider::get_default()
+        .ok_or_else(|| Error::General("no crypto provider installed".into()))?;
+    rustls::crypto::verify_tls13_signature(
+        message,
+        cert,
+        dss,
+        &provider.signature_verification_algorithms,
+    )
+}
+
+fn supported_verify_schemes() -> Vec<SignatureScheme> {
+    vec![
+        SignatureScheme::ECDSA_NISTP256_SHA256,
+        SignatureScheme::ECDSA_NISTP384_SHA384,
+        SignatureScheme::RSA_PSS_SHA256,
+        SignatureScheme::RSA_PSS_SHA384,
+        SignatureScheme::RSA_PSS_SHA512,
+        SignatureScheme::RSA_PKCS1_SHA256,
+        SignatureScheme::RSA_PKCS1_SHA384,
+        SignatureScheme::RSA_PKCS1_SHA512,
+        SignatureScheme::ED25519,
+    ]
+}
 
 impl ServerCertVerifier for TofuVerifier {
     fn verify_server_cert(
@@ -101,18 +166,7 @@ impl ServerCertVerifier for TofuVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, Error> {
-        // TOFU replaces CA-chain validation, NOT signature verification.
-        // We must still verify that the server possesses the private key
-        // matching the certificate — otherwise an attacker who captured the
-        // certificate (sent in the clear during handshake) could MITM.
-        let provider = rustls::crypto::CryptoProvider::get_default()
-            .ok_or_else(|| Error::General("no crypto provider installed".into()))?;
-        rustls::crypto::verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &provider.signature_verification_algorithms,
-        )
+        verify_tls12_signature(message, cert, dss)
     }
 
     fn verify_tls13_signature(
@@ -121,28 +175,68 @@ impl ServerCertVerifier for TofuVerifier {
         cert: &CertificateDer<'_>,
         dss: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, Error> {
-        let provider = rustls::crypto::CryptoProvider::get_default()
-            .ok_or_else(|| Error::General("no crypto provider installed".into()))?;
-        rustls::crypto::verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &provider.signature_verification_algorithms,
-        )
+        verify_tls13_signature(message, cert, dss)
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        vec![
-            SignatureScheme::ECDSA_NISTP256_SHA256,
-            SignatureScheme::ECDSA_NISTP384_SHA384,
-            SignatureScheme::RSA_PSS_SHA256,
-            SignatureScheme::RSA_PSS_SHA384,
-            SignatureScheme::RSA_PSS_SHA512,
-            SignatureScheme::RSA_PKCS1_SHA256,
-            SignatureScheme::RSA_PKCS1_SHA384,
-            SignatureScheme::RSA_PKCS1_SHA512,
-            SignatureScheme::ED25519,
-        ]
+        supported_verify_schemes()
+    }
+}
+
+impl ServerCertVerifier for AutoAcceptTofuVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, Error> {
+        let fp = crate::cert_gen::fingerprint(end_entity);
+        let key = canonical_host_port(server_name, self.target_port);
+
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|e| Error::General(format!("TOFU store lock poisoned: {e}")))?;
+
+        match store.check(&key, &fp) {
+            TofuResult::Trusted => Ok(ServerCertVerified::assertion()),
+            TofuResult::Unknown { fingerprint } => {
+                store.accept(&key, &fingerprint, &key).map_err(|e| {
+                    Error::General(format!("failed to persist TOFU certificate pin: {e}"))
+                })?;
+                Ok(ServerCertVerified::assertion())
+            }
+            TofuResult::Changed {
+                old_fingerprint,
+                new_fingerprint,
+            } => Err(Error::General(format!(
+                "{TOFU_CHANGED_PREFIX}{old_fingerprint}|{new_fingerprint}"
+            ))),
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        supported_verify_schemes()
     }
 }
 
@@ -161,6 +255,28 @@ pub fn build_client_tls_config(
         .with_no_client_auth();
 
     Ok(Arc::new(config))
+}
+
+/// Build an owned client TLS config that auto-pins unknown certificates.
+///
+/// Reqwest consumes an owned `rustls::ClientConfig` through
+/// `use_preconfigured_tls`, so this variant intentionally does not wrap the
+/// config in `Arc`.
+///
+/// # Errors
+/// This function currently always succeeds but returns `Result` for forward compatibility.
+pub fn build_auto_accept_client_tls_config_for_port(
+    tofu_store: Arc<Mutex<TofuStore>>,
+    target_port: u16,
+) -> Result<rustls::ClientConfig, String> {
+    let verifier = Arc::new(AutoAcceptTofuVerifier::with_port(tofu_store, target_port));
+
+    let config = rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(verifier)
+        .with_no_client_auth();
+
+    Ok(config)
 }
 
 /// Build a client TLS config that uses TOFU verification AND presents a client certificate.

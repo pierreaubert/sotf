@@ -16,25 +16,26 @@ use super::stream::stream_api_events;
 use super::stream::stream_api_media;
 use super::types::ApiRequest;
 use crate::federation_config::SotfApiSettings;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::time::timeout;
 
-pub(super) async fn write_sotf_api_response(
-    stream: &mut TcpStream,
+pub(super) async fn write_sotf_api_response<S>(
+    stream: &mut S,
+    peer_addr: SocketAddr,
     request: ApiRequest,
     state: &Arc<ServerState>,
     settings: &SotfApiSettings,
     auth_token: &str,
-) -> Result<(), String> {
+) -> Result<(), String>
+where
+    S: AsyncWrite + Unpin,
+{
     let started = Instant::now();
     let method = request.method.clone();
     let path = request.path.clone();
-    let peer_addr = stream
-        .peer_addr()
-        .map_err(|err| format!("api peer addr: {err}"))?;
     let route = request.path.split('?').next().unwrap_or(&request.path);
     if route.starts_with("/api/v1/media/") {
         if request.method != "GET" && request.method != "HEAD" {
@@ -88,7 +89,10 @@ pub(super) async fn write_sotf_api_response(
         .map_err(|err| err.to_string())
 }
 
-pub(super) async fn read_api_request(stream: &mut TcpStream) -> Result<ApiRequest, String> {
+pub(super) async fn read_api_request<S>(stream: &mut S) -> Result<ApiRequest, String>
+where
+    S: AsyncRead + Unpin,
+{
     let mut buf = Vec::with_capacity(4096);
     let mut chunk = [0u8; 2048];
 

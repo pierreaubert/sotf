@@ -11,12 +11,12 @@
 
 use crate::discovery::CastDevice;
 use rustls::pki_types::ServerName;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 const DEFAULT_MEDIA_RECEIVER: &str = "CC1AD845";
 const NS_CONNECTION: &str = "urn:x-cast:com.google.cast.tp.connection";
@@ -326,8 +326,20 @@ fn parse_embedded_tofu_error(err: &str) -> Option<sotf_tls::TofuResult> {
     if let Some(result) = sotf_tls::client::parse_tofu_error(err) {
         return Some(result);
     }
-    let offset = err.find(sotf_tls::client::TOFU_UNKNOWN_PREFIX)?;
-    sotf_tls::client::parse_tofu_error(&err[offset..])
+    for prefix in [
+        sotf_tls::client::TOFU_UNKNOWN_PREFIX,
+        sotf_tls::client::TOFU_CHANGED_PREFIX,
+    ] {
+        if let Some(offset) = err.find(prefix) {
+            let embedded = err[offset..]
+                .split_whitespace()
+                .next()
+                .unwrap_or(&err[offset..])
+                .trim_matches(|ch| ch == '"' || ch == '\'');
+            return sotf_tls::client::parse_tofu_error(embedded);
+        }
+    }
+    None
 }
 
 impl Drop for ChromecastSender {
@@ -349,7 +361,15 @@ fn connect_cast_tls_once(
         .ok();
 
     let store = sotf_tls::TofuStore::load(tofu_config_dir)?;
-    let config = sotf_tls::build_client_tls_config(Arc::new(std::sync::Mutex::new(store)))?;
+    let verifier = Arc::new(sotf_tls::client::TofuVerifier::with_port(
+        Arc::new(std::sync::Mutex::new(store)),
+        device.port,
+    ));
+    let config = rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(verifier)
+        .with_no_client_auth();
+    let config = Arc::new(config);
     let server_name = ServerName::IpAddress(device.address.into());
     let conn = rustls::ClientConnection::new(config, server_name)
         .map_err(|e| format!("CASTV2 TLS client failed: {e}"))?;
@@ -687,6 +707,9 @@ fn build_wav_header(sample_rate: u32, channels: u16, data_size: u32) -> Vec<u8> 
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use std::io::{Read, Write};
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     fn test_device() -> CastDevice {
         CastDevice {
@@ -697,6 +720,139 @@ mod tests {
             instance_name: String::new(),
             txt_records: HashMap::new(),
         }
+    }
+
+    fn local_test_device(port: u16) -> CastDevice {
+        CastDevice {
+            device_type: crate::CastDeviceType::Chromecast,
+            name: "Loopback Chromecast".to_string(),
+            address: Ipv4Addr::LOCALHOST,
+            port,
+            instance_name: String::new(),
+            txt_records: HashMap::new(),
+        }
+    }
+
+    fn read_cast_message_from<R: Read>(stream: &mut R) -> Result<CastMessage, String> {
+        let mut len_buf = [0u8; 4];
+        stream
+            .read_exact(&mut len_buf)
+            .map_err(|e| format!("test CASTV2 length read failed: {e}"))?;
+        let len = u32::from_be_bytes(len_buf) as usize;
+        let mut payload = vec![0u8; len];
+        stream
+            .read_exact(&mut payload)
+            .map_err(|e| format!("test CASTV2 frame read failed: {e}"))?;
+        decode_cast_message(&payload)
+    }
+
+    fn write_cast_json_to<W: Write>(
+        stream: &mut W,
+        source_id: &str,
+        destination_id: &str,
+        namespace: &str,
+        payload: Value,
+    ) -> Result<(), String> {
+        let message = CastMessage {
+            source_id: source_id.to_string(),
+            destination_id: destination_id.to_string(),
+            namespace: namespace.to_string(),
+            payload_utf8: payload.to_string(),
+        };
+        let encoded = encode_cast_message(&message);
+        let len = u32::try_from(encoded.len()).map_err(|_| "test CASTV2 message too large")?;
+        stream
+            .write_all(&len.to_be_bytes())
+            .and_then(|()| stream.write_all(&encoded))
+            .map_err(|e| format!("test CASTV2 write failed: {e}"))
+    }
+
+    fn server_tls_stream(
+        tcp: TcpStream,
+        config: Arc<rustls::ServerConfig>,
+    ) -> Option<rustls::StreamOwned<rustls::ServerConnection, TcpStream>> {
+        let conn = rustls::ServerConnection::new(config).ok()?;
+        let mut stream = rustls::StreamOwned::new(conn, tcp);
+        while stream.conn.is_handshaking() {
+            if stream.conn.complete_io(&mut stream.sock).is_err() {
+                return None;
+            }
+        }
+        Some(stream)
+    }
+
+    fn spawn_fake_chromecast_receiver() -> std::io::Result<(
+        u16,
+        mpsc::Receiver<String>,
+        std::thread::JoinHandle<Result<(), String>>,
+    )> {
+        let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))?;
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let tmp = tempfile::tempdir().map_err(|e| e.to_string())?;
+            let cert_store = sotf_tls::CertStore::load_or_generate(tmp.path())?;
+            let tls_config =
+                sotf_tls::build_server_tls_config(cert_store.cert_clone(), cert_store.key_clone())?;
+
+            for _ in 0..2 {
+                let (tcp, _) = listener.accept().map_err(|e| e.to_string())?;
+                tcp.set_read_timeout(Some(Duration::from_secs(3))).ok();
+                tcp.set_write_timeout(Some(Duration::from_secs(3))).ok();
+                let Some(mut stream) = server_tls_stream(tcp, Arc::clone(&tls_config)) else {
+                    continue;
+                };
+
+                let _connect = read_cast_message_from(&mut stream)?;
+                let launch = read_cast_message_from(&mut stream)?;
+                let launch_payload: Value =
+                    serde_json::from_str(&launch.payload_utf8).map_err(|e| e.to_string())?;
+                assert_eq!(launch_payload["type"], "LAUNCH");
+                write_cast_json_to(
+                    &mut stream,
+                    RECEIVER_ID,
+                    SOURCE_ID,
+                    NS_RECEIVER,
+                    json!({
+                        "type": "RECEIVER_STATUS",
+                        "status": {
+                            "applications": [{
+                                "transportId": "transport-1",
+                                "appId": DEFAULT_MEDIA_RECEIVER
+                            }]
+                        }
+                    }),
+                )?;
+
+                let _transport_connect = read_cast_message_from(&mut stream)?;
+                let load = read_cast_message_from(&mut stream)?;
+                let load_payload: Value =
+                    serde_json::from_str(&load.payload_utf8).map_err(|e| e.to_string())?;
+                assert_eq!(load_payload["type"], "LOAD");
+                let content_id = load_payload["media"]["contentId"]
+                    .as_str()
+                    .ok_or_else(|| "missing LOAD contentId".to_string())?
+                    .to_string();
+                tx.send(content_id).map_err(|e| e.to_string())?;
+                write_cast_json_to(
+                    &mut stream,
+                    RECEIVER_ID,
+                    SOURCE_ID,
+                    NS_MEDIA,
+                    json!({
+                        "type": "MEDIA_STATUS",
+                        "status": [{
+                            "mediaSessionId": 42,
+                            "playerState": "PLAYING"
+                        }]
+                    }),
+                )?;
+                return Ok(());
+            }
+
+            Err("fake Chromecast receiver did not complete TLS session".to_string())
+        });
+        Ok((port, rx, handle))
     }
 
     #[test]
@@ -783,5 +939,76 @@ mod tests {
         let mut sender = ChromecastSender::new(test_device());
         let samples = vec![0.0f32; 100];
         assert!(sender.write_audio(&samples).is_err());
+    }
+
+    #[test]
+    fn chromecast_http_wav_stream_serves_written_audio_e2e() {
+        let mut sender = ChromecastSender::new(test_device());
+        sender.start_http_stream_server().unwrap();
+        let port = sender.http_port.unwrap();
+        {
+            let mut buffer = sender.audio_buffer.lock().unwrap();
+            buffer.sample_rate = 48_000;
+            buffer.channels = 2;
+        }
+        sender.streaming.store(true, Ordering::Release);
+        assert_eq!(sender.write_audio(&[0.5, -0.5, 0.25, -0.25]).unwrap(), 4);
+
+        let mut stream = TcpStream::connect(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        stream
+            .write_all(b"GET /stream.wav HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .unwrap();
+
+        let mut response = Vec::new();
+        let mut chunk = [0u8; 256];
+        while response.len() < 2048 && !response.windows(4).any(|window| window == b"RIFF") {
+            let n = stream.read(&mut chunk).unwrap();
+            if n == 0 {
+                break;
+            }
+            response.extend_from_slice(&chunk[..n]);
+        }
+        let text = String::from_utf8_lossy(&response);
+        assert!(text.starts_with("HTTP/1.1 200 OK"), "{text}");
+        assert!(text.contains("Content-Type: audio/wav"), "{text}");
+        assert!(
+            response.windows(4).any(|window| window == b"RIFF"),
+            "missing WAV header in response"
+        );
+
+        sender.disconnect();
+    }
+
+    #[test]
+    fn chromecast_castv2_launch_and_load_e2e() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (port, load_urls, handle) = match spawn_fake_chromecast_receiver() {
+            Ok(receiver) => receiver,
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+            Err(err) => panic!("failed to bind fake Chromecast receiver: {err}"),
+        };
+        let mut sender =
+            ChromecastSender::new(local_test_device(port)).with_tofu_config_dir(tmp.path().into());
+
+        sender.connect(Ipv4Addr::LOCALHOST).unwrap();
+        assert_eq!(sender.state(), ChromecastState::Connected);
+        sender.start_stream(48_000, 2).unwrap();
+        assert_eq!(sender.state(), ChromecastState::Streaming);
+
+        let load_url = load_urls.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert_eq!(
+            load_url,
+            format!(
+                "http://127.0.0.1:{}{}",
+                sender.http_port.unwrap(),
+                CAST_STREAM_PATH
+            )
+        );
+
+        sender.disconnect();
+        handle.join().unwrap().unwrap();
     }
 }

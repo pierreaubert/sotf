@@ -3,6 +3,8 @@
 use crate::lan_discovery::DiscoveredSotfApiServer;
 use serde::{Serialize, de::DeserializeOwned};
 use std::fmt;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 mod decode;
 mod error;
@@ -47,16 +49,42 @@ impl fmt::Debug for SotfApiClient {
 impl SotfApiClient {
     pub fn new(base_url: impl Into<String>, auth_token: impl Into<String>) -> SotfApiResult<Self> {
         let base_url = normalize_base_url(base_url.into())?;
-        let auth_token = auth_token.into();
+        Self::new_normalized(base_url, auth_token.into(), None, None)
+    }
+
+    pub(crate) fn new_with_pinned_fingerprint(
+        base_url: impl Into<String>,
+        auth_token: impl Into<String>,
+        accepted_fingerprint: Option<&str>,
+    ) -> SotfApiResult<Self> {
+        let base_url = normalize_base_url(base_url.into())?;
+        Self::new_normalized(base_url, auth_token.into(), None, accepted_fingerprint)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_with_tofu_dir(
+        base_url: impl Into<String>,
+        auth_token: impl Into<String>,
+        tofu_dir: &Path,
+    ) -> SotfApiResult<Self> {
+        let base_url = normalize_base_url(base_url.into())?;
+        Self::new_normalized(base_url, auth_token.into(), Some(tofu_dir), None)
+    }
+
+    fn new_normalized(
+        base_url: String,
+        auth_token: String,
+        tofu_dir: Option<&Path>,
+        accepted_fingerprint: Option<&str>,
+    ) -> SotfApiResult<Self> {
         if auth_token.trim().is_empty() {
             return Err(SotfApiClientError::InvalidConfig(
                 "auth token must not be empty".to_string(),
             ));
         }
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(8))
-            .build()?;
-        let event_client = reqwest::Client::builder().build()?;
+        let tls = sotf_api_tls_options(&base_url, tofu_dir, accepted_fingerprint)?;
+        let client = build_reqwest_client(&tls, Some(std::time::Duration::from_secs(8)))?;
+        let event_client = build_reqwest_client(&tls, None)?;
         Ok(Self {
             client,
             event_client,
@@ -417,5 +445,100 @@ impl SotfApiClient {
             .send()
             .await?;
         decode_response(response).await
+    }
+}
+
+struct SotfApiTlsOptions {
+    store: Arc<Mutex<sotf_tls::TofuStore>>,
+    port: u16,
+}
+
+fn sotf_api_tls_options(
+    base_url: &str,
+    tofu_dir: Option<&Path>,
+    accepted_fingerprint: Option<&str>,
+) -> SotfApiResult<Option<SotfApiTlsOptions>> {
+    let url = url::Url::parse(base_url).map_err(|err| {
+        SotfApiClientError::InvalidConfig(format!("invalid SOTF API base URL: {err}"))
+    })?;
+    if url.scheme() != "https" {
+        return Ok(None);
+    }
+
+    let port = url.port_or_known_default().ok_or_else(|| {
+        SotfApiClientError::InvalidConfig("HTTPS SOTF API URL has no port".to_string())
+    })?;
+    let config_dir = match tofu_dir {
+        Some(path) => path.to_path_buf(),
+        None => crate::config::get_app_config_dir().ok_or_else(|| {
+            SotfApiClientError::InvalidConfig(
+                "could not determine config directory for SOTF API TLS pins".to_string(),
+            )
+        })?,
+    };
+    let store =
+        sotf_tls::TofuStore::load(&config_dir).map_err(SotfApiClientError::InvalidConfig)?;
+    let store = Arc::new(Mutex::new(store));
+
+    if let Some(fingerprint) = accepted_fingerprint
+        .map(str::trim)
+        .filter(|fingerprint| !fingerprint.is_empty())
+    {
+        let host_key = canonical_url_host_port(&url, port)?;
+        let fingerprint = canonical_certificate_fingerprint(fingerprint);
+        store
+            .lock()
+            .map_err(|err| {
+                SotfApiClientError::InvalidConfig(format!("TOFU store lock poisoned: {err}"))
+            })?
+            .accept(&host_key, &fingerprint, &host_key)
+            .map_err(SotfApiClientError::InvalidConfig)?;
+    }
+
+    Ok(Some(SotfApiTlsOptions { store, port }))
+}
+
+fn build_reqwest_client(
+    tls: &Option<SotfApiTlsOptions>,
+    timeout: Option<std::time::Duration>,
+) -> SotfApiResult<reqwest::Client> {
+    let mut builder = reqwest::Client::builder();
+    if let Some(timeout) = timeout {
+        builder = builder.timeout(timeout);
+    }
+    if let Some(tls) = tls {
+        let config =
+            sotf_tls::build_auto_accept_client_tls_config_for_port(tls.store.clone(), tls.port)
+                .map_err(SotfApiClientError::InvalidConfig)?;
+        builder = builder.use_preconfigured_tls(config);
+    }
+    builder.build().map_err(SotfApiClientError::from)
+}
+
+fn canonical_url_host_port(url: &url::Url, port: u16) -> SotfApiResult<String> {
+    match url.host() {
+        Some(url::Host::Domain(host)) => Ok(format!("{}:{port}", host.to_ascii_lowercase())),
+        Some(url::Host::Ipv4(addr)) => Ok(format!("{addr}:{port}")),
+        Some(url::Host::Ipv6(addr)) => Ok(format!("[{addr}]:{port}")),
+        None => Err(SotfApiClientError::InvalidConfig(
+            "SOTF API URL has no host".to_string(),
+        )),
+    }
+}
+
+fn canonical_certificate_fingerprint(fingerprint: &str) -> String {
+    let hex = fingerprint
+        .chars()
+        .filter(|ch| ch.is_ascii_hexdigit())
+        .map(|ch| ch.to_ascii_uppercase())
+        .collect::<String>();
+    if hex.len() >= 2 && hex.len() % 2 == 0 {
+        hex.as_bytes()
+            .chunks(2)
+            .map(|chunk| std::str::from_utf8(chunk).unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join(":")
+    } else {
+        fingerprint.trim().to_string()
     }
 }

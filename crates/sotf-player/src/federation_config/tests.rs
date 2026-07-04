@@ -51,6 +51,7 @@ fn test_server_config_defaults() {
     assert_eq!(config.api.bind_address, "0.0.0.0");
     assert_eq!(config.api.port, 8732);
     assert_eq!(config.api.friendly_name, "SOTF Player");
+    assert!(config.api.tls_enabled);
     assert!(config.api.auth_token.is_none());
 }
 

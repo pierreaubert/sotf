@@ -211,3 +211,16 @@ pub(super) fn build_mpd_tls_acceptor(
     );
     Ok(tokio_rustls::TlsAcceptor::from(tls_config))
 }
+
+pub(super) fn build_sotf_api_tls_acceptor(
+    cert_store: &sotf_tls::CertStore,
+) -> Result<tokio_rustls::TlsAcceptor, Box<dyn std::error::Error>> {
+    let tls_config =
+        sotf_tls::build_server_tls_config(cert_store.cert_clone(), cert_store.key_clone())?;
+
+    eprintln!(
+        "SOTF API TLS certificate fingerprint: {}",
+        cert_store.server_fingerprint()
+    );
+    Ok(tokio_rustls::TlsAcceptor::from(tls_config))
+}

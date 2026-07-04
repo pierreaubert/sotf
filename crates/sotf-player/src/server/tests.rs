@@ -19,9 +19,13 @@ use super::misc::redact_api_path_secrets;
 use super::mpd_player_adapter::MpdPlayerAdapter;
 use super::parse::parse_api_request;
 use super::parse::parse_sotf_api_connection_qr_payload;
+use super::run::run_sotf_api_server;
 use super::server_state::ServerState;
+use super::server_state::build_sotf_api_tls_acceptor;
 use super::sotf::sotf_api_connection_qr_payload;
 use super::sotf::sotf_api_server_url_for_bind;
+use super::sotf::sotf_api_server_url_for_bind_with_tls;
+use super::sotf::sotf_api_server_url_for_settings;
 use super::types::ApiRequest;
 use super::validate::sotf_api_plaintext_warning;
 use crate::federation_config::{ServerConfig, SotfApiSettings};
@@ -30,6 +34,7 @@ use crate::library::MusicLibrary;
 use crate::library_stats::LibraryStats;
 use crate::player::Player;
 use crate::queue::Queue;
+use crate::sotf_api_client::SotfApiClient;
 use crate::sotf_server_event::SotfServerEvent;
 use parking_lot::Mutex;
 use serde_json::{Value, json};
@@ -37,6 +42,7 @@ use sotf_mpd::PlayerAdapter;
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use tokio::net::TcpListener;
 
 mod auth;
 mod misc;
@@ -96,7 +102,31 @@ fn dlna_server_url_uses_specific_bind_address() {
 fn sotf_api_server_url_includes_api_path() {
     let url = sotf_api_server_url_for_bind("192.168.1.42", 8732);
 
-    assert_eq!(url, "http://192.168.1.42:8732/api/v1");
+    assert_eq!(url, "https://192.168.1.42:8732/api/v1");
+}
+
+#[test]
+fn sotf_api_server_url_can_be_plaintext_when_tls_disabled() {
+    let settings = SotfApiSettings {
+        enabled: true,
+        bind_address: "192.168.1.42".to_string(),
+        port: 8732,
+        friendly_name: "SOTF".to_string(),
+        tls_enabled: false,
+        auth_token: Some("secret-token".to_string()),
+    };
+
+    assert_eq!(
+        sotf_api_server_url_for_settings(&settings),
+        "http://192.168.1.42:8732/api/v1"
+    );
+}
+
+#[test]
+fn sotf_api_server_url_uses_https_when_tls_enabled() {
+    let url = sotf_api_server_url_for_bind_with_tls("192.168.1.42", 8732, true);
+
+    assert_eq!(url, "https://192.168.1.42:8732/api/v1");
 }
 
 #[test]
@@ -106,6 +136,7 @@ fn sotf_api_plaintext_warning_ignores_loopback_binds() {
         bind_address: "127.0.0.1".to_string(),
         port: 8732,
         friendly_name: "SOTF".to_string(),
+        tls_enabled: false,
         auth_token: Some("secret-token".to_string()),
     };
 
@@ -119,6 +150,7 @@ fn sotf_api_plaintext_warning_flags_non_loopback_binds() {
         bind_address: "0.0.0.0".to_string(),
         port: 8732,
         friendly_name: "SOTF".to_string(),
+        tls_enabled: false,
         auth_token: Some("secret-token".to_string()),
     };
 
@@ -134,6 +166,7 @@ fn sotf_api_connection_qr_payload_includes_url_and_token() {
         bind_address: "192.168.1.42".to_string(),
         port: 8732,
         friendly_name: "Listening Room".to_string(),
+        tls_enabled: true,
         auth_token: Some("secret-token".to_string()),
     };
 
@@ -143,7 +176,7 @@ fn sotf_api_connection_qr_payload_includes_url_and_token() {
     assert_eq!(json["kind"], "sotf-api-connection");
     assert_eq!(json["version"], 1);
     assert_eq!(json["name"], "Listening Room");
-    assert_eq!(json["url"], "http://192.168.1.42:8732/api/v1");
+    assert_eq!(json["url"], "https://192.168.1.42:8732/api/v1");
     assert_eq!(json["auth"], "bearer");
     assert_eq!(json["token"], "secret-token");
 }
@@ -155,6 +188,7 @@ fn sotf_api_connection_qr_payload_round_trips() {
         bind_address: "192.168.1.42".to_string(),
         port: 8732,
         friendly_name: "Listening Room".to_string(),
+        tls_enabled: true,
         auth_token: Some("secret-token".to_string()),
     };
 
@@ -162,7 +196,7 @@ fn sotf_api_connection_qr_payload_round_trips() {
     let parsed = parse_sotf_api_connection_qr_payload(&payload).unwrap();
 
     assert_eq!(parsed.name, "Listening Room");
-    assert_eq!(parsed.url, "http://192.168.1.42:8732/api/v1");
+    assert_eq!(parsed.url, "https://192.168.1.42:8732/api/v1");
     assert_eq!(parsed.token, "secret-token");
 }
 
@@ -679,6 +713,51 @@ fn sotf_api_http_media_range_and_auth_round_trip() {
         assert!(partial.starts_with("HTTP/1.1 206 Partial Content"));
         assert!(partial.contains("Content-Range: bytes 2-5/10"));
         assert!(partial.ends_with("2345"));
+
+        stop_test_api_server(shutdown_tx, server_handle).await;
+    });
+}
+
+#[test]
+fn sotf_api_tls_health_round_trip() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = test_state();
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+            Err(err) => panic!("failed to bind TLS test API server: {err}"),
+        };
+        let addr = listener.local_addr().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let cert_store = sotf_tls::CertStore::load_or_generate(tmp.path()).unwrap();
+        let tls_acceptor = build_sotf_api_tls_acceptor(&cert_store).unwrap();
+        let mut settings = api_settings(Some("secret"));
+        settings.tls_enabled = true;
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let server_handle = tokio::spawn(run_sotf_api_server(
+            settings,
+            state,
+            listener,
+            Some(tls_acceptor),
+            shutdown_rx,
+        ));
+
+        let client =
+            SotfApiClient::new_with_tofu_dir(format!("https://{addr}"), "secret", tmp.path())
+                .unwrap();
+        let health = client.health().await.unwrap();
+        assert_eq!(health.service, "sotf");
+        assert!(health.ok);
+
+        let tofu_store = sotf_tls::TofuStore::load(tmp.path()).unwrap();
+        assert!(matches!(
+            tofu_store.check(
+                &format!("{}:{}", addr.ip(), addr.port()),
+                &cert_store.server_fingerprint()
+            ),
+            sotf_tls::TofuResult::Trusted
+        ));
 
         stop_test_api_server(shutdown_tx, server_handle).await;
     });

@@ -17,22 +17,10 @@ pub(super) async fn scan_federation_source_async(
 ) {
     use sotf_audio_player::federation_scan;
 
-    let source_id = source.source_id.clone();
-
-    // Phase 1: fetch albums from the provider
-    let albums = match federation_scan::fetch_source_albums(source).await {
-        Ok(albums) => albums,
-        Err(result) => {
-            let _ = tx.send(FederationScanMessage::Done(result));
-            return;
-        }
-    };
-
-    let _ = tx.send(FederationScanMessage::FetchedAlbums {
-        total: albums.len(),
+    let tx_fetched = tx.clone();
+    let fetched_cb: federation_scan::FetchProgressFn = Box::new(move |total| {
+        let _ = tx_fetched.send(FederationScanMessage::FetchedAlbums { total });
     });
-
-    // Phase 2: merge into local DB with progress reporting
     let tx_progress = tx.clone();
     let progress_cb: federation_scan::ScanProgressFn = Box::new(move |a, t| {
         let _ = tx_progress.send(FederationScanMessage::Progress {
@@ -41,8 +29,13 @@ pub(super) async fn scan_federation_source_async(
         });
     });
 
-    let result =
-        federation_scan::merge_albums_to_db(&source_id, &albums, cancel, Some(&progress_cb));
+    let result = federation_scan::sync_federation_source(
+        source,
+        cancel,
+        Some(&fetched_cb),
+        Some(&progress_cb),
+    )
+    .await;
 
     let _ = tx.send(FederationScanMessage::Done(result));
 }

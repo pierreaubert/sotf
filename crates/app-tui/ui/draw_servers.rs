@@ -88,7 +88,7 @@ fn draw_api_section(f: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::from(Span::styled(
         format!(
             "  URL: {}",
-            sotf_audio_player::server::sotf_api_server_url_for_bind(&api.bind_address, api.port)
+            sotf_audio_player::server::sotf_api_server_url_for_settings(api)
         ),
         Style::default()
             .fg(app.theme.accent_primary)
