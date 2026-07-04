@@ -8,7 +8,7 @@ void sotf_tvos_start(void);
 // ── GPUI iOS/tvOS platform FFI ─────────────────────────────────────────────
 
 void gpui_ios_request_frame(void *window_ptr);
-void gpui_ios_get_window(void);
+void gpui_ios_request_current_frame(void);
 void *gpui_ios_get_window(void);
 
 // Lifecycle

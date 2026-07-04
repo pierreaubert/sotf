@@ -6,7 +6,7 @@ tvOS (Apple TV) app shell -- static library (.a) linked by the Xcode project.
 
 ```
 Swift AppDelegate -> sotf_tvos_start() -> GPUI app -> PlayerView
-Swift CADisplayLink -> gpui_ios_request_frame() -> GPUI render tick
+Swift CADisplayLink -> gpui_ios_request_current_frame() -> GPUI render tick
 ```
 
 Key differences from iOS (`sotf-ios`):

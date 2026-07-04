@@ -6,7 +6,7 @@ tvOS (Apple TV) app shell for the SOTF music player. Compiles to a static librar
 
 ```
 Swift AppDelegate -> sotf_tvos_start() -> GPUI app callback -> PlayerView
-Swift CADisplayLink -> gpui_ios_request_frame() -> GPUI render tick
+Swift CADisplayLink -> gpui_ios_request_current_frame() -> GPUI render tick
 ```
 
 Key differences from the iOS app (`sotf-ios`):

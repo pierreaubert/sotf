@@ -18,6 +18,8 @@ fn ios_project_builds_rust_library_instead_of_requiring_committed_archive() {
     let gitignore = std::fs::read_to_string(ios_path(".gitignore")).unwrap();
     assert!(project_yml.contains("preBuildScripts:"));
     assert!(project_yml.contains("./build-rust.sh"));
+    assert!(project_yml.contains("$(DERIVED_FILE_DIR)/rust/libsotf_ios.a"));
+    assert!(!project_yml.contains("$(PROJECT_DIR)/lib/libsotf_ios.a"));
     assert!(gitignore.lines().any(|line| line.trim() == "lib/"));
 }
 

@@ -5,7 +5,7 @@
 # It detects the target architecture from PLATFORM_NAME/ARCHS (set by Xcode)
 # or defaults to the iOS simulator.
 #
-# Output: lib/libsotf_ios.a
+# Output: $SOTF_IOS_RUST_LIB_DIR/libsotf_ios.a, or Xcode's DERIVED_FILE_DIR/rust.
 
 set -euo pipefail
 
@@ -58,9 +58,11 @@ else
     LIB_DIR="target/$RUST_TARGET/debug"
 fi
 
-# Copy the .a file to the Xcode project's lib/ directory
-mkdir -p "$IOS_DIR/lib"
-cp "$LIB_DIR/libsotf_ios.a" "$IOS_DIR/lib/"
+# Copy the .a file to Xcode's derived-file area so build outputs never land in
+# the source tree. Standalone invocations fall back to ignored ios/build/rust/.
+OUTPUT_LIB_DIR="${SOTF_IOS_RUST_LIB_DIR:-${DERIVED_FILE_DIR:-$IOS_DIR/build}/rust}"
+mkdir -p "$OUTPUT_LIB_DIR"
+cp "$LIB_DIR/libsotf_ios.a" "$OUTPUT_LIB_DIR/"
 
-echo "=== SotF iOS static library built: $IOS_DIR/lib/libsotf_ios.a ==="
-ls -lh "$IOS_DIR/lib/libsotf_ios.a"
+echo "=== SotF iOS static library built: $OUTPUT_LIB_DIR/libsotf_ios.a ==="
+ls -lh "$OUTPUT_LIB_DIR/libsotf_ios.a"

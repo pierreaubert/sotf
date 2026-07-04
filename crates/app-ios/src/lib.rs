@@ -5,7 +5,7 @@
 //!
 //! Architecture:
 //!   Swift AppDelegate → sotf_ios_start() → GPUI app callback → PlayerView
-//!   Swift CADisplayLink → gpui_ios_request_frame() → GPUI render tick
+//!   Swift CADisplayLink → gpui_ios_request_current_frame() → GPUI render tick
 
 #[cfg(any(test, target_os = "ios", target_os = "tvos"))]
 mod imp;

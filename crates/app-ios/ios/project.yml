@@ -27,13 +27,13 @@ targets:
         INFOPLIST_FILE: SotFPlayer/Info.plist
         SWIFT_VERSION: "5.10"
         LIBRARY_SEARCH_PATHS:
-          - "$(PROJECT_DIR)/lib"
+          - "$(DERIVED_FILE_DIR)/rust"
         ENABLE_USER_SCRIPT_SANDBOXING: false
         DEAD_CODE_STRIPPING: false
         OTHER_LDFLAGS:
-          - "-L$(PROJECT_DIR)/lib"
+          - "-L$(DERIVED_FILE_DIR)/rust"
           - "-force_load"
-          - "$(PROJECT_DIR)/lib/libsotf_ios.a"
+          - "$(DERIVED_FILE_DIR)/rust/libsotf_ios.a"
           - "-framework Metal"
           - "-framework MetalKit"
           - "-framework QuartzCore"

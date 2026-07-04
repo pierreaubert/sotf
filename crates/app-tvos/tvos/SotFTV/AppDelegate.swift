@@ -27,10 +27,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     @objc private func renderFrame() {
-        let win = gpui_ios_get_window()
-        if win != nil {
-            gpui_ios_request_frame(win)
-        }
+        gpui_ios_request_current_frame()
     }
 
     // MARK: - Lifecycle forwarding
