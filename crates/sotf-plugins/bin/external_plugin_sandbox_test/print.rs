@@ -1,3 +1,8 @@
+#![allow(
+    clippy::too_many_arguments,
+    reason = "sandbox test reporter: one argument per summary field"
+)]
+
 use super::types::CliLifecycleMode;
 use super::worker::worker_reports_json;
 use serde_json::json;

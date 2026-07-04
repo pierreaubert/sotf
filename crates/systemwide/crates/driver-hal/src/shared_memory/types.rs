@@ -18,6 +18,10 @@ pub(super) enum EncryptedRecordRead {
     Read { sample_count: usize },
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "internal hot-path helper: refactoring into a struct would not improve readability"
+)]
 pub(super) fn read_encrypted_with_staging(
     shared: &SharedAudioBuffer,
     output: &mut [f32],

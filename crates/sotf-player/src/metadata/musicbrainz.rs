@@ -146,7 +146,7 @@ fn credit_name(credits: &[MbArtistCredit]) -> Option<String> {
         .filter_map(|credit| credit.name.as_deref())
         .collect::<Vec<_>>()
         .join("");
-    (!name.trim().is_empty()).then(|| name)
+    (!name.trim().is_empty()).then_some(name)
 }
 
 fn score(score: Option<&str>) -> u8 {

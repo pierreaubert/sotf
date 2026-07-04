@@ -241,10 +241,8 @@ fn main() {
             #[cfg_attr(not(feature = "dev-api"), allow(unused_mut))]
             let mut config = Config::load().ok();
             #[cfg(feature = "dev-api")]
-            if qa_mode && !config_path_exists {
-                if let Some(config) = config.as_mut() {
-                    config.release_channel = ReleaseChannel::Alpha;
-                }
+            if qa_mode && !config_path_exists && let Some(config) = config.as_mut() {
+                config.release_channel = ReleaseChannel::Alpha;
             }
             let (language, keymap_preset, release_channel) = config
                 .as_ref()

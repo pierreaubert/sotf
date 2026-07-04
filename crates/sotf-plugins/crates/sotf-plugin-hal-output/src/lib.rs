@@ -21,6 +21,10 @@ const ERR_INVALID_CHANNEL_COUNT: &str = "Invalid channel count. Must be between 
 #[cfg(all(target_os = "macos", feature = "hal"))]
 const ERR_HAL_DAEMON_NOT_INITIALIZED: &str =
     "HAL driver not initialized. Ensure daemon initialized HAL before creating plugins";
+#[allow(
+    dead_code,
+    reason = "used on non-macOS / non-hal builds; dead on macOS+hal configurations"
+)]
 const ERR_HAL_UNSUPPORTED_PLATFORM: &str =
     "HAL output plugin is only supported on macOS with 'hal' feature enabled";
 const ERR_NO_ADJUSTABLE_PARAMETERS: &str = "HAL output has no adjustable parameters";

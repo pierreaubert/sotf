@@ -136,6 +136,10 @@ impl LinearPhaseEqPlugin {
         ))
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "internal builder: each argument maps to a distinct FIR-EQ configuration field"
+    )]
     pub(super) fn build(
         channels: usize,
         sample_rate: u32,

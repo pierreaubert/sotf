@@ -221,7 +221,7 @@ alias terminal := gpui
 
 [group('build')]
 gpui:
-	cargo run --release --bin sotf-desktop -p sotf-gpui {{test_features_macos}}
+	cargo run --release --bin sotf-desktop -p sotf-gpui {{release_test_features}}
 
 alias desktop := gpui
 alias native := gpui

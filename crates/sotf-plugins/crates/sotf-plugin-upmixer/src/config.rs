@@ -606,7 +606,7 @@ impl Default for UpmixerPluginOutputParams {
 }
 
 /// Configuration parameters for UpmixerPlugin
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpmixerPluginParams {
     #[serde(flatten)]
     pub core: UpmixerPluginCoreParams,
@@ -642,20 +642,3 @@ pub struct UpmixerPluginParams {
     pub output: UpmixerPluginOutputParams,
 }
 
-impl Default for UpmixerPluginParams {
-    fn default() -> Self {
-        Self {
-            core: UpmixerPluginCoreParams::default(),
-            gains: UpmixerPluginGainsParams::default(),
-            subharmonic: UpmixerPluginSubharmonicParams::default(),
-            decorrelation: UpmixerPluginDecorrelationParams::default(),
-            height: UpmixerPluginHeightParams::default(),
-            surround: UpmixerPluginSurroundParams::default(),
-            dialogue: UpmixerPluginDialogueParams::default(),
-            ml: UpmixerPluginMlParams::default(),
-            bypass: UpmixerPluginBypassParams::default(),
-            spectral: UpmixerPluginSpectralParams::default(),
-            output: UpmixerPluginOutputParams::default(),
-        }
-    }
-}

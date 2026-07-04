@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Create a temporary directory containing an empty SQLite database file.
+/// Create a temporary directory containing an empty `SQLite` database file.
 ///
 /// Returns the `TempDir` (so it stays alive for the duration of the test)
 /// and the path to the database file.

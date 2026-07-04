@@ -4,6 +4,17 @@
 //! deterministic audio generators, temporary databases, and (behind feature
 //! flags) engine / plugin test harness helpers.
 
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::doc_markdown,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate,
+    reason = "test helper crate: these pedantic lints add noise without improving test fixture correctness"
+)]
+
 pub mod audio;
 pub mod db;
 

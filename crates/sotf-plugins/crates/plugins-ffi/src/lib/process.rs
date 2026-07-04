@@ -65,6 +65,10 @@ pub(super) unsafe fn process_with_ffi_events_impl(
 }
 
 #[inline]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "FFI entry point: one argument per external buffer/event stream"
+)]
 pub(super) unsafe fn process_with_ffi_and_note_expression_events_impl(
     handle: *mut PluginHandle,
     input: *const f32,
@@ -134,6 +138,10 @@ pub(super) unsafe fn process_with_ffi_and_note_expression_events_impl(
 }
 
 #[inline]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "FFI entry point: one argument per external input/output buffer and event stream"
+)]
 pub(super) unsafe fn process_with_full_events_impl(
     handle: *mut PluginHandle,
     input: *const f32,

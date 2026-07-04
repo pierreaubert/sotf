@@ -134,10 +134,10 @@ impl ManagerThread {
         if let Err(e) = self.send_command(ManagerCommand::Shutdown) {
             log::trace!("[Manager Thread] Shutdown command receiver dropped: {}", e);
         }
-        if let Some(handle) = self.thread_handle.take() {
-            if let Err(()) = super::join_timeout(handle, std::time::Duration::from_secs(10)) {
-                log::warn!("[Manager Thread] Shutdown join timed out; thread left detached");
-            }
+        if let Some(handle) = self.thread_handle.take()
+            && super::join_timeout(handle, std::time::Duration::from_secs(10)).is_err()
+        {
+            log::warn!("[Manager Thread] Shutdown join timed out; thread left detached");
         }
     }
 }

@@ -3,6 +3,10 @@ pub(super) fn playback_buffer_capacity(sample_rate: u32, channels: usize, buffer
     samples.div_ceil(1000).min(usize::MAX as u128) as usize
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "recovery diagnostic: one argument per observed stream/callback counter"
+)]
 pub(super) fn playback_recovery_reason(
     current_stream_errors: u64,
     last_stream_error_count: &mut u64,

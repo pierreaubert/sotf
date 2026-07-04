@@ -21,6 +21,10 @@ pub(super) enum DecoderLoopAction {
 }
 
 /// Main decoder thread function
+#[allow(
+    clippy::too_many_arguments,
+    reason = "thread entry point: one argument per decoder runtime resource"
+)]
 pub(super) fn run_decoder_thread(
     message_tx: SyncSender<DecoderMessage>,
     command_rx: Receiver<DecoderCommand>,

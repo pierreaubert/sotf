@@ -19,6 +19,10 @@ pub(super) fn write_header(writer: &mut dyn Write, channels: usize) -> Result<()
     writeln!(writer).map_err(|e| e.to_string())
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "QA CSV helper: one argument per diagnostic column group"
+)]
 pub(super) fn write_row(
     writer: &mut dyn Write,
     block: usize,

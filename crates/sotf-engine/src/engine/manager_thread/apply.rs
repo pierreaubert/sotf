@@ -59,6 +59,10 @@ fn build_plugin_graph_host_on_worker(
 
 /// Apply a plugin update with proper synchronization and rollback on failure.
 /// Waits for confirmation from processing thread and updates playback thread if needed.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "manager command handler: one argument per engine subsystem involved"
+)]
 pub(in crate::engine::manager_thread) fn apply_plugin_update(
     processing: &mut ProcessingThread,
 

@@ -339,6 +339,10 @@ impl DecoderState {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "decoder message helper: one argument per frame metadata field"
+    )]
     pub(super) fn send_prepared_frame(
         &mut self,
         message_tx: &SyncSender<DecoderMessage>,
@@ -364,6 +368,10 @@ impl DecoderState {
         )
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "decoder message helper: one argument per frame metadata field"
+    )]
     pub(super) fn emit_resample_staging(
         &mut self,
         message_tx: &SyncSender<DecoderMessage>,

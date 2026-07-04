@@ -1,4 +1,4 @@
-use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_host::plugin::{InPlacePluginAdapter, ProcessContext};
 use sotf_host::{
     CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, run_standard_tests,
 };

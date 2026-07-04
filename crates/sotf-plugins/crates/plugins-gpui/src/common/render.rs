@@ -304,6 +304,10 @@ pub fn render_edit_hints(theme: &PluginViewTheme) -> impl IntoElement {
 
 /// Render a toggle button using gpui-ui-kit Toggle component
 /// Uses `Entity<H>` for direct state updates via `PluginViewHost`
+#[allow(
+    clippy::too_many_arguments,
+    reason = "UI render helper: one argument per visual/interaction state"
+)]
 pub fn render_toggle<H: PluginViewHost>(
     entity: Entity<H>,
     plugin_idx: usize,
@@ -388,6 +392,10 @@ pub fn render_colored_value(
 
 /// Render a vertical slider with label, value, drag support and enhanced visual feedback
 /// Uses `Entity<H>` for direct state updates via `PluginViewHost`
+#[allow(
+    clippy::too_many_arguments,
+    reason = "UI render helper: one argument per visual/interaction state"
+)]
 pub fn render_vertical_slider<H: PluginViewHost>(
     entity: Entity<H>,
     plugin_idx: usize,
@@ -847,6 +855,10 @@ pub fn render_dynamics_layout(
 
 /// Render a rotary knob control using gpui-audio-kit Potentiometer
 /// Uses `Entity<H>` for direct state updates via `PluginViewHost`
+#[allow(
+    clippy::too_many_arguments,
+    reason = "UI render helper: one argument per visual/interaction state"
+)]
 pub fn render_knob<H: PluginViewHost>(
     entity: Entity<H>,
     plugin_idx: usize,
@@ -879,6 +891,10 @@ pub fn render_knob<H: PluginViewHost>(
 }
 
 /// Render a rotary knob control with custom size
+#[allow(
+    clippy::too_many_arguments,
+    reason = "UI render helper: one argument per visual/interaction state"
+)]
 pub fn render_knob_sized<H: PluginViewHost>(
     entity: Entity<H>,
     plugin_idx: usize,

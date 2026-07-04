@@ -33,6 +33,10 @@ use std::sync::mpsc::{Receiver, Sender, SyncSender, TryRecvError};
 use std::time::{Duration, Instant};
 
 /// Main playback thread function.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "thread entry point: one argument per playback runtime resource"
+)]
 pub(super) fn run_playback_thread(
     message_rx: Receiver<ProcessingMessage>,
     command_rx: Receiver<PlaybackCommand>,
@@ -901,6 +905,10 @@ impl PlaybackRuntime {
         );
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "installs all pieces of a rebuilt output stream"
+    )]
     fn install_rebuilt_parts(
         &mut self,
         stream: Stream,

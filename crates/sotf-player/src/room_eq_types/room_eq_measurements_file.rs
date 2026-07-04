@@ -55,6 +55,10 @@ impl RoomEqMeasurementsFile {
     /// [`CtcMatrixExportStrategy::RawSweep`]. The raw-sweep strategy returns
     /// `Ok(None)` when the loopback channel or raw WAV paths are incomplete,
     /// preserving the default measured-IR behaviour for normal app saves.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "export builder: one argument per input data source"
+    )]
     pub fn build_ctc_measurements_from_recordings_with_strategy(
         recordings: &[ChannelRecording],
         speaker_names: &[String],

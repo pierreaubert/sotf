@@ -31,6 +31,10 @@ pub(super) fn api_media_source(state: &Arc<ServerState>, track_id: &str) -> Opti
         .lookup(&library, library_version, track_id)
 }
 
+#[allow(
+    clippy::result_unit_err,
+    reason = "internal range parser: unit error is intentionally opaque to callers"
+)]
 pub fn api_parse_range_header(
     range_header: Option<&str>,
     file_len: u64,

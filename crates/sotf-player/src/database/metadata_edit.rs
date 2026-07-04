@@ -132,6 +132,10 @@ impl MusicDatabase {
     }
 }
 
+#[allow(
+    clippy::type_complexity,
+    reason = "local SQL row tuple: each element is a distinct optional track facet"
+)]
 fn refresh_track_facets(tx: &Transaction<'_>, track_id: i64) -> SqlResult<()> {
     let (genre, composer, conductor, performer, ensemble): (
         Option<String>,

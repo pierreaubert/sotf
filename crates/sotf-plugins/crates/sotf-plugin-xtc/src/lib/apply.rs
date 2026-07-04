@@ -73,6 +73,10 @@ pub(super) fn apply_filter_right_blended(
 ///
 /// Equivalent to `apply_filter_left_blended` but for speaker-mode filters.
 #[inline(always)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "frequency-domain convolution helper: one buffer argument per filter/channel"
+)]
 pub(super) fn apply_filter_pair_blended(
     ifft_input: &mut [Complex<f32>],
     fft_l: &[Complex<f32>],

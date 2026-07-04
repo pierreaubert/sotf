@@ -2131,6 +2131,10 @@ impl DawHost {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "plugin process signature mirrors the underlying audio graph API"
+    )]
     pub(super) fn process_f32_node(
         plugin: &mut dyn Plugin,
         node: &GraphNode,
@@ -2148,17 +2152,12 @@ impl DawHost {
         }
         let context =
             ProcessContext::new(sample_rate, num_frames).with_sample_position(sample_position);
-        if let Some(compiled_op) = plugin_compiled_op(op_kind) {
-            if let Some(frames) = Self::process_compiled_plugin_f32_isolated(
-                plugin,
-                node,
-                compiled_op,
-                input,
-                output,
-                &context,
-            ) {
-                return Ok(frames);
-            }
+        if let Some(frames) = plugin_compiled_op(op_kind).and_then(|compiled_op| {
+            Self::process_compiled_plugin_f32_isolated(
+                plugin, node, compiled_op, input, output, &context,
+            )
+        }) {
+            return Ok(frames);
         }
         Ok(Self::process_plugin_f32_isolated(
             plugin, node, input, output, &context,
@@ -2692,6 +2691,10 @@ impl DawHost {
         Ok(current_frames)
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "plugin process signature mirrors the underlying audio graph API"
+    )]
     pub(super) fn process_f64_node(
         plugin: &mut dyn Plugin,
         node: &GraphNode,
@@ -2713,6 +2716,10 @@ impl DawHost {
         ))
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "parallel stage dispatch needs the full graph context; a struct would just move the fields"
+    )]
     pub(super) fn process_stage_parallel(
         parallel_enabled: bool,
         stage: &ProcessingStage,
@@ -2892,6 +2899,10 @@ impl DawHost {
         })
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "internal graph wiring helper: all arguments are distinct scratch buffers"
+    )]
     pub(super) fn merge_inputs_into<T: AudioSample>(
         n: &GraphNode,
         preds: &[Vec<GraphEdge>],
@@ -3009,6 +3020,10 @@ impl DawHost {
 
     /// Apply latency compensation delay (if any) to `src_data` for the given edge,
     /// then sum the result into `dest`. If no compensation is needed, sums directly.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "internal latency-compensation helper: scratch buffers and destination slices are separate concerns"
+    )]
     pub(super) fn apply_compensation_and_sum_at<T: AudioSample>(
         edge: &GraphEdge,
         channels: usize,

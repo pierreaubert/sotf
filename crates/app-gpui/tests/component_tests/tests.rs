@@ -28,6 +28,16 @@ fn app_source(relative: &str) -> String {
         .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
 }
 
+fn repo_source(relative: &str) -> String {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest_dir
+        .parent()
+        .and_then(Path::parent)
+        .expect("app-gpui should live under crates/");
+    std::fs::read_to_string(repo_root.join(relative))
+        .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
+}
+
 #[test]
 fn plugin_rendering_uses_cached_registry_and_safe_layout_slots() {
     let plugins = app_source("components/plugins/mod.rs");
@@ -59,6 +69,25 @@ fn dev_api_compile_guard_is_active_for_release_builds() {
     assert!(
         !lib.contains("// #[cfg(all(feature = \"dev-api\", not(debug_assertions)))]"),
         "dev-api release compile guard must not be commented out"
+    );
+}
+
+#[test]
+fn release_gpui_recipe_excludes_dev_api_feature() {
+    let justfile = repo_source("justfile");
+    let gpui_recipe = justfile
+        .split("\n[group('build')]\ngpui:\n")
+        .nth(1)
+        .and_then(|rest| rest.split("\n\n").next())
+        .expect("missing build gpui recipe");
+
+    assert!(
+        gpui_recipe.contains("{{release_test_features}}"),
+        "release gpui recipe must use the feature set that excludes dev-api"
+    );
+    assert!(
+        !gpui_recipe.contains("{{test_features_macos}}") && !gpui_recipe.contains("dev-api"),
+        "release gpui recipe must not compile the QA-only dev-api feature"
     );
 }
 

@@ -1,7 +1,4 @@
-use sotf_host::{
-    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter,
-    ParametricPluginAdapter, run_standard_tests,
-};
+use sotf_host::{CountingAlloc, ParametricInPlacePluginAdapter, run_standard_tests};
 use sotf_plugin_hiss_reducer::HissReducerPlugin;
 
 #[global_allocator]

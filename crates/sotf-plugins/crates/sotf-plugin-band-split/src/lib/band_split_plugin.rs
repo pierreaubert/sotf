@@ -100,6 +100,10 @@ impl BandSplitPlugin {
         Ok(p)
     }
 
+    #[allow(
+        clippy::type_complexity,
+        reason = "parameter key tuple is the natural representation for this helper"
+    )]
     fn build_param_keys(
         num_bands: usize,
         num_frequencies: usize,

@@ -30,6 +30,10 @@ pub struct PlaybackThread {
 
 impl PlaybackThread {
     /// Create and start the playback thread
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "constructor mirrors run_playback_thread argument list"
+    )]
     pub fn new(
         message_rx: Receiver<ProcessingMessage>,
         event_tx: Sender<ThreadEvent>,
@@ -89,10 +93,10 @@ impl PlaybackThread {
         if let Err(e) = self.send_command(PlaybackCommand::Shutdown) {
             log::trace!("[Playback Thread] Shutdown command receiver dropped: {}", e);
         }
-        if let Some(handle) = self.thread_handle.take() {
-            if let Err(()) = super::join_timeout(handle, std::time::Duration::from_secs(5)) {
-                log::warn!("[Playback Thread] Shutdown join timed out; thread left detached");
-            }
+        if let Some(handle) = self.thread_handle.take()
+            && super::join_timeout(handle, std::time::Duration::from_secs(5)).is_err()
+        {
+            log::warn!("[Playback Thread] Shutdown join timed out; thread left detached");
         }
     }
 }

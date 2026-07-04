@@ -379,8 +379,10 @@ fn make_eq(
 }
 
 fn make_crossfeed() -> Result<Box<dyn Plugin>, String> {
-    let mut params = CrossfeedPluginParams::default();
-    params.autogain_enabled = false;
+    let params = CrossfeedPluginParams {
+        autogain_enabled: false,
+        ..Default::default()
+    };
     Ok(Box::new(ParametricInPlacePluginAdapter::new(
         CrossfeedPlugin::new(params)?,
     )))
@@ -413,7 +415,7 @@ fn make_multiband_compressor(channels: usize) -> Result<Box<dyn Plugin>, String>
 
 fn make_denoiser(channels: usize, plugin_index: usize) -> Result<Box<dyn Plugin>, String> {
     Ok(Box::new(ParametricInPlacePluginAdapter::new(
-        DenoiserPlugin::new(channels, plugin_index % 2 == 0),
+        DenoiserPlugin::new(channels, plugin_index.is_multiple_of(2)),
     )))
 }
 
@@ -558,6 +560,10 @@ fn print_focus_header() {
     );
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "CSV row helper: one argument per output column"
+)]
 fn print_focus_row(
     focus: Focus,
     case_name: &str,

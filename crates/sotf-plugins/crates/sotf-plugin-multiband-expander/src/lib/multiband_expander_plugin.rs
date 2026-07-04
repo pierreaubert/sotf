@@ -97,7 +97,7 @@ impl MultibandExpanderPlugin {
         let default_xfs = [200.0f32, 2000.0, 8000.0, 12000.0];
         let mut xfs = params.crossover_frequencies.clone();
         for (i, &d) in default_xfs.iter().enumerate() {
-            if xfs.get(i).map_or(true, |&v| v == 0.0) {
+            if xfs.get(i).is_none_or(|&v| v == 0.0) {
                 if i < xfs.len() {
                     xfs[i] = d;
                 } else {
