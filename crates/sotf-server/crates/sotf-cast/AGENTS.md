@@ -10,13 +10,13 @@ AirPlay and Chromecast audio casting.
 ## Module Layout
 
 - `discovery.rs` -- mDNS/Bonjour device discovery
-- `airplay.rs` -- AirPlay 2 streaming (behind `airplay` feature)
-- `chromecast.rs` -- Google Cast streaming (behind `chromecast` feature)
+- `airplay.rs` -- AirPlay RAOP v1 streaming (behind `airplay` feature)
+- `chromecast.rs` -- Google Cast CASTV2 streaming (behind `chromecast` feature)
 
 ## Features
 
-- `airplay` (default) -- AirPlay 2 audio casting
-- `chromecast` (default) -- Google Cast audio casting
+- `airplay` (default) -- AirPlay RAOP v1 audio casting
+- `chromecast` (default) -- Google Cast CASTV2 audio casting
 
 ## Testing
 

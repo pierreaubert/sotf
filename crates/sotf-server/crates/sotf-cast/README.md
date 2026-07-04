@@ -9,18 +9,18 @@ AirPlay and Chromecast audio casting for SOTF.
 
 ### AirPlay (behind `airplay` feature)
 
-- `airplay.rs` -- AirPlay 2 audio streaming
+- `airplay.rs` -- AirPlay RAOP v1 audio streaming
 
 ### Chromecast (behind `chromecast` feature)
 
-- `chromecast.rs` -- Google Cast protocol audio streaming
+- `chromecast.rs` -- Google Cast CASTV2 audio streaming
 
 ## Features
 
 | Feature | Description | Default |
 |---------|-------------|---------|
-| `airplay` | AirPlay 2 audio casting | Yes |
-| `chromecast` | Google Cast audio casting | Yes |
+| `airplay` | AirPlay RAOP v1 audio casting | Yes |
+| `chromecast` | Google Cast CASTV2 audio casting | Yes |
 
 ## Dependencies
 

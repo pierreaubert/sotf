@@ -8,7 +8,7 @@
 // Protocol overview:
 //   1. Discover receiver via mDNS (_raop._tcp)
 //   2. RTSP session: ANNOUNCE → SETUP → RECORD
-//   3. Stream audio via RTP (UDP) with AES encryption
+//   3. Stream audio via RTP (UDP) as signed 16-bit PCM
 //   4. Control via RTSP SET_PARAMETER (volume, progress)
 //   5. RTSP TEARDOWN to disconnect
 //
@@ -30,7 +30,7 @@ const PACKET_SIZE: usize = FRAMES_PER_PACKET * BYTES_PER_FRAME;
 /// RTP header size (12 bytes).
 const RTP_HEADER_SIZE: usize = 12;
 
-/// RAOP audio packet type in RTP payload type field.
+/// Dynamic RTP payload type used by the ANNOUNCE SDP.
 const RTP_PAYLOAD_TYPE: u8 = 0x60;
 
 /// AirPlay connection state.
@@ -116,13 +116,15 @@ impl AirPlaySender {
              s=iTunes\r\n\
              c=IN IP4 {}\r\n\
              t=0 0\r\n\
-             m=audio 0 RTP/AVP 96\r\n\
-             a=rtpmap:96 AppleLossless\r\n\
-             a=fmtp:96 {frames} 0 16 40 10 14 2 255 0 0 {sr}\r\n",
+             m=audio 0 RTP/AVP {payload_type}\r\n\
+             a=rtpmap:{payload_type} L16/{sr}/{channels}\r\n\
+             a=fmtp:{payload_type} {frames} 0 16 40 10 14 {channels} 255 0 0 {sr}\r\n",
             self.device.address,
             self.device.address,
+            payload_type = RTP_PAYLOAD_TYPE,
             frames = FRAMES_PER_PACKET,
             sr = SAMPLE_RATE,
+            channels = CHANNELS,
         );
 
         self.rtsp_request("ANNOUNCE", "*", Some(&announce_sdp))?;
