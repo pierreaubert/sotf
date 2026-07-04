@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use rand::Rng;
 use sotf_audio_player::{Album, QueuePlaybackEffect};
 
 use super::state::App;
@@ -130,12 +131,65 @@ impl App {
     }
 
     pub fn next_track(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
+        if self.ui_state.phone_repeat_enabled {
+            self.sync_queue_index();
+            return self.queue_state.current_track_source();
+        }
+
+        if self.ui_state.phone_shuffle_enabled
+            && let Some(source) = self.next_shuffled_track()
+        {
+            self.sync_queue_index();
+            return Some(source);
+        }
+
         let effect = self.queue_state.next_track();
         self.sync_queue_index();
         match effect {
             QueuePlaybackEffect::Play(source) => Some(source),
             _ => None,
         }
+    }
+
+    fn next_shuffled_track(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
+        let choices = self
+            .queue_state
+            .items
+            .iter()
+            .enumerate()
+            .flat_map(|(album_idx, item)| {
+                item.album
+                    .tracks
+                    .iter()
+                    .enumerate()
+                    .map(move |(track_idx, _track)| (album_idx, track_idx))
+            })
+            .collect::<Vec<_>>();
+
+        if choices.is_empty() {
+            return None;
+        }
+
+        let current = self.queue_state.current_index().and_then(|album_idx| {
+            self.queue_state
+                .items
+                .get(album_idx)
+                .map(|item| (album_idx, item.current_track_index))
+        });
+
+        let mut rng = rand::rng();
+        let mut target = choices[rng.random_range(0..choices.len())];
+        if choices.len() > 1 {
+            while Some(target) == current {
+                target = choices[rng.random_range(0..choices.len())];
+            }
+        }
+
+        self.queue_state.current_index = Some(target.0);
+        if let Some(item) = self.queue_state.items.get_mut(target.0) {
+            item.current_track_index = target.1;
+        }
+        self.queue_state.current_track_source()
     }
 
     pub fn previous_track(&mut self) -> Option<sotf_audio::decoder::AudioSource> {

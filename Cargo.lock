@@ -7186,7 +7186,7 @@ dependencies = [
 
 [[package]]
 name = "plugins-gpui"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "gpui",
  "gpui-audio-kit",
@@ -9467,7 +9467,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-cast"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "env_logger",
  "log",
@@ -9506,7 +9506,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-dev-driver"
-version = "0.6.8"
+version = "0.8.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -9519,7 +9519,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-dlna"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "env_logger",
  "log",
@@ -9538,7 +9538,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.28"
+version = "1.0.29"
 dependencies = [
  "arc-swap",
  "bytemuck",
@@ -9604,7 +9604,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-federation"
-version = "0.5.1"
+version = "0.8.1"
 dependencies = [
  "log",
  "proptest 1.11.0",
@@ -9794,7 +9794,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-mpd"
-version = "0.5.1"
+version = "0.8.1"
 dependencies = [
  "env_logger",
  "insta",
@@ -9807,7 +9807,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-player"
-version = "0.5.123"
+version = "0.5.124"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
@@ -10491,7 +10491,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-services"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "env_logger",
  "librespot-core",
@@ -10506,7 +10506,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-streaming"
-version = "0.1.0"
+version = "0.8.0"
 dependencies = [
  "env_logger",
  "insta",
@@ -10543,7 +10543,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tls"
-version = "0.6.8"
+version = "0.8.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -10582,7 +10582,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.207"
+version = "0.5.208"
 dependencies = [
  "anyhow",
  "autoeq",

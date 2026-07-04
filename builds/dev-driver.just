@@ -1,6 +1,6 @@
 # Dev-driver scenario suites.
 
-dev_driver_gpui_features := "onnx, hal, gpu-2d, gpu-3d, iamf, dev-api"
+dev_driver_gpui_features := "qa, onnx, hal, gpu-2d, gpu-3d, iamf, dev-api, streaming, hls"
 
 # Build the GPUI binary used by GPUI suite TOMLs.
 [group('dev-driver')]

@@ -3,7 +3,7 @@ use sotf_audio_player_gpui::app::types::{DensityMode, HeadphoneEqState, Spinoram
 use sotf_audio_player_gpui::{
     App, CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState, ContextMenuType,
     CrossoverType, InputMode, LayoutMode, LibraryStats, MeasureState, MeterDisplayMode,
-    PlaybackDeviceConfig, PlotSmoothing, PluginViewMode, RecordingDeviceConfig,
+    PlatformStyle, PlaybackDeviceConfig, PlotSmoothing, PluginViewMode, RecordingDeviceConfig,
     RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode, RoomEqAlgorithm,
     RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration, ToastMessage, ToastType,
     engine_stop_without_queue_should_clear, screen_shows_rack_data,
@@ -13,6 +13,7 @@ use sotf_audio_player_gpui::{
 fn test_screen_variants() {
     let screens = [
         Screen::Home,
+        Screen::HomeShelf,
         Screen::NowPlaying,
         Screen::Library,
         Screen::Streams,
@@ -20,6 +21,9 @@ fn test_screen_variants() {
         Screen::Playlists,
         Screen::Spectrum,
         Screen::Settings,
+        Screen::SettingsDetail,
+        Screen::StudioHub,
+        Screen::EqCurve,
         Screen::Studio,
         Screen::Recording,
         Screen::RoomEq,
@@ -27,7 +31,7 @@ fn test_screen_variants() {
         Screen::Spinorama,
         Screen::PluginGraph,
     ];
-    assert_eq!(screens.len(), 14);
+    assert_eq!(screens.len(), 18);
     assert_ne!(Screen::Library, Screen::Queue);
 }
 
@@ -46,14 +50,17 @@ fn test_primary_information_architecture_destinations() {
     );
     assert_eq!(Screen::NowPlaying.primary_destination_index(), 1);
     assert_eq!(Screen::Home.primary_destination_index(), 0);
+    assert_eq!(Screen::HomeShelf.primary_destination_index(), 0);
     assert_eq!(Screen::Library.primary_destination_index(), 2);
     assert_eq!(Screen::Streams.primary_destination_index(), 3);
     assert_eq!(Screen::Queue.primary_destination_index(), 4);
     assert_eq!(Screen::Studio.primary_destination_index(), 5);
-
+    assert_eq!(Screen::StudioHub.primary_destination_index(), 5);
+    assert_eq!(Screen::EqCurve.primary_destination_index(), 5);
     assert_eq!(Screen::RoomEq.primary_destination_index(), 5);
     assert_eq!(Screen::PluginGraph.primary_destination_index(), 5);
     assert_eq!(Screen::Settings.primary_destination_index(), 0);
+    assert_eq!(Screen::SettingsDetail.primary_destination_index(), 0);
 }
 
 #[test]
@@ -74,6 +81,10 @@ fn test_view_menu_ids_map_to_screens() {
     assert_eq!(
         Screen::from_view_menu_id("settings"),
         Some(Screen::Settings)
+    );
+    assert_eq!(
+        Screen::from_view_menu_id("settings-detail"),
+        Some(Screen::SettingsDetail)
     );
     assert_eq!(Screen::from_view_menu_id("unknown"), None);
 }
@@ -107,6 +118,26 @@ fn test_density_mode_layout_policy() {
     assert_eq!(
         DensityMode::Expert.layout_mode_for_window(1024.0, 768.0),
         LayoutMode::Expanded
+    );
+}
+
+#[test]
+fn test_platform_style_phone_is_ios_only_and_iphone_sized() {
+    assert_eq!(
+        PlatformStyle::for_window(390.0, 844.0, true),
+        PlatformStyle::Phone
+    );
+    assert_eq!(
+        PlatformStyle::for_window(844.0, 390.0, true),
+        PlatformStyle::Phone
+    );
+    assert_eq!(
+        PlatformStyle::for_window(390.0, 844.0, false),
+        PlatformStyle::Desktop
+    );
+    assert_eq!(
+        PlatformStyle::for_window(768.0, 1024.0, true),
+        PlatformStyle::Desktop
     );
 }
 

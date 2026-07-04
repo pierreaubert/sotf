@@ -209,6 +209,12 @@ impl Render for PlayerView {
         let combined_scale = (font_scale * responsive_scale).clamp(scale_min, scale_max);
         window.set_rem_size(px(16.0 * combined_scale));
 
+        let platform_style = crate::app::PlatformStyle::for_window(
+            window_width,
+            window_height,
+            cfg!(any(target_os = "ios", target_os = "tvos")),
+        );
+
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.
         let ui_kit_theme: gpui_ui_kit::Theme = theme.to_ui_kit_theme(theme_id, cx);
@@ -591,30 +597,44 @@ impl Render for PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_app_sidebar(cx))
-                    .child(
+                    .child(if platform_style.is_phone() {
+                        self.render_phone_shell(current_screen, layout_mode, cx)
+                    } else {
                         div()
                             .flex()
-                            .flex_col()
                             .flex_1()
-                            .min_w_0()
                             .min_h_0()
                             .overflow_hidden()
+                            .child(self.render_app_sidebar(cx))
                             .child(
                                 div()
                                     .flex()
+                                    .flex_col()
                                     .flex_1()
+                                    .min_w_0()
                                     .min_h_0()
                                     .overflow_hidden()
-                                    .child(self.render_current_screen(current_screen, layout_mode, cx)),
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_1()
+                                            .min_h_0()
+                                            .overflow_hidden()
+                                            .child(self.render_current_screen(
+                                                current_screen,
+                                                layout_mode,
+                                                cx,
+                                            )),
+                                    )
+                                    .when(
+                                        self.state.read(cx).app.federation.scan_progress.is_some(),
+                                        |div| div.child(self.render_federation_scan_progress(cx)),
+                                    )
+                                    .child(self.render_scan_status_row(cx))
+                                    .child(self.render_footer(cx)),
                             )
-                            .when(
-                                self.state.read(cx).app.federation.scan_progress.is_some(),
-                                |div| div.child(self.render_federation_scan_progress(cx)),
-                            )
-                            .child(self.render_scan_status_row(cx))
-                            .child(self.render_footer(cx)),
-                    ),
+                            .into_any_element()
+                    }),
             )
             .when(input_mode == crate::app::InputMode::Help, |div| {
                 div.child(self.render_help_modal(cx))
@@ -694,9 +714,13 @@ impl PlayerView {
         match screen {
             // These screens render the same regardless of layout mode
             Screen::Home => self.render_home_screen(cx).into_any_element(),
+            Screen::HomeShelf => self.render_home_screen(cx).into_any_element(),
             Screen::Streams => self.render_streams_screen(cx).into_any_element(),
             Screen::Spectrum => self.render_spectrum_screen(cx).into_any_element(),
             Screen::Settings => self.render_settings_screen(cx).into_any_element(),
+            Screen::SettingsDetail => self.render_settings_screen(cx).into_any_element(),
+            Screen::StudioHub => self.render_plugins_screen(cx).into_any_element(),
+            Screen::EqCurve => self.render_plugins_screen(cx).into_any_element(),
             Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
             Screen::Recording => self.render_recording_screen(cx).into_any_element(),
             Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),

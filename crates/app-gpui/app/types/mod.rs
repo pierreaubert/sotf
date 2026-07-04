@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     Home,
+    HomeShelf,
     NowPlaying,
     Library,
     Streams,
@@ -14,12 +15,35 @@ pub enum Screen {
     Playlists,
     Spectrum,
     Settings,
+    SettingsDetail,
+    StudioHub,
+    EqCurve,
     Studio,
     Recording,
     RoomEq,
     HeadphoneEq,
     Spinorama,
     PluginGraph,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PhoneHomeShelf {
+    #[default]
+    RecentlyPlayed,
+    MostPlayed,
+    Favorites,
+    NewInLibrary,
+}
+
+impl PhoneHomeShelf {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::RecentlyPlayed => "Recently Played",
+            Self::MostPlayed => "Most Played",
+            Self::Favorites => "Favorites",
+            Self::NewInLibrary => "New in Library",
+        }
+    }
 }
 
 impl Screen {
@@ -44,11 +68,15 @@ impl Screen {
             return index;
         }
 
-        if self.is_studio_tool() {
+        if self == Screen::HomeShelf {
+            0
+        } else if self == Screen::StudioHub || self == Screen::EqCurve || self.is_studio_tool() {
             Self::primary_destinations()
                 .iter()
                 .position(|screen| *screen == Screen::Studio)
                 .unwrap_or(0)
+        } else if self == Screen::SettingsDetail {
+            0
         } else {
             0
         }
@@ -63,6 +91,8 @@ impl Screen {
                 | Screen::HeadphoneEq
                 | Screen::Spinorama
                 | Screen::Spectrum
+                | Screen::EqCurve
+                | Screen::Studio
         )
     }
 
@@ -80,6 +110,7 @@ impl Screen {
             "headphoneeq" => Some(Screen::HeadphoneEq),
             "spinorama" => Some(Screen::Spinorama),
             "settings" => Some(Screen::Settings),
+            "settings-detail" => Some(Screen::SettingsDetail),
             _ => None,
         }
     }
@@ -169,6 +200,32 @@ pub enum LayoutMode {
     Compact, // Below 800px - tabs bar visible
     #[default]
     Expanded, // Above 800px - split Library/Queue view
+}
+
+/// Presentation style selected from platform and viewport geometry.
+///
+/// Desktop includes macOS, desktop Linux/Windows, and iPad-class iOS windows.
+/// Phone is reserved for iPhone-class iOS/tvOS windows so narrow desktop
+/// windows keep the established desktop compact layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PlatformStyle {
+    #[default]
+    Desktop,
+    Phone,
+}
+
+impl PlatformStyle {
+    pub fn for_window(width: f32, height: f32, is_ios_family: bool) -> Self {
+        if is_ios_family && crate::ui::is_phone_sized_window(width, height) {
+            Self::Phone
+        } else {
+            Self::Desktop
+        }
+    }
+
+    pub fn is_phone(self) -> bool {
+        matches!(self, Self::Phone)
+    }
 }
 
 /// Product density mode.

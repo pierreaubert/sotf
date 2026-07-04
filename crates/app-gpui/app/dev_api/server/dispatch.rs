@@ -213,8 +213,16 @@ fn dispatch_plugin_action(
     use sotf_audio_player::controllers::plugin::dev_api::actions::plugin_action;
     let handled = matches!(
         name,
-        "PluginAdd" | "PluginClear" | "PluginRemove" | "PluginToggle" | "PluginMoveUp" | "PluginMoveDown"
-            | "PluginSetParam" | "PluginSetParamString" | "PluginChainSave" | "PluginChainLoad"
+        "PluginAdd"
+            | "PluginClear"
+            | "PluginRemove"
+            | "PluginToggle"
+            | "PluginMoveUp"
+            | "PluginMoveDown"
+            | "PluginSetParam"
+            | "PluginSetParamString"
+            | "PluginChainSave"
+            | "PluginChainLoad"
     );
     if !handled {
         return Ok(false);

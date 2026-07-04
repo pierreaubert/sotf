@@ -330,16 +330,16 @@ pub(super) fn benchmark_crossover(c: &mut Criterion) {
         });
     }
 
-    // LR48 lowpass (steeper, more computation)
+    // Linear-phase crossover (heavier FIR path)
     {
-        let mut plugin = CrossoverPlugin::new(CHANNELS, "LR48", 1000.0, "low").unwrap();
+        let mut plugin = CrossoverPlugin::new(CHANNELS, "LinearPhase", 1000.0, "low").unwrap();
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
         let mut output = vec![0.0f32; BUFFER_SIZE * plugin.output_channels()];
         let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
 
-        group.bench_function("lr48_lowpass", |b| {
+        group.bench_function("linear_phase_lowpass", |b| {
             b.iter(|| {
                 plugin
                     .process(

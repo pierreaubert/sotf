@@ -2,7 +2,7 @@ use crate::app::Screen;
 
 pub(super) fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str)> {
     match screen {
-        Screen::Home => vec![
+        Screen::Home | Screen::HomeShelf => vec![
             ("/", "Search albums"),
             ("Enter", "Open album"),
             ("Space", "Play/Pause"),
@@ -41,6 +41,12 @@ pub(super) fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &
         ],
         Screen::Spectrum => vec![("Space", "Play/Pause"), ("N", "Next track")],
         Screen::Settings => vec![("T", "Cycle theme"), ("Alt-L", "Cycle language")],
+        Screen::SettingsDetail => vec![("Esc", "Back to settings")],
+        Screen::StudioHub => vec![
+            ("Enter", "Open selected studio tool"),
+            ("Space", "Play/Pause"),
+        ],
+        Screen::EqCurve => vec![("Esc", "Back to Studio"), ("Enter", "Edit selected EQ")],
         Screen::Studio => vec![
             ("E/U/G/L/O/B", "Add plugins"),
             ("Enter/e", "Edit plugin"),

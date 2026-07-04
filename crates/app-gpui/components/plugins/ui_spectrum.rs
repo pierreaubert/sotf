@@ -347,10 +347,22 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let phone_hold = state.app.ui_state.phone_spectrum_hold;
+        let phone_hold_magnitudes = state.app.ui_state.phone_spectrum_hold_magnitudes.clone();
+        let phone_smoothing = if state.app.ui_state.phone_spectrum_smoothed {
+            0.65
+        } else {
+            0.3
+        };
 
         let content = if let Some(info) = &state.app.playback.spectrum_info {
             // Convert magnitudes to Arc for the GPU element
-            let magnitudes: Arc<[f32]> = Arc::from(info.magnitudes.as_ref().as_slice());
+            let magnitudes: Arc<[f32]> =
+                if phone_hold && let Some(held) = phone_hold_magnitudes {
+                    Arc::from(held.into_boxed_slice())
+                } else {
+                    Arc::from(info.magnitudes.as_ref().as_slice())
+                };
 
             div()
                 .flex()
@@ -370,7 +382,7 @@ impl PlayerView {
                                 SpectrumElement::new(magnitudes)
                                     .height(px(256.0))
                                     .frequency_range(20.0, 20000.0)
-                                    .smoothing(0.3)
+                                    .smoothing(phone_smoothing)
                                     .colors(spectrum_colors_from_theme(
                                         &theme.plugin_palette.spectrum_colors,
                                     )),

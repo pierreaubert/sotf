@@ -8,7 +8,7 @@ use crate::components::plugins::level_meters::LevelMeterManager;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::theme::ThemeState as UiKitThemeState;
-use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
+use gpui_ui_kit::{CollapseDirection, NumberInput, NumberInputSize, PaneDivider, PaneDividerTheme};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,6 +16,7 @@ include!("handle.rs");
 include!("playback.rs");
 include!("plugin.rs");
 include!("render.rs");
+include!("phone.rs");
 include!("search.rs");
 include!("select.rs");
 include!("split_view.rs");

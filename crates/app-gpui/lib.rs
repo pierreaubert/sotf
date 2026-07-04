@@ -51,8 +51,8 @@ pub use app::theme;
 #[cfg(not(test))]
 pub use app::{
     App, AppState, ChannelFilter, ChannelGroup, ChannelInfo, ContextMenuState, ContextMenuType,
-    InputMode, LayoutMode, LibrarySortOrder, QueueItem, Screen, SettingsTab, ToastMessage,
-    ToastType, get_param_count,
+    InputMode, LayoutMode, LibrarySortOrder, PlatformStyle, QueueItem, Screen, SettingsTab,
+    ToastMessage, ToastType, get_param_count,
 };
 
 // Re-export additional types for testing

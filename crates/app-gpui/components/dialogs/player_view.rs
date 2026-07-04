@@ -20,12 +20,16 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let screen_name = match state.app.ui_state.current_screen {
             Screen::Home => "Home",
+            Screen::HomeShelf => "Home",
             Screen::NowPlaying => "Now Playing",
             Screen::Library => "Library",
             Screen::Streams => "Streams",
             Screen::Queue => "Queue",
             Screen::Spectrum => "Spectrum",
             Screen::Settings => "Settings",
+            Screen::SettingsDetail => "Settings",
+            Screen::StudioHub => "Studio",
+            Screen::EqCurve => "EQ Curve",
             Screen::Studio => "Studio",
             Screen::Recording => "Recording",
             Screen::RoomEq => "Room EQ",

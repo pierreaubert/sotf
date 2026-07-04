@@ -20,19 +20,23 @@ impl ScreenGuide {
     pub(super) fn for_screen(screen: crate::app::Screen) -> &'static ScreenGuide {
         match screen {
             crate::app::Screen::Home => &GUIDE_LIBRARY,
+            crate::app::Screen::HomeShelf => &GUIDE_LIBRARY,
             crate::app::Screen::NowPlaying => &GUIDE_QUEUE,
             crate::app::Screen::Library => &GUIDE_LIBRARY,
             crate::app::Screen::Streams => &GUIDE_LIBRARY,
             crate::app::Screen::Queue => &GUIDE_QUEUE,
+            crate::app::Screen::StudioHub => &GUIDE_STUDIO,
             crate::app::Screen::Studio => &GUIDE_STUDIO,
             crate::app::Screen::PluginGraph => &GUIDE_PLUGIN_GRAPH,
             crate::app::Screen::Spectrum => &GUIDE_SPECTRUM,
             crate::app::Screen::Settings => &GUIDE_SETTINGS,
+            crate::app::Screen::SettingsDetail => &GUIDE_SETTINGS,
             crate::app::Screen::Recording => &GUIDE_RECORDING,
             crate::app::Screen::RoomEq => &GUIDE_ROOM_EQ,
             crate::app::Screen::HeadphoneEq => &GUIDE_HEADPHONE_EQ,
             crate::app::Screen::Spinorama => &GUIDE_SPINORAMA,
             crate::app::Screen::Playlists => &GUIDE_LIBRARY,
+            crate::app::Screen::EqCurve => &GUIDE_STUDIO,
         }
     }
 }
