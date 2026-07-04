@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::common::render_knob;
 use super::misc::CONFIG_ITEMS;
 use super::misc::param_idx;

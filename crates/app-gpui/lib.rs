@@ -6,6 +6,7 @@
 // The main application binary is in main.rs.
 
 #![recursion_limit = "8192"]
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 #[cfg(all(feature = "dev-api", not(debug_assertions)))]
 compile_error!(

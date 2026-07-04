@@ -357,12 +357,11 @@ impl PlayerView {
 
         let content = if let Some(info) = &state.app.playback.spectrum_info {
             // Convert magnitudes to Arc for the GPU element
-            let magnitudes: Arc<[f32]> =
-                if phone_hold && let Some(held) = phone_hold_magnitudes {
-                    Arc::from(held.into_boxed_slice())
-                } else {
-                    Arc::from(info.magnitudes.as_ref().as_slice())
-                };
+            let magnitudes: Arc<[f32]> = if phone_hold && let Some(held) = phone_hold_magnitudes {
+                Arc::from(held.into_boxed_slice())
+            } else {
+                Arc::from(info.magnitudes.as_ref().as_slice())
+            };
 
             div()
                 .flex()

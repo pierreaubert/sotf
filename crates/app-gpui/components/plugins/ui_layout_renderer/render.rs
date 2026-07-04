@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::actions::{OpenAbConfigFile, OpenIrFile, OpenSofaFile};
 use super::super::common::{
     render_knob_sized, render_section_title, render_toggle, render_transfer_curve_with_level,

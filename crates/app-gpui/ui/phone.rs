@@ -329,7 +329,7 @@ impl PlayerView {
         }
 
         let mut recently_played = albums.clone();
-        recently_played.sort_by(|a, b| b.play_count.cmp(&a.play_count));
+        recently_played.sort_by_key(|album| std::cmp::Reverse(album.play_count));
 
         let mut most_played = albums.clone();
         most_played.sort_by(|a, b| {
@@ -345,7 +345,7 @@ impl PlayerView {
             .collect::<Vec<_>>();
 
         let mut recent_releases = albums.clone();
-        recent_releases.sort_by(|a, b| b.year.cmp(&a.year));
+        recent_releases.sort_by_key(|album| std::cmp::Reverse(album.year));
 
         div()
             .id("phone-home")
@@ -2096,7 +2096,7 @@ impl PlayerView {
                     .as_ref()
                     .map(|plugin| plugin.display_name())
                     .unwrap_or_else(|| "Plugin".to_string()),
-                plugin.as_ref().map_or(true, |plugin| plugin.enabled),
+                plugin.as_ref().is_none_or(|plugin| plugin.enabled),
                 state.app.plugin_state.selected_plugin_index,
                 plugin.map(|plugin| plugin.settings),
             )
@@ -2601,8 +2601,6 @@ impl PlayerView {
             0
         } else if value_text.contains("dB") {
             1
-        } else if label == "Q" {
-            2
         } else {
             2
         };
@@ -2889,7 +2887,8 @@ impl PlayerView {
             )
         };
         let content = self.render_spectrum_screen(cx).into_any_element();
-        let wrapped = self.render_phone_tool_wrapper(
+
+        self.render_phone_tool_wrapper(
             "Spectrum",
             if hold {
                 "Held analyzer frame"
@@ -2900,8 +2899,7 @@ impl PlayerView {
             },
             content,
             cx,
-        );
-        wrapped
+        )
     }
 
     fn render_phone_plugin_graph_screen(&self, cx: &mut Context<Self>) -> AnyElement {

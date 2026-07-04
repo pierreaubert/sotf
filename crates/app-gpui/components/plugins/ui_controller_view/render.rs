@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::editing::PluginEditingManager;
 use super::consts::BUTTON_SIZE;
 use super::consts::CELL_H;

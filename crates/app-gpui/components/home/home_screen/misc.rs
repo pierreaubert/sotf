@@ -99,7 +99,7 @@ fn remove_home_album_from_view(state: &mut crate::app::AppState, album: &Album) 
     }
 }
 
-pub(super) fn sort_album_refs_by_listening<'a>(mut albums: Vec<&'a Album>) -> Vec<&'a Album> {
+pub(super) fn sort_album_refs_by_listening(mut albums: Vec<&Album>) -> Vec<&Album> {
     albums.sort_by(|a, b| {
         b.play_count
             .cmp(&a.play_count)
@@ -109,7 +109,7 @@ pub(super) fn sort_album_refs_by_listening<'a>(mut albums: Vec<&'a Album>) -> Ve
     albums
 }
 
-pub(super) fn prioritize_cover_refs<'a>(mut albums: Vec<&'a Album>) -> Vec<&'a Album> {
+pub(super) fn prioritize_cover_refs(mut albums: Vec<&Album>) -> Vec<&Album> {
     albums.sort_by(|a, b| {
         b.has_cover()
             .cmp(&a.has_cover())

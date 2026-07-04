@@ -1,3 +1,4 @@
+use crate::app::constants::spacing;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -7,6 +8,8 @@ use gpui_ui_kit::{
     Input, InputSize, QrCode, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 use std::rc::Rc;
+
+const SERVER_QR_CODE_SIZE_PX: f32 = 220.0;
 
 impl PlayerView {
     /// Render server settings content
@@ -182,7 +185,7 @@ impl PlayerView {
                         .gap(d.gap_md)
                         .py(d.pad_y)
                         .when_some(qr_data, |el, data| {
-                            el.child(QrCode::new(data).size(px(220.0))).child(
+                            el.child(QrCode::new(data).size(px(SERVER_QR_CODE_SIZE_PX))).child(
                                 div()
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_muted)
@@ -904,17 +907,12 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .gap(d.gap)
-                            .child(
-                                Text::new(friendly_name)
-                                    .size(TextSize::Sm)
-                                    .weight(TextWeight::Semibold)
-                                    .color(theme.text_primary),
-                            )
+                            .child(Text::section_header(friendly_name).color(theme.text_primary))
                             .when(is_selected, |row| {
                                 row.child(
                                     div()
                                         .px(d.pad_y)
-                                        .py(px(2.0))
+                                        .py(spacing::XS)
                                         .rounded(d.r_sm)
                                         .bg(theme.accent)
                                         .text_size(d.text_xs)

@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use crate::app::types::{PlotSmoothing, RecordingResult};
 use crate::components::design::Ds;
 use crate::components::graphs::common::render_empty_state;

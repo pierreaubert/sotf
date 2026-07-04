@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::level_meters::render_gradient_meter;
 use gpui_audio_kit::db_to_position;
 use super::super::render_plugin_content;

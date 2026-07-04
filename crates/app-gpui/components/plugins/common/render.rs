@@ -324,7 +324,7 @@ pub fn render_section_title(d: &Ds, title: &str, theme: &Theme) -> impl IntoElem
                 .flex_shrink_0()
                 .child(title.to_string()),
         )
-        .child(div().flex_1().h(px(1.0)).bg(theme.border))
+        .child(div().flex_1().h(px(1.0)).bg(theme.border)) // intentional: one-pixel separator rule
 }
 
 /// Create a new parameter section container with flex column layout

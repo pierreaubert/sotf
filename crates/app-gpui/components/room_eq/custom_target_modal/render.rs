@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::chart_bounds_wrapper::ChartBoundsWrapper;
 use super::consts::CHART_BOTTOM_MARGIN;
 use super::consts::CHART_HEIGHT;

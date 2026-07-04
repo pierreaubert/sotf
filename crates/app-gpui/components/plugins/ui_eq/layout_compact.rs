@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 //! Compact EQ layouts for small windows.
 //!
 //! - `render_eq_bottom_strip`: medium workbench with a vertical band rail, graph, and property strip.

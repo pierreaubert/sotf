@@ -1939,15 +1939,11 @@ impl PlayerView {
                     .color(theme.text_primary)
                     .weight(TextWeight::Semibold),
             )
-            .child(
-                Text::new(if cfg.differs_from_default() {
-                    "(custom)"
-                } else {
-                    "(defaults)"
-                })
-                .size(TextSize::Xs)
-                .color(theme.text_muted),
-            );
+            .child(Text::caption(if cfg.differs_from_default() {
+                "(custom)"
+            } else {
+                "(defaults)"
+            }));
 
         let enabled = cfg.enabled;
         let weight = cfg.weight;

@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::actions::ToggleUpmixerConfig;
 use super::super::level_meters::render_gradient_meter;
 use super::super::render_plugin_content;

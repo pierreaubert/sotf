@@ -1,4 +1,5 @@
 use super::waveform_element::WaveformElement;
+use crate::app::constants::spacing;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
 use crate::components::design::Ds;
@@ -25,13 +26,19 @@ pub(super) const WAVEFORM_MIN_HEIGHT_PX: f32 = 0.0;
 
 pub(super) const WAVEFORM_BAR_GAP_PX: f32 = 1.0;
 
+const WAVEFORM_MIN_BAR_WIDTH_PX: f32 = 1.0;
+#[cfg(test)]
+const TEST_WAVEFORM_BOUNDS_WIDTH_PX: f32 = 600.0;
+#[cfg(test)]
+const TEST_WAVEFORM_SMALL_BOUNDS_WIDTH_PX: f32 = 64.0;
+
 pub(super) fn waveform_bar_x_and_width(
     bounds_width: Pixels,
     idx: usize,
     bar_count: usize,
 ) -> (Pixels, Pixels) {
     if bar_count == 0 {
-        return (px(0.0), px(0.0));
+        return (spacing::NONE, spacing::NONE);
     }
 
     let slot_width = bounds_width / bar_count as f32;
@@ -41,12 +48,12 @@ pub(super) fn waveform_bar_x_and_width(
     } else {
         slot_width * (idx + 1) as f32
     };
-    let available_width = (right - x).max(px(0.0));
+    let available_width = (right - x).max(spacing::NONE);
     let gap = px(WAVEFORM_BAR_GAP_PX).min(available_width * 0.25);
     let width = if idx + 1 == bar_count {
         available_width
     } else {
-        (available_width - gap).max(px(1.0).min(available_width))
+        (available_width - gap).max(px(WAVEFORM_MIN_BAR_WIDTH_PX).min(available_width))
     };
 
     (x, width)
@@ -64,7 +71,7 @@ mod tests {
 
     #[test]
     fn waveform_bars_span_measured_bounds() {
-        let bounds_width = px(600.0);
+        let bounds_width = px(TEST_WAVEFORM_BOUNDS_WIDTH_PX);
         let (first_x, _) = waveform_bar_x_and_width(bounds_width, 0, WAVEFORM_NUM_BARS);
         let (last_x, last_width) =
             waveform_bar_x_and_width(bounds_width, WAVEFORM_NUM_BARS - 1, WAVEFORM_NUM_BARS);
@@ -75,12 +82,12 @@ mod tests {
 
     #[test]
     fn waveform_bars_do_not_overflow_when_narrow() {
-        let bounds_width = px(64.0);
+        let bounds_width = px(TEST_WAVEFORM_SMALL_BOUNDS_WIDTH_PX);
 
         for idx in 0..WAVEFORM_NUM_BARS {
             let (x, width) = waveform_bar_x_and_width(bounds_width, idx, WAVEFORM_NUM_BARS);
-            assert!(x >= px(0.0));
-            assert!(width >= px(0.0));
+            assert!(x >= spacing::NONE);
+            assert!(width >= spacing::NONE);
             assert!(x + width <= bounds_width);
         }
     }

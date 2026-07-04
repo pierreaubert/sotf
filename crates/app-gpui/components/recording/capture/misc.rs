@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use crate::app::types::{ChannelRecordingState, RecordingResult, RecordingSignalType};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};

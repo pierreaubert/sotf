@@ -1,5 +1,6 @@
 //! Keybindings settings content
 
+use crate::app::constants::spacing;
 use crate::app::keybindings::{KeybindingCategory, KeymapPreset, get_documented_keybindings};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -36,7 +37,7 @@ impl PlayerView {
             .flex_col()
             .gap(d.section_lg)
             .size_full()
-            .min_h(px(0.0))
+            .min_h(spacing::NONE)
             // Preset selection
             .child(
                 div()
@@ -86,7 +87,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .flex_1()
-                    .min_h(px(0.0))
+                    .min_h(spacing::NONE)
                     .gap(d.gap_md)
                     .child(
                         div()
@@ -101,7 +102,7 @@ impl PlayerView {
                             .flex()
                             .flex_col()
                             .flex_1()
-                            .min_h(px(0.0))
+                            .min_h(spacing::NONE)
                             .overflow_y_scroll()
                             .border_1()
                             .border_color(theme.border)

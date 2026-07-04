@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use crate::app::types::{
     CalibrationData, ChannelMapping, CtcMatrixExportStrategy, RecordingState, SpeakerConfiguration,
 };

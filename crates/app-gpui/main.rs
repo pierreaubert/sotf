@@ -235,8 +235,10 @@ fn main() {
             }
 
             // Load configuration to get language, keymap preset, and window geometry.
+            #[cfg_attr(not(feature = "dev-api"), allow(unused_variables))]
             let config_path_exists =
                 sotf_audio_player::config::get_gpui_state_path().is_some_and(|path| path.exists());
+            #[cfg_attr(not(feature = "dev-api"), allow(unused_mut))]
             let mut config = Config::load().ok();
             #[cfg(feature = "dev-api")]
             if qa_mode && !config_path_exists {

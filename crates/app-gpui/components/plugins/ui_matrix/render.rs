@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::common::ParamSectionStyle;
 use super::consts::CELL_SIZE;
 use super::consts::DB_STEP;

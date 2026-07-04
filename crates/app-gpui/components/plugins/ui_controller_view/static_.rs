@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::consts::BUTTON_SIZE;
 use crate::theme::Theme;
 use gpui::prelude::*;

@@ -11,6 +11,9 @@ use gpui_ui_kit::{
 };
 use std::sync::Arc;
 
+const REMOTE_ALBUM_CARD_WIDTH_PX: f32 = 180.0;
+const REMOTE_ALBUM_CARD_MIN_HEIGHT_PX: f32 = 132.0;
+
 /// Selection action types for the library filter UI (Genre only)
 /// Note: Artist, Composer, Tracks now use filter bars like Year/Album
 #[derive(Clone)]
@@ -589,8 +592,8 @@ impl PlayerView {
             cards.push(
                 div()
                     .id(("remote-album-wrapper", idx))
-                    .w(px(180.0))
-                    .min_h(px(132.0))
+                    .w(px(REMOTE_ALBUM_CARD_WIDTH_PX))
+                    .min_h(px(REMOTE_ALBUM_CARD_MIN_HEIGHT_PX))
                     .p(d.pad_y)
                     .rounded(d.r_sm)
                     .border_1()

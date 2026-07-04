@@ -75,8 +75,6 @@ impl Screen {
                 .iter()
                 .position(|screen| *screen == Screen::Studio)
                 .unwrap_or(0)
-        } else if self == Screen::SettingsDetail {
-            0
         } else {
             0
         }

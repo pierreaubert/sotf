@@ -124,7 +124,7 @@ pub(super) fn build_recommended<'a>(
     {
         if album.is_favorite || album.play_count > 0 {
             seed_artists.insert(album.artist().to_lowercase());
-            for genre in album_genres(&album) {
+            for genre in album_genres(album) {
                 seed_genres.insert(genre.to_lowercase());
             }
         }
@@ -134,7 +134,7 @@ pub(super) fn build_recommended<'a>(
         .iter()
         .filter(|album| !album.is_favorite && !excluded.contains(&album_key(album)))
         .map(|album| {
-            let genre_score = album_genres(&album)
+            let genre_score = album_genres(album)
                 .iter()
                 .filter(|genre| seed_genres.contains(&genre.to_lowercase()))
                 .count();

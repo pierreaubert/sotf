@@ -352,6 +352,7 @@ fn bass_anchor_number_row(
     HStack::new()
         .spacing(StackSpacing::Sm)
         .child(Text::new(label).size(TextSize::Xs))
+        // intentional: compact numeric value uses bold microtype, not an eyebrow label.
         .child(
             Text::new(format!("{:.0}", current))
                 .size(TextSize::Xs)

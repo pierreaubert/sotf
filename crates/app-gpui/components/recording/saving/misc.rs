@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use crate::app::types::ChannelRecordingState;
 use crate::app::types::recording::RoomDimensionUnit;
 use crate::components::design::Ds;

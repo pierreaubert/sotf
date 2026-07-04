@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::data::ChannelMetric;
 use super::super::{SpatialSpiderSnapshot, SpiderMode, SpiderViewMode};
 #[cfg(feature = "gpu-3d")]

@@ -22,6 +22,9 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+const REMOTE_ALBUM_CARD_WIDTH_PX: f32 = 180.0;
+const REMOTE_ALBUM_CARD_MIN_HEIGHT_PX: f32 = 132.0;
+
 #[derive(Clone)]
 pub(super) struct HomeShelf {
     pub(super) id: String,
@@ -513,8 +516,8 @@ impl PlayerView {
                 album.id, idx
             )))
             .flex_none()
-            .w(px(180.0))
-            .min_h(px(132.0))
+            .w(px(REMOTE_ALBUM_CARD_WIDTH_PX))
+            .min_h(px(REMOTE_ALBUM_CARD_MIN_HEIGHT_PX))
             .p(d.pad_y)
             .rounded(d.r_sm)
             .border_1()

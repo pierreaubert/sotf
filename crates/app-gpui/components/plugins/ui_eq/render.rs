@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::common::{render_knob_sized, render_midi_badge, render_midi_page_indicator};
 use super::calculate::calculate_band_response;
 use super::calculate::calculate_dynamic_y_range;

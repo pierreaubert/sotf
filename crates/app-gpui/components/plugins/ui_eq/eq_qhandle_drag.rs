@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::consts::Q_HANDLE_RADIUS;
 use gpui::prelude::*;
 use gpui::*;

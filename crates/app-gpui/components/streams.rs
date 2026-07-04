@@ -292,11 +292,11 @@ impl PlayerView {
                                     .weight(TextWeight::Bold)
                                     .color(theme.text_primary),
                             )
-                            .child(
-                                Text::new(if stream.seekable { "seekable" } else { "live" })
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_muted),
-                            ),
+                            .child(Text::caption(if stream.seekable {
+                                "seekable"
+                            } else {
+                                "live"
+                            })),
                     )
                     .child(
                         div()

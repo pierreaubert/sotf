@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::MeterTheme;
 use super::level_meter_manager::LevelMeterManager;
 use super::misc::peak_spread_db;

@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::misc::AUTO_COLUMN_MIN_MAIN_WIDTH;
 use super::misc::AUTO_COLUMN_MIN_SIDE_WIDTH;
 use gpui::prelude::*;

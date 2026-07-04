@@ -1,3 +1,4 @@
+// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use crate::components::design::Ds;
 use gpui::prelude::*;
 use gpui::*;

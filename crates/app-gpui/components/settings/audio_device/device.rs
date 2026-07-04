@@ -604,7 +604,7 @@ fn device_pill(
         .flex()
         .items_center()
         .px(d.pad_y)
-        .py(px(3.0))
+        .py(d.grid)
         .rounded(d.r_sm)
         .bg(bg)
         .text_size(d.text_xs)
