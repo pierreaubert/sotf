@@ -17,12 +17,16 @@
 
 pub mod common;
 pub mod design_tokens;
+pub mod eq_curve_cache;
 mod host;
 pub mod meter_theme;
 mod theme;
 pub mod ticks;
 
 pub use design_tokens::audio_tokens_from_ds;
+pub use eq_curve_cache::{
+    EqCurveRenderCache, EqCurveRenderData, eq_curve_cache, eq_frequency_points,
+};
 pub use host::PluginViewHost;
 pub use meter_theme::{LufsConfig, MeterTheme, TruePeakConfig};
 pub use theme::*;

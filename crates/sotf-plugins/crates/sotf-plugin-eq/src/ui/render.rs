@@ -29,11 +29,32 @@ use gpui_audio_kit::PotentiometerSize;
 use gpui_px::{ChartTheme, ScaleType, line};
 use math_audio_iir_fir::BiquadFilterType;
 use plugins_gpui::common::{render_knob_sized, render_midi_badge, render_midi_page_indicator};
-use plugins_gpui::{PluginViewHost, PluginViewTheme};
+use plugins_gpui::{PluginViewHost, PluginViewTheme, eq_curve_cache, eq_frequency_points};
 use sotf_audio_player_midi::mapping::MidiOverlay;
 use sotf_host::param_specs::find_by_key as pk;
 use std::cell::RefCell;
+use std::fmt::Write;
 use std::rc::Rc;
+
+fn eq_curve_signature(filters: &[EqBandView], freq_count: usize) -> String {
+    let mut signature = String::with_capacity(filters.len() * 48);
+    signature.push_str(&freq_count.to_string());
+
+    for filter in filters {
+        let _ = write!(
+            signature,
+            "|{:?}:{:x}:{:x}:{:x}:{}:{}",
+            filter.filter_type,
+            filter.frequency.to_bits(),
+            filter.q.to_bits(),
+            filter.gain_db.to_bits(),
+            filter.muted,
+            filter.solo,
+        );
+    }
+
+    signature
+}
 
 /// Render EQ frequency response using gpui-px with draggable control points
 ///
@@ -49,25 +70,19 @@ fn render_eq_visualization<H: PluginViewHost>(
     // Calculate dynamic y-axis range based on filter gains
     let (min_db, max_db) = calculate_dynamic_y_range(filters);
 
-    // Generate frequency points (logarithmically spaced from 20Hz to 20kHz)
-    let num_points = 240;
-    let min_freq = 20.0_f64;
-    let max_freq = 20000.0_f64;
-
-    let freq_points: Vec<f64> = (0..num_points)
-        .map(|i| {
-            let t = i as f64 / (num_points - 1) as f64;
-            let log_min = min_freq.ln();
-            let log_max = max_freq.ln();
-            (log_min + t * (log_max - log_min)).exp()
-        })
-        .collect();
-
-    // Calculate combined response as primary series
-    let combined_response: Vec<f64> = freq_points
-        .iter()
-        .map(|&freq| calculate_response_at_freq(filters, freq))
-        .collect();
+    let freq_points = eq_frequency_points();
+    let curve_data = {
+        let mut cache = eq_curve_cache()
+            .lock()
+            .expect("EQ curve render cache mutex poisoned");
+        cache.get_or_build(
+            eq_curve_signature(filters, freq_points.len()),
+            freq_points,
+            filters.len(),
+            |freq| calculate_response_at_freq(filters, freq),
+            |band_idx, freq| calculate_band_response(&filters[band_idx], freq),
+        )
+    };
 
     // Create chart theme from app theme
     let chart_theme = ChartTheme {
@@ -115,7 +130,7 @@ fn render_eq_visualization<H: PluginViewHost>(
         let c = theme.text_muted;
         ((c.r * 255.0) as u32) << 16 | ((c.g * 255.0) as u32) << 8 | (c.b * 255.0) as u32
     };
-    let mut chart_builder = line(&freq_points, &combined_response)
+    let mut chart_builder = line(freq_points, &curve_data.combined_response)
         .x_scale(ScaleType::Log)
         .y_scale(ScaleType::Linear)
         .x_label("Frequency (Hz)")
@@ -130,11 +145,6 @@ fn render_eq_visualization<H: PluginViewHost>(
 
     // Add each filter band as an additional series
     for (i, filter) in filters.iter().enumerate() {
-        let band_response: Vec<f64> = freq_points
-            .iter()
-            .map(|&freq| calculate_band_response(filter, freq))
-            .collect();
-
         let color = BAND_COLORS.get(i).copied().unwrap_or(0x9ca3af);
         let is_selected = selected_band == Some(i);
         let is_muted = filter.muted;
@@ -148,8 +158,13 @@ fn render_eq_visualization<H: PluginViewHost>(
         // Use pre-computed label
         let label = labels[i + 1].clone();
 
-        chart_builder =
-            chart_builder.add_series(&band_response, Some(label), color, stroke, opacity);
+        chart_builder = chart_builder.add_series(
+            &curve_data.band_responses[i],
+            Some(label),
+            color,
+            stroke,
+            opacity,
+        );
     }
 
     // Build the chart element
