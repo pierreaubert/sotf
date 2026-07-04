@@ -1,18 +1,27 @@
 use serial_test::serial;
 use sotf_audio::engine::playback_runtime_harness::{
-    FrameWriterHarness, HarnessFrameWriteOutcome, XorShift64, generated_frame,
+    generated_frame, FrameWriterHarness, HarnessFrameWriteOutcome, XorShift64,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 static ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
 static COUNTING_ENABLED: AtomicBool = AtomicBool::new(false);
 
+thread_local! {
+    static COUNTING_ENABLED_FOR_THREAD: Cell<bool> = const { Cell::new(false) };
+}
+
 struct CountingAlloc;
 
 unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if COUNTING_ENABLED.load(Ordering::Relaxed) {
+        let count_current_thread = COUNTING_ENABLED.load(Ordering::Relaxed)
+            && COUNTING_ENABLED_FOR_THREAD
+                .try_with(Cell::get)
+                .unwrap_or(false);
+        if count_current_thread {
             ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
         }
         unsafe { System.alloc(layout) }
@@ -30,8 +39,15 @@ struct CountingGuard;
 
 impl Drop for CountingGuard {
     fn drop(&mut self) {
+        COUNTING_ENABLED_FOR_THREAD.with(|enabled| enabled.set(false));
         COUNTING_ENABLED.store(false, Ordering::SeqCst);
     }
+}
+
+fn enable_allocation_counting_for_current_thread() -> CountingGuard {
+    COUNTING_ENABLED_FOR_THREAD.with(|enabled| enabled.set(true));
+    COUNTING_ENABLED.store(true, Ordering::SeqCst);
+    CountingGuard
 }
 
 #[test]
@@ -62,6 +78,40 @@ fn converted_frame_capacity_miss_is_not_reported_as_normal_drop() {
     assert_eq!(report.slots_before, report.slots_after);
 }
 
+#[test]
+#[serial]
+fn allocation_counter_ignores_background_thread_allocations() {
+    let start = std::sync::Arc::new(AtomicBool::new(false));
+    let done = std::sync::Arc::new(AtomicBool::new(false));
+    let background_start = start.clone();
+    let background_done = done.clone();
+    let background = std::thread::spawn(move || {
+        while !background_start.load(Ordering::Acquire) {
+            std::hint::spin_loop();
+        }
+        let mut background = Vec::with_capacity(1024);
+        background.extend(0..1024);
+        std::hint::black_box(background);
+        background_done.store(true, Ordering::Release);
+    });
+
+    ALLOC_COUNT.store(0, Ordering::SeqCst);
+    let guard = enable_allocation_counting_for_current_thread();
+
+    start.store(true, Ordering::Release);
+    while !done.load(Ordering::Acquire) {
+        std::hint::spin_loop();
+    }
+    drop(guard);
+    background.join().unwrap();
+
+    assert_eq!(
+        ALLOC_COUNT.load(Ordering::SeqCst),
+        0,
+        "allocation counter must ignore allocations from unrelated threads"
+    );
+}
+
 fn assert_zero_alloc(
     label: &str,
     frames: usize,
@@ -88,8 +138,7 @@ fn assert_zero_alloc(
     let _ = harness.write(post_rebuild_warmup);
 
     ALLOC_COUNT.store(0, Ordering::SeqCst);
-    COUNTING_ENABLED.store(true, Ordering::SeqCst);
-    let _guard = CountingGuard;
+    let _guard = enable_allocation_counting_for_current_thread();
     let report = harness.write(frame);
 
     let allocations = ALLOC_COUNT.load(Ordering::SeqCst);

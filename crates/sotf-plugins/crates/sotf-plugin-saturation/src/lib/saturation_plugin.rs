@@ -3,17 +3,17 @@ use super::default::default_exciter_freq;
 use super::default::default_mix;
 use super::default::default_output_gain;
 use super::default::default_tone;
-use super::misc::DEFAULT_BUF_SIZE;
-use super::misc::MAX_CHANNELS;
 use super::misc::soft_clip;
 use super::misc::tape;
 use super::misc::tube;
-use super::saturation_mode::SaturationMode;
+use super::misc::DEFAULT_BUF_SIZE;
+use super::misc::MAX_CHANNELS;
 use super::saturation_mode::saturate;
+use super::saturation_mode::SaturationMode;
 use super::saturation_plugin_params::SaturationPluginParams;
 use crate::params::PARAMS as SAT;
 use math_audio_dsp::fast_math::fast_pow10;
-use sotf_host::adaa::{Adaa1, adaa1_softclip, adaa1_tanh};
+use sotf_host::adaa::{adaa1_softclip, adaa1_tanh, Adaa1};
 use sotf_host::dc_blocker::DcBlocker;
 use sotf_host::envelope_follower::EnvelopeFollower;
 use sotf_host::lr4_crossover::Lr4Crossover;
@@ -598,8 +598,10 @@ impl ParametricInPlacePlugin for SaturationPlugin {
             })
             .collect();
 
-        // Pre-allocate buffers for max expected frame size
-        let buf_size = 8192 * self.channels;
+        // Pre-allocate buffers for the largest block sizes seen in offline and
+        // stress hosts without growing on the audio callback path.
+        let max_expected_frames = sample_rate as usize + 8192;
+        let buf_size = DEFAULT_BUF_SIZE.max(max_expected_frames * self.channels);
         if self.dry_buf.len() < buf_size {
             self.dry_buf.resize(buf_size, 0.0);
             self.low_buf.resize(buf_size, 0.0);

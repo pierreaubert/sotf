@@ -4,6 +4,7 @@ import Foundation
 
 /// Manages the driver's clock for synchronization with Core Audio
 final class DriverClock {
+    private let lock = NSLock()
     private var anchorHostTime: UInt64 = 0
     private var anchorSampleTime: Float64 = 0
     private var sampleRate: Float64 = 48000.0
@@ -18,6 +19,9 @@ final class DriverClock {
 
     /// Reset the clock anchor when IO starts
     func start(sampleRate: Float64) {
+        lock.lock()
+        defer { lock.unlock() }
+
         self.sampleRate = sampleRate
         anchorHostTime = mach_absolute_time()
         anchorSampleTime = 0
@@ -27,16 +31,21 @@ final class DriverClock {
 
     /// Stop the clock
     func stop() {
+        lock.lock()
+        defer { lock.unlock() }
+
         isRunning = false
     }
 
     /// Update sample rate (triggers clock seed change)
     func setSampleRate(_ rate: Float64) {
+        lock.lock()
+        defer { lock.unlock() }
+
         if rate != sampleRate {
-            sampleRate = rate
-            // Re-anchor the clock
             let currentHostTime = mach_absolute_time()
-            anchorSampleTime = getCurrentSampleTime(at: currentHostTime)
+            anchorSampleTime = getCurrentSampleTimeLocked(at: currentHostTime)
+            sampleRate = rate
             anchorHostTime = currentHostTime
             clockSeed += 1
         }
@@ -48,7 +57,7 @@ final class DriverClock {
     }
 
     /// Get current sample time for a given host time
-    private func getCurrentSampleTime(at hostTime: UInt64) -> Float64 {
+    private func getCurrentSampleTimeLocked(at hostTime: UInt64) -> Float64 {
         guard hostTime >= anchorHostTime else { return anchorSampleTime }
 
         let hostTimeDelta = hostTime - anchorHostTime
@@ -62,8 +71,11 @@ final class DriverClock {
     /// Get the zero timestamp for Core Audio synchronization
     /// Returns (sampleTime, hostTime, seed)
     func getZeroTimeStamp(period: UInt32) -> (Float64, UInt64, UInt64) {
+        lock.lock()
+        defer { lock.unlock() }
+
         let currentHostTime = mach_absolute_time()
-        let currentSampleTime = getCurrentSampleTime(at: currentHostTime)
+        let currentSampleTime = getCurrentSampleTimeLocked(at: currentHostTime)
 
         // Zero timestamps advance by kAudioDevicePropertyZeroTimeStampPeriod,
         // not by the IO buffer size.
@@ -82,15 +94,24 @@ final class DriverClock {
 
     /// Get current sample time
     func getCurrentSampleTime() -> Float64 {
-        return getCurrentSampleTime(at: mach_absolute_time())
+        lock.lock()
+        defer { lock.unlock() }
+
+        return getCurrentSampleTimeLocked(at: mach_absolute_time())
     }
 
     /// Get the clock seed (changes when timing is reset)
     func getSeed() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+
         return clockSeed
     }
 
     var running: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
         return isRunning
     }
 }

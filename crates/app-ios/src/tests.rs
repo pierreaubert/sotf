@@ -25,7 +25,10 @@ fn ios_project_builds_rust_library_instead_of_requiring_committed_archive() {
 
 #[test]
 fn ios_bundle_metadata_has_required_shipping_assets() {
+    let project_yml = std::fs::read_to_string(ios_path("project.yml")).unwrap();
     let plist = std::fs::read_to_string(app_path("Info.plist")).unwrap();
+    assert!(project_yml.contains("MARKETING_VERSION: 0.6.8"));
+    assert!(project_yml.contains("CURRENT_PROJECT_VERSION: 0.6.8"));
     assert!(plist.contains("<string>$(MARKETING_VERSION)</string>"));
     assert!(plist.contains("<string>$(CURRENT_PROJECT_VERSION)</string>"));
     assert!(plist.contains("<string>LaunchScreen</string>"));
@@ -33,6 +36,21 @@ fn ios_bundle_metadata_has_required_shipping_assets() {
 
     assert!(app_path("LaunchScreen.storyboard").exists());
     assert!(app_path("PrivacyInfo.xcprivacy").exists());
+    let privacy = std::fs::read_to_string(app_path("PrivacyInfo.xcprivacy")).unwrap();
+    assert!(privacy.contains("NSPrivacyAccessedAPICategoryFileTimestamp"));
+    assert!(privacy.contains("NSPrivacyAccessedAPICategoryDiskSpace"));
+    assert!(privacy.contains("NSPrivacyAccessedAPICategoryUserDefaults"));
+    assert!(privacy.contains("C617.1"));
+    assert!(privacy.contains("E174.1"));
+    assert!(privacy.contains("CA92.1"));
+    assert!(
+        privacy.contains("<key>NSPrivacyTracking</key>\n\t<false/>"),
+        "SotF must declare that it does not track users"
+    );
+    assert!(
+        privacy.contains("<key>NSPrivacyCollectedDataTypes</key>\n\t<array/>"),
+        "local network, Bonjour, camera permission, and document import are permission strings, not collected-data declarations"
+    );
     let app_icon_dir = app_path("Assets.xcassets/AppIcon.appiconset");
     let app_icon_json = std::fs::read_to_string(app_icon_dir.join("Contents.json")).unwrap();
     let app_icon: serde_json::Value = serde_json::from_str(&app_icon_json).unwrap();
@@ -57,11 +75,8 @@ fn ios_route_change_handler_does_not_pause_for_airplay_or_bluetooth_switches() {
     assert!(audio_manager.contains(".headphones"));
     assert!(audio_manager.contains(".headsetMic"));
     assert!(audio_manager.contains("continuing playback"));
-    assert!(
-        !audio_manager.contains(
-            "device unavailable — pausing\")\n            sotf_ios_audio_route_changed()"
-        )
-    );
+    assert!(!audio_manager
+        .contains("device unavailable — pausing\")\n            sotf_ios_audio_route_changed()"));
 }
 
 #[test]

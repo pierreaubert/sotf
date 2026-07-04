@@ -10,6 +10,13 @@ import os.log
 
 private let logger = OSLog(subsystem: "org.spinorama.sotf-hal", category: "HALDriver")
 private let kEnableVerboseHALProbeLogging = false
+private var gZeroTimeLogCount: UInt64 = 0
+private var gDoIOLoggedCycle: UInt32 = 0
+private var gDoIOLoggedReadInput: UInt32 = 0
+private var gDoIOLoggedWriteMix: UInt32 = 0
+private var gWriteMixDiagCount: UInt64 = 0
+private var gWriteMixFirstCallLogged: UInt32 = 0
+private var gEngineReadyTrackerState: UInt32 = 0
 
 func halLog(_ message: String) {
     os_log("%{public}@", log: logger, type: .default, message)
@@ -18,6 +25,23 @@ func halLog(_ message: String) {
 func halDebugLog(_ message: @autoclosure () -> String) {
     guard kEnableVerboseHALProbeLogging else { return }
     os_log("%{public}@", log: logger, type: .debug, message())
+}
+
+private func markDoIOOperationLogged(_ operationID: UInt32) -> Bool {
+    switch operationID {
+    case kIOOperation_Cycle:
+        return sotf_atomic_compare_exchange_u32(&gDoIOLoggedCycle, 0, 1)
+    case kIOOperation_ReadInput:
+        return sotf_atomic_compare_exchange_u32(&gDoIOLoggedReadInput, 0, 1)
+    case kIOOperation_WriteMix:
+        return sotf_atomic_compare_exchange_u32(&gDoIOLoggedWriteMix, 0, 1)
+    default:
+        return false
+    }
+}
+
+private func engineReadyTrackerValue(_ engineReady: Bool) -> UInt32 {
+    return engineReady ? 2 : 1
 }
 
 private func fourCC(_ value: UInt32) -> String {
@@ -1263,13 +1287,9 @@ private func driverGetZeroTimeStamp(_ driver: AudioServerPlugInDriverRef, _ devi
     outHostTime.pointee = hostTime
     outSeed.pointee = seed
 
-    // Log periodically (every ~1000 calls to avoid spam)
-    struct ZeroTimeLogger {
-        static var callCount: UInt64 = 0
-    }
-    ZeroTimeLogger.callCount += 1
-    if ZeroTimeLogger.callCount == 1 || ZeroTimeLogger.callCount % 1000 == 0 {
-        halDebugLog("GetZeroTimeStamp[#\(ZeroTimeLogger.callCount)]: sampleTime=\(sampleTime), hostTime=\(hostTime), seed=\(seed)")
+    let callCount = sotf_atomic_fetch_add_u64(&gZeroTimeLogCount, 1)
+    if callCount == 1 || callCount % 1000 == 0 {
+        halDebugLog("GetZeroTimeStamp[#\(callCount)]: sampleTime=\(sampleTime), hostTime=\(hostTime), seed=\(seed)")
     }
 
     return noErr
@@ -1325,12 +1345,8 @@ private func peakMagnitude(_ buffer: UnsafePointer<Float>, sampleCount: Int) -> 
 
 private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ streamObjectID: AudioObjectID, _ clientID: UInt32, _ operationID: UInt32, _ ioBufferFrameSize: UInt32, _ ioCycleInfo: UnsafePointer<AudioServerPlugInIOCycleInfo>, _ ioMainBuffer: UnsafeMutableRawPointer?, _ ioSecondaryBuffer: UnsafeMutableRawPointer?) -> OSStatus {
 
-    // Log first call for each operation type
-    struct DoIOLogger {
-        static var loggedOps: Set<UInt32> = []
-    }
-    if !DoIOLogger.loggedOps.contains(operationID) {
-        DoIOLogger.loggedOps.insert(operationID)
+    // Log first call for each supported operation type.
+    if markDoIOOperationLogged(operationID) {
         halLog("DoIOOperation: FIRST CALL for op=\(ioOperationName(operationID)), stream=\(streamObjectID), frames=\(ioBufferFrameSize)")
     }
 
@@ -1387,36 +1403,28 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
         }
 
         // Periodic diagnostic logging (every ~2 seconds at 48kHz with 512 frame buffers)
-        // Use a simple counter to avoid logging every frame
-        struct DiagCounter {
-            static var count: UInt64 = 0
-            static var firstCallLogged: Bool = false
-        }
-        DiagCounter.count += 1
+        let diagCount = sotf_atomic_fetch_add_u64(&gWriteMixDiagCount, 1)
 
         // Log on very first call to confirm WriteMix is being invoked
-        if !DiagCounter.firstCallLogged {
-            DiagCounter.firstCallLogged = true
+        if sotf_atomic_compare_exchange_u32(&gWriteMixFirstCallLogged, 0, 1) {
             halLog("WriteMix: FIRST CALL - frameCount=\(frameCount), channels=\(channelCount), sampleCount=\(sampleCount)")
         }
 
-        let shouldLogDiag = kEnableVerboseHALProbeLogging && (DiagCounter.count % 200) == 0
+        let shouldLogDiag = kEnableVerboseHALProbeLogging && (diagCount % 200) == 0
 
         let isConnected = state.sharedAudio.isConnected
         let engineReady = state.sharedAudio.engineReady
 
-        struct EngineReadyTracker {
-            static var lastValue: Bool = false
-            static var initialized: Bool = false
-        }
-        if kEnableVerboseHALProbeLogging && (!EngineReadyTracker.initialized || engineReady != EngineReadyTracker.lastValue) {
-            os_log("[ENGINE_READY FLIP] %{public}d -> %{public}d (isConnected=%{public}d)",
-                   log: logger, type: .debug,
-                   EngineReadyTracker.lastValue ? 1 : 0,
-                   engineReady ? 1 : 0,
-                   isConnected ? 1 : 0)
-            EngineReadyTracker.lastValue = engineReady
-            EngineReadyTracker.initialized = true
+        if kEnableVerboseHALProbeLogging {
+            let newReadyState = engineReadyTrackerValue(engineReady)
+            let previousReadyState = sotf_atomic_exchange_u32(&gEngineReadyTrackerState, newReadyState)
+            if previousReadyState == 0 || previousReadyState != newReadyState {
+                os_log("[ENGINE_READY FLIP] %{public}d -> %{public}d (isConnected=%{public}d)",
+                       log: logger, type: .debug,
+                       previousReadyState == 2 ? 1 : 0,
+                       engineReady ? 1 : 0,
+                       isConnected ? 1 : 0)
+            }
         }
 
         // Compute RMS and peak of the incoming CoreAudio buffer to verify data is non-zero

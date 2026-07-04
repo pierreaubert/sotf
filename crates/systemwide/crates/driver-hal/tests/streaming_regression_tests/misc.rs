@@ -357,6 +357,66 @@ fn swift_reports_legal_zero_time_stamp_period() {
 }
 
 #[test]
+fn swift_ioproc_logging_state_is_not_backed_by_mutable_statics() {
+    let source =
+        read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SotFHALDriver.swift");
+    let get_zero = function_body(&source, "private func driverGetZeroTimeStamp");
+    let io_body = function_body(&source, "private func driverDoIOOperation");
+
+    for forbidden in [
+        "struct ZeroTimeLogger",
+        "struct DoIOLogger",
+        "struct DiagCounter",
+        "struct EngineReadyTracker",
+        "static var",
+    ] {
+        assert!(
+            !get_zero.contains(forbidden) && !io_body.contains(forbidden),
+            "CoreAudio IO callbacks must not mutate unsynchronized static state: {forbidden}"
+        );
+    }
+
+    assert!(
+        get_zero.contains("sotf_atomic_fetch_add_u64"),
+        "GetZeroTimeStamp logging counters must use atomic state"
+    );
+    assert!(
+        io_body.contains("sotf_atomic_fetch_add_u64")
+            && io_body.contains("sotf_atomic_compare_exchange_u32"),
+        "DoIOOperation diagnostics must use atomic state for callback-shared counters and flags"
+    );
+}
+
+#[test]
+fn swift_driver_clock_state_is_lock_protected() {
+    let timing = read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/Timing.swift");
+    let clock = function_body(&timing, "final class DriverClock");
+
+    assert!(
+        clock.contains("private let lock = NSLock()"),
+        "DriverClock needs a lock because IOProc and control threads access the same fields"
+    );
+    for function_name in [
+        "func start(sampleRate:",
+        "func stop()",
+        "func setSampleRate",
+        "func getZeroTimeStamp",
+        "func getCurrentSampleTime()",
+        "func getSeed()",
+    ] {
+        let body = function_body(clock, function_name);
+        assert!(
+            body.contains("lock.lock()") && body.contains("defer { lock.unlock() }"),
+            "{function_name} must hold the DriverClock lock while reading or mutating clock state"
+        );
+    }
+    assert!(
+        clock.contains("getCurrentSampleTimeLocked"),
+        "sample-time math should stay inside the locked section without recursively locking"
+    );
+}
+
+#[test]
 fn swift_shared_memory_is_open_only_for_restricted_hal_process() {
     let source =
         read_repo_file("crates/systemwide/crates/driver-hal/swift/Sources/SharedMemory.swift");
@@ -515,7 +575,7 @@ fn swift_probe_logging_is_gated_off_by_default() {
         "WillDoIOOperation is queried during stream setup and should not always log"
     );
     assert!(
-        io_body.contains("kEnableVerboseHALProbeLogging && (DiagCounter.count % 200) == 0")
+        io_body.contains("kEnableVerboseHALProbeLogging && (diagCount % 200) == 0")
             && !io_body.contains("TEMP DEBUG"),
         "WriteMix diagnostics should be gated off the audio callback hot path"
     );

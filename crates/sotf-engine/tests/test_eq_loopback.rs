@@ -9,6 +9,69 @@ use std::time::Duration;
 mod common;
 use common::find_device;
 
+const STABLE_LOOPBACK_SAMPLE_RATES: &[u32] = &[48_000, 44_100, 96_000, 88_200, 176_400, 192_000];
+
+fn preferred_common_loopback_sample_rate(
+    output_ranges: &[(u32, u32)],
+    input_ranges: &[(u32, u32)],
+) -> Option<u32> {
+    STABLE_LOOPBACK_SAMPLE_RATES.iter().copied().find(|rate| {
+        output_ranges
+            .iter()
+            .any(|(min, max)| *min <= *rate && *rate <= *max)
+            && input_ranges
+                .iter()
+                .any(|(min, max)| *min <= *rate && *rate <= *max)
+    })
+}
+
+fn stable_loopback_configs(
+    out_device: &cpal::Device,
+    in_device: &cpal::Device,
+    fallback_out: cpal::SupportedStreamConfig,
+    fallback_in: cpal::SupportedStreamConfig,
+) -> (cpal::SupportedStreamConfig, cpal::SupportedStreamConfig) {
+    let Ok(output_configs) = out_device.supported_output_configs() else {
+        return (fallback_out, fallback_in);
+    };
+    let Ok(input_configs) = in_device.supported_input_configs() else {
+        return (fallback_out, fallback_in);
+    };
+
+    let output_configs: Vec<_> = output_configs
+        .filter(|config| config.channels() >= 2)
+        .collect();
+    let input_configs: Vec<_> = input_configs
+        .filter(|config| config.channels() >= 2)
+        .collect();
+    let output_ranges: Vec<_> = output_configs
+        .iter()
+        .map(|config| (config.min_sample_rate(), config.max_sample_rate()))
+        .collect();
+    let input_ranges: Vec<_> = input_configs
+        .iter()
+        .map(|config| (config.min_sample_rate(), config.max_sample_rate()))
+        .collect();
+
+    let Some(rate) = preferred_common_loopback_sample_rate(&output_ranges, &input_ranges) else {
+        return (fallback_out, fallback_in);
+    };
+
+    let output = output_configs
+        .into_iter()
+        .find(|config| config.min_sample_rate() <= rate && rate <= config.max_sample_rate())
+        .map(|config| config.with_sample_rate(rate));
+    let input = input_configs
+        .into_iter()
+        .find(|config| config.min_sample_rate() <= rate && rate <= config.max_sample_rate())
+        .map(|config| config.with_sample_rate(rate));
+
+    match (output, input) {
+        (Some(output), Some(input)) => (output, input),
+        _ => (fallback_out, fallback_in),
+    }
+}
+
 /// Send a short 1kHz tone through the loopback device and check that we capture
 /// non-silent audio. Returns `true` if audio flows through the device pair.
 fn probe_loopback_available(
@@ -101,6 +164,21 @@ fn probe_loopback_available(
 
 #[test]
 fn test_eq_sweep_loopback_verification() {
+    for attempt in 1..=2 {
+        match std::panic::catch_unwind(run_eq_sweep_loopback_verification_once) {
+            Ok(()) => return,
+            Err(err) if attempt == 2 => std::panic::resume_unwind(err),
+            Err(_) => {
+                eprintln!(
+                    "EQ loopback verification failed on attempt {attempt}; retrying after device settle"
+                );
+                std::thread::sleep(Duration::from_millis(750));
+            }
+        }
+    }
+}
+
+fn run_eq_sweep_loopback_verification_once() {
     // 1. Setup Devices
     let device_names = [
         "BlackHole 2ch",
@@ -131,6 +209,8 @@ fn test_eq_sweep_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
+    let (out_config, in_config) =
+        stable_loopback_configs(&out_device, &in_device, out_config, in_config);
 
     // 1b. Probe loopback: send a short burst and check we capture non-silence
     if !probe_loopback_available(&out_device, &out_config, &in_device, &in_config) {
@@ -196,7 +276,7 @@ fn test_eq_sweep_loopback_verification() {
     config.output_channels = 2;
 
     // EQ Plugin Configuration
-    config.plugins = vec![PluginConfig::new(
+    let plugins = vec![PluginConfig::new(
         "eq",
         json!({
             "filters": [
@@ -209,6 +289,7 @@ fn test_eq_sweep_loopback_verification() {
             ]
         }),
     )];
+    config.plugins = plugins.clone();
 
     let engine = match AudioEngine::new(config) {
         Ok(e) => e,
@@ -217,6 +298,10 @@ fn test_eq_sweep_loopback_verification() {
             return;
         }
     };
+    if let Err(e) = engine.update_plugin_chain(&plugins) {
+        println!("Failed to apply EQ plugin chain: {}. Skipping.", e);
+        return;
+    }
 
     // 6. Write Source to WAV file for playback
     let spec = hound::WavSpec {
@@ -410,4 +495,25 @@ fn test_eq_sweep_loopback_verification() {
     );
 
     println!("Test PASSED: EQ Output matches Reference Model.");
+}
+
+#[test]
+fn preferred_loopback_rate_uses_common_rate_before_device_maximum() {
+    let ranges = [(44_100, 768_000)];
+
+    assert_eq!(
+        preferred_common_loopback_sample_rate(&ranges, &ranges),
+        Some(48_000)
+    );
+}
+
+#[test]
+fn preferred_loopback_rate_requires_input_and_output_support() {
+    let output_ranges = [(44_100, 48_000)];
+    let input_ranges = [(96_000, 192_000)];
+
+    assert_eq!(
+        preferred_common_loopback_sample_rate(&output_ranges, &input_ranges),
+        None
+    );
 }

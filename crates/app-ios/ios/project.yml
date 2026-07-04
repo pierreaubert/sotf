@@ -7,6 +7,8 @@ options:
 
 settings:
   base:
+    MARKETING_VERSION: 0.6.8
+    CURRENT_PROJECT_VERSION: 0.6.8
     SWIFT_OBJC_BRIDGING_HEADER: SotFPlayer/BridgingHeader.h
     # Only build for arm64 (our Rust lib is arm64-only)
     EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
