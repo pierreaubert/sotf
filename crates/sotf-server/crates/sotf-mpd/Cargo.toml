@@ -10,7 +10,7 @@ categories.workspace = true
 
 [dependencies]
 log = { workspace = true }
-tokio = { workspace = true, features = ["net", "io-util", "macros", "sync"] }
+tokio = { workspace = true, features = ["net", "io-util", "macros", "sync", "time"] }
 sotf-tls = { workspace = true, optional = true }
 tokio-rustls = { workspace = true, optional = true }
 
