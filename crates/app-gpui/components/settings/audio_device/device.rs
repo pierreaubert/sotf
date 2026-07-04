@@ -7,6 +7,8 @@ use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+#[cfg(target_os = "ios")]
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use gpui_ui_kit::{ButtonSet, ButtonSetOption, Select, SelectOption};
 use gpui_ui_kit::{HStack, StackAlign, StackSpacing, Text, VStack};
@@ -225,6 +227,28 @@ impl PlayerView {
                     )
                     .child(div().h(d.gap)); // Spacer
             }
+        }
+
+        #[cfg(target_os = "ios")]
+        {
+            content = content.child(
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .align(StackAlign::Center)
+                    .child(Text::label("AirPlay and Bluetooth"))
+                    .child(
+                        Button::new("show-airplay-route-picker", "AirPlay")
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(|_, _window, _cx| {
+                                unsafe extern "C" {
+                                    fn sotf_ios_show_route_picker();
+                                }
+                                unsafe { sotf_ios_show_route_picker() };
+                            }),
+                    ),
+            );
         }
 
         content = content.child(Text::label(translations.devices_title));

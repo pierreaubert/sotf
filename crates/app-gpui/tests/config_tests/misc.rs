@@ -1,4 +1,6 @@
-use sotf_audio_player_gpui::{ImageAccessTracker, compute_responsive_scale};
+use sotf_audio_player_gpui::{
+    ImageAccessTracker, compute_responsive_scale, responsive_scale_reference_size,
+};
 
 const MAX_CACHE_SIZE: usize = 200;
 
@@ -34,4 +36,18 @@ fn test_compute_responsive_scale_max_clamp() {
 #[test]
 fn test_compute_responsive_scale_uses_constraining_axis() {
     assert_f32_eq(compute_responsive_scale(2400.0, 400.0), 0.55);
+}
+
+#[test]
+fn test_compute_responsive_scale_uses_phone_reference_size() {
+    assert_eq!(
+        responsive_scale_reference_size(390.0, 844.0),
+        (390.0, 844.0)
+    );
+    assert_eq!(
+        responsive_scale_reference_size(844.0, 390.0),
+        (844.0, 390.0)
+    );
+    assert_f32_eq(compute_responsive_scale(390.0, 844.0), 1.0);
+    assert_f32_eq(compute_responsive_scale(844.0, 390.0), 1.0);
 }

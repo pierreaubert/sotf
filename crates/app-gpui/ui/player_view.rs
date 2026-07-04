@@ -15,8 +15,8 @@ use std::time::Duration;
 
 #[cfg(target_os = "ios")]
 use super::misc::{
-    sotf_ios_pop_remote_command, sotf_ios_string_free, sotf_ios_take_imported_files_json,
-    sotf_ios_take_scanned_qr_payload,
+    sotf_ios_pop_remote_command, sotf_ios_string_free, sotf_ios_take_dynamic_type_scale,
+    sotf_ios_take_imported_files_json, sotf_ios_take_scanned_qr_payload,
 };
 
 /// `PlayerView` is GPUI's view type. The code-review (`reviews/review-app-gpui.md`)
@@ -407,12 +407,56 @@ impl PlayerView {
                 4 => {
                     Self::handle_ios_scanned_qr(state);
                 }
+                5 => {
+                    Self::handle_ios_dynamic_type_change(state);
+                }
+                6 => {
+                    Self::handle_ios_memory_warning(state);
+                }
+                7 => {
+                    Self::handle_ios_low_power_mode_change(state, true);
+                }
+                8 => {
+                    Self::handle_ios_low_power_mode_change(state, false);
+                }
                 other => {
                     log::warn!("[iOS] unknown remote command code: {other}");
                     break;
                 }
             }
         }
+    }
+
+    #[cfg(target_os = "ios")]
+    pub(super) fn handle_ios_dynamic_type_change(state: &mut AppState) {
+        // SAFETY: implemented by app-ios and returns 0.0 when no payload is queued.
+        let scale = unsafe { sotf_ios_take_dynamic_type_scale() };
+        if scale > 0.0 {
+            state.app.ui_state.font_scale = scale.clamp(0.5, 2.0);
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::info(
+                "Updated text size from iOS Dynamic Type.",
+            ));
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    pub(super) fn handle_ios_memory_warning(state: &mut AppState) {
+        state.app.library_state.invalidate_cache();
+        state.app.remote.album_cache.invalidate_all();
+        state.app.remote.clear_remote_album_page();
+        state.app.ui_state.toast_message = Some(crate::app::ToastMessage::warning(
+            "iOS memory warning received; released cached library artwork.",
+        ));
+    }
+
+    #[cfg(target_os = "ios")]
+    pub(super) fn handle_ios_low_power_mode_change(state: &mut AppState, enabled: bool) {
+        state.app.ui_state.reduce_motion = enabled;
+        state.app.ui_state.toast_message = Some(if enabled {
+            crate::app::ToastMessage::info("Low Power Mode enabled; reduced motion is active.")
+        } else {
+            crate::app::ToastMessage::info("Low Power Mode disabled; restored motion setting.")
+        });
     }
 
     #[cfg(target_os = "ios")]

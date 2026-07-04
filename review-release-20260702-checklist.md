@@ -70,12 +70,12 @@ Source: `review-release-20260702.md`
 - [x] Gate/document Spotify and Tidal stubs/defaults.
 
 ### iOS / GPUI
-- [ ] Honor left/right safe-area insets in landscape.
-- [ ] Add phone-specific responsive scale reference.
-- [ ] Fix `DensityMode::Expert` threshold for iPhones.
-- [ ] Add Dynamic Type hooks.
-- [ ] Add AirPlay route picker.
-- [ ] Add memory-warning and low-power-mode handling.
+- [x] Honor left/right safe-area insets in landscape.
+- [x] Add phone-specific responsive scale reference.
+- [x] Fix `DensityMode::Expert` threshold for iPhones.
+- [x] Add Dynamic Type hooks.
+- [x] Add AirPlay route picker.
+- [x] Add memory-warning and low-power-mode handling.
 
 ### Systemwide
 - [x] Replace destructive `pkill -9` daemon shutdown path.

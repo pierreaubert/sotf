@@ -576,8 +576,8 @@ impl Render for PlayerView {
             .map(|div| {
                 #[cfg(any(target_os = "ios", target_os = "tvos"))]
                 {
-                    let (top, _left, bottom, _right) = gpui_ios::safe_area_insets();
-                    div.pt(px(top)).pb(px(bottom))
+                    let (top, left, bottom, right) = gpui_ios::safe_area_insets();
+                    div.pt(px(top)).pl(px(left)).pb(px(bottom)).pr(px(right))
                 }
                 #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                 { div }

@@ -20,6 +20,9 @@ pub(super) static PENDING_IMPORTED_FILES: OnceLock<SegQueue<PathBuf>> = OnceLock
 /// Lock-free queue for payloads scanned by the native QR code reader.
 pub(super) static PENDING_QR_PAYLOADS: OnceLock<SegQueue<String>> = OnceLock::new();
 
+/// Lock-free queue for Dynamic Type font-scale updates from UIKit.
+pub(super) static PENDING_DYNAMIC_TYPE_SCALES: OnceLock<SegQueue<f32>> = OnceLock::new();
+
 /// Test-only mutex used to serialize tests that touch the global pending queues.
 /// `parking_lot` is used so a panicking test does not poison the lock.
 #[cfg(test)]

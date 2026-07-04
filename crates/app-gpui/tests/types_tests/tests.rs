@@ -96,6 +96,18 @@ fn test_density_mode_layout_policy() {
         DensityMode::Expert.layout_mode_for_window(1600.0, 499.0),
         LayoutMode::Compact
     );
+    assert_eq!(
+        DensityMode::Expert.layout_mode_for_window(390.0, 844.0),
+        LayoutMode::Compact
+    );
+    assert_eq!(
+        DensityMode::Expert.layout_mode_for_window(844.0, 390.0),
+        LayoutMode::Compact
+    );
+    assert_eq!(
+        DensityMode::Expert.layout_mode_for_window(1024.0, 768.0),
+        LayoutMode::Expanded
+    );
 }
 
 #[test]

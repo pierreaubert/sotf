@@ -3,14 +3,36 @@ unsafe extern "C" {
     pub(super) fn sotf_ios_pop_remote_command() -> i32;
     pub(super) fn sotf_ios_take_imported_files_json() -> *mut std::ffi::c_char;
     pub(super) fn sotf_ios_take_scanned_qr_payload() -> *mut std::ffi::c_char;
+    pub(super) fn sotf_ios_take_dynamic_type_scale() -> f32;
     pub(super) fn sotf_ios_string_free(value: *mut std::ffi::c_char);
 }
 
 /// Compute the responsive scale factor for a given window size.
-/// Reference size: 1200×800 (default window). Uses the smaller axis ratio
-/// so the UI never overflows, clamped to 0.55–2.5× for usability.
+/// Desktop/tablet reference size: 1200×800. Phone-sized windows use an
+/// orientation-aware 390×844 reference so iPhone portrait/landscape layouts do
+/// not inherit the desktop minimum scale.
 pub fn compute_responsive_scale(window_width: f32, window_height: f32) -> f32 {
-    let width_scale = window_width / 1200.0;
-    let height_scale = window_height / 800.0;
+    let (reference_width, reference_height) =
+        responsive_scale_reference_size(window_width, window_height);
+    let width_scale = window_width / reference_width;
+    let height_scale = window_height / reference_height;
     width_scale.min(height_scale).clamp(0.55, 2.5)
+}
+
+pub fn responsive_scale_reference_size(window_width: f32, window_height: f32) -> (f32, f32) {
+    if is_phone_sized_window(window_width, window_height) {
+        if window_width >= window_height {
+            (844.0, 390.0)
+        } else {
+            (390.0, 844.0)
+        }
+    } else {
+        (1200.0, 800.0)
+    }
+}
+
+pub fn is_phone_sized_window(window_width: f32, window_height: f32) -> bool {
+    let short_axis = window_width.min(window_height);
+    let long_axis = window_width.max(window_height);
+    short_axis <= 430.0 && long_axis <= 932.0
 }

@@ -1,5 +1,15 @@
 # 0.5.3 (unreleased)
 
+## iOS / GPUI P1 hardening
+
+- The canonical iOS Xcode target and app source directory are now `SotFPlayer`;
+  host tests guard against stale `SotFApp` paths while still allowing ignored
+  local `lib/libsotf_ios.a` build artifacts.
+- iOS now forwards Dynamic Type changes, memory warnings, and Low Power Mode
+  changes into the GPUI app so text scale, transient caches, and reduced motion
+  respond to platform state.
+- Audio settings on iOS can open the native AirPlay/Bluetooth route picker.
+
 ## Remote SOTF connections
 
 - Remote SOTF API bearer tokens are now persisted through the iOS Keychain

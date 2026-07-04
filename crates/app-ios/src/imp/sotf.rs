@@ -1,5 +1,6 @@
 use super::consts::GLOBAL_PLAYER;
 use super::misc::ffi_guard;
+use super::pending::pending_dynamic_type_scales;
 use super::pending::pending_imports;
 use super::pending::pending_qr_payloads;
 use super::pending::pending_queue;
@@ -30,7 +31,8 @@ use sotf_audio_player_gpui::ui;
 /// Return codes are intentionally scalar so `app-gpui` can consume remote
 /// commands without depending on this crate and creating a cycle:
 /// 0 = none, 1 = next track, 2 = previous track, 3 = imported files noticed,
-/// 4 = QR payload scanned.
+/// 4 = QR payload scanned, 5 = Dynamic Type changed, 6 = memory warning,
+/// 7 = Low Power Mode enabled, 8 = Low Power Mode disabled.
 #[unsafe(no_mangle)]
 pub extern "C" fn sotf_ios_pop_remote_command() -> i32 {
     ffi_guard(|| match pending_queue().pop() {
@@ -45,6 +47,10 @@ pub extern "C" fn sotf_ios_pop_remote_command() -> i32 {
             3
         }
         Some(RemoteCommand::QrPayloadScanned) => 4,
+        Some(RemoteCommand::DynamicTypeChanged) => 5,
+        Some(RemoteCommand::MemoryWarning) => 6,
+        Some(RemoteCommand::LowPowerModeEnabled) => 7,
+        Some(RemoteCommand::LowPowerModeDisabled) => 8,
     })
 }
 
@@ -90,6 +96,42 @@ pub extern "C" fn sotf_ios_take_scanned_qr_payload() -> *mut std::ffi::c_char {
                 std::ptr::null_mut()
             }
         }
+    })
+}
+
+/// Called from Swift when UIKit Dynamic Type changes.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_dynamic_type_scale_changed(scale: f64) {
+    ffi_guard(|| {
+        if !scale.is_finite() || scale <= 0.0 {
+            return;
+        }
+        pending_dynamic_type_scales().push(scale as f32);
+        push_remote_command(RemoteCommand::DynamicTypeChanged);
+    })
+}
+
+/// Return the next queued Dynamic Type scale for GPUI to consume.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_take_dynamic_type_scale() -> f32 {
+    ffi_guard(|| pending_dynamic_type_scales().pop().unwrap_or(0.0))
+}
+
+/// Called from Swift when UIKit reports memory pressure.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_memory_warning() {
+    ffi_guard(|| push_remote_command(RemoteCommand::MemoryWarning))
+}
+
+/// Called from Swift when ProcessInfo Low Power Mode changes.
+#[unsafe(no_mangle)]
+pub extern "C" fn sotf_ios_low_power_mode_changed(enabled: bool) {
+    ffi_guard(|| {
+        push_remote_command(if enabled {
+            RemoteCommand::LowPowerModeEnabled
+        } else {
+            RemoteCommand::LowPowerModeDisabled
+        })
     })
 }
 
@@ -436,6 +478,7 @@ mod tests {
         while pending_queue().pop().is_some() {}
         while pending_imports().pop().is_some() {}
         while pending_qr_payloads().pop().is_some() {}
+        while pending_dynamic_type_scales().pop().is_some() {}
     }
 
     #[test]
@@ -451,11 +494,48 @@ mod tests {
         push_remote_command(RemoteCommand::ImportFiles(vec![PathBuf::from(
             "/tmp/x.mp3",
         )]));
+        push_remote_command(RemoteCommand::DynamicTypeChanged);
+        push_remote_command(RemoteCommand::MemoryWarning);
+        push_remote_command(RemoteCommand::LowPowerModeEnabled);
+        push_remote_command(RemoteCommand::LowPowerModeDisabled);
 
         assert_eq!(sotf_ios_pop_remote_command(), 1);
         assert_eq!(sotf_ios_pop_remote_command(), 2);
         assert_eq!(sotf_ios_pop_remote_command(), 4);
         assert_eq!(sotf_ios_pop_remote_command(), 3);
+        assert_eq!(sotf_ios_pop_remote_command(), 5);
+        assert_eq!(sotf_ios_pop_remote_command(), 6);
+        assert_eq!(sotf_ios_pop_remote_command(), 7);
+        assert_eq!(sotf_ios_pop_remote_command(), 8);
+        assert_eq!(sotf_ios_pop_remote_command(), 0);
+    }
+
+    #[test]
+    fn dynamic_type_scale_callback_roundtrips() {
+        let _guard = QUEUE_TEST_LOCK.lock();
+        drain_all_queues();
+
+        sotf_ios_dynamic_type_scale_changed(1.25);
+        assert_eq!(sotf_ios_pop_remote_command(), 5);
+        assert_eq!(sotf_ios_take_dynamic_type_scale(), 1.25);
+        assert_eq!(sotf_ios_take_dynamic_type_scale(), 0.0);
+
+        sotf_ios_dynamic_type_scale_changed(-1.0);
+        assert_eq!(sotf_ios_pop_remote_command(), 0);
+    }
+
+    #[test]
+    fn platform_pressure_callbacks_enqueue_commands() {
+        let _guard = QUEUE_TEST_LOCK.lock();
+        drain_all_queues();
+
+        sotf_ios_memory_warning();
+        sotf_ios_low_power_mode_changed(true);
+        sotf_ios_low_power_mode_changed(false);
+
+        assert_eq!(sotf_ios_pop_remote_command(), 6);
+        assert_eq!(sotf_ios_pop_remote_command(), 7);
+        assert_eq!(sotf_ios_pop_remote_command(), 8);
         assert_eq!(sotf_ios_pop_remote_command(), 0);
     }
 

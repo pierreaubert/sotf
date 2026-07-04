@@ -1,5 +1,14 @@
 # 0.6.6 (unreleased)
 
+## iOS / GPUI P1 hardening
+
+- GPUI now applies iOS/tvOS left and right safe-area insets, uses an
+  orientation-aware phone reference size for responsive scaling, and keeps
+  `DensityMode::Expert` in compact layout on iPhone-sized windows.
+- The iOS bridge now feeds Dynamic Type, memory-warning, and Low Power Mode
+  events into the GPUI tick, and the Audio Devices settings surface includes a
+  native AirPlay route picker on iOS.
+
 ## Plugin UI P1 hardening
 
 - Added regression coverage that the Channel Mute/Solo plugin's M/S/D controls

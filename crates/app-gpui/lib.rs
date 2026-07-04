@@ -111,7 +111,7 @@ pub use components::home::image_cache::MAX_CACHE_SIZE;
 pub use ui::{
     DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX, combined_scale_bounds,
     compute_responsive_scale, engine_stop_without_queue_should_clear, estimate_grid_dimensions,
-    screen_shows_rack_data,
+    is_phone_sized_window, responsive_scale_reference_size, screen_shows_rack_data,
 };
 
 // Re-export room EQ rack-apply helper for testing.

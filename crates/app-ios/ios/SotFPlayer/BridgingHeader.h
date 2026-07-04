@@ -71,6 +71,9 @@ const char *sotf_ios_get_music_directory(void);
 // Audio lifecycle — called by Swift AudioManager → Rust
 void sotf_ios_audio_interrupted(_Bool began);
 void sotf_ios_audio_route_changed(void);
+void sotf_ios_dynamic_type_scale_changed(double scale);
+void sotf_ios_memory_warning(void);
+void sotf_ios_low_power_mode_changed(_Bool enabled);
 
 // Remote commands — called by Swift MPRemoteCommandCenter → Rust
 void sotf_ios_remote_play(void);

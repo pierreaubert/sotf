@@ -12,4 +12,12 @@ pub enum RemoteCommand {
     ImportFiles(Vec<PathBuf>),
     /// A QR code payload was scanned by the native camera view.
     QrPayloadScanned,
+    /// iOS Dynamic Type changed and a scale payload is available.
+    DynamicTypeChanged,
+    /// UIKit reported memory pressure; release transient UI caches.
+    MemoryWarning,
+    /// ProcessInfo low-power mode is enabled.
+    LowPowerModeEnabled,
+    /// ProcessInfo low-power mode is disabled.
+    LowPowerModeDisabled,
 }

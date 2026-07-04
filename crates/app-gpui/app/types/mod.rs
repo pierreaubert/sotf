@@ -213,7 +213,13 @@ impl DensityMode {
 
     pub fn layout_mode_for_window(self, width: f32, height: f32) -> LayoutMode {
         match self {
-            DensityMode::Expert if width >= 600.0 && height >= 500.0 => LayoutMode::Expanded,
+            DensityMode::Expert
+                if !crate::ui::is_phone_sized_window(width, height)
+                    && width >= 600.0
+                    && height >= 500.0 =>
+            {
+                LayoutMode::Expanded
+            }
             _ => LayoutMode::Compact,
         }
     }
