@@ -5,6 +5,7 @@ use crate::runner::TestScenario;
 use gpui::{VisualTestContext, WindowHandle};
 use sotf_audio_player::{Album, Track};
 use sotf_audio_player_gpui::app::Screen;
+use sotf_audio_player_gpui::app::state::library::LibrarySortOrder;
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 use std::path::PathBuf;
@@ -407,6 +408,130 @@ impl TestScenario for SearchInputRequiresClickScenario {
 #[gpui::test]
 async fn test_search_input_requires_click(cx: &mut gpui::TestAppContext) {
     let scenario = SearchInputRequiresClickScenario;
+    let runner = E2ERunner::new(scenario);
+    let result = runner.run(cx).await;
+
+    if let Err(e) = &result {
+        println!("Test failed: {}", e);
+    }
+    assert!(result.is_ok());
+}
+
+pub struct SearchSortTabsClickableScenario;
+
+impl TestScenario for SearchSortTabsClickableScenario {
+    fn name(&self) -> &'static str {
+        "Search Sort Tabs Clickable"
+    }
+
+    fn setup(&mut self, cx: &mut gpui::TestAppContext) -> Result<(), Box<dyn Error>> {
+        gpui_ui_kit::clear_all_input_states();
+        cx.update(|cx| {
+            cx.bind_keys(sotf_audio_player_gpui::app::keybindings::get_keybindings(
+                sotf_audio_player_gpui::app::KeymapPreset::Default,
+            ));
+        });
+        Ok(())
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        view: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut driver = AppDriver::new(cx, view);
+        driver.navigate_to(Screen::Home);
+
+        let mut page = LibraryPage::new(&mut driver);
+
+        enter_search_from_sidebar(&mut page)?;
+        page.click_library_year_tab()?;
+        assert_sort_tab_clicked(&mut page, "Years", LibrarySortOrder::Year)?;
+
+        enter_search_from_library_tab(&mut page)?;
+        page.click_library_genre_tab()?;
+        assert_sort_tab_clicked(&mut page, "Genre", LibrarySortOrder::Genre)?;
+
+        enter_search_from_library_tab(&mut page)?;
+        page.click_library_artist_tab()?;
+        assert_sort_tab_clicked(&mut page, "Artists", LibrarySortOrder::Artist)?;
+
+        enter_search_from_library_tab(&mut page)?;
+        page.click_library_album_tab()?;
+        assert_sort_tab_clicked(&mut page, "Albums", LibrarySortOrder::Album)?;
+
+        enter_search_from_library_tab(&mut page)?;
+        page.click_library_tracks_tab()?;
+        assert_sort_tab_clicked(&mut page, "Tracks", LibrarySortOrder::Tracks)?;
+
+        enter_search_from_library_tab(&mut page)?;
+        page.click_library_composer_tab()?;
+        assert_sort_tab_clicked(&mut page, "Composers", LibrarySortOrder::Composer)?;
+
+        enter_search_from_library_tab(&mut page)?;
+        page.click_library_filter_tab()?;
+        if page.is_search_focused() {
+            return Err("Clicking Stereo/Multi while in Search should leave search mode".into());
+        }
+        if !page.is_filter_menu_open() {
+            return Err("Clicking Stereo/Multi while in Search should open filter menu".into());
+        }
+
+        enter_search_from_library_tab(&mut page)?;
+        page.click_library_search_tab()?;
+        if page.is_search_focused() {
+            return Err("Clicking Search while in Search should leave search mode".into());
+        }
+
+        Ok(())
+    }
+
+    fn teardown(&mut self, _cx: &mut gpui::TestAppContext) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+}
+
+fn enter_search_from_sidebar(page: &mut LibraryPage<'_, '_>) -> Result<(), Box<dyn Error>> {
+    page.click_sidebar_search()?;
+    enter_search_query(page)
+}
+
+fn enter_search_from_library_tab(page: &mut LibraryPage<'_, '_>) -> Result<(), Box<dyn Error>> {
+    page.click_library_search_tab()?;
+    enter_search_query(page)
+}
+
+fn enter_search_query(page: &mut LibraryPage<'_, '_>) -> Result<(), Box<dyn Error>> {
+    if !page.is_search_focused() {
+        return Err("Search should be active before typing".into());
+    }
+    page.click_search_bar_chrome()?;
+    page.type_search_query_one_char_at_a_time_asserting("x")?;
+    Ok(())
+}
+
+fn assert_sort_tab_clicked(
+    page: &mut LibraryPage<'_, '_>,
+    label: &str,
+    expected: LibrarySortOrder,
+) -> Result<(), Box<dyn Error>> {
+    if page.is_search_focused() {
+        return Err(format!("Clicking {label} while in Search should leave search mode").into());
+    }
+    let actual = page.get_sort_order();
+    if actual != expected {
+        return Err(format!(
+            "Clicking {label} while in Search should set {:?} sort, got {:?}",
+            expected, actual
+        )
+        .into());
+    }
+    Ok(())
+}
+
+#[gpui::test]
+async fn test_search_sort_tabs_clickable(cx: &mut gpui::TestAppContext) {
+    let scenario = SearchSortTabsClickableScenario;
     let runner = E2ERunner::new(scenario);
     let result = runner.run(cx).await;
 

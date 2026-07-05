@@ -1066,6 +1066,7 @@ impl PlayerView {
     ) -> AnyElement {
         let label = label.to_string();
         let state_entity = self.state.clone();
+        let state_entity_id = state_entity.entity_id();
 
         self.render_sidebar_item_base(id, &label, icon, selected, collapsed, theme, d)
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
@@ -1073,6 +1074,7 @@ impl PlayerView {
                     state.app.set_screen(screen, "SidebarNav");
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                 });
+                cx.notify(state_entity_id);
             })
             .into_any_element()
     }
@@ -1085,6 +1087,7 @@ impl PlayerView {
         d: &Ds,
     ) -> AnyElement {
         let state_entity = self.state.clone();
+        let state_entity_id = state_entity.entity_id();
 
         self.render_sidebar_item_base(
             "nav-search",
@@ -1099,10 +1102,11 @@ impl PlayerView {
             state_entity.update(cx, |state, _cx| {
                 state.app.set_screen(Screen::Library, "SidebarSearch");
                 state.app.ui_state.input_mode = crate::app::InputMode::Search;
-                state.app.library_state.search_query.clear();
+                state.app.clear_library_search();
             });
             #[cfg(any(target_os = "ios", target_os = "tvos"))]
             gpui_ios::show_keyboard();
+            cx.notify(state_entity_id);
         })
         .into_any_element()
     }

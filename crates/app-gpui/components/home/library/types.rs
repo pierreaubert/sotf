@@ -6,8 +6,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, SearchBar, SearchBarSize, Spinner, SpinnerSize, TabItem,
-    TabVariant, Tabs, TabsTheme,
+    Button, ButtonSize, ButtonVariant, SearchBar, SearchBarSize, Spinner, SpinnerSize,
 };
 use std::sync::Arc;
 
@@ -130,25 +129,6 @@ impl PlayerView {
             }
         };
 
-        // Build tabs theme from app theme
-        let tabs_theme = TabsTheme {
-            container_bg: theme.surface,
-            container_border: theme.border,
-            selected_bg: theme.surface_hover,
-            selected_hover_bg: theme.surface_hover,
-            hover_bg: theme.surface,
-            accent: theme.accent,
-            // Use text_on_accent for selected text since accent is used as background
-            text_selected: theme.text_on_accent,
-            text_unselected: theme.text_muted,
-            text_hover: theme.text_secondary,
-            badge_bg: theme.surface_hover,
-            close_color: theme.text_muted,
-            close_hover_color: theme.text_primary,
-            icon_selected: Some(theme.icon_on_accent),
-            icon_unselected: None,
-        };
-
         // Format year range for tab badge
         let year_badge = format!(
             "{}-{}",
@@ -164,79 +144,60 @@ impl PlayerView {
             }
         );
 
-        // Build sort tabs with Filter and Search
-        // Icons use icon_with_color to receive the correct color at render time
-        // based on the tab's selection state (selected vs unselected)
-        let sort_tabs = vec![
-            TabItem::new("year", translations.library_years)
-                .icon_with_color(|color| {
-                    Icon::new(IconName::Disc)
-                        .size(IconSize::Md)
-                        .color(color)
-                        .into_any_element()
-                })
-                .badge(year_badge),
-            TabItem::new("genre", translations.library_genres)
-                .icon_with_color(|color| {
-                    Icon::new(IconName::Folder)
-                        .size(IconSize::Md)
-                        .color(color)
-                        .into_any_element()
-                })
-                .badge(genres_count.to_string()),
-            TabItem::new("artist", translations.library_artists)
-                .icon_with_color(|color| {
-                    Icon::new(IconName::User)
-                        .size(IconSize::Md)
-                        .color(color)
-                        .into_any_element()
-                })
-                .badge(artists_count.to_string()),
-            TabItem::new("album", translations.library_albums)
-                .icon_with_color(|color| {
-                    Icon::new(IconName::Album)
-                        .size(IconSize::Md)
-                        .color(color)
-                        .into_any_element()
-                })
-                .badge(albums_count.to_string()),
-            TabItem::new("tracks", translations.library_tracks)
-                .icon_with_color(|color| {
-                    Icon::new(IconName::Music)
-                        .size(IconSize::Md)
-                        .color(color)
-                        .into_any_element()
-                })
-                .badge(tracks_count.to_string()),
-            TabItem::new("composer", translations.library_composers)
-                .icon_with_color(|color| {
-                    Icon::new(IconName::PenTool)
-                        .size(IconSize::Md)
-                        .color(color)
-                        .into_any_element()
-                })
-                .badge(composers_count.to_string()),
-            TabItem::new("filter", translations.library_stereo_multi)
-                .icon_with_color(|color| {
-                    Icon::new(IconName::AudioWaveform)
-                        .size(IconSize::Md)
-                        .color(color)
-                        .into_any_element()
-                })
-                .badge(format!(
+        let sort_tabs = [
+            (
+                "year",
+                translations.library_years,
+                year_badge,
+                IconName::Disc,
+            ),
+            (
+                "genre",
+                translations.library_genres,
+                genres_count.to_string(),
+                IconName::Folder,
+            ),
+            (
+                "artist",
+                translations.library_artists,
+                artists_count.to_string(),
+                IconName::User,
+            ),
+            (
+                "album",
+                translations.library_albums,
+                albums_count.to_string(),
+                IconName::Album,
+            ),
+            (
+                "tracks",
+                translations.library_tracks,
+                tracks_count.to_string(),
+                IconName::Music,
+            ),
+            (
+                "composer",
+                translations.library_composers,
+                composers_count.to_string(),
+                IconName::PenTool,
+            ),
+            (
+                "filter",
+                translations.library_stereo_multi,
+                format!(
                     "{}/{}/{}",
                     stereo_count,
                     surround_count,
                     surround71_count + surround_plus_count
-                )),
-            TabItem::new("search", translations.library_search)
-                .icon_with_color(|color| {
-                    Icon::new(IconName::Search)
-                        .size(IconSize::Md)
-                        .color(color)
-                        .into_any_element()
-                })
-                .badge(translations.library_albums),
+                ),
+                IconName::AudioWaveform,
+            ),
+            (
+                "search",
+                translations.library_search,
+                translations.library_albums.to_string(),
+                IconName::Search,
+            ),
         ];
 
         let state_for_tabs = self.state.clone();
@@ -253,6 +214,8 @@ impl PlayerView {
             })
             .when(!state.app.library_view.loading_initial_data, |el| {
                 let state_for_clear = self.state.clone();
+                let view_handle_for_tabs = cx.entity().clone();
+                let view_handle_for_clear = cx.entity().clone();
                 el.child(
                     div()
                         .flex()
@@ -267,67 +230,158 @@ impl PlayerView {
                         .gap(d.gap)
                         .mb(d.gap)
                         .child(
-                            Tabs::new("library-sort-tabs")
-                                .tabs(sort_tabs)
-                                .selected_index(sort_tab_index)
-                                .variant(TabVariant::VerticalCard)
-                                .theme(tabs_theme.clone())
-                                .on_change(move |index, _window, cx| {
-                                    let mut left_search = false;
-                                    state_for_tabs.update(cx, |state, _cx| {
-                                        // Handle sort order tabs (0-5)
-                                        if index <= 5 {
-                                            let sort_order = match index {
-                                                0 => crate::app::LibrarySortOrder::Year,
-                                                1 => crate::app::LibrarySortOrder::Genre,
-                                                2 => crate::app::LibrarySortOrder::Artist,
-                                                3 => crate::app::LibrarySortOrder::Album,
-                                                4 => crate::app::LibrarySortOrder::Tracks,
-                                                5 => crate::app::LibrarySortOrder::Composer,
-                                                _ => crate::app::LibrarySortOrder::Album,
-                                            };
-                                            state.app.set_library_sort_order(sort_order);
-                                            // Close filter/search modes when selecting sort tab
-                                            state.app.ui_state.filter_menu_open = false;
-                                            if state.app.ui_state.input_mode
-                                                == crate::app::InputMode::Search
-                                            {
-                                                left_search = true;
-                                            }
-                                            state.app.ui_state.input_mode =
-                                                crate::app::InputMode::Normal;
-                                        } else if index == 6 {
-                                            // Filter tab
-                                            state.app.ui_state.filter_menu_open =
-                                                !state.app.ui_state.filter_menu_open;
-                                            if state.app.ui_state.input_mode
-                                                == crate::app::InputMode::Search
-                                            {
-                                                left_search = true;
-                                            }
-                                            state.app.ui_state.input_mode =
-                                                crate::app::InputMode::Normal;
-                                        } else if index == 7 {
-                                            // Search tab
-                                            if state.app.ui_state.input_mode
-                                                == crate::app::InputMode::Search
-                                            {
-                                                state.app.ui_state.input_mode =
-                                                    crate::app::InputMode::Normal;
-                                                state.app.library_state.search_query.clear();
-                                                left_search = true;
+                            div()
+                                .id("library-sort-tabs")
+                                .flex()
+                                .flex_wrap()
+                                .items_center()
+                                .gap_2()
+                                .p_1()
+                                .bg(theme.surface)
+                                .rounded_lg()
+                                .children(sort_tabs.into_iter().enumerate().map(
+                                    |(index, (id, label, badge, icon))| {
+                                        let selected = index == sort_tab_index;
+                                        let state_for_tab = state_for_tabs.clone();
+                                        let view_handle = view_handle_for_tabs.clone();
+                                        let tab_id = SharedString::from(format!("tab-{id}"));
+                                        let icon_color = if selected {
+                                            theme.icon_on_accent
+                                        } else {
+                                            theme.accent
+                                        };
+
+                                        div()
+                                            .id(tab_id)
+                                            .flex()
+                                            .items_center()
+                                            .gap_2()
+                                            .px_3()
+                                            .py_2()
+                                            .min_w(px(90.0))
+                                            .rounded_lg()
+                                            .cursor_pointer()
+                                            .bg(if selected {
+                                                theme.accent
                                             } else {
-                                                state.app.ui_state.input_mode =
-                                                    crate::app::InputMode::Search;
-                                                state.app.ui_state.filter_menu_open = false;
-                                            }
-                                        }
-                                    });
-                                    if left_search {
-                                        #[cfg(any(target_os = "ios", target_os = "tvos"))]
-                                        gpui_ios::hide_keyboard();
-                                    }
-                                }),
+                                                theme.surface_hover
+                                            })
+                                            .text_color(if selected {
+                                                theme.text_on_accent
+                                            } else {
+                                                theme.text_muted
+                                            })
+                                            .when(!selected, |el| {
+                                                el.hover(|style| style.bg(theme.surface_hover))
+                                            })
+                                            .child(
+                                                div().flex().items_center().child(
+                                                    Icon::new(icon)
+                                                        .size(IconSize::Md)
+                                                        .color(icon_color),
+                                                ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .gap(px(1.0))
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .font_weight(if selected {
+                                                                FontWeight::SEMIBOLD
+                                                            } else {
+                                                                FontWeight::NORMAL
+                                                            })
+                                                            .child(label),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_sm()
+                                                            .font_weight(FontWeight::BOLD)
+                                                            .child(badge),
+                                                    ),
+                                            )
+                                            .on_mouse_up(
+                                                MouseButton::Left,
+                                                move |_event, _window, cx| {
+                                                    let mut left_search = false;
+                                                    state_for_tab.update(cx, |state, _cx| {
+                                                        if index <= 5 {
+                                                            let sort_order = match index {
+                                                                0 => {
+                                                                    crate::app::LibrarySortOrder::Year
+                                                                }
+                                                                1 => {
+                                                                    crate::app::LibrarySortOrder::Genre
+                                                                }
+                                                                2 => {
+                                                                    crate::app::LibrarySortOrder::Artist
+                                                                }
+                                                                3 => {
+                                                                    crate::app::LibrarySortOrder::Album
+                                                                }
+                                                                4 => {
+                                                                    crate::app::LibrarySortOrder::Tracks
+                                                                }
+                                                                5 => {
+                                                                    crate::app::LibrarySortOrder::Composer
+                                                                }
+                                                                _ => {
+                                                                    crate::app::LibrarySortOrder::Album
+                                                                }
+                                                            };
+                                                            state
+                                                                .app
+                                                                .set_library_sort_order(sort_order);
+                                                            state.app.ui_state.filter_menu_open =
+                                                                false;
+                                                            if state.app.ui_state.input_mode
+                                                                == crate::app::InputMode::Search
+                                                            {
+                                                                left_search = true;
+                                                            }
+                                                            state.app.ui_state.input_mode =
+                                                                crate::app::InputMode::Normal;
+                                                        } else if index == 6 {
+                                                            state.app.ui_state.filter_menu_open =
+                                                                !state.app.ui_state.filter_menu_open;
+                                                            if state.app.ui_state.input_mode
+                                                                == crate::app::InputMode::Search
+                                                            {
+                                                                left_search = true;
+                                                            }
+                                                            state.app.ui_state.input_mode =
+                                                                crate::app::InputMode::Normal;
+                                                        } else if index == 7 {
+                                                            if state.app.ui_state.input_mode
+                                                                == crate::app::InputMode::Search
+                                                            {
+                                                                state.app.ui_state.input_mode =
+                                                                    crate::app::InputMode::Normal;
+                                                                state.app.clear_library_search();
+                                                                left_search = true;
+                                                            } else {
+                                                                state.app.ui_state.input_mode =
+                                                                    crate::app::InputMode::Search;
+                                                                state.app.ui_state.filter_menu_open =
+                                                                    false;
+                                                            }
+                                                        }
+                                                    });
+                                                    if left_search {
+                                                        #[cfg(any(
+                                                            target_os = "ios",
+                                                            target_os = "tvos"
+                                                        ))]
+                                                        gpui_ios::hide_keyboard();
+                                                    }
+                                                    view_handle.update(cx, |_, cx| cx.notify());
+                                                },
+                                            )
+                                    },
+                                )),
                         )
                         .when(has_active_filters, |el| {
                             el.child(
@@ -337,10 +391,13 @@ impl PlayerView {
                                     .on_click(move |_, cx| {
                                         state_for_clear.update(cx, |state, _| {
                                             state.app.library_state.clear_all_filters();
+                                            state.app.library_state.ensure_cache_valid();
+                                            state.app.library_state.ensure_selection_cache_valid();
                                             state.app.ui_state.filter_menu_open = false;
                                             state.app.ui_state.input_mode =
                                                 crate::app::InputMode::Normal;
                                         });
+                                        view_handle_for_clear.update(cx, |_, cx| cx.notify());
                                     }),
                             )
                         }),
@@ -434,8 +491,7 @@ impl PlayerView {
                                                 app_state.update(cx, |state, _| {
                                                     state
                                                         .app
-                                                        .library_state
-                                                        .set_search_query(text.to_string());
+                                                        .set_library_search_query(text.to_string());
                                                     if state
                                                         .app
                                                         .remote
@@ -1816,21 +1872,27 @@ impl PlayerView {
                         return;
                     }
 
+                    view.focus_handle.focus(window, cx);
+                    let click_count = event.click_count();
                     view.state.update(cx, |state, _cx| {
                         state.app.library_state.selected_index = idx;
-                    });
-                    // Double-click adds to queue
-                    if event.click_count() == 2 {
-                        view.state
-                            .update(cx, |state, _cx| match state.app.add_album_to_queue() {
+                        if click_count >= 2 {
+                            let queue_was_empty = state.app.queue_state.is_empty();
+                            match state.app.add_album_to_queue() {
                                 Ok(Some(path)) => Self::play_track(state, path),
+                                Ok(None) if queue_was_empty => {
+                                    if let Some(path) = state.app.start_queue() {
+                                        Self::play_track(state, path);
+                                    }
+                                }
                                 Err(e) => {
                                     state.app.ui_state.toast_message =
                                         Some(crate::app::ToastMessage::error(e));
                                 }
                                 _ => {}
-                            });
-                    }
+                            }
+                        }
+                    });
                     cx.notify();
                 }))
                 .on_mouse_up(

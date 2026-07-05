@@ -9695,7 +9695,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.93"
+version = "0.5.94"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",
@@ -9871,7 +9871,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-aae"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "criterion",
  "hound",
@@ -9899,7 +9899,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-aec"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "rustfft 6.4.1",
  "serde",
@@ -10136,7 +10136,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-gain"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "proptest 1.11.0",
  "serde",
@@ -10249,7 +10249,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-multiband-compressor"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -10260,7 +10260,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-multiband-expander"
-version = "0.5.23"
+version = "0.5.24"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -10305,7 +10305,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-spectral-compressor"
-version = "0.5.22"
+version = "0.5.23"
 dependencies = [
  "math-dsp",
  "realfft",
@@ -10367,7 +10367,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-xtc"
-version = "0.5.37"
+version = "0.5.38"
 dependencies = [
  "arc-swap",
  "criterion",

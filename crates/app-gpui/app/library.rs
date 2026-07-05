@@ -13,6 +13,11 @@ use super::state::library::{ChannelFilter, LibrarySortOrder};
 use super::types::ToastMessage;
 
 impl App {
+    fn refresh_library_filter_cache(&mut self) {
+        self.library_state.ensure_cache_valid();
+        self.library_state.ensure_selection_cache_valid();
+    }
+
     /// Get filtered and sorted albums (with selection filters applied).
     pub fn filtered_albums(&self) -> Vec<&Album> {
         self.library_state.selection_filtered_albums()
@@ -21,24 +26,42 @@ impl App {
     /// Set library sort order (delegates to controller, then resets page).
     pub fn set_library_sort_order(&mut self, order: LibrarySortOrder) {
         self.library_state.set_sort_order(order);
+        self.refresh_library_filter_cache();
         self.reset_page();
     }
 
     /// Set channel filter (delegates to controller, then resets page).
     pub fn set_channel_filter(&mut self, filter: ChannelFilter) {
         self.library_state.set_filter(filter);
+        self.refresh_library_filter_cache();
         self.reset_page();
     }
 
     /// Cycle to next channel filter (delegates to controller, then resets page).
     pub fn cycle_channel_filter(&mut self) {
         self.library_state.cycle_filter();
+        self.refresh_library_filter_cache();
         self.reset_page();
     }
 
     /// Toggle the favorites-only filter.
     pub fn toggle_favorites_filter(&mut self) {
         self.library_state.toggle_favorites_filter();
+        self.refresh_library_filter_cache();
+        self.reset_page();
+    }
+
+    /// Set the library search query and make the result available immediately.
+    pub fn set_library_search_query(&mut self, query: String) {
+        self.library_state.set_search_query(query);
+        self.refresh_library_filter_cache();
+        self.reset_page();
+    }
+
+    /// Clear the library search query and make the result available immediately.
+    pub fn clear_library_search(&mut self) {
+        self.library_state.clear_search();
+        self.refresh_library_filter_cache();
         self.reset_page();
     }
 

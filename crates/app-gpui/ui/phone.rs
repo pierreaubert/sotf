@@ -565,7 +565,7 @@ impl PlayerView {
                         .size(gpui_ui_kit::SearchBarSize::Sm)
                         .on_change(move |text, _window, cx| {
                             app_state.update(cx, |state, _| {
-                                state.app.library_state.set_search_query(text.to_string());
+                                state.app.set_library_search_query(text.to_string());
                                 state.app.ui_state.input_mode = crate::app::InputMode::Search;
                                 if state.app.remote.server_store.selected_server_id.is_some() {
                                     state.app.remote.clear_remote_album_page();

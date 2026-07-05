@@ -6,6 +6,9 @@
 
 use sotf_audio_player::QueueItem;
 
+const METERS_PANEL_MIN_WIDTH: f32 = 120.0;
+const METERS_PANEL_MAX_AVAILABLE_RATIO: f32 = 0.6;
+
 /// Lightweight summary of a queue item used to build the queue accordion.
 /// Keeping this small avoids cloning the full `QueueItem` (album + tracks)
 /// on every render.
@@ -33,6 +36,24 @@ pub fn queue_accordion_summaries(items: &[QueueItem]) -> Vec<QueueAccordionSumma
             ),
         })
         .collect()
+}
+
+/// Calculate the right-side meters panel width for the queue screen.
+pub fn queue_meters_panel_width(meters_ratio: f32, available_queue_width: f32) -> f32 {
+    let available_queue_width = if available_queue_width.is_finite() {
+        available_queue_width.max(0.0)
+    } else {
+        0.0
+    };
+    let max_width = available_queue_width * METERS_PANEL_MAX_AVAILABLE_RATIO;
+    let min_width = METERS_PANEL_MIN_WIDTH.min(max_width);
+    let desired_width = if meters_ratio.is_finite() {
+        meters_ratio.max(0.0) * available_queue_width
+    } else {
+        0.0
+    };
+
+    desired_width.clamp(min_width, max_width)
 }
 
 #[cfg(test)]
@@ -101,5 +122,22 @@ mod tests {
         // The original items are still owned by this scope, proving the
         // helper did not consume/clone the whole queue.
         assert_eq!(items[0].album.title, "Test Album");
+    }
+
+    #[test]
+    fn queue_meters_panel_width_shrinks_when_min_exceeds_max() {
+        assert!((queue_meters_panel_width(0.25, 141.7583) - 85.054985).abs() < 0.0001);
+    }
+
+    #[test]
+    fn queue_meters_panel_width_uses_nominal_min_when_space_allows() {
+        assert!((queue_meters_panel_width(0.10, 800.0) - 120.0).abs() < 0.0001);
+        assert!((queue_meters_panel_width(0.80, 800.0) - 480.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn queue_meters_panel_width_handles_non_finite_inputs() {
+        assert_eq!(queue_meters_panel_width(f32::NAN, 800.0), 120.0);
+        assert_eq!(queue_meters_panel_width(0.25, f32::NAN), 0.0);
     }
 }

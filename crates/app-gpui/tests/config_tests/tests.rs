@@ -4,6 +4,7 @@ use sotf_audio_player_gpui::app::state::ui::{
 use sotf_audio_player_gpui::app::state::{
     RACK_STRIP_MAX_HEIGHT, RACK_STRIP_MIN_HEIGHT, rack_strip_height_from_drag,
 };
+use sotf_audio_player_gpui::queue_render::queue_meters_panel_width;
 use sotf_audio_player_gpui::{
     Config, IconName, IconSize, ImageAccessTracker, PanelLayout, PlaybackDeviceConfig,
     PlaybackState, RecordingConfigState, RecordingDeviceConfig, RecordingSignalType, ScaleType,
@@ -92,6 +93,21 @@ fn test_lufs_level_meter_divider_ratio_clamps_to_meter_bounds() {
         lufs_panel_ratio_from_drag(0.25, 1000.0, 600.0),
         LUFS_PANEL_MAX_RATIO
     );
+}
+
+#[test]
+fn test_queue_meters_panel_width_shrinks_below_nominal_min_when_narrow() {
+    let width = queue_meters_panel_width(0.25, 141.7583);
+
+    assert!((width - 85.054985).abs() < 0.0001);
+}
+
+#[test]
+fn test_queue_meters_panel_width_keeps_bounds_ordered() {
+    assert_eq!(queue_meters_panel_width(0.10, 800.0), 120.0);
+    assert!((queue_meters_panel_width(0.80, 800.0) - 480.0).abs() < 0.0001);
+    assert_eq!(queue_meters_panel_width(f32::NAN, 800.0), 120.0);
+    assert_eq!(queue_meters_panel_width(0.25, f32::NAN), 0.0);
 }
 
 #[test]

@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-multiband-compressor"
 description = "SOTF Multiband Compressor plugin - multiband dynamic range compression"
-version = "0.5.11"
+version = "0.5.12"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

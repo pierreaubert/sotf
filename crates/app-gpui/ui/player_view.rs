@@ -796,7 +796,7 @@ impl PlayerView {
             } else {
                 log::info!("toggle_search: entering search mode");
                 state.app.ui_state.input_mode = crate::app::InputMode::Search;
-                state.app.library_state.search_query.clear();
+                state.app.clear_library_search();
             }
         });
 
@@ -812,7 +812,7 @@ impl PlayerView {
             self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Search;
         self.state.update(cx, |state, _cx| {
             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-            state.app.library_state.search_query.clear();
+            state.app.clear_library_search();
             state.app.input_state.directory_input.clear();
             state.app.input_state.apo_file_input.clear();
             state.app.input_state.sofa_file_input.clear();

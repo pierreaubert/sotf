@@ -2,6 +2,7 @@ use crate::app::types::{MeterDisplayMode, Screen};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::level_meters::LevelMeterManager;
+use crate::queue_render::queue_meters_panel_width;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -172,7 +173,7 @@ impl PlayerView {
                 let state_entity = self.state.clone();
 
                 // Use meters_panel_ratio to control width (resizable via divider drag)
-                let panel_width = (meters_ratio * available_queue_width).clamp(120.0, available_queue_width * 0.6);
+                let panel_width = queue_meters_panel_width(meters_ratio, available_queue_width);
 
                 el.child(
                     div()
