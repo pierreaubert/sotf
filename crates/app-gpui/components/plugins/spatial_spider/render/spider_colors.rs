@@ -20,15 +20,8 @@ pub struct SpiderColors {
 
 impl Default for SpiderColors {
     fn default() -> Self {
-        Self {
-            background: rgba(0x14181eff),
-            grid: rgba(0x3a414cff),
-            polygon_fill: rgba(0x4ea1ff40), // translucent blue
-            polygon_stroke: rgba(0x4ea1ffff),
-            speaker_dot: rgba(0xe6ecf4ff),
-            label: rgba(0xe6ecf4ff),
-            negative_value: rgba(0xff5a5aff),
-        }
+        let theme = crate::theme::Theme::dark();
+        Self::from_theme(&theme)
     }
 }
 

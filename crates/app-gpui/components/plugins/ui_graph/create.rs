@@ -3,7 +3,6 @@ use super::consts::NODE_TYPE_OUTPUT_DEVICE;
 use super::consts::NODE_TYPE_PLAYER;
 use super::consts::NODE_TYPE_PLUGIN;
 use crate::theme::Theme;
-use gpui::*;
 use gpui_ui_kit::workflow::{Position, WorkflowGraph, WorkflowNodeData, WorkflowTheme};
 
 /// Create the default graph: Player → EQ → Output
@@ -61,22 +60,12 @@ pub(super) fn create_default_graph(output_name: &str, output_channels: usize) ->
 pub(super) fn create_workflow_theme(theme: &Theme) -> WorkflowTheme {
     WorkflowTheme {
         canvas_background: theme.background,
-        grid_color: Rgba {
-            r: theme.border.r,
-            g: theme.border.g,
-            b: theme.border.b,
-            a: 0.3,
-        },
+        grid_color: Theme::with_opacity(theme.border, 0.3),
         grid_spacing: 20.0,
         node_background: theme.surface,
         node_border: theme.border,
         node_border_selected: theme.accent,
-        node_header: Rgba {
-            r: theme.surface.r * 0.8,
-            g: theme.surface.g * 0.8,
-            b: theme.surface.b * 0.8,
-            a: theme.surface.a,
-        },
+        node_header: theme.background_secondary,
         node_text: theme.text_primary,
         node_border_radius: 8.0,
         node_header_height: 28.0,
@@ -91,18 +80,8 @@ pub(super) fn create_workflow_theme(theme: &Theme) -> WorkflowTheme {
         connection_selected: theme.accent,
         connection_width: 4.0,      // Fat links (all channels)
         connection_width_thin: 1.5, // Thin links (single channel)
-        connection_preview: Rgba {
-            r: theme.accent.r,
-            g: theme.accent.g,
-            b: theme.accent.b,
-            a: 0.6,
-        },
-        selection_fill: Rgba {
-            r: theme.accent.r,
-            g: theme.accent.g,
-            b: theme.accent.b,
-            a: 0.1,
-        },
+        connection_preview: Theme::with_opacity(theme.accent, 0.6),
+        selection_fill: Theme::with_opacity(theme.accent, 0.1),
         selection_border: theme.accent,
     }
 }

@@ -264,12 +264,7 @@ pub fn render_mb_compressor_plugin(
                 .border_color(if is_selected {
                     theme.accent
                 } else {
-                    gpui::Rgba {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 0.0,
-                    }
+                    crate::theme::Theme::with_opacity(theme.border, 0.0)
                 })
                 .cursor_pointer()
                 .hover(|s| {

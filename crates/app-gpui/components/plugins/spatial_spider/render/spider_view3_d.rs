@@ -47,7 +47,7 @@ impl<'a> SpiderView3D<'a> {
             metric,
             state,
             colors: SpiderColors::default(),
-            vertical_color: rgba(0xffa050ff),
+            vertical_color: crate::theme::Theme::dark().warning,
         }
     }
 

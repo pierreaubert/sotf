@@ -1,4 +1,5 @@
 use super::misc::BREAKPOINT_NARROW_LAYOUT_REMS;
+use crate::app::constants::spacing;
 use crate::components::design::Ds;
 use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
 use crate::components::icons::{Icon, IconName, IconSize};
@@ -258,7 +259,7 @@ impl PlayerView {
                                             .gap_2()
                                             .px_3()
                                             .py_2()
-                                            .min_w(px(90.0))
+                                            .min_w(rems(5.625))
                                             .rounded_lg()
                                             .cursor_pointer()
                                             .bg(if selected {
@@ -285,7 +286,7 @@ impl PlayerView {
                                                 div()
                                                     .flex()
                                                     .flex_col()
-                                                    .gap(px(1.0))
+                                                    .gap(spacing::XS)
                                                     .child(
                                                         div()
                                                             .text_xs()

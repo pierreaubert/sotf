@@ -30,10 +30,7 @@ impl PlayerView {
             foreground: theme.text_muted,
             foreground_hover: theme.text_secondary,
             border: theme.border,
-            tint: Rgba {
-                a: 0.42,
-                ..theme.accent
-            },
+            tint: crate::theme::Theme::with_opacity(theme.accent, 0.42),
             tint_hover: theme.accent,
         };
 
@@ -316,10 +313,7 @@ impl PlayerView {
             foreground: theme.text_muted,
             foreground_hover: theme.text_secondary,
             border: theme.border,
-            tint: Rgba {
-                a: 0.42,
-                ..theme.accent
-            },
+            tint: crate::theme::Theme::with_opacity(theme.accent, 0.42),
             tint_hover: theme.accent,
         };
 

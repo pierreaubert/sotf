@@ -336,7 +336,11 @@ pub(super) fn build_body(
             // every event handler mutates the same camera.
             let camera_state = snapshot.ui.camera_3d.clone();
             attach_orbit_handlers(container().id("spider-3d-viewport"), camera_state.clone())
-                .child(SpiderView3D::new(cfg, metric, camera_state).colors(palette))
+                .child(
+                    SpiderView3D::new(cfg, metric, camera_state)
+                        .colors(palette)
+                        .vertical_color(theme.warning),
+                )
                 .into_any_element()
         }
         #[cfg(not(feature = "gpu-3d"))]

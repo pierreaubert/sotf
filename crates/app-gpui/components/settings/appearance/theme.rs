@@ -1059,12 +1059,7 @@ impl PlayerView {
             .rounded(d.r_sm)
             .bg(bg_color)
             .border_1()
-            .border_color(gpui::Rgba {
-                r: text_color.r,
-                g: text_color.g,
-                b: text_color.b,
-                a: 0.2,
-            })
+            .border_color(crate::theme::Theme::with_opacity(text_color, 0.2))
             .child(
                 div()
                     .text_size(d.text_xs)

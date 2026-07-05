@@ -35,20 +35,7 @@ pub struct AutoEqFormTheme {
 
 impl Default for AutoEqFormTheme {
     fn default() -> Self {
-        Self {
-            card_bg: rgba(0x2a2a2aff),
-            header_color: rgba(0xffffffff),
-            label_color: rgba(0xccccccff),
-            description_color: rgba(0x888888ff),
-            accent: rgba(0x007accff),
-            toggle_checked_bg: rgba(0x007accff),
-            toggle_unchecked_bg: rgba(0x4a4a4aff),
-            toggle_knob: rgba(0xffffffff),
-            border: rgba(0x3a3a3aff),
-            text_muted: rgba(0x888888ff),
-            number_input_theme: NumberInputTheme::default(),
-            select_theme: SelectTheme::default(),
-        }
+        Self::from(&Theme::default())
     }
 }
 

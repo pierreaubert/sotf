@@ -1023,8 +1023,8 @@ impl PlayerView {
     fn render_sidebar_separator(&self, theme: &crate::theme::Theme) -> AnyElement {
         div()
             .h(px(1.0))
-            .mx(rems(0.25))
-            .my(rems(0.25))
+            .mx(crate::app::constants::spacing::SM)
+            .my(crate::app::constants::spacing::SM)
             .bg(theme.border)
             .into_any_element()
     }

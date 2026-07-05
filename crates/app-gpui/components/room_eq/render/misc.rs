@@ -104,5 +104,6 @@ pub(super) fn rgba_from_u32(color: u32) -> Rgba {
     let r = ((color >> 16) & 0xff) as f32 / 255.0;
     let g = ((color >> 8) & 0xff) as f32 / 255.0;
     let b = (color & 0xff) as f32 / 255.0;
+    // intentional: chart data series colors are carried as packed u32 values.
     Rgba { r, g, b, a: 1.0 }
 }

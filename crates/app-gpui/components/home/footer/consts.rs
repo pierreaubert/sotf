@@ -232,7 +232,7 @@ impl PlayerView {
         div()
             .flex()
             .items_center()
-            .gap(rems(0.35))
+            .gap(spacing::SM)
             .child(
                 div()
                     .text_size(rems(0.72))

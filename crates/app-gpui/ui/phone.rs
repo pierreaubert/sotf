@@ -274,7 +274,7 @@ impl PlayerView {
             .flex_col()
             .items_center()
             .justify_center()
-            .gap(rems(0.125))
+            .gap(crate::app::constants::spacing::XS)
             .min_w(rems(3.5))
             .min_h(rems(3.5))
             .rounded(d.r_md)
@@ -2615,7 +2615,7 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap(rems(0.35))
+            .gap(d.grid)
             .child(
                 div()
                     .flex()
@@ -2760,7 +2760,7 @@ impl PlayerView {
                     .p(d.card)
                     .flex()
                     .items_end()
-                    .gap(rems(0.125))
+                    .gap(crate::app::constants::spacing::XS)
                     .children((0..48).map(|i| {
                         let norm = i as f64 / 47.0;
                         let freq = 20.0_f64 * (1000.0_f64).powf(norm);
@@ -3782,7 +3782,7 @@ impl PlayerView {
                                 div()
                                     .min_w(rems(4.75))
                                     .px(d.grid)
-                                    .py(rems(0.35))
+                                    .py(d.grid)
                                     .rounded(d.r_md)
                                     .bg(theme.background_secondary)
                                     .text_size(d.text_xs)
