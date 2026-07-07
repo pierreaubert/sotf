@@ -202,7 +202,9 @@ fn env_var_expansion() {
     let mut vars = std::collections::HashMap::new();
     vars.insert("SOTF_TEST_X".to_string(), "/tmp/qa".to_string());
     let result = expand_env_vars_with("plugin_chain_save $SOTF_TEST_X/gain.json", |name| {
-        vars.get(name).cloned().ok_or(std::env::VarError::NotPresent)
+        vars.get(name)
+            .cloned()
+            .ok_or(std::env::VarError::NotPresent)
     });
     assert_eq!(result, "plugin_chain_save /tmp/qa/gain.json");
 }

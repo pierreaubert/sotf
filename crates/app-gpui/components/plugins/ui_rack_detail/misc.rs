@@ -923,7 +923,7 @@ impl PlayerView {
                             group,
                             fake_in_idx + i,
                             false,
-                            input_loudness.as_ref(),
+                            input_loudness.as_deref(),
                             &peak_hold,
                             &theme,
                             cx,
@@ -940,7 +940,7 @@ impl PlayerView {
                             group,
                             i, // real index into level_meter_groups
                             false,
-                            output_loudness.as_ref(),
+                            output_loudness.as_deref(),
                             &peak_hold,
                             &theme,
                             cx,
@@ -950,4 +950,3 @@ impl PlayerView {
             )
     }
 }
-

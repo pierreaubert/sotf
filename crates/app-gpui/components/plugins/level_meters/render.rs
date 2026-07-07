@@ -887,7 +887,7 @@ impl PlayerView {
         let (theme, groups_data) = {
             let state = self.state.read(cx);
             let theme = state.app.ui_state.theme.clone();
-            let loudness = state.app.playback.loudness_info.as_ref();
+            let loudness = state.app.playback.loudness_info.as_deref();
             let peak_hold = &state.app.level_meters.peak_hold;
             let groups = &state.app.level_meters.groups;
 
@@ -1047,6 +1047,6 @@ impl PlayerView {
             .w_full()
             .p(d.card)
             .bg(theme.background)
-            .child(self.render_lufs_with_true_peak(&d, loudness.as_ref(), &theme))
+            .child(self.render_lufs_with_true_peak(&d, loudness.as_deref(), &theme))
     }
 }

@@ -11,12 +11,12 @@
 
 use crate::discovery::CastDevice;
 use rustls::pki_types::ServerName;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const DEFAULT_MEDIA_RECEIVER: &str = "CC1AD845";
 const NS_CONNECTION: &str = "urn:x-cast:com.google.cast.tp.connection";

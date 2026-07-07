@@ -682,10 +682,14 @@ impl MusicLibrary {
             );
         }
 
-        let mut changed_paths: HashSet<PathBuf> = album_map
-            .values()
-            .flat_map(|album| album.tracks.iter().map(|track| track.path.clone()))
-            .collect();
+        let mut changed_paths: HashSet<PathBuf> = if incremental && self.db.is_some() {
+            album_map
+                .values()
+                .flat_map(|album| album.tracks.iter().map(|track| track.path.clone()))
+                .collect()
+        } else {
+            HashSet::new()
+        };
 
         // Merge with existing albums if we have a database
         if let Some(db) = &self.db

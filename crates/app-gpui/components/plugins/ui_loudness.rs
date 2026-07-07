@@ -10,7 +10,7 @@ use gpui::*;
 /// Render the Loudness Monitor plugin (analyzer)
 pub fn render_loudness_monitor_plugin(
     d: &Ds,
-    loudness: Option<sotf_audio_player::LoudnessData>,
+    loudness: Option<std::sync::Arc<sotf_audio_player::LoudnessData>>,
     _plugin_idx: usize,
     _is_editing: bool,
     theme: &Theme,
@@ -19,7 +19,7 @@ pub fn render_loudness_monitor_plugin(
         .flex()
         .flex_col()
         .gap(d.section)
-        .child(render_lufs_with_true_peak(d, loudness.as_ref(), theme))
+        .child(render_lufs_with_true_peak(d, loudness.as_deref(), theme))
         .child(
             div()
                 .flex()

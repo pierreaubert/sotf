@@ -277,7 +277,7 @@ pub(super) fn build_body(
         }
         Some(c) => c,
     };
-    let loudness = snapshot.loudness.as_ref();
+    let loudness = snapshot.loudness.as_deref();
     let n = cfg.total_channels;
 
     // SPL buffer.

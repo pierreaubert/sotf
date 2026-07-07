@@ -511,21 +511,39 @@ impl App {
     /// Save the current plugin chain to the given path.
     pub fn save_plugins_to_path(&mut self, path: &std::path::Path) -> Result<(), String> {
         let dir = path.parent().ok_or("path has no parent")?;
-        let file = path.file_stem().and_then(|s| s.to_str()).ok_or("invalid filename")?;
-        self.plugin_rack.graph.save_to_file(dir, file).map_err(|e| e.to_string())?;
-        self.plugin_rack.last_loaded_preset = Some(path.file_name().unwrap().to_string_lossy().to_string());
+        let file = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or("invalid filename")?;
+        self.plugin_rack
+            .graph
+            .save_to_file(dir, file)
+            .map_err(|e| e.to_string())?;
+        self.plugin_rack.last_loaded_preset =
+            Some(path.file_name().unwrap().to_string_lossy().to_string());
         Ok(())
     }
 
     /// Load a plugin chain from the given path.
     /// Returns any load warnings (skipped plugin descriptions).
-    pub fn load_plugins_from_path(&mut self, path: &std::path::Path) -> Result<Vec<String>, String> {
+    pub fn load_plugins_from_path(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<Vec<String>, String> {
         let dir = path.parent().ok_or("path has no parent")?;
-        let file = path.file_stem().and_then(|s| s.to_str()).ok_or("invalid filename")?;
-        let warnings = self.plugin_rack.graph.load_from_file(dir, file).map_err(|e| e.to_string())?;
+        let file = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or("invalid filename")?;
+        let warnings = self
+            .plugin_rack
+            .graph
+            .load_from_file(dir, file)
+            .map_err(|e| e.to_string())?;
         self.plugin_rack.graph.update_channel_dependent_plugins();
         self.request_plugin_update();
-        self.plugin_rack.last_loaded_preset = Some(path.file_name().unwrap().to_string_lossy().to_string());
+        self.plugin_rack.last_loaded_preset =
+            Some(path.file_name().unwrap().to_string_lossy().to_string());
         Ok(warnings)
     }
 
@@ -671,7 +689,9 @@ mod tests {
         // The default rack places a Gain (ReplayGain) plugin at index 1.
         assert!(app.set_plugin_param(1, 0, -6.0));
         let plugin = app.plugin_rack.graph.get_plugin(1).unwrap();
-        assert!(matches!(plugin.settings, PluginSettings::Gain { gain_db, .. } if (gain_db - -6.0).abs() < 0.01));
+        assert!(
+            matches!(plugin.settings, PluginSettings::Gain { gain_db, .. } if (gain_db - -6.0).abs() < 0.01)
+        );
         assert!(app.plugin_rack.needs_update);
     }
 
@@ -688,7 +708,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test-chain.json");
 
-        app.save_plugins_to_path(&path).expect("save should succeed");
+        app.save_plugins_to_path(&path)
+            .expect("save should succeed");
         assert_eq!(
             app.plugin_rack.last_loaded_preset,
             Some("test-chain.json".to_string())

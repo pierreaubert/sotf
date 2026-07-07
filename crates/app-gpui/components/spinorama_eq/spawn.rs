@@ -29,6 +29,7 @@ pub(super) fn spawn_spinorama_curves_thread(
             // Convert to our SpinoramaCurves format
             let on_axis = curves.get("On Axis").ok_or("On Axis curve not found")?;
             let frequencies: Vec<f64> = on_axis.freq.to_vec();
+            let frequency_count = frequencies.len();
 
             // Get PIR (Estimated In-Room Response)
             let estimated_in_room = curves
@@ -71,31 +72,31 @@ pub(super) fn spawn_spinorama_curves_thread(
             };
 
             let spinorama_curves = crate::app::types::SpinoramaCurves {
-                frequencies: frequencies.clone(),
                 on_axis: on_axis.spl.to_vec(),
                 listening_window: curves
                     .get("Listening Window")
                     .map(|c| c.spl.to_vec())
-                    .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+                    .unwrap_or_else(|| vec![0.0; frequency_count]),
                 early_reflections: curves
                     .get("Early Reflections")
                     .map(|c| c.spl.to_vec())
-                    .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+                    .unwrap_or_else(|| vec![0.0; frequency_count]),
                 sound_power: curves
                     .get("Sound Power")
                     .map(|c| c.spl.to_vec())
-                    .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+                    .unwrap_or_else(|| vec![0.0; frequency_count]),
                 early_reflections_di: curves
                     .get("Early Reflections DI")
                     .map(|c| c.spl.to_vec())
-                    .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+                    .unwrap_or_else(|| vec![0.0; frequency_count]),
                 sound_power_di: curves
                     .get("Sound Power DI")
                     .map(|c| c.spl.to_vec())
-                    .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+                    .unwrap_or_else(|| vec![0.0; frequency_count]),
                 estimated_in_room,
                 horizontal_directivity,
                 vertical_directivity,
+                frequencies,
             };
 
             Ok::<crate::app::types::SpinoramaCurves, String>(spinorama_curves)

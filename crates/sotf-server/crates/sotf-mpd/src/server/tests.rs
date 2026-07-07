@@ -150,8 +150,10 @@ impl PlayerAdapter for IdleAdapter {
     }
     fn volume_change(&self, delta: i8) -> Result<(), String> {
         let current = self.volume.load(Ordering::SeqCst) as i16;
-        self.volume
-            .store((current + delta as i16).clamp(0, 100) as u8, Ordering::SeqCst);
+        self.volume.store(
+            (current + delta as i16).clamp(0, 100) as u8,
+            Ordering::SeqCst,
+        );
         Ok(())
     }
     fn status(&self) -> MpdStatus {
@@ -315,14 +317,21 @@ async fn test_idle_waits_until_noidle() {
         None,
     ));
 
-    assert!(read_client_chunk(&mut client_reader).await.starts_with("OK MPD "));
+    assert!(
+        read_client_chunk(&mut client_reader)
+            .await
+            .starts_with("OK MPD ")
+    );
     client_writer.write_all(b"idle player\n").await.unwrap();
     let pending = tokio::time::timeout(
         std::time::Duration::from_millis(50),
         read_client_chunk(&mut client_reader),
     )
     .await;
-    assert!(pending.is_err(), "idle should wait until noidle or a change");
+    assert!(
+        pending.is_err(),
+        "idle should wait until noidle or a change"
+    );
 
     client_writer.write_all(b"noidle\n").await.unwrap();
     assert_eq!(read_client_chunk(&mut client_reader).await, "OK\n");
@@ -347,7 +356,11 @@ async fn test_idle_reports_mixer_change() {
         None,
     ));
 
-    assert!(read_client_chunk(&mut client_reader).await.starts_with("OK MPD "));
+    assert!(
+        read_client_chunk(&mut client_reader)
+            .await
+            .starts_with("OK MPD ")
+    );
     client_writer.write_all(b"idle mixer\n").await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     adapter.volume.store(51, Ordering::SeqCst);

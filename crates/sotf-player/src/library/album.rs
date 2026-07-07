@@ -402,28 +402,24 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
 
     // Second pass: merge unknown-artist groups into known-artist groups with the same title
     let unknown_keys: Vec<(String, String)> = groups
-        .keys()
-        .filter(|(title, artist_key)| {
+        .iter()
+        .filter(|(_, group)| {
             // Check if all albums in this group have unknown artists
-            groups[&(title.clone(), artist_key.clone())]
-                .iter()
-                .all(|a| is_unknown_artist(&a.artist()))
+            group.iter().all(|a| is_unknown_artist(&a.artist()))
         })
-        .cloned()
+        .map(|(key, _)| key.clone())
         .collect();
 
     for (title, unknown_artist_key) in unknown_keys {
         // Find a known-artist group with the same title
         let known_key = groups
-            .keys()
-            .find(|(t, ak)| {
+            .iter()
+            .find(|((t, ak), group)| {
                 *t == title
                     && *ak != unknown_artist_key
-                    && groups[&(t.clone(), ak.clone())]
-                        .iter()
-                        .any(|a| !is_unknown_artist(&a.artist()))
+                    && group.iter().any(|a| !is_unknown_artist(&a.artist()))
             })
-            .cloned();
+            .map(|(key, _)| key.clone());
 
         if let Some(target_key) = known_key {
             if let Some(unknown_albums) = groups.remove(&(title, unknown_artist_key)) {
@@ -468,18 +464,32 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
             })
             .unwrap_or(&group[0]);
 
-        let mut album = (*best_album).clone();
+        let mut album = if group.len() > 1 {
+            Album {
+                id: best_album.id,
+                title: best_album.title.clone(),
+                year: best_album.year,
+                tracks: Vec::with_capacity(group.iter().map(|album| album.tracks.len()).sum()),
+                album_art_path: best_album.album_art_path.clone(),
+                album_art_thumbnail: best_album.album_art_thumbnail.clone(),
+                play_count: best_album.play_count,
+                edition: best_album.edition.clone(),
+                dynamic_range: best_album.dynamic_range,
+                is_favorite: best_album.is_favorite,
+                uuid: best_album.uuid.clone(),
+            }
+        } else {
+            (*best_album).clone()
+        };
 
         // Clean up the title if there are multiple editions
         if group.len() > 1 {
             album.title = clean_album_title(&album.title);
 
-            // Collect all tracks from all albums in the group
-            let mut all_tracks = Vec::new();
+            // Collect all tracks from all albums in the group.
             for g_album in group {
-                all_tracks.extend(g_album.tracks.clone());
+                album.tracks.extend(g_album.tracks.iter().cloned());
             }
-            album.tracks = all_tracks;
 
             // Normalize album_artist on merged tracks to the best album's artist
             // so that Album::artist() doesn't return "Various Artists" due to

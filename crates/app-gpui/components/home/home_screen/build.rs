@@ -58,27 +58,29 @@ pub(super) fn build_home_shelves(
 }
 
 pub(super) fn build_remote_home_shelves(albums: &[SotfApiAlbum]) -> Vec<RemoteHomeShelf> {
-    let mut top = albums.to_vec();
-    top.sort_by(|a, b| {
-        b.play_count
-            .cmp(&a.play_count)
-            .then_with(|| a.artist.cmp(&b.artist))
-            .then_with(|| a.title.cmp(&b.title))
+    let mut top = (0..albums.len()).collect::<Vec<_>>();
+    top.sort_by(|&a, &b| {
+        albums[b]
+            .play_count
+            .cmp(&albums[a].play_count)
+            .then_with(|| albums[a].artist.cmp(&albums[b].artist))
+            .then_with(|| albums[a].title.cmp(&albums[b].title))
     });
 
-    let mut recent = albums.to_vec();
-    recent.sort_by(|a, b| {
-        b.year
+    let mut recent = (0..albums.len()).collect::<Vec<_>>();
+    recent.sort_by(|&a, &b| {
+        albums[b]
+            .year
             .unwrap_or(0)
-            .cmp(&a.year.unwrap_or(0))
-            .then_with(|| a.artist.cmp(&b.artist))
-            .then_with(|| a.title.cmp(&b.title))
+            .cmp(&albums[a].year.unwrap_or(0))
+            .then_with(|| albums[a].artist.cmp(&albums[b].artist))
+            .then_with(|| albums[a].title.cmp(&albums[b].title))
     });
 
     let favorites = top
         .iter()
-        .filter(|album| album.is_favorite)
-        .cloned()
+        .copied()
+        .filter(|&album_idx| albums[album_idx].is_favorite)
         .collect::<Vec<_>>();
 
     let mut shelves = Vec::new();
@@ -86,25 +88,31 @@ pub(super) fn build_remote_home_shelves(albums: &[SotfApiAlbum]) -> Vec<RemoteHo
         shelves.push(RemoteHomeShelf {
             id: "remote-favorites".to_string(),
             title: "Favorites".to_string(),
-            albums: favorites,
+            album_indices: favorites,
         });
     }
 
     shelves.push(RemoteHomeShelf {
         id: "remote-albums".to_string(),
-        title: if top.iter().any(|album| album.play_count > 0) {
+        title: if top
+            .iter()
+            .any(|&album_idx| albums[album_idx].play_count > 0)
+        {
             "Top Albums".to_string()
         } else {
             "Albums".to_string()
         },
-        albums: top,
+        album_indices: top,
     });
 
-    if recent.iter().any(|album| album.year.is_some()) {
+    if recent
+        .iter()
+        .any(|&album_idx| albums[album_idx].year.is_some())
+    {
         shelves.push(RemoteHomeShelf {
             id: "remote-recent".to_string(),
             title: "Recently Released".to_string(),
-            albums: recent,
+            album_indices: recent,
         });
     }
 

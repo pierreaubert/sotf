@@ -121,6 +121,6 @@ impl std::fmt::Debug for SpatialSpiderUiState {
 /// out)" label so the user knows what they're looking at.
 #[derive(Clone)]
 pub struct SpatialSpiderSnapshot {
-    pub loudness: Option<sotf_audio_player::LoudnessData>,
+    pub loudness: Option<std::sync::Arc<sotf_audio_player::LoudnessData>>,
     pub ui: SpatialSpiderUiState,
 }

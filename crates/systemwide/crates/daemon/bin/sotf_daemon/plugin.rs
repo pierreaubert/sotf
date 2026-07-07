@@ -85,7 +85,10 @@ pub(super) fn plugin_type_category(pt: &PluginType) -> &'static str {
         | PluginType::Pnd => "Restoration",
         PluginType::LoudnessMonitor | PluginType::SpectrumAnalyzer => "Monitoring",
         PluginType::ABCompare => "Utility",
-        PluginType::Crossover | PluginType::BandSplit | PluginType::BandMerge | PluginType::Crossfeed => "Utility",
+        PluginType::Crossover
+        | PluginType::BandSplit
+        | PluginType::BandMerge
+        | PluginType::Crossfeed => "Utility",
         PluginType::Delay => "Effects",
         PluginType::Aec => "Restoration",
         PluginType::Beamformer => "Spatial & Routing",

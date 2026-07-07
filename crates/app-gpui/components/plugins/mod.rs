@@ -85,7 +85,7 @@ pub fn render_plugin_content(
     theme: &Theme,
     _config_open: bool,
     selected_band_idx: usize,
-    loudness: Option<sotf_audio_player::LoudnessData>,
+    loudness: Option<std::sync::Arc<sotf_audio_player::LoudnessData>>,
     plugin_data: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     spectrum_tilt_select_open: bool,
     spectrum_reference_select_open: bool,

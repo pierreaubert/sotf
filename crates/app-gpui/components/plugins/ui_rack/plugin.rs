@@ -511,12 +511,7 @@ impl PlayerView {
             .iter()
             .position(|(_, _, _, _, _, _, pt, _, _, _)| *pt == PluginType::Matrix)
             .unwrap_or(modules_info.len());
-        let (main_modules, tail_modules) = if trailing_start < modules_info.len() {
-            let (main, tail) = modules_info.split_at(trailing_start);
-            (main.to_vec(), tail.to_vec())
-        } else {
-            (modules_info, vec![])
-        };
+        let (main_modules, tail_modules) = modules_info.split_at(trailing_start);
 
         div()
             .relative()
@@ -546,12 +541,20 @@ impl PlayerView {
                             .py(d.pad_x)
                             .overflow_x_scroll()
                     // Plugin modules - Ozone-style cards with left button column
-                    .children(main_modules.into_iter().map(
+                    .children(main_modules.iter().map(
                         |(idx, color, icon, _name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
+                            let idx = *idx;
+                            let color = *color;
+                            let icon = *icon;
+                            let enabled = *enabled;
+                            let is_selected = *is_selected;
+                            let is_permanent = *is_permanent;
+                            let is_input_mon = *is_input_mon;
+                            let is_output_mon = *is_output_mon;
                             let theme_c = theme.clone();
                             let drag_info = PluginDragInfo {
                                 source_index: idx,
-                                name: short_name_with_permanent(&plugin_type, is_input_mon, is_output_mon, is_permanent).to_string(),
+                                name: short_name_with_permanent(plugin_type, is_input_mon, is_output_mon, is_permanent).to_string(),
                                 color,
                                 icon,
                                 surface: theme_c.surface,
@@ -1067,7 +1070,7 @@ impl PlayerView {
                                                     .font_weight(FontWeight::SEMIBOLD)
                                                     .overflow_hidden()
                                                     .text_ellipsis()
-                                                    .child(short_name_with_permanent(&plugin_type, is_input_mon, is_output_mon, is_permanent)),
+                                                    .child(short_name_with_permanent(plugin_type, is_input_mon, is_output_mon, is_permanent)),
                                             )
                                             .child(
                                                 div()
@@ -1170,8 +1173,16 @@ impl PlayerView {
                             .child("+")
                     })
                     // Trailing permanent plugins (output matrix/monitor) after "+"
-                    .children(tail_modules.into_iter().map(
+                    .children(tail_modules.iter().map(
                         |(idx, color, icon, _name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
+                            let idx = *idx;
+                            let color = *color;
+                            let icon = *icon;
+                            let enabled = *enabled;
+                            let is_selected = *is_selected;
+                            let is_permanent = *is_permanent;
+                            let is_input_mon = *is_input_mon;
+                            let is_output_mon = *is_output_mon;
                             let theme_c = theme.clone();
                             div()
                                 .id(("plugin-module", idx))
@@ -1347,7 +1358,7 @@ impl PlayerView {
                                                 .font_weight(FontWeight::SEMIBOLD)
                                                 .overflow_hidden()
                                                 .text_ellipsis()
-                                                .child(short_name_with_permanent(&plugin_type, is_input_mon, is_output_mon, is_permanent)),
+                                                .child(short_name_with_permanent(plugin_type, is_input_mon, is_output_mon, is_permanent)),
                                         )
                                         .child(
                                             div()
@@ -2647,7 +2658,7 @@ impl PlayerView {
                             group,
                             fake_in_idx + i,
                             false,
-                            input_loudness.as_ref(),
+                            input_loudness.as_deref(),
                             &peak_hold,
                             &theme,
                             cx,
@@ -2660,7 +2671,7 @@ impl PlayerView {
                             group,
                             i, // real index into level_meter_groups
                             false,
-                            output_loudness.as_ref(),
+                            output_loudness.as_deref(),
                             &peak_hold,
                             &theme,
                             cx,

@@ -2154,7 +2154,12 @@ impl DawHost {
             ProcessContext::new(sample_rate, num_frames).with_sample_position(sample_position);
         if let Some(frames) = plugin_compiled_op(op_kind).and_then(|compiled_op| {
             Self::process_compiled_plugin_f32_isolated(
-                plugin, node, compiled_op, input, output, &context,
+                plugin,
+                node,
+                compiled_op,
+                input,
+                output,
+                &context,
             )
         }) {
             return Ok(frames);

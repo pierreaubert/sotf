@@ -21,7 +21,7 @@ pub struct CustomViewRenderContext<'a> {
     /// override. Renderers that have adopted the chassis theme system read
     /// from this; renderers still on the global app theme can ignore it.
     pub plugin_theme: &'a PluginTheme,
-    pub loudness: Option<sotf_audio_player::LoudnessData>,
+    pub loudness: Option<Arc<sotf_audio_player::LoudnessData>>,
     pub plugin_data: Option<Arc<dyn std::any::Any + Send + Sync>>,
     pub spectrum_tilt_select_open: bool,
     pub spectrum_reference_select_open: bool,

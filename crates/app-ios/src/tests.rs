@@ -75,8 +75,11 @@ fn ios_route_change_handler_does_not_pause_for_airplay_or_bluetooth_switches() {
     assert!(audio_manager.contains(".headphones"));
     assert!(audio_manager.contains(".headsetMic"));
     assert!(audio_manager.contains("continuing playback"));
-    assert!(!audio_manager
-        .contains("device unavailable — pausing\")\n            sotf_ios_audio_route_changed()"));
+    assert!(
+        !audio_manager.contains(
+            "device unavailable — pausing\")\n            sotf_ios_audio_route_changed()"
+        )
+    );
 }
 
 #[test]

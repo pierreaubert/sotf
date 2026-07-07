@@ -1,6 +1,6 @@
 use serial_test::serial;
 use sotf_audio::engine::playback_runtime_harness::{
-    generated_frame, FrameWriterHarness, HarnessFrameWriteOutcome, XorShift64,
+    FrameWriterHarness, HarnessFrameWriteOutcome, XorShift64, generated_frame,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;

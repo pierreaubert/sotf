@@ -4,6 +4,7 @@
 //! display fields (loudness, spectrum, compressor).
 
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use crate::app::constants;
 use sotf_audio_player::{LoudnessData, PlaybackController, SpectrumData};
@@ -17,13 +18,13 @@ pub struct PlaybackState {
     pub current_queue_index: Option<usize>,
 
     // GPUI-specific: display data from audio engine
-    pub input_loudness_info: Option<LoudnessData>,
+    pub input_loudness_info: Option<Arc<LoudnessData>>,
     /// Output-side loudness data. Includes per-channel true-peaks (level
     /// meters, SPL spider) AND the inter-channel correlation matrix
     /// (Correlation spider) — both are produced by the same LoudnessMonitor.
-    pub loudness_info: Option<LoudnessData>,
-    pub spectrum_info: Option<SpectrumData>,
-    pub compressor_info: Option<CompressorData>,
+    pub loudness_info: Option<Arc<LoudnessData>>,
+    pub spectrum_info: Option<Arc<SpectrumData>>,
+    pub compressor_info: Option<Arc<CompressorData>>,
 }
 
 impl Deref for PlaybackState {

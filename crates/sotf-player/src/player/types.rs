@@ -1,5 +1,6 @@
 use sotf_audio::decoder::AudioSource;
 use sotf_audio::engine::{PluginConfig, StreamMetadata};
+use std::sync::Arc;
 
 /// Batched playback state to reduce mutex locking
 #[derive(Debug, Clone)]
@@ -26,9 +27,9 @@ pub struct PlaybackState {
 /// Saved configuration for restarting after a crash.
 #[derive(Clone)]
 pub(super) struct SavedPlaybackConfig {
-    pub(super) source: AudioSource,
-    pub(super) plugins: Vec<PluginConfig>,
+    pub(super) source: Arc<AudioSource>,
+    pub(super) plugins: Arc<[PluginConfig]>,
     pub(super) output_channels: usize,
-    pub(super) output_device: Option<String>,
+    pub(super) output_device: Option<Arc<str>>,
     pub(super) last_position_secs: f64,
 }

@@ -71,7 +71,7 @@ pub struct UpmixerRenderState<'a> {
     /// reads `true_peaks_dbtp`, the Correlation view reads
     /// `correlation_matrix`. Both are populated by the same LoudnessMonitor
     /// poll path, so no separate correlation field is needed.
-    pub loudness_info: Option<sotf_audio_player::LoudnessData>,
+    pub loudness_info: Option<std::sync::Arc<sotf_audio_player::LoudnessData>>,
     /// Shared spatial-spider UI state (view mode, ref channel, 3D camera).
     pub spatial_spider: crate::components::plugins::spatial_spider::SpatialSpiderUiState,
 }

@@ -95,8 +95,8 @@ pub fn test_parameter_ramp(
 
         let in_slice =
             &input[frames_processed * channels..(frames_processed + num_frames) * channels];
-        let out_slice = &mut output[frames_processed * output_channels
-            ..(frames_processed + num_frames) * output_channels];
+        let out_slice = &mut output
+            [frames_processed * output_channels..(frames_processed + num_frames) * output_channels];
 
         plugin.process(in_slice, out_slice, &ctx).unwrap();
         frames_processed += num_frames;

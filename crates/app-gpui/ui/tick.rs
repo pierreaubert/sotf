@@ -151,18 +151,18 @@ impl PlayerView {
             state.app.playback.input_loudness_info = graph
                 .input_monitor_engine_index()
                 .and_then(|idx| player.get_cached_plugin_data(idx))
-                .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
+                .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok());
 
             state.app.playback.loudness_info = graph
                 .output_monitor_engine_index()
                 .and_then(|idx| player.get_cached_plugin_data(idx))
-                .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
+                .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok());
 
             if include_spectrum {
                 state.app.playback.spectrum_info = graph
                     .spectrum_engine_index()
                     .and_then(|idx| player.get_cached_plugin_data(idx))
-                    .and_then(|d| d.downcast_ref::<sotf_audio_player::SpectrumData>().cloned());
+                    .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::SpectrumData>(d).ok());
             }
 
             if include_compressor {
@@ -176,7 +176,7 @@ impl PlayerView {
                 };
                 state.app.playback.compressor_info = idx
                     .and_then(|i| player.get_cached_plugin_data(i))
-                    .and_then(|d| d.downcast_ref::<sotf_plugins::CompressorData>().cloned());
+                    .and_then(|d| std::sync::Arc::downcast::<sotf_plugins::CompressorData>(d).ok());
             } else {
                 state.app.playback.compressor_info = None;
             }
@@ -219,8 +219,8 @@ impl PlayerView {
             return None;
         }
 
-        let input = state.app.playback.input_loudness_info.as_ref()?;
-        let output = state.app.playback.loudness_info.as_ref()?;
+        let input = state.app.playback.input_loudness_info.as_deref()?;
+        let output = state.app.playback.loudness_info.as_deref()?;
 
         let input_lufs = input.momentary_lufs;
         let output_lufs = output.momentary_lufs;

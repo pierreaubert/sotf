@@ -1015,16 +1015,18 @@ impl PlayerView {
         ) = {
             let state = self.state.read(cx);
             let pd: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>> = match settings {
-                PluginSettings::SpectrumAnalyzer { .. } => {
-                    state.app.playback.spectrum_info.clone().map(|s| {
-                        std::sync::Arc::new(s) as std::sync::Arc<dyn std::any::Any + Send + Sync>
-                    })
-                }
-                PluginSettings::Compressor { .. } => {
-                    state.app.playback.compressor_info.clone().map(|c| {
-                        std::sync::Arc::new(c) as std::sync::Arc<dyn std::any::Any + Send + Sync>
-                    })
-                }
+                PluginSettings::SpectrumAnalyzer { .. } => state
+                    .app
+                    .playback
+                    .spectrum_info
+                    .clone()
+                    .map(|s| s as std::sync::Arc<dyn std::any::Any + Send + Sync>),
+                PluginSettings::Compressor { .. } => state
+                    .app
+                    .playback
+                    .compressor_info
+                    .clone()
+                    .map(|c| c as std::sync::Arc<dyn std::any::Any + Send + Sync>),
                 _ => None,
             };
             (

@@ -67,16 +67,18 @@ impl From<SpeakerOptResult> for SpeakerOptimizationResult {
             )
         };
 
+        let input_curve = result.curves.input_curve;
+
         Self {
             biquads: result.biquads,
             frequencies: result.curves.frequencies,
-            input_curve: result.curves.input_curve.clone(),
+            normalized_curve: input_curve.clone(),
+            input_curve,
             target_curve: result.curves.target_curve,
             deviation_curve: result.curves.deviation_curve,
             filter_response: result.curves.filter_response,
             error_curve: result.curves.error_curve,
             corrected_curve: result.curves.corrected_curve,
-            normalized_curve: result.curves.input_curve.clone(),
             individual_filter_responses: result.curves.individual_filter_responses,
             output_path: String::new(),
             on_axis_curve: on_axis,

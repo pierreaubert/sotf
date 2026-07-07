@@ -85,10 +85,10 @@ impl Player {
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Save config for potential crash recovery
         self.saved_config = Some(SavedPlaybackConfig {
-            source: source.clone(),
-            plugins: plugins.clone(),
+            source: Arc::new(source.clone()),
+            plugins: Arc::from(plugins.clone().into_boxed_slice()),
             output_channels,
-            output_device: output_device.clone(),
+            output_device: output_device.as_deref().map(Arc::from),
             last_position_secs: position.unwrap_or(0.0),
         });
         self.restart_count = 0;
@@ -120,7 +120,8 @@ impl Player {
         position: Option<f64>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(config) = &self.saved_config
-            && (config.output_channels != output_channels || config.output_device != output_device)
+            && (config.output_channels != output_channels
+                || config.output_device.as_deref() != output_device.as_deref())
         {
             let mut mismatches = Vec::new();
             if config.output_channels != output_channels {
@@ -129,10 +130,11 @@ impl Player {
                     config.output_channels, output_channels
                 ));
             }
-            if config.output_device != output_device {
+            if config.output_device.as_deref() != output_device.as_deref() {
                 mismatches.push(format!(
                     "output_device: saved={:?} requested={:?}",
-                    config.output_device, output_device
+                    config.output_device.as_deref(),
+                    output_device
                 ));
             }
             return Err(format!(
@@ -143,10 +145,10 @@ impl Player {
         }
 
         self.saved_config = Some(SavedPlaybackConfig {
-            source: source.clone(),
-            plugins: plugins.clone(),
+            source: Arc::new(source.clone()),
+            plugins: Arc::from(plugins.clone().into_boxed_slice()),
             output_channels,
-            output_device,
+            output_device: output_device.as_deref().map(Arc::from),
             last_position_secs: position.unwrap_or(0.0),
         });
         self.restart_count = 0;
@@ -168,7 +170,7 @@ impl Player {
             Ok(()) => {
                 // Update saved config so crash recovery uses latest plugins.
                 if let Some(ref mut config) = self.saved_config {
-                    config.plugins = plugins;
+                    config.plugins = Arc::from(plugins.into_boxed_slice());
                 }
                 log::info!("[Player] update_plugins: success");
                 Ok(())
@@ -409,7 +411,7 @@ impl Player {
                 StreamingEvent::GaplessTransition(source) => {
                     // Update saved config for crash recovery
                     if let Some(ref mut config) = self.saved_config {
-                        config.source = source.clone();
+                        config.source = Arc::new(source.clone());
                         config.last_position_secs = 0.0;
                     }
                     gapless_transition = Some(source);
@@ -481,28 +483,37 @@ impl Player {
 
     /// Attempt to restart the engine from saved config.
     fn attempt_restart(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let config = self
-            .saved_config
-            .clone()
-            .ok_or("attempt_restart called without saved config")?;
+        let (source, plugins, output_channels, output_device, last_position_secs) = {
+            let config = self
+                .saved_config
+                .as_ref()
+                .ok_or("attempt_restart called without saved config")?;
+            (
+                (*config.source).clone(),
+                config.plugins.iter().cloned().collect::<Vec<_>>(),
+                config.output_channels,
+                config.output_device.as_deref().map(str::to_owned),
+                config.last_position_secs,
+            )
+        };
 
         // Use the last known position so the user resumes near where they were
         let position = self.manager.get_position();
         let resume_pos = if position > 0.0 {
             position
         } else {
-            config.last_position_secs
+            last_position_secs
         };
 
         // Stop the dead engine
         let _ = self.manager.stop();
 
         // Re-load and play
-        self.manager.load_source(config.source)?;
+        self.manager.load_source(source)?;
         self.manager.start_playback_at(
-            config.output_device,
-            config.plugins,
-            config.output_channels,
+            output_device,
+            plugins,
+            output_channels,
             Some(resume_pos),
         )?;
 

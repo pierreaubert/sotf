@@ -37,7 +37,7 @@ pub(super) struct HomeShelf {
 pub(super) struct RemoteHomeShelf {
     pub(super) id: String,
     pub(super) title: String,
-    pub(super) albums: Vec<SotfApiAlbum>,
+    pub(super) album_indices: Vec<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -163,11 +163,17 @@ impl PlayerView {
 
     pub(super) fn render_remote_home_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let (theme, page, expanded_sections, is_loading, server_name) = {
+        let (theme, remote_albums, expanded_sections, is_loading, server_name) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
-                state.app.remote.current_album_page.clone(),
+                state
+                    .app
+                    .remote
+                    .current_album_page
+                    .as_ref()
+                    .map(|page| page.albums.clone())
+                    .unwrap_or_default(),
                 state.app.ui_state.expanded_home_sections.clone(),
                 state
                     .app
@@ -184,10 +190,7 @@ impl PlayerView {
                     .unwrap_or_else(|| "Remote SOTF Player".to_string()),
             )
         };
-        let shelves = page
-            .as_ref()
-            .map(|page| build_remote_home_shelves(&page.albums))
-            .unwrap_or_default();
+        let shelves = build_remote_home_shelves(&remote_albums);
 
         div()
             .id("remote-home-screen")
@@ -198,29 +201,32 @@ impl PlayerView {
             .bg(theme.background)
             .p(d.card)
             .gap(d.section_lg)
-            .when(shelves.iter().all(|shelf| shelf.albums.is_empty()), |el| {
-                el.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .size_full()
-                        .text_size(d.text_sm)
-                        .text_color(theme.text_muted)
-                        .child(if is_loading {
-                            format!("Loading Home from {server_name}...")
-                        } else {
-                            format!("{server_name} has no albums to show.")
-                        }),
-                )
-            })
+            .when(
+                shelves.iter().all(|shelf| shelf.album_indices.is_empty()),
+                |el| {
+                    el.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size_full()
+                            .text_size(d.text_sm)
+                            .text_color(theme.text_muted)
+                            .child(if is_loading {
+                                format!("Loading Home from {server_name}...")
+                            } else {
+                                format!("{server_name} has no albums to show.")
+                            }),
+                    )
+                },
+            )
             .children(
                 shelves
                     .into_iter()
-                    .filter(|shelf| !shelf.albums.is_empty())
+                    .filter(|shelf| !shelf.album_indices.is_empty())
                     .map(|shelf| {
                         let is_expanded = expanded_sections.contains(&shelf.id);
-                        self.render_remote_home_shelf(shelf, is_expanded, cx)
+                        self.render_remote_home_shelf(shelf, &remote_albums, is_expanded, cx)
                     }),
             )
             .into_any_element()
@@ -332,6 +338,7 @@ impl PlayerView {
     pub(super) fn render_remote_home_shelf(
         &self,
         shelf: RemoteHomeShelf,
+        albums: &[SotfApiAlbum],
         is_expanded: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -352,7 +359,7 @@ impl PlayerView {
         } else {
             collapsed_limit
         };
-        let can_expand = shelf.albums.len() > collapsed_limit;
+        let can_expand = shelf.album_indices.len() > collapsed_limit;
         let shelf_id = shelf.id.clone();
         let state_for_toggle = self.state.clone();
 
@@ -425,11 +432,15 @@ impl PlayerView {
                     .when(!is_expanded, |el| el.overflow_hidden())
                     .children(
                         shelf
-                            .albums
+                            .album_indices
                             .into_iter()
                             .take(limit)
                             .enumerate()
-                            .map(|(idx, album)| self.render_remote_home_album_card(album, idx, cx)),
+                            .filter_map(|(idx, album_idx)| {
+                                albums
+                                    .get(album_idx)
+                                    .map(|album| self.render_remote_home_album_card(album, idx, cx))
+                            }),
                     ),
             )
             .into_any_element()
@@ -492,7 +503,7 @@ impl PlayerView {
 
     pub(super) fn render_remote_home_album_card(
         &self,
-        album: SotfApiAlbum,
+        album: &SotfApiAlbum,
         idx: usize,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -503,6 +514,7 @@ impl PlayerView {
         let title_for_click = title.clone();
         let title_for_add = title.clone();
         let title_for_play = title.clone();
+        let artist = album.artist.clone();
         let album_id_for_click = album_id.clone();
         let album_id_for_add = album_id.clone();
         let album_id_for_play = album_id.clone();
@@ -553,7 +565,7 @@ impl PlayerView {
                         div()
                             .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
-                            .child(album.artist),
+                            .child(artist),
                     )
                     .child(
                         div()

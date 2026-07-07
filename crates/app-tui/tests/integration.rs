@@ -462,7 +462,8 @@ fn federation_add_source_workflow() {
     }
     send_keys(&mut app, &[KeyCode::Enter]);
     assert!(app.federation.state.edit.as_ref().unwrap().editing_value);
-    app.federation.state
+    app.federation
+        .state
         .edit
         .as_mut()
         .unwrap()

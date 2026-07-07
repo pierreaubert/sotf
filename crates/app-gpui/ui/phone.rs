@@ -307,13 +307,9 @@ impl PlayerView {
 
     fn render_home_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let (theme, albums) = {
-            let state = self.state.read(cx);
-            (
-                state.app.ui_state.theme.clone(),
-                state.app.library_state.library.albums.clone(),
-            )
-        };
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let albums = &state.app.library_state.library.albums;
 
         if albums.is_empty() {
             return div()
@@ -328,10 +324,10 @@ impl PlayerView {
                 .into_any_element();
         }
 
-        let mut recently_played = albums.clone();
+        let mut recently_played = albums.iter().collect::<Vec<_>>();
         recently_played.sort_by_key(|album| std::cmp::Reverse(album.play_count));
 
-        let mut most_played = albums.clone();
+        let mut most_played = albums.iter().collect::<Vec<_>>();
         most_played.sort_by(|a, b| {
             b.play_count
                 .cmp(&a.play_count)
@@ -341,10 +337,9 @@ impl PlayerView {
         let favorites = albums
             .iter()
             .filter(|album| album.is_favorite)
-            .cloned()
             .collect::<Vec<_>>();
 
-        let mut recent_releases = albums.clone();
+        let mut recent_releases = albums.iter().collect::<Vec<_>>();
         recent_releases.sort_by_key(|album| std::cmp::Reverse(album.year));
 
         div()
@@ -388,7 +383,7 @@ impl PlayerView {
     fn render_phone_home_shelf(
         &self,
         shelf: crate::app::PhoneHomeShelf,
-        albums: Vec<sotf_audio_player::Album>,
+        albums: Vec<&sotf_audio_player::Album>,
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> AnyElement {
@@ -453,37 +448,35 @@ impl PlayerView {
 
     fn render_home_shelf_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let (theme, shelf, albums, columns) = {
-            let state = self.state.read(cx);
-            let shelf = state.app.ui_state.phone_home_shelf;
-            let mut albums = state.app.library_state.library.albums.clone();
-            match shelf {
-                crate::app::PhoneHomeShelf::RecentlyPlayed
-                | crate::app::PhoneHomeShelf::MostPlayed => {
-                    albums.sort_by(|a, b| {
-                        b.play_count
-                            .cmp(&a.play_count)
-                            .then_with(|| a.title.cmp(&b.title))
-                    });
-                }
-                crate::app::PhoneHomeShelf::Favorites => {
-                    albums.retain(|album| album.is_favorite);
-                }
-                crate::app::PhoneHomeShelf::NewInLibrary => {
-                    albums.sort_by(|a, b| b.year.cmp(&a.year).then_with(|| a.title.cmp(&b.title)));
-                }
-            }
-            (
-                state.app.ui_state.theme.clone(),
-                shelf,
-                albums,
-                if state.app.ui_state.window_width >= 430.0 {
-                    3
-                } else {
-                    2
-                },
-            )
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let shelf = state.app.ui_state.phone_home_shelf;
+        let columns = if state.app.ui_state.window_width >= 430.0 {
+            3
+        } else {
+            2
         };
+        let mut albums = state
+            .app
+            .library_state
+            .library
+            .albums
+            .iter()
+            .filter(|album| shelf != crate::app::PhoneHomeShelf::Favorites || album.is_favorite)
+            .collect::<Vec<_>>();
+        match shelf {
+            crate::app::PhoneHomeShelf::RecentlyPlayed | crate::app::PhoneHomeShelf::MostPlayed => {
+                albums.sort_by(|a, b| {
+                    b.play_count
+                        .cmp(&a.play_count)
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            crate::app::PhoneHomeShelf::Favorites => {}
+            crate::app::PhoneHomeShelf::NewInLibrary => {
+                albums.sort_by(|a, b| b.year.cmp(&a.year).then_with(|| a.title.cmp(&b.title)));
+            }
+        }
 
         div()
             .id("phone-home-shelf-grid")
@@ -527,26 +520,16 @@ impl PlayerView {
 
     fn render_library_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let (theme, search_query, filter_menu_open, columns, albums) = {
-            let state = self.state.read(cx);
-            let columns = if state.app.ui_state.window_width >= 430.0 {
-                3
-            } else {
-                2
-            };
-            (
-                state.app.ui_state.theme.clone(),
-                state.app.library_state.search_query.clone(),
-                state.app.ui_state.filter_menu_open,
-                columns,
-                state
-                    .app
-                    .get_paginated_albums()
-                    .into_iter()
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            )
+        let state = self.state.read(cx);
+        let columns = if state.app.ui_state.window_width >= 430.0 {
+            3
+        } else {
+            2
         };
+        let theme = state.app.ui_state.theme.clone();
+        let search_query = state.app.library_state.search_query.clone();
+        let filter_menu_open = state.app.ui_state.filter_menu_open;
+        let albums = state.app.get_paginated_albums();
         let app_state = self.state.clone();
         let view_handle = cx.entity().clone();
 
@@ -1050,7 +1033,7 @@ impl PlayerView {
     fn render_phone_album_tile(
         &self,
         idx: usize,
-        album: sotf_audio_player::Album,
+        album: &sotf_audio_player::Album,
         width_rems: Option<f32>,
         trigger: &'static str,
         theme: &crate::theme::Theme,

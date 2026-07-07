@@ -641,4 +641,3 @@ pub struct UpmixerPluginParams {
     #[serde(flatten)]
     pub output: UpmixerPluginOutputParams,
 }
-
