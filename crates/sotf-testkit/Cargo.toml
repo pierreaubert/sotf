@@ -1,12 +1,13 @@
 [package]
 name = "sotf-testkit"
 description = "Shared test fixtures and helpers for the SOTF workspace"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
+readme.workspace = true
 publish = false
 
 [features]
