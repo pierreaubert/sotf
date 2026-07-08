@@ -1,4 +1,5 @@
 use super::consts::DEFAULT_TARGET_DURATION;
+use super::consts::MAX_SEGMENTS;
 use super::hls_segment::HlsSegment;
 use super::resolve::resolve_byte_range;
 use super::types::PendingByteRange;
@@ -117,6 +118,12 @@ pub(super) fn parse_media_playlist(base_url: &Url, playlist: &str) -> io::Result
             && emitted_maps.insert(map.key())
         {
             segments.push(map);
+            if segments.len() > MAX_SEGMENTS {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "HLS media playlist exceeds maximum segment count",
+                ));
+            }
         }
 
         let byte_range = match pending_byte_range.take() {
@@ -130,6 +137,12 @@ pub(super) fn parse_media_playlist(base_url: &Url, playlist: &str) -> io::Result
             .join(line)
             .map_err(|e| io::Error::other(e.to_string()))?;
         segments.push(HlsSegment::new(url, byte_range));
+        if segments.len() > MAX_SEGMENTS {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "HLS media playlist exceeds maximum segment count",
+            ));
+        }
     }
 
     if segments.is_empty() {

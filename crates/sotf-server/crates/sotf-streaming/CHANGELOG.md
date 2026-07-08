@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-08
+
+### Added
+- QA-SEC-006 negative abuse tests for oversized HTTP requests, HLS byte-range overflow, and unbounded segment allocation.
+
 ### Changed
+- HLS media playlist parsing now enforces a `MAX_SEGMENTS` cap to prevent unbounded allocation from malicious playlists.
 - `HttpMediaSource` reconnect now schedules exponential backoff without sleeping
   on the decoder read thread.
 - MPD httpd stream startup now retries readiness with bounded short attempts

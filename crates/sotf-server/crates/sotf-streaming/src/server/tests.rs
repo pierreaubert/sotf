@@ -263,6 +263,53 @@ fn publish_rejects_invalid_shape() {
     // an assertion above panics.
 }
 
+fn raw_request_response(addr: std::net::SocketAddr, request: &[u8]) -> Vec<u8> {
+    let mut stream = TcpStream::connect(addr).unwrap();
+    stream.write_all(request).unwrap();
+    let mut bytes = Vec::new();
+    let mut buf = [0u8; 4096];
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => bytes.extend_from_slice(&buf[..n]),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                break;
+            }
+            Err(e) => panic!("read failed: {e}"),
+        }
+    }
+    bytes
+}
+
+#[test]
+fn rejects_oversize_http_request() {
+    let Some(server) = start_test_server() else {
+        return;
+    };
+
+    let mut huge = Vec::with_capacity(super::consts::MAX_HTTP_REQUEST_BYTES + 1024);
+    huge.extend_from_slice(b"GET /status HTTP/1.1\r\nHost: localhost\r\n");
+    // Pad the headers so the total request exceeds the byte cap before the
+    // terminating \r\n\r\n.
+    let pad_len = super::consts::MAX_HTTP_REQUEST_BYTES - huge.len() + 64;
+    huge.extend_from_slice(b"X-Pad: ");
+    huge.extend(std::iter::repeat_n(b'A', pad_len));
+    huge.extend_from_slice(b"\r\n\r\n");
+
+    let response = raw_request_response(server.local_addr(), &huge);
+    let text = String::from_utf8_lossy(&response);
+    assert!(
+        !text.starts_with("HTTP/1.1 200 OK"),
+        "oversized request should not reach the handler, got: {text}"
+    );
+}
+
 #[test]
 fn parallel_server_starts_use_distinct_ports() {
     const N: usize = 16;

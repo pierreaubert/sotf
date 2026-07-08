@@ -329,3 +329,35 @@ fn resolve_byte_range_zero_start_when_no_last_end() {
     assert_eq!(range.offset, 0);
     assert_eq!(last_end, Some(100));
 }
+
+#[test]
+fn parse_media_playlist_rejects_segment_count_bomb() {
+    // A malicious playlist could still be within the byte cap while declaring
+    // thousands of tiny segments. The parser must reject playlists that exceed
+    // MAX_SEGMENTS to avoid unbounded Vec allocation.
+    let mut playlist = String::from("#EXTM3U\n#EXT-X-TARGETDURATION:1\n");
+    for i in 0..(super::consts::MAX_SEGMENTS + 1) {
+        playlist.push_str("#EXTINF:1,\n");
+        playlist.push_str(&format!("seg{i}.aac\n"));
+    }
+    let err = parse::parse_media_playlist(&base_url("hls/live/index.m3u8"), &playlist).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(
+        err.to_string().contains("maximum segment count"),
+        "got: {}",
+        err
+    );
+}
+
+#[test]
+fn parse_media_playlist_rejects_byte_range_overflow() {
+    // offset + length must not overflow u64.
+    let playlist = "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-BYTERANGE:1@18446744073709551615\n#EXTINF:1,\nseg.aac\n";
+    let err = parse::parse_media_playlist(&base_url("hls/live/index.m3u8"), playlist).unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(
+        err.to_string().contains("overflow"),
+        "expected overflow error, got: {}",
+        err
+    );
+}

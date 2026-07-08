@@ -26,14 +26,14 @@ pub(super) fn read_http_request(stream: &mut TcpStream) -> io::Result<String> {
             break;
         }
         request.extend_from_slice(&buf[..n]);
-        if request.windows(4).any(|w| w == b"\r\n\r\n") {
-            break;
-        }
         if request.len() > MAX_HTTP_REQUEST_BYTES {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "HTTP request too large",
             ));
+        }
+        if request.windows(4).any(|w| w == b"\r\n\r\n") {
+            break;
         }
     }
 
