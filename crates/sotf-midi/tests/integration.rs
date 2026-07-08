@@ -916,3 +916,155 @@ fn built_in_layouts_are_loadable() {
     assert!(!xone.controls.is_empty());
     assert_eq!(xone.name, "Xone:K2");
 }
+
+// ----------------------------------------------------------------------------
+// Mapping persistence and absent-device behavior
+// ----------------------------------------------------------------------------
+
+#[test]
+fn midi_mapping_persists_through_json_round_trip() {
+    use sotf_audio_player_midi::mapping::{ControlBinding, MidiMapping, ValueScaling};
+
+    let mut mapping = MidiMapping::new("Test Controller".to_string(), "TestPlugin".to_string());
+    mapping.total_pages = 2;
+    mapping.bindings.push(ControlBinding {
+        control_id: "volume".to_string(),
+        plugin_index: 0,
+        param_index: 0,
+        page: 0,
+        scaling: ValueScaling::Linear,
+    });
+    mapping.bindings.push(ControlBinding {
+        control_id: "bypass".to_string(),
+        plugin_index: 0,
+        param_index: 2,
+        page: 1,
+        scaling: ValueScaling::Toggle,
+    });
+    mapping.manual_overrides.insert(2, "bypass".to_string());
+
+    let json = serde_json::to_string(&mapping).unwrap();
+    let loaded: MidiMapping = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(loaded.controller_name, mapping.controller_name);
+    assert_eq!(loaded.plugin_type, mapping.plugin_type);
+    assert_eq!(loaded.total_pages, mapping.total_pages);
+    assert_eq!(loaded.bindings.len(), mapping.bindings.len());
+    assert_eq!(
+        loaded.bindings[0].control_id,
+        mapping.bindings[0].control_id
+    );
+    assert_eq!(loaded.bindings[1].scaling, mapping.bindings[1].scaling);
+    assert_eq!(loaded.manual_overrides, mapping.manual_overrides);
+}
+
+#[test]
+fn persisted_mapping_with_absent_device_still_loads() {
+    // Simulates the user saving a mapping for a device that is later unplugged.
+    // The configuration must load and the manager must start without crashing.
+    use sotf_audio_player_midi::mapping::{ControlBinding, MidiMapping, ValueScaling};
+
+    let mut mapping = MidiMapping::new("Absent Controller".to_string(), "TestPlugin".to_string());
+    mapping.bindings.push(ControlBinding {
+        control_id: "volume".to_string(),
+        plugin_index: 0,
+        param_index: 0,
+        page: 0,
+        scaling: ValueScaling::Linear,
+    });
+
+    let mut config = MidiConfig::default();
+    let mut profile = DeviceProfile::new("Absent Profile".to_string());
+    profile.input_device = Some("Absent Controller".to_string());
+    profile.output_device = Some("Absent Interface".to_string());
+    config.add_profile("absent".to_string(), profile);
+    config.set_active_profile("absent".to_string());
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    config.save(&path).unwrap();
+
+    let loaded = MidiConfig::load(&path).unwrap();
+    assert_eq!(loaded.active_profile, Some("absent".to_string()));
+    let p = loaded.get_profile("absent").unwrap();
+    assert_eq!(p.input_device, Some("Absent Controller".to_string()));
+    assert_eq!(p.output_device, Some("Absent Interface".to_string()));
+
+    // Manager construction succeeds even though the configured devices are absent.
+    let manager = MidiManager::with_config(loaded).unwrap();
+    assert!(!manager.is_input_connected());
+    assert!(!manager.is_output_connected());
+}
+
+#[test]
+fn device_snapshot_handles_duplicate_names_by_type() {
+    use sotf_audio_player_midi::device::{MidiDeviceChangeKind, MidiDeviceSnapshot};
+
+    let before = MidiDeviceSnapshot::new(
+        vec![midi_device_info(0, "LoopBe", MidiDeviceType::Input)],
+        vec![midi_device_info(0, "LoopBe", MidiDeviceType::Output)],
+    );
+    let after = MidiDeviceSnapshot::new(
+        vec![midi_device_info(0, "LoopBe", MidiDeviceType::Input)],
+        vec![midi_device_info(1, "LoopBe", MidiDeviceType::Output)],
+    );
+
+    // Same name + same type + different index is still the same logical device.
+    assert!(before.diff(&after).is_empty());
+
+    // Removing one of the duplicated names should still produce exactly one
+    // disconnect event for the output side.
+    let after_removed = MidiDeviceSnapshot::new(
+        vec![midi_device_info(0, "LoopBe", MidiDeviceType::Input)],
+        vec![],
+    );
+    let changes = before.diff(&after_removed);
+    assert_eq!(changes.len(), 1);
+    assert!(changes.iter().any(|change| {
+        change.kind == MidiDeviceChangeKind::Disconnected
+            && change.device.device_type == MidiDeviceType::Output
+    }));
+}
+
+#[test]
+fn mapping_engine_ignores_invalid_input_events() {
+    let layout = test_controller_layout();
+    let params = TEST_PARAMS;
+
+    let mut engine = MidiMappingEngine::new();
+    engine.set_layout(layout);
+    engine.on_plugin_focus("TestPlugin", params, 0);
+
+    // Unknown CC not in layout.
+    let unknown_cc = MidiMessage::ControlChange {
+        channel: 0,
+        controller: 99,
+        value: 64,
+    };
+    assert!(matches!(
+        engine.handle_midi(&unknown_cc, params),
+        MappingAction::Unmapped
+    ));
+
+    // Note not in layout.
+    let unknown_note = MidiMessage::NoteOn {
+        channel: 0,
+        note: 99,
+        velocity: 127,
+    };
+    assert!(matches!(
+        engine.handle_midi(&unknown_note, params),
+        MappingAction::Unmapped
+    ));
+
+    // Supported message type but on a different channel.
+    let wrong_channel = MidiMessage::ControlChange {
+        channel: 5,
+        controller: 7,
+        value: 127,
+    };
+    assert!(matches!(
+        engine.handle_midi(&wrong_channel, params),
+        MappingAction::Unmapped
+    ));
+}

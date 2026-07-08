@@ -312,10 +312,39 @@ Supports all standard MIDI message types:
   MIDI Clock, Start/Continue/Stop, Active Sensing, and Reset
 - **Raw Messages**: `Raw` for unsupported or custom messages
 
+## Supported MIDI behavior for this release
+
+- **Device discovery and hot-plug**: `MidiManager` can enumerate input/output
+  devices and poll for changes without requiring active connections. Hot-plug
+  is detected by name and device type (input vs. output), so reconnecting a
+  device with the same name is treated as a stable identity.
+- **Mapping persistence**: `MidiMapping`, `ControllerLayout`, and
+  `MappingTemplate` serialize to JSON and round-trip through serde. Mappings,
+  manual overrides, active pages, and scaling choices are preserved.
+- **Missing-device safety**: Starting the manager with a profile that names an
+  absent input or output device does not crash. `connect_input_by_name` and
+  `connect_output_by_name` return a `ConnectionError` when the named device is
+  not present, and the caller can retry after the device appears.
+- **Invalid input events**: Malformed MIDI bytes (missing status bytes,
+  too-short messages, data bytes with the status bit set) are rejected by the
+  parser. Messages that parse correctly but do not match any control in the
+  current layout, or that arrive on the wrong channel, are reported as
+  `Unmapped` by the mapping engine and do not affect plugin parameters.
+- **Hardware profiles**: Pre-configured profiles are provided for RME TotalMix
+  FX, Genelec GLM, Allen & Heath Xone:K2/K3, and Novation Launch Control XL.
+  These profiles send the documented CC/Note messages and do not require
+  additional driver software beyond standard OS MIDI support.
+
 ## Limitations
 
 - Incoming MIDI Clock and MTC messages are parsed, but this crate does not yet
   provide a transport-sync engine that slaves the sequencer to external clock.
+- Real-time MIDI device arrival/departure notifications depend on the host OS
+  and the `midir` backend; apps should poll `device_snapshot()` or
+  `poll_device_changes()` if they need live updates.
+- Two MIDI devices with the same name and same direction are treated as one
+  logical device by hot-plug diffing. If you need to distinguish them, rename
+  them in the OS or DAW configuration.
 
 ## License
 

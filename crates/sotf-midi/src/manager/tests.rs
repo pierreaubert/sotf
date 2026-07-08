@@ -72,3 +72,53 @@ fn input_buffer_preserves_sysex_when_realtime_arrives_mid_packet() {
         }
     );
 }
+
+fn assert_missing_device_or_skip_backend(result: crate::error::Result<()>, device_kind: &str) {
+    match result {
+        Err(crate::error::MidiError::ConnectionError(_)) => {}
+        Err(crate::error::MidiError::InitError(err)) => {
+            eprintln!(
+                "Skipping missing {device_kind} device test: MIDI backend unavailable ({err})"
+            );
+        }
+        other => panic!(
+            "expected ConnectionError for missing {device_kind} device, got {:?}",
+            other
+        ),
+    }
+}
+
+#[test]
+fn connect_input_by_name_missing_device_returns_error() {
+    let mut manager = MidiManager::new().unwrap();
+
+    let result = manager.connect_input_by_name("Definitely Not Present Input", |_msg| {});
+    assert_missing_device_or_skip_backend(result, "input");
+}
+
+#[test]
+fn connect_output_by_name_missing_device_returns_error() {
+    let mut manager = MidiManager::new().unwrap();
+
+    let result = manager.connect_output_by_name("Definitely Not Present Output");
+    assert_missing_device_or_skip_backend(result, "output");
+}
+
+#[test]
+fn manager_with_missing_default_devices_constructs_safely() {
+    use crate::config::MidiConfig;
+
+    let config = MidiConfig {
+        default_input: Some("Missing Input".to_string()),
+        default_output: Some("Missing Output".to_string()),
+        ..Default::default()
+    };
+
+    let manager = MidiManager::with_config(config).unwrap();
+    assert!(!manager.is_input_connected());
+    assert!(!manager.is_output_connected());
+    assert_eq!(
+        manager.config().default_input,
+        Some("Missing Input".to_string())
+    );
+}

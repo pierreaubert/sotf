@@ -243,4 +243,36 @@ mod tests {
         assert!(registry.find("LCXL", "EQ").is_some());
         assert!(registry.find("Xone K2", "EQ").is_none());
     }
+
+    #[test]
+    fn test_mapping_template_serialization_round_trip() {
+        let template = MappingTemplate {
+            controller_name: "Launch Control XL".to_string(),
+            plugin_type: "EQ".to_string(),
+            bindings: vec![
+                TemplateBinding {
+                    control_id: "knob_1_1".to_string(),
+                    param_index: 0,
+                    page: 0,
+                    scaling: ValueScaling::Logarithmic,
+                },
+                TemplateBinding {
+                    control_id: "btn_1".to_string(),
+                    param_index: 5,
+                    page: 1,
+                    scaling: ValueScaling::Toggle,
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&template).unwrap();
+        let loaded: MappingTemplate = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(loaded.controller_name, template.controller_name);
+        assert_eq!(loaded.plugin_type, template.plugin_type);
+        assert_eq!(loaded.bindings.len(), template.bindings.len());
+        assert_eq!(loaded.bindings[0].control_id, "knob_1_1");
+        assert_eq!(loaded.bindings[0].scaling, ValueScaling::Logarithmic);
+        assert_eq!(loaded.bindings[1].page, 1);
+    }
 }

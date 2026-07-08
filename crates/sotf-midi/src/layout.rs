@@ -188,4 +188,24 @@ mod tests {
         let layout = test_layout();
         assert_eq!(layout.continuous_control_count(), 2);
     }
+
+    #[test]
+    fn test_controller_layout_serialization_round_trip() {
+        let layout = test_layout();
+        let json = serde_json::to_string(&layout).unwrap();
+        let loaded: ControllerLayout = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(loaded.name, layout.name);
+        assert_eq!(loaded.controls.len(), layout.controls.len());
+        assert_eq!(loaded.grid_columns, layout.grid_columns);
+        assert_eq!(loaded.grid_rows, layout.grid_rows);
+        assert_eq!(loaded.reserved_control_ids, layout.reserved_control_ids);
+        assert_eq!(loaded.page_prev_id, layout.page_prev_id);
+        assert_eq!(loaded.page_next_id, layout.page_next_id);
+
+        let original_pot = layout.find_by_id("pot_1").unwrap();
+        let loaded_pot = loaded.find_by_id("pot_1").unwrap();
+        assert_eq!(loaded_pot.kind, original_pot.kind);
+        assert_eq!(loaded_pot.midi_id, original_pot.midi_id);
+    }
 }

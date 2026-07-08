@@ -360,4 +360,54 @@ mod tests {
         );
         assert!(mapping.binding_for_param(1, 1).is_none());
     }
+
+    #[test]
+    fn test_midi_mapping_serialization_round_trip() {
+        let mut mapping = MidiMapping::new("Xone:K2".to_string(), "Compressor".to_string());
+        mapping.total_pages = 2;
+        mapping.current_page = 1;
+        mapping.bindings.push(ControlBinding {
+            control_id: "pot_1".to_string(),
+            plugin_index: 0,
+            param_index: 0,
+            page: 0,
+            scaling: ValueScaling::Logarithmic,
+        });
+        mapping.bindings.push(ControlBinding {
+            control_id: "btn_1".to_string(),
+            plugin_index: 0,
+            param_index: 2,
+            page: 1,
+            scaling: ValueScaling::Toggle,
+        });
+        mapping.manual_overrides.insert(2, "btn_1".to_string());
+
+        let json = serde_json::to_string(&mapping).unwrap();
+        let loaded: MidiMapping = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(loaded.controller_name, "Xone:K2");
+        assert_eq!(loaded.plugin_type, "Compressor");
+        assert_eq!(loaded.total_pages, 2);
+        assert_eq!(loaded.current_page, 1);
+        assert_eq!(loaded.bindings.len(), 2);
+        assert_eq!(loaded.bindings[0].control_id, "pot_1");
+        assert_eq!(loaded.bindings[0].scaling, ValueScaling::Logarithmic);
+        assert_eq!(loaded.bindings[1].page, 1);
+        assert_eq!(loaded.manual_overrides.get(&2), Some(&"btn_1".to_string()));
+    }
+
+    #[test]
+    fn test_value_scaling_serialization_round_trip() {
+        for scaling in [
+            ValueScaling::Linear,
+            ValueScaling::Logarithmic,
+            ValueScaling::Toggle,
+            ValueScaling::Stepped(4),
+            ValueScaling::Relative,
+        ] {
+            let json = serde_json::to_string(&scaling).unwrap();
+            let loaded: ValueScaling = serde_json::from_str(&json).unwrap();
+            assert_eq!(loaded, scaling, "round-trip failed for {scaling:?}");
+        }
+    }
 }

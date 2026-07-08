@@ -243,4 +243,71 @@ mod tests {
 
         assert!(before.diff(&after).is_empty());
     }
+
+    #[test]
+    fn hotplug_simulation_with_duplicate_names_keeps_stable_identity() {
+        // Two devices with the same name but different types are treated as
+        // distinct identities.
+        let before = MidiDeviceSnapshot::new(
+            vec![device(0, "LoopBe", MidiDeviceType::Input)],
+            vec![device(0, "LoopBe", MidiDeviceType::Output)],
+        );
+        let after =
+            MidiDeviceSnapshot::new(vec![device(0, "LoopBe", MidiDeviceType::Input)], vec![]);
+
+        let changes = before.diff(&after);
+        assert_eq!(changes.len(), 1);
+        assert!(changes.iter().any(|change| {
+            change.kind == MidiDeviceChangeKind::Disconnected
+                && change.device.name == "LoopBe"
+                && change.device.device_type == MidiDeviceType::Output
+        }));
+    }
+
+    #[test]
+    fn hotplug_simulation_detects_reconnection_with_same_name() {
+        // A device disconnects and a new device with the same name but a
+        // different index appears. Because diff is name+type based, this is
+        // treated as no net change.
+        let before = MidiDeviceSnapshot::new(
+            vec![device(0, "Keyboard", MidiDeviceType::Input)],
+            Vec::new(),
+        );
+        let after = MidiDeviceSnapshot::new(
+            vec![device(1, "Keyboard", MidiDeviceType::Input)],
+            Vec::new(),
+        );
+
+        assert!(before.diff(&after).is_empty());
+    }
+
+    #[test]
+    fn midi_device_info_serialization_round_trip() {
+        let info = MidiDeviceInfo {
+            index: 3,
+            name: "Test Controller".to_string(),
+            device_type: MidiDeviceType::Output,
+            manufacturer: Some("ACME".to_string()),
+            is_connected: true,
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        let loaded: MidiDeviceInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded, info);
+    }
+
+    #[test]
+    fn midi_device_snapshot_serialization_round_trip() {
+        let snapshot = MidiDeviceSnapshot::new(
+            vec![
+                device(0, "Keyboard", MidiDeviceType::Input),
+                device(1, "Pads", MidiDeviceType::Input),
+            ],
+            vec![device(0, "Interface", MidiDeviceType::Output)],
+        );
+
+        let json = serde_json::to_string(&snapshot).unwrap();
+        let loaded: MidiDeviceSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded, snapshot);
+    }
 }

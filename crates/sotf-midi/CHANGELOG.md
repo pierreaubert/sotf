@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-08
+
+### Added
+- Add serialization/deserialization round-trip tests for `MidiMapping`,
+  `ValueScaling`, `ControllerLayout`, `MappingTemplate`, `MidiDeviceInfo`, and
+  `MidiDeviceSnapshot`.
+- Add tests for invalid MIDI input events: out-of-range/malformed messages,
+  unknown control IDs, wrong-channel messages, unsupported message types, and
+  stale parameter indices in mappings.
+- Add tests verifying safe behavior when configured MIDI devices are absent on
+  launch (`MidiManager::with_config`, `connect_input_by_name`,
+  `connect_output_by_name`).
+- Add hot-plug simulation tests for duplicate device names and reconnection
+  with the same name but a different port index.
+- Add `RELEASE_NOTES.md` documenting supported MIDI behavior for release and
+  expand the README with the same statement.
+
 ## [0.1.4] - 2026-05-31
 
 ### Added

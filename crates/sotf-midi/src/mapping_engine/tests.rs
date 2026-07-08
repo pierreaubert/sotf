@@ -1,7 +1,7 @@
 use super::midi_mapping_engine::MidiMappingEngine;
 use super::types::MappingAction;
 use crate::layout::{ControllerLayout, MidiControlId};
-use crate::mapping::ValueScaling;
+use crate::mapping::{ControlBinding, ValueScaling};
 use crate::message::MidiMessage;
 use crate::templates::TemplateRegistry;
 
@@ -184,4 +184,168 @@ fn test_build_overlay() {
     // pot_1 should be assigned to first continuous param
     assert!(overlay.assignments.contains_key(&0));
     assert_eq!(overlay.assignments[&0].control_label, "P1");
+}
+
+#[test]
+fn unknown_control_id_returns_unmapped() {
+    let mut engine = MidiMappingEngine::new();
+    engine.set_layout(tiny_layout());
+
+    let params = compressor::PARAMS;
+    engine.on_plugin_focus("Compressor", params, 0);
+
+    // CC 99 is not present in the tiny layout.
+    let msg = MidiMessage::ControlChange {
+        channel: 0,
+        controller: 99,
+        value: 64,
+    };
+    assert!(matches!(
+        engine.handle_midi(&msg, params),
+        MappingAction::Unmapped
+    ));
+}
+
+#[test]
+fn unsupported_message_types_return_unmapped() {
+    let mut engine = MidiMappingEngine::new();
+    engine.set_layout(tiny_layout());
+
+    let params = compressor::PARAMS;
+    engine.on_plugin_focus("Compressor", params, 0);
+
+    // Pitch bend is parsed but not mapped in this layout.
+    let pitch_bend = MidiMessage::PitchBend {
+        channel: 0,
+        value: 8192,
+    };
+    assert!(matches!(
+        engine.handle_midi(&pitch_bend, params),
+        MappingAction::Unmapped
+    ));
+
+    // Program change is parsed but not mapped.
+    let program_change = MidiMessage::ProgramChange {
+        channel: 0,
+        program: 5,
+    };
+    assert!(matches!(
+        engine.handle_midi(&program_change, params),
+        MappingAction::Unmapped
+    ));
+
+    // Channel aftertouch is parsed but not mapped.
+    let aftertouch = MidiMessage::ChannelAftertouch {
+        channel: 0,
+        pressure: 100,
+    };
+    assert!(matches!(
+        engine.handle_midi(&aftertouch, params),
+        MappingAction::Unmapped
+    ));
+}
+
+#[test]
+fn out_of_range_midi_values_are_rejected_by_parser() {
+    // Values outside the MIDI 0-127 range cannot be constructed directly through
+    // the typed API, so the parser must reject malformed bytes.
+    assert!(MidiMessage::from_bytes(&[0xB0, 0x80, 0x40]).is_err());
+    assert!(MidiMessage::from_bytes(&[0xB0, 0x40, 0x80]).is_err());
+    assert!(MidiMessage::from_bytes(&[0x90, 0x80, 0x40]).is_err());
+}
+
+#[test]
+fn mapped_control_on_wrong_channel_returns_unmapped() {
+    let mut engine = MidiMappingEngine::new();
+    engine.set_layout(tiny_layout());
+
+    let params = compressor::PARAMS;
+    engine.on_plugin_focus("Compressor", params, 0);
+
+    // pot_1 is on channel 0, CC 1. Channel 1 should not match.
+    let msg = MidiMessage::ControlChange {
+        channel: 1,
+        controller: 1,
+        value: 64,
+    };
+    assert!(matches!(
+        engine.handle_midi(&msg, params),
+        MappingAction::Unmapped
+    ));
+}
+
+#[test]
+fn relative_encoder_returns_adjust_param_action() {
+    let mut layout = tiny_layout();
+    layout.controls[0].kind = PhysicalControlKind::Encoder;
+
+    let mut engine = MidiMappingEngine::new();
+    engine.set_layout(layout);
+
+    let params = compressor::PARAMS;
+    engine.on_plugin_focus("Compressor", params, 0);
+
+    // Force the pot_1 binding to Relative scaling so the engine emits deltas.
+    engine
+        .mapping_mut()
+        .unwrap()
+        .bindings
+        .iter_mut()
+        .find(|b| b.control_id == "pot_1")
+        .unwrap()
+        .scaling = ValueScaling::Relative;
+
+    // Increment: value 3 -> +3
+    let msg = MidiMessage::ControlChange {
+        channel: 0,
+        controller: 1,
+        value: 3,
+    };
+    assert!(
+        matches!(engine.handle_midi(&msg, params), MappingAction::AdjustParam { delta, .. } if delta > 0.0),
+        "expected positive delta for encoder increment"
+    );
+
+    // Decrement: value 125 -> -3
+    let msg = MidiMessage::ControlChange {
+        channel: 0,
+        controller: 1,
+        value: 125,
+    };
+    assert!(
+        matches!(engine.handle_midi(&msg, params), MappingAction::AdjustParam { delta, .. } if delta < 0.0),
+        "expected negative delta for encoder decrement"
+    );
+}
+
+#[test]
+fn stale_param_index_in_mapping_returns_unmapped() {
+    let mut engine = MidiMappingEngine::new();
+    engine.set_layout(tiny_layout());
+
+    let params = compressor::PARAMS;
+    engine.on_plugin_focus("Compressor", params, 0);
+
+    // Replace the existing btn_1 binding with one whose param_index is out of
+    // bounds for the focused plugin. The engine must not panic and should
+    // report Unmapped.
+    let mapping = engine.mapping_mut().unwrap();
+    mapping.bindings.retain(|b| b.control_id != "btn_1");
+    mapping.bindings.push(ControlBinding {
+        control_id: "btn_1".to_string(),
+        plugin_index: 0,
+        param_index: 9999,
+        page: 0,
+        scaling: ValueScaling::Linear,
+    });
+
+    let msg = MidiMessage::NoteOn {
+        channel: 0,
+        note: 24,
+        velocity: 127,
+    };
+    assert!(matches!(
+        engine.handle_midi(&msg, params),
+        MappingAction::Unmapped
+    ));
 }
