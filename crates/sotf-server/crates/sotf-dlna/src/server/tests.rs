@@ -125,6 +125,15 @@ fn make_track(id: &str) -> MediaTrack {
 }
 
 async fn server_http_round_trip(adapter: Arc<dyn MediaServerAdapter>, request: &str) -> Vec<u8> {
+    server_http_raw(adapter, request)
+        .await
+        .expect("request should succeed")
+}
+
+async fn server_http_raw(
+    adapter: Arc<dyn MediaServerAdapter>,
+    request: &str,
+) -> Result<Vec<u8>, String> {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let device = DlnaDevice::new_server("SOTF DLNA Test", addr.port());
@@ -132,9 +141,7 @@ async fn server_http_round_trip(adapter: Arc<dyn MediaServerAdapter>, request: &
 
     let task = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        handle_server_request(stream, &device, &base_url, &adapter)
-            .await
-            .unwrap();
+        handle_server_request(stream, &device, &base_url, &adapter).await
     });
 
     let mut client = TcpStream::connect(addr).await.unwrap();
@@ -143,8 +150,10 @@ async fn server_http_round_trip(adapter: Arc<dyn MediaServerAdapter>, request: &
 
     let mut response = Vec::new();
     client.read_to_end(&mut response).await.unwrap();
-    task.await.unwrap();
-    response
+    match task.await.unwrap() {
+        Ok(()) => Ok(response),
+        Err(e) => Err(e),
+    }
 }
 
 fn split_http_response(response: &[u8]) -> (String, Vec<u8>) {
@@ -311,4 +320,74 @@ fn rejects_invalid_byte_ranges() {
     assert!(parse_range_header(Some("bytes=0-1,4-5"), 100).is_err());
     assert!(parse_range_header(Some("bytes=-0"), 100).is_err());
     assert!(parse_range_header(Some("bytes=0-1"), 0).is_err());
+}
+
+// ===== QA-SEC-006: request-line / header / URL abuse =====
+
+#[tokio::test]
+async fn rejects_single_oversize_header_line() {
+    let adapter: Arc<dyn MediaServerAdapter> = Arc::new(SearchStub {
+        rows: Vec::new(),
+        total: 0,
+    });
+    let mut request = String::from("GET /description.xml HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Huge: ");
+    request.extend(std::iter::repeat_n(
+        'A',
+        crate::http_io::MAX_HEADER_LINE + 16,
+    ));
+    request.push_str("\r\n\r\n");
+
+    let err = server_http_raw(adapter, &request).await.unwrap_err();
+    assert!(
+        err.contains("header line exceeds cap"),
+        "expected cap error, got: {}",
+        err
+    );
+}
+
+#[tokio::test]
+async fn rejects_path_traversal_in_media_url() {
+    let adapter: Arc<dyn MediaServerAdapter> = Arc::new(HttpStub {
+        media_path: test_media_path(),
+    });
+    let response = server_http_round_trip(
+        adapter,
+        "GET /media/../../etc/passwd HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+    )
+    .await;
+    let (headers, body) = split_http_response(&response);
+    assert!(
+        headers.starts_with("HTTP/1.1 400 Bad Request"),
+        "got: {}",
+        headers
+    );
+    assert!(
+        body == b"Bad media id",
+        "response body must not reveal filesystem path, got: {:?}",
+        String::from_utf8_lossy(&body)
+    );
+}
+
+#[tokio::test]
+async fn media_404_does_not_leak_filesystem_path() {
+    let adapter: Arc<dyn MediaServerAdapter> = Arc::new(HttpStub {
+        media_path: std::env::temp_dir().join("sotf-dlna-secret-path.flac"),
+    });
+    let response = server_http_round_trip(
+        adapter,
+        "GET /media/track-1 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+    )
+    .await;
+    let (headers, body) = split_http_response(&response);
+    assert!(
+        headers.starts_with("HTTP/1.1 404 Not Found"),
+        "got: {}",
+        headers
+    );
+    let body_text = String::from_utf8_lossy(&body);
+    assert!(
+        !body_text.contains("secret-path"),
+        "error body must not leak path, got: {}",
+        body_text
+    );
 }
