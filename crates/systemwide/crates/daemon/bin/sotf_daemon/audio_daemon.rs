@@ -342,21 +342,61 @@ impl AudioDaemon {
     }
 
     pub(super) async fn handle_status(&self) -> Response {
-        let manager = self.manager.lock();
-        let state = manager.get_state();
-        let engine_state = manager.get_engine_state();
-        let pipeline = self.system_state.lock();
-        let selected_device = pipeline.selected_output_device();
-        let input_channels = pipeline.input_channels();
-        let output_channels = pipeline.output_channels();
-        let pipeline_generation = pipeline.applied_generation();
-        let pipeline_applied_output_device = pipeline.applied_output_device();
-        drop(pipeline);
+        let (state, engine_state, volume, muted) = {
+            let manager = self.manager.lock();
+            (
+                manager.get_state(),
+                manager.get_engine_state(),
+                manager.get_volume(),
+                manager.is_muted(),
+            )
+        };
+        let (
+            selected_device,
+            input_channels,
+            output_channels,
+            pipeline_generation,
+            pipeline_applied_output_device,
+        ) = {
+            let pipeline = self.system_state.lock();
+            (
+                pipeline.selected_output_device(),
+                pipeline.input_channels(),
+                pipeline.output_channels(),
+                pipeline.applied_generation(),
+                pipeline.applied_output_device(),
+            )
+        };
+        let driver_status = self.driver_manager.lock().status();
+        let key_status = self.key_manager.lock().status();
+
+        let mut recovery_actions = Vec::<String>::new();
+        if !driver_status.platform_supported {
+            recovery_actions.push("driver_not_supported".to_string());
+        }
+        if !driver_status.driver_installed {
+            recovery_actions.push("reinstall_driver".to_string());
+        }
+        if driver_status.driver_installed && !driver_status.driver_ready {
+            recovery_actions.push("restart_daemon".to_string());
+        }
+        if selected_device.is_none()
+            && pipeline_applied_output_device.is_none()
+            && engine_state.playback_output_device.is_none()
+        {
+            recovery_actions.push("select_output_device".to_string());
+        }
+        if key_status.enabled && key_status.fingerprint.len() < 16 {
+            recovery_actions.push("rotate_encryption_key".to_string());
+        }
+        if engine_state.underruns > 0 {
+            recovery_actions.push("reset_shared_memory".to_string());
+        }
 
         Response::ok(serde_json::json!({
             "state": format!("{:?}", state),
-            "volume": manager.get_volume(),
-            "muted": manager.is_muted(),
+            "volume": volume,
+            "muted": muted,
             "selected_device": selected_device,
             "pipeline_generation": pipeline_generation,
             "pipeline_applied_output_device": pipeline_applied_output_device,
@@ -374,6 +414,25 @@ impl AudioDaemon {
             "playback_frames_dropped": engine_state.playback_frames_dropped,
             "playback_effective_sample_rate": engine_state.playback_effective_sample_rate,
             "last_error": engine_state.last_error,
+            "driver": {
+                "installed": driver_status.driver_installed,
+                "ready": driver_status.driver_ready,
+                "capture_active": driver_status.capture_active,
+                "frame_size": driver_status.buffer_frames,
+                "sample_rate": driver_status.sample_rate,
+                "channel_count": driver_status.channel_count,
+            },
+            "encryption": {
+                "enabled": key_status.enabled,
+                "fingerprint": key_status.fingerprint,
+            },
+            "active_route": {
+                "desired_output_device": selected_device,
+                "applied_output_device": pipeline_applied_output_device,
+                "playback_output_device": engine_state.playback_output_device,
+                "capture_active": driver_status.capture_active,
+            },
+            "recovery_actions": recovery_actions,
         }))
     }
 

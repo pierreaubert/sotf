@@ -1,4 +1,33 @@
-# Unreleased
+# 0.1.37 (unreleased)
+
+## Diagnostics and recovery UX (QA-SYS-003)
+
+- Enriched the daemon `Status` response with explicit systemwide diagnostics:
+  - `driver`: `installed`, `ready`, `capture_active`, `frame_size`, `sample_rate`,
+    and `channel_count`.
+  - `encryption`: `enabled` and `fingerprint`.
+  - `active_route`: `desired_output_device`, `applied_output_device`,
+    `playback_output_device`, and `capture_active`.
+  - `recovery_actions`: deterministic list of suggested recovery steps such as
+    `reinstall_driver`, `restart_daemon`, `select_output_device`,
+    `rotate_encryption_key`, and `reset_shared_memory`.
+- Updated unit tests and the `snapshot_status_response_shape` snapshot to cover
+  the new fields.
+
+## Security and IPC hardening (QA-SYS-001)
+
+- Added focused non-device tests for daemon security boundaries:
+  - `KeyManager::force_rotate` produces a new session fingerprint and keeps the
+    HAL key copy at mode `0600`.
+  - `KeyManager::check_and_reload` detects an externally modified session key
+    file (daemon-restart / driver-reconnection scenario).
+  - Peer classification falls back to the restricted `CoreAudioD` class for any
+    UID that is not the daemon owner, root, or the macOS `_coreaudiod` user.
+  - Socket path construction is deterministic, honors explicit absolute lab
+    overrides, and defaults to a user-isolated path under `$TMPDIR`,
+    `$XDG_RUNTIME_DIR`, or `/tmp/sotf-{uid}/`.
+- Documented that real-device HAL install, reload, recovery, and audio-callback
+  timing QA remain release blockers tracked separately under `QA-SYS-002`.
 
 ## Daemon startup cleanup
 

@@ -79,9 +79,7 @@ fn parse_plugin_entry(item: Value) -> Result<Option<PluginConfig>, String> {
         return Ok(None);
     }
 
-    let parameters = object
-        .remove("parameters")
-        .unwrap_or_else(|| Value::Object(object));
+    let parameters = object.remove("parameters").unwrap_or(Value::Object(object));
     Ok(Some(PluginConfig {
         plugin_type,
         parameters,

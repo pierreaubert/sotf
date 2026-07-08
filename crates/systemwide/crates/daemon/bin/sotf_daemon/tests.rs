@@ -1512,6 +1512,28 @@ mod command_roundtrip_tests {
         assert!(data.get("input_channels").is_some());
         assert!(data.get("output_channels").is_some());
         assert!(data.get("playback_output_device").is_some());
+
+        // QA-SYS-003 explicit diagnostics fields.
+        let driver = data.get("driver").expect("driver object");
+        assert!(driver.get("installed").is_some());
+        assert!(driver.get("ready").is_some());
+        assert!(driver.get("capture_active").is_some());
+        assert!(driver.get("frame_size").is_some());
+
+        let encryption = data.get("encryption").expect("encryption object");
+        assert!(encryption.get("enabled").is_some());
+
+        let active_route = data.get("active_route").expect("active_route object");
+        assert!(active_route.get("desired_output_device").is_some());
+        assert!(active_route.get("applied_output_device").is_some());
+        assert!(active_route.get("playback_output_device").is_some());
+        assert!(active_route.get("capture_active").is_some());
+
+        assert!(
+            data.get("recovery_actions").is_some(),
+            "recovery_actions list must be present"
+        );
+        assert!(data["recovery_actions"].is_array());
     }
 
     #[test]

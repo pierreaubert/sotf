@@ -1,9 +1,28 @@
 ---
 source: crates/systemwide/crates/daemon/bin/sotf_daemon/tests.rs
+assertion_line: 1771
 expression: data
 ---
 {
+  "active_route": {
+    "applied_output_device": null,
+    "capture_active": false,
+    "desired_output_device": null,
+    "playback_output_device": null
+  },
   "channels": 2,
+  "driver": {
+    "capture_active": false,
+    "channel_count": 0,
+    "frame_size": 0,
+    "installed": false,
+    "ready": false,
+    "sample_rate": 0
+  },
+  "encryption": {
+    "enabled": false,
+    "fingerprint": "0000000000000000"
+  },
   "input_channels": 2,
   "last_error": null,
   "muted": false,
@@ -18,6 +37,11 @@ expression: data
   "playback_frames_written": 0,
   "playback_output_device": null,
   "playback_stream_error_count": 0,
+  "recovery_actions": [
+    "driver_not_supported",
+    "reinstall_driver",
+    "select_output_device"
+  ],
   "sample_rate": 48000,
   "selected_device": null,
   "state": "Idle",
