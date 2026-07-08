@@ -2,6 +2,10 @@
 
 ## Fixes
 
+- **Guard against buffer-length mismatch when external sidechain is enabled** —
+  `process_in_place` now returns an error instead of indexing out of bounds when
+  `sidechain_external` is toggled on but the input buffer does not contain the
+  expected sidechain channels.
 - **Document and test soft-knee shape** — `USAGE.md` now describes the Knee
   parameter as a quadratic soft-knee transition around threshold, the code
   documents the boundary behavior, and

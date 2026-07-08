@@ -428,6 +428,19 @@ impl ParametricInPlacePlugin for GatePlugin {
             self.channels
         };
 
+        // Guard against buffer/channel-count mismatch when external sidechain is
+        // toggled without rebuilding the plugin with the doubled input width.
+        let expected_len = num_frames * stride;
+        if buffer.len() < expected_len {
+            return Err(format!(
+                "gate process buffer length {} does not match expected {} for {} channels (external_sidechain={})",
+                buffer.len(),
+                expected_len,
+                self.channels,
+                use_ext_sc
+            ));
+        }
+
         // Block-based smoothing: advance once per block
         let thresh = self.threshold_smoother.next_n(num_frames);
         let mix = self.mix_smoother.next_n(num_frames);
