@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-07-08
+
+### Added
+- QA-SEC-006 negative abuse tests for malformed command frames, invalid UTF-8 lines, and missing/wrong password authentication.
+
 ## [0.5.1] - 2025-05-13
 
 ### Added

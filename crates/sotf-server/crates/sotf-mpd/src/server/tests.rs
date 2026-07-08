@@ -511,3 +511,92 @@ async fn test_read_line_bounded_partial_line_at_eof() {
         other => panic!("unexpected: {other:?}", other = format_outcome(&other)),
     }
 }
+
+// ===== QA-SEC-006: malformed frames, invalid UTF-8, auth abuse =====
+
+async fn run_session_with_password(password: Option<&str>, client_input: &[&[u8]]) -> Vec<String> {
+    let (client, server) = tokio::io::duplex(1024);
+    let (mut client_reader, mut client_writer) = tokio::io::split(client);
+    let (server_reader, server_writer) = tokio::io::split(server);
+    let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    let adapter: Arc<dyn PlayerAdapter> = Arc::new(DummyAdapter);
+
+    let server_task = tokio::spawn(handle_session(
+        server_reader,
+        server_writer,
+        adapter,
+        cancel_rx,
+        password.map(|s| s.to_string()),
+    ));
+
+    // Consume the greeting so each subsequent read maps to one command.
+    let _greeting = read_client_chunk(&mut client_reader).await;
+
+    let mut chunks = Vec::new();
+    for input in client_input {
+        client_writer.write_all(input).await.unwrap();
+        chunks.push(read_client_chunk(&mut client_reader).await);
+    }
+    let _ = client_writer.write_all(b"close\n").await;
+    let _ = server_task.await;
+    chunks
+}
+
+#[tokio::test]
+async fn malformed_command_frame_returns_arg_error() {
+    let chunks = run_session_with_password(None, &[b"status extra\n"]).await;
+    let response = chunks.first().expect("expected error response");
+    assert!(
+        response.starts_with("ACK [2@0] {status}"),
+        "expected Arg error, got: {response}"
+    );
+    assert!(response.contains("trailing tokens"), "got: {response}");
+}
+
+#[tokio::test]
+async fn invalid_utf8_at_session_level_returns_arg_error() {
+    let chunks = run_session_with_password(None, &[b"\xff\xfe\n"]).await;
+    let response = chunks.first().expect("expected error response");
+    assert!(
+        response.starts_with("ACK [2@0] {input}"),
+        "expected Arg error for invalid UTF-8, got: {response}"
+    );
+    assert!(response.contains("invalid UTF-8"), "got: {response}");
+}
+
+#[tokio::test]
+async fn unauthenticated_command_rejected_and_password_not_echoed() {
+    let chunks = run_session_with_password(
+        Some("hunter2"),
+        &[b"status\n", b"password wrong\n", b"status\n"],
+    )
+    .await;
+    // First status before auth -> permission error.
+    let response = chunks.first().expect("expected permission error");
+    assert!(
+        response.starts_with("ACK [4@0] {status}"),
+        "expected Permission error, got: {response}"
+    );
+
+    // Wrong password response.
+    let response = chunks.get(1).expect("expected password error");
+    assert!(
+        response.starts_with("ACK [3@0] {password}"),
+        "expected Password error, got: {response}"
+    );
+
+    // After wrong password, still not authenticated.
+    let response = chunks.get(2).expect("expected still permission error");
+    assert!(
+        response.starts_with("ACK [4@0] {status}"),
+        "expected Permission error after wrong password, got: {response}"
+    );
+
+    // None of the responses may leak the configured password.
+    for chunk in &chunks {
+        assert!(
+            !chunk.contains("hunter2"),
+            "password leaked in response: {chunk}"
+        );
+    }
+}
