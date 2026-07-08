@@ -309,4 +309,27 @@ mod tests {
         let keys: Vec<_> = store.list().iter().map(|(k, _)| k.to_string()).collect();
         assert_eq!(keys, vec!["a:1", "m:5", "z:9"]);
     }
+
+    #[test]
+    fn test_corrupted_trust_store_load_fails_cleanly() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let path = tmp.path().join("tls").join("known_hosts.toml");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "[[invalid toml").unwrap();
+
+        let err = TofuStore::load(tmp.path()).expect_err("expected parse error");
+        let err_text = err.to_string();
+        assert!(
+            err_text.contains("parse known_hosts"),
+            "error should describe the parse failure, got: {}",
+            err_text
+        );
+        // The error is surfaced to callers; it must not contain the absolute
+        // filesystem path to the trust store.
+        assert!(
+            !err_text.contains(tmp.path().to_str().unwrap()),
+            "error must not leak trust-store path: {}",
+            err_text
+        );
+    }
 }

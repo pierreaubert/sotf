@@ -221,4 +221,34 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "New Name");
     }
+
+    #[test]
+    fn test_invalid_or_malformed_fingerprints_are_not_trusted() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let mut store = TrustedClientStore::load(tmp.path()).expect("load");
+
+        // Only exact string matches count; a malformed/shortened variant must
+        // not be accepted.
+        store.add("AA:BB:CC:DD", "Valid").expect("add");
+        assert!(!store.contains("AA:BB:CC"));
+        assert!(!store.contains("aa:bb:cc:dd")); // case-sensitive
+        assert!(!store.contains("not-a-fingerprint"));
+        assert!(store.contains("AA:BB:CC:DD"));
+    }
+
+    #[test]
+    fn test_revoked_client_is_removed_and_persisted() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        {
+            let mut store = TrustedClientStore::load(tmp.path()).expect("load");
+            store.add("REVOKED", "To Revoke").expect("add");
+            assert!(store.contains("REVOKED"));
+            assert!(store.remove("REVOKED").expect("remove"));
+            assert!(!store.contains("REVOKED"));
+        }
+
+        // Reload from disk and confirm the revocation persisted.
+        let store = TrustedClientStore::load(tmp.path()).expect("reload");
+        assert!(!store.contains("REVOKED"));
+    }
 }

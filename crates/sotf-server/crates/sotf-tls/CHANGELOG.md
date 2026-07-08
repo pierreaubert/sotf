@@ -1,3 +1,9 @@
+# 0.8.3
+
+## Changes
+
+- Updated release notes for current crate changes.
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -8,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## 0.8.2 [Unreleased]
 
 ### Added
+- QA-SEC-006 negative abuse tests for malformed fingerprints, trust-store corruption, and client revocation.
 - Added client-certificate generation/load helpers for mobile and desktop
   pairing flows.
 - Added a persistent trusted-client certificate store for server-side mTLS
