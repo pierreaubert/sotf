@@ -1,4 +1,20 @@
-# Unreleased
+# 0.1.12 (unreleased)
+
+## Shared-memory security and recovery coverage (QA-SYS-001)
+
+- Added focused non-device tests for shared-memory header integrity and
+  daemon-restart behavior:
+  - `SharedAudioBuffer::open` rejects corrupted headers: invalid magic, bad
+    version, zero channel count, out-of-range geometry, files too small for the
+    header, and files too small for the declared geometry.
+  - Daemon restart with a different geometry re-initializes the header,
+    resetting ring positions, ready flags, and encryption state instead of
+    inheriting stale runtime data.
+  - `load_initial_cipher` refuses to load a cached cipher when the on-disk key
+    fingerprint does not match the shared-memory header, forcing a key reload
+    after rotation.
+- Default shared-memory path is verified to be user-isolated under the expected
+  runtime directory (`/tmp/sotf-{uid}/audio.shm` or a lab override).
 
 ## Encrypted HAL passthrough coverage
 

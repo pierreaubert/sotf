@@ -292,3 +292,181 @@ fn test_invalid_version() {
         result.err()
     );
 }
+
+/// Corrupted shared-memory headers must be rejected rather than silently
+/// used. Regression test for QA-SYS-001.
+#[test]
+fn test_corrupted_header_zero_channel_count() {
+    let mut file = NamedTempFile::new().expect("Failed to create temp file");
+    let mut buffer = vec![0u8; 4096];
+    buffer[0..4].copy_from_slice(&SHARED_MEMORY_MAGIC.to_ne_bytes());
+    buffer[4..8].copy_from_slice(&SHARED_MEMORY_VERSION.to_ne_bytes());
+    // channel_count stays 0; valid sample_rate and buffer_frames.
+    buffer[8..12].copy_from_slice(&48_000u32.to_ne_bytes());
+    buffer[12..16].copy_from_slice(&512u32.to_ne_bytes());
+    file.write_all(&buffer).expect("Failed to write");
+    file.flush().expect("Failed to flush");
+
+    let result = SharedAudioBuffer::open(file.path());
+    assert!(
+        result
+            .as_ref()
+            .err()
+            .map(|e| e
+                .to_string()
+                .contains("Invalid shared memory configuration"))
+            .unwrap_or(false),
+        "Expected configuration error for zero channel_count, got: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn test_corrupted_header_out_of_range_geometry() {
+    let mut file = NamedTempFile::new().expect("Failed to create temp file");
+    let mut buffer = vec![0u8; 4096];
+    buffer[0..4].copy_from_slice(&SHARED_MEMORY_MAGIC.to_ne_bytes());
+    buffer[4..8].copy_from_slice(&SHARED_MEMORY_VERSION.to_ne_bytes());
+    buffer[8..12].copy_from_slice(&48_000u32.to_ne_bytes());
+    // buffer_frames far above the allowed maximum.
+    buffer[12..16].copy_from_slice(&1_000_000u32.to_ne_bytes());
+    buffer[16..20].copy_from_slice(&2u32.to_ne_bytes());
+    file.write_all(&buffer).expect("Failed to write");
+    file.flush().expect("Failed to flush");
+
+    let result = SharedAudioBuffer::open(file.path());
+    assert!(
+        result
+            .as_ref()
+            .err()
+            .map(|e| e.to_string().contains("out of range"))
+            .unwrap_or(false),
+        "Expected out-of-range error, got: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn test_open_rejects_file_too_small_for_header() {
+    let mut file = NamedTempFile::new().expect("Failed to create temp file");
+    // Write only the magic/version, not enough for the full header.
+    let mut buffer = vec![0u8; 8];
+    buffer[0..4].copy_from_slice(&SHARED_MEMORY_MAGIC.to_ne_bytes());
+    buffer[4..8].copy_from_slice(&SHARED_MEMORY_VERSION.to_ne_bytes());
+    file.write_all(&buffer).expect("Failed to write");
+    file.flush().expect("Failed to flush");
+
+    let result = SharedAudioBuffer::open(file.path());
+    assert!(
+        result
+            .as_ref()
+            .err()
+            .map(|e| e.to_string().contains("too small for header"))
+            .unwrap_or(false),
+        "Expected 'too small for header' error, got: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn test_open_rejects_file_too_small_for_declared_geometry() {
+    let mut file = NamedTempFile::new().expect("Failed to create temp file");
+    let mut buffer = vec![0u8; 4096];
+    buffer[0..4].copy_from_slice(&SHARED_MEMORY_MAGIC.to_ne_bytes());
+    buffer[4..8].copy_from_slice(&SHARED_MEMORY_VERSION.to_ne_bytes());
+    buffer[8..12].copy_from_slice(&48_000u32.to_ne_bytes());
+    buffer[12..16].copy_from_slice(&512u32.to_ne_bytes());
+    buffer[16..20].copy_from_slice(&2u32.to_ne_bytes());
+    file.write_all(&buffer).expect("Failed to write");
+    file.flush().expect("Failed to flush");
+
+    let result = SharedAudioBuffer::open(file.path());
+    assert!(
+        result
+            .as_ref()
+            .err()
+            .map(|e| e.to_string().contains("Shared memory too small"))
+            .unwrap_or(false),
+        "Expected 'too small' error for declared geometry, got: {:?}",
+        result.err()
+    );
+}
+
+/// Daemon restart with a different geometry must re-initialize the header,
+/// resetting ring positions, ready flags, and encryption state. Same-geometry
+/// reopen is covered by `test_create_or_open_preserves_runtime_state_for_same_geometry`.
+#[test]
+fn test_daemon_restart_with_geometry_change_resets_runtime_state() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
+        .expect("Failed to create shared memory");
+    buffer.set_engine_ready(true);
+    buffer.header().driver_ready.store(1, Ordering::Release);
+    buffer.header().write_position.store(64, Ordering::Release);
+    buffer.header().read_position.store(32, Ordering::Release);
+    buffer.set_key_fingerprint([0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04]);
+    buffer.set_encrypted(true);
+    drop(buffer);
+
+    // Reopen with a different geometry — this should trigger header
+    // re-initialization and therefore reset runtime state.
+    let reopened = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 1024, 2)
+        .expect("Failed to reopen shared memory");
+
+    assert_eq!(reopened.buffer_frames(), 1024);
+    assert_eq!(reopened.header().write_position.load(Ordering::Acquire), 0);
+    assert_eq!(reopened.header().read_position.load(Ordering::Acquire), 0);
+    assert_eq!(reopened.header().engine_ready.load(Ordering::Acquire), 0);
+    assert!(!reopened.driver_ready());
+    assert!(!reopened.is_encrypted());
+    assert_eq!(reopened.key_fingerprint(), [0u8; 8]);
+}
+
+/// After daemon restart the HAL reader must refuse to load a cached cipher
+/// whose fingerprint does not match the shared-memory header. This prevents
+/// decoding with a stale key after key rotation. Regression test for
+/// QA-SYS-001 daemon-restart / reconnection behavior.
+#[test]
+fn test_load_initial_cipher_rejects_fingerprint_mismatch() {
+    use crate::encryption::{AudioCipher, generate_key};
+
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let buffer =
+        SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2).expect("create");
+
+    let stale_key = generate_key();
+    let stale_cipher = AudioCipher::new(&stale_key);
+
+    // Simulate a header that advertises encryption with a fingerprint that
+    // does not match any key currently on disk.
+    buffer.set_encrypted(true);
+    buffer.set_key_fingerprint(*stale_cipher.fingerprint());
+
+    let loaded = super::shared_audio_buffer::load_initial_cipher(&buffer);
+    assert!(
+        loaded.is_none(),
+        "load_initial_cipher must return None when on-disk key fingerprint does not match header"
+    );
+}
+
+/// Default shared-memory path must be user-isolated under the expected runtime
+/// directory. Regression test for QA-SYS-001 path-bounding requirement.
+#[test]
+fn test_default_shared_memory_path_is_user_isolated() {
+    let path = super::misc::get_shared_memory_path();
+    let path_str = path.to_string_lossy();
+
+    let uid = unsafe { libc::getuid() };
+    let tmpdir = std::env::var("TMPDIR").ok();
+    let runtime = std::env::var("SOTF_SYSTEMWIDE_RUNTIME_DIR").ok();
+
+    let is_under_expected = runtime.map(|r| path_str.starts_with(&r)).unwrap_or(false)
+        || tmpdir.map(|t| path_str.starts_with(&t)).unwrap_or(false)
+        || path_str.starts_with(&format!("/tmp/sotf-{}/", uid));
+
+    assert!(
+        is_under_expected,
+        "default shared-memory path should be user-isolated: {}",
+        path_str
+    );
+}
