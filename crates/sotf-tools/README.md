@@ -4,7 +4,7 @@ Tools for generating test signals, converting formats, and managing design token
 
 ## Overview
 
-Binary-only crate providing utility programs for audio development, testing, and design-system maintenance.
+Binary-only crate providing utility programs for audio development, testing, and design-system maintenance. These binaries are not included in release distributions; they are used for development, QA, and CI.
 
 ## Binaries
 
