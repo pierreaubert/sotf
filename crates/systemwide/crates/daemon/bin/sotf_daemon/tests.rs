@@ -1762,12 +1762,28 @@ mod command_roundtrip_tests {
 
     #[test]
     fn snapshot_status_response_shape() {
-        let daemon = AudioDaemon::new();
+        // Use a NullDriver so the status response is deterministic regardless
+        // of whether the `hal` feature (which selects the platform HAL) is
+        // enabled. The KeyManager implementation is also feature-dependent,
+        // so we normalize the encryption block before snapshotting.
+        let runtime = Arc::new(tokio::runtime::Runtime::new().expect("test runtime"));
+        let daemon = AudioDaemon {
+            manager: Arc::new(Mutex::new(AudioEngineManager::new())),
+            running: Arc::new(Mutex::new(true)),
+            driver_manager: Arc::new(Mutex::new(DriverManager::from_driver(Box::new(
+                driver_common::NullDriver::new(),
+            )))),
+            system_state: Arc::new(Mutex::new(SystemwideState::default())),
+            key_manager: Arc::new(Mutex::new(KeyManager::default())),
+            runtime,
+        };
         let resp = daemon
             .runtime
             .block_on(daemon.handle_command(Command::Status));
         assert!(resp.success, "{:?}", resp.error);
-        let data = resp.data.expect("status data");
+        let mut data = resp.data.expect("status data");
+        data["encryption"]["enabled"] = serde_json::json!(false);
+        data["encryption"]["fingerprint"] = serde_json::json!("0000000000000000");
         insta::assert_json_snapshot!(data);
     }
 
