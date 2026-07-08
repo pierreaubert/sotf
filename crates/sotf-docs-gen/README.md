@@ -43,6 +43,9 @@ Single-file binary crate (`src/main.rs`). No library component.
 ```bash
 cargo check -p sotf-docs-gen
 cargo test -p sotf-docs-gen
+
+# Verify generated plugin docs are up-to-date.
+just doc-crates
 ```
 
 ## License

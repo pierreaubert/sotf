@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-07-08
+
+### Changed
+- Regenerated plugin reference pages (`crossover.md`, `xtc.md`) so the
+  `just doc-crates` idempotence check passes.
+
 ## [0.6.8] - 2026-05-31
 
 ### Added
