@@ -203,7 +203,8 @@ pub fn parse_audio_element(data: &[u8]) -> IamfResult<AudioElement> {
             constant_subblock_duration = read_leb128_u32(data, &mut pos)?;
             if constant_subblock_duration == 0 {
                 let num_subblocks = read_leb128_u32(data, &mut pos)?;
-                for _ in 0..num_subblocks.saturating_sub(1) {
+                let cap = bounded_capacity(num_subblocks, data.len().saturating_sub(pos))?;
+                for _ in 0..cap.saturating_sub(1) {
                     let _subblock_dur = read_leb128_u32(data, &mut pos)?;
                 }
             }
@@ -409,6 +410,10 @@ pub fn parse_mix_presentation(data: &[u8]) -> IamfResult<MixPresentation> {
             // rendering_config
             let _headphones_rendering_mode_byte = read_u8(data, &mut pos)?;
             let rendering_config_extension_size = read_leb128_u32(data, &mut pos)? as usize;
+            let _ = bounded_capacity(
+                rendering_config_extension_size as u32,
+                data.len().saturating_sub(pos),
+            )?;
             pos += rendering_config_extension_size;
 
             // element mix gain
@@ -465,7 +470,8 @@ fn parse_mix_gain_config(data: &[u8], pos: &mut usize) -> IamfResult<MixGainConf
         let constant_subblock_duration = read_leb128_u32(data, pos)?;
         if constant_subblock_duration == 0 {
             let num_subblocks = read_leb128_u32(data, pos)?;
-            for _ in 0..num_subblocks.saturating_sub(1) {
+            let cap = bounded_capacity(num_subblocks, data.len().saturating_sub(*pos))?;
+            for _ in 0..cap.saturating_sub(1) {
                 let _dur = read_leb128_u32(data, pos)?;
             }
         }
@@ -506,6 +512,7 @@ fn parse_loudness_info(data: &[u8], pos: &mut usize) -> IamfResult<LoudnessInfo>
     // Skip layout extension if present (info_type bit 2)
     if info_type & 4 != 0 {
         let ext_size = read_leb128_u32(data, pos)? as usize;
+        let _ = bounded_capacity(ext_size as u32, data.len().saturating_sub(*pos))?;
         *pos += ext_size;
     }
 
@@ -551,15 +558,22 @@ pub fn parse_parameter_block_with_kind(
         .copied()
         .unwrap_or(ParameterDataKind::MixGain);
 
-    // Subblocks may legitimately consume zero bytes per element (e.g. our
-    // simplified ReconGain), so we only cap against the absolute element
-    // ceiling here rather than `remaining_bytes`.
-    let cap_n = num_subblocks as usize;
-    if cap_n > MAX_LEB128_CAPACITY {
-        return Err(IamfError::ParseError(format!(
-            "Refusing num_subblocks {cap_n} > MAX_LEB128_CAPACITY"
-        )));
-    }
+    // Bound the number of subblocks to prevent unbounded allocation/iteration.
+    // MixGain and DemixingInfo subblocks consume at least one byte each, so
+    // they are capped by the remaining payload bytes. ReconGain subblocks may
+    // be zero-byte in our simplified parse, so they keep the absolute ceiling.
+    let cap_n = match kind {
+        ParameterDataKind::ReconGain => {
+            let n = num_subblocks as usize;
+            if n > MAX_LEB128_CAPACITY {
+                return Err(IamfError::ParseError(format!(
+                    "Refusing num_subblocks {n} > MAX_LEB128_CAPACITY"
+                )));
+            }
+            n
+        }
+        _ => bounded_capacity(num_subblocks, data.len().saturating_sub(pos))?,
+    };
     let mut subblocks = Vec::with_capacity(cap_n);
     for i in 0..num_subblocks {
         let subblock_duration = if constant_subblock_duration != 0 {

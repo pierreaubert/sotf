@@ -2,6 +2,8 @@
 
 Pure Rust IAMF (Immersive Audio Model and Formats) decoder implementing IAMF v1.1.0 bitstream parsing and rendering.
 
+> **Release support level: Experimental.** See [`RELEASE_SCOPE.md`](RELEASE_SCOPE.md) for the current completeness gap analysis. In short: descriptor/temporal-unit parsing and LPCM substream decoding are functional, but Opus/AAC/FLAC substream decoding is not yet implemented.
+
 ## Overview
 
 Decodes IAMF bitstreams and renders to target speaker layouts. No C/C++ dependencies — reuses SOTF's Ambisonics decoder and speaker configs from `sotf-host`.
@@ -9,10 +11,11 @@ Decodes IAMF bitstreams and renders to target speaker layouts. No C/C++ dependen
 ## Features
 
 - **IAMF v1.1.0** bitstream parsing (OBU-based)
-- **Codec support**: Opus, AAC, FLAC, PCM substreams
+- **Codec support**: LPCM substreams natively; Opus, AAC, and FLAC parsing only (decode requires engine-level integration)
 - **Ambisonics rendering** via `sotf-plugin-ambisonics`
 - **Speaker layout rendering** to standard configurations
 - **Zero-allocation decode path**: All intermediate buffers pre-allocated during `open()`
+- **Bounded parsing**: leb128-derived counts are capped against remaining payload bytes and a hard 64 MiB ceiling
 
 ## Module Layout
 
@@ -32,10 +35,13 @@ Decodes IAMF bitstreams and renders to target speaker layouts. No C/C++ dependen
 ```rust
 use sotf_iamf::IamfDecoder;
 use std::fs;
+use std::io::Cursor;
 
 let data = fs::read("audio.iamf")?;
-let mut decoder = IamfDecoder::open(&data)?;
-let frames = decoder.decode_next()?;
+let mut decoder = IamfDecoder::open(Cursor::new(&data))?;
+let spec = decoder.spec().clone();
+let mut output = vec![0.0_f32; spec.output_channels as usize * spec.num_samples_per_frame as usize];
+let frames = decoder.decode_next(&mut output)?;
 ```
 
 ## Dependencies
