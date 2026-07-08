@@ -272,4 +272,74 @@ mod tests {
             Some(1234567890)
         );
     }
+
+    #[test]
+    fn test_duplicate_registration_overwrites_and_does_not_inflate_count() {
+        let mut registry = SourceRegistry::new();
+
+        let provider_a = LocalFilesProvider::new(LocalProviderConfig {
+            directories: vec![PathBuf::from("/music-a")],
+        });
+        registry.register(
+            Box::new(provider_a),
+            SourceConfig {
+                source_id: SourceId("local".to_string()),
+                source_type: SourceType::Local,
+                display_name: "Local A".to_string(),
+                priority: 100,
+                is_enabled: true,
+                config_json: None,
+                last_sync_at: None,
+            },
+        );
+
+        let provider_b = LocalFilesProvider::new(LocalProviderConfig {
+            directories: vec![PathBuf::from("/music-b")],
+        });
+        registry.register(
+            Box::new(provider_b),
+            SourceConfig {
+                source_id: SourceId("local".to_string()),
+                source_type: SourceType::Local,
+                display_name: "Local B".to_string(),
+                priority: 200,
+                is_enabled: true,
+                config_json: None,
+                last_sync_at: None,
+            },
+        );
+
+        assert_eq!(registry.len(), 1);
+        assert_eq!(registry.priority("local"), Some(200));
+        assert_eq!(
+            registry.get_config("local").unwrap().display_name,
+            "Local B"
+        );
+    }
+
+    #[test]
+    fn test_unregister_revokes_source_and_removes_config() {
+        let mut registry = SourceRegistry::new();
+
+        let provider = LocalFilesProvider::new(LocalProviderConfig {
+            directories: vec![],
+        });
+        registry.register(
+            Box::new(provider),
+            SourceConfig {
+                source_id: SourceId("local".to_string()),
+                source_type: SourceType::Local,
+                display_name: "To Revoke".to_string(),
+                priority: 100,
+                is_enabled: true,
+                config_json: None,
+                last_sync_at: None,
+            },
+        );
+
+        assert!(registry.unregister("local").is_some());
+        assert!(!registry.contains("local"));
+        assert!(registry.get_config("local").is_none());
+        assert!(registry.enabled_providers().is_empty());
+    }
 }

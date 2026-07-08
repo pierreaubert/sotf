@@ -85,7 +85,7 @@ pub(super) fn soap_post(url: &str, action: &str, body: &str) -> Result<String, P
 pub(super) fn parse_http_url(url: &str) -> Result<(String, u16, String), ProviderError> {
     let url = url
         .strip_prefix("http://")
-        .ok_or_else(|| ProviderError::Network(format!("not an HTTP URL: {url}")))?;
+        .ok_or_else(|| ProviderError::Network("not an HTTP URL".to_string()))?;
     let (authority, path) = url.split_once('/').unwrap_or((url, ""));
     let path = format!("/{path}");
     let (host, port) = if let Some((h, p)) = authority.rsplit_once(':') {

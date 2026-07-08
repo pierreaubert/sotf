@@ -8,6 +8,7 @@ use super::misc::MAX_BROWSE_ITERATIONS;
 use super::misc::mime_to_format_hint;
 use super::parse::parse_didl_containers;
 use super::parse::parse_didl_items;
+use super::parse::parse_http_url;
 use super::parse::parse_upnp_duration;
 use super::types::BrowsePage;
 use crate::provider::ProviderError;
@@ -84,6 +85,43 @@ fn test_mime_to_format_hint() {
     assert_eq!(mime_to_format_hint("audio/flac"), Some("flac".to_string()));
     assert_eq!(mime_to_format_hint("audio/mpeg"), Some("mp3".to_string()));
     assert_eq!(mime_to_format_hint("unknown/type"), None);
+}
+
+#[test]
+fn test_parse_http_url_rejects_non_http() {
+    let err = parse_http_url("https://example.com:80/cd").unwrap_err();
+    assert!(err.to_string().contains("not an HTTP URL"), "got: {}", err);
+}
+
+#[test]
+fn test_parse_http_url_rejects_invalid_port() {
+    let err = parse_http_url("http://example.com:99999/cd").unwrap_err();
+    assert!(err.to_string().contains("invalid port"), "got: {}", err);
+
+    let err = parse_http_url("http://example.com:abc/cd").unwrap_err();
+    assert!(err.to_string().contains("invalid port"), "got: {}", err);
+}
+
+#[test]
+fn test_parse_http_url_error_does_not_leak_secret_path() {
+    let err = parse_http_url("https://example.com:80/secret-token/path").unwrap_err();
+    // Even on failure, the error message must not echo attacker-supplied
+    // sensitive-looking path components.
+    assert!(!err.to_string().contains("secret-token"), "got: {}", err);
+}
+
+#[test]
+fn test_parse_http_url_rejects_empty_location_url() {
+    let err = parse_http_url("").unwrap_err();
+    assert!(err.to_string().contains("not an HTTP URL"), "got: {}", err);
+}
+
+#[test]
+fn test_parse_http_url_default_port_80() {
+    let (host, port, path) = parse_http_url("http://example.com/cd").unwrap();
+    assert_eq!(host, "example.com");
+    assert_eq!(port, 80);
+    assert_eq!(path, "/cd");
 }
 
 #[test]
