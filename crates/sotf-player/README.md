@@ -75,6 +75,13 @@ src/
 
 - `sotf-bliss-scan` — Standalone Bliss audio similarity analysis tool
 
+## Schema stability
+
+See [`SCHEMA.md`](./SCHEMA.md) for the stable-versus-internal field
+classification and version-compatibility rules for persisted player config
+and state types (`AppConfig`, `ServerConfig`, `RoomEqOptimizerConfig`,
+remote server/token stores, metadata services, and recording device configs).
+
 ## Testing
 
 ```bash

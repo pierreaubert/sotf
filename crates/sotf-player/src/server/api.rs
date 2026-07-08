@@ -529,11 +529,8 @@ pub(super) fn api_pairing_complete(
     state: &Arc<ServerState>,
     request: &ApiRequest,
 ) -> Result<Value, String> {
-    if !state
-        .pairing_mode
-        .load(std::sync::atomic::Ordering::Relaxed)
-    {
-        return Err("pairing is not enabled".to_string());
+    if !state.pairing_window_valid() {
+        return Err("pairing is not enabled or the pairing window has expired".to_string());
     }
 
     let body = api_json_body(request)?;
@@ -551,10 +548,10 @@ pub(super) fn api_pairing_complete(
         .map(sanitize_pairing_client_name)
         .unwrap_or_else(|| "Unnamed Device".to_string());
 
-    let mut expected_nonce = state.pairing_nonce.lock();
-    if *expected_nonce != nonce {
+    if !state.consume_pairing_nonce(nonce) {
         return Err("invalid nonce".to_string());
     }
+
     let fingerprint = normalize_certificate_fingerprint(fingerprint)?;
 
     state
@@ -563,11 +560,6 @@ pub(super) fn api_pairing_complete(
         .add(&fingerprint, &name)
         .map_err(|e| format!("failed to save trusted client: {e}"))?;
     insert_live_trusted_client(state, &fingerprint)?;
-
-    state
-        .pairing_mode
-        .store(false, std::sync::atomic::Ordering::Relaxed);
-    *expected_nonce = String::new();
 
     log::info!(
         "[pairing] Client '{}' added with fingerprint {}",

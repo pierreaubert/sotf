@@ -272,6 +272,23 @@ fn sotf_api_log_path_redacts_tokens() {
 }
 
 #[test]
+fn sotf_api_log_path_redacts_secret_query_keys_case_insensitively() {
+    let redacted = redact_api_path_secrets(
+        "/api/v1/pair?Auth_Token=secret&refresh_token=r1&client_secret=s2&image_api_key=k3&secret=s4&foo=bar",
+    );
+
+    assert_eq!(
+        redacted,
+        "/api/v1/pair?Auth_Token=%3Credacted%3E&refresh_token=%3Credacted%3E&client_secret=%3Credacted%3E&image_api_key=%3Credacted%3E&secret=%3Credacted%3E&foo=bar"
+    );
+    assert!(!redacted.contains("Auth_Token=secret"));
+    assert!(!redacted.contains("r1"));
+    assert!(!redacted.contains("s2"));
+    assert!(!redacted.contains("k3"));
+    assert!(!redacted.contains("s4"));
+}
+
+#[test]
 fn sotf_api_parses_request_with_body() {
     let raw =
             b"POST /api/v1/volume HTTP/1.1\r\nHost: localhost\r\nContent-Length: 13\r\n\r\n{\"volume\":42}";
@@ -382,6 +399,7 @@ fn broadcast_events_on_volume_change() {
         library_scan_active: std::sync::atomic::AtomicBool::new(false),
         pairing_mode: std::sync::atomic::AtomicBool::new(false),
         pairing_nonce: parking_lot::Mutex::new(String::new()),
+        pairing_enabled_at: parking_lot::Mutex::new(None),
         trusted_clients: parking_lot::Mutex::new(
             sotf_tls::TrustedClientStore::load(std::env::temp_dir().as_path()).unwrap(),
         ),
@@ -414,6 +432,7 @@ fn broadcast_events_on_queue_clear() {
         library_scan_active: std::sync::atomic::AtomicBool::new(false),
         pairing_mode: std::sync::atomic::AtomicBool::new(false),
         pairing_nonce: parking_lot::Mutex::new(String::new()),
+        pairing_enabled_at: parking_lot::Mutex::new(None),
         trusted_clients: parking_lot::Mutex::new(
             sotf_tls::TrustedClientStore::load(std::env::temp_dir().as_path()).unwrap(),
         ),

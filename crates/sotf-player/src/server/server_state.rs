@@ -1,3 +1,4 @@
+use super::consts::PAIRING_MAX_LIFETIME;
 use super::generate::generate_pairing_nonce;
 use super::media_index::MediaSourceIndex;
 use crate::federation_config::{self, ServerConfig};
@@ -10,7 +11,7 @@ use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Shared state for the headless server adapters.
 pub(super) struct ServerState {
@@ -30,6 +31,8 @@ pub(super) struct ServerState {
     pub(super) pairing_mode: std::sync::atomic::AtomicBool,
     /// Pairing nonce/short code — valid only while pairing_mode is true.
     pub(super) pairing_nonce: parking_lot::Mutex<String>,
+    /// When pairing mode was enabled; used to enforce `PAIRING_MAX_LIFETIME`.
+    pub(super) pairing_enabled_at: parking_lot::Mutex<Option<Instant>>,
     /// Trusted client certificate store for mTLS.
     pub(super) trusted_clients: parking_lot::Mutex<sotf_tls::TrustedClientStore>,
     /// Live trusted fingerprints used by the MPD mTLS verifier.
@@ -145,11 +148,55 @@ impl ServerState {
         }
     }
 
-    /// Generate a fresh pairing nonce.
+    /// Generate a fresh pairing nonce and record the pairing-window start time.
     pub(super) fn refresh_pairing_nonce(&self) -> String {
         let nonce = generate_pairing_nonce();
         *self.pairing_nonce.lock() = nonce.clone();
+        *self.pairing_enabled_at.lock() = Some(Instant::now());
         nonce
+    }
+
+    /// Returns true if pairing mode is enabled and its lifetime has not expired.
+    pub(super) fn pairing_window_valid(&self) -> bool {
+        if !self.pairing_mode.load(Ordering::Relaxed) {
+            return false;
+        }
+
+        let expired = {
+            let started = *self.pairing_enabled_at.lock();
+            match started {
+                Some(started) => started.elapsed() > PAIRING_MAX_LIFETIME,
+                // If we somehow have no start timestamp, treat the window as expired
+                // rather than allowing an unlimited pairing window.
+                None => true,
+            }
+        };
+        if expired {
+            self.clear_pairing_state();
+            return false;
+        }
+
+        true
+    }
+
+    /// Atomically consume the active pairing nonce.
+    pub(super) fn consume_pairing_nonce(&self, nonce: &str) -> bool {
+        let mut expected_nonce = self.pairing_nonce.lock();
+        if *expected_nonce != nonce {
+            return false;
+        }
+
+        *expected_nonce = String::new();
+        self.pairing_mode.store(false, Ordering::Relaxed);
+        *self.pairing_enabled_at.lock() = None;
+        true
+    }
+
+    /// Disable pairing mode and clear the nonce/lifetime state.
+    pub(super) fn clear_pairing_state(&self) {
+        self.pairing_mode.store(false, Ordering::Relaxed);
+        *self.pairing_nonce.lock() = String::new();
+        *self.pairing_enabled_at.lock() = None;
     }
 }
 

@@ -77,7 +77,7 @@ pub(super) fn redact_api_path_secrets(path: &str) -> String {
     };
     let redacted = url::form_urlencoded::parse(query.as_bytes())
         .map(|(key, value)| {
-            let value = if matches!(key.as_ref(), "token" | "auth_token" | "access_token") {
+            let value = if is_sensitive_query_key(&key) {
                 "<redacted>".into()
             } else {
                 value
@@ -93,6 +93,31 @@ pub(super) fn redact_api_path_secrets(path: &str) -> String {
         )
         .finish();
     format!("{route}?{redacted}")
+}
+
+fn is_sensitive_query_key(key: &str) -> bool {
+    let key = key.trim().to_ascii_lowercase();
+    key == "authorization"
+        || key == "password"
+        || key == "passwd"
+        || key == "bearer"
+        || key == "secret"
+        || key == "api_key"
+        || key == "apikey"
+        || key == "client_secret"
+        || key == "nonce"
+        || key == "fingerprint"
+        || key == "code"
+        || key == "pin"
+        || key.contains("api_key")
+        || key.contains("api-key")
+        || key.ends_with("_token")
+        || key.ends_with("-token")
+        || key.ends_with("_secret")
+        || key.ends_with("-secret")
+        || key.contains("token")
+        || key.contains("nonce")
+        || key.contains("fingerprint")
 }
 
 pub(super) fn find_header_end(buf: &[u8]) -> Option<usize> {

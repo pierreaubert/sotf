@@ -111,9 +111,7 @@ pub(super) fn handle_sotf_api_request(
             return api_json_response(200, api_capabilities_json());
         }
         ("GET", "/api/v1/pairing/status") => {
-            let pairing_enabled = state
-                .pairing_mode
-                .load(std::sync::atomic::Ordering::Relaxed);
+            let pairing_enabled = state.pairing_window_valid();
             return api_json_response(
                 200,
                 json!({
@@ -152,10 +150,7 @@ pub(super) fn handle_sotf_api_request(
             )
         }
         ("POST", "/api/v1/pairing/disable") => {
-            state
-                .pairing_mode
-                .store(false, std::sync::atomic::Ordering::Relaxed);
-            *state.pairing_nonce.lock() = String::new();
+            state.clear_pairing_state();
             api_json_response(
                 200,
                 json!({ "ok": true, "pairing_enabled": false, "nonce": null }),

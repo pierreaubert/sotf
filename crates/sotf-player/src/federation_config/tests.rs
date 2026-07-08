@@ -1,6 +1,6 @@
 use super::mpd_client_auth_mode::MpdClientAuthMode;
 use super::source_connection_config::SourceConnectionConfig;
-use super::types::ServerConfig;
+use super::types::{MpdAuthMode, ServerConfig};
 
 #[test]
 fn test_source_connection_roundtrip() {
@@ -357,4 +357,84 @@ fn test_set_field_value_out_of_bounds() {
     config.set_field_value(99, "value");
     // Values should remain unchanged
     assert_eq!(config.field_value(0), "https://");
+}
+
+// =========================================================================
+// ServerConfig schema / version compatibility tests (QA-CORE-001)
+// =========================================================================
+
+#[test]
+fn server_config_empty_json_defaults() {
+    let json = "{}";
+    let config: ServerConfig = serde_json::from_str(json).unwrap();
+    assert!(!config.mpd.enabled);
+    assert_eq!(config.mpd.bind_address, "0.0.0.0");
+    assert_eq!(config.mpd.port, 6600);
+    assert!(config.mpd.tls_enabled);
+    assert_eq!(config.mpd.auth_mode, MpdAuthMode::Certificate);
+    assert!(config.mpd.password.is_none());
+    assert!(config.mpd.trusted_client_fingerprints.is_empty());
+    assert!(!config.dlna.enabled);
+    assert_eq!(config.dlna.bind_address, "0.0.0.0");
+    assert_eq!(config.dlna.friendly_name, "SOTF Media Server");
+    assert_eq!(config.dlna.port, 8200);
+    assert!(!config.api.enabled);
+    assert_eq!(config.api.bind_address, "0.0.0.0");
+    assert_eq!(config.api.port, 8732);
+    assert_eq!(config.api.friendly_name, "SOTF Player");
+    assert!(config.api.tls_enabled);
+    assert!(config.api.auth_token.is_none());
+}
+
+#[test]
+fn server_config_ignores_unknown_fields() {
+    let json = r#"{
+        "mpd": {"enabled": true},
+        "dlna": {"enabled": true},
+        "api": {"enabled": true},
+        "future_field": "ignored",
+        "unknown_nested": {"x": 1}
+    }"#;
+
+    let config: ServerConfig = serde_json::from_str(json).unwrap();
+    assert!(config.mpd.enabled);
+    assert!(config.dlna.enabled);
+    assert!(config.api.enabled);
+}
+
+#[test]
+fn server_config_serde_roundtrip() {
+    let config = ServerConfig {
+        mpd: super::mpd_settings::MpdSettings {
+            enabled: true,
+            bind_address: "127.0.0.1".into(),
+            port: 6601,
+            tls_enabled: false,
+            auth_mode: MpdAuthMode::Password,
+            password: Some("secret".into()),
+            trusted_client_fingerprints: vec!["aa:bb".into()],
+        },
+        dlna: super::dlna_settings::DlnaSettings {
+            enabled: true,
+            bind_address: "127.0.0.1".into(),
+            friendly_name: "Test".into(),
+            port: 8201,
+        },
+        api: super::sotf_api_settings::SotfApiSettings {
+            enabled: true,
+            bind_address: "127.0.0.1".into(),
+            port: 8733,
+            friendly_name: "Test API".into(),
+            tls_enabled: false,
+            auth_token: Some("token".into()),
+        },
+    };
+
+    let json = serde_json::to_string(&config).unwrap();
+    let decoded: ServerConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.mpd.enabled, config.mpd.enabled);
+    assert_eq!(decoded.mpd.port, config.mpd.port);
+    assert_eq!(decoded.dlna.port, config.dlna.port);
+    assert_eq!(decoded.api.port, config.api.port);
+    assert_eq!(decoded.api.auth_token, config.api.auth_token);
 }

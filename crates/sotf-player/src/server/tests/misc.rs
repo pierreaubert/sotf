@@ -2,10 +2,12 @@ use super::super::api::api_library_album_artwork_response;
 use super::super::api::api_library_albums_json;
 use super::super::consts::API_LIBRARY_MAX_LIMIT;
 use super::super::handle::handle_sotf_api_request;
+use super::super::misc::redact_api_path_secrets;
 use super::super::run::run_sotf_api_server;
 use super::super::server_state::ServerState;
 use super::super::server_state::build_mpd_tls_acceptor;
 use super::super::types::ApiRequest;
+use super::super::validate::sotf_api_plaintext_guard;
 use super::super::validate::validate_server_mode_config;
 use super::super::validate::validate_sotf_api_token;
 use crate::federation_config::{self, ServerConfig, SotfApiSettings};
@@ -47,6 +49,54 @@ fn empty_trusted_client_store() -> (tempfile::TempDir, sotf_tls::TrustedClientSt
 
 fn valid_fingerprint() -> String {
     (0..32).map(|_| "AA").collect::<Vec<_>>().join(":")
+}
+
+static PLAINTEXT_LAN_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+struct PlaintextLanEnvGuard {
+    key: &'static str,
+    previous: Option<std::ffi::OsString>,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+impl PlaintextLanEnvGuard {
+    fn unset() -> Self {
+        Self::with_value(None)
+    }
+
+    fn set(value: &'static str) -> Self {
+        Self::with_value(Some(value))
+    }
+
+    fn with_value(value: Option<&str>) -> Self {
+        let lock = PLAINTEXT_LAN_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let key = super::super::validate::PLAINTEXT_LAN_OPT_IN_VAR;
+        let previous = std::env::var_os(key);
+        unsafe {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
+        Self {
+            key,
+            previous,
+            _lock: lock,
+        }
+    }
+}
+
+impl Drop for PlaintextLanEnvGuard {
+    fn drop(&mut self) {
+        unsafe {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 }
 
 #[test]
@@ -140,6 +190,7 @@ fn sotf_api_capabilities_are_public_and_media_aware() {
         library_scan_active: std::sync::atomic::AtomicBool::new(false),
         pairing_mode: std::sync::atomic::AtomicBool::new(false),
         pairing_nonce: parking_lot::Mutex::new(String::new()),
+        pairing_enabled_at: parking_lot::Mutex::new(None),
         trusted_clients: parking_lot::Mutex::new(
             sotf_tls::TrustedClientStore::load(std::env::temp_dir().as_path()).unwrap(),
         ),
@@ -173,6 +224,7 @@ pub(super) fn test_state() -> Arc<ServerState> {
             library_scan_active: std::sync::atomic::AtomicBool::new(false),
             pairing_mode: std::sync::atomic::AtomicBool::new(false),
             pairing_nonce: parking_lot::Mutex::new(String::new()),
+            pairing_enabled_at: parking_lot::Mutex::new(None),
             trusted_clients: parking_lot::Mutex::new(
                 sotf_tls::TrustedClientStore::load(&tmp).unwrap()
             ),
@@ -325,6 +377,7 @@ fn pairing_status_is_public_and_reflects_mode() {
         .pairing_mode
         .store(true, std::sync::atomic::Ordering::Relaxed);
     *state.pairing_nonce.lock() = "ABC123".to_string();
+    *state.pairing_enabled_at.lock() = Some(std::time::Instant::now());
 
     let req = ApiRequest {
         method: "GET".to_string(),
@@ -337,6 +390,34 @@ fn pairing_status_is_public_and_reflects_mode() {
     assert!(resp_str.starts_with("HTTP/1.1 200 OK"));
     assert!(resp_str.contains("\"pairing_enabled\":true"));
     assert!(resp_str.contains("\"nonce\":null"));
+}
+
+#[test]
+fn pairing_status_expires_lapsed_window() {
+    let state = test_state();
+    state
+        .pairing_mode
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    *state.pairing_nonce.lock() = "ABC123".to_string();
+    *state.pairing_enabled_at.lock() =
+        Some(std::time::Instant::now() - super::super::consts::PAIRING_MAX_LIFETIME);
+
+    let req = ApiRequest {
+        method: "GET".to_string(),
+        path: "/api/v1/pairing/status".to_string(),
+        headers: Vec::new(),
+        body: Vec::new(),
+    };
+    let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+    let resp_str = String::from_utf8(resp).unwrap();
+    assert!(resp_str.starts_with("HTTP/1.1 200 OK"));
+    assert!(resp_str.contains("\"pairing_enabled\":false"));
+    assert!(
+        !state
+            .pairing_mode
+            .load(std::sync::atomic::Ordering::Relaxed)
+    );
+    assert!(state.pairing_nonce.lock().is_empty());
 }
 
 #[test]
@@ -362,6 +443,7 @@ fn pairing_complete_validates_nonce() {
         .pairing_mode
         .store(true, std::sync::atomic::Ordering::Relaxed);
     *state.pairing_nonce.lock() = "GOOD01".to_string();
+    *state.pairing_enabled_at.lock() = Some(std::time::Instant::now());
 
     let req = ApiRequest {
         method: "POST".to_string(),
@@ -382,6 +464,7 @@ fn pairing_complete_rejects_malformed_fingerprint() {
         .pairing_mode
         .store(true, std::sync::atomic::Ordering::Relaxed);
     *state.pairing_nonce.lock() = "PAIR01".to_string();
+    *state.pairing_enabled_at.lock() = Some(std::time::Instant::now());
 
     let body = r#"{"nonce":"PAIR01","fingerprint":"ZZ:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99","name":"Bad"}"#;
     let req = ApiRequest {
@@ -403,6 +486,7 @@ fn pairing_complete_adds_trusted_client() {
         .pairing_mode
         .store(true, std::sync::atomic::Ordering::Relaxed);
     *state.pairing_nonce.lock() = "PAIR01".to_string();
+    *state.pairing_enabled_at.lock() = Some(std::time::Instant::now());
 
     let valid_fp = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99";
     let body = format!(
@@ -449,4 +533,110 @@ fn pairing_admin_requires_auth() {
     let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "wrong");
     let resp_str = String::from_utf8(resp).unwrap();
     assert!(resp_str.starts_with("HTTP/1.1 401"));
+}
+
+#[test]
+fn pairing_complete_rejects_expired_window() {
+    let state = test_state();
+    state
+        .pairing_mode
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    *state.pairing_nonce.lock() = "PAIR01".to_string();
+    // Simulate an old pairing window by back-dating the start timestamp.
+    *state.pairing_enabled_at.lock() =
+        Some(std::time::Instant::now() - super::super::consts::PAIRING_MAX_LIFETIME);
+
+    let valid_fp = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99";
+    let body =
+        format!("{{\"nonce\":\"PAIR01\",\"fingerprint\":\"{valid_fp}\",\"name\":\"iPhone\"}}");
+    let req = ApiRequest {
+        method: "POST".to_string(),
+        path: "/api/v1/pairing/complete".to_string(),
+        headers: Vec::new(),
+        body: body.into_bytes(),
+    };
+    let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+    let resp_str = String::from_utf8(resp).unwrap();
+    assert!(resp_str.starts_with("HTTP/1.1 400"));
+    assert!(resp_str.contains("pairing window has expired"));
+    assert!(!state.trusted_clients.lock().contains(valid_fp));
+}
+
+#[test]
+fn pairing_complete_rejects_missing_start_timestamp() {
+    let state = test_state();
+    state
+        .pairing_mode
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    *state.pairing_nonce.lock() = "PAIR01".to_string();
+    // Leave pairing_enabled_at as None to simulate a corrupted/window-less state.
+
+    let valid_fp = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99";
+    let body =
+        format!("{{\"nonce\":\"PAIR01\",\"fingerprint\":\"{valid_fp}\",\"name\":\"iPhone\"}}");
+    let req = ApiRequest {
+        method: "POST".to_string(),
+        path: "/api/v1/pairing/complete".to_string(),
+        headers: Vec::new(),
+        body: body.into_bytes(),
+    };
+    let resp = handle_sotf_api_request(req, &state, &api_settings(Some("secret")), "secret");
+    let resp_str = String::from_utf8(resp).unwrap();
+    assert!(resp_str.starts_with("HTTP/1.1 400"));
+    assert!(!state.trusted_clients.lock().contains(valid_fp));
+}
+
+#[test]
+fn plaintext_guard_allows_loopback_and_blocks_lan_without_opt_in() {
+    let _env = PlaintextLanEnvGuard::unset();
+    let loopback = SotfApiSettings {
+        enabled: true,
+        bind_address: "127.0.0.1".to_string(),
+        port: 8732,
+        friendly_name: "SOTF".to_string(),
+        tls_enabled: false,
+        auth_token: Some("secret".to_string()),
+    };
+    assert!(sotf_api_plaintext_guard(&loopback).is_ok());
+
+    let lan = SotfApiSettings {
+        bind_address: "0.0.0.0".to_string(),
+        ..loopback.clone()
+    };
+    assert!(sotf_api_plaintext_guard(&lan).is_err());
+
+    let specific_lan = SotfApiSettings {
+        bind_address: "192.168.1.42".to_string(),
+        ..loopback.clone()
+    };
+    assert!(sotf_api_plaintext_guard(&specific_lan).is_err());
+}
+
+#[test]
+fn plaintext_guard_allows_lan_with_environment_opt_in() {
+    let _env = PlaintextLanEnvGuard::set("1");
+    let settings = SotfApiSettings {
+        enabled: true,
+        bind_address: "0.0.0.0".to_string(),
+        port: 8732,
+        friendly_name: "SOTF".to_string(),
+        tls_enabled: false,
+        auth_token: Some("secret".to_string()),
+    };
+    assert!(sotf_api_plaintext_guard(&settings).is_ok());
+}
+
+#[test]
+fn sotf_api_log_redacts_pairing_secrets() {
+    let redacted = redact_api_path_secrets(
+        "/api/v1/pair?nonce=PAIR01&fingerprint=AA:BB:CC&code=abc123&pin=9999&foo=bar",
+    );
+    assert_eq!(
+        redacted,
+        "/api/v1/pair?nonce=%3Credacted%3E&fingerprint=%3Credacted%3E&code=%3Credacted%3E&pin=%3Credacted%3E&foo=bar"
+    );
+    assert!(!redacted.contains("PAIR01"));
+    assert!(!redacted.contains("AA:BB:CC"));
+    assert!(!redacted.contains("abc123"));
+    assert!(!redacted.contains("9999"));
 }

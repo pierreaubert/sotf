@@ -158,7 +158,7 @@ pub fn set_string_param(
     param_idx: usize,
     value: String,
 ) -> Result<()> {
-    use crate::security::validate_plugin_file_path;
+    use crate::security::{validate_plugin_ir_file_path, validate_plugin_sofa_file_path};
     use std::path::Path;
 
     match settings {
@@ -170,19 +170,19 @@ pub fn set_string_param(
         }
         crate::PluginSettings::Convolution { ir_file, .. } if param_idx == 0 => {
             if !value.is_empty() {
-                validate_plugin_file_path(Path::new(&value))?;
+                validate_plugin_ir_file_path(Path::new(&value))?;
             }
             *ir_file = value;
         }
         crate::PluginSettings::XTC { room_ir_file, .. } if param_idx == 16 => {
             if !value.is_empty() {
-                validate_plugin_file_path(Path::new(&value))?;
+                validate_plugin_ir_file_path(Path::new(&value))?;
             }
             *room_ir_file = if value.is_empty() { None } else { Some(value) };
         }
         crate::PluginSettings::BinauralDecoder { sofa_file, .. } if param_idx == 0 => {
             if !value.is_empty() {
-                validate_plugin_file_path(Path::new(&value))?;
+                validate_plugin_sofa_file_path(Path::new(&value))?;
             }
             *sofa_file = value;
         }

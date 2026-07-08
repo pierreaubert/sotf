@@ -1,4 +1,86 @@
-# 0.5.123 (unreleased)
+# 0.5.125 (unreleased)
+
+## Signal path model (QA-SOTA-004)
+
+- Added `SignalPath` and related types (`SignalPathSource`, `SignalPathPlugin`,
+  `SignalPathProcessing`, `SignalPathResampling`, `SignalPathOutput`,
+  `SignalPathHealth`) as a read-only model of the current audio signal path.
+- `Player::signal_path()` builds the snapshot from saved config, decoder audio
+  info, and live engine state.
+- The model exposes source format/sample rate/bit depth, plugin chain,
+  resampling stages, output device/rate/channels/access mode, and engine-known
+  health indicators (underruns, stream errors, dropped frames).
+- Re-exported the signal-path types from `sotf-player` so GPUI/TUI surfaces can
+  consume them.
+- Added unit tests covering idle state, source/plugin reporting, resampling
+  detection, rate-matching, and engine health issue reporting.
+- Clipping detection and headroom metering remain placeholders (`None`) pending
+  engine peak-meter integration.
+
+## LAN/server threat model and guards (QA-SEC-005)
+
+- Added a checked-in threat model document at
+  `reviews/qa/lan-server-threat-model.md` covering SOTF API, MPD, DLNA,
+  streaming, federation, cast discovery/control, pairing, SSE, QR pairing, and
+  remote token storage. For each entry point the document defines authentication,
+  authorization, transport security, bind-address defaults, replay risk, secret
+  logging risk, and expected loopback vs LAN behavior.
+- Added `sotf_api_plaintext_guard()` which refuses to start a plaintext SOTF API
+  listener on a non-loopback address unless `SOTF_ALLOW_PLAINTEXT_LAN=1` is set.
+  Loopback plaintext remains allowed for local testing and reverse-proxy setups.
+- Added a pairing lifetime window (`PAIRING_MAX_LIFETIME`, 10 minutes). Pairing
+  completion is rejected once the window expires or if the enable timestamp is
+  missing, limiting the window in which a captured nonce can be replayed.
+- Expanded SOTF API request-log redaction to cover `nonce`, `fingerprint`,
+  `code`, and `pin` query parameters in addition to existing token/secret fields.
+- Added GPUI tests ensuring the QR pairing helper rejects loopback and
+  unspecified bind addresses so the connection QR never advertises `127.0.0.1`
+  or `0.0.0.0`.
+
+## Diagnostics bundle and "why no audio" helper (QA-SOTA-005)
+
+- Added `diagnostics` module with a secret-safe `DiagnosticsBundle` that
+  captures app version, OS info, audio devices, selected output, engine state,
+  library scan summary, plugin graph summary, recent errors, and optional
+  systemwide status.
+- Added redaction helpers that remove URL query values for sensitive keys
+  (`token`, `secret`, `password`, `api_key`, etc.), full URLs, and user home
+  directory prefixes before export.
+- Added `NoAudioReason` enum and `diagnose_no_audio` helper that checks queue,
+  engine state, output device selection/availability, mute, volume, source load
+  failures, plugin graph errors, and systemwide status in order.
+- Added unit tests for redaction, bundle JSON round-trip, and `diagnose_no_audio`.
+
+# 0.5.123
+
+## Schema/version compatibility (QA-CORE-001)
+
+- Added schema/version compatibility tests for persisted config/state types:
+  `AppConfig`, `ServerConfig`, `SourceConnectionConfig`, `SotfRemoteServerStore`,
+  `SotfRemoteTokenStore`, `MetadataServicesConfig`, `RoomEqOptimizerConfig`,
+  `MicrophonePresetsConfig`, `RecordingDeviceConfig`, and `PlaybackDeviceConfig`.
+- Tests cover unknown-field tolerance, missing optional-field defaults, and
+  serde round-trips.
+- Added a migration test for the 0.5.122 Room EQ target-response change:
+  legacy `target_tilt` / `broadband_target_matching` fields are ignored on read
+  and `target_response` falls back to defaults.
+- Documented stable vs internal fields in `SCHEMA.md`.
+
+### Fixed
+- `AppConfig` fields now all have `#[serde(default)]`, so a partially-written
+  or legacy JSON file missing fields deserializes to the same defaults as
+  `AppConfig::default` instead of failing.
+
+## Security hardening
+
+- SOTF API request logging now redacts token, secret, password, and API-key
+  query parameters case-insensitively before writing request diagnostics.
+- The fallback remote-server bearer-token store now writes
+  `remote_server_tokens.json` with owner-only permissions on Unix and repairs
+  permissions on existing token-store files when saving.
+- Plugin file path parameters now use type-specific extension allowlists for
+  impulse-response audio, SOFA/HRTF, and EqualizerAPO files, and the binaural
+  SOFA editing helper validates paths before accepting them.
 
 ## Server media lookup cache
 

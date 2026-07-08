@@ -1,3 +1,4 @@
+use super::app_config::AppConfig;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use super::decide::decide_plugin_sandbox_permission_with_broker;
 use super::get::delete_remote_server_token;
@@ -418,5 +419,76 @@ fn test_macos_sandbox_home_prefers_cf_fixed_home() {
     assert_eq!(
         dir,
         PathBuf::from("/Users/alice/Library/Containers/org.spinorama.sotf/Data")
+    );
+}
+
+// =========================================================================
+// AppConfig schema / version compatibility tests (QA-CORE-001)
+// =========================================================================
+
+#[test]
+fn app_config_default_deserialize() {
+    let json = r#"{}"#;
+    let config: AppConfig = serde_json::from_str(json).unwrap();
+    assert_eq!(config.version, 1);
+    assert_eq!(config.output_device, None);
+    assert!(config.queue.is_empty());
+    assert_eq!(config.queue_index, None);
+    assert_eq!(config.track_index, 0);
+    assert_eq!(config.plugin_preset, None);
+}
+
+#[test]
+fn app_config_ignores_unknown_fields() {
+    let json = r#"{
+        "version": 1,
+        "output_device": "Built-in Output",
+        "queue": [],
+        "queue_index": null,
+        "track_index": 0,
+        "plugin_preset": null,
+        "future_field": "ignored",
+        "unknown_nested": {"x": 1}
+    }"#;
+
+    let config: AppConfig = serde_json::from_str(json).unwrap();
+    assert_eq!(config.output_device.as_deref(), Some("Built-in Output"));
+    assert_eq!(config.version, 1);
+}
+
+#[test]
+fn app_config_serde_roundtrip() {
+    let config = AppConfig {
+        version: 1,
+        output_device: Some("Device".into()),
+        queue: vec![("Artist".into(), "Album".into())],
+        queue_index: Some(0),
+        track_index: 3,
+        plugin_preset: Some("preset".into()),
+    };
+
+    let json = serde_json::to_string(&config).unwrap();
+    let decoded: AppConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.version, config.version);
+    assert_eq!(decoded.output_device, config.output_device);
+    assert_eq!(decoded.queue, config.queue);
+    assert_eq!(decoded.queue_index, config.queue_index);
+    assert_eq!(decoded.track_index, config.track_index);
+    assert_eq!(decoded.plugin_preset, config.plugin_preset);
+}
+
+#[test]
+fn app_config_rejects_version_below_minimum() {
+    let config = AppConfig {
+        version: 0,
+        ..Default::default()
+    };
+    let result = super::app_config::migrate_app_config(config);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported AppConfig version")
     );
 }

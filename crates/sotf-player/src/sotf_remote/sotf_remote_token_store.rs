@@ -4,6 +4,8 @@ use crate::sotf_api_client::{SotfApiClientError, SotfApiResult};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -50,7 +52,7 @@ impl SotfRemoteTokenStore {
                 .map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))?;
         }
         let json = serde_json::to_string_pretty(self).map_err(SotfApiClientError::Json)?;
-        std::fs::write(path, json).map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))
+        write_token_store(path, json.as_bytes())
     }
 
     pub fn set(&mut self, key: impl Into<String>, token: impl Into<String>) {
@@ -71,4 +73,28 @@ impl SotfRemoteTokenStore {
     pub fn get(&self, key: &str) -> Option<&str> {
         self.tokens.get(key).map(String::as_str)
     }
+}
+
+#[cfg(unix)]
+fn write_token_store(path: &Path, contents: &[u8]) -> SotfApiResult<()> {
+    use std::io::Write;
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))?;
+    file.write_all(contents)
+        .map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))?;
+    file.sync_all()
+        .map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))
+}
+
+#[cfg(not(unix))]
+fn write_token_store(path: &Path, contents: &[u8]) -> SotfApiResult<()> {
+    std::fs::write(path, contents).map_err(|err| SotfApiClientError::InvalidConfig(err.to_string()))
 }

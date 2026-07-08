@@ -145,6 +145,61 @@ impl Default for MetadataServicesConfig {
     }
 }
 
+#[cfg(test)]
+mod schema_tests {
+    use super::{MetadataProviderConfig, MetadataServicesConfig};
+
+    #[test]
+    fn metadata_services_config_empty_defaults() {
+        let json = r#"{"providers": [], "user_agent": "test"}"#;
+        let config: MetadataServicesConfig = serde_json::from_str(json).unwrap();
+        assert!(config.providers.is_empty());
+        assert_eq!(config.user_agent, "test");
+    }
+
+    #[test]
+    fn metadata_services_config_ignores_unknown_fields() {
+        let json = r#"{
+            "providers": [
+                {
+                    "provider_id": "musicbrainz",
+                    "enabled": true,
+                    "endpoint": "https://example.com/",
+                    "username": null,
+                    "has_stored_credentials": false,
+                    "future_field": "ignored"
+                }
+            ],
+            "user_agent": "test",
+            "unknown_nested": {"x": 1}
+        }"#;
+
+        let config: MetadataServicesConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.providers.len(), 1);
+        assert_eq!(config.providers[0].provider_id, "musicbrainz");
+    }
+
+    #[test]
+    fn metadata_services_config_serde_roundtrip() {
+        let config = MetadataServicesConfig {
+            providers: vec![MetadataProviderConfig {
+                provider_id: "musicbrainz".into(),
+                enabled: true,
+                endpoint: "https://example.com/".into(),
+                username: Some("user".into()),
+                has_stored_credentials: true,
+            }],
+            user_agent: "SOTF/test".into(),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let decoded: MetadataServicesConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.providers.len(), config.providers.len());
+        assert_eq!(decoded.user_agent, config.user_agent);
+        assert_eq!(decoded.providers[0].provider_id, "musicbrainz");
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum MetadataError {
     #[error("metadata patch is empty")]

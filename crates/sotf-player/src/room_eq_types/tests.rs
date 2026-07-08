@@ -13,6 +13,7 @@ use super::multi_measurement_ui_config::MultiMeasurementUiConfig;
 use super::room_eq_measurements_file::RoomEqMeasurementsFile;
 use super::room_eq_optimization_mode::apply_simple_preset;
 use super::room_eq_optimizer_config::RoomEqOptimizerConfig;
+use super::target_response_ui_config::TargetResponseUiConfig;
 use super::types::append_channel_dsp_graph_branch;
 use super::types::is_route_replaced_global_plugin;
 #[cfg(test)]
@@ -1070,4 +1071,112 @@ fn test_factored_graph_node_count_independent_of_channel_count() {
         collect_labels(&small),
         collect_labels(&larger),
     );
+}
+
+// =========================================================================
+// RoomEqOptimizerConfig schema / version compatibility tests (QA-CORE-001)
+// =========================================================================
+
+#[test]
+fn room_eq_optimizer_config_serde_roundtrip() {
+    let config = RoomEqOptimizerConfig {
+        target_response: TargetResponseUiConfig {
+            enabled: true,
+            shape: "from_measurement".into(),
+            slope_db_per_octave: -0.5,
+            reference_freq: 1000.0,
+            curve_path: None,
+            bass_shelf_db: 1.0,
+            bass_shelf_freq: 120.0,
+            treble_shelf_db: -0.5,
+            treble_shelf_freq: 9000.0,
+            broadband_precorrection: true,
+        },
+        ..Default::default()
+    };
+
+    let json = serde_json::to_string(&config).unwrap();
+    let decoded: RoomEqOptimizerConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.target_response.shape, config.target_response.shape);
+    assert_eq!(
+        decoded.target_response.broadband_precorrection,
+        config.target_response.broadband_precorrection
+    );
+    assert_eq!(decoded.num_filters, config.num_filters);
+}
+
+#[test]
+fn room_eq_optimizer_config_ignores_unknown_legacy_fields() {
+    // 0.5.121 and earlier persisted `target_tilt` and `broadband_target_matching`.
+    // Those fields were removed in 0.5.122 in favour of `target_response`.
+    // This test documents that such legacy configs still deserialize (unknown
+    // fields are ignored) and `target_response` falls back to defaults.
+    let json = r#"{
+        "multi_speaker_mode": "Combined",
+        "algorithm": "autoeq:cmaes",
+        "num_filters": 7,
+        "min_q": 0.5,
+        "max_q": 6.0,
+        "min_db": -12.0,
+        "max_db": 4.0,
+        "min_freq": 20.0,
+        "max_freq": 1600.0,
+        "max_iter": 50000,
+        "peq_model": "pk",
+        "population": 300,
+        "refine": false,
+        "local_algo": "cobyla",
+        "loss_type": "flat",
+        "psychoacoustic": true,
+        "asymmetric_loss": true,
+        "target_curve": "flat",
+        "system_type": "stereo",
+        "target_tilt": {"slope_db_per_octave": -0.8},
+        "broadband_target_matching": {"enabled": true},
+        "future_unknown_field": "ignored"
+    }"#;
+
+    let config: RoomEqOptimizerConfig = serde_json::from_str(json).unwrap();
+    assert_eq!(config.target_response.shape, "harman");
+    assert_eq!(config.target_response.enabled, true);
+    assert_eq!(config.target_response.broadband_precorrection, false);
+}
+
+#[test]
+fn room_eq_optimizer_config_missing_optional_fields_use_defaults() {
+    // Only the fields without #[serde(default)] are required.
+    let json = r#"{
+        "multi_speaker_mode": "Combined",
+        "algorithm": "autoeq:cmaes",
+        "num_filters": 7,
+        "min_q": 0.5,
+        "max_q": 6.0,
+        "min_db": -12.0,
+        "max_db": 4.0,
+        "min_freq": 20.0,
+        "max_freq": 1600.0,
+        "max_iter": 50000,
+        "peq_model": "pk",
+        "population": 300,
+        "refine": false,
+        "local_algo": "cobyla",
+        "loss_type": "flat",
+        "psychoacoustic": true,
+        "asymmetric_loss": true,
+        "target_curve": "flat",
+        "system_type": "stereo"
+    }"#;
+
+    let config: RoomEqOptimizerConfig = serde_json::from_str(json).unwrap();
+    assert_eq!(
+        config.mode,
+        super::room_eq_optimization_mode::RoomEqOptimizationMode::Iir
+    );
+    assert!(!config.multi_measurement.enabled);
+    assert!(!config.excursion_protection.enabled);
+    assert!(!config.schroeder_split.enabled);
+    assert!(!config.phase_alignment.enabled);
+    assert!(!config.multi_seat.enabled);
+    assert_eq!(config.bo_initial_samples, 0);
+    assert_eq!(config.bo_acquisition, "qei");
 }

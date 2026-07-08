@@ -191,6 +191,62 @@ pub fn validate_plugin_file_path(path: &Path) -> Result<PathBuf, SecurityError> 
     }
 }
 
+/// Validate a plugin file path and require an expected extension.
+pub fn validate_plugin_file_path_with_extensions(
+    path: &Path,
+    allowed_extensions: &[&str],
+    file_kind: &str,
+) -> Result<PathBuf, SecurityError> {
+    let canonical = validate_plugin_file_path(path)?;
+    let extension = canonical
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase);
+
+    let Some(extension) = extension else {
+        return Err(SecurityError {
+            message: format!("{file_kind} file must have an allowed extension"),
+            path: path.to_path_buf(),
+            allowed_dirs: vec![],
+        });
+    };
+
+    if allowed_extensions
+        .iter()
+        .any(|allowed| extension == allowed.trim_start_matches('.').to_ascii_lowercase())
+    {
+        Ok(canonical)
+    } else {
+        Err(SecurityError {
+            message: format!(
+                "{file_kind} file extension '.{extension}' is not allowed; expected one of: {}",
+                allowed_extensions.join(", ")
+            ),
+            path: path.to_path_buf(),
+            allowed_dirs: vec![],
+        })
+    }
+}
+
+/// Validate a SOFA/HRTF file path supplied to spatial plugins.
+pub fn validate_plugin_sofa_file_path(path: &Path) -> Result<PathBuf, SecurityError> {
+    validate_plugin_file_path_with_extensions(path, &["sofa"], "SOFA")
+}
+
+/// Validate an impulse-response audio file path supplied to convolution plugins.
+pub fn validate_plugin_ir_file_path(path: &Path) -> Result<PathBuf, SecurityError> {
+    validate_plugin_file_path_with_extensions(
+        path,
+        &["wav", "wave", "aif", "aiff", "flac"],
+        "impulse response",
+    )
+}
+
+/// Validate an EqualizerAPO-style filter file path.
+pub fn validate_plugin_apo_file_path(path: &Path) -> Result<PathBuf, SecurityError> {
+    validate_plugin_file_path_with_extensions(path, &["txt", "apo"], "EqualizerAPO")
+}
+
 /// Validate that a path is within a music directory for reading audio files.
 pub fn validate_music_read_path(
     path: &Path,
@@ -302,5 +358,33 @@ mod tests {
         // Use a file that definitely exists
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
         assert!(validate_plugin_file_path(&path).is_ok());
+    }
+
+    #[test]
+    fn test_validate_plugin_file_path_with_extensions_rejects_wrong_extension() {
+        let temp_dir = env::temp_dir().join("sotf_plugin_path_ext");
+        std::fs::create_dir_all(&temp_dir).ok();
+        let path = temp_dir.join("impulse.txt");
+        std::fs::write(&path, b"not an impulse response").ok();
+
+        let result = validate_plugin_ir_file_path(&path);
+        assert!(result.is_err());
+
+        std::fs::remove_file(&path).ok();
+        std::fs::remove_dir(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_validate_plugin_file_path_with_extensions_accepts_case_insensitive_extension() {
+        let temp_dir = env::temp_dir().join("sotf_plugin_path_ext_case");
+        std::fs::create_dir_all(&temp_dir).ok();
+        let path = temp_dir.join("room.SOFA");
+        std::fs::write(&path, b"placeholder").ok();
+
+        let result = validate_plugin_sofa_file_path(&path);
+        assert!(result.is_ok());
+
+        std::fs::remove_file(&path).ok();
+        std::fs::remove_dir(&temp_dir).ok();
     }
 }

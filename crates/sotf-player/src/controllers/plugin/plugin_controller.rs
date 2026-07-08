@@ -557,7 +557,7 @@ impl PluginController {
                 },
                 PluginSettings::Convolution { ir_file, .. } if param_idx == 0 => {
                     if !value.is_empty() {
-                        crate::security::validate_plugin_file_path(Path::new(&value))
+                        crate::security::validate_plugin_ir_file_path(Path::new(&value))
                             .map_err(|e| e.to_string())?;
                     }
                     *ir_file = value;
@@ -565,7 +565,7 @@ impl PluginController {
                 }
                 PluginSettings::XTC { room_ir_file, .. } if param_idx == 16 => {
                     if !value.is_empty() {
-                        crate::security::validate_plugin_file_path(Path::new(&value))
+                        crate::security::validate_plugin_ir_file_path(Path::new(&value))
                             .map_err(|e| e.to_string())?;
                     }
                     *room_ir_file = if value.is_empty() { None } else { Some(value) };
@@ -573,7 +573,7 @@ impl PluginController {
                 }
                 PluginSettings::BinauralDecoder { sofa_file, .. } if param_idx == 0 => {
                     if !value.is_empty() {
-                        crate::security::validate_plugin_file_path(Path::new(&value))
+                        crate::security::validate_plugin_sofa_file_path(Path::new(&value))
                             .map_err(|e| e.to_string())?;
                     }
                     *sofa_file = value;
@@ -624,7 +624,7 @@ impl PluginController {
                 },
                 PluginSettings::Convolution { ir_file, .. } if param_idx == 0 => {
                     if !value.is_empty() {
-                        crate::security::validate_plugin_file_path(Path::new(&value))
+                        crate::security::validate_plugin_ir_file_path(Path::new(&value))
                             .map_err(|e| e.to_string())?;
                     }
                     *ir_file = value;
@@ -632,7 +632,7 @@ impl PluginController {
                 }
                 PluginSettings::XTC { room_ir_file, .. } if param_idx == 16 => {
                     if !value.is_empty() {
-                        crate::security::validate_plugin_file_path(Path::new(&value))
+                        crate::security::validate_plugin_ir_file_path(Path::new(&value))
                             .map_err(|e| e.to_string())?;
                     }
                     *room_ir_file = if value.is_empty() { None } else { Some(value) };
@@ -640,7 +640,7 @@ impl PluginController {
                 }
                 PluginSettings::BinauralDecoder { sofa_file, .. } if param_idx == 0 => {
                     if !value.is_empty() {
-                        crate::security::validate_plugin_file_path(Path::new(&value))
+                        crate::security::validate_plugin_sofa_file_path(Path::new(&value))
                             .map_err(|e| e.to_string())?;
                     }
                     *sofa_file = value;
@@ -825,7 +825,7 @@ impl PluginController {
 
     /// Load EQ filters from an APO file path. Works for both EQ and LinearPhaseEq.
     pub fn load_apo_filters(&mut self, path: &Path) -> Result<PluginUpdateEffect, String> {
-        crate::security::validate_plugin_file_path(path).map_err(|e| e.to_string())?;
+        crate::security::validate_plugin_apo_file_path(path).map_err(|e| e.to_string())?;
         let new_filters = EQFilter::from_apo_file(path)?;
         let plugin = self
             .get_editing_plugin_mut()
@@ -846,6 +846,11 @@ impl PluginController {
             }
         } else {
             return Err("No plugin being edited".to_string());
+        }
+
+        if !sofa_path.is_empty() {
+            crate::security::validate_plugin_sofa_file_path(Path::new(&sofa_path))
+                .map_err(|e| e.to_string())?;
         }
 
         if let Some(plugin) = self.get_editing_plugin_mut() {

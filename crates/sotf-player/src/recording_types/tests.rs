@@ -183,3 +183,73 @@ fn test_lfe_sweep_bounds_with_mic_suffix() {
     assert_eq!(multi_l.sweep_start_freq, 20.0, "multi-mic L start");
     assert_eq!(multi_l.sweep_end_freq, 20000.0, "multi-mic L end");
 }
+
+// =========================================================================
+// Recording config schema compatibility tests (QA-CORE-001)
+// =========================================================================
+
+#[test]
+fn microphone_presets_config_ignores_unknown_fields() {
+    let json = r#"{
+        "presets": [
+            {
+                "name": "UMIK-1",
+                "device_name": "UMIK-1 USB",
+                "channel_mappings": [0, 1],
+                "mic_calibration_paths": ["/cal/ch0.txt", null],
+                "future_field": "ignored"
+            }
+        ],
+        "unknown_nested": {"x": 1}
+    }"#;
+
+    let config: MicrophonePresetsConfig = serde_json::from_str(json).unwrap();
+    assert_eq!(config.presets.len(), 1);
+    assert_eq!(config.presets[0].name, "UMIK-1");
+}
+
+#[test]
+fn microphone_presets_config_serde_roundtrip() {
+    let config = MicrophonePresetsConfig {
+        presets: vec![MicrophonePreset {
+            name: "Test".to_string(),
+            device_name: "Device".to_string(),
+            channel_mappings: vec![0, 1],
+            mic_calibration_paths: vec![Some("/cal/ch0.txt".to_string()), None],
+        }],
+    };
+
+    let json = serde_json::to_string(&config).unwrap();
+    let decoded: MicrophonePresetsConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.presets.len(), config.presets.len());
+    assert_eq!(decoded.presets[0].name, config.presets[0].name);
+}
+
+#[test]
+fn recording_device_config_missing_optional_defaults() {
+    // Old format without mic_calibration_paths, num_positions, ctc fields
+    let json = r#"{
+        "device_id": "test",
+        "device_name": "Test Device",
+        "num_channels": 1,
+        "sample_rate": 48000,
+        "available_sample_rates": [48000],
+        "channel_mappings": [0]
+    }"#;
+
+    let config: RecordingDeviceConfig = serde_json::from_str(json).unwrap();
+    assert!(config.mic_calibration_paths.is_empty());
+    assert_eq!(config.num_positions, 1);
+}
+
+#[test]
+fn playback_device_config_serde_roundtrip() {
+    use super::playback_device_config::PlaybackDeviceConfig;
+
+    let config = PlaybackDeviceConfig::default();
+    let json = serde_json::to_string(&config).unwrap();
+    let decoded: PlaybackDeviceConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.device_id, config.device_id);
+    assert_eq!(decoded.num_channels, config.num_channels);
+    assert_eq!(decoded.sample_rate, config.sample_rate);
+}

@@ -300,6 +300,26 @@ impl Player {
         self.manager.get_engine_state()
     }
 
+    /// Return the plugin chain from the current playback config, if any.
+    pub fn current_plugins(&self) -> Option<&[sotf_audio::engine::PluginConfig]> {
+        self.saved_config
+            .as_ref()
+            .map(|config| config.plugins.as_ref())
+    }
+
+    /// Return a read-only model of the current signal path.
+    ///
+    /// This aggregates the saved playback config, decoder audio info, and live
+    /// engine state. Clipping/headroom fields are `None` when the engine does
+    /// not expose a peak meter for the current configuration.
+    pub fn signal_path(&self) -> SignalPath {
+        SignalPath::from_player_state(
+            self.saved_config.as_ref(),
+            self.manager.get_audio_info().as_ref(),
+            &self.manager.get_engine_state(),
+        )
+    }
+
     /// Seek to a specific position in seconds
     pub fn seek(&self, position_secs: f64) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.seek(position_secs)?;

@@ -139,6 +139,22 @@ fn token_store_round_trips_to_json_file_and_redacts_debug() {
     assert!(!debug.contains("very-secret-token"));
 }
 
+#[cfg(unix)]
+#[test]
+fn token_store_file_is_owner_only_on_unix() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("remote_server_tokens.json");
+    let mut store = SotfRemoteTokenStore::default();
+    store.set("remote-key", "very-secret-token");
+
+    store.save_to_path(&path).unwrap();
+
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+}
+
 #[test]
 fn token_store_deserializes_missing_version_as_current() {
     let store: SotfRemoteTokenStore =
@@ -186,4 +202,80 @@ fn pairing_url_falls_back_to_address() {
     server.address = Some("192.168.1.5".to_string());
     let url = server.pairing_url("FP:00", "NONCE1");
     assert!(url.contains("host=192.168.1.5"));
+}
+
+// =========================================================================
+// Remote server/token store schema compatibility tests (QA-CORE-001)
+// =========================================================================
+
+#[test]
+fn remote_server_store_ignores_unknown_fields() {
+    let json = r#"{
+        "version": 1,
+        "selected_server_id": "server-1",
+        "servers": [
+            {
+                "id": "server-1",
+                "friendly_name": "Living Room",
+                "api_base_url": "http://192.168.1.5:8732/api/v1",
+                "origin_url": "http://192.168.1.5:8732",
+                "host_name": "room.local",
+                "address": "192.168.1.5",
+                "port": 8732,
+                "protocol": "http",
+                "api_path": "/api/v1",
+                "auth": "bearer",
+                "future_field": "ignored"
+            }
+        ],
+        "unknown_nested": {"x": 1}
+    }"#;
+
+    let store: SotfRemoteServerStore = serde_json::from_str(json).unwrap();
+    assert_eq!(store.version, REMOTE_SERVER_STORE_VERSION);
+    assert_eq!(store.servers.len(), 1);
+    assert_eq!(store.servers[0].friendly_name, "Living Room");
+}
+
+#[test]
+fn remote_server_store_missing_version_defaults() {
+    let store: SotfRemoteServerStore = serde_json::from_str(r#"{"servers":[]}"#).unwrap();
+    assert_eq!(store.version, REMOTE_SERVER_STORE_VERSION);
+    assert!(store.servers.is_empty());
+    assert_eq!(store.selected_server_id, None);
+}
+
+#[test]
+fn remote_token_store_ignores_unknown_fields() {
+    let json = r#"{
+        "version": 1,
+        "tokens": {"remote-key": "secret"},
+        "future_field": "ignored"
+    }"#;
+
+    let store: SotfRemoteTokenStore = serde_json::from_str(json).unwrap();
+    assert_eq!(store.version, REMOTE_TOKEN_STORE_VERSION);
+    assert_eq!(store.get("remote-key"), Some("secret"));
+}
+
+#[test]
+fn remote_server_store_serde_roundtrip() {
+    let mut store = SotfRemoteServerStore::default();
+    let server = SotfRemoteServer::manual("Desk", "http://desk.local:8732").unwrap();
+    store.upsert(server);
+
+    let json = serde_json::to_string(&store).unwrap();
+    let decoded: SotfRemoteServerStore = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.version, store.version);
+    assert_eq!(decoded.servers.len(), store.servers.len());
+}
+
+#[test]
+fn remote_token_store_serde_roundtrip() {
+    let mut store = SotfRemoteTokenStore::default();
+    store.set("key", "token");
+
+    let json = serde_json::to_string(&store).unwrap();
+    let decoded: SotfRemoteTokenStore = serde_json::from_str(&json).unwrap();
+    assert_eq!(decoded.get("key"), Some("token"));
 }

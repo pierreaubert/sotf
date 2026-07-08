@@ -20,6 +20,7 @@ pub mod controllers;
 pub mod database;
 #[cfg(feature = "dev-api")]
 pub mod dev_api_fixtures;
+pub mod diagnostics;
 pub mod federation_config;
 pub mod federation_scan;
 pub mod headphone_eq_types;
@@ -73,7 +74,10 @@ pub use metadata::{
     MetadataServicesConfig, MetadataTarget, MusicBrainzProvider,
 };
 pub use play_tracker::PlayTracker;
-pub use player::{PlaybackState, Player};
+pub use player::{
+    PlaybackState, Player, SignalPath, SignalPathHealth, SignalPathOutput, SignalPathPlugin,
+    SignalPathProcessing, SignalPathResampling, SignalPathSource,
+};
 pub use plugin_graph::{
     ConnectionDrag, GraphConnection, GraphNodeId, GraphSelection, NodeDrag, NodePosition,
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
@@ -135,6 +139,13 @@ pub use sotf_plugins::{LoudnessData, LoudnessInfo, SpectrumData, SpectrumInfo};
 
 // Re-export parameter specifications for UI components
 pub use sotf_plugins::param_specs;
+
+// Re-export diagnostics bundle helpers
+pub use diagnostics::{
+    AudioDeviceInfo, DiagnosticsBundle, DiagnosticsError, EngineStateSummary, LibraryScanSummary,
+    NoAudioReason, PluginGraphSummary, PluginNodeSummary, SystemwideStatus, SystemwideSummary,
+    diagnose_no_audio, redact_string, redact_value,
+};
 
 // Re-export controllers
 pub use controllers::{

@@ -12,6 +12,7 @@ use super::mpd_player_adapter::MpdPlayerAdapter;
 use super::server_state::ServerState;
 use super::server_state::build_mpd_tls_acceptor;
 use super::server_state::build_sotf_api_tls_acceptor;
+use super::validate::sotf_api_plaintext_guard;
 use super::validate::sotf_api_plaintext_warning;
 use super::validate::validate_server_mode_config;
 use super::validate::validate_sotf_api_token;
@@ -159,6 +160,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
         library_scan_active: std::sync::atomic::AtomicBool::new(false),
         pairing_mode: std::sync::atomic::AtomicBool::new(false),
         pairing_nonce: parking_lot::Mutex::new(String::new()),
+        pairing_enabled_at: parking_lot::Mutex::new(None),
         trusted_clients: parking_lot::Mutex::new(trusted_clients),
         trusted_client_fingerprints,
         server_fingerprint: server_fingerprint.clone(),
@@ -178,6 +180,8 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     if config.api.enabled {
         validate_sotf_api_token(&config.api)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        sotf_api_plaintext_guard(&config.api)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
     }
 
     // Build a tokio runtime for the async servers
@@ -308,9 +312,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
 
                 let discovery_config = config.api.clone();
                 let discovery_ip = get_local_ipv4();
-                let pairing_enabled = state
-                    .pairing_mode
-                    .load(std::sync::atomic::Ordering::Relaxed);
+            let pairing_enabled = state.pairing_window_valid();
                 eprintln!(
                     "SOTF API discovery advertising _sotf._tcp for {}:{}",
                     discovery_ip, discovery_config.port

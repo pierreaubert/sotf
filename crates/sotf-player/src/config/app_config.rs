@@ -9,14 +9,19 @@ pub struct AppConfig {
     pub version: u32,
 
     /// Currently selected output device name
+    #[serde(default)]
     pub output_device: Option<String>,
     /// Queue of albums (artist, title pairs)
+    #[serde(default)]
     pub queue: Vec<(String, String)>,
     /// Current position in queue
+    #[serde(default)]
     pub queue_index: Option<usize>,
     /// Current track index in the current album
+    #[serde(default)]
     pub track_index: usize,
     /// Currently loaded plugin preset name
+    #[serde(default)]
     pub plugin_preset: Option<String>,
 }
 
