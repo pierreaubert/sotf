@@ -85,7 +85,7 @@ exclude = [
 resolver = "3"
 
 [workspace.package]
-version = "0.7.9"
+version = "0.7.10"
 authors = ["Pierre F. Aubert pierre@spinorama.org"]
 description = "Optimise the sound of your speakers or your headphones"
 edition = "2024"
@@ -505,3 +505,4 @@ strip = "symbols"
 [patch.crates-io]
 nnnoiseless = { path = "crates/3rdparties/nnnoiseless" }
 coreaudio-rs = { path = "crates/3rdparties/coreaudio-rs" }
+psm = { path = "crates/3rdparties/psm" }

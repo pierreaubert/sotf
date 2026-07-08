@@ -1,12 +1,9 @@
 # rust
-/target
-/crates/gpui-toolkit/target
-/target-static
-/coverage
+target
+target-static
+coverage
 mutants.out
-/crates/*/fuzzer_output
-/crates/*/*/fuzzer_output
-fuzzer_output/
+fuzzer_output
 
 # installers
 /appimage-builder-*
@@ -67,8 +64,9 @@ check_output_*.txt
 /.claude/worktrees/
 /.worktrees/
 /.tokensave
-.qwen
-.opencode
+/.qwen
+/.opencode
+/.superpowers
 
 # Logs
 logs
