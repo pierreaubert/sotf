@@ -1,7 +1,7 @@
 [package]
 name = "plugins-bridge"
 description = "Format-agnostic adapter for SOTF audio plugins (AU, VST3, CLAP)"
-version = "0.5.3"
+version = "0.5.4"
 edition.workspace = true
 repository.workspace = true
 keywords.workspace = true

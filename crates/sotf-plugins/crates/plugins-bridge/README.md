@@ -38,6 +38,15 @@ buffers.rs      -- Buffer interleave/deinterleave
 state.rs        -- Plugin state serialization
 ```
 
+## Ownership and lifetime
+
+`plugins-bridge` is a safe Rust adapter. `create_plugin()` returns a
+`Box<dyn Plugin>` that owns the plugin instance. Format wrappers (AU via
+`plugins-ffi`, VST3/CLAP via `plugins-nih`) hold that box inside a
+`PluginHandle` or equivalent wrapper and release it on teardown. FFI callers
+never receive raw `Plugin` pointers; all Rust-side references are scoped to the
+wrapper lifetime.
+
 ## Testing
 
 ```bash
