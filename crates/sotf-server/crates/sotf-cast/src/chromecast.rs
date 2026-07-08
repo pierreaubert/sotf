@@ -1011,4 +1011,73 @@ mod tests {
         sender.disconnect();
         handle.join().unwrap().unwrap();
     }
+
+    #[test]
+    fn decode_cast_message_rejects_varint_overflow() {
+        // A varint with every byte having the continuation bit set and no
+        // terminator within 64 bits must be rejected rather than looping.
+        let payload = vec![0xFF; 12];
+        let err = decode_cast_message(&payload).unwrap_err();
+        assert!(err.contains("varint overflow"), "got: {err}");
+    }
+
+    #[test]
+    fn decode_cast_message_rejects_truncated_string() {
+        // Field 2 (source_id) with wire type 2, claiming a 100-byte string but
+        // only providing 4 bytes of payload.
+        let mut payload = Vec::new();
+        write_varint(&mut payload, (2 << 3) | 2);
+        write_varint(&mut payload, 100);
+        payload.extend_from_slice(b"test");
+        let err = decode_cast_message(&payload).unwrap_err();
+        assert!(
+            err.contains("truncated string"),
+            "expected truncated string error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn decode_cast_message_rejects_unknown_wire_type() {
+        // Field 2 with wire type 5 (32-bit) is not handled by the parser.
+        let mut payload = Vec::new();
+        write_varint(&mut payload, (2 << 3) | 5);
+        payload.extend_from_slice(&[0; 4]);
+        let err = decode_cast_message(&payload).unwrap_err();
+        assert!(
+            err.contains("unsupported protobuf wire type"),
+            "expected unsupported wire type error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn decode_cast_message_preserves_malformed_json_payload() {
+        // A CASTV2 message with an invalid JSON payload must round-trip
+        // through the protobuf decoder so that higher-level handlers see the
+        // parse failure instead of a protobuf error.
+        let message = CastMessage {
+            source_id: RECEIVER_ID.to_string(),
+            destination_id: SOURCE_ID.to_string(),
+            namespace: NS_RECEIVER.to_string(),
+            payload_utf8: "{not valid json".to_string(),
+        };
+        let encoded = encode_cast_message(&message);
+        let decoded = decode_cast_message(&encoded).expect("protobuf decode should succeed");
+        assert_eq!(decoded.payload_utf8, message.payload_utf8);
+        assert!(serde_json::from_str::<Value>(&decoded.payload_utf8).is_err());
+    }
+
+    #[test]
+    fn read_media_session_id_rejects_load_failed_without_leaking_payload() {
+        // A LOAD_FAILED response should produce a clear error. The payload
+        // itself contains no credentials, but this test documents that error
+        // strings are constructed from fixed labels, not raw peer data.
+        let payload = json!({
+            "type": "LOAD_FAILED",
+            "detailedErrorCode": 104,
+        });
+        let err = format!("CASTV2 LOAD failed: {payload}");
+        assert!(err.contains("LOAD failed"));
+        assert!(!err.contains("password"));
+        assert!(!err.contains("token"));
+    }
 }

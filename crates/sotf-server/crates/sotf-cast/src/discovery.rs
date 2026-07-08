@@ -613,4 +613,69 @@ mod tests {
         let name = decode_dns_name(&data, offset).unwrap();
         assert_eq!(name, "test.local");
     }
+
+    #[test]
+    fn parse_mdns_response_does_not_panic_on_truncated_txt() {
+        let mut packet = Vec::new();
+        packet.extend_from_slice(&[0, 0]);
+        packet.extend_from_slice(&0x8400u16.to_be_bytes()); // response
+        packet.extend_from_slice(&[0, 0]);
+        packet.extend_from_slice(&1u16.to_be_bytes()); // one answer
+        packet.extend_from_slice(&[0, 0]);
+        packet.extend_from_slice(&[0, 0]);
+
+        // TXT record: rdlength=1, single length byte 0xFF with no payload.
+        append_record(
+            &mut packet,
+            "Kitchen._googlecast._tcp.local",
+            16,
+            120,
+            &[0xFF],
+        );
+
+        let from: SocketAddr = "192.168.1.1:5353".parse().unwrap();
+        // Must not panic; returning None or a fallback device are both acceptable.
+        let _ = parse_mdns_response(&packet, from, CastDeviceType::Chromecast);
+    }
+
+    #[test]
+    fn decode_dns_name_rejects_self_referencing_compression_loop() {
+        // A compression pointer that points to its own offset creates an
+        // infinite decode loop unless the jump limit fires.
+        let mut data = Vec::new();
+        let offset = data.len();
+        data.push(0xC0);
+        data.push(offset as u8);
+        assert_eq!(decode_dns_name(&data, offset), None);
+    }
+
+    #[test]
+    fn skip_dns_name_rejects_truncated_label() {
+        // A regular label-length byte (0x7F, not a compression pointer)
+        // claiming 127 bytes but with no payload.
+        let data = [0x7F];
+        assert_eq!(skip_dns_name(&data, 0), None);
+    }
+
+    #[test]
+    fn parse_mdns_response_rejects_truncated_name() {
+        let mut packet = Vec::new();
+        packet.extend_from_slice(&[0, 0]);
+        packet.extend_from_slice(&0x8400u16.to_be_bytes()); // response
+        packet.extend_from_slice(&[0, 0]);
+        packet.extend_from_slice(&1u16.to_be_bytes()); // one answer
+        packet.extend_from_slice(&[0, 0]);
+        packet.extend_from_slice(&[0, 0]);
+
+        // A record whose name claims a label length beyond the packet.
+        packet.push(0x7F); // regular label length 127 with no following bytes
+        packet.extend_from_slice(&1u16.to_be_bytes()); // A
+        packet.extend_from_slice(&1u16.to_be_bytes()); // IN
+        packet.extend_from_slice(&120u32.to_be_bytes()); // TTL
+        packet.extend_from_slice(&4u16.to_be_bytes()); // rdlength
+        packet.extend_from_slice(&[192, 168, 1, 10]);
+
+        let from: SocketAddr = "192.168.1.1:5353".parse().unwrap();
+        assert!(parse_mdns_response(&packet, from, CastDeviceType::Chromecast).is_none());
+    }
 }
