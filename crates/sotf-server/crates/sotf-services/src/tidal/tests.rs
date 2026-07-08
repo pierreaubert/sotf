@@ -104,3 +104,32 @@ fn test_tidal_service_debug_redacts_tokens() {
     assert!(dbg.contains("refr"));
     assert!(dbg.contains("***"));
 }
+
+#[test]
+fn test_malformed_tidal_session_json_is_rejected() {
+    let result: Result<super::types::TidalSession, _> =
+        serde_json::from_str(r#"{"userId": "not-a-number"}"#);
+    assert!(result.is_err());
+
+    let result: Result<super::types::TidalSession, _> =
+        serde_json::from_str(r#"{"countryCode": "US"}"#);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_malformed_tidal_device_auth_json_is_rejected() {
+    let result: Result<super::types::TidalDeviceAuth, _> =
+        serde_json::from_str(r#"{"expiresIn": "not-a-number"}"#);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_service_error_auth_does_not_echo_secret() {
+    let token = "bearer-secret-token-12345";
+    let err = ServiceError::AuthError(format!("token validation failed: {token}"));
+    let text = err.to_string();
+    assert!(
+        !text.contains(token),
+        "ServiceError must not echo the raw secret, got: {text}"
+    );
+}

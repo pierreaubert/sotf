@@ -430,4 +430,31 @@ mod tests {
             assert_eq!(f32::from_le_bytes(bytes), *s);
         }
     }
+
+    #[test]
+    fn authenticate_rejects_non_username_password_credentials() {
+        let mut service = SpotifyService::new();
+        let result = service.authenticate(ServiceCredentials::AccessToken(
+            "not-valid-for-spotify".to_string(),
+        ));
+        assert!(result.is_err());
+        match result {
+            Err(ServiceError::AuthError(msg)) => {
+                assert!(msg.contains("UsernamePassword"), "got: {msg}");
+            }
+            other => panic!("expected AuthError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn authenticate_rejects_empty_username_password() {
+        let mut service = SpotifyService::new();
+        let result = service.authenticate(ServiceCredentials::UsernamePassword {
+            username: "".to_string(),
+            password: "".to_string(),
+        });
+        // librespot will fail to connect; the important thing is that it does
+        // not panic and the error does not leak the (empty) credentials.
+        assert!(result.is_err());
+    }
 }

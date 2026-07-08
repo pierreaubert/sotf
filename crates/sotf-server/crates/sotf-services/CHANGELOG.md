@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-08
+
+### Added
+- QA-SEC-006 negative abuse tests for malformed Tidal control JSON, invalid Spotify credential types, and secret-free error messages.
+
 ## [0.1.0] - 2025-05-13
 
 ### Added
