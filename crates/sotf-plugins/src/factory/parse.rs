@@ -149,6 +149,12 @@ pub(super) fn parse_external_plugin_descriptor(
     let path = seed
         .path
         .ok_or_else(|| "External plugin descriptor is missing required `path`".to_string())?;
+    if !path.exists() {
+        return Err(format!(
+            "External plugin path does not exist: {}",
+            path.display()
+        ));
+    }
     let path = path.canonicalize().unwrap_or(path);
     let format = parse_external_format(seed.format, &path)?;
     let fallback_name = fallback_name_from_path(&path)?;

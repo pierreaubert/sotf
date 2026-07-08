@@ -17,13 +17,6 @@ N-way crossover with selectable filter family (LR24 or linear-phase FIR) and per
 | Mode | Choice (Lowpass, Highpass, Both) | 3 options | Lowpass | - | Output mode for the primary crossover |
 | FIR Taps | Int | 31 .. 16385 | 1025 | - | FIR length for linear-phase mode (odd values are rounded up) |
 
-### Multi-way
-
-| Parameter | Type | Range | Default | Unit | Description |
-|-----------|------|-------|---------|------|-------------|
-| Frequency 2 | Float | 20 .. 20000 | 1000 | Hz | Second crossover frequency for 3-way/4-way operation |
-| Frequency 3 | Float | 20 .. 20000 | 1000 | Hz | Third crossover frequency for 4-way operation |
-
 :::note
 **Structural parameters** (Type, FIR Taps) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
 :::

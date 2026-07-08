@@ -59,6 +59,7 @@ Crosstalk cancellation for speaker playback. Creates a wider stereo image by can
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
 | Room Reflections | Bool | On / Off | Off | - | Include first-order reflections |
+| Room IR | File Path | - | - | - | Optional measured room impulse response |
 | Room Width | Float | 2 .. 10 | 4 | m | Listening room width |
 | Room Depth | Float | 2 .. 15 | 5 | m | Listening room depth |
 | Wall Absorption | Float | 0 .. 1 | 0.3 | - | Wall absorption coefficient |
@@ -79,3 +80,7 @@ Crosstalk cancellation for speaker playback. Creates a wider stereo image by can
 | Auto Gain | Bool | On / Off | On | - | Auto-normalize output level |
 | AG Max | Float | 0 .. 24 | 12 | dB | Maximum auto gain correction |
 | AG Smoothing | Float | 10 .. 500 | 100 | ms | Auto gain transition time |
+
+:::note
+**Structural parameters** (Room IR) require rebuilding the plugin when changed. Other parameters update in real-time with zero dropout.
+:::

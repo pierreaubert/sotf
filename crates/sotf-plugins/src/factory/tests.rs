@@ -461,3 +461,106 @@ fn create_external_plugin_reports_invalid_parameters() {
             || err.contains("path")
     );
 }
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[test]
+fn isolated_untrusted_config_rejects_broad_read_write_paths() {
+    let err = parse_isolated_external_plugin_config(
+        &serde_json::json!({
+            "sandbox_read_paths": ["/"],
+            "sandbox_write_paths": ["/tmp"],
+        }),
+        ExternalPluginTrust::Untrusted,
+    )
+    .unwrap_err();
+    assert!(err.contains("cannot expand sandbox filesystem access"));
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[test]
+fn isolated_untrusted_config_rejects_network_grant() {
+    let err = parse_isolated_external_plugin_config(
+        &serde_json::json!({"sandbox_allow_network": true}),
+        ExternalPluginTrust::Untrusted,
+    )
+    .unwrap_err();
+    assert!(err.contains("cannot allow network access"));
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[test]
+fn isolated_untrusted_config_rejects_child_process_grant() {
+    let err = parse_isolated_external_plugin_config(
+        &serde_json::json!({"sandbox_allow_child_processes": true}),
+        ExternalPluginTrust::Untrusted,
+    )
+    .unwrap_err();
+    assert!(err.contains("cannot allow child processes"));
+}
+
+#[test]
+fn create_external_plugin_rejects_missing_file_path() {
+    let err = match create_plugin(
+        "external",
+        &serde_json::json!({
+            "path": "/nonexistent/path/to/plugin.clap",
+            "audio_inputs": 2,
+            "audio_outputs": 2,
+            "name": "Missing Plugin",
+            "format": "clap",
+        }),
+        2,
+        48_000,
+    ) {
+        Ok(_) => panic!("expected missing external plugin path to fail"),
+        Err(err) => err,
+    };
+    assert!(
+        err.to_ascii_lowercase().contains("path")
+            || err.to_ascii_lowercase().contains("file")
+            || err.to_ascii_lowercase().contains("no such")
+    );
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[test]
+fn external_plugin_state_stays_consistent_after_invalid_parameter_changes() {
+    let dir = tempdir().unwrap();
+    let plugin_path = dir.path().join("external-param-corruption.clap");
+    std::fs::write(&plugin_path, b"stub plugin").unwrap();
+    let params = serde_json::json!({
+        "path": plugin_path.to_string_lossy(),
+        "audio_inputs": 2,
+        "audio_outputs": 2,
+        "name": "Param Corruption Test",
+        "format": "clap",
+        "plugin_trust": "unknown",
+        "start_worker": false,
+    });
+
+    let mut plugin = create_plugin("external", &params, 2, 48_000).unwrap();
+    plugin.initialize(48_000).unwrap();
+
+    // Unknown parameter id should be ignored, not corrupt state.
+    let _ = plugin.set_parameter(
+        sotf_host::parameters::ParameterId::from("definitely_not_a_real_parameter"),
+        sotf_host::parameters::ParameterValue::Float(1.0),
+    );
+
+    // Out-of-range value should be rejected, not corrupt state.
+    let _ = plugin.set_parameter(
+        sotf_host::parameters::ParameterId::from("mix"),
+        sotf_host::parameters::ParameterValue::Float(f32::NAN),
+    );
+
+    let input = vec![0.25, -0.5, 1.0, -1.0];
+    let mut output = vec![0.0; input.len()];
+    let frames = plugin
+        .process(
+            &input,
+            &mut output,
+            &sotf_host::ProcessContext::new(48_000, 2),
+        )
+        .unwrap();
+    assert_eq!(frames, 2);
+}

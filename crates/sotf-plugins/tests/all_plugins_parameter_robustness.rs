@@ -216,20 +216,20 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
 
         for param in plugin.parameters() {
             let id = ParameterId::from(param.id.as_str());
-            if let Some(value) = plugin.get_parameter(&id) {
-                if let Err(err) = plugin.set_parameter(id, value) {
-                    let key = (plugin_type, param.id.as_str());
-                    let is_known = KNOWN_ROUNDTRIP_FAILURES
-                        .iter()
-                        .any(|(t, p, _)| *t == key.0 && *p == key.1);
-                    if is_known {
-                        known_failures_seen.push(format!("{plugin_type}/{}", param.id));
-                    } else {
-                        unexpected_failures.push(format!(
-                            "{plugin_type}/{}: round-trip failed: {err}",
-                            param.id
-                        ));
-                    }
+            if let Some(value) = plugin.get_parameter(&id)
+                && let Err(err) = plugin.set_parameter(id, value)
+            {
+                let key = (plugin_type, param.id.as_str());
+                let is_known = KNOWN_ROUNDTRIP_FAILURES
+                    .iter()
+                    .any(|(t, p, _)| *t == key.0 && *p == key.1);
+                if is_known {
+                    known_failures_seen.push(format!("{plugin_type}/{}", param.id));
+                } else {
+                    unexpected_failures.push(format!(
+                        "{plugin_type}/{}: round-trip failed: {err}",
+                        param.id
+                    ));
                 }
             }
         }

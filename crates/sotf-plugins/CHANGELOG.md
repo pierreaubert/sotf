@@ -1,4 +1,4 @@
-# 0.5.14
+# 0.7.10
 
 ## New
 
@@ -17,6 +17,14 @@
 - merge expander and multiband expander
 
 # 0.6.6 (unreleased)
+
+## New
+
+### QA / edge-case coverage
+- Added `tests/plugin_high_channel_tests.rs` covering 5.1 / 7.1.4 layout transitions, high-channel matrix identity, downmix to stereo, and extreme-parameter/NaN/Inf output sanity for built-in plugins (QA-PLUGIN-003/004, QA-DSP-001/002/003).
+- Extended `tests/plugin_high_channel_tests.rs` with block-size variation, silence/denormal input, high-level input, missing-file-path rejection, STFT `context.num_frames` return-value, and latency-reporting tests for spatial/convolution and advanced DSP plugins (QA-DSP-001/002, QA-PLUGIN-003).
+- Added explicit routing layout-transition coverage for `band_split`/`band_merge` round-trip at 5.1 / 7.1.4, `mono_to_stereo` 1ch→2ch, and `ab_compare` A/B switching without channel-layout change (QA-DSP-003).
+- Hardened external plugin sandbox config parsing: untrusted configs are now rejected for `sandbox_allow_network`, `sandbox_allow_child_processes`, and broad `sandbox_read_paths`/`sandbox_write_paths`; non-existent external plugin paths are rejected at descriptor parse time (QA-PLUGIN-002).
 
 ## Bugs
 
