@@ -52,6 +52,15 @@ params.rs   -- DynamicParams: runtime nih-plug parameter generation
 wrapper.rs  -- sotf_nih_plugin! macro: generates full nih-plug impl
 ```
 
+## Ownership and lifetime
+
+Each VST3/CLAP plugin wraps a SOTF plugin instance created through
+`plugins-bridge::create_plugin()`. The generated wrapper owns the instance via
+`Box<dyn Plugin>` and uses `plugins-bridge::state` for preset serialization.
+All audio buffers are converted from nih-plug's planar layout to SOTF's
+interleaved layout inside pre-allocated scratch memory; no heap allocations
+occur on the process thread.
+
 ## Testing
 
 ```bash

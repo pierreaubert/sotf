@@ -1,3 +1,12 @@
+# 0.5.4 (unreleased)
+
+## Fixes
+
+- Fixed VST3/CLAP wrapper compilation: convert `ParameterId` to `String` when
+  building `BridgedParamInfo`.
+- Documented plugin instance ownership and render-thread allocation guarantees
+  in README.
+
 # 0.5.3
 
 ## New

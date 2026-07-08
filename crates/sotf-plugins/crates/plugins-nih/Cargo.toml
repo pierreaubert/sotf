@@ -1,7 +1,7 @@
 [package]
 name = "plugins-nih"
 description = "VST3/CLAP plugin wrappers for SOTF audio plugins via nih-plug"
-version = "0.5.3"
+version = "0.5.4"
 edition.workspace = true
 repository.workspace = true
 keywords.workspace = true
