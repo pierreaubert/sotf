@@ -130,6 +130,83 @@ fn player_cli_help_shows_usage() {
         .stdout(predicate::str::contains("Audio player"));
 }
 
+#[test]
+fn player_cli_help_lists_all_subcommands() {
+    let output = player_cmd()
+        .arg("--help")
+        .output()
+        .expect("player-cli --help failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "player-cli --help should succeed");
+    for subcommand in [
+        "devices",
+        "replay-gain",
+        "play",
+        "status",
+        "library",
+        "diagnostics",
+    ] {
+        assert!(
+            stdout.contains(subcommand),
+            "top-level help should list subcommand `{subcommand}`"
+        );
+    }
+}
+
+#[test]
+fn player_cli_diagnostics_why_no_audio_runs() {
+    player_cmd()
+        .args(["diagnostics", "--why-no-audio"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Why no audio:"));
+}
+
+#[test]
+fn player_cli_diagnostics_exports_bundle() {
+    let output_path =
+        std::env::temp_dir().join(format!("sotf-diagnostics-{}.json", std::process::id()));
+    let _ = std::fs::remove_file(&output_path);
+
+    player_cmd()
+        .args(["diagnostics", "--output", output_path.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Diagnostics bundle written to"));
+
+    let contents = std::fs::read_to_string(&output_path)
+        .unwrap_or_else(|e| panic!("failed to read diagnostics bundle: {e}"));
+    assert!(
+        contents.contains("app_version"),
+        "bundle should contain app_version"
+    );
+    assert!(
+        contents.contains("engine_state"),
+        "bundle should contain engine_state"
+    );
+}
+
+#[test]
+fn player_cli_play_help_shows_filter_examples() {
+    let output = player_cmd()
+        .args(["play", "--help"])
+        .output()
+        .expect("player-cli play --help failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "player-cli play --help should succeed"
+    );
+    assert!(
+        stdout.contains("1000:1.5:3.0"),
+        "play help should show the basic filter example"
+    );
+    assert!(
+        stdout.contains("LS:100:0.7:-2.0"),
+        "play help should show the typed filter example"
+    );
+}
+
 #[sotf_test::requires_hardware]
 #[test]
 fn player_cli_devices_lists_audio_devices() {
@@ -171,6 +248,41 @@ fn player_cli_replay_gain_missing_file_fails() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("Error"));
+}
+
+#[test]
+fn player_cli_replay_gain_missing_file_error_has_no_debug_struct() {
+    player_cmd()
+        .args(["replay-gain", "/nonexistent/no_such_file.wav"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("{").not())
+        .stderr(predicate::str::contains("}").not());
+}
+
+#[test]
+fn player_cli_replay_gain_url_error_does_not_leak_token() {
+    let token = "SOTF_CLI_TEST_SECRET_TOKEN_42";
+    let url = format!("http://127.0.0.1:1/test.mp3?token={}", token);
+
+    let output = player_cmd()
+        .args(["replay-gain", &url])
+        .output()
+        .expect("failed to spawn player-cli replay-gain");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "replay-gain on a URL should fail when streaming is unavailable"
+    );
+    assert!(
+        !stderr.contains(token),
+        "stderr leaked secret token: {stderr}"
+    );
+    assert!(
+        stderr.contains("[URL REDACTED]") || !stderr.contains("http://"),
+        "expected URL to be redacted or absent from stderr: {stderr}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +647,32 @@ fn recorder_cli_help_shows_usage() {
         .stdout(predicate::str::contains(
             "Generate and record test signals with analysis",
         ));
+}
+
+#[test]
+fn recorder_cli_help_lists_key_options() {
+    let output = recorder_cmd()
+        .arg("--help")
+        .output()
+        .expect("sotf-recorder-cli --help failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "sotf-recorder-cli --help should succeed"
+    );
+    for option in [
+        "--signal",
+        "--duration",
+        "--sample-rate",
+        "--hwaudio-send-to",
+        "--hwaudio-record-from",
+        "--list-devices",
+    ] {
+        assert!(
+            stdout.contains(option),
+            "recorder help should list option `{option}`"
+        );
+    }
 }
 
 #[sotf_test::requires_hardware]

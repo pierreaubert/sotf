@@ -26,6 +26,7 @@ use super::create::create_pnd_plugin_config;
 use super::create::create_spectrum_analyzer_plugin_config;
 use super::create::create_upmixer_plugin_config;
 use super::create::create_xtc_plugin_config;
+use super::error_output::redact_secrets;
 use super::misc::get_speaker_config_channels;
 use super::parse::parse_channel_mapping;
 use super::parse::parse_crossfeed_mode;
@@ -61,7 +62,7 @@ pub(super) fn play_stream(
     plugins: &PluginArgs,
 ) -> Result<(), String> {
     log::info!("Starting streaming playback...");
-    log::info!("  File: {:?}", file);
+    log::info!("  File: {}", redact_secrets(&file.to_string_lossy()));
     log::info!("  Device: {:?}", device.as_deref().unwrap_or("default"));
     if start_time > 0.0 {
         log::info!("  Start time: {:.2}s", start_time);

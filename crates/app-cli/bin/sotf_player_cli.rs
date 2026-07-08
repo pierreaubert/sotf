@@ -7,6 +7,10 @@ use std::fs::OpenOptions;
 mod build;
 #[path = "sotf_player_cli/create.rs"]
 mod create;
+#[path = "sotf_player_cli/diagnostics.rs"]
+mod diagnostics;
+#[path = "error_output.rs"]
+mod error_output;
 #[path = "sotf_player_cli/library.rs"]
 mod library;
 #[path = "sotf_player_cli/misc.rs"]
@@ -20,6 +24,8 @@ mod tests;
 mod types;
 
 use build::play_stream;
+use diagnostics::run_diagnostics_command;
+use error_output::redact_secrets;
 use library::run_library_command;
 use library::run_status_command;
 use misc::list_devices;
@@ -60,6 +66,7 @@ fn main() {
     if matches!(cli.command, Commands::Play { .. })
         && let Err(e) = run_preflight_checks()
     {
+        let e = redact_secrets(&e.to_string());
         eprintln!("\nPre-flight check failed:\n");
         eprintln!("{}\n", e);
         log::error!("Pre-flight check failed: {}", e);
@@ -69,6 +76,7 @@ fn main() {
     match cli.command {
         Commands::Devices => {
             if let Err(e) = list_devices() {
+                let e = redact_secrets(&e.to_string());
                 log::error!("Error: {}", e);
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -84,6 +92,7 @@ fn main() {
                 println!("{}", msg);
             }
             Err(e) => {
+                let e = redact_secrets(&e.to_string());
                 log::error!("Error: {}", e);
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -115,6 +124,7 @@ fn main() {
             let filter_params = match parse_filters(&filters) {
                 Ok(params) => params,
                 Err(e) => {
+                    let e = redact_secrets(&e.to_string());
                     log::error!("Error parsing filters: {}", e);
                     eprintln!("Error parsing filters: {}", e);
                     std::process::exit(1);
@@ -124,6 +134,7 @@ fn main() {
             // Parse loudness compensation
             let loudness: Option<LoudnessCompensation> = match loudness_compensation {
                 Some(ref vals) => parse_loudness_compensation(vals).unwrap_or_else(|e| {
+                    let e = redact_secrets(&e.to_string());
                     log::error!("Error in --loudness-compensation: {}", e);
                     eprintln!("Error in --loudness-compensation: {}", e);
                     std::process::exit(1);
@@ -146,6 +157,7 @@ fn main() {
                 rack,
                 &plugins,
             ) {
+                let e = redact_secrets(&e.to_string());
                 log::error!("Error: {}", e);
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -154,6 +166,7 @@ fn main() {
         Commands::Status { db } => {
             if let Some(db_path) = db {
                 if let Err(e) = run_status_command(&db_path) {
+                    let e = redact_secrets(&e.to_string());
                     log::error!("Error: {}", e);
                     eprintln!("Error: {}", e);
                     std::process::exit(1);
@@ -166,6 +179,18 @@ fn main() {
         }
         Commands::Library { db, action } => {
             if let Err(e) = run_library_command(&db, &action) {
+                let e = redact_secrets(&e.to_string());
+                log::error!("Error: {}", e);
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Diagnostics {
+            output,
+            why_no_audio,
+        } => {
+            if let Err(e) = run_diagnostics_command(output, why_no_audio) {
+                let e = redact_secrets(&e.to_string());
                 log::error!("Error: {}", e);
                 eprintln!("Error: {}", e);
                 std::process::exit(1);

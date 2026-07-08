@@ -1,5 +1,7 @@
 use clap::Parser;
 
+#[path = "error_output.rs"]
+mod error_output;
 #[path = "sotf_recorder_cli/misc.rs"]
 mod misc;
 #[path = "sotf_recorder_cli/types.rs"]
@@ -7,6 +9,7 @@ mod types;
 
 pub use misc::*;
 
+use error_output::redact_secrets;
 use misc::list_audio_devices;
 use types::Cli;
 
@@ -47,6 +50,7 @@ fn main() {
                     mic_calibration_map.insert(ch, path.to_string());
                 }
                 Err(_) => {
+                    let entry = redact_secrets(entry);
                     eprintln!(
                         "Error: invalid channel number in --mic-calibration: {}",
                         entry
@@ -55,6 +59,7 @@ fn main() {
                 }
             }
         } else {
+            let entry = redact_secrets(entry);
             eprintln!(
                 "Error: --mic-calibration must be in CHANNEL:PATH format, got: {}",
                 entry
@@ -85,6 +90,7 @@ fn main() {
         cli.microphone_compensation,
         mic_calibration_map,
     ) {
+        let e = redact_secrets(&e.to_string());
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }

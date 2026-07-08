@@ -24,10 +24,10 @@ Feature-rich command-line music player:
 
 ```bash
 # Basic playback
-player-cli /path/to/music
+player-cli play /path/to/music
 
 # With specific output config and plugins
-player-cli --speaker-config 5.1 --crossfeed preset1 /path/to/music
+player-cli play --upmixer --upmixer-config 5.1 --filter 1000:1.5:3.0 /path/to/music
 ```
 
 ### `sotf-recorder-cli`
@@ -40,10 +40,10 @@ Generate and record test signals for acoustic measurements:
 
 ```bash
 # Generate a log sweep and record
-sotf-recorder-cli --signal sweep --duration 10 --sample-rate 48000
+sotf-recorder-cli --signal sweep --duration 10 --sample-rate 48000 --hwaudio-send-to 0 --hwaudio-record-from 0
 
 # Record from specific input channels
-sotf-recorder-cli --signal tone --hwaudio-send-to 0 --record-channels 0,1,2
+sotf-recorder-cli --signal tone --hwaudio-send-to 0 --hwaudio-record-from 0,1,2
 ```
 
 ## Dependencies

@@ -13,8 +13,11 @@ Command-line interfaces for audio playback and recording. Binaries only, no libr
 # Play a file with filters
 cargo run --bin player-cli --release -- play audio.flac --filter 1000:1.5:3.0 --upmixer
 
-# Record audio
-cargo run --bin sotf-recorder-cli --release
+# List available audio devices
+cargo run --bin sotf-recorder-cli --release -- --list-devices
+
+# Record a 1 kHz tone from hardware channel 0
+cargo run --bin sotf-recorder-cli --release -- --signal tone --freq 1000 --duration 5 --hwaudio-send-to 0 --hwaudio-record-from 0
 ```
 
 ## Testing

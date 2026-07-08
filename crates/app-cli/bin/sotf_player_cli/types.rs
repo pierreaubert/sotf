@@ -1765,6 +1765,17 @@ pub(super) enum Commands {
         #[command(subcommand)]
         action: LibraryAction,
     },
+
+    /// Export a secret-safe diagnostics bundle or print a "why no audio" diagnosis
+    Diagnostics {
+        /// Output path for the JSON bundle
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Print a compact "why no audio" diagnosis instead of the full bundle
+        #[arg(long)]
+        why_no_audio: bool,
+    },
 }
 
 #[derive(Debug, Clone, Subcommand)]
