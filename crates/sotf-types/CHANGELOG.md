@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-07-08
+
+### Added
+- Add schema/version compatibility tests for persisted config/state types
+  (`EngineConfig`, `PluginConfig`, `PluginGraphConfig`, `AudioEngineState`).
+- Document stable vs internal fields in `SCHEMA.md`.
+
+### Fixed
+- Enable `serde_json/preserve_order` so JSON serialization of `serde_json::Value`
+  preserves insertion order consistently across workspace and per-crate builds,
+  eliminating non-deterministic snapshot drift in `snapshot_configs`.
+- `AudioEngineState::latency_compensation_enabled` now uses the same default
+  (`true`) when the field is missing during deserialization as it does in
+  `Default::default`. Previously `#[serde(default)]` deserialized missing
+  values as `false`.
+
 ## [0.6.8] - 2026-05-31
 
 ### Added

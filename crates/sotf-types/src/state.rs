@@ -197,6 +197,10 @@ pub struct IsolatedExternalPluginWorkerStatus {
     pub sandbox_reason: Option<String>,
 }
 
+fn default_latency_compensation_enabled() -> bool {
+    true
+}
+
 /// Complete audio engine state
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AudioEngineState {
@@ -249,7 +253,7 @@ pub struct AudioEngineState {
     /// Total plugin chain latency in samples (for position compensation)
     pub plugin_latency_samples: usize,
     /// Whether transport position should compensate for plugin latency.
-    #[serde(default)]
+    #[serde(default = "default_latency_compensation_enabled")]
     pub latency_compensation_enabled: bool,
     /// Requested output access mode.
     #[serde(default)]

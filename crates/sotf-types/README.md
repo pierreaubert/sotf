@@ -15,6 +15,11 @@ Provides lightweight, serializable types used across the SOTF workspace without 
 - `SinkType` / `SinkConfig` — Output sink configuration
 - `PlaybackState` / `AudioEngineState` — Runtime state types
 
+## Schema stability
+
+See [`SCHEMA.md`](./SCHEMA.md) for the stable-versus-internal field classification
+and version-compatibility rules for persisted config/state types.
+
 ## Usage
 
 ```rust

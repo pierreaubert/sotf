@@ -17,8 +17,8 @@ expression: config
           {
             "filter_type": "peak",
             "frequency": 1000.0,
-            "gain_db": 3.0,
-            "q": 1.5
+            "q": 1.5,
+            "gain_db": 3.0
           }
         ]
       }
@@ -26,11 +26,11 @@ expression: config
     {
       "plugin_type": "compressor",
       "parameters": {
-        "attack_ms": 10.0,
-        "makeup_db": 0.0,
+        "threshold_db": -12.0,
         "ratio": 4.0,
+        "attack_ms": 10.0,
         "release_ms": 100.0,
-        "threshold_db": -12.0
+        "makeup_db": 0.0
       }
     },
     {
