@@ -230,8 +230,9 @@ pub fn render_simple_plugin_view(
                             .decimals(dec)
                             .size(NumberInputSize::Xs)
                             .on_change(move |value, _window, cx| {
-                                entity_clone.update(cx, |state, _| {
+                                entity_clone.update(cx, |state, cx| {
                                     state.app.set_plugin_param(plugin_idx, param_idx, value);
+                                    cx.notify();
                                 });
                             });
 
@@ -256,8 +257,9 @@ pub fn render_simple_plugin_view(
                             .decimals(0)
                             .size(NumberInputSize::Xs)
                             .on_change(move |value, _window, cx| {
-                                entity_clone.update(cx, |state, _| {
+                                entity_clone.update(cx, |state, cx| {
                                     state.app.set_plugin_param(plugin_idx, param_idx, value);
+                                    cx.notify();
                                 });
                             });
 
@@ -278,12 +280,13 @@ pub fn render_simple_plugin_view(
                             .checked(row.bool_value)
                             .size(ToggleSize::Sm)
                             .on_change(move |checked, _window, cx| {
-                                entity_clone.update(cx, |state, _| {
+                                entity_clone.update(cx, |state, cx| {
                                     state.app.set_plugin_param(
                                         plugin_idx,
                                         param_idx,
                                         if checked { 1.0 } else { 0.0 },
                                     );
+                                    cx.notify();
                                 });
                             })
                             .into_any_element()
@@ -298,13 +301,15 @@ pub fn render_simple_plugin_view(
                                 &row.value_str,
                                 accent,
                                 move |_window, cx| {
-                                    entity_prev.update(cx, |state, _| {
+                                    entity_prev.update(cx, |state, cx| {
                                         state.app.adjust_selected_param(-1.0);
+                                        cx.notify();
                                     });
                                 },
                                 move |_window, cx| {
-                                    entity_next.update(cx, |state, _| {
+                                    entity_next.update(cx, |state, cx| {
                                         state.app.adjust_selected_param(1.0);
+                                        cx.notify();
                                     });
                                 },
                                 plugin_idx,

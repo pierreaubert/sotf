@@ -21,7 +21,6 @@ impl PlayerView {
             .min_h_0()
             .overflow_hidden()
             .bg(theme.background)
-            .child(self.render_phone_top_bar(current_screen, cx))
             .child(
                 div()
                     .flex()
@@ -38,7 +37,7 @@ impl PlayerView {
             .when(show_mini_player, |div| {
                 div.child(self.render_phone_mini_player(cx))
             })
-            .child(self.render_phone_tab_bar(current_screen, cx))
+            .child(self.render_phone_tab_bar_collapsible(current_screen, cx))
             .into_any_element()
     }
 
@@ -82,142 +81,6 @@ impl PlayerView {
         }
     }
 
-    fn render_phone_top_bar(&self, current_screen: Screen, cx: &mut Context<Self>) -> AnyElement {
-        let d = Ds::from_cx(cx);
-        let (theme, title, is_studio_tool) = {
-            let state = self.state.read(cx);
-            (
-                state.app.ui_state.theme.clone(),
-                Self::phone_screen_title(current_screen).to_string(),
-                current_screen.is_studio_tool()
-                    || current_screen == Screen::SettingsDetail
-                    || current_screen == Screen::HomeShelf,
-            )
-        };
-        let state_for_back = self.state.clone();
-        let state_for_search = self.state.clone();
-        let state_for_settings = self.state.clone();
-
-        div()
-            .id("phone-top-bar")
-            .flex()
-            .items_center()
-            .justify_between()
-            .flex_none()
-            .min_h(rems(3.25))
-            .px(d.card)
-            .bg(theme.surface)
-            .border_b_1()
-            .border_color(theme.border)
-            .child(
-                div()
-                    .id("phone-top-title")
-                    .flex()
-                    .items_center()
-                    .gap(d.grid)
-                    .min_w_0()
-                    .when(is_studio_tool, |el| {
-                        let back_screen = if current_screen == Screen::SettingsDetail {
-                            Screen::Settings
-                        } else if current_screen == Screen::HomeShelf {
-                            Screen::Home
-                        } else {
-                            Screen::StudioHub
-                        };
-                        el.cursor_pointer()
-                            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                                state_for_back.update(cx, |state, _cx| {
-                                    state.app.set_screen(back_screen, "PhoneBack");
-                                });
-                            })
-                            .child(
-                                div()
-                                    .size(rems(2.75))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded(d.r_md)
-                                    .child(
-                                        Icon::new(IconName::ChevronLeft)
-                                            .size(IconSize::Md)
-                                            .color(theme.text_primary),
-                                    ),
-                            )
-                    })
-                    .child(
-                        div()
-                            .min_w_0()
-                            .text_size(d.text_lg)
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .child(if is_studio_tool {
-                                title
-                            } else {
-                                "SOTF".to_string()
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(d.grid)
-                    .child(
-                        div()
-                            .id("phone-search")
-                            .size(rems(2.75))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(d.r_md)
-                            .cursor_pointer()
-                            .hover({
-                                let theme = theme.clone();
-                                move |s| s.bg(theme.surface_hover)
-                            })
-                            .child(
-                                Icon::new(IconName::Search)
-                                    .size(IconSize::Md)
-                                    .color(theme.text_primary),
-                            )
-                            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                                state_for_search.update(cx, |state, _cx| {
-                                    state.app.ui_state.input_mode = crate::app::InputMode::Search;
-                                    state.app.set_screen(Screen::Library, "PhoneSearch");
-                                });
-                            }),
-                    )
-                    .child(
-                        div()
-                            .id("phone-settings")
-                            .size(rems(2.75))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(d.r_md)
-                            .cursor_pointer()
-                            .hover({
-                                let theme = theme.clone();
-                                move |s| s.bg(theme.surface_hover)
-                            })
-                            .child(
-                                Icon::new(IconName::Settings)
-                                    .size(IconSize::Md)
-                                    .color(theme.text_primary),
-                            )
-                            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                                state_for_settings.update(cx, |state, _cx| {
-                                    state.app.set_screen(Screen::Settings, "PhoneSettings");
-                                });
-                            }),
-                    ),
-            )
-            .into_any_element()
-    }
-
     fn render_phone_tab_bar(&self, current_screen: Screen, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
@@ -239,8 +102,6 @@ impl PlayerView {
             .px(d.pad_y)
             .py(d.grid)
             .bg(theme.surface)
-            .border_t_1()
-            .border_color(theme.border)
             .children(tabs.into_iter().map(|(screen, label, icon)| {
                 let selected = current_screen == screen
                     || (screen == Screen::Home && current_screen == Screen::HomeShelf)
@@ -249,6 +110,94 @@ impl PlayerView {
                     || (screen == Screen::NowPlaying && current_screen == Screen::Queue);
                 self.render_phone_tab_item(screen, label, icon, selected, &theme, &d)
             }))
+            .into_any_element()
+    }
+
+    fn render_phone_tab_bar_collapsible(
+        &self,
+        current_screen: Screen,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let hidden = self.state.read(cx).app.ui_state.phone_tab_bar_hidden;
+        let state_for_toggle = self.state.clone();
+
+        let current_tab_icon = [
+            (Screen::Home, IconName::Home),
+            (Screen::Library, IconName::Library),
+            (Screen::NowPlaying, IconName::Play),
+            (Screen::StudioHub, IconName::SlidersHorizontal),
+            (Screen::Settings, IconName::Settings),
+        ]
+        .into_iter()
+        .find_map(|(screen, icon)| {
+            let selected = current_screen == screen
+                || (screen == Screen::Home && current_screen == Screen::HomeShelf)
+                || (screen == Screen::StudioHub && current_screen.is_studio_tool())
+                || (screen == Screen::Settings && current_screen == Screen::SettingsDetail)
+                || (screen == Screen::NowPlaying && current_screen == Screen::Queue);
+            if selected {
+                Some(icon)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(IconName::Home);
+
+        let handle_icon = if hidden {
+            IconName::ChevronUp
+        } else {
+            IconName::ChevronDown
+        };
+
+        let handle = div()
+            .id("phone-tab-bar-handle")
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .flex_none()
+            .min_h(rems(1.25))
+            .bg(theme.surface)
+            .border_t_1()
+            .border_color(theme.border)
+            .cursor_pointer()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(d.grid)
+                    .child(
+                        Icon::new(current_tab_icon)
+                            .size(IconSize::Xs)
+                            .color(theme.text_muted),
+                    )
+                    .child(
+                        Icon::new(handle_icon)
+                            .size(IconSize::Xs)
+                            .color(theme.text_muted),
+                    ),
+            )
+            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                state_for_toggle.update(cx, |state, _cx| {
+                    state.app.ui_state.phone_tab_bar_hidden =
+                        !state.app.ui_state.phone_tab_bar_hidden;
+                });
+            })
+            .into_any_element();
+
+        if hidden {
+            return handle;
+        }
+
+        div()
+            .id("phone-tab-bar-collapsible")
+            .flex()
+            .flex_col()
+            .flex_none()
+            .child(handle)
+            .child(self.render_phone_tab_bar(current_screen, cx))
             .into_any_element()
     }
 
@@ -305,21 +254,134 @@ impl PlayerView {
             .into_any_element()
     }
 
+    fn render_phone_home_header(&self, cx: &mut Context<Self>) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let state_for_search = self.state.clone();
+
+        div()
+            .id("phone-home-header")
+            .flex()
+            .items_center()
+            .justify_between()
+            .flex_none()
+            .min_h(rems(3.25))
+            .px(d.card)
+            .py(d.grid)
+            .bg(theme.background)
+            .child(
+                div()
+                    .text_size(d.text_lg)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
+                    .child("SOTF"),
+            )
+            .child(
+                div()
+                    .id("phone-home-search")
+                    .size(rems(2.75))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(d.r_md)
+                    .cursor_pointer()
+                    .hover({
+                        let theme = theme.clone();
+                        move |s| s.bg(theme.surface_hover)
+                    })
+                    .child(
+                        Icon::new(IconName::Search)
+                            .size(IconSize::Md)
+                            .color(theme.text_primary),
+                    )
+                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                        state_for_search.update(cx, |state, _cx| {
+                            state.app.ui_state.input_mode = crate::app::InputMode::Search;
+                            state.app.set_screen(Screen::Library, "PhoneHomeSearch");
+                        });
+                    }),
+            )
+            .into_any_element()
+    }
+
+    fn render_phone_screen_header(
+        &self,
+        title: &'static str,
+        back_screen: Screen,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let state_for_back = self.state.clone();
+
+        div()
+            .id("phone-screen-header")
+            .flex()
+            .items_center()
+            .gap(d.grid)
+            .flex_none()
+            .min_h(rems(3.25))
+            .px(d.card)
+            .py(d.grid)
+            .bg(theme.surface)
+            .border_b_1()
+            .border_color(theme.border)
+            .child(
+                div()
+                    .id("phone-screen-back")
+                    .size(rems(2.75))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(d.r_md)
+                    .cursor_pointer()
+                    .hover({
+                        let theme = theme.clone();
+                        move |s| s.bg(theme.surface_hover)
+                    })
+                    .child(
+                        Icon::new(IconName::ChevronLeft)
+                            .size(IconSize::Md)
+                            .color(theme.text_primary),
+                    )
+                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                        state_for_back.update(cx, |state, _cx| {
+                            state.app.set_screen(back_screen, "PhoneBack");
+                        });
+                    }),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(d.text_lg)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(title),
+            )
+            .into_any_element()
+    }
+
     fn render_home_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let albums = &state.app.library_state.library.albums;
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let albums: Vec<sotf_audio_player::Album> =
+            self.state.read(cx).app.library_state.library.albums.clone();
 
         if albums.is_empty() {
             return div()
                 .size_full()
                 .flex()
+                .flex_col()
                 .items_center()
                 .justify_center()
                 .p(d.card)
                 .bg(theme.background)
                 .text_color(theme.text_muted)
+                .child(self.render_phone_home_header(cx))
                 .child("Add albums to your library to build Home shelves.")
                 .into_any_element();
         }
@@ -328,7 +390,7 @@ impl PlayerView {
         recently_played.sort_by_key(|album| std::cmp::Reverse(album.play_count));
 
         let mut most_played = albums.iter().collect::<Vec<_>>();
-        most_played.sort_by(|a, b| {
+                most_played.sort_by(|a, b| {
             b.play_count
                 .cmp(&a.play_count)
                 .then_with(|| a.title.cmp(&b.title))
@@ -351,6 +413,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .gap(d.section_lg)
+            .child(self.render_phone_home_header(cx))
             .child(self.render_phone_home_shelf(
                 crate::app::PhoneHomeShelf::RecentlyPlayed,
                 recently_played.into_iter().take(12).collect(),
@@ -448,35 +511,43 @@ impl PlayerView {
 
     fn render_home_shelf_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let state = self.state.read(cx);
-        let theme = state.app.ui_state.theme.clone();
-        let shelf = state.app.ui_state.phone_home_shelf;
-        let columns = if state.app.ui_state.window_width >= 430.0 {
-            3
-        } else {
-            2
+        let (theme, shelf, columns, albums, album_count) = {
+            let state = self.state.read(cx);
+            let theme = state.app.ui_state.theme.clone();
+            let shelf = state.app.ui_state.phone_home_shelf;
+            let columns = if state.app.ui_state.window_width >= 430.0 {
+                3
+            } else {
+                2
+            };
+            let mut albums: Vec<sotf_audio_player::Album> = state
+                .app
+                .library_state
+                .library
+                .albums
+                .iter()
+                .filter(|album| {
+                    shelf != crate::app::PhoneHomeShelf::Favorites || album.is_favorite
+                })
+                .cloned()
+                .collect();
+            match shelf {
+                crate::app::PhoneHomeShelf::RecentlyPlayed
+                | crate::app::PhoneHomeShelf::MostPlayed => {
+                    albums.sort_by(|a, b| {
+                        b.play_count
+                            .cmp(&a.play_count)
+                            .then_with(|| a.title.cmp(&b.title))
+                    });
+                }
+                crate::app::PhoneHomeShelf::Favorites => {}
+                crate::app::PhoneHomeShelf::NewInLibrary => {
+                    albums.sort_by(|a, b| b.year.cmp(&a.year).then_with(|| a.title.cmp(&b.title)));
+                }
+            }
+            let album_count = albums.len();
+            (theme, shelf, columns, albums, album_count)
         };
-        let mut albums = state
-            .app
-            .library_state
-            .library
-            .albums
-            .iter()
-            .filter(|album| shelf != crate::app::PhoneHomeShelf::Favorites || album.is_favorite)
-            .collect::<Vec<_>>();
-        match shelf {
-            crate::app::PhoneHomeShelf::RecentlyPlayed | crate::app::PhoneHomeShelf::MostPlayed => {
-                albums.sort_by(|a, b| {
-                    b.play_count
-                        .cmp(&a.play_count)
-                        .then_with(|| a.title.cmp(&b.title))
-                });
-            }
-            crate::app::PhoneHomeShelf::Favorites => {}
-            crate::app::PhoneHomeShelf::NewInLibrary => {
-                albums.sort_by(|a, b| b.year.cmp(&a.year).then_with(|| a.title.cmp(&b.title)));
-            }
-        }
 
         div()
             .id("phone-home-shelf-grid")
@@ -485,6 +556,7 @@ impl PlayerView {
             .flex_col()
             .min_h_0()
             .bg(theme.background)
+            .child(self.render_phone_screen_header(shelf.title(), Screen::Home, cx))
             .child(
                 div()
                     .flex_none()
@@ -492,7 +564,7 @@ impl PlayerView {
                     .py(d.grid)
                     .text_size(d.text_sm)
                     .text_color(theme.text_muted)
-                    .child(format!("{} albums", albums.len())),
+                    .child(format!("{} albums", album_count)),
             )
             .child(
                 div()
@@ -503,7 +575,7 @@ impl PlayerView {
                     .p(d.card)
                     .pt(d.grid)
                     .child(div().grid().grid_cols(columns).gap(d.gap_md).children(
-                        albums.into_iter().enumerate().map(|(idx, album)| {
+                        albums.iter().enumerate().map(|(idx, album)| {
                             self.render_phone_album_tile(
                                 idx,
                                 album,
@@ -1770,6 +1842,7 @@ impl PlayerView {
 
         let state_for_add = self.state.clone();
         let state_for_edit = self.state.clone();
+        let state_for_back = self.state.clone();
 
         div()
             .id("phone-plugin-rack")
@@ -1789,9 +1862,39 @@ impl PlayerView {
                     .border_color(theme.border)
                     .child(
                         div()
-                            .text_size(d.text_sm)
-                            .text_color(theme.text_muted)
-                            .child(format!("{} plugins", plugins.len())),
+                            .flex()
+                            .items_center()
+                            .gap(d.grid)
+                            .child(
+                                div()
+                                    .id("phone-plugin-rack-back")
+                                    .size(rems(2.75))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(d.r_md)
+                                    .cursor_pointer()
+                                    .hover({
+                                        let theme = theme.clone();
+                                        move |s| s.bg(theme.surface_hover)
+                                    })
+                                    .child(
+                                        Icon::new(IconName::ChevronLeft)
+                                            .size(IconSize::Md)
+                                            .color(theme.text_primary),
+                                    )
+                                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                                        state_for_back.update(cx, |state, _cx| {
+                                            state.app.set_screen(Screen::StudioHub, "PhoneRackBack");
+                                        });
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .text_size(d.text_sm)
+                                    .text_color(theme.text_muted)
+                                    .child(format!("{} plugins", plugins.len())),
+                            ),
                     )
                     .child(
                         div()
@@ -2732,6 +2835,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .gap(d.section)
+            .child(self.render_phone_screen_header("EQ Curve", Screen::StudioHub, cx))
             .child(
                 div()
                     .w_full()
@@ -3321,6 +3425,7 @@ impl PlayerView {
         };
         let wizard_back = self.state.clone();
         let wizard_next = self.state.clone();
+        let state_for_back = self.state.clone();
 
         div()
             .id(SharedString::from(format!("phone-tool-{title}")))
@@ -3342,6 +3447,30 @@ impl PlayerView {
                             .items_center()
                             .justify_between()
                             .gap(d.grid)
+                            .child(
+                                div()
+                                    .id("phone-tool-back")
+                                    .size(rems(2.75))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(d.r_md)
+                                    .cursor_pointer()
+                                    .hover({
+                                        let theme = theme.clone();
+                                        move |s| s.bg(theme.surface_hover)
+                                    })
+                                    .child(
+                                        Icon::new(IconName::ChevronLeft)
+                                            .size(IconSize::Md)
+                                            .color(theme.text_primary),
+                                    )
+                                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                                        state_for_back.update(cx, |state, _cx| {
+                                            state.app.set_screen(Screen::StudioHub, "PhoneToolBack");
+                                        });
+                                    }),
+                            )
                             .child(
                                 div()
                                     .flex()
@@ -3648,12 +3777,13 @@ impl PlayerView {
 
     fn render_settings_detail_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
-        let (theme, active_tab, visible_tabs) = {
+        let (theme, active_tab, visible_tabs, translations) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
                 state.app.ui_state.active_settings_tab,
                 crate::app::SettingsTab::visible_tabs(),
+                state.app.ui_state.translations.clone(),
             )
         };
         let active_tab = if visible_tabs.contains(&active_tab) {
@@ -3692,13 +3822,18 @@ impl PlayerView {
                 .into_any_element(),
         };
 
+        let title = crate::components::settings_tab_label(active_tab, &translations);
+
         div()
             .id("phone-settings-detail")
             .size_full()
             .overflow_y_scroll()
             .bg(theme.background)
-            .p(d.card)
-            .child(content)
+            .flex()
+            .flex_col()
+            .gap(d.grid)
+            .child(self.render_phone_screen_header(title, Screen::Settings, cx))
+            .child(div().p(d.card).child(content))
             .into_any_element()
     }
 
@@ -3976,29 +4111,6 @@ impl PlayerView {
                 });
             })
             .into_any_element()
-    }
-
-    fn phone_screen_title(screen: Screen) -> &'static str {
-        match screen {
-            Screen::Home => "Home",
-            Screen::HomeShelf => "Home",
-            Screen::NowPlaying => "Now Playing",
-            Screen::Library => "Library",
-            Screen::Streams => "Streams",
-            Screen::Queue => "Queue",
-            Screen::Playlists => "Playlists",
-            Screen::Spectrum => "Spectrum",
-            Screen::Settings => "Settings",
-            Screen::SettingsDetail => "Settings",
-            Screen::StudioHub => "Studio",
-            Screen::EqCurve => "EQ",
-            Screen::Studio => "Rack",
-            Screen::Recording => "Recording",
-            Screen::RoomEq => "Room EQ",
-            Screen::HeadphoneEq => "Headphone EQ",
-            Screen::Spinorama => "Spinorama",
-            Screen::PluginGraph => "Plugin Graph",
-        }
     }
 
     fn format_phone_time(seconds: f64) -> String {

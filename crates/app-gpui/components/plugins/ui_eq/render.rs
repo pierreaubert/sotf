@@ -35,6 +35,7 @@ use gpui::*;
 use gpui_audio_kit::PotentiometerSize;
 use gpui_px::{ChartTheme, ScaleType, line};
 use math_audio_iir_fir::BiquadFilterType;
+use sotf_audio::plugins::EqFilterTopology;
 use sotf_audio_player::{EQFilter, PluginSettings};
 use sotf_audio_player_midi::mapping::MidiOverlay;
 use sotf_plugins::param_specs::{
@@ -92,6 +93,12 @@ pub(crate) enum EqGlobalControl {
     FirPhaseMode,
     FirAutoGain,
     FirMix,
+}
+
+#[derive(Clone, Copy)]
+enum EqBandAction {
+    Add,
+    Remove(usize),
 }
 
 fn format_eq_frequency_label(freq: f64) -> String {
@@ -348,6 +355,68 @@ pub(crate) fn render_eq_channel_toolbar(
         .into_any_element()
 }
 
+#[allow(clippy::too_many_arguments)]
+fn render_eq_channel_segment(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    channels: usize,
+    selected_channel: usize,
+    per_channel_mode: bool,
+    theme: &Theme,
+) -> AnyElement {
+    let all_entity = entity.clone();
+    let per_entity = entity.clone();
+
+    div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap(d.grid)
+        .child(render_eq_mode_button(
+            d,
+            "All",
+            !per_channel_mode,
+            theme,
+            move |_, _, cx| {
+                all_entity.update(cx, |state, cx| {
+                    state.app.set_eq_per_channel_mode(plugin_idx, false);
+                    cx.notify();
+                });
+            },
+        ))
+        .child(render_eq_mode_button(
+            d,
+            "Per Ch",
+            per_channel_mode,
+            theme,
+            move |_, _, cx| {
+                per_entity.update(cx, |state, cx| {
+                    state.app.set_eq_per_channel_mode(plugin_idx, true);
+                    cx.notify();
+                });
+            },
+        ))
+        .when(per_channel_mode, |row| {
+            row.children((0..channels).map(|ch| {
+                let entity = entity.clone();
+                render_eq_mode_button(
+                    d,
+                    get_channel_name(ch, channels),
+                    selected_channel == ch,
+                    theme,
+                    move |_, _, cx| {
+                        entity.update(cx, |state, cx| {
+                            state.app.plugin_state.selected_eq_channel = ch;
+                            cx.notify();
+                        });
+                    },
+                )
+            }))
+        })
+        .into_any_element()
+}
+
 fn render_eq_mode_button<F>(
     d: &Ds,
     label: impl Into<SharedString>,
@@ -406,7 +475,7 @@ pub(crate) fn render_eq_property_strip(
     let midi_overlay = state.midi_overlay;
     let mute_entity = entity.clone();
     let solo_entity = entity.clone();
-    let add_entity = entity.clone();
+    let can_show_filter_types = matches!(filter.topology, EqFilterTopology::Biquad);
 
     div()
         .w_full()
@@ -415,7 +484,7 @@ pub(crate) fn render_eq_property_strip(
         .flex_wrap()
         .items_center()
         .justify_between()
-        .gap(d.gap)
+        .gap(d.section)
         .px(d.pad_x)
         .py(d.pad_y)
         .bg(theme.surface)
@@ -423,48 +492,102 @@ pub(crate) fn render_eq_property_strip(
         .child(
             div()
                 .flex()
-                .flex_col()
-                .gap(d.grid)
+                .items_center()
+                .gap(d.gap)
                 .min_w(rems(10.0))
                 .child(
                     div()
-                        .text_size(d.text_xs)
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(theme.text_primary)
-                        .child(format!(
-                            "#{} {}",
-                            band_idx + 1,
-                            filter.filter_type.short_name()
-                        )),
+                        .flex()
+                        .flex_col()
+                        .gap(d.grid)
+                        .child(
+                            div()
+                                .text_size(d.text_xs)
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(theme.text_primary)
+                                .child(format!(
+                                    "#{} {}",
+                                    band_idx + 1,
+                                    filter.filter_type.short_name()
+                                )),
+                        )
+                        .child(
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_muted)
+                                .child(format!(
+                                    "{:.0} Hz  {:+.1} dB  Q {:.2}",
+                                    filter.frequency, filter.gain_db, filter.q
+                                )),
+                        ),
                 )
                 .child(
                     div()
-                        .text_size(d.text_xs)
-                        .text_color(theme.text_muted)
-                        .child(format!(
-                            "{:.0} Hz  {:+.1} dB  Q {:.2}",
-                            filter.frequency, filter.gain_db, filter.q
+                        .flex()
+                        .items_center()
+                        .gap(d.grid)
+                        .child(render_eq_action_button(
+                            d,
+                            "Solo",
+                            filter.solo,
+                            theme.success,
+                            theme,
+                            move |_, _, cx| {
+                                solo_entity.update(cx, |state, cx| {
+                                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                                    if let Err(e) = state.app.toggle_eq_band_solo(band_idx) {
+                                        log::warn!("Failed to toggle EQ band solo: {}", e);
+                                    }
+                                    cx.notify();
+                                });
+                            },
+                        ))
+                        .child(render_eq_action_button(
+                            d,
+                            "Mute",
+                            filter.muted,
+                            theme.error,
+                            theme,
+                            move |_, _, cx| {
+                                mute_entity.update(cx, |state, cx| {
+                                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                                    if let Err(e) = state.app.toggle_eq_band_mute(band_idx) {
+                                        log::warn!("Failed to toggle EQ band mute: {}", e);
+                                    }
+                                    cx.notify();
+                                });
+                            },
                         )),
                 ),
         )
         .child(
             div()
                 .flex()
-                .flex_wrap()
-                .items_center()
+                .flex_col()
                 .gap(d.grid)
-                .child(render_filter_type_selector(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    &filter.filter_type,
-                    band_idx,
-                    base_param_idx + indexing.filter_type,
-                    None,
-                    theme,
-                ))
-                .when(!is_lp_mode, |row| {
-                    row.child(render_standard_eq_algorithm_pill(d, state.topology, theme))
+                .min_w(rems(12.0))
+                .children((!is_lp_mode).then(|| {
+                    render_eq_band_topology_selector(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        band_idx,
+                        filter.topology,
+                        theme,
+                    )
+                    .into_any_element()
+                }))
+                .when(can_show_filter_types, |col| {
+                    col.child(render_filter_type_selector(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        &filter.filter_type,
+                        band_idx,
+                        base_param_idx + indexing.filter_type,
+                        None,
+                        theme,
+                    ))
                 }),
         )
         .child(
@@ -532,45 +655,6 @@ pub(crate) fn render_eq_property_strip(
                     )
                 })),
         )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(d.grid)
-                .child(render_eq_action_button(
-                    d,
-                    "M",
-                    filter.muted,
-                    theme.error,
-                    theme,
-                    move |_, _, cx| {
-                        mute_entity.update(cx, |state, cx| {
-                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                            if let Err(e) = state.app.toggle_eq_band_mute(band_idx) {
-                                log::warn!("Failed to toggle EQ band mute: {}", e);
-                            }
-                            cx.notify();
-                        });
-                    },
-                ))
-                .child(render_eq_action_button(
-                    d,
-                    "S",
-                    filter.solo,
-                    theme.success,
-                    theme,
-                    move |_, _, cx| {
-                        solo_entity.update(cx, |state, cx| {
-                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                            if let Err(e) = state.app.toggle_eq_band_solo(band_idx) {
-                                log::warn!("Failed to toggle EQ band solo: {}", e);
-                            }
-                            cx.notify();
-                        });
-                    },
-                ))
-                .child(render_eq_add_button(d, add_entity, plugin_idx, theme)),
-        )
         .into_any_element()
 }
 
@@ -615,34 +699,92 @@ where
         .child(label)
 }
 
-fn render_eq_add_button(
+fn render_eq_band_action_button(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
+    action: EqBandAction,
+    enabled: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    let (id, label, bg) = match action {
+        EqBandAction::Add => ("eq-add-band", "+", theme.success),
+        EqBandAction::Remove(_) => ("eq-remove-band", "-", theme.error),
+    };
+
+    div()
+        .id(id)
+        .key_context("plugin-control")
+        .w(px(28.0))
+        .h(px(24.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(d.text_sm)
+        .font_weight(FontWeight::BOLD)
+        .rounded(d.r_sm)
+        .bg(if enabled {
+            bg
+        } else {
+            theme.background_secondary
+        })
+        .text_color(if enabled {
+            theme.text_on_accent
+        } else {
+            theme.text_muted
+        })
+        .when(enabled, |el| {
+            el.cursor_pointer().hover(|s| s.opacity(0.8)).on_mouse_down(
+                MouseButton::Left,
+                move |_, _, cx| {
+                    entity.update(cx, |state, cx| {
+                        state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                        let result = match action {
+                            EqBandAction::Add => state.app.add_eq_band(),
+                            EqBandAction::Remove(band_idx) => state.app.remove_eq_band(band_idx),
+                        };
+                        if let Err(e) = result {
+                            log::warn!("Failed to update EQ bands: {}", e);
+                        }
+                        cx.notify();
+                    });
+                },
+            )
+        })
+        .child(label)
+}
+
+fn render_eq_graph_action_row(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    selected_band_idx: usize,
+    num_bands: usize,
     theme: &Theme,
 ) -> impl IntoElement {
     div()
-        .id("eq-add-band")
-        .key_context("plugin-control")
-        .px(d.pad_y)
-        .py(d.pad_y_half)
-        .text_size(d.text_xs)
-        .font_weight(FontWeight::BOLD)
-        .rounded(d.r_sm)
-        .cursor_pointer()
-        .bg(theme.success)
-        .text_color(theme.text_on_accent)
-        .hover(|s| s.opacity(0.8))
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            entity.update(cx, |state, cx| {
-                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                if let Err(e) = state.app.add_eq_band() {
-                    log::warn!("Failed to add EQ band: {}", e);
-                }
-                cx.notify();
-            });
-        })
-        .child("+")
+        .w_full()
+        .flex()
+        .justify_center()
+        .items_center()
+        .gap(d.grid)
+        .pt(d.pad_y_half)
+        .child(render_eq_band_action_button(
+            d,
+            entity.clone(),
+            plugin_idx,
+            EqBandAction::Remove(selected_band_idx),
+            num_bands > 0,
+            theme,
+        ))
+        .child(render_eq_band_action_button(
+            d,
+            entity,
+            plugin_idx,
+            EqBandAction::Add,
+            true,
+            theme,
+        ))
 }
 
 /// Render EQ frequency response using gpui-px with draggable control points
@@ -1228,7 +1370,17 @@ pub fn render_eq_plugin(
             indexing,
             theme,
             graph_width,
-        ));
+        ))
+        .when(layout == EqCompactLayout::Current, |graph| {
+            graph.child(render_eq_graph_action_row(
+                &ds,
+                entity.clone(),
+                plugin_idx,
+                selected_band_idx,
+                num_bands,
+                theme,
+            ))
+        });
 
     // Clone values needed for closures
     let channels = state.channels;
@@ -1239,18 +1391,6 @@ pub fn render_eq_plugin(
     } else {
         state.per_channel_mode
     };
-    let channel_toolbar = (!is_lp_mode).then(|| {
-        render_eq_channel_toolbar(
-            &ds,
-            entity.clone(),
-            plugin_idx,
-            channels,
-            selected_eq_channel,
-            per_channel_mode,
-            theme,
-        )
-    });
-
     let _legacy_controls_section = if layout == EqCompactLayout::Current {
         div()
             .flex()
@@ -1894,9 +2034,10 @@ pub fn render_eq_plugin(
         Some(
             div()
                 .flex()
+                .flex_wrap()
                 .items_center()
                 .justify_center()
-                .gap(ds.section)
+                .gap(ds.gap)
                 .px(ds.pad_x)
                 .py(ds.pad_y_half)
                 .bg(theme.surface)
@@ -1923,15 +2064,13 @@ pub fn render_eq_plugin(
                     "Biquad",
                     theme,
                 ))
-                .child(render_eq_global_toggle(
+                .child(render_eq_channel_segment(
                     &ds,
                     entity.clone(),
                     plugin_idx,
-                    EqGlobalControl::StandardTdf2,
-                    "TDF-II",
-                    state.tdf2,
-                    "On",
-                    "Off",
+                    channels,
+                    selected_eq_channel,
+                    per_channel_mode,
                     theme,
                 )),
         )
@@ -1949,7 +2088,6 @@ pub fn render_eq_plugin(
             .gap(ds.section_xl)
             .children(eq_header)
             .children(lp_header)
-            .children(channel_toolbar)
             .child(graph_section)
             .children(lp_analysis)
             .child(controls_section)
@@ -2074,6 +2212,92 @@ fn render_standard_eq_algorithm_pill(d: &Ds, topology: f64, theme: &Theme) -> im
         .bg(theme.background_secondary)
         .text_color(theme.text_secondary)
         .child(if topology > 0.5 { "SVF" } else { "Biquad" })
+}
+
+fn eq_band_topology_label(topology: EqFilterTopology) -> &'static str {
+    match topology {
+        EqFilterTopology::Biquad => "Biquad",
+        EqFilterTopology::WarpedBiquad => "Warped",
+        EqFilterTopology::KautzFilter => "Kautz",
+    }
+}
+
+fn render_eq_band_topology_selector(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    band_idx: usize,
+    topology: EqFilterTopology,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(d.grid)
+        .child(
+            div()
+                .px(d.pad_y)
+                .py(d.pad_y_half)
+                .text_size(d.text_xs)
+                .text_color(theme.text_muted)
+                .rounded(d.r_sm)
+                .bg(theme.background_secondary)
+                .child("Alg"),
+        )
+        .children(
+            [
+                EqFilterTopology::Biquad,
+                EqFilterTopology::WarpedBiquad,
+                EqFilterTopology::KautzFilter,
+            ]
+            .into_iter()
+            .map(move |candidate| {
+                let entity = entity.clone();
+                let active = candidate == topology;
+                div()
+                    .px(d.pad_y)
+                    .py(d.pad_y_half)
+                    .text_size(d.text_xs)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .rounded(d.r_sm)
+                    .cursor_pointer()
+                    .when(active, |el| {
+                        el.bg(theme.accent).text_color(theme.text_on_accent)
+                    })
+                    .when(!active, |el| {
+                        el.bg(theme.background_secondary)
+                            .text_color(theme.text_secondary)
+                            .hover(|s| s.bg(theme.surface_hover))
+                    })
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        if active {
+                            return;
+                        }
+                        entity.update(cx, |state, cx| {
+                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                            for _ in 0..3 {
+                                let current = state
+                                    .app
+                                    .plugin_state
+                                    .graph
+                                    .get_plugin(plugin_idx)
+                                    .and_then(|plugin| match &plugin.settings {
+                                        PluginSettings::EQ { filters, .. } => {
+                                            filters.get(band_idx).map(|filter| filter.topology)
+                                        }
+                                        _ => None,
+                                    });
+                                if current == Some(candidate) {
+                                    break;
+                                }
+                                state.app.cycle_eq_filter_topology(plugin_idx, band_idx);
+                            }
+                            cx.notify();
+                        });
+                    })
+                    .child(eq_band_topology_label(candidate))
+            }),
+        )
 }
 
 pub(crate) fn render_eq_active_toggle(

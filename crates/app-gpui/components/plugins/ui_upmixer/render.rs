@@ -1389,6 +1389,50 @@ struct ControlLaneSpec {
     is_editing: bool,
 }
 
+#[derive(Clone, Copy)]
+struct ControlLaneRange {
+    value: f64,
+    min: f64,
+    max: f64,
+}
+
+fn sanitize_control_lane_range(spec: &ControlLaneSpec) -> ControlLaneRange {
+    let (mut min, mut max) = if spec.min.is_finite() && spec.max.is_finite() {
+        (spec.min.min(spec.max), spec.min.max(spec.max))
+    } else if spec.value.is_finite() {
+        (spec.value - 1.0, spec.value + 1.0)
+    } else {
+        (0.0, 1.0)
+    };
+
+    if min == max {
+        let pad = min.abs().max(1.0) * 0.01;
+        min -= pad;
+        max += pad;
+    }
+
+    let value = if spec.value.is_finite() {
+        spec.value.clamp(min, max)
+    } else {
+        min
+    };
+
+    if value != spec.value || min != spec.min || max != spec.max {
+        log::warn!(
+            "Invalid upmixer control range for '{}': value={}, min={}, max={}; using value={}, min={}, max={}",
+            spec.label,
+            spec.value,
+            spec.min,
+            spec.max,
+            value,
+            min,
+            max
+        );
+    }
+
+    ControlLaneRange { value, min, max }
+}
+
 fn render_control_lane(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1397,7 +1441,8 @@ fn render_control_lane(
     theme: &Theme,
 ) -> AnyElement {
     let is_selected = spec.selected_param == spec.param_idx && spec.is_editing;
-    let value = spec.value.clamp(spec.min, spec.max);
+    let range = sanitize_control_lane_range(&spec);
+    let value = range.value;
     let slider_width = 132.0;
     let value_label = format_compact_value(value, spec.unit);
 
@@ -1431,7 +1476,7 @@ fn render_control_lane(
         .child(
             Slider::new(("upmix-lane", plugin_idx * 1000 + spec.param_idx))
                 .value(value as f32)
-                .range(spec.min as f32, spec.max as f32)
+                .range(range.min as f32, range.max as f32)
                 .width(slider_width)
                 .size(SliderSize::Sm)
                 .theme(theme.to_slider_theme())
