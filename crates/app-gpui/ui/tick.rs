@@ -37,6 +37,11 @@ pub(crate) struct TickSnapshot {
     library_stats_computing: bool,
     remote_server_probe_revision: u64,
     remote_album_page_revision: u64,
+    signal_path_resampled: bool,
+    signal_path_underruns: u64,
+    signal_path_stream_errors: u64,
+    signal_path_frames_dropped: u64,
+    signal_path_clipping: Option<bool>,
 }
 
 /// Screens where rack analyzer data is visible. Library/Queue only show rack
@@ -101,6 +106,36 @@ impl PlayerView {
             library_stats_computing: state.app.library_view.stats_computing,
             remote_server_probe_revision: state.app.remote.server_probe_revision,
             remote_album_page_revision: state.app.remote.remote_album_page_revision,
+            signal_path_resampled: state
+                .app
+                .playback
+                .signal_path
+                .as_ref()
+                .is_some_and(|p| p.is_resampled()),
+            signal_path_underruns: state
+                .app
+                .playback
+                .signal_path
+                .as_ref()
+                .map_or(0, |p| p.health.underruns),
+            signal_path_stream_errors: state
+                .app
+                .playback
+                .signal_path
+                .as_ref()
+                .map_or(0, |p| p.health.stream_errors),
+            signal_path_frames_dropped: state
+                .app
+                .playback
+                .signal_path
+                .as_ref()
+                .map_or(0, |p| p.health.frames_dropped),
+            signal_path_clipping: state
+                .app
+                .playback
+                .signal_path
+                .as_ref()
+                .and_then(|p| p.health.clipping_detected),
         }
     }
 
@@ -139,6 +174,7 @@ impl PlayerView {
         let player_handle = state.player.clone();
         let mut player = player_handle.lock();
         let playback_state = player.get_playback_state();
+        state.app.playback.signal_path = Some(player.signal_path());
 
         let was_playing = state.app.playback.is_playing;
         state.app.playback.is_playing = playback_state.is_playing;

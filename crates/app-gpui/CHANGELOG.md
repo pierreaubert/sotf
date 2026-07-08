@@ -1,4 +1,8 @@
-# 0.6.6 (unreleased)
+# 0.7.10 (unreleased)
+
+## Signal path visibility
+
+- Footer and Plugin Graph now display source/output sample rates, a resampling (SRC) indicator, and an engine-health warning pill from the read-only `SignalPath` model.
 
 ## iOS / GPUI P1 hardening
 
@@ -64,6 +68,11 @@
 - Pairing QR payloads now include a reachable LAN host instead of `127.0.0.1`,
   and trusted-client revocation goes through the server endpoint so the live
   mTLS verifier is updated immediately.
+- The QR host helper now rejects loopback (`127.0.0.1`, `localhost`) and
+  unspecified (`0.0.0.0`) bind addresses, ensuring the connection QR only
+  advertises a concrete LAN interface.
+- Added GPUI regression tests for QR host loopback/unspecified rejection and
+  wildcard-to-loopback mapping for local API clients.
 - Remote SSE handling now accepts both incremental server events and full
   `state` refresh frames from lag recovery or initial snapshots.
 

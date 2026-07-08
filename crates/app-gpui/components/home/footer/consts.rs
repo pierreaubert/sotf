@@ -766,6 +766,25 @@ impl PlayerView {
             state.app.ui_state.theme.clone()
         };
 
+        let (signal_path_source, signal_path_output, signal_path_resampled, signal_path_issues) = {
+            let state = self.state.read(cx);
+            state.app.playback.signal_path.as_ref().map_or(
+                (String::new(), String::new(), false, false),
+                |p| {
+                    let source = p.source.as_ref().map_or_else(
+                        || "—".to_string(),
+                        |s| format!("{} {}k", s.format, s.sample_rate_hz / 1000),
+                    );
+                    let output = format!(
+                        "{} {}k",
+                        p.output.device.as_deref().unwrap_or("Default"),
+                        p.output.sample_rate_hz / 1000
+                    );
+                    (source, output, p.is_resampled(), p.has_known_issues())
+                },
+            )
+        };
+
         let bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
         let bounds_ref_clone = bounds_ref.clone();
 
@@ -1039,6 +1058,46 @@ impl PlayerView {
                         .child(position_str)
                         .child("/")
                         .child(duration_str),
+                )
+            })
+            // Row 3: Signal path status (source → output, resampling/health pills)
+            .when(!is_hal_mode, |el| {
+                el.child(
+                    div()
+                        .id("footer-signal-path")
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .gap(d.grid)
+                        .text_size(d.text_xs)
+                        .text_color(text_muted)
+                        .child(signal_path_source.clone())
+                        .child("→")
+                        .child(signal_path_output.clone())
+                        .when(signal_path_resampled, |el| {
+                            el.child(
+                                div()
+                                    .px(d.pad_y_half)
+                                    .py(px(1.0))
+                                    .rounded(d.r_sm)
+                                    .bg(theme.warning)
+                                    .text_size(d.text_xs)
+                                    .text_color(theme.text_on_accent)
+                                    .child("SRC"),
+                            )
+                        })
+                        .when(signal_path_issues, |el| {
+                            el.child(
+                                div()
+                                    .px(d.pad_y_half)
+                                    .py(px(1.0))
+                                    .rounded(d.r_sm)
+                                    .bg(theme.error)
+                                    .text_size(d.text_xs)
+                                    .text_color(theme.text_on_accent)
+                                    .child("!"),
+                            )
+                        }),
                 )
             })
     }

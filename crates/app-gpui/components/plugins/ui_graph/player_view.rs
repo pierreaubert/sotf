@@ -334,6 +334,30 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
 
+        let (
+            signal_path_source_rate,
+            signal_path_output_rate,
+            signal_path_resampled,
+            signal_path_issues,
+        ) = {
+            let state = self.state.read(cx);
+            state
+                .app
+                .playback
+                .signal_path
+                .as_ref()
+                .map_or((None, None, false, false), |p| {
+                    let source_rate = p.source.as_ref().map(|s| s.sample_rate_hz);
+                    let output_rate = u32::try_from(p.output.sample_rate_hz).ok();
+                    (
+                        source_rate,
+                        output_rate,
+                        p.is_resampled(),
+                        p.has_known_issues(),
+                    )
+                })
+        };
+
         let state_for_home = self.state.clone();
         let text_muted = theme.text_muted;
         let surface_hover = theme.surface_hover;
@@ -390,7 +414,47 @@ impl PlayerView {
                             .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .child(format!("#{} links", connection_count)),
-                    ),
+                    )
+                    .when_some(signal_path_source_rate, |el, rate| {
+                        el.child(
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_muted)
+                                .child(format!("{}k →", rate / 1000)),
+                        )
+                    })
+                    .when_some(signal_path_output_rate, |el, rate| {
+                        el.child(
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_muted)
+                                .child(format!("{}k out", rate / 1000)),
+                        )
+                    })
+                    .when(signal_path_resampled, |el| {
+                        el.child(
+                            div()
+                                .px(d.pad_y_half)
+                                .py(px(1.0))
+                                .rounded(d.r_sm)
+                                .bg(theme.warning)
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_on_accent)
+                                .child("SRC"),
+                        )
+                    })
+                    .when(signal_path_issues, |el| {
+                        el.child(
+                            div()
+                                .px(d.pad_y_half)
+                                .py(px(1.0))
+                                .rounded(d.r_sm)
+                                .bg(theme.error)
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_on_accent)
+                                .child("!"),
+                        )
+                    }),
             )
             // Reset view button on the right
             .child(

@@ -7,7 +7,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use crate::app::constants;
-use sotf_audio_player::{LoudnessData, PlaybackController, SpectrumData};
+use sotf_audio_player::{LoudnessData, PlaybackController, SignalPath, SpectrumData};
 use sotf_plugins::CompressorData;
 
 #[derive(Debug)]
@@ -25,6 +25,8 @@ pub struct PlaybackState {
     pub loudness_info: Option<Arc<LoudnessData>>,
     pub spectrum_info: Option<Arc<SpectrumData>>,
     pub compressor_info: Option<Arc<CompressorData>>,
+    /// Latest read-only signal-path snapshot for UI status badges.
+    pub signal_path: Option<SignalPath>,
 }
 
 impl Deref for PlaybackState {
@@ -58,6 +60,7 @@ impl PlaybackState {
             loudness_info: None,
             spectrum_info: None,
             compressor_info: None,
+            signal_path: None,
         }
     }
 }
