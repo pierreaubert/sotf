@@ -8,6 +8,10 @@ mod macos;
 mod mpris;
 mod stub;
 
+/// Owned, `'static` callback. The `'static` bound ensures the closure cannot
+/// borrow app/player state, and each backend's `Drop` impl joins the handler
+/// thread / removes OS targets before the backend is destroyed, so the
+/// closure is dropped while its captured state is still alive.
 pub(crate) type EventHandler = Box<dyn FnMut(MediaControlEvent) + Send + 'static>;
 
 #[allow(

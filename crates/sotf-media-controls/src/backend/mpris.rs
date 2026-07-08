@@ -103,6 +103,11 @@ impl MprisBackend {
 
 impl Drop for MprisBackend {
     fn drop(&mut self) {
+        // 1. Signal the runtime thread to exit and wait for it. This drops
+        //    the user-supplied `EventHandler` (and any captured state) before
+        //    the backend is destroyed.
+        // 2. The tokio runtime is driven inside the joined thread, so all
+        //    D-Bus callbacks stop before this function returns.
         let _ = self.cmd_tx.send(Cmd::Shutdown);
         if let Some(handle) = self.runtime_thread.take() {
             let _ = handle.join();
@@ -336,5 +341,28 @@ mod tests {
     #[test]
     fn nonnegative_time_micros_preserves_positive_offsets() {
         assert_eq!(nonnegative_time_micros(Time::from_micros(42)), 42);
+    }
+
+    #[test]
+    fn duration_to_time_preserves_normal_values() {
+        let time = duration_to_time(Duration::from_millis(1_500));
+        assert_eq!(time.as_micros(), 1_500_000);
+    }
+
+    #[test]
+    fn owned_metadata_from_borrowed_copies_strings() {
+        let borrowed = MediaMetadata {
+            title: Some("Title"),
+            artist: Some("Artist"),
+            album: Some("Album"),
+            duration: Some(Duration::from_secs(180)),
+            cover_url: Some("file:///cover.jpg"),
+        };
+        let owned = OwnedMetadata::from_borrowed(&borrowed);
+        assert_eq!(owned.title, Some("Title".to_string()));
+        assert_eq!(owned.artist, Some("Artist".to_string()));
+        assert_eq!(owned.album, Some("Album".to_string()));
+        assert_eq!(owned.duration, Some(Duration::from_secs(180)));
+        assert_eq!(owned.cover_url, Some("file:///cover.jpg".to_string()));
     }
 }

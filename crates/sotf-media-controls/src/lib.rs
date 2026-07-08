@@ -79,8 +79,13 @@ impl MediaControls {
     /// Register an event handler invoked from the OS-controls callback
     /// thread (macOS main run loop / D-Bus reader thread).
     ///
-    /// `handler` must be `Send + 'static`. Use a channel inside the closure if
-    /// you need the events on a different thread.
+    /// `handler` must be `Send + 'static`. The `'static` bound prevents the
+    /// closure from borrowing app or player state; ownership of any captured
+    /// state stays with the backend. When `MediaControls` is dropped the
+    /// backend joins its handler thread and removes OS-registered targets,
+    /// so the closure is dropped before app/player state can disappear.
+    /// Use a channel inside the closure if you need the events on a different
+    /// thread.
     pub fn attach(
         &mut self,
         handler: impl FnMut(MediaControlEvent) + Send + 'static,
@@ -151,5 +156,34 @@ mod tests {
     fn media_position_from_secs_preserves_positive() {
         let p = MediaPosition::from_secs_f64(1.5);
         assert_eq!(p.0, Duration::from_millis(1500));
+    }
+
+    #[test]
+    fn media_controls_new_on_unsupported_platform() {
+        // On macOS / Linux this test would initialize a real backend, so it
+        // only exercises the stub path. The non-macOS/non-Linux CI target
+        // therefore covers the public Unsupported return path end-to-end.
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "freebsd")))]
+        {
+            let cfg = PlatformConfig::default()
+                .with_dbus_name("test")
+                .with_display_name("Test");
+            assert!(matches!(MediaControls::new(cfg), Err(Error::Unsupported)));
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn media_controls_debug_is_non_exhaustive() {
+        // `Debug` must not expose internal backend state. Skipped on macOS
+        // because backend construction must happen on the main thread.
+        let fmt = format!(
+            "{:?}",
+            MediaControls {
+                inner: backend::Backend::new(PlatformConfig::default()).unwrap(),
+            }
+        );
+        assert!(fmt.starts_with("MediaControls"));
+        assert!(fmt.contains(".."));
     }
 }

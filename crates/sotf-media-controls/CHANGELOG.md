@@ -1,3 +1,29 @@
+# 0.1.3
+
+## Changes
+
+- Added host-independent unit tests for `PlatformConfig`, `MediaMetadata`,
+  `MediaPlayback`, `SeekDirection`, and `MediaControlEvent` variants.
+- Added `with_dbus_name` and `with_display_name` builder helpers to
+  `PlatformConfig` to match the existing `with_window_handle` API.
+- Added backend-level tests for `OwnedMetadata` copying and MPRIS time
+  conversion, plus a macOS handler-thread shutdown/drop lifetime guard.
+- Documented the callback lifetime contract explicitly: handlers are
+  `Send + 'static`, owned by the backend, and dropped before app/player state
+  because `Drop` joins the handler/runtime thread before the backend is
+  destroyed.
+- Added `PLATFORM_LIMITATIONS.md` covering the supported-platform matrix,
+  macOS main-thread construction requirement, Linux D-Bus requirement,
+  cover-artwork omission, process-global command-center behavior, and
+  unit-test coverage gaps.
+
+## Testing
+
+- Expanded unit-test coverage for state transitions, metadata formatting,
+  event parsing, and lifetime-safe handler teardown.
+- No real macOS media-key hardware or D-Bus session is required for the new
+  tests.
+
 # 0.1.1
 
 ## Changes

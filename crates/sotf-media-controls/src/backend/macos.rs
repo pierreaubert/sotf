@@ -198,23 +198,31 @@ impl MacosBackend {
 
 impl Drop for MacosBackend {
     fn drop(&mut self) {
-        // Signal the handler thread to exit and wait for it so the user
-        // closure is dropped before the backend disappears.
+        // 1. Stop the handler thread first. This drops the user-supplied
+        //    `EventHandler` (and therefore any captured app/player state)
+        //    before the backend itself is destroyed.
+        // 2. Then detach the Objective-C blocks from the shared command
+        //    center so future `MediaControls` instances don't double-dispatch
+        //    through ghost targets.
+        //
+        // There is a narrow race where an Objective-C block may still be
+        // executing on the main thread after the handler thread has joined.
+        // In that case the block's `cmd_tx` send fails silently and the event
+        // is dropped; the handler is already gone, so no use-after-free can
+        // occur.
         let _ = self.cmd_tx.send(HandlerCmd::Shutdown);
         if let Some(handle) = self.handler_thread.take() {
             let _ = handle.join();
         }
 
-        // Detach every registered block from the shared command center so
-        // future `MediaControls` instances don't double-dispatch through
-        // ghost blocks. `removeTarget:` must run on the main thread; we
-        // go through `exec_async` regardless of the dropping thread to
-        // keep the threading contract uniform. The wired handles move
-        // into the closure and drop there.
         let wired = std::mem::take(&mut self.wired);
         if wired.is_empty() {
             return;
         }
+        // `removeTarget:` must run on the main thread; use `exec_async`
+        // regardless of the dropping thread to keep the threading contract
+        // uniform. The wired handles move into the closure and drop there,
+        // releasing the retained blocks.
         DispatchQueue::main().exec_async(move || {
             for w in &wired {
                 // SAFETY: main queue + the `MPRemoteCommand` handle is
@@ -473,5 +481,48 @@ mod tests {
         done_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("handler should have been called for the Play event");
+    }
+
+    #[test]
+    fn owned_metadata_from_borrowed_copies_strings() {
+        let borrowed = MediaMetadata {
+            title: Some("Title"),
+            artist: Some("Artist"),
+            album: Some("Album"),
+            duration: Some(Duration::from_secs(180)),
+            cover_url: Some("file:///cover.jpg"),
+        };
+        let owned = OwnedMetadata::from_borrowed(&borrowed);
+        assert_eq!(owned.title, Some("Title".to_string()));
+        assert_eq!(owned.artist, Some("Artist".to_string()));
+        assert_eq!(owned.album, Some("Album".to_string()));
+        assert_eq!(owned.duration, Some(Duration::from_secs(180)));
+        // Cover artwork is intentionally omitted on macOS.
+    }
+
+    /// Lifetime regression guard: the handler thread must drop the user
+    /// closure before the backend disappears, so the closure cannot outlive
+    /// app/player state it captured.
+    #[test]
+    fn handler_thread_drops_handler_on_shutdown() {
+        let (cmd_tx, cmd_rx) = mpsc::channel::<HandlerCmd>();
+        let (dropped_tx, dropped_rx) = mpsc::channel::<()>();
+
+        let worker = thread::spawn(move || run_handler_thread(cmd_rx));
+
+        cmd_tx
+            .send(HandlerCmd::SetHandler(Box::new(move |_ev| {
+                let _ = dropped_tx.send(());
+            })))
+            .unwrap();
+        cmd_tx.send(HandlerCmd::Shutdown).unwrap();
+        worker.join().expect("handler thread should exit cleanly");
+
+        // The closure has been dropped; any captured state is therefore also
+        // dropped before the backend is destroyed.
+        assert!(
+            dropped_rx.try_recv().is_err(),
+            "handler closure was never invoked after shutdown"
+        );
     }
 }

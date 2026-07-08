@@ -78,6 +78,20 @@ impl<'a> PlatformConfig<'a> {
         self.hwnd = Some(handle);
         self
     }
+
+    /// Builder-style constructor for the D-Bus name suffix (Linux / FreeBSD).
+    #[must_use]
+    pub fn with_dbus_name(mut self, name: &'a str) -> Self {
+        self.dbus_name = name;
+        self
+    }
+
+    /// Builder-style constructor for the user-visible application name.
+    #[must_use]
+    pub fn with_display_name(mut self, name: &'a str) -> Self {
+        self.display_name = name;
+        self
+    }
 }
 
 /// Now-playing metadata. Lifetime-borrowed to mirror souvlaki's API.
@@ -159,5 +173,94 @@ mod tests {
         let handle = unsafe { WindowHandle::from_raw(raw) };
 
         assert_eq!(handle.as_raw(), raw.as_ptr());
+    }
+
+    #[test]
+    fn platform_config_builder_chains() {
+        let mut byte = 0_u8;
+        let raw = NonNull::from(&mut byte).cast::<core::ffi::c_void>();
+        // SAFETY: pointer is valid for this test only.
+        let handle = unsafe { WindowHandle::from_raw(raw) };
+
+        let cfg = PlatformConfig::default()
+            .with_window_handle(handle)
+            .with_dbus_name("sotf")
+            .with_display_name("SOTF");
+
+        assert_eq!(cfg.dbus_name, "sotf");
+        assert_eq!(cfg.display_name, "SOTF");
+        assert_eq!(cfg.hwnd.unwrap().as_raw(), raw.as_ptr());
+    }
+
+    #[test]
+    fn media_metadata_default_is_empty() {
+        let md = MediaMetadata::default();
+        assert!(md.title.is_none());
+        assert!(md.artist.is_none());
+        assert!(md.album.is_none());
+        assert!(md.duration.is_none());
+        assert!(md.cover_url.is_none());
+    }
+
+    #[test]
+    fn media_metadata_clones_borrowed_fields() {
+        let md = MediaMetadata {
+            title: Some("Title"),
+            artist: Some("Artist"),
+            album: Some("Album"),
+            duration: Some(Duration::from_secs(42)),
+            cover_url: Some("file:///cover.jpg"),
+        };
+        let cloned = md.clone();
+        assert_eq!(cloned.title, Some("Title"));
+        assert_eq!(cloned.artist, Some("Artist"));
+        assert_eq!(cloned.album, Some("Album"));
+        assert_eq!(cloned.duration, Some(Duration::from_secs(42)));
+        assert_eq!(cloned.cover_url, Some("file:///cover.jpg"));
+    }
+
+    #[test]
+    fn media_playback_states_carry_optional_progress() {
+        assert!(matches!(MediaPlayback::Stopped, MediaPlayback::Stopped));
+        let pos = Some(MediaPosition(Duration::from_secs(12)));
+        assert!(matches!(
+            MediaPlayback::Paused { progress: pos },
+            MediaPlayback::Paused { progress: Some(_) }
+        ));
+        assert!(matches!(
+            MediaPlayback::Playing { progress: None },
+            MediaPlayback::Playing { progress: None }
+        ));
+    }
+
+    #[test]
+    fn seek_direction_variants_are_distinct() {
+        assert_ne!(SeekDirection::Forward, SeekDirection::Backward);
+        assert_eq!(SeekDirection::Forward, SeekDirection::Forward);
+        assert_eq!(SeekDirection::Backward, SeekDirection::Backward);
+    }
+
+    #[test]
+    fn media_control_event_variants_match() {
+        use MediaControlEvent::*;
+        assert!(matches!(Play, Play));
+        assert!(matches!(Pause, Pause));
+        assert!(matches!(Toggle, Toggle));
+        assert!(matches!(Next, Next));
+        assert!(matches!(Previous, Previous));
+        assert!(matches!(Stop, Stop));
+        assert!(matches!(Raise, Raise));
+        assert!(matches!(Quit, Quit));
+        assert!(matches!(
+            SetPosition(MediaPosition::from_secs_f64(10.0)),
+            SetPosition(_)
+        ));
+        assert!(matches!(SetVolume(0.5), SetVolume(v) if (v - 0.5).abs() < f64::EPSILON));
+        assert!(matches!(Seek(SeekDirection::Forward), Seek(_)));
+        assert!(matches!(
+            SeekBy(SeekDirection::Backward, Duration::from_secs(5)),
+            SeekBy(_, _)
+        ));
+        assert!(matches!(OpenUri("uri".to_string()), OpenUri(_)));
     }
 }
