@@ -62,6 +62,35 @@ pub(super) fn loudness_redraw_signature(l: Option<&sotf_audio_player::LoudnessDa
     sig
 }
 
+/// Compute a cheap signature of signal-path data for redraw gating.
+/// Changes in sample rates, resampling state, or engine health drive
+/// a redraw without allocating in the tick.
+pub(super) fn signal_path_redraw_signature(p: Option<&sotf_audio_player::SignalPath>) -> u64 {
+    let Some(p) = p else {
+        return 0;
+    };
+    let source_rate = p.source.as_ref().map_or(0, |s| s.sample_rate_hz);
+    let mut sig = (source_rate as u64)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(p.output.sample_rate_hz);
+    sig = sig
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(p.is_resampled() as u64);
+    sig = sig
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(p.health.underruns);
+    sig = sig
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(p.health.stream_errors);
+    sig = sig
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(p.health.frames_dropped);
+    sig = sig
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(p.health.clipping_detected.map_or(2, |c| c as u64));
+    sig
+}
+
 /// Start playback for an audio source, handling matrix adaptation and channel clamping.
 pub(super) fn start_playback(
     player: &mut Player,
@@ -763,4 +792,55 @@ pub(super) fn parse_keystroke(s: &str) -> anyhow::Result<crossterm::event::KeyEv
     };
 
     Ok(KeyEvent::new(code, modifiers))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sotf_audio_player::SignalPath;
+
+    #[test]
+    fn signal_path_signature_changes_with_resampling_and_health() {
+        let idle_path = SignalPath {
+            source: None,
+            plugin_chain: Vec::new(),
+            processing: sotf_audio_player::SignalPathProcessing {
+                resampling: None,
+                latency_samples: 0,
+                bypassed: false,
+            },
+            output: sotf_audio_player::SignalPathOutput {
+                device: None,
+                sample_rate_hz: 48_000,
+                channels: 2,
+                access_mode: "Shared".to_string(),
+                exclusive_active: false,
+            },
+            health: sotf_audio_player::SignalPathHealth {
+                underruns: 0,
+                stream_errors: 0,
+                frames_dropped: 0,
+                clipping_detected: None,
+                headroom_db: None,
+            },
+        };
+        let sig_idle = signal_path_redraw_signature(Some(&idle_path));
+
+        let mut resampled_path = idle_path.clone();
+        resampled_path.source = Some(sotf_audio_player::SignalPathSource {
+            format: "FLAC".to_string(),
+            sample_rate_hz: 44_100,
+            channels: 2,
+            bits_per_sample: 16,
+            lossless: true,
+        });
+        resampled_path.output.sample_rate_hz = 48_000;
+        let sig_resampled = signal_path_redraw_signature(Some(&resampled_path));
+        assert_ne!(sig_idle, sig_resampled);
+
+        let mut unhealthy_path = resampled_path.clone();
+        unhealthy_path.health.underruns = 1;
+        let sig_unhealthy = signal_path_redraw_signature(Some(&unhealthy_path));
+        assert_ne!(sig_resampled, sig_unhealthy);
+    }
 }

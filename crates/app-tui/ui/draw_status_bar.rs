@@ -76,6 +76,42 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         status_spans.push(Span::raw("| "));
     }
 
+    // Show signal path / engine health
+    if let Some(path) = app.playback.signal_path.as_ref() {
+        let source_rate_k = path
+            .source
+            .as_ref()
+            .map(|s| s.sample_rate_hz as f64 / 1000.0);
+        let output_rate_k = path.output.sample_rate_hz as f64 / 1000.0;
+        let signal_text = if path.is_resampled() {
+            format!(
+                "SRC {:.1}→{:.0}k ",
+                source_rate_k.unwrap_or(output_rate_k),
+                output_rate_k
+            )
+        } else {
+            format!("{:.0}k ", output_rate_k)
+        };
+        status_spans.push(Span::styled(
+            signal_text,
+            Style::default().fg(app.theme.accent_secondary),
+        ));
+        if path.has_known_issues() {
+            let issue_text = if path.health.clipping_detected == Some(true) {
+                "CLIP "
+            } else {
+                "! "
+            };
+            status_spans.push(Span::styled(
+                issue_text,
+                Style::default()
+                    .fg(app.theme.accent_warning)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        status_spans.push(Span::raw("| "));
+    }
+
     // Show background scanner progress
     {
         let mut scanner_parts: Vec<String> = Vec::new();

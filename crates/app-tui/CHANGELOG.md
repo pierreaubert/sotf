@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.209] - 2026-07-08
+
 ### Added
+- Status bar now shows source/output sample rates, a resampling (SRC) indicator,
+  and a clipping/health warning from the read-only `SignalPath` model.
 - Configure > Servers now includes a SOTF API section alongside MPD and DLNA,
   with editable enabled state, bind address, port, friendly name, auth token,
   and the URL remote SOTF apps should use.

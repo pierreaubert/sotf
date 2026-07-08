@@ -9,7 +9,7 @@ use crate::theme::Theme;
 use sotf_audio::LoudnessData;
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::plugin_graph::PluginGraph;
-use sotf_audio_player::{Album, ChannelConflict, MusicLibrary, Track};
+use sotf_audio_player::{Album, ChannelConflict, MusicLibrary, SignalPath, Track};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -72,6 +72,7 @@ pub struct PlaybackState {
     pub current_track_start_time: Option<std::time::Instant>,
     pub current_track_already_recorded: bool,
     pub loudness_info: Option<LoudnessData>,
+    pub signal_path: Option<SignalPath>,
     pub replay_gain_enabled: bool,
     pub replay_gain_mode: super::super::types::ReplayGainMode,
     pub replay_gain_preamp: f32,
@@ -136,6 +137,7 @@ pub struct MediaControlState {
     pub last_position_secs: f64,
     pub last_is_playing_state: bool,
     pub last_loudness_signature: u64,
+    pub last_signal_path_signature: u64,
 }
 
 pub struct ScanState {
@@ -301,6 +303,7 @@ impl App {
                 current_track_start_time: None,
                 current_track_already_recorded: false,
                 loudness_info: None,
+                signal_path: None,
                 replay_gain_enabled: true,
                 replay_gain_mode: super::super::types::ReplayGainMode::Track,
                 replay_gain_preamp: 0.0,
@@ -359,6 +362,7 @@ impl App {
                 last_position_secs: f64::NAN,
                 last_is_playing_state: false,
                 last_loudness_signature: 0,
+                last_signal_path_signature: 0,
             },
             scan: ScanState {
                 in_progress: false,
@@ -1044,5 +1048,12 @@ mod p1_field_budget_tests {
     fn app_stays_within_struct_field_budget() {
         let source = include_str!("app.rs");
         assert!(struct_field_count(source, "App") <= 30);
+    }
+
+    #[test]
+    fn playback_state_initializes_signal_path_to_none() {
+        use crate::theme::Theme;
+        let app = super::App::new(Theme::default(), true);
+        assert!(app.playback.signal_path.is_none());
     }
 }

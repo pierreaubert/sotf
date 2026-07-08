@@ -2,6 +2,7 @@ use super::misc::handle_player_command;
 use super::misc::loudness_redraw_signature;
 #[cfg(feature = "dev-api")]
 use super::misc::process_dev_command;
+use super::misc::signal_path_redraw_signature;
 use super::misc::start_playback;
 use super::misc::update_media_controls;
 use ratatui::Terminal;
@@ -177,19 +178,27 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         != (app.media_control.last_position_secs * 10.0).round();
                     let play_state_changed =
                         state.is_playing != app.media_control.last_is_playing_state;
+                    let new_signal_path = player.signal_path();
                     let new_loudness_signature = loudness_redraw_signature(new_loudness.as_ref());
+                    let new_signal_path_signature =
+                        signal_path_redraw_signature(Some(&new_signal_path));
                     let loudness_changed =
                         new_loudness_signature != app.media_control.last_loudness_signature;
+                    let signal_path_changed =
+                        new_signal_path_signature != app.media_control.last_signal_path_signature;
 
-                    if pos_changed || play_state_changed || loudness_changed {
+                    if pos_changed || play_state_changed || loudness_changed || signal_path_changed
+                    {
                         app.ui.needs_redraw = true;
                     }
 
                     app.playback.position_secs = new_position;
                     app.playback.loudness_info = new_loudness;
+                    app.playback.signal_path = Some(new_signal_path);
                     app.media_control.last_position_secs = new_position;
                     app.media_control.last_is_playing_state = state.is_playing;
                     app.media_control.last_loudness_signature = new_loudness_signature;
+                    app.media_control.last_signal_path_signature = new_signal_path_signature;
 
                     // Redraw while scanning or processing
                     if app.scan.in_progress
