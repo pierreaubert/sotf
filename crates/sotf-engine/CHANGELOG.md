@@ -1,4 +1,11 @@
-# 1.0.29 (unreleased)
+# 1.0.30 (unreleased)
+
+## Release QA
+
+- Fixed `crates/sotf-engine/Justfile` so `just qa-engine` passes `--test-threads=1` as a libtest argument (after `--`) rather than a cargo argument; the recipe now reaches the e2e audio tests.
+- Added focused engine-manager integration tests for EOF transition,
+  44.1 kHz source → 48 kHz device sample-rate mismatch, and high-gain plugin
+  output clamping survival.
 
 ## Release P1 engine hardening
 

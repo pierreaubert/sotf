@@ -783,3 +783,118 @@ fn test_engine_auto_advance_after_end_of_stream() {
     assert_eq!(manager.get_state(), StreamingState::Playing);
     assert_eq!(manager.get_volume(), 0.65);
 }
+
+#[test]
+#[serial]
+fn test_engine_eof_transition_to_stopped() {
+    super::common::skip_without_device!();
+
+    let _ = env_logger::builder().is_test(true).try_init();
+    let config = super::common::test_engine_config();
+    let engine = AudioEngine::new(config).unwrap();
+
+    // Short 0.2s file
+    let temp_file = super::common::create_test_wav(0.2, 48000, 2);
+    engine.play(temp_file.path().to_path_buf()).unwrap();
+
+    // Wait for playback to reach the end and stop.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut stopped = false;
+    while Instant::now() < deadline {
+        if engine.get_playback_state() == PlaybackState::Stopped {
+            stopped = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    assert!(
+        stopped,
+        "Engine should transition to Stopped after reaching EOF"
+    );
+    let position = engine.get_position().unwrap();
+    assert!(
+        position >= 0.15 && position <= 0.25,
+        "Position at EOF should be ~0.2s, got {position}s"
+    );
+    let state = engine.get_state();
+    assert!(
+        state.last_error.is_none(),
+        "No error expected at EOF, got: {:?}",
+        state.last_error
+    );
+}
+
+#[test]
+#[serial]
+fn test_engine_44100_source_on_48000_device() {
+    super::common::skip_without_device!();
+
+    let _ = env_logger::builder().is_test(true).try_init();
+    let config = super::common::test_engine_config_with(|c| {
+        c.output_sample_rate = 48000;
+    });
+    let engine = AudioEngine::new(config).unwrap();
+
+    // Source file is 44.1 kHz while the engine/output device runs at 48 kHz.
+    let temp_file = super::common::create_test_wav(1.0, 44100, 2);
+    engine.play(temp_file.path().to_path_buf()).unwrap();
+
+    std::thread::sleep(Duration::from_millis(300));
+
+    let state = engine.get_state();
+    assert_eq!(state.playback_state, PlaybackState::Playing);
+    assert!(
+        state.last_error.is_none(),
+        "Sample-rate mismatch should not produce an error, got: {:?}",
+        state.last_error
+    );
+
+    let pos1 = engine.get_position().unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    let pos2 = engine.get_position().unwrap();
+    assert!(
+        pos2 > pos1,
+        "Position should advance despite sample-rate mismatch: {pos1} -> {pos2}"
+    );
+}
+
+#[test]
+#[serial]
+fn test_engine_high_gain_plugin_does_not_crash_or_error() {
+    super::common::skip_without_device!();
+
+    let _ = env_logger::builder().is_test(true).try_init();
+    let config = super::common::test_engine_config();
+    let engine = AudioEngine::new(config).unwrap();
+
+    let temp_file = super::common::create_test_wav(1.0, 48000, 2);
+    engine.play(temp_file.path().to_path_buf()).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+
+    // Extreme gain will push samples outside [-1, 1]. The engine's output
+    // path clamps before the device, so the engine must remain playable.
+    let plugins = vec![PluginConfig::new(
+        "gain",
+        serde_json::json!({"gain_db": 30.0}),
+    )];
+    engine.update_plugin_chain(&plugins).unwrap();
+
+    std::thread::sleep(Duration::from_millis(300));
+
+    let state = engine.get_state();
+    assert_eq!(state.playback_state, PlaybackState::Playing);
+    assert!(
+        state.last_error.is_none(),
+        "High-gain plugin should not cause an engine error, got: {:?}",
+        state.last_error
+    );
+
+    let pos1 = engine.get_position().unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    let pos2 = engine.get_position().unwrap();
+    assert!(
+        pos2 > pos1,
+        "Position should advance with high-gain plugin: {pos1} -> {pos2}"
+    );
+}
