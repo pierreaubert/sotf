@@ -13,21 +13,21 @@ impl PlayerView {
                         Self::play_track(state, path);
                     }
                 } else {
-                    if let Err(e) = state.player.lock().resume() {
+                    if let Err(e) = state.player.resume() {
                         log::warn!("Player resume failed: {e}");
                     }
                     state.app.playback.is_playing = true;
                 }
             }
             MediaControlEvent::Pause => {
-                if let Err(e) = state.player.lock().pause() {
+                if let Err(e) = state.player.pause() {
                     log::warn!("Player pause failed: {e}");
                 }
                 state.app.playback.is_playing = false;
             }
             MediaControlEvent::Toggle => {
                 if state.app.playback.is_playing {
-                    if let Err(e) = state.player.lock().pause() {
+                    if let Err(e) = state.player.pause() {
                         log::warn!("Player pause failed: {e}");
                     }
                     state.app.playback.is_playing = false;
@@ -36,7 +36,7 @@ impl PlayerView {
                         Self::play_track(state, path);
                     }
                 } else {
-                    if let Err(e) = state.player.lock().resume() {
+                    if let Err(e) = state.player.resume() {
                         log::warn!("Player resume failed: {e}");
                     }
                     state.app.playback.is_playing = true;
@@ -55,21 +55,21 @@ impl PlayerView {
                 }
             }
             MediaControlEvent::Stop => {
-                if let Err(e) = state.player.lock().stop() {
+                if let Err(e) = state.player.stop() {
                     log::warn!("Player stop failed: {e}");
                 }
                 state.app.playback.is_playing = false;
                 state.app.playback.current_queue_index = None;
             }
             MediaControlEvent::SetPosition(pos) => {
-                if let Err(e) = state.player.lock().seek(pos.0.as_secs_f64()) {
+                if let Err(e) = state.player.seek(pos.0.as_secs_f64()) {
                     log::warn!("Player seek failed: {e}");
                 }
             }
             MediaControlEvent::SetVolume(vol) => {
                 let clamped = vol.clamp(0.0, 1.0) as f32;
                 state.app.playback.volume = clamped;
-                if let Err(e) = state.player.lock().set_volume(clamped) {
+                if let Err(e) = state.player.set_volume(clamped) {
                     log::warn!("Player set_volume failed: {e}");
                 }
             }
@@ -79,7 +79,7 @@ impl PlayerView {
                     sotf_media_controls::SeekDirection::Backward => -10.0,
                 };
                 let new_pos = (state.app.playback.position_secs + offset).max(0.0);
-                if let Err(e) = state.player.lock().seek(new_pos) {
+                if let Err(e) = state.player.seek(new_pos) {
                     log::warn!("Player seek failed: {e}");
                 }
             }
@@ -90,7 +90,7 @@ impl PlayerView {
                     sotf_media_controls::SeekDirection::Backward => -secs,
                 };
                 let new_pos = (state.app.playback.position_secs + offset).max(0.0);
-                if let Err(e) = state.player.lock().seek(new_pos) {
+                if let Err(e) = state.player.seek(new_pos) {
                     log::warn!("Player seek failed: {e}");
                 }
             }
@@ -109,7 +109,7 @@ impl PlayerView {
     ) {
         self.state.update(cx, |state, _cx| {
             if state.app.playback.is_playing {
-                if let Err(e) = state.player.lock().pause() {
+                if let Err(e) = state.player.pause() {
                     log::warn!("Player pause failed: {e}");
                 }
                 state.app.playback.is_playing = false;
@@ -120,7 +120,7 @@ impl PlayerView {
                     Self::play_track(state, path);
                 }
             } else {
-                if let Err(e) = state.player.lock().resume() {
+                if let Err(e) = state.player.resume() {
                     log::warn!("Player resume failed: {e}");
                 }
                 state.app.playback.is_playing = true;
@@ -132,7 +132,7 @@ impl PlayerView {
 
     fn stop_playback(&mut self, _: &Stop, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            if let Err(e) = state.player.lock().stop() {
+            if let Err(e) = state.player.stop() {
                 log::warn!("Player stop failed: {e}");
             }
             state.app.playback.is_playing = false;
@@ -149,7 +149,7 @@ impl PlayerView {
                 return;
             }
             // Cancel any pending gapless queue before manual skip
-            if let Err(e) = state.player.lock().cancel_next() {
+            if let Err(e) = state.player.cancel_next() {
                 log::warn!("Player cancel_next failed: {e}");
             }
             let from_index = state.app.playback.current_queue_index;
@@ -177,7 +177,7 @@ impl PlayerView {
                 return;
             }
             // Cancel any pending gapless queue before manual skip
-            if let Err(e) = state.player.lock().cancel_next() {
+            if let Err(e) = state.player.cancel_next() {
                 log::warn!("Player cancel_next failed: {e}");
             }
             let from_index = state.app.playback.current_queue_index;

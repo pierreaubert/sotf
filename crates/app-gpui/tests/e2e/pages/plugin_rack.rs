@@ -239,7 +239,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                         let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
                         let output_channels = state.app.plugin_state.graph.output_channels();
 
-                        if let Err(e) = state.player.lock().load_and_play_source(
+                        if let Err(e) = state.player.load_and_play_source(
                             source,
                             plugins,
                             output_channels,

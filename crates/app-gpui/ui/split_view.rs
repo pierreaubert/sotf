@@ -104,7 +104,7 @@ impl PlayerView {
                         let new_volume: f32 = (vd.start_value + volume_delta).clamp(0.0, 1.0);
                         view.state.update(cx, |state, _cx| {
                             state.app.playback.volume = new_volume;
-                            if let Err(e) = state.player.lock().set_volume(new_volume) {
+            if let Err(e) = state.player.set_volume(new_volume) {
                                 log::warn!("Player set_volume failed: {e}");
                             }
                         });

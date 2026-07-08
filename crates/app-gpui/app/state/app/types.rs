@@ -1,12 +1,11 @@
 use super::super::ui::LayoutState;
 use super::App;
+use crate::app::player_handle::PlayerHandle;
 use crate::app::state::library::LibraryEvent;
 use crate::app::types::{ChannelGroup, MeterDisplayMode};
 use gpui::Entity;
 use gpui_ui_kit::workflow::NodeId;
-use sotf_audio_player::Player;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Messages that can be dispatched to the App
 #[derive(Debug, Clone)]
@@ -146,5 +145,5 @@ pub(super) struct RemoteAlbumCacheKey {
 pub struct AppState {
     pub app: App,
     pub layout: Entity<LayoutState>,
-    pub player: Arc<parking_lot::Mutex<Player>>,
+    pub player: PlayerHandle,
 }

@@ -56,7 +56,7 @@ impl PlayerView {
                                 state.app.audio_device_state.playback_source = source;
                                 // Stop HAL playback if switching to File mode
                                 if matches!(source, PlaybackSource::File) {
-                                    if let Err(e) = state.player.lock().stop() {
+                                    if let Err(e) = state.player.stop() {
                                         log::error!("Failed to stop HAL playback: {}", e);
                                     }
                                     state.app.playback.is_playing = false;
@@ -434,7 +434,7 @@ impl PlayerView {
             Self::apply_hal_config_to_driver(hal_config);
 
             // Start HAL playback with configured sample rate
-            match state.player.lock().start_hal_playback_with_config(
+            match state.player.start_hal_playback_with_config(
                 plugins,
                 output_channels,
                 output_device,
@@ -538,7 +538,7 @@ impl PlayerView {
     pub(super) fn restart_hal_playback(state_entity: &Entity<crate::app::AppState>, cx: &mut App) {
         // Stop current playback
         state_entity.update(cx, |state, _cx| {
-            if let Err(e) = state.player.lock().stop() {
+            if let Err(e) = state.player.stop() {
                 log::warn!("Failed to stop HAL playback for restart: {}", e);
             }
         });

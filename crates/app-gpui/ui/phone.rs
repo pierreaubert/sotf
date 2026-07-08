@@ -990,7 +990,7 @@ impl PlayerView {
                                             PlayerView::play_track(state, source);
                                         }
                                         sotf_audio_player::QueuePlaybackEffect::Stop => {
-                                            let _ = state.player.lock().stop();
+                                            let _ = state.player.stop();
                                         }
                                         _ => {}
                                     }
@@ -1355,7 +1355,7 @@ impl PlayerView {
                                         };
                                         let new_position = duration * ratio as f64;
                                         state.app.playback.position_secs = new_position;
-                                        if let Err(e) = state.player.lock().seek(new_position) {
+                                        if let Err(e) = state.player.seek(new_position) {
                                             log::error!(
                                                 "Failed to seek from phone scrubber: {}",
                                                 e
@@ -3910,7 +3910,7 @@ impl PlayerView {
                     "PhoneNowRewind" => {
                         let new_position = (state.app.playback.position_secs - 30.0).max(0.0);
                         state.app.playback.position_secs = new_position;
-                        if let Err(e) = state.player.lock().seek(new_position) {
+                        if let Err(e) = state.player.seek(new_position) {
                             log::error!("Failed to seek backward: {}", e);
                         }
                     }
@@ -3918,7 +3918,7 @@ impl PlayerView {
                         let max = state.app.playback.duration_secs;
                         let new_position = (state.app.playback.position_secs + 30.0).min(max);
                         state.app.playback.position_secs = new_position;
-                        if let Err(e) = state.player.lock().seek(new_position) {
+                        if let Err(e) = state.player.seek(new_position) {
                             log::error!("Failed to seek forward: {}", e);
                         }
                     }
@@ -3963,12 +3963,12 @@ impl PlayerView {
                             PlayerView::play_track(state, source);
                         }
                     } else if state.app.playback.is_playing {
-                        if let Err(e) = state.player.lock().pause() {
+                        if let Err(e) = state.player.pause() {
                             log::error!("Failed to pause: {}", e);
                         }
                         state.app.playback.is_playing = false;
                     } else {
-                        if let Err(e) = state.player.lock().resume() {
+                        if let Err(e) = state.player.resume() {
                             log::error!("Failed to play: {}", e);
                         }
                         state.app.playback.is_playing = true;

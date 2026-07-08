@@ -53,7 +53,6 @@ impl PlayerView {
                         {
                             state
                                 .player
-                                .lock()
                                 .set_plugin_parameter(engine_index, param_id, value)
                         } else {
                             // Parameter not supported for individual update, fall back to structural
@@ -61,7 +60,7 @@ impl PlayerView {
                             let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
                             let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
                             let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
-                            state.player.lock().update_plugins(plugins)
+                            state.player.update_plugins(plugins)
                         }
                     } else {
                         // Plugin is disabled or not found in engine map - ignore or full update
@@ -83,17 +82,16 @@ impl PlayerView {
                         if let Some((param_id, value)) =
                             param_index_to_engine_param(&node.plugin.settings, param_index)
                         {
-                            state
-                                .player
-                                .lock()
-                                .set_plugin_parameter(engine_index, param_id, value)
+                                state
+                                    .player
+                                    .set_plugin_parameter(engine_index, param_id, value)
                         } else {
                             // Fall back to structural rebuild
                             let device_name = state.app.audio_device_state.current_output_device_name.as_deref();
                             let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
                             let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
                             let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
-                            state.player.lock().update_plugins(plugins)
+                            state.player.update_plugins(plugins)
                         }
                     } else {
                         Ok(()) // Node disabled or not in engine
@@ -125,7 +123,7 @@ impl PlayerView {
                         state.app.plugin_state.graph.output_channels(),
                         sample_rate
                     );
-                    state.player.lock().update_plugins(plugins)
+                    state.player.update_plugins(plugins)
                 } else {
                     let graph_config =
                         state.app.plugin_state.graph.to_plugin_graph_config(sample_rate);
@@ -135,7 +133,7 @@ impl PlayerView {
                         graph_config.edges.len(),
                         sample_rate
                     );
-                    state.player.lock().update_plugin_graph(graph_config)
+                    state.player.update_plugin_graph(graph_config)
                 }
             }
         };

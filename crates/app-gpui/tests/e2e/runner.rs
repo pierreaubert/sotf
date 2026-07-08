@@ -85,10 +85,10 @@ pub trait TestScenario {
 }
 
 use sotf_audio_player::Player;
+use sotf_audio_player_gpui::app::player_handle::PlayerHandle;
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::ui::PlayerView;
-use std::sync::Arc;
 
 /// Runner for executing E2E test scenarios.
 pub struct E2ERunner<S: TestScenario> {
@@ -132,7 +132,7 @@ impl<S: TestScenario> E2ERunner<S> {
                 AppState {
                     app,
                     layout,
-                    player: Arc::new(parking_lot::Mutex::new(player)),
+                    player: PlayerHandle::new(player),
                 }
             });
 

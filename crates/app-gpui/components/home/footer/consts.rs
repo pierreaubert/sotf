@@ -864,9 +864,7 @@ impl PlayerView {
                                                     (state.app.playback.position_secs - 30.0)
                                                         .max(0.0);
                                                 state.app.playback.position_secs = new_position;
-                                                if let Err(e) =
-                                                    state.player.lock().seek(new_position)
-                                                {
+                                                if let Err(e) = state.player.seek(new_position) {
                                                     log::error!("Failed to seek backward: {}", e);
                                                 }
                                             });
@@ -942,9 +940,7 @@ impl PlayerView {
                                                     (state.app.playback.position_secs + 30.0)
                                                         .min(max);
                                                 state.app.playback.position_secs = new_position;
-                                                if let Err(e) =
-                                                    state.player.lock().seek(new_position)
-                                                {
+                                                if let Err(e) = state.player.seek(new_position) {
                                                     log::error!("Failed to seek forward: {}", e);
                                                 }
                                             });
@@ -1027,7 +1023,7 @@ impl PlayerView {
                                         let new_pos =
                                             state.app.playback.duration_secs * ratio as f64;
                                         state.app.playback.position_secs = new_pos;
-                                        if let Err(e) = state.player.lock().seek(new_pos) {
+                                        if let Err(e) = state.player.seek(new_pos) {
                                             log::error!("Failed to seek from waveform: {}", e);
                                         }
                                     });
@@ -1237,7 +1233,7 @@ impl PlayerView {
                     if event.click_count == 2 {
                         view.state.update(cx, |state, _cx| {
                             state.app.playback.volume = 0.1;
-                            let _ = state.player.lock().set_volume(0.1);
+                            let _ = state.player.set_volume(0.1);
                         });
                         cx.notify();
                         return;
@@ -1263,7 +1259,7 @@ impl PlayerView {
                 view.state.update(cx, |state, _cx| {
                     let new_volume = (state.app.playback.volume + delta).clamp(0.0, 1.0);
                     state.app.playback.volume = new_volume;
-                    let _ = state.player.lock().set_volume(new_volume);
+                    let _ = state.player.set_volume(new_volume);
                 });
                 cx.notify();
             }))
@@ -1365,7 +1361,7 @@ impl PlayerView {
                         // Double click resets volume to 10%
                         view.state.update(cx, |state, _cx| {
                             state.app.playback.volume = 0.1;
-                            let _ = state.player.lock().set_volume(0.1);
+                            let _ = state.player.set_volume(0.1);
                         });
                         cx.notify();
                         return;
@@ -1393,7 +1389,7 @@ impl PlayerView {
                     let new_volume = (state.app.playback.volume + delta).clamp(0.0, 1.0);
                     state.app.playback.volume = new_volume;
                     // Apply volume change to player
-                    let _ = state.player.lock().set_volume(new_volume);
+                    let _ = state.player.set_volume(new_volume);
                 });
                 cx.notify();
             }))

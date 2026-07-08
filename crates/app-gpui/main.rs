@@ -7,6 +7,7 @@ use gpui::*;
 use mimalloc::MiMalloc;
 use sotf_audio_player::{Player, ReleaseChannel};
 use sotf_audio_player_gpui::app::actions::*;
+use sotf_audio_player_gpui::app::player_handle::PlayerHandle;
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::{
     App, AppState, Screen,
@@ -433,8 +434,7 @@ fn main() {
                     // Converting this to non-blocking command sends would require a
                     // `PlayerHandle` wrapper and updating ~30 call sites; defer to a
                     // dedicated refactor.
-                    #[allow(clippy::arc_with_non_send_sync)]
-                    let player_arc = Arc::new(parking_lot::Mutex::new(player));
+                    let player_handle = PlayerHandle::new(player);
 
                     // Create application state
                     // Note: Database loading is deferred to after UI renders via check_library_on_startup()
@@ -451,7 +451,7 @@ fn main() {
                         AppState {
                             app,
                             layout,
-                            player: player_arc,
+                            player: player_handle,
                         }
                     });
 

@@ -1311,11 +1311,9 @@ impl PlayerView {
                         Some(device_name.clone());
                     state.app.deselect_cast_device();
 
-                    let mut player = state.player.lock();
-                    if let Err(e) = player.set_output_device(device_name.clone()) {
+                    if let Err(e) = state.player.set_output_device(device_name.clone()) {
                         log::error!("Failed to set output device: {}", e);
                     } else if was_playing && let Some(path) = current_path {
-                        drop(player);
                         Self::play_track_at(state, path, Some(current_pos));
                     }
                 });

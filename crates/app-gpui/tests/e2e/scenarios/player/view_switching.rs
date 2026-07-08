@@ -11,7 +11,7 @@ pub struct ViewSwitchingStabilityScenario;
 fn stop_test_playback(driver: &mut AppDriver<'_>) {
     let _ = driver.view.update(driver.cx, |view, _, cx| {
         view.state.update(cx, |state, _cx| {
-            let _ = state.player.lock().stop();
+            let _ = state.player.stop();
             state.app.playback.is_playing = false;
             state.app.playback.current_queue_index = None;
         });

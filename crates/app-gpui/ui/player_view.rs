@@ -557,7 +557,7 @@ impl PlayerView {
 
     #[cfg(target_os = "ios")]
     pub(super) fn handle_ios_queue_navigation(state: &mut AppState, next: bool) {
-        if let Err(e) = state.player.lock().cancel_next() {
+        if let Err(e) = state.player.cancel_next() {
             log::warn!("Player cancel_next failed: {e}");
         }
 
@@ -612,7 +612,7 @@ impl PlayerView {
             state.app.scan.ctrl.stop_all();
 
             // Stop audio playback - this stops the audio engine threads
-            if let Err(e) = state.player.lock().stop() {
+            if let Err(e) = state.player.stop() {
                 log::error!("Failed to stop player on quit: {}", e);
             }
         });
@@ -924,7 +924,7 @@ impl PlayerView {
                         Self::play_track(state, source);
                     }
                     QueuePlaybackEffect::Stop => {
-                        if let Err(e) = state.player.lock().stop() {
+                        if let Err(e) = state.player.stop() {
                             log::warn!("[UI] Failed to stop player after queue removal: {}", e);
                         }
                     }
@@ -1262,41 +1262,14 @@ impl PlayerView {
             }
         };
 
-        let play_result = {
-            let mut player = state.player.lock();
-            if prefer_smooth_switch && position.is_none() {
-                match player.switch_to_source_at(
-                    source.clone(),
-                    plugins.clone(),
-                    output_channels,
-                    device_name.clone(),
-                    position,
-                ) {
-                    Ok(()) => Ok(()),
-                    Err(e) => {
-                        log::warn!(
-                            "[GPUI] Smooth track switch unavailable, falling back to restart: {}",
-                            e
-                        );
-                        player.load_and_play_source_at(
-                            source,
-                            plugins,
-                            output_channels,
-                            device_name,
-                            position,
-                        )
-                    }
-                }
-            } else {
-                player.load_and_play_source_at(
-                    source,
-                    plugins,
-                    output_channels,
-                    device_name,
-                    position,
-                )
-            }
-        };
+        let play_result = state.player.load_or_switch_source_at(
+            source,
+            plugins,
+            output_channels,
+            device_name,
+            position,
+            prefer_smooth_switch,
+        );
 
         if let Err(e) = play_result {
             log::error!("Failed to play track: {}", e);

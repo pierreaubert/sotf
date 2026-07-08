@@ -171,57 +171,94 @@ impl PlayerView {
         let include_level_meters = include_rack_data;
         let can_update_autogain = state.app.plugin_state.update_state.pending_plugin_update.is_none();
 
-        let player_handle = state.player.clone();
-        let mut player = player_handle.lock();
-        let playback_state = player.get_playback_state();
-        state.app.playback.signal_path = Some(player.signal_path());
-
         let was_playing = state.app.playback.is_playing;
-        state.app.playback.is_playing = playback_state.is_playing;
-        state.app.playback.position_secs = playback_state.position_secs;
-        state.app.playback.duration_secs = state.app.get_current_track_duration();
-
-        {
+        let (input_monitor_idx, output_monitor_idx, spectrum_idx, compressor_idx) = {
             let graph = &state.app.plugin_state.graph;
-
-            state.app.playback.input_loudness_info = graph
-                .input_monitor_engine_index()
-                .and_then(|idx| player.get_cached_plugin_data(idx))
-                .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok());
-
-            state.app.playback.loudness_info = graph
-                .output_monitor_engine_index()
-                .and_then(|idx| player.get_cached_plugin_data(idx))
-                .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok());
-
-            if include_spectrum {
-                state.app.playback.spectrum_info = graph
-                    .spectrum_engine_index()
-                    .and_then(|idx| player.get_cached_plugin_data(idx))
-                    .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::SpectrumData>(d).ok());
-            }
-
-            if include_compressor {
-                let idx = match *compressor_idx_cache {
+            let compressor_idx = if include_compressor {
+                match *compressor_idx_cache {
                     Some(cached) => cached,
                     None => {
                         let found = graph.compressor_engine_index();
                         *compressor_idx_cache = Some(found);
                         found
                     }
-                };
-                state.app.playback.compressor_info = idx
-                    .and_then(|i| player.get_cached_plugin_data(i))
-                    .and_then(|d| std::sync::Arc::downcast::<sotf_plugins::CompressorData>(d).ok());
+                }
             } else {
-                state.app.playback.compressor_info = None;
-            }
+                None
+            };
+            (
+                graph.input_monitor_engine_index(),
+                graph.output_monitor_engine_index(),
+                if include_spectrum {
+                    graph.spectrum_engine_index()
+                } else {
+                    None
+                },
+                compressor_idx,
+            )
+        };
+
+        let Some((
+            playback_state,
+            signal_path,
+            input_loudness_info,
+            loudness_info,
+            spectrum_info,
+            compressor_info,
+        )) = state.player.try_with_player(|player| {
+            (
+                player.get_playback_state(),
+                player.signal_path(),
+                input_monitor_idx
+                    .and_then(|idx| player.get_cached_plugin_data(idx))
+                    .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok()),
+                output_monitor_idx
+                    .and_then(|idx| player.get_cached_plugin_data(idx))
+                    .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok()),
+                spectrum_idx
+                    .and_then(|idx| player.get_cached_plugin_data(idx))
+                    .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::SpectrumData>(d).ok()),
+                compressor_idx
+                    .and_then(|i| player.get_cached_plugin_data(i))
+                    .and_then(|d| std::sync::Arc::downcast::<sotf_plugins::CompressorData>(d).ok()),
+            )
+        }) else {
+            return (
+                sotf_audio_player::PlaybackState {
+                    position_secs: state.app.playback.position_secs,
+                    is_playing: state.app.playback.is_playing,
+                    sample_rate: state.app.playback.sample_rate,
+                    last_error: None,
+                    engine_restarted: false,
+                    engine_fatal: false,
+                    track_ended: false,
+                    gapless_transition: None,
+                    stream_metadata: None,
+                },
+                was_playing,
+            );
+        };
+
+        state.app.playback.signal_path = Some(signal_path);
+        state.app.playback.is_playing = playback_state.is_playing;
+        state.app.playback.position_secs = playback_state.position_secs;
+        state.app.playback.duration_secs = state.app.get_current_track_duration();
+
+        state.app.playback.input_loudness_info = input_loudness_info;
+        state.app.playback.loudness_info = loudness_info;
+        if include_spectrum {
+            state.app.playback.spectrum_info = spectrum_info;
+        }
+        if include_compressor {
+            state.app.playback.compressor_info = compressor_info;
+        } else {
+            state.app.playback.compressor_info = None;
         }
 
         if can_update_autogain
             && let Some((engine_index, next_gain_db)) =
                 Self::sync_chain_autogain(state, frame_count)
-            && let Err(e) = player.set_plugin_parameter(
+            && let Err(e) = state.player.set_plugin_parameter(
                 engine_index,
                 "gain_db".to_string(),
                 format!("{next_gain_db:.3}"),
@@ -229,8 +266,6 @@ impl PlayerView {
         {
             log::warn!("Failed to update chain AutoGain: {}", e);
         }
-
-        drop(player);
 
         if include_level_meters {
             state.app.update_level_meter_groups();
@@ -374,7 +409,7 @@ impl PlayerView {
                 .unwrap_or(2) as usize;
 
             if next_ch == current_ch {
-                let _ = state.player.lock().queue_next(next_track.path.clone());
+                let _ = state.player.queue_next(next_track.path.clone());
             }
         }
     }
@@ -412,6 +447,13 @@ impl PlayerView {
         state.app.update_toast();
 
         state.app.library_state.ensure_cache_valid();
+
+        for failure in state.player.drain_failures() {
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
+                "Audio command failed ({}): {}",
+                failure.label, failure.error
+            )));
+        }
 
         let pending = state.app.library_view.pending_stats.lock().take();
         if let Some(stats) = pending {

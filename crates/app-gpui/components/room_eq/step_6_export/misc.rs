@@ -647,10 +647,9 @@ impl PlayerView {
                             plugins.len(),
                             sr
                         );
-                        state
-                            .player
-                            .lock()
-                            .update_plugins(plugins)
+                            state
+                                .player
+                                .update_plugins(plugins)
                             .map(|()| {
                                 (
                                     format!(
@@ -674,7 +673,6 @@ impl PlayerView {
                     state.app.ui_state.current_screen = crate::app::Screen::PluginGraph;
                     state
                         .player
-                        .lock()
                         .update_plugin_graph(graph.config)
                         .map(|()| {
                             (
@@ -760,7 +758,7 @@ impl PlayerView {
             state.app.plugin_state.update_state.plugin_graph_modified = true;
             state.app.ui_state.current_screen = crate::app::Screen::PluginGraph;
 
-            match state.player.lock().update_plugin_graph(outcome.config) {
+            match state.player.update_plugin_graph(outcome.config) {
                 Ok(()) => {
                     state.app.measurement_state.room_eq_state.status_message =
                         "Room EQ applied as graph!".to_string();

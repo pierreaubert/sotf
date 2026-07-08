@@ -714,7 +714,7 @@ impl PlayerView {
                                                 Self::play_track(state, source);
                                             }
                                             QueuePlaybackEffect::Stop => {
-                                                if let Err(e) = state.player.lock().stop() {
+                                                if let Err(e) = state.player.stop() {
                                                     log::warn!(
                                                         "[ContextMenu] Failed to stop player after queue removal: {}",
                                                         e

@@ -22,6 +22,7 @@ pub mod library;
 pub mod manager;
 pub mod midi_input;
 pub mod navigation;
+pub mod player_handle;
 pub mod queue;
 pub mod remote;
 pub mod state;

@@ -308,12 +308,9 @@ impl PlayerView {
                                 state.app.ui_state.show_device_popup = false;
 
                                 // Apply the device selection to the player
-                                let mut player = state.player.lock();
-                                if let Err(e) = player.set_output_device(device_name.clone()) {
+                                if let Err(e) = state.player.set_output_device(device_name.clone()) {
                                     log::error!("Failed to set output device: {}", e);
                                 } else if was_playing && let Some(path) = current_path {
-                                    // Drop the player lock before calling play_track which also locks it
-                                    drop(player);
                                     Self::play_track_at(state, path, Some(current_pos));
                                 }
                             });
@@ -581,7 +578,7 @@ impl PlayerView {
                         // Double click resets volume to 10%
                         view.state.update(cx, |state, _cx| {
                             state.app.playback.volume = 0.1;
-                            let _ = state.player.lock().set_volume(0.1);
+                            let _ = state.player.set_volume(0.1);
                         });
                         cx.notify();
                         return;
@@ -607,7 +604,7 @@ impl PlayerView {
                     let new_volume = (state.app.playback.volume + delta).clamp(0.0, 1.0);
                     state.app.playback.volume = new_volume;
                     // Apply volume change to player
-                    let _ = state.player.lock().set_volume(new_volume);
+                    let _ = state.player.set_volume(new_volume);
                 });
                 cx.notify();
             }))
@@ -625,4 +622,3 @@ impl PlayerView {
             )
     }
 }
-
