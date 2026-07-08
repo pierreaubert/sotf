@@ -1,4 +1,4 @@
-# 0.13.0 (sotf vendored fork)
+# 0.13.1 (sotf vendored fork)
 
 This is a vendored fork of upstream [coreaudio-rs](https://github.com/RustAudio/coreaudio-rs). Only changes specific to the SOTF workspace are tracked here; refer to upstream for the canonical history.
 

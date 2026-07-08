@@ -171,13 +171,17 @@ impl AudioUnit {
         let data_byte_size = buffer_frame_size * sample_bytes as u32 * n_channels;
         let mut data = vec![0u8; data_byte_size as usize];
         let mut buffer_capacity = data_byte_size as usize;
+        // Track capacity separately from the AudioBufferList so the backing Vec can be
+        // reconstructed with the correct capacity when the callback is freed. The closure
+        // and the AudioUnit both hold raw pointers to this allocation; it is freed in
+        // `free_input_callback`.
+        let buffer_capacity_ptr = Box::into_raw(Box::new(buffer_capacity));
         let audio_buffer = AudioBuffer {
             mDataByteSize: data_byte_size,
             mNumberChannels: n_channels,
             mData: data.as_mut_ptr() as *mut _,
         };
         // Relieve ownership of the `Vec` until we're ready to drop the `AudioBufferList`.
-        // TODO: This leaks the len & capacity fields, since only the buffer pointer is released
         mem::forget(data);
 
         let audio_buffer_list = Box::new(AudioBufferList {
@@ -236,6 +240,9 @@ impl AudioUnit {
                         buffer.mDataByteSize = data_byte_size as u32;
                         mem::forget(vec);
                     }
+                    // Update the shared capacity record so `free_input_callback` can
+                    // reconstruct the Vec with the correct capacity later.
+                    *buffer_capacity_ptr = buffer_capacity;
                 }
                 buffer_frame_size = in_number_frames;
             }
@@ -297,6 +304,7 @@ impl AudioUnit {
         let input_callback = super::super::InputCallback {
             buffer_list: audio_buffer_list_ptr,
             callback: input_proc_fn_wrapper_ptr as *mut InputProcFnWrapper,
+            buffer_capacity: buffer_capacity_ptr,
         };
         self.free_input_callback();
         self.maybe_input_callback = Some(input_callback);
@@ -322,20 +330,25 @@ impl AudioUnit {
             let super::super::InputCallback {
                 buffer_list,
                 callback,
+                buffer_capacity,
             } = input_callback;
             unsafe {
                 // Take ownership over the AudioBufferList in order to safely free it.
                 let buffer_list: Box<AudioBufferList> = Box::from_raw(buffer_list);
-                // Free the allocated data from the individual audio buffers.
+                // Free the allocated data from the individual audio buffers. The capacity is
+                // tracked separately because `resize` may reallocate with a larger capacity
+                // than `mDataByteSize`; reconstructing the Vec with the wrong capacity is UB.
                 let ptr = buffer_list.mBuffers.as_ptr() as *const AudioBuffer;
                 let len = buffer_list.mNumberBuffers as usize;
                 let buffers: &[AudioBuffer] = slice::from_raw_parts(ptr, len);
+                let cap = *buffer_capacity;
                 for &buffer in buffers {
                     let ptr = buffer.mData as *mut u8;
                     let len = buffer.mDataByteSize as usize;
-                    let cap = len;
                     let _ = Vec::from_raw_parts(ptr, len, cap);
                 }
+                // Free the shared capacity record.
+                let _ = Box::from_raw(buffer_capacity);
                 // Take ownership over the callback so that it can be freed.
                 let callback: Box<InputProcFnWrapper> = Box::from_raw(callback);
                 return Some(callback);

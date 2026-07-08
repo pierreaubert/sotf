@@ -87,6 +87,9 @@ struct InputCallback {
     // The audio buffer list to which input data is rendered.
     buffer_list: *mut AudioBufferList,
     callback: *mut render_callback::InputProcFnWrapper,
+    // Capacity of the buffer allocated for `mBuffers[0].mData`, tracked so the
+    // buffer can be safely reconstructed into a `Vec` when the callback is freed.
+    buffer_capacity: *mut usize,
 }
 
 macro_rules! try_os_status {

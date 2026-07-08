@@ -15,8 +15,16 @@ pub mod data {
         /// Check whether the stream format matches this type of data.
         fn does_stream_format_match(stream_format: &StreamFormat) -> bool;
         /// We must be able to construct Self from arguments given to the `input_proc`.
+        ///
         /// # Safety
-        /// TODO document how to use this function safely.
+        ///
+        /// - `io_data` must be a valid, non-null pointer to an `AudioBufferList` that
+        ///   remains valid for the duration of the CoreAudio render callback.
+        /// - The `AudioBufferList` and every `AudioBuffer` it describes must be sized
+        ///   for at least `num_frames` frames in the expected sample format.
+        /// - The returned references are only valid until the render callback returns.
+        ///   They must not be stored, sent to another thread, or accessed after the
+        ///   callback completes.
         unsafe fn from_input_proc_args(num_frames: u32, io_data: *mut AudioBufferList) -> Self;
     }
 
@@ -144,6 +152,10 @@ pub mod data {
                 && S::sample_format().does_match_flags(stream_format.flags)
         }
 
+        /// # Safety
+        /// See [`Data::from_input_proc_args`]. The caller must ensure `io_data` points
+        /// to a valid `AudioBufferList` whose `mBuffers` array is valid for the duration
+        /// of the callback.
         #[allow(non_snake_case)]
         unsafe fn from_input_proc_args(frames: u32, io_data: *mut AudioBufferList) -> Self {
             let ptr = (*io_data).mBuffers.as_ptr() as *mut AudioBuffer;
@@ -169,6 +181,10 @@ pub mod data {
                 && S::sample_format().does_match_flags(stream_format.flags)
         }
 
+        /// # Safety
+        /// See [`Data::from_input_proc_args`]. The caller must ensure `io_data`
+        /// points to a valid `AudioBufferList` whose first buffer is an interleaved
+        /// buffer sized for at least `frames` samples per channel.
         #[allow(non_snake_case)]
         unsafe fn from_input_proc_args(frames: u32, io_data: *mut AudioBufferList) -> Self {
             // // We're expecting a single interleaved buffer which will be the first in the array.
@@ -210,6 +226,10 @@ pub mod data {
                 && S::sample_format().does_match_flags(stream_format.flags)
         }
 
+        /// # Safety
+        /// See [`Data::from_input_proc_args`]. The caller must ensure `io_data`
+        /// points to a valid `AudioBufferList` whose first buffer is an interleaved
+        /// buffer sized for at least `frames` samples per channel.
         #[allow(non_snake_case)]
         unsafe fn from_input_proc_args(frames: u32, io_data: *mut AudioBufferList) -> Self {
             // // We're expecting a single interleaved buffer which will be the first in the array.
