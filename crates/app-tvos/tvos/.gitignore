@@ -1,0 +1,6 @@
+# Build artifacts
+build/
+lib/
+*.xcodeproj
+*.xcworkspace
+DerivedData/

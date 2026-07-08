@@ -7,6 +7,8 @@ options:
 
 settings:
   base:
+    MARKETING_VERSION: 0.6.8
+    CURRENT_PROJECT_VERSION: 0.6.8
     SWIFT_OBJC_BRIDGING_HEADER: SotFTV/BridgingHeader.h
     # Only build for arm64 (our Rust lib is arm64-only)
     EXCLUDED_ARCHS[sdk=appletvsimulator*]: x86_64
@@ -17,19 +19,23 @@ targets:
     platform: tvOS
     sources:
       - SotFTV
+    preBuildScripts:
+      - name: Build Rust static library
+        script: ./build-rust.sh
+        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.sotf.tv
         INFOPLIST_FILE: SotFTV/Info.plist
         SWIFT_VERSION: "5.10"
         LIBRARY_SEARCH_PATHS:
-          - "$(PROJECT_DIR)/lib"
+          - "$(DERIVED_FILE_DIR)/rust"
         ENABLE_USER_SCRIPT_SANDBOXING: false
         DEAD_CODE_STRIPPING: false
         OTHER_LDFLAGS:
-          - "-L$(PROJECT_DIR)/lib"
+          - "-L$(DERIVED_FILE_DIR)/rust"
           - "-force_load"
-          - "$(PROJECT_DIR)/lib/libsotf_tvos.a"
+          - "$(DERIVED_FILE_DIR)/rust/libsotf_tvos.a"
           - "-framework Metal"
           - "-framework MetalKit"
           - "-framework QuartzCore"

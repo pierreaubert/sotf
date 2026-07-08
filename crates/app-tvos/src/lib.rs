@@ -15,3 +15,5 @@
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
 mod imp;
+#[cfg(test)]
+mod tests;

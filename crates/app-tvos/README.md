@@ -25,11 +25,37 @@ Key differences from the iOS app (`sotf-ios`):
 
 ## Building
 
-Built as part of the Xcode project. The static library is linked into the tvOS app target.
+The tvOS app is built through the Xcode project in `tvos/`. The Rust static
+library is produced by `tvos/build-rust.sh`, which is invoked automatically as
+an Xcode pre-build script, so a clean checkout can build without manually
+placing `libsotf_tvos.a` under `tvos/lib/`.
+
+Prerequisites:
+
+- Rust nightly toolchain with the `rust-src` component:
+  ```bash
+  rustup toolchain install nightly
+  rustup component add rust-src --toolchain nightly
+  ```
+
+Generate the Xcode project and build for the tvOS simulator:
 
 ```bash
-cargo check -p sotf-tvos
+just tvos-sim
 ```
+
+Or build the Rust library directly:
+
+```bash
+# Simulator
+just tvos-rust-sim
+
+# Device
+just tvos-rust-device
+```
+
+`cargo check -p sotf-tvos` checks the host-compilable parts of the crate, but
+the full app requires the tvOS Rust targets and Xcode.
 
 ## License
 
