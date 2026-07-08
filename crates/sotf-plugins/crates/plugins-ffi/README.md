@@ -57,6 +57,33 @@ This stages macOS, iOS device, and iOS simulator static libraries and wraps
 them with the generated headers into
 `SwiftPackage/Artifacts/SOTFPluginFFI.xcframework`.
 
+## Ownership and lifetime
+
+The C ABI follows a strict ownership model:
+
+- **Handles:** `plugin_create()` returns an owned `PluginHandle*` that must be
+  released with exactly one call to `plugin_destroy()`. After destroy the handle
+  is invalid and must not be used for any other call.
+- **Borrowed pointers:** `plugin_type`, `config_json`, `param_id`, process
+  buffers, and input event arrays are borrowed only for the duration of the
+  call. The caller keeps ownership and must keep the data valid and unchanged
+  while the FFI function runs.
+- **Owned return values:** Functions documented as returning an owned string or
+  byte buffer (`plugin_get_info_json()`, `plugin_save_state()`,
+  `plugin_export_preset_json()`, `plugin_suggest_preset_filename()`,
+  `plugin_ffi_platform_info_json()`, `plugin_available_types()`) transfer
+  ownership to the caller. The matching `plugin_free_string()` or
+  `plugin_free_state()` must be called exactly once.
+- **Handle-derived pointers:** `plugin_get_parameter_info()` returns a pointer
+  that is valid only while the handle remains alive and undestroyed.
+- **Static strings:** `plugin_preset_document_info()`,
+  `plugin_vst3_ffi_descriptor()`, and `plugin_swift_package_info()` return
+  pointers to static, null-terminated C strings with program lifetime. They
+  must not be freed.
+- **Thread-local errors:** `plugin_get_last_error()` points to thread-local
+  storage that remains valid until the next FFI call on the same thread that
+  may set an error.
+
 ## Windows VST3 FFI
 
 `plugin_vst3_ffi_descriptor()` is the native-language discovery entrypoint.

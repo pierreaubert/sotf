@@ -55,10 +55,24 @@ mod types;
 pub use misc::*;
 pub use plugin::*;
 
-/// Opaque handle to a plugin instance
+/// Opaque handle to a plugin instance.
 ///
 /// This is passed to Swift/Objective-C code and must not be dereferenced
-/// outside of Rust. Use plugin_* functions to interact with it.
+/// outside of Rust. Use `plugin_*` functions to interact with it.
+///
+/// # Ownership and lifetime
+///
+/// A `PluginHandle` is created by [`plugin_create`] and owned by the caller.
+/// The handle must be released exactly once with [`plugin_destroy`]; after
+/// that it is invalid to use the pointer for any other call.
+///
+/// The handle owns the plugin instance, the parameter map, the output-event
+/// queues, and the channel-count metadata recorded at creation time. All
+/// pointers returned into C memory that are derived from a handle
+/// (for example [`plugin_get_parameter_info`], [`plugin_get_info_json`],
+/// [`plugin_save_state`], or [`plugin_export_preset_json`]) are only valid
+/// while the handle remains alive, unless the function documentation explicitly
+/// says the returned pointer is owned by the caller and must be freed.
 #[repr(C)]
 pub struct PluginHandle {
     plugin: Box<dyn Plugin>,

@@ -67,10 +67,24 @@ typedef enum PluginNoteExpressionKind {
 typedef struct AtomicParamCache AtomicParamCache;
 
 /**
- * Opaque handle to a plugin instance
+ * Opaque handle to a plugin instance.
  *
  * This is passed to Swift/Objective-C code and must not be dereferenced
- * outside of Rust. Use plugin_* functions to interact with it.
+ * outside of Rust. Use `plugin_*` functions to interact with it.
+ *
+ * # Ownership and lifetime
+ *
+ * A `PluginHandle` is created by [`plugin_create`] and owned by the caller.
+ * The handle must be released exactly once with [`plugin_destroy`]; after
+ * that it is invalid to use the pointer for any other call.
+ *
+ * The handle owns the plugin instance, the parameter map, the output-event
+ * queues, and the channel-count metadata recorded at creation time. All
+ * pointers returned into C memory that are derived from a handle
+ * (for example [`plugin_get_parameter_info`], [`plugin_get_info_json`],
+ * [`plugin_save_state`], or [`plugin_export_preset_json`]) are only valid
+ * while the handle remains alive, unless the function documentation explicitly
+ * says the returned pointer is owned by the caller and must be freed.
  */
 typedef struct PluginHandle PluginHandle;
 
@@ -271,8 +285,13 @@ void *gpui_au_create_with_plugin(void *ns_view,
                                  void *cb_userdata);
 
 /**
- * Get the last error message
- * Returns NULL if no error
+ * Get the last error message.
+ *
+ * # Returns
+ * * Pointer to a null-terminated C string, or `NULL` if no error has been set.
+ * * The pointer points to thread-local storage that remains valid until the
+ *   next FFI call on the same thread that may set an error. Copy the contents
+ *   if you need it to outlive the next call.
  */
 const char *plugin_get_last_error(void);
 
@@ -289,22 +308,34 @@ struct PluginFfiCapabilities plugin_ffi_capabilities(void);
 /**
  * Get machine-readable platform and capability metadata as JSON.
  *
- * Caller must free the returned string with plugin_free_string().
+ * # Returns
+ * * JSON string owned by the caller. It must be released with
+ *   [`plugin_free_string`] when no longer needed.
+ * * `NULL` on error.
  */
 char *plugin_ffi_platform_info_json(void);
 
 /**
  * Get preset document metadata for host file dialogs and AUv3 document state.
+ *
+ * The returned string pointers reference static, null-terminated C strings
+ * with program lifetime. They must not be freed.
  */
 struct PluginPresetDocumentInfo plugin_preset_document_info(void);
 
 /**
  * Get Windows/VST3 FFI metadata for native language bindings.
+ *
+ * The returned string pointers reference static, null-terminated C strings
+ * with program lifetime. They must not be freed.
  */
 struct PluginVst3FfiDescriptor plugin_vst3_ffi_descriptor(void);
 
 /**
  * Get Swift Package metadata for Xcode/SwiftPM integrations.
+ *
+ * The returned string pointers reference static, null-terminated C strings
+ * with program lifetime. They must not be freed.
  */
 struct PluginSwiftPackageInfo plugin_swift_package_info(void);
 
@@ -323,8 +354,10 @@ struct PluginSwiftPackageInfo plugin_swift_package_info(void);
  * * NULL on failure (check plugin_get_last_error())
  *
  * # Safety
- * * Caller must ensure plugin_type and config_json are valid UTF-8 C strings
- * * Caller must call plugin_destroy() when done
+ * * `plugin_type` and `config_json` must be valid, null-terminated UTF-8 C strings
+ *   that remain readable for the duration of this call.
+ * * The returned handle is owned by the caller and must be released with
+ *   [`plugin_destroy`] exactly once. The pointer is invalid after that call.
  */
 struct PluginHandle *plugin_create(const char *plugin_type,
                                    const char *config_json,
@@ -363,10 +396,15 @@ int plugin_reset(struct PluginHandle *handle);
  * * Error code on failure
  *
  * # Safety
- * * handle must be a valid plugin handle
- * * input must point to num_frames * input_channels samples
- * * output must have space for num_frames * output_channels samples
- * * This function is designed to be real-time safe (no allocations)
+ * * `handle` must be a valid plugin handle returned by [`plugin_create`] that
+ *   has not been destroyed.
+ * * `input` and `output` must be valid, properly aligned, non-overlapping
+ *   buffers that remain valid for the duration of this call.
+ * * `input` must contain at least `num_frames * input_channels` samples and
+ *   `output` must have space for at least `num_frames * output_channels`
+ *   samples, where `input_channels` and `output_channels` are the values
+ *   passed to [`plugin_create`].
+ * * This function is designed to be real-time safe (no allocations).
  */
 int plugin_process(struct PluginHandle *handle,
                    const float *input,
@@ -378,6 +416,13 @@ int plugin_process(struct PluginHandle *handle,
  *
  * MIDI events are copied into a fixed stack buffer, then borrowed by
  * ProcessContext. No heap allocation occurs on the render path.
+ *
+ * # Safety
+ * * `handle`, `input`, and `output` must satisfy the same contract as
+ *   [`plugin_process`].
+ * * `midi_events` must point to `midi_event_count` valid [`PluginMidiEvent`]
+ *   structs and remain readable for the duration of this call. It may be
+ *   `NULL` only when `midi_event_count` is `0`.
  */
 int plugin_process_with_midi(struct PluginHandle *handle,
                              const float *input,
@@ -392,6 +437,21 @@ int plugin_process_with_midi(struct PluginHandle *handle,
  * Incoming MIDI is bridged into ProcessContext. Queued MIDI output and Note
  * Expression events are copied into host-provided buffers without allocating
  * on the render path.
+ *
+ * # Safety
+ * * `handle`, `input`, and `output` must satisfy the same contract as
+ *   [`plugin_process`].
+ * * `midi_input` must point to `midi_input_count` valid [`PluginMidiEvent`]
+ *   structs and remain readable for the duration of this call. It may be
+ *   `NULL` only when `midi_input_count` is `0`.
+ * * `note_expression_input` must point to `note_expression_input_count` valid
+ *   [`PluginNoteExpressionEvent`] structs and remain readable for the duration
+ *   of this call. It may be `NULL` only when `note_expression_input_count` is `0`.
+ * * If queued output events exist, `midi_output` and `note_expression_output`
+ *   must be valid writable buffers with capacities matching the supplied
+ *   `_capacity` values and remain writable for the duration of this call.
+ * * `midi_output_count` and `note_expression_output_count` must be valid
+ *   pointers to `usize` values that this call may write.
  */
 int plugin_process_with_events(struct PluginHandle *handle,
                                const float *input,
@@ -446,17 +506,21 @@ int plugin_get_note_expression_output_events(struct PluginHandle *handle,
 int plugin_get_parameter_count(const struct PluginHandle *handle);
 
 /**
- * Get parameter info by index
+ * Get parameter info by index.
  *
  * # Returns
- * * Pointer to parameter info (valid until plugin is destroyed)
- * * NULL if index is out of bounds
+ * * Pointer to parameter info. The pointer is valid only while the
+ *   `PluginHandle` used to obtain it remains alive and has not been destroyed.
+ * * `NULL` if the handle is invalid or the index is out of bounds.
+ *
+ * # Safety
+ * * `handle` must be a valid plugin handle that has not been destroyed.
  */
 const struct ParameterInfo *plugin_get_parameter_info(const struct PluginHandle *handle,
                                                       size_t index);
 
 /**
- * Set a parameter value (normalized 0.0-1.0)
+ * Set a parameter value (normalized 0.0-1.0).
  *
  * # Arguments
  * * `handle` - Plugin handle
@@ -466,31 +530,51 @@ const struct ParameterInfo *plugin_get_parameter_info(const struct PluginHandle 
  * # Returns
  * * 0 on success
  * * Error code on failure
+ *
+ * # Safety
+ * * `handle` must be a valid plugin handle that has not been destroyed.
+ * * `param_id` must be a valid, null-terminated UTF-8 C string that remains
+ *   readable for the duration of this call.
  */
 int plugin_set_parameter(struct PluginHandle *handle,
                          const char *param_id,
                          double normalized_value);
 
 /**
- * Get a parameter value (normalized 0.0-1.0)
+ * Get a parameter value (normalized 0.0-1.0).
  *
  * # Returns
  * * Normalized value on success
  * * -1.0 on error
+ *
+ * # Safety
+ * * `handle` must be a valid plugin handle that has not been destroyed.
+ * * `param_id` must be a valid, null-terminated UTF-8 C string that remains
+ *   readable for the duration of this call.
  */
 double plugin_get_parameter(const struct PluginHandle *handle, const char *param_id);
 
 /**
- * Get plugin information as JSON string
+ * Get plugin information as a JSON string.
  *
  * # Returns
- * * JSON string (caller must free with plugin_free_string())
- * * NULL on error
+ * * JSON string owned by the caller. It must be released with
+ *   [`plugin_free_string`] when no longer needed.
+ * * `NULL` on error.
+ *
+ * # Safety
+ * * `handle` must be a valid plugin handle that has not been destroyed.
  */
 char *plugin_get_info_json(const struct PluginHandle *handle);
 
 /**
- * Free a string returned by the plugin
+ * Free a string returned by the plugin.
+ *
+ * # Safety
+ * * `s` must be either `NULL` or a pointer previously returned by a function
+ *   documented as returning an owned string (for example [`plugin_get_info_json`],
+ *   [`plugin_ffi_platform_info_json`], or [`plugin_suggest_preset_filename`]).
+ * * The pointer must not be freed more than once.
  */
 void plugin_free_string(char *s);
 
@@ -498,12 +582,13 @@ void plugin_free_string(char *s);
  * Save plugin state to a JSON byte buffer.
  *
  * # Returns
- * * Pointer to allocated buffer on success (caller must free with plugin_free_state())
- * * NULL on error
+ * * Pointer to an allocated buffer owned by the caller on success. It must be
+ *   released with [`plugin_free_state`] when no longer needed.
+ * * `NULL` on error.
  *
  * # Safety
- * * handle must be a valid plugin handle
- * * out_len must be a valid pointer to write the buffer length
+ * * `handle` must be a valid plugin handle that has not been destroyed.
+ * * `out_len` must be a valid pointer to `usize` that this call may write.
  */
 uint8_t *plugin_save_state(const struct PluginHandle *handle, size_t *out_len);
 
@@ -515,13 +600,21 @@ uint8_t *plugin_save_state(const struct PluginHandle *handle, size_t *out_len);
  * * Error code on failure
  *
  * # Safety
- * * handle must be a valid plugin handle
- * * data must point to len bytes of valid JSON
+ * * `handle` must be a valid plugin handle that has not been destroyed.
+ * * `data` must point to `len` bytes of valid JSON that remain readable for
+ *   the duration of this call.
  */
 int plugin_load_state(struct PluginHandle *handle, const uint8_t *data, size_t len);
 
 /**
- * Free a state buffer returned by plugin_save_state().
+ * Free a state buffer returned by [`plugin_save_state`] or
+ * [`plugin_export_preset_json`].
+ *
+ * # Safety
+ * * `data` must be either `NULL` or a pointer previously returned by a
+ *   function documented as returning an owned byte buffer, with the same
+ *   `len` value that was written to the associated `out_len` pointer.
+ * * The pointer must not be freed more than once.
  */
 void plugin_free_state(uint8_t *data, size_t len);
 
@@ -529,21 +622,39 @@ void plugin_free_state(uint8_t *data, size_t len);
  * Export a named preset document as JSON bytes.
  *
  * The returned buffer uses the preset document schema advertised by
- * plugin_preset_document_info() and must be freed with plugin_free_state().
+ * [`plugin_preset_document_info`] and must be freed with [`plugin_free_state`].
+ *
+ * # Safety
+ * * `handle` must be a valid plugin handle that has not been destroyed.
+ * * `preset_name` may be `NULL` or must be a valid, null-terminated UTF-8 C
+ *   string that remains readable for the duration of this call.
+ * * `out_len` must be a valid pointer to `usize` that this call may write.
  */
 uint8_t *plugin_export_preset_json(const struct PluginHandle *handle,
                                    const char *preset_name,
                                    size_t *out_len);
 
 /**
- * Import a JSON preset document created by plugin_export_preset_json().
+ * Import a JSON preset document created by [`plugin_export_preset_json`].
+ *
+ * # Safety
+ * * `handle` must be a valid plugin handle that has not been destroyed.
+ * * `data` must point to `len` bytes of valid preset JSON that remain readable
+ *   for the duration of this call.
  */
 int plugin_import_preset_json(struct PluginHandle *handle, const uint8_t *data, size_t len);
 
 /**
  * Suggest a filesystem-safe preset filename.
  *
- * Caller must free the returned string with plugin_free_string().
+ * # Returns
+ * * Owned string that the caller must release with [`plugin_free_string`].
+ * * `NULL` on error.
+ *
+ * # Safety
+ * * `handle` must be a valid plugin handle that has not been destroyed.
+ * * `preset_name` may be `NULL` or must be a valid, null-terminated UTF-8 C
+ *   string that remains readable for the duration of this call.
  */
 char *plugin_suggest_preset_filename(const struct PluginHandle *handle, const char *preset_name);
 
@@ -551,8 +662,9 @@ char *plugin_suggest_preset_filename(const struct PluginHandle *handle, const ch
  * Get the list of available plugin types as a JSON array string.
  *
  * # Returns
- * * JSON array string (caller must free with plugin_free_string())
- * * NULL on error
+ * * JSON array string owned by the caller. It must be released with
+ *   [`plugin_free_string`] when no longer needed.
+ * * `NULL` on error.
  */
 char *plugin_available_types(void);
 

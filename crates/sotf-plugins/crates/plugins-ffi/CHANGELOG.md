@@ -1,3 +1,17 @@
+# 0.6.1 (unreleased)
+
+## Changed
+
+- Documented FFI ownership and lifetime contracts for handles, borrowed
+  pointers, owned return values, handle-derived pointers, static strings, and
+  thread-local error storage.
+- Added unit tests covering handle destroy safety, UTF-8 validation, unknown
+  plugin type rejection, process buffer sizing, parameter info lifetime,
+  parameter round-trip, owned string/state buffer freeing, output-event
+  buffer bounds, free-function null-pointer tolerance, static metadata pointer
+  lifetime, thread-local error stability, state save/load round-trip, and
+  reset-after-create usability.
+
 # 0.6.0
 
 ## New
