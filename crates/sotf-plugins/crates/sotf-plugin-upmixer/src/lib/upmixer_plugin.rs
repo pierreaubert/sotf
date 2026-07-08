@@ -1354,8 +1354,14 @@ impl UpmixerPlugin {
             26 => self.surround.rear_ambient_boost.set_target(value as f32),
             27 => self.surround.rear_late_reflection.set_target(value as f32),
             28 => self.dialogue.dialogue_weight.set_target(value as f32),
-            29 => self.dialogue.voice_freq_min_hz = value as f32,
-            30 => self.dialogue.voice_freq_max_hz = value as f32,
+            29 => {
+                self.dialogue.voice_freq_min_hz =
+                    (value as f32).min(self.dialogue.voice_freq_max_hz);
+            }
+            30 => {
+                self.dialogue.voice_freq_max_hz =
+                    (value as f32).max(self.dialogue.voice_freq_min_hz);
+            }
             31 => self.dialogue.dialogue_centroid_weight = value as f32,
             32 => self.dialogue.dialogue_variance_weight = value as f32,
             33 => self.dialogue.dialogue_coherence_weight = value as f32,

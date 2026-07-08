@@ -10,6 +10,46 @@ use gpui_ui_kit::{Toggle, ToggleStyle};
 use sotf_audio_player_midi::PhysicalControlKind;
 use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 
+#[derive(Clone, Copy)]
+struct SanitizedControlRange {
+    value: f64,
+    min: f64,
+    max: f64,
+}
+
+fn sanitize_audio_control_range(
+    _label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+) -> SanitizedControlRange {
+    let (mut normalized_min, mut normalized_max) = if min.is_finite() && max.is_finite() {
+        (min.min(max), min.max(max))
+    } else if value.is_finite() {
+        (value - 1.0, value + 1.0)
+    } else {
+        (0.0, 1.0)
+    };
+
+    if normalized_min == normalized_max {
+        let pad = normalized_min.abs().max(1.0) * 0.01;
+        normalized_min -= pad;
+        normalized_max += pad;
+    }
+
+    let normalized_value = if value.is_finite() {
+        value.clamp(normalized_min, normalized_max)
+    } else {
+        normalized_min
+    };
+
+    SanitizedControlRange {
+        value: normalized_value,
+        min: normalized_min,
+        max: normalized_max,
+    }
+}
+
 /// Render a parameter row with name, value, and optional range hint.
 ///
 /// When `range_hint` is `Some("0.0 — 100.0")` and the row is selected,
@@ -911,6 +951,10 @@ pub fn render_knob_sized<H: PluginViewHost>(
     theme: &PluginViewTheme,
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
+    let control_range = sanitize_audio_control_range(label, value, min, max);
+    let value = control_range.value;
+    let min = control_range.min;
+    let max = control_range.max;
 
     // Determine scale type based on unit (Hz parameters use logarithmic scale)
     let scale = if unit == "Hz" {
@@ -969,4 +1013,36 @@ pub fn render_knob_sized<H: PluginViewHost>(
     }
 
     div().key_context("plugin-control").child(knob)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_audio_control_range;
+
+    #[test]
+    fn sanitize_audio_control_range_orders_reversed_bounds() {
+        let range = sanitize_audio_control_range("Voice Hi", 125.0, 150.0, 100.0);
+
+        assert_eq!(range.min, 100.0);
+        assert_eq!(range.max, 150.0);
+        assert_eq!(range.value, 125.0);
+    }
+
+    #[test]
+    fn sanitize_audio_control_range_clamps_value_into_ordered_bounds() {
+        let range = sanitize_audio_control_range("Voice Hi", 180.0, 150.0, 100.0);
+
+        assert_eq!(range.min, 100.0);
+        assert_eq!(range.max, 150.0);
+        assert_eq!(range.value, 150.0);
+    }
+
+    #[test]
+    fn sanitize_audio_control_range_falls_back_for_non_finite_bounds() {
+        let range = sanitize_audio_control_range("Broken", f64::NAN, f64::NAN, 100.0);
+
+        assert_eq!(range.min, 0.0);
+        assert_eq!(range.max, 1.0);
+        assert_eq!(range.value, 0.0);
+    }
 }

@@ -284,3 +284,17 @@ fn frequency_resolution_labels_match() {
     let labels = pk(PARAMS, "frequency_resolution").choice_labels();
     assert_eq!(labels, FREQUENCY_RESOLUTIONS);
 }
+
+#[test]
+fn voice_frequency_bounds_remain_ordered() {
+    let mut p = Params::default();
+
+    p.set_param_value(29, 3_500.0);
+    assert_eq!(p.voice_freq_min_hz, p.voice_freq_max_hz);
+    assert_eq!(p.voice_freq_min_hz, 3_000.0);
+
+    p.set_param_value(29, 500.0);
+    p.set_param_value(30, 400.0);
+    assert_eq!(p.voice_freq_min_hz, p.voice_freq_max_hz);
+    assert_eq!(p.voice_freq_max_hz, 500.0);
+}
