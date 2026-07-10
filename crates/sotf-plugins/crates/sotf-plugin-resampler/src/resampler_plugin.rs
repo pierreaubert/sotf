@@ -264,6 +264,17 @@ impl ResamplerPlugin {
         self.output_sample_rate as f64 / self.input_sample_rate as f64
     }
 
+    /// Intrinsic output-domain delay of rubato's interpolation filter.
+    ///
+    /// Offline callers can trim this many leading frames after feeding enough
+    /// zero tail to retain the complete time-aligned signal.
+    pub fn output_delay_frames(&self) -> usize {
+        self.resampler
+            .as_ref()
+            .map(|resampler| resampler.output_delay())
+            .unwrap_or(self.quality.sinc_len() / 2)
+    }
+
     /// Get the current effective resampling ratio (may differ from nominal when dynamic_ratio is used)
     pub fn current_ratio(&self) -> f64 {
         self.current_ratio
@@ -606,11 +617,7 @@ impl Plugin for ResamplerPlugin {
         // ring-buffer offsets, and polyphase filter delays — not just sinc_len / 2.
         // Also add the chunking buffer latency: up to chunk_size - 1 frames can sit in
         // residual_input before producing output.
-        let rubato_delay = self
-            .resampler
-            .as_ref()
-            .map(|r| r.output_delay())
-            .unwrap_or(self.quality.sinc_len() / 2);
+        let rubato_delay = self.output_delay_frames();
         rubato_delay + self.chunk_size - 1
     }
 

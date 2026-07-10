@@ -2,6 +2,7 @@ use super::band_expander_params::BandExpanderParams;
 use super::misc::MAX_BLOCK_FRAMES;
 use super::misc::parse_detection_mode;
 use super::multiband_expander_plugin::MultibandExpanderPlugin;
+use super::spectral_state::SpectralState;
 use super::types::GateState;
 use super::types::MultibandExpanderPluginParams;
 use sotf_host::detector::DetectionMode;
@@ -203,12 +204,11 @@ fn test_spectral_mode_basic() {
     let mut p = MultibandExpanderPlugin::with_params(2, params);
     p.initialize(48000).unwrap();
 
-    // Latency must be fft_size - hop_size (50% overlap: 1024 - 512 = 512).
-    // Reporting fft_size (1024) was wrong — it would over-compensate by one hop.
+    // The streaming scheduler emits a fixed one-window causal latency.
     assert_eq!(
         p.latency_samples(),
-        512,
-        "Spectral mode latency should be fft_size - hop_size = 512"
+        1024,
+        "Spectral mode latency should match its streamed one-window delay"
     );
 
     // Generate pink-noise-like signal using sum of sines
@@ -238,6 +238,78 @@ fn test_spectral_mode_basic() {
     assert!(
         rms_out > 1e-5,
         "Spectral mode output should not be silent for loud input, RMS={rms_out:.8}"
+    );
+}
+
+#[test]
+fn spectral_streamed_impulse_delay_is_block_size_independent() {
+    for block_size in [64usize, 128, 256, 512, 1024] {
+        let mut params = MultibandExpanderPluginParams {
+            num_bands: 3,
+            threshold_db: -100.0,
+            ratio: 1.0,
+            mix: 1.0,
+            processing_mode: "spectral".to_string(),
+            ..Default::default()
+        };
+        for band in &mut params.bands {
+            band.ratio = Some(1.0);
+        }
+        let mut plugin = MultibandExpanderPlugin::with_params(1, params);
+        plugin.initialize(48_000).unwrap();
+
+        let fft_size = plugin.spectral.as_ref().unwrap().fft_size;
+        let impulse_index = fft_size / 2;
+        let total_frames = fft_size * 5;
+        let mut input = vec![0.0f32; total_frames];
+        input[impulse_index] = 1.0;
+        let mut output = Vec::with_capacity(total_frames);
+        for chunk in input.chunks(block_size) {
+            let mut block = chunk.to_vec();
+            plugin
+                .process_in_place(&mut block, &ProcessContext::new(48_000, chunk.len()))
+                .unwrap();
+            output.extend_from_slice(&block);
+        }
+
+        let peak_index = output
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+            .map(|(index, _)| index)
+            .unwrap();
+        assert_eq!(
+            peak_index.saturating_sub(impulse_index),
+            plugin.latency_samples(),
+            "block size {block_size} changed spectral latency"
+        );
+    }
+}
+
+#[test]
+fn spectral_hops_reuse_preallocated_band_metadata() {
+    let params = MultibandExpanderPluginParams {
+        num_bands: 3,
+        processing_mode: "spectral".to_string(),
+        ..Default::default()
+    };
+    let mut plugin = MultibandExpanderPlugin::with_params(1, params);
+    plugin.initialize(48_000).unwrap();
+
+    let band_info_ptr = plugin.spectral.as_ref().unwrap().band_info.as_ptr();
+    let band_info_capacity = plugin.spectral.as_ref().unwrap().band_info.capacity();
+    let mut signal = vec![0.1f32; 4096];
+    plugin
+        .process_in_place(&mut signal, &ProcessContext::new(48_000, 4096))
+        .unwrap();
+
+    let band_info = &plugin.spectral.as_ref().unwrap().band_info;
+    assert_eq!(band_info.as_ptr(), band_info_ptr);
+    assert_eq!(band_info.capacity(), band_info_capacity);
+    let source = include_str!("multiband_expander_plugin.rs");
+    assert!(
+        !source.contains("let band_info: Vec"),
+        "spectral hop must not allocate a band-info Vec"
     );
 }
 
@@ -390,10 +462,8 @@ fn test_spectral_mode_more_than_5_bands_no_panic() {
     );
 }
 
-/// Regression: spectral mode latency must be fft_size - hop_size (not fft_size).
-///
-/// Reporting fft_size would cause the host to over-shift by hop_size samples,
-/// misaligning this plugin against other tracks.
+/// The causal streaming schedule reports the one-window delay measured by the
+/// chunked impulse regression above.
 #[test]
 fn test_spectral_mode_latency_correct() {
     let params = MultibandExpanderPluginParams {
@@ -403,8 +473,7 @@ fn test_spectral_mode_latency_correct() {
     };
     let mut p = MultibandExpanderPlugin::with_params(2, params);
     p.initialize(48000).unwrap();
-    // fft_size = 1024, hop_size = 512 (50% overlap), latency = 512
-    assert_eq!(p.latency_samples(), 512);
+    assert_eq!(p.latency_samples(), 1024);
 }
 
 #[test]
@@ -608,8 +677,7 @@ fn test_set_processing_mode_spectral_creates_state() {
 
     assert!(p.spectral.is_some());
     assert_eq!(p.processing_mode, "spectral");
-    // fft_size=1024, hop_size=512 -> latency = 512
-    assert_eq!(p.latency_samples(), 512);
+    assert_eq!(p.latency_samples(), 1024);
 }
 
 #[test]
@@ -1828,6 +1896,30 @@ fn test_compute_bin_to_band() {
 
     assert_eq!(bin_to_band[0], 0); // DC bin -> lowest band
     assert_eq!(bin_to_band[10], 1); // ~469 Hz -> above 300 Hz crossover
+}
+
+#[test]
+fn spectral_window_product_is_constant_overlap_add() {
+    let state = SpectralState::new(256, 1, 48_000, &[1_000.0], 2);
+    let overlap_count = state.fft_size / state.hop_size;
+    let mut min_sum = f32::INFINITY;
+    let mut max_sum = f32::NEG_INFINITY;
+
+    for sample in 0..state.fft_size {
+        let sum = (0..overlap_count)
+            .map(|shift| {
+                let idx = (sample + shift * state.hop_size) % state.fft_size;
+                state.analysis_window[idx] * state.analysis_window[idx]
+            })
+            .sum::<f32>();
+        min_sum = min_sum.min(sum);
+        max_sum = max_sum.max(sum);
+    }
+
+    assert!(
+        max_sum - min_sum < 1.0e-5,
+        "analysis*synthesis window sum must be constant, range={min_sum}..{max_sum}"
+    );
 }
 
 #[test]

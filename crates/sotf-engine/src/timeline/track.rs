@@ -35,6 +35,8 @@ pub struct Track {
     decoders: HashMap<usize, ActiveDecoder>,
     /// Pre-allocated decode buffer
     decode_buf: DecodedAudio,
+    /// Reused source-span buffer for fractional varispeed reads.
+    stretch_buf: Vec<f32>,
     /// Pre-allocated mix buffer for summing clips
     mix_buf: Vec<f32>,
     /// Pre-allocated chain output buffer
@@ -49,8 +51,10 @@ struct OverlapWork {
     overlap_frames: usize,
     clip_position: u64,
     source_position: u64,
+    source_start: f64,
+    source_step: f64,
+    source_frames_needed: usize,
     offset_in_block: usize,
-    reverse: bool,
 }
 
 /// A decoder that is currently active for a region.
@@ -80,6 +84,7 @@ impl Track {
             channels,
             decoders: HashMap::new(),
             decode_buf: DecodedAudio::new(spec),
+            stretch_buf: Vec::new(),
             mix_buf: Vec::new(),
             chain_output: Vec::new(),
             overlap_work: Vec::new(),
@@ -95,6 +100,48 @@ impl Track {
     pub fn build(&mut self) -> Result<(), String> {
         self.prepare_decoders()?;
         self.chain.build()
+    }
+
+    /// Pre-allocate scratch used by `render_block` for the timeline's fixed
+    /// processing block size. The timeline calls this during `build()` so
+    /// fractional and reverse playback cannot grow a Vec on the audio thread.
+    pub(crate) fn prepare_render_buffers(&mut self, max_frames: usize) {
+        let total_samples = max_frames.saturating_mul(self.channels);
+        self.mix_buf.resize(total_samples, 0.0);
+        self.chain_output
+            .resize(max_frames.saturating_mul(self.chain.output_channels()), 0.0);
+        if self.overlap_work.capacity() < self.regions.len() {
+            self.overlap_work
+                .reserve(self.regions.len().saturating_sub(self.overlap_work.len()));
+        }
+
+        let max_source_channels = self
+            .decoders
+            .values()
+            .map(|active| active.decoder.spec().channels as usize)
+            .max()
+            .unwrap_or(self.channels);
+        let max_source_frames = self
+            .regions
+            .iter()
+            .map(|region| {
+                let ratio = if region.clip.time_stretch_ratio.is_finite()
+                    && region.clip.time_stretch_ratio > 0.0
+                {
+                    region.clip.time_stretch_ratio
+                } else {
+                    1.0
+                };
+                (((max_frames.saturating_sub(1) as f64 * ratio).ceil() as usize) + 2)
+                    .min(region.clip.duration_samples as usize)
+            })
+            .max()
+            .unwrap_or(0);
+        let required_samples = max_source_frames.saturating_mul(max_source_channels);
+        self.stretch_buf.clear();
+        if self.stretch_buf.capacity() < required_samples {
+            self.stretch_buf.reserve(required_samples);
+        }
     }
 
     fn prepare_decoders(&mut self) -> Result<(), String> {
@@ -152,19 +199,35 @@ impl Track {
                 continue;
             }
             let clip_position = overlap_start - region_start;
-            // Apply time-stretch: map clip position to source position
-            let stretched_pos =
-                if region.clip.time_stretch_ratio != 1.0 && region.clip.time_stretch_ratio > 0.0 {
-                    (clip_position as f64 * region.clip.time_stretch_ratio) as u64
-                } else {
-                    clip_position
-                };
-            // Apply reverse: read from end of source instead of start
-            let source_position = if region.clip.reverse {
-                let end = region.clip.source_offset_samples + region.clip.duration_samples;
-                end.saturating_sub(stretched_pos + 1)
+            let ratio = if region.clip.time_stretch_ratio > 0.0 {
+                region.clip.time_stretch_ratio
             } else {
-                region.clip.source_offset_samples + stretched_pos
+                1.0
+            };
+            let source_offset = region.clip.source_offset_samples as f64;
+            let source_end =
+                (region.clip.source_offset_samples + region.clip.duration_samples) as f64;
+            let relative_start = clip_position as f64 * ratio;
+            let source_start = if region.clip.reverse {
+                source_end - 1.0 - relative_start
+            } else {
+                source_offset + relative_start
+            };
+            let source_step = if region.clip.reverse { -ratio } else { ratio };
+            let source_last = source_start + source_step * overlap_frames.saturating_sub(1) as f64;
+            let source_min = source_start.min(source_last).max(source_offset);
+            let source_max = source_start.max(source_last).min(source_end - 1.0);
+            let source_position = source_min.floor() as u64;
+            let source_frames_needed = if source_max >= source_min {
+                (source_max.floor() as u64)
+                    .saturating_sub(source_position)
+                    .saturating_add(2)
+                    .min(
+                        region.clip.source_offset_samples + region.clip.duration_samples
+                            - source_position,
+                    ) as usize
+            } else {
+                0
             };
             let offset_in_block = (overlap_start - block_start) as usize;
 
@@ -173,8 +236,10 @@ impl Track {
                 overlap_frames,
                 clip_position,
                 source_position,
+                source_start,
+                source_step,
+                source_frames_needed,
                 offset_in_block,
-                reverse: region.clip.reverse,
             });
         }
 
@@ -206,54 +271,123 @@ impl Track {
                 }
             }
 
-            // Decode
-            self.decode_buf.clear();
+            // Preserve the allocation-free common path for ordinary forward
+            // playback. Fractional/reverse reads use the span buffer below.
+            if work.source_step == 1.0 && work.source_start.fract() == 0.0 {
+                self.decode_buf.clear();
+                let dec = self.decoders.get_mut(&work.region_idx).ok_or_else(|| {
+                    format!(
+                        "Missing active decoder for region {} on track '{}'",
+                        work.region_idx, self.name
+                    )
+                })?;
+                let decoded = dec
+                    .decoder
+                    .decode_into(&mut self.decode_buf)
+                    .map_err(|e| format!("Decode error on track '{}': {e}", self.name))?;
+                if decoded == 0 {
+                    continue;
+                }
+
+                let usable_frames = decoded.min(work.overlap_frames);
+                let src_channels = self.decode_buf.spec.channels as usize;
+                let region = &self.regions[work.region_idx];
+                let clip_gain = region.clip.linear_gain();
+                for frame in 0..usable_frames {
+                    let gain =
+                        clip_gain * region.clip.fade_gain_at(work.clip_position + frame as u64);
+                    for ch in 0..self.channels.min(src_channels) {
+                        let src_idx = frame * src_channels + ch;
+                        let dst_idx = (work.offset_in_block + frame) * self.channels + ch;
+                        if src_idx < self.decode_buf.samples.len() && dst_idx < total_samples {
+                            self.mix_buf[dst_idx] += self.decode_buf.samples[src_idx] * gain;
+                        }
+                    }
+                }
+                dec.source_position = work.source_position + decoded as u64;
+                continue;
+            }
+
+            // Decode the complete source span needed for this output block.
+            self.stretch_buf.clear();
+            let mut source_frames = 0usize;
+            let mut decoder_advanced = 0usize;
+            let mut src_channels = 0usize;
+            while source_frames < work.source_frames_needed {
+                self.decode_buf.clear();
+                let dec = self.decoders.get_mut(&work.region_idx).ok_or_else(|| {
+                    format!(
+                        "Missing active decoder for region {} on track '{}'",
+                        work.region_idx, self.name
+                    )
+                })?;
+                let decoded = dec
+                    .decoder
+                    .decode_into(&mut self.decode_buf)
+                    .map_err(|e| format!("Decode error on track '{}': {e}", self.name))?;
+                if decoded == 0 {
+                    break;
+                }
+                decoder_advanced += decoded;
+                src_channels = self.decode_buf.spec.channels as usize;
+                let take_frames = decoded.min(work.source_frames_needed - source_frames);
+                let take_samples = take_frames.saturating_mul(src_channels);
+                if self.stretch_buf.len().saturating_add(take_samples) > self.stretch_buf.capacity()
+                {
+                    return Err(format!(
+                        "Stretch scratch for track '{}' is too small for {} frames; rebuild the timeline for the configured block size",
+                        self.name, work.overlap_frames
+                    ));
+                }
+                self.stretch_buf
+                    .extend_from_slice(&self.decode_buf.samples[..take_samples]);
+                source_frames += take_frames;
+            }
+            if source_frames == 0 || src_channels == 0 {
+                continue;
+            }
+
+            // Mix decoded audio into mix_buf with per-clip gain/fade
+            let region = &self.regions[work.region_idx];
+            let clip_gain = region.clip.linear_gain();
+            for frame in 0..work.overlap_frames {
+                let source_position = (work.source_start + work.source_step * frame as f64).clamp(
+                    region.clip.source_offset_samples as f64,
+                    (region.clip.source_offset_samples + region.clip.duration_samples - 1) as f64,
+                );
+                let local_position = source_position - work.source_position as f64;
+                if local_position < 0.0 {
+                    continue;
+                }
+                let source_frame = local_position.floor() as usize;
+                if source_frame >= source_frames {
+                    continue;
+                }
+                let fraction = (local_position - source_frame as f64) as f32;
+                let next_source_frame = (source_frame + 1).min(source_frames - 1);
+                let gain = clip_gain * region.clip.fade_gain_at(work.clip_position + frame as u64);
+                for ch in 0..self.channels.min(src_channels) {
+                    let src_idx = source_frame * src_channels + ch;
+                    let next_src_idx = next_source_frame * src_channels + ch;
+                    let dst_idx = (work.offset_in_block + frame) * self.channels + ch;
+                    if next_src_idx < self.stretch_buf.len() && dst_idx < total_samples {
+                        let sample = self.stretch_buf[src_idx]
+                            + (self.stretch_buf[next_src_idx] - self.stretch_buf[src_idx])
+                                * fraction;
+                        self.mix_buf[dst_idx] += sample * gain;
+                    }
+                }
+            }
+
+            // Update decoder position to match where the decoder actually is
+            // (it may have advanced past the exact source span in its final chunk).
             let dec = self.decoders.get_mut(&work.region_idx).ok_or_else(|| {
                 format!(
                     "Missing active decoder for region {} on track '{}'",
                     work.region_idx, self.name
                 )
             })?;
-            let decoded = dec
-                .decoder
-                .decode_into(&mut self.decode_buf)
-                .map_err(|e| format!("Decode error on track '{}': {e}", self.name))?;
-
-            if decoded == 0 {
-                continue;
-            }
-
-            let usable_frames = decoded.min(work.overlap_frames);
-            let src_channels = self.decode_buf.spec.channels as usize;
-
-            // Reverse decoded samples if clip is reversed
-            if work.reverse && usable_frames > 1 {
-                let samples = &mut self.decode_buf.samples;
-                for f in 0..usable_frames / 2 {
-                    let f2 = usable_frames - 1 - f;
-                    for ch in 0..src_channels {
-                        samples.swap(f * src_channels + ch, f2 * src_channels + ch);
-                    }
-                }
-            }
-
-            // Mix decoded audio into mix_buf with per-clip gain/fade
-            let region = &self.regions[work.region_idx];
-            let clip_gain = region.clip.linear_gain();
-            for frame in 0..usable_frames {
-                let gain = clip_gain * region.clip.fade_gain_at(work.clip_position + frame as u64);
-                for ch in 0..self.channels.min(src_channels) {
-                    let src_idx = frame * src_channels + ch;
-                    let dst_idx = (work.offset_in_block + frame) * self.channels + ch;
-                    if src_idx < self.decode_buf.samples.len() && dst_idx < total_samples {
-                        self.mix_buf[dst_idx] += self.decode_buf.samples[src_idx] * gain;
-                    }
-                }
-            }
-
-            // Update decoder position to match where the decoder actually is
-            // (it advanced by `decoded` frames, which may be more than `usable_frames`)
-            dec.source_position = work.source_position + decoded as u64;
+            dec.source_position = work.source_position + decoder_advanced as u64;
         }
         // Return work_items Vec for reuse (avoids allocation on next call)
         self.overlap_work = work_items;
@@ -331,6 +465,45 @@ mod tests {
         spec: AudioSpec,
     }
 
+    struct RampDecoder {
+        spec: AudioSpec,
+        position: u64,
+        total_frames: u64,
+    }
+
+    impl AudioDecoder for RampDecoder {
+        fn spec(&self) -> &AudioSpec {
+            &self.spec
+        }
+
+        fn format(&self) -> AudioFormat {
+            AudioFormat::Wav
+        }
+
+        fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize> {
+            dest.clear();
+            dest.spec = self.spec.clone();
+            let frames = (self.total_frames - self.position).min(256) as usize;
+            dest.samples
+                .extend((0..frames).map(|i| (self.position + i as u64) as f32));
+            self.position += frames as u64;
+            Ok(frames)
+        }
+
+        fn seek(&mut self, frame_position: u64) -> AudioDecoderResult<()> {
+            self.position = frame_position.min(self.total_frames);
+            Ok(())
+        }
+
+        fn position(&self) -> u64 {
+            self.position
+        }
+
+        fn is_eof(&self) -> bool {
+            self.position >= self.total_frames
+        }
+    }
+
     impl AudioDecoder for FailingSeekDecoder {
         fn spec(&self) -> &AudioSpec {
             &self.spec
@@ -384,6 +557,74 @@ mod tests {
 
         assert!(err.contains("Seek failed for region 0"));
         assert_eq!(track.decoders.get(&0).unwrap().source_position, 0);
+    }
+
+    #[test]
+    fn time_stretch_ratio_is_applied_continuously_within_a_block() {
+        let spec = AudioSpec {
+            sample_rate: 48_000,
+            channels: 1,
+            bits_per_sample: 32,
+            total_frames: Some(1_000),
+        };
+        let mut clip = Clip::new(AudioSource::Driver, 100);
+        clip.time_stretch_ratio = 2.0;
+        let mut track = Track::new("stretch-test", 1, 48_000);
+        track.add_region(Region::new(clip, 0));
+        track.decoders.insert(
+            0,
+            ActiveDecoder {
+                decoder: Box::new(RampDecoder {
+                    spec,
+                    position: 0,
+                    total_frames: 1_000,
+                }),
+                source_position: 0,
+            },
+        );
+
+        track.prepare_render_buffers(8);
+        let stretch_capacity = track.stretch_buf.capacity();
+        let mut output = vec![0.0; 8];
+        track.render_block(0, 8, &mut output).unwrap();
+        assert_eq!(output, vec![0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0]);
+        assert_eq!(
+            track.stretch_buf.capacity(),
+            stretch_capacity,
+            "prepared stretch rendering must not grow audio-thread scratch storage"
+        );
+    }
+
+    #[test]
+    fn fractional_reverse_clamps_the_source_end_symmetrically() {
+        let spec = AudioSpec {
+            sample_rate: 48_000,
+            channels: 1,
+            bits_per_sample: 32,
+            total_frames: Some(100),
+        };
+        let mut clip = Clip::new(AudioSource::Driver, 100);
+        clip.source_offset_samples = 10;
+        clip.time_stretch_ratio = 0.5;
+        clip.reverse = true;
+        let mut track = Track::new("reverse-stretch-test", 1, 48_000);
+        track.add_region(Region::new(clip, 0));
+        track.decoders.insert(
+            0,
+            ActiveDecoder {
+                decoder: Box::new(RampDecoder {
+                    spec,
+                    position: 0,
+                    total_frames: 200,
+                }),
+                source_position: 0,
+            },
+        );
+
+        track.prepare_render_buffers(4);
+        let mut output = vec![0.0; 4];
+        track.render_block(196, 4, &mut output).unwrap();
+        assert_eq!(output, vec![11.0, 10.5, 10.0, 10.0]);
     }
 
     #[test]

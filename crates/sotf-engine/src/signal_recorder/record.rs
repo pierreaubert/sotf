@@ -11,6 +11,61 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(not(target_os = "ios"))]
+pub(super) fn resample_reference_signal(
+    signal: &[f32],
+    source_rate: u32,
+    target_rate: u32,
+) -> Result<Vec<f32>, String> {
+    use sotf_plugins::{Plugin, ProcessContext, ResamplerPlugin};
+
+    if source_rate == target_rate {
+        return Ok(signal.to_vec());
+    }
+    if signal.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    const CHUNK_SIZE: usize = 1_024;
+    let mut resampler = ResamplerPlugin::new(1, source_rate, target_rate, CHUNK_SIZE)?;
+    let expected_len =
+        (signal.len() as f64 * target_rate as f64 / source_rate as f64).ceil() as usize;
+    let filter_delay = resampler.output_delay_frames();
+    let aligned_end = filter_delay.saturating_add(expected_len);
+    let mut resampled = Vec::with_capacity(aligned_end + CHUNK_SIZE);
+
+    for chunk in signal.chunks(CHUNK_SIZE) {
+        let max_output_frames = resampler.output_frames_for_input(chunk.len());
+        let mut output = vec![0.0f32; max_output_frames];
+        let produced = resampler.process(
+            chunk,
+            &mut output,
+            &ProcessContext::new(source_rate, chunk.len()),
+        )?;
+        resampled.extend_from_slice(&output[..produced]);
+    }
+
+    // Feed silence until rubato has emitted the complete valid tail. Trimming
+    // its output-domain filter delay then aligns sample zero while retaining
+    // exactly the duration represented by the original reference.
+    let zero_input = vec![0.0f32; CHUNK_SIZE];
+    while resampled.len() < aligned_end {
+        let max_output_frames = resampler.output_frames_for_input(CHUNK_SIZE);
+        let mut output = vec![0.0f32; max_output_frames];
+        let produced = resampler.process(
+            &zero_input,
+            &mut output,
+            &ProcessContext::new(source_rate, CHUNK_SIZE),
+        )?;
+        if produced == 0 {
+            return Err("Resampler made no progress while draining its filter tail".to_string());
+        }
+        resampled.extend_from_slice(&output[..produced]);
+    }
+
+    Ok(resampled[filter_delay..aligned_end].to_vec())
+}
+
 /// Perform recording and analysis using AudioEngineManager for playback
 /// and cpal for recording.
 ///
@@ -340,7 +395,7 @@ pub fn record_and_analyze(
 
         // Print progress every second
         if elapsed.as_millis() % 1000 < check_interval.as_millis() {
-            let recorded_duration = current_sample_count as f64 / sample_rate as f64;
+            let recorded_duration = current_sample_count as f64 / input_sample_rate as f64;
             log::info!(
                 "[record_and_analyze] Recording progress: {:.2}s / {:.2}s ({} samples)",
                 recorded_duration,
@@ -483,9 +538,13 @@ pub fn record_and_analyze(
 
     // Analyze the recording
     log::debug!("[record_and_analyze] Analyzing recording...");
+    let resampled_reference = (analysis_sample_rate != sample_rate)
+        .then(|| resample_reference_signal(reference_signal, sample_rate, analysis_sample_rate))
+        .transpose()?;
+    let analysis_reference = resampled_reference.as_deref().unwrap_or(reference_signal);
     let analysis = analyze_recording(
         recorded_wav_path,
-        reference_signal,
+        analysis_reference,
         analysis_sample_rate,
         sweep_range,
     )?;
@@ -743,7 +802,7 @@ pub fn record_and_analyze_multi(
         let current_sample_count = recorded_counts[0].load(Ordering::Relaxed);
 
         if elapsed.as_millis() % 1000 < check_interval.as_millis() {
-            let recorded_duration = current_sample_count as f64 / sample_rate as f64;
+            let recorded_duration = current_sample_count as f64 / input_sample_rate as f64;
             log::info!(
                 "[record_and_analyze_multi] Progress: {:.2}s / {:.2}s",
                 recorded_duration,
@@ -776,6 +835,10 @@ pub fn record_and_analyze_multi(
 
     // --- Analyze each mic channel independently ---
     let analysis_sample_rate = input_sample_rate;
+    let resampled_reference = (analysis_sample_rate != sample_rate)
+        .then(|| resample_reference_signal(reference_signal, sample_rate, analysis_sample_rate))
+        .transpose()?;
+    let analysis_reference = resampled_reference.as_deref().unwrap_or(reference_signal);
     let mut results = Vec::with_capacity(num_mics);
     let dropped_samples = recorded_overruns.load(Ordering::Relaxed);
     if dropped_samples > 0 {
@@ -832,7 +895,7 @@ pub fn record_and_analyze_multi(
         // Analyze
         let analysis = analyze_recording(
             &recorded_wav_paths[mic_i],
-            reference_signal,
+            analysis_reference,
             analysis_sample_rate,
             sweep_range,
         )?;

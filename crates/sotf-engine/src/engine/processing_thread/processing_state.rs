@@ -34,6 +34,9 @@ pub(super) struct ProcessingState {
     pub(super) crossfade_progress: f32,
     /// Crossfade step per frame
     pub(super) crossfade_step: f32,
+    /// When host timing differs, transition old→silence→new instead of
+    /// blending time-misaligned samples.
+    pub(super) crossfade_through_silence: bool,
     /// Number of channels
     pub(super) channels: usize,
     pub(super) bypassed: bool,
@@ -87,6 +90,7 @@ impl ProcessingState {
             prev_host: None,
             crossfade_progress: 1.0,
             crossfade_step: 0.0,
+            crossfade_through_silence: false,
             channels,
             bypassed: false,
             // Pre-sized for the worst-case processing block so the hot path only reuses memory.
@@ -155,21 +159,6 @@ impl ProcessingState {
         }
     }
 
-    pub(super) fn fade_in_unblended_tail(
-        output: &mut [f32],
-        blend_samples: usize,
-        output_samples: usize,
-        alpha: f32,
-    ) {
-        if output_samples <= blend_samples {
-            return;
-        }
-
-        for sample in &mut output[blend_samples..output_samples] {
-            *sample *= alpha;
-        }
-    }
-
     /// Process a frame
     /// Returns the actual number of output frames written
     pub(super) fn process_frame(
@@ -195,34 +184,71 @@ impl ProcessingState {
         if let Some(ref mut prev_host) = self.prev_host {
             let actual_frames = self.host.process(input, output)?;
 
-            // Size prev_process_buffer to match output (not actual_frames from
-            // new host), so prev_host has enough room even if it produces a
-            // slightly different frame count.
-            let buf_len = output.len();
-            Self::prepare_scratch_buffer(&mut self.prev_process_buffer, buf_len);
+            // Size the previous-host destination from its own output rate.
+            // During a down-rate transition the old host can require more
+            // frames than the new host's caller-provided output buffer.
+            let prev_output_frames = prev_host.output_frames_for_input(input_frames);
+            let prev_buf_len = prev_output_frames.saturating_mul(prev_host.output_channels());
+            Self::prepare_scratch_buffer(&mut self.prev_process_buffer, prev_buf_len);
 
-            let output_samples = actual_frames * self.channels;
-            let prev_actual = prev_host.process(input, &mut self.prev_process_buffer[..buf_len])?;
-            let blend_samples = output_samples.min(prev_actual * self.channels);
+            let prev_actual =
+                prev_host.process(input, &mut self.prev_process_buffer[..prev_buf_len])?;
 
             // Compute crossfade step from actual frame size (~50ms crossfade)
             if self.crossfade_step == 0.0 {
                 self.crossfade_step = Self::compute_crossfade_step(input_frames, self.sample_rate);
             }
 
-            // Blend buffers: output = (1-alpha)*prev + alpha*current
-            let alpha = self.crossfade_progress;
-            sotf_plugins::simd::blend_simd(
-                &mut output[..blend_samples],
-                &self.prev_process_buffer[..blend_samples],
-                alpha,
-            );
-            Self::fade_in_unblended_tail(output, blend_samples, output_samples, alpha);
+            let alpha_start = self.crossfade_progress;
+            let alpha_end = (alpha_start + self.crossfade_step).min(1.0);
+            for frame in 0..actual_frames {
+                let position = if actual_frames > 1 {
+                    frame as f32 / (actual_frames - 1) as f32
+                } else {
+                    1.0
+                };
+                let alpha = alpha_start + (alpha_end - alpha_start) * position;
+                for channel in 0..self.channels {
+                    let index = frame * self.channels + channel;
+                    let previous = if prev_actual == 0 {
+                        0.0
+                    } else if prev_actual == actual_frames {
+                        self.prev_process_buffer[index]
+                    } else {
+                        // Hosts with different output rates produce different
+                        // frame counts for the same input duration. During a
+                        // fade-through-silence transition, map the old block
+                        // across the new block's duration so it does not end
+                        // abruptly halfway through the callback.
+                        let old_position = if actual_frames > 1 {
+                            frame as f32 * (prev_actual - 1) as f32 / (actual_frames - 1) as f32
+                        } else {
+                            0.0
+                        };
+                        let old_frame = old_position.floor() as usize;
+                        let next_old_frame = (old_frame + 1).min(prev_actual - 1);
+                        let fraction = old_position - old_frame as f32;
+                        let old = self.prev_process_buffer[old_frame * self.channels + channel];
+                        let next =
+                            self.prev_process_buffer[next_old_frame * self.channels + channel];
+                        old + (next - old) * fraction
+                    };
+                    if self.crossfade_through_silence {
+                        output[index] = if alpha < 0.5 {
+                            previous * (1.0 - 2.0 * alpha)
+                        } else {
+                            output[index] * (2.0 * alpha - 1.0)
+                        };
+                    } else {
+                        output[index] = previous * (1.0 - alpha) + output[index] * alpha;
+                    }
+                }
+            }
 
-            // Advance crossfade
-            self.crossfade_progress = (self.crossfade_progress + self.crossfade_step).min(1.0);
+            self.crossfade_progress = alpha_end;
             if self.crossfade_progress >= 1.0 {
                 self.prev_host = None;
+                self.crossfade_through_silence = false;
             }
 
             Ok(actual_frames)
@@ -251,10 +277,23 @@ pub(super) fn handle_processing_command(
                 output_channels
             );
 
-            // Initiate crossfade if channel counts match and we have an existing chain
-            if state.host.output_channels() == output_channels && state.host.plugin_count() > 0 {
+            let old_latency = state.host.total_latency_samples();
+            let new_latency = new_host.total_latency_samples();
+            let old_output_rate = state.host.output_sample_rate(state.sample_rate);
+            let new_output_rate = new_host.output_sample_rate(state.sample_rate);
+            let same_timing = old_output_rate == new_output_rate
+                && (old_latency as u128 * new_output_rate as u128)
+                    == (new_latency as u128 * old_output_rate as u128);
+            let can_transition =
+                state.host.output_channels() == output_channels && state.host.plugin_count() > 0;
+
+            // A sample-for-sample blend is only valid when both chains share
+            // channel count and latency. Otherwise swap atomically rather than
+            // create comb filtering from time-misaligned signals.
+            if can_transition {
                 state.prev_host = Some(std::mem::replace(&mut state.host, new_host));
                 state.crossfade_progress = 0.0;
+                state.crossfade_through_silence = !same_timing;
 
                 // crossfade_step is computed lazily in process_frame using
                 // the actual input_frames, so it adapts to any frame size.
@@ -265,6 +304,7 @@ pub(super) fn handle_processing_command(
                 state.host = new_host;
                 state.prev_host = None;
                 state.crossfade_progress = 1.0;
+                state.crossfade_through_silence = false;
             }
 
             state.channels = output_channels;

@@ -360,13 +360,22 @@ impl Plugin for SpectrumAnalyzerPlugin {
                 crate::rate_limited_log!(error, 5, "spectrum FFT process failed: {e}");
                 return Ok(context.num_frames);
             }
-            let scale = 2.0 / FFT_SIZE as f32;
-            let scale_sq = scale * scale;
+            // 2/N converts the positive-frequency FFT bin to peak amplitude;
+            // periodic Hann has coherent gain 0.5, requiring another factor 2.
+            let interior_scale = 4.0 / FFT_SIZE as f32;
+            let endpoint_scale = 2.0 / FFT_SIZE as f32;
+            let interior_scale_sq = interior_scale * interior_scale;
+            let endpoint_scale_sq = endpoint_scale * endpoint_scale;
             self.new_mags.fill(-100.0);
 
             for (i, bin) in self.fft_output.iter().enumerate().skip(1) {
                 if let Some(display_bin) = self.bin_to_display.get(i).copied().flatten() {
                     // Use norm_sqr to avoid sqrt; convert with 10*log10 instead of 20*log10
+                    let scale_sq = if i == FFT_SIZE / 2 {
+                        endpoint_scale_sq
+                    } else {
+                        interior_scale_sq
+                    };
                     let norm_sq = bin.norm_sqr() * scale_sq;
                     let db = 10.0 * fast_log10(norm_sq.max(1e-10));
                     self.new_mags[display_bin] = self.new_mags[display_bin].max(db);
@@ -381,8 +390,11 @@ impl Plugin for SpectrumAnalyzerPlugin {
                     s * self.current_magnitudes[i] + inv_s * self.new_mags[i];
             }
 
-            // Find peak using SIMD-optimized function
-            let peak = crate::simd::find_max_abs_simd(&self.current_magnitudes);
+            let peak = self
+                .current_magnitudes
+                .iter()
+                .copied()
+                .fold(f32::NEG_INFINITY, f32::max);
 
             // Update cache in-place (real-time safe)
             self.cache.update(|data| {
@@ -409,5 +421,94 @@ impl Plugin for SpectrumAnalyzerPlugin {
     }
     fn take_cache_contention_stats(&mut self) -> (u64, u64) {
         self.cache.take_contention_stats()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bin_centered_full_scale_tone_reads_zero_dbfs() {
+        let mut plugin = SpectrumAnalyzerPlugin::with_config(
+            1,
+            SpectrumConfig {
+                num_bins: 100,
+                min_freq: 10.0,
+                max_freq: 20_000.0,
+                smoothing: 0.0,
+            },
+        )
+        .unwrap();
+        plugin.initialize(48_000).unwrap();
+
+        let bin = 128usize;
+        let input: Vec<f32> = (0..FFT_SIZE)
+            .map(|i| (2.0 * std::f32::consts::PI * bin as f32 * i as f32 / FFT_SIZE as f32).sin())
+            .collect();
+        let mut output = vec![0.0; FFT_SIZE];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, FFT_SIZE))
+            .unwrap();
+
+        let peak = plugin.cache.load().peak_magnitude;
+        assert!(peak.abs() < 0.1, "full-scale tone measured {peak:.2} dBFS");
+    }
+
+    #[test]
+    fn silence_cache_peak_remains_negative_floor() {
+        let mut plugin = SpectrumAnalyzerPlugin::with_config(
+            1,
+            SpectrumConfig {
+                num_bins: 100,
+                min_freq: 10.0,
+                max_freq: 20_000.0,
+                smoothing: 0.0,
+            },
+        )
+        .unwrap();
+        plugin.initialize(48_000).unwrap();
+
+        let input = vec![0.0; FFT_SIZE];
+        let mut output = vec![0.0; FFT_SIZE];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, FFT_SIZE))
+            .unwrap();
+
+        assert_eq!(plugin.cache.load().peak_magnitude, -100.0);
+    }
+
+    #[test]
+    fn full_scale_nyquist_tone_reads_zero_dbfs() {
+        let sample_rate = 40_000;
+        let mut plugin = SpectrumAnalyzerPlugin::with_config(
+            1,
+            SpectrumConfig {
+                num_bins: 100,
+                min_freq: 10.0,
+                max_freq: 20_100.0,
+                smoothing: 0.0,
+            },
+        )
+        .unwrap();
+        plugin.initialize(sample_rate).unwrap();
+
+        let input: Vec<f32> = (0..FFT_SIZE)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
+        let mut output = vec![0.0; FFT_SIZE];
+        plugin
+            .process(
+                &input,
+                &mut output,
+                &ProcessContext::new(sample_rate, FFT_SIZE),
+            )
+            .unwrap();
+
+        let peak = plugin.cache.load().peak_magnitude;
+        assert!(
+            peak.abs() < 0.1,
+            "full-scale Nyquist tone measured {peak:.2} dBFS"
+        );
     }
 }

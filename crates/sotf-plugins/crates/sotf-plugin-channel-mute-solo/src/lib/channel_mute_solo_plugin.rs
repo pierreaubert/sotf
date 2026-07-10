@@ -497,10 +497,9 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
         } else {
             let inv_nf = 1.0 / num_frames as f32;
             for frame in 0..num_frames {
-                // Linear interpolation: t goes from 0 at frame 0 to (nf-1)/nf at last frame.
-                // Frame 0 uses the start gain; frame nf-1 approaches (but does not reach) the
-                // end gain — the smoother state has been advanced to end_gain already.
-                let t = frame as f32 * inv_nf;
+                // Each emitted sample represents one smoother advance. The
+                // final sample therefore lands exactly on the stored end state.
+                let t = (frame + 1) as f32 * inv_nf;
                 let offset = frame * channels;
                 let frame_buf = &mut buffer[offset..offset + channels];
                 for (s, (&sg, &eg)) in frame_buf

@@ -844,13 +844,21 @@ impl EqPlugin {
             self.rebuild_cached_parameters();
         } else if name == "tdf2" {
             let enabled = value.as_bool().unwrap_or(false);
-            self.use_tdf2 = enabled;
-            // Update all biquad filters
-            for ch_filters in &mut self.filters {
-                for stages in ch_filters {
-                    for bq in stages {
-                        bq.use_tdf2 = enabled;
+            if enabled != self.use_tdf2 {
+                self.use_tdf2 = enabled;
+                // DF-I and TDF-II store different state variables. Reset on a
+                // runtime topology switch so stale state from the other form
+                // cannot reappear on a later switch.
+                for ch_filters in &mut self.filters {
+                    for stages in ch_filters {
+                        for bq in stages {
+                            bq.reset();
+                            bq.use_tdf2 = enabled;
+                        }
                     }
+                }
+                for transition in &mut self.transitions {
+                    *transition = None;
                 }
             }
             self.rebuild_cached_parameters();
@@ -867,7 +875,27 @@ impl EqPlugin {
             } else {
                 0
             };
+            if new_topo == 1 && self.band_orders.iter().any(|&order| order > 2) {
+                return Err(
+                    "SVF topology only supports second-order bands; switch high-order bands to order 2 first"
+                        .to_string(),
+                );
+            }
             if new_topo != self.topology {
+                // Biquad and SVF realizations keep unrelated delay state. A
+                // topology change is a realization boundary, so neither the
+                // dormant realization nor an in-flight coefficient
+                // transition may resume with stale samples later.
+                for ch_filters in &mut self.filters {
+                    for stages in ch_filters {
+                        for biquad in stages {
+                            biquad.reset();
+                        }
+                    }
+                }
+                for transition in &mut self.transitions {
+                    *transition = None;
+                }
                 self.topology = new_topo;
                 if new_topo == 1 {
                     self.rebuild_svf_filters();
@@ -890,6 +918,9 @@ impl EqPlugin {
                         return Err(format!(
                             "Filter order must be even (2, 4, 6, 8); got {new_order}"
                         ));
+                    }
+                    if self.topology == 1 && new_order > 2 {
+                        return Err("SVF topology only supports second-order bands".to_string());
                     }
                     if let Some(stages) = self.filters[0].get(b_idx)
                         && let Some(primary) = stages.first()

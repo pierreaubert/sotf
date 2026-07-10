@@ -83,18 +83,16 @@ fn convolution_parameter_roundtrip() {
     plugin
         .set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(-6.0))
         .unwrap();
-    plugin
-        .set_parameter(ParameterId::from("use_nupc"), ParameterValue::Bool(false))
-        .unwrap();
-    plugin
-        .set_parameter(
-            ParameterId::from("zero_latency_head"),
-            ParameterValue::Bool(true),
-        )
-        .unwrap();
-    plugin
-        .set_parameter(ParameterId::from("head_taps"), ParameterValue::Int(64))
-        .unwrap();
+    for (id, value) in [
+        ("use_nupc", ParameterValue::Bool(true)),
+        ("zero_latency_head", ParameterValue::Bool(true)),
+        ("head_taps", ParameterValue::Int(64)),
+    ] {
+        let error = plugin
+            .set_parameter(ParameterId::from(id), value)
+            .unwrap_err();
+        assert!(error.contains("structural"), "unexpected error: {error}");
+    }
 
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("mix")),
@@ -110,11 +108,11 @@ fn convolution_parameter_roundtrip() {
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("zero_latency_head")),
-        Some(ParameterValue::Bool(true))
+        Some(ParameterValue::Bool(false))
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("head_taps")),
-        Some(ParameterValue::Int(64))
+        Some(ParameterValue::Int(128))
     );
 }
 

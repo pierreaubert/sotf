@@ -111,6 +111,10 @@ pub struct ConvolutionPlugin {
     pub(super) use_nupc: bool,
     pub(super) zero_latency_head: bool,
     pub(super) head_taps: usize,
+    /// Per-channel dry delay used to align partial NUPC mixes when no
+    /// zero-latency time-domain head is active.
+    pub(super) nupc_dry_delay: Vec<Vec<f32>>,
+    pub(super) nupc_dry_delay_pos: usize,
     /// Pre-allocated accumulator buffers for rayon fold/reduce (one per rayon thread).
     /// Avoids heap allocation in the audio processing hot path.
     pub(super) rayon_accum_pool: Vec<Vec<Complex<f32>>>,
@@ -145,6 +149,8 @@ impl ConvolutionPlugin {
             use_nupc: false,
             zero_latency_head: false,
             head_taps: 128,
+            nupc_dry_delay: vec![vec![0.0; PARTITION_SIZE]; channels],
+            nupc_dry_delay_pos: 0,
             rayon_accum_pool: Vec::new(),
             ir_load_result_rx: None,
         };
@@ -319,6 +325,10 @@ impl ConvolutionPlugin {
         self.fft_scratch = result.fft_scratch;
         self.rayon_accum_pool = result.rayon_accum_pool;
         self.ir_file = result.ir_file;
+        for buffer in &mut self.nupc_dry_delay {
+            buffer.fill(0.0);
+        }
+        self.nupc_dry_delay_pos = 0;
     }
 
     pub fn load_ir(&mut self, path: &str) -> Result<(), String> {
@@ -617,6 +627,11 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
                         })
                         .map_err(|e| format!("Failed to enqueue IR load: {e}"))?;
                 }
+            } else if matches!(id.as_str(), "use_nupc" | "zero_latency_head" | "head_taps") {
+                return Err(format!(
+                    "{} is a structural convolution parameter; rebuild the plugin host to change it",
+                    id.as_str()
+                ));
             } else {
                 param_bridge::set_parameter(CV, &id, &value, |i, v| {
                     self.set_param_value(i, v);
@@ -678,11 +693,32 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
         for engine in &mut self.nupc_engines {
             engine.reset();
         }
+        for buffer in &mut self.nupc_dry_delay {
+            buffer.fill(0.0);
+        }
+        self.nupc_dry_delay_pos = 0;
         // Reset parameter smoothers to their instantaneous values so the
         // next playback starts without interpolating from a stale position.
         self.mix.reset(self.mix_value);
         self.gain_linear
             .reset(10.0f32.powf(self.gain_db_value / 20.0));
+    }
+
+    fn latency_samples(&self) -> usize {
+        if self.use_nupc {
+            if self.zero_latency_head && self.head_taps > 0 {
+                return 0;
+            }
+            self.nupc_engines.first().map_or(PARTITION_SIZE, |engine| {
+                if engine.head_taps() > 0 {
+                    0
+                } else {
+                    engine.latency_samples()
+                }
+            })
+        } else {
+            PARTITION_SIZE
+        }
     }
 
     fn process_in_place(
@@ -725,6 +761,12 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
         // Issue #3 fix (NUPC): advance smoothers one sample at a time so that
         // mix/gain transitions are sample-accurate rather than block-quantized.
         if !self.nupc_engines.is_empty() && self.nupc_engines.len() == self.channels {
+            let wet_latency = if self.nupc_engines[0].head_taps() > 0 {
+                0
+            } else {
+                self.nupc_engines[0].latency_samples()
+            };
+            debug_assert!(wet_latency <= PARTITION_SIZE);
             for frame in 0..nf {
                 // Advance smoothers by one sample to get the value for this frame.
                 let mix = self.mix.advance();
@@ -733,7 +775,20 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
                 for ch in 0..self.channels {
                     let dry = buffer[off + ch];
                     let wet = self.nupc_engines[ch].process_sample(dry);
-                    buffer[off + ch] = dry * (1.0 - mix) + wet * mix * gain;
+                    let aligned_dry = if wet_latency == 0 {
+                        dry
+                    } else {
+                        let delayed = self.nupc_dry_delay[ch][self.nupc_dry_delay_pos];
+                        self.nupc_dry_delay[ch][self.nupc_dry_delay_pos] = dry;
+                        delayed
+                    };
+                    buffer[off + ch] = aligned_dry * (1.0 - mix) + wet * mix * gain;
+                }
+                if wet_latency > 0 {
+                    self.nupc_dry_delay_pos += 1;
+                    if self.nupc_dry_delay_pos == wet_latency {
+                        self.nupc_dry_delay_pos = 0;
+                    }
                 }
             }
             return Ok(nf);

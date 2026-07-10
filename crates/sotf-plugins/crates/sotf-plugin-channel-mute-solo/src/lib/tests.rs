@@ -423,6 +423,25 @@ fn test_block_smoothing_converges_to_target() {
     );
 }
 
+#[test]
+fn block_ramp_last_sample_matches_advanced_smoother_state() {
+    let mut plugin = ChannelMuteSoloPlugin::new(1, true);
+    plugin.set_fade_ms(50.0);
+    plugin.set_channel_state(0, true, false, false).unwrap();
+
+    let mut buffer = vec![1.0f32; 8];
+    plugin
+        .process_in_place(&mut buffer, &ProcessContext::new(48_000, 8))
+        .unwrap();
+
+    let smoother_end = plugin.channel_smoothers[0].current();
+    assert!(
+        (buffer[7] - smoother_end).abs() < 1.0e-7,
+        "last ramp sample {} must equal the advanced smoother state {smoother_end}",
+        buffer[7]
+    );
+}
+
 /// Bug fix: set_channel_state must return an error for out-of-bounds channel.
 #[test]
 fn test_set_channel_state_oob_returns_error() {

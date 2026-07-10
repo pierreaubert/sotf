@@ -222,6 +222,113 @@ fn test_dc_gain_not_hardcoded() {
 }
 
 #[test]
+fn auto_gain_does_not_explode_highpass_design() {
+    let params = FirDesignerPluginParams {
+        num_filters: 1,
+        fir_length_index: 0,
+        phase_mode_index: 0,
+        auto_gain: true,
+        mix: 1.0,
+        filters: vec![BandConfig {
+            filter_type: "Highpass".to_string(),
+            frequency: 1_000.0,
+            q: 0.707,
+            gain_db: 0.0,
+            active: true,
+        }],
+    };
+
+    let plugin = FirDesignerPlugin::from_params(1, 48_000, params).unwrap();
+    let peak = plugin
+        .fir_coeffs
+        .iter()
+        .copied()
+        .map(f32::abs)
+        .fold(0.0f32, f32::max);
+    let nyquist_gain = plugin
+        .fir_coeffs
+        .iter()
+        .enumerate()
+        .map(|(index, coefficient)| {
+            if index % 2 == 0 {
+                *coefficient
+            } else {
+                -*coefficient
+            }
+        })
+        .sum::<f32>()
+        .abs();
+    assert!(
+        peak < 2.0,
+        "auto-gain produced an unsafe coefficient peak {peak}"
+    );
+    assert!(
+        (nyquist_gain - 1.0).abs() < 1e-3,
+        "auto-gain should preserve unity high-pass Nyquist gain, got {nyquist_gain}"
+    );
+}
+
+#[test]
+fn auto_gain_normalizes_lowshelf_dc_to_unity() {
+    let params = FirDesignerPluginParams {
+        num_filters: 1,
+        fir_length_index: 0,
+        phase_mode_index: 0,
+        auto_gain: true,
+        mix: 1.0,
+        filters: vec![BandConfig {
+            filter_type: "Lowshelf".to_string(),
+            frequency: 200.0,
+            q: 0.707,
+            gain_db: -12.0,
+            active: true,
+        }],
+    };
+
+    let plugin = FirDesignerPlugin::from_params(1, 48_000, params).unwrap();
+    let dc_gain: f32 = plugin.fir_coeffs.iter().sum();
+    assert!(
+        (dc_gain - 1.0).abs() < 1e-3,
+        "auto-gain should normalize a shelf's DC response to unity, got {dc_gain}"
+    );
+}
+
+#[test]
+fn auto_gain_keeps_narrow_lowpass_unity_and_bounded() {
+    let params = FirDesignerPluginParams {
+        num_filters: 1,
+        fir_length_index: 0,
+        phase_mode_index: 0,
+        auto_gain: true,
+        mix: 1.0,
+        filters: vec![BandConfig {
+            filter_type: "Lowpass".to_string(),
+            frequency: 200.0,
+            q: 0.707,
+            gain_db: 0.0,
+            active: true,
+        }],
+    };
+
+    let plugin = FirDesignerPlugin::from_params(1, 48_000, params).unwrap();
+    let dc_gain: f32 = plugin.fir_coeffs.iter().sum();
+    let coefficient_peak = plugin
+        .fir_coeffs
+        .iter()
+        .copied()
+        .map(f32::abs)
+        .fold(0.0f32, f32::max);
+    assert!(
+        (dc_gain - 1.0).abs() < 1e-3,
+        "auto-gain should preserve unity low-pass DC gain, got {dc_gain}"
+    );
+    assert!(
+        coefficient_peak < 1.0,
+        "auto-gain produced an unsafe low-pass coefficient peak {coefficient_peak}"
+    );
+}
+
+#[test]
 fn test_parse_filter_type_cases() {
     assert_eq!(parse_filter_type("Peak").unwrap(), BiquadFilterType::Peak);
     assert_eq!(parse_filter_type("peak").unwrap(), BiquadFilterType::Peak);

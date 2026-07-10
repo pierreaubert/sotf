@@ -1079,6 +1079,103 @@ fn test_set_parameter_tdf2_roundtrip() {
 }
 
 #[test]
+fn changing_direct_form_resets_incompatible_filter_state() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Lowpass,
+            1_000.0,
+            48_000.0,
+            0.707,
+            0.0,
+        )],
+    );
+    p.plugin_initialize(48_000).unwrap();
+
+    let ctx = ProcessContext::new(48_000, 32);
+    let mut impulse = vec![0.0f32; 32];
+    impulse[0] = 1.0;
+    _process_in_place(&mut p, &mut impulse, &ctx);
+
+    p.parametric_set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(true))
+        .unwrap();
+    let mut tdf2_impulse = vec![0.0f32; 32];
+    tdf2_impulse[0] = 1.0;
+    _process_in_place(&mut p, &mut tdf2_impulse, &ctx);
+
+    p.parametric_set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(false))
+        .unwrap();
+    let mut silence = vec![0.0f32; 32];
+    _process_in_place(&mut p, &mut silence, &ctx);
+    assert!(
+        silence.iter().all(|sample| sample.abs() < 1.0e-9),
+        "switching forms must not revive stale state: {silence:?}"
+    );
+}
+
+#[test]
+fn changing_filter_topology_resets_dormant_biquad_state() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Lowpass,
+            1_000.0,
+            48_000.0,
+            0.707,
+            0.0,
+        )],
+    );
+    p.plugin_initialize(48_000).unwrap();
+
+    let ctx = ProcessContext::new(48_000, 16);
+    let mut impulse = vec![0.0f32; 16];
+    impulse[0] = 1.0;
+    _process_in_place(&mut p, &mut impulse, &ctx);
+
+    p.parametric_set_parameter(ParameterId::from("topology"), ParameterValue::Int(1))
+        .unwrap();
+    let mut svf_impulse = vec![0.0f32; 16];
+    svf_impulse[0] = 1.0;
+    _process_in_place(&mut p, &mut svf_impulse, &ctx);
+
+    p.parametric_set_parameter(ParameterId::from("topology"), ParameterValue::Int(0))
+        .unwrap();
+    let mut silence = vec![0.0f32; 16];
+    _process_in_place(&mut p, &mut silence, &ctx);
+    assert!(
+        silence.iter().all(|sample| sample.abs() < 1.0e-9),
+        "switching topologies must not revive stale state: {silence:?}"
+    );
+}
+
+#[test]
+fn svf_topology_rejects_high_order_bands() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Lowpass,
+            1_000.0,
+            48_000.0,
+            0.707,
+            0.0,
+        )],
+    );
+    p.plugin_initialize(48_000).unwrap();
+    p.parametric_set_parameter(ParameterId::from("band_0_order"), ParameterValue::Int(4))
+        .unwrap();
+
+    let result = p.parametric_set_parameter(
+        ParameterId::from("topology"),
+        ParameterValue::String("SVF".to_string()),
+    );
+    assert!(
+        result.is_err(),
+        "SVF must reject orders it cannot represent"
+    );
+    assert_eq!(p.topology, 0);
+}
+
+#[test]
 fn test_set_parameter_topology_svf_roundtrip() {
     let mut p = EqPlugin::new(
         1,

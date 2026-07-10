@@ -9,7 +9,9 @@ use super::isolated::isolated_external_plugin_sandbox_backend;
 use super::isolated::isolated_external_plugin_status;
 use super::misc::create_plugin;
 use super::misc::send_or_interrupt;
-use super::processing_state::{ProcessingState, update_plugin_data_cache};
+use super::processing_state::{
+    ProcessingState, handle_processing_command, update_plugin_data_cache,
+};
 use crate::plugins::{PluginSettings, PluginType};
 use arc_swap::ArcSwap;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -190,13 +192,79 @@ fn crossfade_zero_frame_block_completes_instead_of_leaking_prev_host() {
 }
 
 #[test]
-fn crossfade_fades_in_unblended_new_host_tail() {
-    let mut output = vec![1.0; 8];
+fn latency_changing_host_update_fades_through_silence_without_a_jump() {
+    let sample_rate = 48_000;
+    for reverse_rate_change in [false, true] {
+        let gain = PluginConfig::new("gain", serde_json::json!({ "gain_db": 0.0 }));
+        let resampler = PluginConfig::new(
+            "resampler",
+            serde_json::json!({
+                "input_sample_rate": sample_rate,
+                "output_sample_rate": 96_000,
+                "chunk_size": 64
+            }),
+        );
+        let (mut gain_host, gain_warnings) = build_plugin_host(&[gain], sample_rate, 1).unwrap();
+        let (mut resampler_host, resampler_warnings) =
+            build_plugin_host(&[resampler], sample_rate, 1).unwrap();
+        assert!(gain_warnings.is_empty());
+        assert!(resampler_warnings.is_empty());
+        gain_host.build().unwrap();
+        resampler_host.build().unwrap();
+        let (mut old_host, new_host) = if reverse_rate_change {
+            (resampler_host, gain_host)
+        } else {
+            (gain_host, resampler_host)
+        };
+        assert_ne!(
+            old_host.total_latency_samples(),
+            new_host.total_latency_samples()
+        );
+        for _ in 0..10 {
+            let input = vec![1.0f32; 64];
+            let old_output_frames = old_host.output_frames_for_input(64);
+            let mut old_output = vec![0.0f32; old_output_frames];
+            old_host.process(&input, &mut old_output).unwrap();
+        }
 
-    ProcessingState::fade_in_unblended_tail(&mut output, 4, 8, 0.25);
+        let mut state = ProcessingState::new(
+            1,
+            sample_rate,
+            #[cfg(feature = "streaming")]
+            None,
+        );
+        state.host = old_host;
+        let (response_tx, _response_rx) = std::sync::mpsc::channel();
+        let (event_tx, _event_rx) = std::sync::mpsc::channel();
 
-    assert_eq!(&output[..4], &[1.0; 4]);
-    assert_eq!(&output[4..], &[0.25; 4]);
+        assert!(!handle_processing_command(
+            ProcessingCommand::UpdateHost(Box::new(new_host)),
+            &mut state,
+            &response_tx,
+            &event_tx,
+        ));
+        assert!(
+            state.prev_host.is_some(),
+            "latency-changing update should retain the old host for a safe transition"
+        );
+
+        let mut rendered = Vec::new();
+        for _ in 0..50 {
+            let input = vec![1.0f32; 64];
+            let output_frames = state.output_frames_for_input(64);
+            let mut output = vec![0.0f32; output_frames];
+            let actual = state.process_frame(&input, &mut output, 64).unwrap();
+            rendered.extend_from_slice(&output[..actual]);
+        }
+        let max_jump = rendered
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_jump < 0.05,
+            "rate-change direction reverse={reverse_rate_change} introduced an adjacent-sample jump of {max_jump}"
+        );
+    }
 }
 
 #[test]

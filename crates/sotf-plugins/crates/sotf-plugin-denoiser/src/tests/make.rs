@@ -58,6 +58,13 @@ fn test_different_sample_rates() {
         let context = ProcessContext::new(sr, num_frames);
 
         plugin.process_in_place(&mut input, &context).unwrap();
+        assert!(
+            input.iter().all(|sample| *sample == 0.0),
+            "the first FFT-sized block is the reported startup latency"
+        );
+
+        let mut input = make_test_signal(num_frames, 2, freq);
+        plugin.process_in_place(&mut input, &context).unwrap();
 
         let sum: f32 = input.iter().map(|x| x.abs()).sum();
         assert!(sum > 0.0, "Sample rate {} should produce output", sr);

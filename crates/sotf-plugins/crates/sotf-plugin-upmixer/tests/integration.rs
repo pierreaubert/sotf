@@ -16,6 +16,60 @@ fn upmixer_plugin_info_and_channels() {
 }
 
 #[test]
+fn upmixer_reports_causal_overlap_latency() {
+    let params = UpmixerPluginParams::default();
+    let fft_size = params.core.fft_size;
+    let plugin = UpmixerPlugin::from_params(params);
+    assert_eq!(plugin.latency_samples(), fft_size);
+}
+
+#[test]
+fn upmixer_streamed_impulse_matches_reported_latency() {
+    for block_size in [128usize, 512, 1024, 2048] {
+        let params = UpmixerPluginParams::default();
+        let fft_size = params.core.fft_size;
+        let mut plugin = UpmixerPlugin::from_params(params);
+        plugin.initialize(48_000).unwrap();
+
+        let impulse_index = fft_size / 2;
+        let total_frames = fft_size * 4;
+        let mut input = vec![0.0f32; total_frames * 2];
+        input[impulse_index * 2] = 1.0;
+        input[impulse_index * 2 + 1] = 1.0;
+        let out_channels = plugin.output_channels();
+        let mut output = Vec::with_capacity(total_frames * out_channels);
+        for chunk in input.chunks(block_size * 2) {
+            let frames = chunk.len() / 2;
+            let mut block_output = vec![0.0f32; frames * out_channels];
+            plugin
+                .process(
+                    chunk,
+                    &mut block_output,
+                    &ProcessContext::new(48_000, frames),
+                )
+                .unwrap();
+            output.extend_from_slice(&block_output);
+        }
+
+        let peak_frame = output
+            .chunks_exact(out_channels)
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                let a_peak = a.iter().copied().map(f32::abs).fold(0.0f32, f32::max);
+                let b_peak = b.iter().copied().map(f32::abs).fold(0.0f32, f32::max);
+                a_peak.total_cmp(&b_peak)
+            })
+            .map(|(frame, _)| frame)
+            .unwrap();
+        assert_eq!(
+            peak_frame.saturating_sub(impulse_index),
+            plugin.latency_samples(),
+            "block size {block_size} changed upmixer latency"
+        );
+    }
+}
+
+#[test]
 fn upmixer_instantiate_from_params_custom_config() {
     let mut params = UpmixerPluginParams::default();
     params.core.speaker_config = "7.1".to_string();

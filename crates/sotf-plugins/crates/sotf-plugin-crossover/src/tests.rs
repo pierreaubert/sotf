@@ -54,6 +54,31 @@ fn test_linear_phase_crossover_reconstructs_delayed_input() {
 }
 
 #[test]
+fn test_multiband_linear_phase_crossover_reconstructs_delayed_input() {
+    let mut p = CrossoverPlugin::new_multiway(1, "LinearPhase", 500.0, "both", &[5_000.0]).unwrap();
+    p.set_parameter(ParameterId::from("fir_taps"), ParameterValue::Int(127))
+        .unwrap();
+    p.initialize(48_000).unwrap();
+
+    let latency = p.latency_samples();
+    let frames = 768;
+    let input: Vec<f32> = (0..frames).map(|i| (i as f32 * 0.1).sin()).collect();
+    let mut output = vec![0.0; frames * 3];
+    p.process(&input, &mut output, &ProcessContext::new(48_000, frames))
+        .unwrap();
+
+    let mut max_error = 0.0f32;
+    for i in (latency + 16)..frames {
+        let reconstructed = output[i * 3] + output[i * 3 + 1] + output[i * 3 + 2];
+        max_error = max_error.max((reconstructed - input[i - latency]).abs());
+    }
+    assert!(
+        max_error < 0.02,
+        "multiway linear-phase bands should reconstruct delayed input, max_error={max_error}"
+    );
+}
+
+#[test]
 fn test_crossover_stereo() {
     let mut p = CrossoverPlugin::new(2, "LR24", 500.0, "low").unwrap();
     p.initialize(48000).unwrap();
@@ -379,6 +404,14 @@ fn test_all_frequencies_remain_sorted_after_primary_update() {
         "all_frequencies must remain sorted after primary frequency change; got {:?}",
         freqs
     );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("frequency")),
+        Some(ParameterValue::Float(5_000.0))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("frequency_2")),
+        Some(ParameterValue::Float(10_000.0))
+    );
 
     // Plugin must still produce finite output.
     let num_frames = 1000;
@@ -414,6 +447,27 @@ fn test_all_frequencies_remain_sorted_after_extra_freq_update() {
         "all_frequencies must remain sorted after frequency_2 change; got {:?}",
         freqs
     );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("frequency")),
+        Some(ParameterValue::Float(200.0))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("frequency_2")),
+        Some(ParameterValue::Float(500.0))
+    );
+}
+
+#[test]
+fn ordinary_frequency_update_preserves_smoothing() {
+    let mut p = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[5_000.0]).unwrap();
+    p.initialize(48_000).unwrap();
+    let before = p.freq_smoother.current();
+
+    p.set_parameter(ParameterId::from("frequency"), ParameterValue::Float(750.0))
+        .unwrap();
+
+    assert_eq!(p.freq_smoother.current(), before);
+    assert_eq!(p.freq_smoother.target(), 750.0);
 }
 
 /// §2.2: "frequency_1" must NOT be parsed as a valid extra-freq parameter.

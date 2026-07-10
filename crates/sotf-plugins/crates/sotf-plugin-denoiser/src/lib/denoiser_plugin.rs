@@ -143,6 +143,7 @@ pub(super) struct DenoiserIo {
     pub output_read_pos: usize,     // read position in ring
     pub output_write_pos: usize,    // next overlap-add write position
     pub output_accumulator_fill: usize, // frames available for reading
+    pub startup_padding_remaining: usize,
     pub time_out_channels: Vec<Vec<f32>>,
 }
 
@@ -372,6 +373,7 @@ impl DenoiserPlugin {
                 output_read_pos: 0,
                 output_write_pos: 0,
                 output_accumulator_fill: 0,
+                startup_padding_remaining: fft_size,
                 time_out_channels,
             },
 
@@ -905,6 +907,7 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
         self.io.output_read_pos = 0;
         self.io.output_write_pos = 0;
         self.io.output_accumulator_fill = 0;
+        self.io.startup_padding_remaining = self.config.fft_size;
 
         // Reset formant preserver working buffers
         self.auxiliary.formant_preserver.log_mag_scratch.fill(0.0);
@@ -1012,9 +1015,11 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
         }
 
         // Phase 3: Drain output to buffer
-        let mut output_pos: usize = 0;
-        if self.io.output_accumulator_fill > 0 {
-            output_pos = self.drain_output(buffer, 0, num_frames);
+        let mut output_pos = self.io.startup_padding_remaining.min(num_frames);
+        self.io.startup_padding_remaining -= output_pos;
+        buffer[..output_pos * self.config.channels].fill(0.0);
+        if output_pos < num_frames && self.io.output_accumulator_fill > 0 {
+            output_pos += self.drain_output(buffer, output_pos, num_frames - output_pos);
         }
 
         // Zero-fill any remaining output (initial latency period)

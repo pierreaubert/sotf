@@ -296,16 +296,33 @@ impl FirDesignerPlugin {
             *dst = *src as f32;
         }
 
-        // Auto-gain: normalize FIR so that passband gain is unity
+        // Auto-gain normally restores unity gain at DC. DC-null filters (such
+        // as a high-pass) use Nyquist when it is a meaningful passband
+        // reference. If both endpoints are null, retain the designed scale
+        // instead of amplifying numerical residue.
         if self.auto_gain {
-            let sum: f32 = self.fir_coeffs.iter().sum();
-            if sum.abs() > 1e-10 {
-                let inv = 1.0 / sum;
-                // Apply correction relative to unity
-                // The FIR's DC gain is its sum. We want to keep the EQ shape
-                // but remove any overall level shift.
-                // Actually for auto-gain: we just want to undo the DC offset
-                // Compute current DC gain and apply inverse
+            let dc = self.fir_coeffs.iter().sum::<f32>();
+            let nyquist = self
+                .fir_coeffs
+                .iter()
+                .enumerate()
+                .map(|(index, &coefficient)| {
+                    if index % 2 == 0 {
+                        coefficient
+                    } else {
+                        -coefficient
+                    }
+                })
+                .sum::<f32>();
+            let reference = if dc.is_finite() && dc.abs() > 1e-4 {
+                Some(dc)
+            } else if nyquist.is_finite() && nyquist.abs() > 1e-4 {
+                Some(nyquist)
+            } else {
+                None
+            };
+            if let Some(reference) = reference {
+                let inv = 1.0 / reference;
                 for c in &mut self.fir_coeffs {
                     *c *= inv;
                 }

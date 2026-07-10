@@ -5,6 +5,7 @@ use super::misc::MAX_LOOKAHEAD_MS;
 use super::misc::parse_detection_mode;
 use super::multiband_expander_data::MultibandExpanderData;
 use super::spectral_bin_state::SpectralBinState;
+use super::spectral_state::SpectralBandInfo;
 use super::spectral_state::SpectralState;
 use super::types::GateState;
 use super::types::MultibandExpanderPluginParams;
@@ -564,43 +565,27 @@ impl MultibandExpanderPlugin {
         let window_sum: f32 = ss.analysis_window.iter().sum();
         let channels = self.channels;
 
-        // Cache band parameters into a compact form to avoid repeated borrow conflicts.
-        // Hold time is converted from milliseconds to hop counts at the hop rate.
-        // Uses a Vec sized to num_bands (not a fixed-size array) so num_bands > 5 is safe.
-        #[derive(Clone, Copy)]
-        struct BandInfo {
-            th: f32,
-            rat: f32,
-            kn: f32,
-            rg: f32,
-            hys: f32,
-            /// Hold duration measured in STFT hops (not samples)
-            hs: usize,
-            bypass: bool,
-            active: bool,
-            solo: bool,
-        }
+        // Snapshot band parameters in pre-allocated STFT state to avoid
+        // borrowing conflicts without allocating on every audio hop.
         let hop_rate = self.sample_rate as f32 / ss.hop_size as f32;
-        let band_info: Vec<BandInfo> = (0..self.num_bands)
-            .map(|b| {
-                let bp = self.band_params.get(b);
-                let hold_ms = bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms);
-                BandInfo {
-                    th: bp.and_then(|p| p.threshold_db).unwrap_or(self.threshold_db),
-                    rat: bp.and_then(|p| p.ratio).unwrap_or(self.ratio),
-                    kn: bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db),
-                    rg: bp.and_then(|p| p.range_db).unwrap_or(self.range_db),
-                    hys: bp
-                        .and_then(|p| p.hysteresis_db)
-                        .unwrap_or(self.hysteresis_db),
-                    // Use .round() to avoid truncating short-but-nonzero hold times to 0.
-                    hs: (hold_ms * 0.001 * hop_rate).round() as usize,
-                    bypass: bp.map(|p| p.bypass).unwrap_or(false),
-                    active: bp.map(|p| p.active).unwrap_or(true),
-                    solo: bp.map(|p| p.solo).unwrap_or(false),
-                }
-            })
-            .collect();
+        debug_assert!(ss.band_info.len() >= self.num_bands);
+        for b in 0..self.num_bands {
+            let bp = self.band_params.get(b);
+            let hold_ms = bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms);
+            ss.band_info[b] = SpectralBandInfo {
+                threshold_db: bp.and_then(|p| p.threshold_db).unwrap_or(self.threshold_db),
+                ratio: bp.and_then(|p| p.ratio).unwrap_or(self.ratio),
+                knee_db: bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db),
+                range_db: bp.and_then(|p| p.range_db).unwrap_or(self.range_db),
+                hysteresis_db: bp
+                    .and_then(|p| p.hysteresis_db)
+                    .unwrap_or(self.hysteresis_db),
+                hold_hops: (hold_ms * 0.001 * hop_rate).round() as usize,
+                bypass: bp.map(|p| p.bypass).unwrap_or(false),
+                active: bp.map(|p| p.active).unwrap_or(true),
+                solo: bp.map(|p| p.solo).unwrap_or(false),
+            };
+        }
 
         for ch in 0..channels {
             // --- Forward FFT ---
@@ -619,7 +604,7 @@ impl MultibandExpanderPlugin {
             // --- Per-bin expansion ---
             for k in 0..num_bins {
                 let b = ss.bin_to_band[k];
-                let info = &band_info[b];
+                let info = &ss.band_info[b];
 
                 // Muted bands (solo active, this band not solo)
                 if any_solo && !info.solo {
@@ -645,14 +630,14 @@ impl MultibandExpanderPlugin {
 
                 // Update gate state and envelope (at hop rate)
                 let state = &mut ss.bin_states[ch][k];
-                let th = info.th;
-                let hys = info.hys;
+                let th = info.threshold_db;
+                let hys = info.hysteresis_db;
 
                 let target_atten = match state.gate_state {
                     GateState::Open => {
                         if mag_db < th {
                             state.gate_state = GateState::Hold;
-                            state.hold_counter = info.hs;
+                            state.hold_counter = info.hold_hops;
                             0.0
                         } else {
                             0.0
@@ -668,7 +653,11 @@ impl MultibandExpanderPlugin {
                         } else if mag_db < th - hys {
                             state.gate_state = GateState::Closing;
                             Self::calculate_expansion_attenuation(
-                                mag_db, th, info.rat, info.kn, info.rg,
+                                mag_db,
+                                th,
+                                info.ratio,
+                                info.knee_db,
+                                info.range_db,
                             )
                         } else {
                             0.0
@@ -680,7 +669,11 @@ impl MultibandExpanderPlugin {
                             0.0
                         } else {
                             Self::calculate_expansion_attenuation(
-                                mag_db, th, info.rat, info.kn, info.rg,
+                                mag_db,
+                                th,
+                                info.ratio,
+                                info.knee_db,
+                                info.range_db,
                             )
                         }
                     }
@@ -813,6 +806,11 @@ impl MultibandExpanderPlugin {
             // --- Step 3: Drain available OLA frames into output ---
             {
                 let ss = self.spectral.as_mut().unwrap();
+                if ss.startup_padding_remaining > 0 && output_pos < nf {
+                    let frames_to_pad = ss.startup_padding_remaining.min(nf - output_pos);
+                    ss.startup_padding_remaining -= frames_to_pad;
+                    output_pos += frames_to_pad;
+                }
                 let frames_to_drain = ss.output_accumulator_fill.min(nf - output_pos);
                 if frames_to_drain > 0 {
                     let mask = ss.output_accumulator_mask;
@@ -834,7 +832,7 @@ impl MultibandExpanderPlugin {
                     ss.output_read_position = (ss.output_read_position + frames_to_drain) & mask;
                     ss.output_accumulator_fill -= frames_to_drain;
                     output_pos += frames_to_drain;
-                } else {
+                } else if input_pos >= nf {
                     // No output ready: output silence for this iteration and break
                     // This happens only during initial latency fill
                     output_pos = nf;
@@ -843,7 +841,7 @@ impl MultibandExpanderPlugin {
         }
 
         // Apply wet/dry mix with latency-compensated dry signal.
-        // The STFT introduces (fft_size - hop_size) samples of algorithmic latency.
+        // The causal STFT schedule introduces fft_size samples of latency.
         // We delay the dry path by the same amount so dry and wet stay time-aligned,
         // preventing comb-filter notches when mix < 1.0.
         {
@@ -963,6 +961,7 @@ impl MultibandExpanderPlugin {
                     // Rebuild spectral bin->band mapping
                     if let Some(ss) = &mut self.spectral {
                         ss.update_bin_to_band(self.sample_rate, &self.crossover_frequencies, nb);
+                        ss.band_info.resize(nb, SpectralBandInfo::default());
                         ss.update_band_coefficients(
                             nb,
                             &self.band_params,
@@ -1390,9 +1389,7 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
 
     fn latency_samples(&self) -> usize {
         if let Some(ss) = &self.spectral {
-            // Algorithmic latency is fft_size - hop_size (not fft_size).
-            // Reporting fft_size would cause the host to over-compensate by hop_size samples.
-            ss.fft_size - ss.hop_size
+            ss.fft_size
         } else if self.lookahead_ms > 0.0 {
             (self.lookahead_ms * 0.001 * self.sample_rate as f32).round() as usize
         } else {

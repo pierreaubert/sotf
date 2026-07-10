@@ -4,6 +4,20 @@ use super::types::GateState;
 use math_audio_dsp::stft::{RealFftProcessor, generate_hann_window};
 use rustfft::num_complex::Complex;
 
+#[derive(Clone, Copy, Default)]
+pub(super) struct SpectralBandInfo {
+    pub(super) threshold_db: f32,
+    pub(super) ratio: f32,
+    pub(super) knee_db: f32,
+    pub(super) range_db: f32,
+    pub(super) hysteresis_db: f32,
+    /// Hold duration measured in STFT hops.
+    pub(super) hold_hops: usize,
+    pub(super) bypass: bool,
+    pub(super) active: bool,
+    pub(super) solo: bool,
+}
+
 /// All STFT buffers needed for spectral mode processing.
 ///
 /// Pre-allocated in `initialize()` to avoid hot-path allocation.
@@ -38,6 +52,8 @@ pub(super) struct SpectralState {
     /// Per-band: attack/release coefficients (hop-rate, not sample-rate)
     pub(super) band_attack_hop: Vec<f32>,
     pub(super) band_release_hop: Vec<f32>,
+    /// Hot-path snapshot of band parameters, allocated with the STFT state.
+    pub(super) band_info: Vec<SpectralBandInfo>,
 
     // --- OLA output accumulator ---
     /// Flat interleaved ring buffer: [ch0_f0, ch1_f0, ch0_f1, ...]
@@ -52,10 +68,12 @@ pub(super) struct SpectralState {
     pub(super) next_add_position: usize,
     /// Next frame read position (ring)
     pub(super) output_read_position: usize,
+    /// Explicit leading silence makes stream latency independent of host block size.
+    pub(super) startup_padding_remaining: usize,
 
     // --- Dry-path latency compensation ---
     /// Interleaved circular delay buffer for the dry signal.
-    /// Delays dry by (fft_size - hop_size) frames so dry and wet are time-aligned
+    /// Delays dry by fft_size frames so dry and wet are time-aligned
     /// before the wet/dry mix, preventing comb-filter notches.
     /// Size: (fft_size - hop_size) * channels floats; cursor wraps at that size.
     pub(super) dry_delay_buf: Vec<f32>,
@@ -81,9 +99,9 @@ impl SpectralState {
         crossover_frequencies: &[f32],
         num_bands: usize,
     ) -> Self {
-        // Use 50% overlap: Hann window is COLA-compliant at 50% overlap (sum of
-        // shifted squared Hann windows = 1/2 everywhere), avoiding amplitude modulation.
-        let hop_size = fft_size / 2; // 50% overlap — COLA-compliant with Hann
+        // Dual Hann analysis/synthesis windows require 75% overlap. At this
+        // hop the sum of shifted Hann² windows is the constant 1.5.
+        let hop_size = fft_size / 4;
         let num_bins = fft_size / 2 + 1;
 
         // Build per-channel FFT processors
@@ -95,13 +113,9 @@ impl SpectralState {
 
         let analysis_window = generate_hann_window(fft_size);
 
-        // COLA normalization for 50% overlap + Hann window.
-        // Window sum (DC gain) = fft_size / 2.  Two-sided: analysis * synthesis = (N/2)^2.
-        // With hop = N/2 hops, exactly 2 windows overlap everywhere, so OLA sum = N/2.
-        // After IFFT the IFFT normalizes by 1/fft_size; the remaining factor is 1/(N/2).
-        // Combined scale = 1 / (window_sum) where window_sum = fft_size / 2.
-        let window_sum: f32 = analysis_window.iter().sum(); // = fft_size / 2 for Hann
-        let output_scale = 1.0 / window_sum;
+        // RealFftProcessor's inverse is unnormalized. Correct both the IFFT
+        // gain and the 1.5 Hann² overlap sum in one multiplication.
+        let output_scale = 1.0 / (1.5 * fft_size as f32);
 
         // Assign each bin to a band based on center frequency
         let bin_to_band = Self::compute_bin_to_band(
@@ -120,9 +134,10 @@ impl SpectralState {
         let output_accumulator_frames = (fft_size * 4).next_power_of_two();
         let output_accumulator = vec![0.0f32; output_accumulator_frames * channels];
 
-        // Dry-path delay: compensate for STFT algorithmic latency = fft_size - hop_size.
+        // The causal streaming schedule emits its first wet frame after one
+        // complete FFT window, independent of the host's block size.
         // This aligns the dry signal with the processed wet signal before mixing.
-        let dry_delay_frames = fft_size - hop_size;
+        let dry_delay_frames = fft_size;
         let dry_delay_len = dry_delay_frames * channels;
 
         Self {
@@ -138,12 +153,14 @@ impl SpectralState {
             bin_to_band,
             band_attack_hop: vec![0.0; num_bands],
             band_release_hop: vec![0.0; num_bands],
+            band_info: vec![SpectralBandInfo::default(); num_bands],
             output_accumulator,
             _output_accumulator_frames: output_accumulator_frames,
             output_accumulator_mask: output_accumulator_frames - 1,
             output_accumulator_fill: 0,
             next_add_position: 0,
             output_read_position: 0,
+            startup_padding_remaining: fft_size,
             dry_delay_buf: vec![0.0f32; dry_delay_len],
             dry_delay_pos: 0,
             dry_delay_len,
@@ -247,6 +264,7 @@ impl SpectralState {
         self.output_accumulator_fill = 0;
         self.next_add_position = 0;
         self.output_read_position = 0;
+        self.startup_padding_remaining = self.fft_size;
         self.dry_delay_buf.fill(0.0);
         self.dry_delay_pos = 0;
         self.windowed_buf.fill(0.0);

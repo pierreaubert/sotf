@@ -73,6 +73,7 @@ impl Timeline {
     pub fn build(&mut self) -> Result<(), String> {
         for track in &mut self.tracks {
             track.build()?;
+            track.prepare_render_buffers(self.frame_size);
         }
         for midi_track in &mut self.midi_tracks {
             midi_track.build()?;

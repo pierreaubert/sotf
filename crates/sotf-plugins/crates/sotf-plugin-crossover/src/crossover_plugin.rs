@@ -13,6 +13,62 @@ use sotf_host::plugin::{
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::LogSmoother;
 
+/// Delays the early branches of a cascaded FIR crossover so every emitted
+/// band has the same cumulative group delay as the final branch.
+struct FirBandAlignment {
+    delay_lines: Vec<Vec<f32>>,
+    write_positions: Vec<usize>,
+    delay_frames: Vec<usize>,
+    channels: usize,
+}
+
+impl FirBandAlignment {
+    fn new(num_bands: usize, channels: usize, split_latency: usize) -> Self {
+        let num_splits = num_bands.saturating_sub(1);
+        let delay_frames: Vec<usize> = (0..num_bands)
+            .map(|band| {
+                let intrinsic_splits = (band + 1).min(num_splits);
+                (num_splits - intrinsic_splits) * split_latency
+            })
+            .collect();
+        let delay_lines = delay_frames
+            .iter()
+            .map(|&frames| vec![0.0; frames * channels])
+            .collect();
+        Self {
+            delay_lines,
+            write_positions: vec![0; num_bands],
+            delay_frames,
+            channels,
+        }
+    }
+
+    fn process_frame(&mut self, bands: &mut [f32]) {
+        for band in 0..self.delay_frames.len() {
+            let frames = self.delay_frames[band];
+            if frames == 0 {
+                continue;
+            }
+            let band_offset = band * self.channels;
+            let delay_offset = self.write_positions[band] * self.channels;
+            for channel in 0..self.channels {
+                std::mem::swap(
+                    &mut self.delay_lines[band][delay_offset + channel],
+                    &mut bands[band_offset + channel],
+                );
+            }
+            self.write_positions[band] = (self.write_positions[band] + 1) % frames;
+        }
+    }
+
+    fn reset(&mut self) {
+        for delay in &mut self.delay_lines {
+            delay.fill(0.0);
+        }
+        self.write_positions.fill(0);
+    }
+}
+
 pub struct CrossoverPlugin {
     pub(super) num_channels: usize,
     pub(super) sample_rate: u32,
@@ -30,6 +86,7 @@ pub struct CrossoverPlugin {
     /// None when in 2-way mode.
     pub(super) multiband: Option<MultibandLr4Crossover<f32>>,
     pub(super) fir_multiband: Option<MultibandFirCrossover<f32>>,
+    fir_band_alignment: Option<FirBandAlignment>,
     pub(super) extra_freq_smoothers: Vec<LogSmoother>,
 
     /// Sorted crossover frequencies for multi-way mode (including primary).
@@ -120,6 +177,8 @@ impl CrossoverPlugin {
             .then(|| FirCrossover::new(frequency as f32, sr as f32, num_channels, fir_taps));
         let fir_multiband = (kind == CrossoverKind::LinearPhase && all_freqs.len() > 1)
             .then(|| MultibandFirCrossover::new(&all_freqs, sr as f32, num_channels, fir_taps));
+        let fir_band_alignment = (kind == CrossoverKind::LinearPhase && all_freqs.len() > 1)
+            .then(|| FirBandAlignment::new(num_bands, num_channels, (fir_taps - 1) / 2));
 
         let mut p = Self {
             num_channels,
@@ -132,6 +191,7 @@ impl CrossoverPlugin {
             freq_smoother: LogSmoother::new(frequency as f32, 20.0, sr),
             multiband,
             fir_multiband,
+            fir_band_alignment,
             extra_freq_smoothers: extra_smoothers,
             all_frequencies: all_freqs,
             cached_parameters: Vec::new(),
@@ -196,6 +256,7 @@ impl CrossoverPlugin {
             freq_smoother: LogSmoother::new(primary_freq, 20.0, sr),
             multiband: None,
             fir_multiband: None,
+            fir_band_alignment: None,
             extra_freq_smoothers: Vec::new(),
             all_frequencies: vec![primary_freq],
             cached_parameters: Vec::new(),
@@ -297,6 +358,36 @@ impl CrossoverPlugin {
         self.fir_multiband = (self.all_frequencies.len() > 1).then(|| {
             MultibandFirCrossover::new(&self.all_frequencies, sr, self.num_channels, self.fir_taps)
         });
+        self.fir_band_alignment = (self.all_frequencies.len() > 1).then(|| {
+            FirBandAlignment::new(
+                self.all_frequencies.len() + 1,
+                self.num_channels,
+                (self.fir_taps - 1) / 2,
+            )
+        });
+    }
+
+    fn rebind_sorted_frequencies(&mut self) {
+        self.all_frequencies.sort_by(|a, b| a.total_cmp(b));
+        let Some(&primary) = self.all_frequencies.first() else {
+            return;
+        };
+
+        self.freq_smoother = LogSmoother::new(primary, 20.0, self.sample_rate);
+        self.extra_freq_smoothers = self
+            .all_frequencies
+            .iter()
+            .skip(1)
+            .map(|&frequency| LogSmoother::new(frequency, 20.0, self.sample_rate))
+            .collect();
+        if let Some(multiband) = &mut self.multiband {
+            multiband.reinit(
+                &self.all_frequencies,
+                self.sample_rate as f32,
+                self.num_channels,
+            );
+        }
+        self.rebuild_fir_crossovers();
     }
 
     pub fn from_params(
@@ -434,10 +525,16 @@ impl Plugin for CrossoverPlugin {
                 // sorted order. MultibandLr4Crossover requires sorted frequencies.
                 if !self.all_frequencies.is_empty() {
                     self.all_frequencies[0] = val;
-                    self.all_frequencies.sort_by(|a, b| a.total_cmp(b));
-                    self.all_frequencies.dedup();
+                    if self
+                        .all_frequencies
+                        .windows(2)
+                        .any(|pair| pair[0] > pair[1])
+                    {
+                        self.rebind_sorted_frequencies();
+                    } else {
+                        self.rebuild_fir_crossovers();
+                    }
                 }
-                self.rebuild_fir_crossovers();
                 self.rebuild_cached_parameters();
             }
             Ok(())
@@ -454,10 +551,16 @@ impl Plugin for CrossoverPlugin {
                 let freq_idx = smoother_idx + 1; // offset: extra smoothers start at freq index 1
                 if freq_idx < self.all_frequencies.len() {
                     self.all_frequencies[freq_idx] = val;
-                    self.all_frequencies.sort_by(|a, b| a.total_cmp(b));
-                    self.all_frequencies.dedup();
+                    if self
+                        .all_frequencies
+                        .windows(2)
+                        .any(|pair| pair[0] > pair[1])
+                    {
+                        self.rebind_sorted_frequencies();
+                    } else {
+                        self.rebuild_fir_crossovers();
+                    }
                 }
-                self.rebuild_fir_crossovers();
                 self.rebuild_cached_parameters();
             }
             Ok(())
@@ -621,6 +724,9 @@ impl Plugin for CrossoverPlugin {
         if let Some(ref mut mb) = self.fir_multiband {
             mb.reset();
         }
+        if let Some(alignment) = &mut self.fir_band_alignment {
+            alignment.reset();
+        }
     }
 
     fn process(
@@ -705,6 +811,9 @@ impl Plugin for CrossoverPlugin {
                             remaining = rest;
                         }
                         mb.process_frame(frame_slice, &mut band_slices[..num_bands]);
+                    }
+                    if let Some(alignment) = &mut self.fir_band_alignment {
+                        alignment.process_frame(&mut self.band_flat[..num_bands * in_ch]);
                     }
 
                     match self.mode {

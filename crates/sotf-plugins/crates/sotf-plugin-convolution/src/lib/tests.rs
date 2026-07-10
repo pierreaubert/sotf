@@ -1,8 +1,14 @@
 use super::convolution_plugin::ConvolutionPlugin;
 use super::types::ConvolutionPluginParams;
+use super::types::ConvolutionState;
+use crate::misc::{FFT_SIZE, PARTITION_SIZE};
+use plugins_spatial::nupc;
+use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
+use std::sync::Arc;
 
 mod misc;
 
@@ -30,6 +36,122 @@ fn test_ir_file_parameter_reports_load_errors() {
         .unwrap_err();
     assert!(err.contains("IO:"), "unexpected error: {err}");
     assert!(plugin.state.load().is_none());
+}
+
+#[test]
+fn uniform_partitioned_convolution_reports_partition_latency() {
+    let plugin = ConvolutionPlugin::new(1, 48_000);
+    assert_eq!(plugin.latency_samples(), PARTITION_SIZE);
+}
+
+#[test]
+fn configured_zero_latency_head_is_stable_before_runtime_ir_load() {
+    let params = ConvolutionPluginParams {
+        ir_file: String::new(),
+        mix: 1.0,
+        gain_db: 0.0,
+        use_nupc: true,
+        zero_latency_head: true,
+        head_taps: 128,
+    };
+    let mut plugin = ConvolutionPlugin::from_params(1, 48_000, params).unwrap();
+    assert!(plugin.nupc_engines.is_empty());
+    let latency_before_load = plugin.latency_samples();
+
+    plugin.nupc_engines = vec![nupc::NupcEngine::new_with_head(&[1.0], PARTITION_SIZE, 128)];
+    assert_eq!(latency_before_load, 0);
+    assert_eq!(plugin.latency_samples(), latency_before_load);
+}
+
+fn make_delta_ir_plugin(use_nupc: bool, zero_latency_head: bool) -> ConvolutionPlugin {
+    let mut plugin = ConvolutionPlugin::new(1, 48_000);
+    let mut planner = FftPlanner::<f32>::new();
+    let fft_forward = planner.plan_fft_forward(FFT_SIZE);
+    let fft_inverse = planner.plan_fft_inverse(FFT_SIZE);
+    let mut partition = vec![Complex::new(0.0, 0.0); FFT_SIZE];
+    partition[0] = Complex::new(1.0, 0.0);
+    fft_forward.process(&mut partition);
+    let scratch_len = fft_forward
+        .get_inplace_scratch_len()
+        .max(fft_inverse.get_inplace_scratch_len());
+    plugin.state.store(Arc::new(Some(ConvolutionState {
+        partitions: vec![vec![partition]],
+        num_partitions: 1,
+        ir_channels: 1,
+        fft_forward,
+        fft_inverse,
+    })));
+    plugin.fdl_flat = vec![Complex::new(0.0, 0.0); FFT_SIZE];
+    plugin.fft_scratch = vec![Complex::new(0.0, 0.0); scratch_len];
+    plugin.use_nupc = use_nupc;
+    plugin.zero_latency_head = zero_latency_head;
+    if use_nupc {
+        plugin.nupc_engines = vec![if zero_latency_head {
+            nupc::NupcEngine::new_with_head(&[1.0], PARTITION_SIZE, 128)
+        } else {
+            nupc::NupcEngine::new(&[1.0], PARTITION_SIZE)
+        }];
+    }
+    plugin
+}
+
+fn processed_delta_peak(mut plugin: ConvolutionPlugin, mix: f32) -> (usize, f32) {
+    plugin.mix_value = mix;
+    plugin.mix.reset(mix);
+    plugin.gain_linear.reset(1.0);
+    let mut signal = vec![0.0f32; PARTITION_SIZE * 3];
+    signal[0] = 1.0;
+    for block in signal.chunks_mut(127) {
+        plugin
+            .process_in_place(block, &ProcessContext::new(48_000, block.len()))
+            .unwrap();
+    }
+    signal
+        .iter()
+        .copied()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+        .unwrap()
+}
+
+#[test]
+fn convolution_delta_positions_match_reported_latency() {
+    for (use_nupc, zero_latency_head) in [(false, false), (true, false), (true, true)] {
+        let plugin = make_delta_ir_plugin(use_nupc, zero_latency_head);
+        let latency = plugin.latency_samples();
+        assert_eq!(
+            processed_delta_peak(plugin, 1.0).0,
+            latency,
+            "use_nupc={use_nupc}, zero_latency_head={zero_latency_head}"
+        );
+    }
+}
+
+#[test]
+fn nupc_partial_mix_delays_dry_to_the_wet_path() {
+    let plugin = make_delta_ir_plugin(true, false);
+    let latency = plugin.latency_samples();
+    let (peak_index, peak) = processed_delta_peak(plugin, 0.5);
+    assert_eq!(peak_index, latency);
+    assert!(
+        (peak - 1.0).abs() < 1e-4,
+        "aligned dry and wet impulses should sum to unity, got {peak}"
+    );
+}
+
+#[test]
+fn runtime_structural_change_cannot_desynchronize_latency_from_loaded_engine() {
+    let mut plugin = make_delta_ir_plugin(true, false);
+    let latency = plugin.latency_samples();
+    let error = plugin
+        .parametric_set_parameter(
+            ParameterId::from("zero_latency_head"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap_err();
+    assert!(error.contains("structural"), "unexpected error: {error}");
+    assert_eq!(plugin.latency_samples(), latency);
+    assert_eq!(processed_delta_peak(plugin, 1.0).0, latency);
 }
 
 #[test]

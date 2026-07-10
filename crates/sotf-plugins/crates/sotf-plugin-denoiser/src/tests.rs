@@ -144,6 +144,43 @@ fn test_latency() {
 }
 
 #[test]
+fn streamed_impulse_delay_matches_reported_latency_for_varied_blocks() {
+    for block_size in [128usize, 256, 512, 1024, 2048] {
+        let mut params = DenoiserPluginParams::default();
+        params.reduction_db = 0.0;
+        let mut plugin = DenoiserPlugin::from_params(1, params);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+
+        let fft_size = plugin.config.fft_size;
+        let impulse_index = fft_size / 4;
+        let total_frames = fft_size * 4;
+        let mut input = vec![0.0f32; total_frames];
+        input[impulse_index] = 1.0;
+        let mut output = Vec::with_capacity(total_frames);
+        for chunk in input.chunks(block_size) {
+            let mut block = chunk.to_vec();
+            plugin
+                .process_in_place(&mut block, &ProcessContext::new(SAMPLE_RATE, chunk.len()))
+                .unwrap();
+            output.extend_from_slice(&block);
+        }
+
+        let peak_index = output
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+            .map(|(index, _)| index)
+            .unwrap();
+        let measured_delay = peak_index.saturating_sub(impulse_index);
+        assert_eq!(
+            measured_delay,
+            plugin.latency_samples(),
+            "block size {block_size} changed denoiser latency"
+        );
+    }
+}
+
+#[test]
 fn test_rejects_oversized_classical_in_place_block() {
     let mut plugin = DenoiserPlugin::new(2, false);
     plugin.initialize(SAMPLE_RATE).unwrap();

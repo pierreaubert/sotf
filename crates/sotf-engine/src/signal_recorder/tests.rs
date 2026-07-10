@@ -8,6 +8,8 @@ use super::misc::parse_channel_list;
 use super::misc::prepare_signal;
 #[cfg(not(target_os = "ios"))]
 use super::record::record_and_analyze;
+#[cfg(not(target_os = "ios"))]
+use super::record::resample_reference_signal;
 use super::recording_session::RecordingSession;
 use super::signal_params::sweep_params_from_config;
 use super::signal_params::validate_signal_params;
@@ -25,6 +27,62 @@ use std::str::FromStr;
 use tempfile::tempdir;
 
 mod misc;
+
+#[cfg(not(target_os = "ios"))]
+#[test]
+fn reference_resampling_tracks_the_capture_sample_rate() {
+    let input: Vec<f32> = (0..4_410)
+        .map(|i| (2.0 * std::f32::consts::PI * 1_000.0 * i as f32 / 44_100.0).sin())
+        .collect();
+    let output = resample_reference_signal(&input, 44_100, 48_000).unwrap();
+    assert!(
+        (4_798..=4_802).contains(&output.len()),
+        "100 ms reference should remain 100 ms after resampling, got {} frames",
+        output.len()
+    );
+}
+
+#[cfg(not(target_os = "ios"))]
+#[test]
+fn reference_resampling_removes_filter_delay() {
+    let mut input = vec![0.0f32; 4_410];
+    let impulse_index = 1_000usize;
+    input[impulse_index] = 1.0;
+
+    let output = resample_reference_signal(&input, 44_100, 48_000).unwrap();
+    let peak_index = output
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+        .map(|(index, _)| index)
+        .unwrap();
+    let expected_index = (impulse_index as f64 * 48_000.0 / 44_100.0).round() as usize;
+    assert!(
+        peak_index.abs_diff(expected_index) <= 1,
+        "resampled impulse was shifted: expected {expected_index}, got {peak_index}"
+    );
+}
+
+#[cfg(not(target_os = "ios"))]
+#[test]
+fn reference_resampling_preserves_late_signal_content() {
+    let mut input = vec![0.0f32; 4_410];
+    let tone_start = input.len() - 64;
+    for (offset, sample) in input[tone_start..].iter_mut().enumerate() {
+        *sample = (2.0 * std::f32::consts::PI * 1_000.0 * offset as f32 / 44_100.0).sin();
+    }
+
+    let output = resample_reference_signal(&input, 44_100, 48_000).unwrap();
+    let output_tone_start = (tone_start as f64 * 48_000.0 / 44_100.0).round() as usize;
+    let tail_energy: f32 = output[output_tone_start..]
+        .iter()
+        .map(|sample| sample * sample)
+        .sum();
+    assert!(
+        tail_energy > 20.0,
+        "late reference content was truncated (tail energy {tail_energy})"
+    );
+}
 
 #[test]
 fn cpal_input_callbacks_stay_lock_free() {
