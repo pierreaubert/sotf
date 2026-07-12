@@ -310,7 +310,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -321,7 +321,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -867,7 +867,7 @@ dependencies = [
  "math-optimisation",
  "math-rir",
  "metaheuristics-nature",
- "nalgebra",
+ "nalgebra 0.33.3",
  "ndarray 0.17.2",
  "num-complex 0.4.6",
  "num_cpus",
@@ -2551,7 +2551,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3382,6 +3382,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19fc433e8437a212d1b6f1e68c7824af3aed907da60afa994e7f542d18d12aa9"
 
 [[package]]
+name = "glam"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "556f6b2ea90b8d15a74e0e7bb41671c9bdf38cd9f78c284d750b9ce58a2b5be7"
+
+[[package]]
+name = "glam"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f70749695b063ecbf6b62949ccccde2e733ec3ecbbd71d467dca4e5c6c97cca0"
+
+[[package]]
+name = "glam"
+version = "0.33.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f22fb22f065b308be0d8724e3706c7fa3fc2a6c7d6899df4cad7860e7a75436"
+
+[[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3631,7 +3649,7 @@ dependencies = [
  "bytemuck",
  "delaunator",
  "fontdue",
- "glam",
+ "glam 0.30.10",
  "gpui",
  "gpui-builder",
  "gpui-design",
@@ -5540,18 +5558,18 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.5.21"
-source = "git+https://github.com/pierreaubert/math-audio#6633e3fcce8bbeb1f54e73a9f324604b8ad3d0b5"
+version = "0.5.22"
+source = "git+https://github.com/pierreaubert/math-audio#fdb1041416842ad5326d5a31429316db652d9410"
 dependencies = [
  "clap",
  "hound",
  "log",
  "math-iir-fir",
- "nalgebra",
+ "nalgebra 0.35.0",
  "ndarray 0.17.2",
  "num-complex 0.4.6",
  "oxiblas-ndarray",
- "rand 0.9.4",
+ "rand 0.10.2",
  "rayon",
  "realfft",
  "rustfft 6.4.1",
@@ -5560,8 +5578,8 @@ dependencies = [
 
 [[package]]
 name = "math-iir-fir"
-version = "0.5.15"
-source = "git+https://github.com/pierreaubert/math-audio#6633e3fcce8bbeb1f54e73a9f324604b8ad3d0b5"
+version = "0.5.16"
+source = "git+https://github.com/pierreaubert/math-audio#fdb1041416842ad5326d5a31429316db652d9410"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -5577,15 +5595,15 @@ dependencies = [
 [[package]]
 name = "math-optimisation"
 version = "0.5.10"
-source = "git+https://github.com/pierreaubert/math-audio#6633e3fcce8bbeb1f54e73a9f324604b8ad3d0b5"
+source = "git+https://github.com/pierreaubert/math-audio#fdb1041416842ad5326d5a31429316db652d9410"
 dependencies = [
  "clap",
  "directories",
  "math-test-functions",
- "nalgebra",
+ "nalgebra 0.35.0",
  "ndarray 0.17.2",
  "oxiblas-ndarray",
- "rand 0.9.4",
+ "rand 0.10.2",
  "rayon",
  "thiserror 2.0.18",
 ]
@@ -5593,7 +5611,7 @@ dependencies = [
 [[package]]
 name = "math-rir"
 version = "0.5.6"
-source = "git+https://github.com/pierreaubert/math-audio#6633e3fcce8bbeb1f54e73a9f324604b8ad3d0b5"
+source = "git+https://github.com/pierreaubert/math-audio#fdb1041416842ad5326d5a31429316db652d9410"
 dependencies = [
  "math-iir-fir",
  "rayon",
@@ -5602,7 +5620,7 @@ dependencies = [
 [[package]]
 name = "math-test-functions"
 version = "0.5.2"
-source = "git+https://github.com/pierreaubert/math-audio#6633e3fcce8bbeb1f54e73a9f324604b8ad3d0b5"
+source = "git+https://github.com/pierreaubert/math-audio#fdb1041416842ad5326d5a31429316db652d9410"
 dependencies = [
  "clap",
  "directories",
@@ -5873,7 +5891,26 @@ dependencies = [
  "num-complex 0.4.6",
  "num-rational",
  "num-traits",
- "simba",
+ "simba 0.9.1",
+ "typenum",
+]
+
+[[package]]
+name = "nalgebra"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adc43a60c217b0c6ff46e47f26911015ad8d2e5a8be1af668c67e370d99a4346"
+dependencies = [
+ "approx",
+ "glam 0.30.10",
+ "glam 0.31.1",
+ "glam 0.32.1",
+ "glam 0.33.2",
+ "matrixmultiply",
+ "num-complex 0.4.6",
+ "num-rational",
+ "num-traits",
+ "simba 0.10.0",
  "typenum",
 ]
 
@@ -6146,7 +6183,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9097,6 +9134,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "safe_arch"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f7caad094bd561859bcd467734a720c3c1f5d1f338995351fefe2190c45efed"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "safetensors"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9581,6 +9627,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "simba"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f45c644a9f3a386f9288625d9f0c1e999e1acf07a37df35d0516c7f199d9cb2"
+dependencies = [
+ "approx",
+ "num-complex 0.4.6",
+ "num-traits",
+ "wide 1.5.0",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9717,7 +9775,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9923,7 +9981,7 @@ dependencies = [
  "cpal",
  "driver-hal",
  "env_logger",
- "glam",
+ "glam 0.30.10",
  "gpui",
  "gpui-audio-kit",
  "gpui-builder",
@@ -10241,7 +10299,7 @@ name = "sotf-plugin-beamformer"
 version = "0.5.1"
 dependencies = [
  "math-dsp",
- "nalgebra",
+ "nalgebra 0.33.3",
  "realfft",
  "rustfft 6.4.1",
  "serde",
@@ -11027,7 +11085,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11685,7 +11743,7 @@ dependencies = [
  "parking_lot",
  "rustix 1.1.4",
  "signal-hook 0.3.18",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -12453,7 +12511,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -13570,6 +13628,16 @@ checksum = "13ca908d26e4786149c48efcf6c0ea09ab0e06d1fe3c17dc1b4b0f1ca4a7e788"
 dependencies = [
  "bytemuck",
  "safe_arch 0.9.3",
+]
+
+[[package]]
+name = "wide"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfdfe6a32973f2d1b268b8895845a8a96cac2f0191e72c27cc929036060dbf89"
+dependencies = [
+ "bytemuck",
+ "safe_arch 1.0.0",
 ]
 
 [[package]]
