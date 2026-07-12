@@ -9808,7 +9808,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "toml 0.8.23",
+ "toml 1.1.2+spec-1.1.0",
 ]
 
 [[package]]
@@ -10777,7 +10777,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.8.23",
+ "toml 1.1.2+spec-1.1.0",
  "tract-onnx",
  "walkdir",
  "which 8.0.4",
@@ -10850,7 +10850,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-rustls 0.26.4",
- "toml 0.8.23",
+ "toml 1.1.2+spec-1.1.0",
 ]
 
 [[package]]
