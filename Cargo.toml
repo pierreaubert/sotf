@@ -75,6 +75,7 @@ members = [
     "crates/sotf-server/crates/sotf-tls",
     "crates/app-ios",
     "crates/app-tvos",
+    "crates/app-android",
     "crates/sotf-docs-gen",
 ]
 exclude = [
@@ -208,6 +209,7 @@ gpui-keybinding = { version = "0.8", git = "https://github.com/pierreaubert/gpui
 gpui-pretext = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 
 gpui-ios = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-android = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-au = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 
 # SotF
@@ -311,11 +313,11 @@ ratatui-image = { version = "10", default-features = false, features = ["serde",
 crossterm = "0.29"
 
 # GPUI framework - all packages must use the same git revision
-gpui = { version="0.2.2", git = "https://github.com/zed-industries/zed.git", tag = "v1.0.0" }
-gpui_macos = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.0.0", features = ["font-kit"] }
-gpui_linux = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.0.0" }
-gpui_windows = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.0.0" }
-gpui_wgpu = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.0.0" }
+gpui = { version="0.2.2", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
+gpui_macos = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0", features = ["font-kit"] }
+gpui_linux = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
+gpui_windows = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
+gpui_wgpu = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
 wgpu = { version="29.0.0", git = "https://github.com/zed-industries/wgpu.git", branch = "v29" }
 
 # System and low-level
@@ -393,6 +395,10 @@ font-kit = { package = "zed-font-kit", version = "0.14.1-zed", git = "https://gi
 # TUI extensions
 
 cbindgen = "0.28"
+
+# Android platform bindings
+android-activity = { version = "0.6", features = ["native-activity"] }
+android_logger = "0.15"
 
 [workspace.lints.rust]
 ambiguous_negative_literals = "warn"
@@ -502,6 +508,9 @@ strip = "symbols"
 
 # Patches for tvOS/watchOS/visionOS support (Tier 3 Apple platforms):
 # - coreaudio-rs: cfg(target_os = "ios") doesn't include tvos
+[patch."https://github.com/pierreaubert/gpui-toolkit"]
+gpui-android = { path = "patches/gpui-android" }
+
 [patch.crates-io]
 nnnoiseless = { path = "crates/3rdparties/nnnoiseless" }
 coreaudio-rs = { path = "crates/3rdparties/coreaudio-rs" }

@@ -15,6 +15,7 @@ import 'builds/windows.just'
 import 'builds/linux.just'
 import 'builds/ios.just'
 import 'builds/tvos.just'
+import 'builds/android.just'
 import 'builds/dev-driver.just'
 
 import 'crates/sotf-plugins/Justfile'

@@ -1,0 +1,20 @@
+[package]
+name = "sotf-android"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Android app shell for SOTF music player"
+
+[lib]
+name = "sotf_android"
+crate-type = ["cdylib"]
+
+[dependencies]
+gpui = { workspace = true }
+gpui-android = { workspace = true }
+gpui-ui-kit = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { workspace = true }
+android_logger = { workspace = true }

@@ -112,7 +112,7 @@ num-complex = { workspace = true }
 
 
 # Asset embedding
-rust-embed = { workspace = true }
+rust-embed = { workspace = true, features = ["include-exclude"] }
 anyhow = { workspace = true }
 
 # Image processing

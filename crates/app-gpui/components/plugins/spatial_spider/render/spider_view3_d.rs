@@ -5,13 +5,9 @@ use super::misc::translucent;
 #[cfg(feature = "gpu-3d")]
 use super::spider_colors::SpiderColors;
 #[cfg(feature = "gpu-3d")]
-use crate::theme::rgba;
-#[cfg(feature = "gpu-3d")]
 use d3rs::gpu3d::{Line3D, Lines3DElement, Lines3DScene, Lines3DState, Polygon3D};
 #[cfg(feature = "gpu-3d")]
 use glam::Vec3;
-#[cfg(feature = "gpu-3d")]
-use gpui::prelude::*;
 #[cfg(feature = "gpu-3d")]
 use gpui::*;
 #[cfg(feature = "gpu-3d")]

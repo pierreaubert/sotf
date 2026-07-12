@@ -50,6 +50,9 @@ UNIVERSAL=false
 CLEAN=false
 ARCH=""
 SOURCE_BINARY=""
+WITH_MOBILE=false
+
+DIST_DIR="$PROJECT_ROOT/dist"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -60,6 +63,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --clean)
             CLEAN=true
+            shift
+            ;;
+        --with-mobile)
+            WITH_MOBILE=true
             shift
             ;;
         --arch)
@@ -82,11 +89,12 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
-            echo "  --universal   Build universal binary (Intel + Apple Silicon)"
-            echo "  --arch <arch> Architecture label for DMG name (e.g., arm64, x86_64)"
+            echo "  --universal    Build universal binary (Intel + Apple Silicon)"
+            echo "  --arch <arch>  Architecture label for DMG name (e.g., arm64, x86_64)"
             echo "  --binary <path> Package an existing sotf-desktop binary instead of rebuilding"
-            echo "  --clean       Clean build directory before building"
-            echo "  --help        Show this help message"
+            echo "  --with-mobile  Also build iOS and tvOS device .app bundles"
+            echo "  --clean        Clean build directory before building"
+            echo "  --help         Show this help message"
             echo ""
             echo "Signing: run ./sign-macos.sh after building"
             exit 0
@@ -448,6 +456,45 @@ create_dmg() {
     log_success "DMG created at $dmg_path"
 }
 
+# Build iOS and tvOS device apps and zip them for distribution
+build_mobile_apps() {
+    log_info "Building iOS and tvOS device apps..."
+
+    if ! command -v just &> /dev/null; then
+        log_error "just is required for mobile builds. Install with: cargo install just"
+        exit 1
+    fi
+
+    cd "$PROJECT_ROOT"
+
+    log_info "Building iOS device app..."
+    just ios-device
+    local ios_app="$PROJECT_ROOT/crates/app-ios/ios/build/Release-iphoneos/SotFPlayer.app"
+    if [ ! -d "$ios_app" ]; then
+        log_error "iOS app not found at $ios_app"
+        exit 1
+    fi
+    mkdir -p "$DIST_DIR"
+    local ios_zip="$DIST_DIR/sotf-ios-${VERSION}-ios-device.app.zip"
+    rm -f "$ios_zip"
+    (cd "$(dirname "$ios_app")" && zip -r "$ios_zip" "$(basename "$ios_app")" >/dev/null)
+    log_success "iOS app zipped: $ios_zip"
+
+    log_info "Building tvOS device app..."
+    just tvos-device
+    local tvos_app="$PROJECT_ROOT/crates/app-tvos/tvos/build/Release-appletvos/SotFTV.app"
+    if [ ! -d "$tvos_app" ]; then
+        log_error "tvOS app not found at $tvos_app"
+        exit 1
+    fi
+    local tvos_zip="$DIST_DIR/sotf-tvos-${VERSION}-tvos-device.app.zip"
+    rm -f "$tvos_zip"
+    (cd "$(dirname "$tvos_app")" && zip -r "$tvos_zip" "$(basename "$tvos_app")" >/dev/null)
+    log_success "tvOS app zipped: $tvos_zip"
+
+    log_success "Mobile apps built"
+}
+
 # Create DMG using hdiutil (fallback)
 create_dmg_hdiutil() {
     local dmg_path="$1"
@@ -481,21 +528,25 @@ main() {
     bundle_dylibs
     create_dmg
 
-    log_info "=========================================="
-    log_success "Build complete!"
-    log_info "=========================================="
-
     local dmg_path="$DMG_DIR/$DMG_FILENAME"
     if [ -f "$dmg_path" ]; then
         # Copy final artifact to dist/
-        mkdir -p "$PROJECT_ROOT/dist"
-        cp "$dmg_path" "$PROJECT_ROOT/dist/"
-        log_info "DMG: $PROJECT_ROOT/dist/$(basename "$dmg_path")"
+        mkdir -p "$DIST_DIR"
+        cp "$dmg_path" "$DIST_DIR/"
+        log_info "DMG: $DIST_DIR/$(basename "$dmg_path")"
         log_info "Size: $(du -h "$dmg_path" | cut -f1)"
         log_info ""
         log_info "To sign: ./scripts/sign-macos.sh"
         log_info "To sign + notarize: ./scripts/sign-macos.sh --notarize"
     fi
+
+    if $WITH_MOBILE; then
+        build_mobile_apps
+    fi
+
+    log_info "=========================================="
+    log_success "Build complete!"
+    log_info "=========================================="
 }
 
 main "$@"

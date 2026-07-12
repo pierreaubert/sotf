@@ -67,6 +67,7 @@ check_output_*.txt
 /.qwen
 /.opencode
 /.superpowers
+/docs/superpowers
 
 # Logs
 logs

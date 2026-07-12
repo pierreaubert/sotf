@@ -6,7 +6,7 @@ options:
   createIntermediateGroups: true
 
 settings:
-  MARKETING_VERSION: 0.6.1
+  MARKETING_VERSION: 0.7.10
   CURRENT_PROJECT_VERSION: 1
   IPHONEOS_DEPLOYMENT_TARGET: "17.0"
   SWIFT_VERSION: "6.0"

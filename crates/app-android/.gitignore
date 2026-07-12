@@ -1,0 +1,13 @@
+# Gradle build outputs
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+
+# Generated native libraries copied by cargo-ndk
+android/gradle/app/src/main/jniLibs/
+
+# Local APK/AAB artifacts (dist/ is handled at the workspace root)
+*.apk
+*.aab
