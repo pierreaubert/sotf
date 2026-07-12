@@ -55,7 +55,9 @@ impl Render for PlayerView {
                             // Derive layout orientation, rack display mode, and
                             // queue-meter visibility from the constraint solver.
                             let solved = crate::ui::layout_tree::solve_app_layout(
-                                window_width, window_height, layout,
+                                window_width,
+                                window_height,
+                                layout,
                             );
                             state.app.layout.orientation =
                                 if crate::ui::layout_tree::solved_is_horizontal(&solved) {
@@ -69,7 +71,7 @@ impl Render for PlayerView {
                                 crate::ui::layout_tree::solved_hide_queue_meters(&solved);
                         });
                     });
-                    
+
                     // Recalculate pagination based on new window size
                     view.recalculate_pagination(cx, false);
                 });
@@ -154,9 +156,7 @@ impl Render for PlayerView {
                                 {
                                     log::warn!("Failed to save window geometry: {}", e);
                                 } else {
-                                    log::debug!(
-                                        "Debounced window geometry saved successfully"
-                                    );
+                                    log::debug!("Debounced window geometry saved successfully");
                                 }
                             });
                         });
@@ -190,7 +190,11 @@ impl Render for PlayerView {
                 state.app.ui_state.active_menu,
                 state.app.ui_state.font_scale,
                 state.app.ui_state.theme_id,
-                state.app.measurement_state.recording_state.migration_modal_open,
+                state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .migration_modal_open,
                 state
                     .app
                     .measurement_state
@@ -380,7 +384,10 @@ impl Render for PlayerView {
                 // Handle text input for search mode and add directory mode
                 let (input_mode, current_screen) = {
                     let state = view.state.read(cx);
-                    (state.app.ui_state.input_mode, state.app.ui_state.current_screen)
+                    (
+                        state.app.ui_state.input_mode,
+                        state.app.ui_state.current_screen,
+                    )
                 };
 
                 log::debug!(
@@ -469,8 +476,7 @@ impl Render for PlayerView {
                         cx.stop_propagation();
                         if matches!(event.keystroke.key.as_str(), "escape" | "f1") {
                             view.state.update(cx, |state, _| {
-                                state.app.ui_state.input_mode =
-                                    crate::app::InputMode::Normal;
+                                state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                             });
                         }
                     }
@@ -490,16 +496,13 @@ impl Render for PlayerView {
                                         .plugin_state
                                         .graph
                                         .update_channel_dependent_plugins();
-                                    state.app.ui_state.input_mode =
-                                        crate::app::InputMode::Normal;
+                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                 });
-                                let (path, track_channels) = view
-                                    .state
-                                    .update(cx, |state, _| {
-                                        let p = state.app.modal.channel_conflict_path.take();
-                                        let ch = state.app.modal.channel_conflict_track_channels;
-                                        (p, ch)
-                                    });
+                                let (path, track_channels) = view.state.update(cx, |state, _| {
+                                    let p = state.app.modal.channel_conflict_path.take();
+                                    let ch = state.app.modal.channel_conflict_track_channels;
+                                    (p, ch)
+                                });
                                 if let Some(path) = path {
                                     view.state.update(cx, |state, _| {
                                         // Call play_track_at_inner directly — conflict
@@ -521,8 +524,7 @@ impl Render for PlayerView {
                                 view.state.update(cx, |state, _| {
                                     state.app.modal.channel_conflict_path = None;
                                     state.app.modal.channel_conflicts.clear();
-                                    state.app.ui_state.input_mode =
-                                        crate::app::InputMode::Normal;
+                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                     state.app.playback.is_playing = false;
                                 });
                                 cx.notify();
@@ -544,7 +546,8 @@ impl Render for PlayerView {
                                 .state
                                 .read(cx)
                                 .app
-                                .settings.expanded_sections
+                                .settings
+                                .expanded_sections
                                 .contains(&"plugins".to_string()) =>
                     {
                         match event.keystroke.key.as_str() {
@@ -553,7 +556,8 @@ impl Render for PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.refresh_plugin_presets();
                                     state.app.input_state.plugin_file_input.clear();
-                                    state.app.ui_state.input_mode = crate::app::InputMode::SavePlugins;
+                                    state.app.ui_state.input_mode =
+                                        crate::app::InputMode::SavePlugins;
                                 });
                                 cx.notify();
                             }
@@ -562,7 +566,8 @@ impl Render for PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.refresh_plugin_presets();
                                     state.app.input_state.plugin_file_input.clear();
-                                    state.app.ui_state.input_mode = crate::app::InputMode::LoadPlugins;
+                                    state.app.ui_state.input_mode =
+                                        crate::app::InputMode::LoadPlugins;
                                 });
                                 cx.notify();
                             }
@@ -586,56 +591,45 @@ impl Render for PlayerView {
                     div.pt(px(top)).pl(px(left)).pb(px(bottom)).pr(px(right))
                 }
                 #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                { div }
+                {
+                    div
+                }
             })
-            .when(!cfg!(target_os = "macos") && !cfg!(target_os = "ios") && !cfg!(target_os = "tvos"), |div| {
-                div.child(self.render_menu_bar(cx))
-            })
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .child(if platform_style.is_phone() {
-                        self.render_phone_shell(current_screen, layout_mode, cx)
-                    } else {
-                        div()
-                            .flex()
-                            .flex_1()
-                            .min_h_0()
-                            .overflow_hidden()
-                            .child(self.render_app_sidebar(cx))
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .min_h_0()
-                                    .overflow_hidden()
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_1()
-                                            .min_h_0()
-                                            .overflow_hidden()
-                                            .child(self.render_current_screen(
-                                                current_screen,
-                                                layout_mode,
-                                                cx,
-                                            )),
-                                    )
-                                    .when(
-                                        self.state.read(cx).app.federation.scan_progress.is_some(),
-                                        |div| div.child(self.render_federation_scan_progress(cx)),
-                                    )
-                                    .child(self.render_scan_status_row(cx))
-                                    .child(self.render_footer(cx)),
-                            )
-                            .into_any_element()
-                    }),
+            .when(
+                !cfg!(target_os = "macos") && !cfg!(target_os = "ios") && !cfg!(target_os = "tvos"),
+                |div| div.child(self.render_menu_bar(cx)),
             )
+            .child(div().flex().flex_1().min_h_0().overflow_hidden().child(
+                if platform_style.is_phone() {
+                    self.render_phone_shell(current_screen, layout_mode, cx)
+                } else {
+                    div()
+                        .flex()
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_hidden()
+                        .child(self.render_app_sidebar(cx))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w_0()
+                                .min_h_0()
+                                .overflow_hidden()
+                                .child(div().flex().flex_1().min_h_0().overflow_hidden().child(
+                                    self.render_current_screen(current_screen, layout_mode, cx),
+                                ))
+                                .when(
+                                    self.state.read(cx).app.federation.scan_progress.is_some(),
+                                    |div| div.child(self.render_federation_scan_progress(cx)),
+                                )
+                                .child(self.render_scan_status_row(cx))
+                                .child(self.render_footer(cx)),
+                        )
+                        .into_any_element()
+                },
+            ))
             .when(input_mode == crate::app::InputMode::Help, |div| {
                 div.child(self.render_help_modal(cx))
             })
@@ -665,14 +659,12 @@ impl Render for PlayerView {
                 input_mode == crate::app::InputMode::EmptyLibraryPrompt,
                 |div| div.child(self.render_empty_library_prompt(cx)),
             )
-            .when(
-                input_mode == crate::app::InputMode::Tutorial,
-                |div| div.child(self.render_tutorial_dialog(cx)),
-            )
-            .when(
-                input_mode == crate::app::InputMode::ScreenGuide,
-                |div| div.child(self.render_screen_guide_dialog(cx)),
-            )
+            .when(input_mode == crate::app::InputMode::Tutorial, |div| {
+                div.child(self.render_tutorial_dialog(cx))
+            })
+            .when(input_mode == crate::app::InputMode::ScreenGuide, |div| {
+                div.child(self.render_screen_guide_dialog(cx))
+            })
             .when(
                 input_mode == crate::app::InputMode::EditingPluginNode,
                 |div| div.child(self.render_plugin_node_modal(cx)),
@@ -681,12 +673,13 @@ impl Render for PlayerView {
                 input_mode == crate::app::InputMode::ChannelConflict,
                 |div| div.child(self.render_channel_conflict_dialog(cx)),
             )
-            .when(
-                input_mode == crate::app::InputMode::MetadataEditor,
-                |div| div.child(self.render_metadata_editor_dialog(cx)),
-            )
+            .when(input_mode == crate::app::InputMode::MetadataEditor, |div| {
+                div.child(self.render_metadata_editor_dialog(cx))
+            })
             // Migration modal for recording format conversion
-            .when(show_migration_modal, |div| div.child(self.render_migration_modal(cx)))
+            .when(show_migration_modal, |div| {
+                div.child(self.render_migration_modal(cx))
+            })
             // Move-microphones-to-next-position modal (multi-position recording)
             .when(show_move_position_modal, |div| {
                 div.child(self.render_move_position_modal(cx))
@@ -739,16 +732,14 @@ impl PlayerView {
                         crate::app::LayoutOrientation::Vertical => {
                             self.render_vertical_3panel(cx).into_any_element()
                         }
-                    }
-                    crate::app::LayoutMode::Compact => {
-                        match screen {
-                            Screen::Library => self.render_library_screen(cx).into_any_element(),
-                            Screen::NowPlaying | Screen::Queue => {
-                                self.render_queue_screen(cx).into_any_element()
-                            }
-                            _ => unreachable!("handled by outer match"),
+                    },
+                    crate::app::LayoutMode::Compact => match screen {
+                        Screen::Library => self.render_library_screen(cx).into_any_element(),
+                        Screen::NowPlaying | Screen::Queue => {
+                            self.render_queue_screen(cx).into_any_element()
                         }
-                    }
+                        _ => unreachable!("handled by outer match"),
+                    },
                 }
             }
         }
@@ -903,18 +894,21 @@ impl PlayerView {
                     &d,
                 ))
             })
-            .when(release_channel.allows(Screen::HeadphoneEq.maturity()), |el| {
-                el.child(self.render_sidebar_screen_item(
-                    "nav-headphone-eq",
-                    translations.screen_headphone_eq,
-                    IconName::Headphones,
-                    Screen::HeadphoneEq,
-                    current_screen == Screen::HeadphoneEq,
-                    collapsed,
-                    &theme,
-                    &d,
-                ))
-            })
+            .when(
+                release_channel.allows(Screen::HeadphoneEq.maturity()),
+                |el| {
+                    el.child(self.render_sidebar_screen_item(
+                        "nav-headphone-eq",
+                        translations.screen_headphone_eq,
+                        IconName::Headphones,
+                        Screen::HeadphoneEq,
+                        current_screen == Screen::HeadphoneEq,
+                        collapsed,
+                        &theme,
+                        &d,
+                    ))
+                },
+            )
             .when(release_channel.allows(Screen::Spinorama.maturity()), |el| {
                 el.child(self.render_sidebar_screen_item(
                     "nav-spinorama",
@@ -929,6 +923,18 @@ impl PlayerView {
             })
             .child(div().flex_1())
             .child(self.render_sidebar_separator(&theme))
+            .when(collapsed, |el| {
+                el.child(self.render_sidebar_screen_item(
+                    "nav-preferences-collapsed",
+                    "Preferences",
+                    IconName::Settings,
+                    Screen::Settings,
+                    current_screen == Screen::Settings,
+                    true,
+                    &theme,
+                    &d,
+                ))
+            })
             .child({
                 let state_entity = self.state.clone();
                 div()
@@ -962,60 +968,63 @@ impl PlayerView {
                                     move |s| s.text_color(theme.text_primary)
                                 })
                                 .child(Icon::new(IconName::Settings).xs())
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    move |_event, window, cx| {
-                                        window.dispatch_action(Box::new(OpenConfig), cx);
-                                        state_entity.update(cx, |state, _cx| {
-                                            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                                        });
-                                    },
-                                ),
+                                .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                                    window.dispatch_action(Box::new(OpenConfig), cx);
+                                    state_entity.update(cx, |state, _cx| {
+                                        state.app.ui_state.input_mode =
+                                            crate::app::InputMode::Normal;
+                                    });
+                                }),
                         )
                     })
                     .into_any_element()
             })
             .child(self.render_sidebar_devices_item(collapsed, &theme, &d))
             .when(!collapsed, |el| {
-                el.child(self.render_sidebar_device_actions(
-                    cast_discovery_running,
-                    &theme,
-                    &d,
-                ))
-                .children(output_devices.iter().take(4).enumerate().map(|(idx, device)| {
-                    self.render_sidebar_output_device_item(
-                        idx,
-                        &device.name,
-                        idx == selected_output_device_index && selected_cast_device.is_none(),
-                        &theme,
-                        &d,
+                el.child(self.render_sidebar_device_actions(cast_discovery_running, &theme, &d))
+                    .children(
+                        output_devices
+                            .iter()
+                            .take(4)
+                            .enumerate()
+                            .map(|(idx, device)| {
+                                self.render_sidebar_output_device_item(
+                                    idx,
+                                    &device.name,
+                                    idx == selected_output_device_index
+                                        && selected_cast_device.is_none(),
+                                    &theme,
+                                    &d,
+                                )
+                            }),
                     )
-                }))
-                .child(self.render_sidebar_cast_group_label(
-                    cast_discovery_running,
-                    &theme,
-                    &d,
-                ))
-                .when(cast_devices.is_empty() && !cast_discovery_running, |el| {
-                    el.child(
-                        div()
-                            .px(d.pad_y)
-                            .py(d.grid)
-                            .text_size(d.text_xs)
-                            .text_color(theme.text_muted)
-                            .child("No Cast devices"),
+                    .child(self.render_sidebar_cast_group_label(cast_discovery_running, &theme, &d))
+                    .when(cast_devices.is_empty() && !cast_discovery_running, |el| {
+                        el.child(
+                            div()
+                                .px(d.pad_y)
+                                .py(d.grid)
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_muted)
+                                .child("No Cast devices"),
+                        )
+                    })
+                    .children(
+                        cast_devices
+                            .iter()
+                            .take(4)
+                            .enumerate()
+                            .map(|(idx, device)| {
+                                self.render_sidebar_cast_device_item(
+                                    idx,
+                                    &device.name,
+                                    &device.device_type,
+                                    selected_cast_device == Some(idx),
+                                    &theme,
+                                    &d,
+                                )
+                            }),
                     )
-                })
-                .children(cast_devices.iter().take(4).enumerate().map(|(idx, device)| {
-                    self.render_sidebar_cast_device_item(
-                        idx,
-                        &device.name,
-                        &device.device_type,
-                        selected_cast_device == Some(idx),
-                        &theme,
-                        &d,
-                    )
-                }))
             })
             .into_any_element()
     }
@@ -1122,7 +1131,11 @@ impl PlayerView {
         self.render_sidebar_item_base(
             "nav-devices",
             "Devices",
-            if collapsed { IconName::Cog } else { IconName::Speaker },
+            if collapsed {
+                IconName::Cog
+            } else {
+                IconName::Speaker
+            },
             false,
             collapsed,
             theme,
@@ -1410,6 +1423,8 @@ impl PlayerView {
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> Stateful<Div> {
+        use crate::components::themed_tooltip;
+
         let icon_color = if selected {
             theme.icon_on_accent
         } else {
@@ -1420,6 +1435,9 @@ impl PlayerView {
         } else {
             theme.text_secondary
         };
+
+        let tooltip_label = label.to_string();
+        let tooltip_theme = theme.clone();
 
         div()
             .id(id)
@@ -1443,6 +1461,11 @@ impl PlayerView {
                 })
             })
             .child(Icon::new(icon).size(IconSize::Sm).color(icon_color))
+            .when(collapsed, |el| {
+                el.tooltip(move |_window, cx| {
+                    themed_tooltip(tooltip_label.clone(), &tooltip_theme, cx)
+                })
+            })
             .when(!collapsed, |el| {
                 el.justify_start().child(
                     div()

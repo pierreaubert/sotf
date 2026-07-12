@@ -166,10 +166,8 @@ impl PlayerView {
             RecordingStep::Config => "Close",
             _ => "Back",
         };
-        let next_label = match current_step {
-            RecordingStep::Saving => "Finish",
-            _ => "Next",
-        };
+        let next_label =
+            crate::components::wizard_continue_label(current_step.next().map(|next| next.label()));
 
         let navigation = HStack::new()
             .spacing(StackSpacing::Sm)

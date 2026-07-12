@@ -1217,9 +1217,10 @@ fn render_param_as_inline_toggle(
     }
 }
 
-/// Render a param as a click-to-cycle selector (for Choice params).
+/// Render a choice parameter as an explicit set of options.
 ///
-/// Displays the current label; clicking advances to the next option.
+/// Showing every choice avoids the opaque click-to-cycle interaction and lets
+/// users compare modes and select the desired value directly.
 fn render_param_as_selector(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1232,44 +1233,19 @@ fn render_param_as_selector(
     theme: &Theme,
 ) -> AnyElement {
     match param.param_type {
-        ParamType::Choice { labels, .. } => {
-            let current = (value as usize).min(labels.len().saturating_sub(1));
-            let label = labels.get(current).copied().unwrap_or("?");
-            let is_sel = selected_param == idx && is_editing;
-            let num_labels = labels.len();
-
-            let sel_entity = entity.clone();
-            div()
-                .flex()
-                .items_center()
-                .gap(d.gap)
-                .px(d.pad_y)
-                .py(d.pad_y_half)
-                .rounded(d.r_md)
-                .cursor_pointer()
-                .id(SharedString::from(format!("selector-{plugin_idx}-{idx}")))
-                .when(is_sel, |el| el.border_1().border_color(theme.accent))
-                .child(
-                    div()
-                        .text_size(d.text_xs)
-                        .text_color(theme.text_muted)
-                        .child(param.name),
-                )
-                .child(
-                    div()
-                        .text_size(d.text_sm)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_primary)
-                        .child(label.to_string()),
-                )
-                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                    let next = (current + 1) % num_labels;
-                    sel_entity.update(cx, |state, _| {
-                        state.app.set_plugin_param(plugin_idx, idx, next as f64);
-                    });
-                })
-                .into_any_element()
-        }
+        ParamType::Choice { labels, .. } => render_param_as_button_set(
+            d,
+            entity,
+            plugin_idx,
+            idx,
+            param,
+            value,
+            labels,
+            true,
+            is_editing,
+            selected_param,
+            theme,
+        ),
         // Non-choice params: fall back to toggle
         _ => render_param_as_toggle(
             d,
@@ -1351,7 +1327,9 @@ fn render_param_as_button_set(
             .flex_col()
             .items_stretch()
             .gap(d.grid)
-            .w(px(130.0))
+            .min_w(px(130.0))
+            .max_w(px(240.0))
+            .flex_1()
             .rounded(d.r_md)
             .when(is_sel, |el| el.border_1().border_color(theme.accent))
             .child(

@@ -1,22 +1,22 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::level_meters::render_gradient_meter;
-use gpui_audio_kit::db_to_position;
 use super::super::render_plugin_content;
 use super::super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_icon};
+use super::super::ui_rack::{plugin_description, short_name, speaker_config_to_channels};
 use crate::app::constants::spacing;
 use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::level_meters::LevelMeterManager;
+use crate::components::themed_tooltip as make_tooltip;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_audio_kit::db_to_position;
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginType;
-use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP, aae::PARAMS as AAE_P};
-use crate::components::themed_tooltip as make_tooltip;
-use super::super::ui_rack::{plugin_description, short_name, speaker_config_to_channels};
+use sotf_plugins::param_specs::{aae::PARAMS as AAE_P, find_by_key as pk, upmixer::PARAMS as UP};
 
 impl PlayerView {
     /// Render a side level meter group for the detail panel
@@ -267,8 +267,10 @@ impl PlayerView {
                 if !release_channel.allows(pt.maturity()) {
                     continue;
                 }
-                let is_single_instance =
-                    matches!(pt, PluginType::Upmixer | PluginType::AAE | PluginType::BinauralDecoder);
+                let is_single_instance = matches!(
+                    pt,
+                    PluginType::Upmixer | PluginType::AAE | PluginType::BinauralDecoder
+                );
                 if is_single_instance && present_plugins.contains(&pt) {
                     continue;
                 }
@@ -760,29 +762,44 @@ impl PlayerView {
 
                                     match &plugin_ui_view {
                                         PluginUiView::Simple => {
-                                            super::super::ui_simple::render_simple_plugin_view(
+                                            super::super::render_app_plugin_shell(
                                                 &d,
                                                 self.state.clone(),
                                                 selected_idx,
-                                                &plugin.settings,
-                                                is_editing,
-                                                param_selection,
+                                                plugin.plugin_type(),
+                                                plugin.enabled,
                                                 &chassis,
-                                                midi_ref.as_ref(),
+                                                super::super::ui_simple::render_simple_plugin_view(
+                                                    &d,
+                                                    self.state.clone(),
+                                                    selected_idx,
+                                                    &plugin.settings,
+                                                    is_editing,
+                                                    param_selection,
+                                                    &chassis,
+                                                    midi_ref.as_ref(),
+                                                ),
                                             )
-                                            .into_any_element()
                                         }
                                         PluginUiView::Controller(controller_id) => {
-                                            super::super::render_controller_view(
+                                            super::super::render_app_plugin_shell(
                                                 &d,
-                                                controller_id,
-                                                &plugin.settings,
-                                                selected_idx,
-                                                &app_st.app.plugin_state.midi_mapping,
                                                 self.state.clone(),
-                                                is_editing,
-                                                param_selection,
+                                                selected_idx,
+                                                plugin.plugin_type(),
+                                                plugin.enabled,
                                                 &chassis,
+                                                super::super::render_controller_view(
+                                                    &d,
+                                                    controller_id,
+                                                    &plugin.settings,
+                                                    selected_idx,
+                                                    &app_st.app.plugin_state.midi_mapping,
+                                                    self.state.clone(),
+                                                    is_editing,
+                                                    param_selection,
+                                                    &chassis,
+                                                ),
                                             )
                                         }
                                         PluginUiView::UI => {

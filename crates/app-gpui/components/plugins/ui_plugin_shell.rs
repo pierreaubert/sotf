@@ -10,6 +10,7 @@ use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use sotf_audio_player::PluginType;
 
 /// Get the accent color for a plugin type from the theme
@@ -207,6 +208,7 @@ pub fn plugin_short_name(
 #[allow(clippy::type_complexity)]
 pub fn render_plugin_shell(
     d: &Ds,
+    plugin_idx: usize,
     plugin_type: &PluginType,
     enabled: bool,
     theme: &Theme,
@@ -216,6 +218,7 @@ pub fn render_plugin_shell(
     let accent = plugin_accent_color(plugin_type, theme);
     let icon = plugin_icon(plugin_type, false, false);
     let name = plugin_type.name().to_uppercase();
+    let description = super::ui_rack::plugin_description(plugin_type);
 
     div()
         .flex()
@@ -242,6 +245,8 @@ pub fn render_plugin_shell(
                 .child(
                     div()
                         .flex()
+                        .flex_1()
+                        .min_w_0()
                         .items_center()
                         .gap(d.gap)
                         .child(
@@ -252,42 +257,59 @@ pub fn render_plugin_shell(
                         )
                         .child(
                             div()
-                                .text_size(d.text_sm)
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(theme.text_primary)
-                                .child(name),
+                                .flex()
+                                .flex_col()
+                                .min_w_0()
+                                .child(
+                                    div()
+                                        .text_size(d.text_sm)
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(theme.text_primary)
+                                        .child(name),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(d.text_xs)
+                                        .text_color(theme.text_muted)
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .whitespace_nowrap()
+                                        .child(description),
+                                ),
                         ),
                 )
                 // Right: bypass toggle
                 .children(on_bypass.map(|cb| {
-                    let bypass_color = if enabled {
-                        theme.success
+                    let bypass = Button::new(
+                        ("shell-bypass", plugin_idx),
+                        if enabled { "Active" } else { "Bypassed" },
+                    )
+                    .variant(if enabled {
+                        ButtonVariant::Primary
                     } else {
-                        theme.text_muted
-                    };
+                        ButtonVariant::Secondary
+                    })
+                    .size(ButtonSize::Xs)
+                    .theme(theme.to_button_theme())
+                    .aria_label(if enabled {
+                        "Bypass plugin"
+                    } else {
+                        "Activate plugin"
+                    })
+                    .on_click_event(move |_event, window, cx| cb(!enabled, window, cx));
+
                     div()
-                        .id("shell-bypass")
-                        .cursor_pointer()
                         .flex()
-                        .items_center()
+                        .flex_col()
+                        .items_end()
                         .gap(d.grid)
-                        .px(d.pad_y)
-                        // intentional: compact header pill padding
-                        .py(px(2.0))
-                        .rounded(d.r_md)
-                        .hover(move |s| s.bg(Theme::opacity_20pct(bypass_color)))
-                        // intentional: 8px status dot — visual indicator, not spacing
-                        .child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(bypass_color))
+                        .child(bypass)
                         .child(
                             div()
                                 .text_size(d.text_xs)
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(bypass_color)
-                                .child(if enabled { "ON" } else { "OFF" }),
+                                .text_color(theme.text_muted)
+                                .child("Double-click a control to reset it"),
                         )
-                        .on_click(move |_, window, cx| {
-                            cb(!enabled, window, cx);
-                        })
                 })),
         )
         // Content area with padding

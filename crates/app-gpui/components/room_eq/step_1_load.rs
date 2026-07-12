@@ -173,10 +173,10 @@ impl PlayerView {
                         ),
                     ),
             )
-            // Success status message below cards with Next button
+            // Success status below the cards. The shared wizard header owns
+            // navigation so every step has one predictable primary action.
             .when(has_measurements && !status_message.is_empty(), |vstack| {
-                vstack
-                    .child(
+                vstack.child(
                         Card::new()
                             .background(theme.surface)
                             .header_background(theme.background_secondary)
@@ -196,37 +196,6 @@ impl PlayerView {
                                             .color(theme.text_primary),
                                     ),
                             ),
-                    )
-                    .child(
-                        gpui::div().flex().justify_center().child(
-                            // Label and target both come from `.next()`
-                            // so new wizard steps inserted before this
-                            // button can't be silently skipped the way
-                            // an earlier hardcoded "Next: Configure"
-                            // was bypassing the Delay Detection step.
-                            Button::new("next-from-load", "Next")
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Md)
-                                .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                        view.state.update(cx, |state, _| {
-                                            if let Some(next) = state
-                                                .app
-                                                .measurement_state
-                                                .room_eq_state
-                                                .step
-                                                .next()
-                                            {
-                                                state
-                                                    .app
-                                                    .measurement_state
-                                                    .room_eq_state
-                                                    .step = next;
-                                            }
-                                        });
-                                        cx.notify();
-                                    })),
-                        ),
                     )
             })
     }

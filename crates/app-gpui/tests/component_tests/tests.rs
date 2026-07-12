@@ -13,6 +13,7 @@ use sotf_audio_player_gpui::components::home::album_card::{
 use sotf_audio_player_gpui::components::plugins::common::{
     compute_transfer, format_shortcut_label,
 };
+use sotf_audio_player_gpui::components::wizard_continue_label;
 use sotf_audio_player_gpui::components::{settings_tab_icon_name, settings_tab_label};
 use sotf_audio_player_gpui::i18n::{Language, Translations};
 use sotf_audio_player_gpui::plugin_file_picker::{FilePickerOpenTarget, file_picker_open_target};
@@ -1154,4 +1155,36 @@ fn test_input_mode_is_text_input_add_directory() {
 fn test_input_mode_is_text_input_editing_param() {
     // EditingParam uses stepper/knob interaction, not text input
     assert!(!InputMode::EditingParam.is_text_input());
+}
+#[test]
+fn wizard_actions_name_the_destination_or_finish() {
+    assert_eq!(
+        wizard_continue_label(Some("Optimization")),
+        "Continue to Optimization"
+    );
+    assert_eq!(wizard_continue_label(None), "Finish");
+}
+
+#[test]
+fn guided_workflows_keep_navigation_in_the_shared_header() {
+    let room_load = app_source("components/room_eq/step_1_load.rs");
+    let headphone_measurement = app_source("components/headphone_eq/step_1_measurements.rs");
+
+    assert!(!room_load.contains("next-from-load"));
+    assert!(!headphone_measurement.contains("headphone-next-step"));
+}
+
+#[test]
+fn plugin_choices_and_identity_are_explicit() {
+    let layout_renderer = app_source("components/plugins/ui_layout_renderer/render.rs");
+    let plugin_root = app_source("components/plugins/mod.rs");
+    let plugin_shell = app_source("components/plugins/ui_plugin_shell.rs");
+
+    assert!(!layout_renderer.contains("clicking advances to the next option"));
+    assert!(
+        layout_renderer.contains("ParamType::Choice { labels, .. } => render_param_as_button_set")
+    );
+    assert!(plugin_root.contains("ui_plugin_shell::render_plugin_shell"));
+    assert!(plugin_shell.contains("plugin_description(plugin_type)"));
+    assert!(plugin_shell.contains("(\"shell-bypass\", plugin_idx)"));
 }

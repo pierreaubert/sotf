@@ -359,49 +359,17 @@ impl PlayerView {
                                     .child(Text::caption("Downloading measurement...")),
                             )
                         })
-                        // Frequency response graph + Next button after download
+                        // Frequency response preview after download. Navigation
+                        // remains in the shared wizard header.
                         .when_some(
                             downloaded_curve,
                             |vstack, curve_data| {
-                                vstack
-                                    .child(self.render_headphone_measurement_graph(
-                                        &curve_data,
-                                        &theme,
-                                        app_width,
-                                        cx,
-                                    ))
-                                    .child(
-                                        HStack::new()
-                                            .spacing(StackSpacing::Sm)
-                                            .justify(gpui_ui_kit::StackJustify::End)
-                                            .child(
-                                                Button::new(
-                                                    "headphone-next-step",
-                                                    "Next: Configure EQ",
-                                                )
-                                                .variant(ButtonVariant::Primary)
-                                                .size(ButtonSize::Sm)
-                                                .theme(button_theme.clone())
-                                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                                        view.state.update(cx, |state, _| {
-                                                            if let Some(next) = state
-                                                                .app
-                                                                .measurement_state
-                                                                .headphone_eq_state
-                                                                .step
-                                                                .next()
-                                                            {
-                                                                state
-                                                                    .app
-                                                                    .measurement_state
-                                                                    .headphone_eq_state
-                                                                    .step = next;
-                                                            }
-                                                        });
-                                                        cx.notify();
-                                                    })),
-                                            ),
-                                    )
+                                vstack.child(self.render_headphone_measurement_graph(
+                                    &curve_data,
+                                    &theme,
+                                    app_width,
+                                    cx,
+                                ))
                             },
                         )
                 },

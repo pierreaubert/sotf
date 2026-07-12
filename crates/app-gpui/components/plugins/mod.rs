@@ -33,10 +33,12 @@ mod ui_spectrum;
 mod ui_upmixer;
 
 pub use common::*;
+use editing::PluginEditingManager;
 pub use editing::get_param_count;
 pub use gpui_audio_kit::{
     LevelMeterElement, MeterColors, ScaleType, TickConfig, db_to_position, render_tick_row,
 };
+use level_meters::LevelMeterManager;
 pub use level_meters::{
     render_gr_meter, render_gradient_meter, render_lufs_with_true_peak, render_peak_meter,
 };
@@ -93,6 +95,7 @@ pub fn render_plugin_content(
     midi_overlay: Option<&MidiOverlay>,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
+    let d = Ds::from_cx(cx);
     let state = entity.read(cx);
     let auto_tab = state
         .app
@@ -183,7 +186,6 @@ pub fn render_plugin_content(
         render_fn(&ctx, cx)
     } else if settings.layout().is_some() {
         // Fallback: generic layout renderer for plugins with PluginLayout definitions.
-        let d = Ds::from_cx(cx);
         // Snapshot live audio data for plugins whose layout opts into the
         // spatial-spider visualization. The renderer ignores this when the
         // plugin's layout has no matching `VizSlot::Custom` entry.
@@ -216,9 +218,54 @@ pub fn render_plugin_content(
         gpui::div().into_any_element()
     };
 
-    gpui::div()
-        .size_full()
-        .bg(chassis_theme.background)
-        .child(content)
-        .into_any_element()
+    if let Some(plugin) = plugin_graph.get_plugin(plugin_idx) {
+        gpui::div()
+            .size_full()
+            .bg(chassis_theme.background)
+            .child(render_app_plugin_shell(
+                &d,
+                entity,
+                plugin_idx,
+                &plugin.plugin_type(),
+                plugin.enabled,
+                &chassis_theme,
+                content,
+            ))
+            .into_any_element()
+    } else {
+        gpui::div()
+            .size_full()
+            .bg(chassis_theme.background)
+            .child(content)
+            .into_any_element()
+    }
+}
+
+pub(crate) fn render_app_plugin_shell(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    plugin_type: &sotf_audio_player::PluginType,
+    enabled: bool,
+    theme: &Theme,
+    content: impl IntoElement,
+) -> AnyElement {
+    let entity_for_bypass = entity.clone();
+    ui_plugin_shell::render_plugin_shell(
+        d,
+        plugin_idx,
+        plugin_type,
+        enabled,
+        theme,
+        content,
+        Some(Box::new(move |target_enabled, _window, cx| {
+            if target_enabled != enabled {
+                entity_for_bypass.update(cx, |state, _| {
+                    state.app.toggle_plugin(plugin_idx);
+                    state.app.update_level_meter_groups();
+                });
+            }
+        })),
+    )
+    .into_any_element()
 }

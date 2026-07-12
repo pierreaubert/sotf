@@ -93,14 +93,26 @@ impl Render for ThemedTooltip {
 }
 
 /// Create a themed tooltip AnyView for GPUI's native `.tooltip()` method.
-pub(crate) fn themed_tooltip(text: &'static str, theme: &Theme, cx: &mut App) -> AnyView {
-    cx.new(|_| ThemedTooltip {
-        text: text.into(),
+pub(crate) fn themed_tooltip(
+    text: impl Into<SharedString>,
+    theme: &Theme,
+    cx: &mut App,
+) -> AnyView {
+    let text = text.into();
+    cx.new(move |_| ThemedTooltip {
+        text,
         bg: theme.surface,
         border: theme.border,
         text_color: theme.text_primary,
     })
     .into()
+}
+
+/// Consistent primary-action copy for every guided workflow.
+pub fn wizard_continue_label(next_step: Option<&str>) -> String {
+    next_step
+        .map(|label| format!("Continue to {label}"))
+        .unwrap_or_else(|| "Finish".to_string())
 }
 
 impl PlayerView {

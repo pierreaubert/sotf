@@ -297,10 +297,8 @@ impl PlayerView {
             SpinoramaStep::SelectSpeaker => "Close",
             _ => "Back",
         };
-        let next_label = match current_step {
-            SpinoramaStep::Export => "Finish",
-            _ => "Next",
-        };
+        let next_label =
+            crate::components::wizard_continue_label(current_step.next().map(|next| next.label()));
 
         let navigation = HStack::new()
             .spacing(StackSpacing::Sm)
