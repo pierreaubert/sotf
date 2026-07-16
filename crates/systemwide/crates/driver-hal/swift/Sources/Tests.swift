@@ -26,6 +26,9 @@ final class HALDriverTests {
         if testRingBufferWrapAround() { passed += 1 } else { failed += 1 }
         if testRingBufferMultiChannel() { passed += 1 } else { failed += 1 }
 
+        // Cross-language shared-memory ABI
+        if testSharedAudioHeaderLayout() { passed += 1 } else { failed += 1 }
+
         // Encryption tests
         if testEncryptionRoundTrip() { passed += 1 } else { failed += 1 }
         if testEncryptionWithDifferentKeys() { passed += 1 } else { failed += 1 }
@@ -36,6 +39,51 @@ final class HALDriverTests {
         halLog("Tests complete: \(passed) passed, \(failed) failed")
     }
 
+    /// Keep the Swift mirror byte-for-byte compatible with Rust's
+    /// `#[repr(C, align(8))] SharedAudioHeader`. Rust asserts the same table in
+    /// `shared_memory/tests.rs`; changing either side without updating the
+    /// other fails its platform test instead of silently corrupting the mmap.
+    static func testSharedAudioHeaderLayout() -> Bool {
+        halLog("  Test: SharedAudioHeader layout")
+
+        let expectedOffsets: [(String, Int?, Int)] = [
+            ("magic", MemoryLayout<SharedAudioHeader>.offset(of: \.magic), 0),
+            ("version", MemoryLayout<SharedAudioHeader>.offset(of: \.version), 4),
+            ("sampleRate", MemoryLayout<SharedAudioHeader>.offset(of: \.sampleRate), 8),
+            ("bufferFrames", MemoryLayout<SharedAudioHeader>.offset(of: \.bufferFrames), 12),
+            ("channelCount", MemoryLayout<SharedAudioHeader>.offset(of: \.channelCount), 16),
+            ("writePosition", MemoryLayout<SharedAudioHeader>.offset(of: \.writePosition), 24),
+            ("readPosition", MemoryLayout<SharedAudioHeader>.offset(of: \.readPosition), 32),
+            ("active", MemoryLayout<SharedAudioHeader>.offset(of: \.active), 40),
+            ("keyFingerprint", MemoryLayout<SharedAudioHeader>.offset(of: \.keyFingerprint), 64),
+            ("frameCounter", MemoryLayout<SharedAudioHeader>.offset(of: \.frameCounter), 72),
+            ("requestedSampleRate", MemoryLayout<SharedAudioHeader>.offset(of: \.requestedSampleRate), 80),
+            ("configStatus", MemoryLayout<SharedAudioHeader>.offset(of: \.configStatus), 96),
+            ("encryptionOverflowCount", MemoryLayout<SharedAudioHeader>.offset(of: \.encryptionOverflowCount), 112),
+            ("daemonHeartbeatMs", MemoryLayout<SharedAudioHeader>.offset(of: \.daemonHeartbeatMs), 120),
+            ("configuring", MemoryLayout<SharedAudioHeader>.offset(of: \.configuring), 128),
+        ]
+
+        guard MemoryLayout<SharedAudioHeader>.size == 136,
+              MemoryLayout<SharedAudioHeader>.stride == 136,
+              MemoryLayout<SharedAudioHeader>.alignment == 8 else {
+            halLog(
+                "    FAIL: size=\(MemoryLayout<SharedAudioHeader>.size), " +
+                "stride=\(MemoryLayout<SharedAudioHeader>.stride), " +
+                "alignment=\(MemoryLayout<SharedAudioHeader>.alignment)"
+            )
+            return false
+        }
+
+        for (name, actual, expected) in expectedOffsets where actual != expected {
+            halLog("    FAIL: \(name) offset=\(String(describing: actual)), expected=\(expected)")
+            return false
+        }
+
+        halLog("    PASS")
+        return true
+    }
+
     // ==========================================================================
     // Ring Buffer Tests
     // ==========================================================================
@@ -44,7 +92,7 @@ final class HALDriverTests {
     static func testRingBufferBasicOperations() -> Bool {
         halLog("  Test: RingBuffer basic operations")
 
-        let buffer = RingBuffer(capacity: 1024)
+        let buffer = AudioRingBuffer(capacity: 1024)
 
         // Initially empty
         guard buffer.availableToRead == 0 else {
@@ -97,7 +145,7 @@ final class HALDriverTests {
         halLog("  Test: RingBuffer wrap-around")
 
         let capacity = 256
-        let buffer = RingBuffer(capacity: capacity)
+        let buffer = AudioRingBuffer(capacity: capacity)
 
         // Write and read multiple times to force wrap-around
         for iteration in 0..<10 {
@@ -134,9 +182,9 @@ final class HALDriverTests {
     static func testRingBufferMultiChannel() -> Bool {
         halLog("  Test: RingBuffer multi-channel")
 
-        let buffer = RingBuffer(capacity: 1024)
         let channels = 6  // 5.1 surround
         let frames = 64
+        let buffer = MultiChannelRingBuffer(channelCount: channels, framesCapacity: 1024)
 
         // Create interleaved multi-channel data
         var writeData = [Float](repeating: 0, count: frames * channels)
@@ -148,7 +196,7 @@ final class HALDriverTests {
         }
 
         // Write interleaved
-        let written = buffer.writeInterleaved(&writeData, frameCount: frames, channels: channels)
+        let written = buffer.writeInterleaved(&writeData, frameCount: frames)
         guard written == frames else {
             halLog("    FAIL: Should write \(frames) frames, wrote \(written)")
             return false
@@ -156,7 +204,7 @@ final class HALDriverTests {
 
         // Read interleaved
         var readData = [Float](repeating: 0, count: frames * channels)
-        let read = buffer.readInterleaved(&readData, frameCount: frames, channels: channels)
+        let read = buffer.readInterleaved(&readData, frameCount: frames)
         guard read == frames else {
             halLog("    FAIL: Should read \(frames) frames, read \(read)")
             return false

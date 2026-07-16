@@ -16,8 +16,36 @@ mod misc;
 
 #[test]
 fn test_header_size() {
-    assert!(std::mem::size_of::<SharedAudioHeader>() <= 256);
+    assert_eq!(std::mem::size_of::<SharedAudioHeader>(), 136);
     assert_eq!(std::mem::align_of::<SharedAudioHeader>(), 8);
+}
+
+#[test]
+fn test_header_offsets_match_swift_layout_contract() {
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, magic), 0);
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, version), 4);
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, sample_rate), 8);
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, buffer_frames), 12);
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, channel_count), 16);
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, write_position), 24);
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, read_position), 32);
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, active), 40);
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, key_fingerprint), 64);
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, frame_counter), 72);
+    assert_eq!(
+        std::mem::offset_of!(SharedAudioHeader, requested_sample_rate),
+        80
+    );
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, config_status), 96);
+    assert_eq!(
+        std::mem::offset_of!(SharedAudioHeader, encryption_overflow_count),
+        112
+    );
+    assert_eq!(
+        std::mem::offset_of!(SharedAudioHeader, daemon_heartbeat_ms),
+        120
+    );
+    assert_eq!(std::mem::offset_of!(SharedAudioHeader, configuring), 128);
 }
 
 #[test]
@@ -52,6 +80,47 @@ fn test_create_or_open_initializes_daemon_owned_file() {
     assert_eq!(reopened.sample_rate(), 48_000);
     assert_eq!(reopened.buffer_frames(), 512);
     assert_eq!(reopened.channel_count(), 2);
+}
+
+#[test]
+fn open_mapping_derives_capacity_after_cross_process_geometry_change() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let mut controller = SharedAudioBuffer::create_or_open_with_max_geometry(
+        temp_file.path(),
+        48_000,
+        512,
+        2,
+        1024,
+        8,
+    )
+    .expect("Failed to create shared memory");
+    let observer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open observer");
+
+    assert_eq!(observer.current_audio_capacity(), 512 * 2 * 8);
+    controller.reconfigure_quiesced(None, Some(1024), Some(8));
+    assert_eq!(observer.current_audio_capacity(), 1024 * 8 * 8);
+}
+
+#[test]
+fn encrypted_write_refuses_to_grow_rt_staging_buffers() {
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let mut buffer = SharedAudioBuffer::create_or_open(temp_file.path(), 48_000, 512, 2)
+        .expect("Failed to create shared memory");
+    buffer.set_encrypted(true);
+
+    let cipher = crate::encryption::AudioCipher::new(&[7; 32]);
+    let samples = vec![0.25; 128];
+    let mut ciphertext = Vec::with_capacity(1);
+    let mut encrypted = Vec::with_capacity(1);
+    let ciphertext_capacity = ciphertext.capacity();
+    let encrypted_capacity = encrypted.capacity();
+
+    assert_eq!(
+        buffer.write_audio_encrypted_into(&samples, &cipher, &mut ciphertext, &mut encrypted,),
+        0
+    );
+    assert_eq!(ciphertext.capacity(), ciphertext_capacity);
+    assert_eq!(encrypted.capacity(), encrypted_capacity);
 }
 
 #[cfg(unix)]

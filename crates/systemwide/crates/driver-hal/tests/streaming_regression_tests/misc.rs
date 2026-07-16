@@ -166,8 +166,8 @@ fn swift_encrypted_ioproc_uses_preallocated_buffers_and_atomic_counter() {
     );
     assert!(
         read_audio.contains("record.totalBytes <= encryptedPayloadScratch.count")
-            && read_audio
-                .contains("header.pointee.readPosition = readPos + UInt64(record.floatCount)"),
+            && read_audio.contains("readPos + UInt64(record.floatCount)")
+            && read_audio.contains("atomicStore("),
         "oversized encrypted records should be consumed so the daemon does not retry the same bad record forever"
     );
 }
@@ -465,7 +465,7 @@ fn swift_shared_memory_protocol_matches_rust_v5_configuring_handshake() {
         "Swift must compare the UInt64 fingerprint using Rust's canonical big-endian byte order"
     );
     assert!(
-        source.contains("header.pointee.configuring != 0"),
+        source.contains("atomicLoad(&header.pointee.configuring) != 0"),
         "HAL write/config paths must observe the daemon configuring flag"
     );
 }
@@ -674,7 +674,7 @@ fn swift_hal_supports_daemon_requested_channel_counts_up_to_32() {
     );
     assert!(
         shm_source.contains("func getRequestedChannelCount()")
-            && shm_source.contains("header.pointee.channelCount = channelCount"),
+            && shm_source.contains("atomicStore(&header.pointee.channelCount, channelCount)"),
         "shared-memory config negotiation should carry the requested channel count"
     );
     assert!(
@@ -694,7 +694,7 @@ fn swift_shared_memory_drops_old_capture_when_ring_is_full() {
     assert!(
         write_audio.contains("samplesToWrite")
             && write_audio.contains("samplesToDrop")
-            && write_audio.contains("header.pointee.readPosition = adjustedReadPos"),
+            && write_audio.contains("atomicStore(&header.pointee.readPosition, adjustedReadPos)"),
         "unencrypted live capture writes must drop oldest samples before publishing current audio"
     );
     assert!(
@@ -705,7 +705,7 @@ fn swift_shared_memory_drops_old_capture_when_ring_is_full() {
     assert!(
         write_raw.contains("floatCount > audioCapacity")
             && write_raw.contains("floatCount > available")
-            && write_raw.contains("header.pointee.readPosition = writePos"),
+            && write_raw.contains("atomicStore(&header.pointee.readPosition, writePos)"),
         "encrypted capture writes must drop old records at record boundaries when the ring is full"
     );
 }

@@ -88,7 +88,7 @@ fn test_device_matching_priority_logic() {
 fn daemon_plugin_reload_uses_hot_update_path() {
     let source = daemon_source();
     let reload_start = source
-        .find("async fn reload_plugins_with_user_plugins")
+        .find("fn reload_plugins_with_user_plugins")
         .expect("reload_plugins_with_user_plugins should exist");
     let reload_body = &source[reload_start..];
 
@@ -104,6 +104,25 @@ fn daemon_plugin_reload_uses_hot_update_path() {
         reload_body.contains("No engine running")
             && reload_body.contains("handle_load_plugins_with_channels"),
         "full driver playback restart should be reserved for the no-engine fallback"
+    );
+}
+
+#[test]
+fn daemon_serializes_startup_before_rotating_the_audio_key() {
+    let source = daemon_source();
+    let lock = source
+        .find("acquire_daemon_instance_lock(&secure_socket_path)")
+        .expect("daemon startup should acquire the per-user instance lock");
+    let construct = source
+        .find("let daemon = AudioDaemon::new()")
+        .expect("daemon should be constructed after locking");
+    let rotate = source
+        .find("daemon.key_manager.lock().force_rotate()")
+        .expect("daemon startup should rotate the AEAD session key");
+
+    assert!(
+        lock < construct && construct < rotate,
+        "instance lock must precede KeyManager construction and key rotation"
     );
 }
 
@@ -369,12 +388,14 @@ fn configbar_hal_stream_status_wording_matches_signal_scope() {
         "HAL status should describe the virtual HAL stream, not imply the whole system has no audio"
     );
     assert!(
-        shared_memory.contains("if header.pointee.active == 0")
-            && shared_memory.contains("header.pointee.active = 1")
-            && shared_memory
-                .contains("header.pointee.writePosition = writePos + UInt64(samplesToWrite)")
-            && shared_memory
-                .contains("header.pointee.writePosition = writePos + UInt64(floatCount)"),
+        shared_memory.contains("if atomicLoad(&header.pointee.active) == 0")
+            && shared_memory.contains("atomicStore(&header.pointee.active, 1)")
+            && shared_memory.contains(
+                "atomicStore(&header.pointee.writePosition, writePos + UInt64(samplesToWrite))"
+            )
+            && shared_memory.contains(
+                "atomicStore(&header.pointee.writePosition, writePos + UInt64(floatCount))"
+            ),
         "successful HAL shared-memory writes should mark the HAL stream active even if StartIO state was stale"
     );
 }

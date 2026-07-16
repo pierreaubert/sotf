@@ -1,5 +1,21 @@
 # 0.1.12 (unreleased)
 
+## Cross-process atomic and real-time hardening
+
+- Converted the Rust/Swift shared header contract to matching atomic field
+  access, using C11 acquire/release helpers from Swift.
+- Added shared-header size and field-offset contract tests on both sides.
+- Re-check the `configuring` gate before Swift publishes read or write
+  positions, and derive Rust ring capacity from the current atomic geometry.
+- Preallocate encrypted reader/writer staging for the maximum HAL geometry and
+  reject insufficient capacity instead of allocating on the audio path.
+- Removed mmap-layer key rotation so the daemon remains the sole key-state
+  owner, and use constant-time-style fingerprint comparison in Swift.
+- Gate Swift IO tracing behind `SOTF_AUDIO_TRACE` and remove wall-clock
+  heartbeat updates from the Rust audio read path.
+- Replaced a Rust sample/byte reinterpretation with `bytemuck` and enabled
+  `unsafe_op_in_unsafe_fn` denial for tighter unsafe auditing.
+
 ## Shared-memory security and recovery coverage (QA-SYS-001)
 
 - Added focused non-device tests for shared-memory header integrity and

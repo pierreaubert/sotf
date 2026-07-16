@@ -38,7 +38,7 @@ use sotf_audio::manager::AudioEngineManager;
 use sotf_audio::plugins::PluginType;
 use std::io::{BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub(super) fn pipeline_timing_after_config_request(
     result: &driver_common::ConfigResult,
@@ -66,21 +66,16 @@ pub(super) struct AudioDaemon {
     pub(super) system_state: Arc<Mutex<SystemwideState>>,
     /// Encryption key manager
     pub(super) key_manager: Arc<Mutex<KeyManager>>,
-    /// Shared Tokio runtime for async operations
-    pub(super) runtime: Arc<tokio::runtime::Runtime>,
 }
 
 impl AudioDaemon {
     pub(super) fn new() -> Self {
-        let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
         Self {
             manager: Arc::new(Mutex::new(AudioEngineManager::new())),
             running: Arc::new(Mutex::new(true)),
             driver_manager: Arc::new(Mutex::new(DriverManager::new())),
             system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
-            runtime: Arc::new(runtime),
         }
     }
 
@@ -106,9 +101,7 @@ impl AudioDaemon {
 
             let plugins: Vec<PluginConfig> = vec![];
 
-            let result = daemon
-                .runtime
-                .block_on(daemon.handle_load_plugins_with_channels(plugins, 2, 2));
+            let result = daemon.handle_load_plugins_with_channels(plugins, 2, 2);
             if result.success {
                 println!("   Driver playback started successfully");
             } else {
@@ -117,72 +110,61 @@ impl AudioDaemon {
         });
     }
 
-    pub(super) async fn handle_command(&self, cmd: Command) -> Response {
+    pub(super) fn handle_command(&self, cmd: Command) -> Response {
         match cmd {
-            Command::Status => self.handle_status().await,
-            Command::GetSnapshot => self.handle_get_snapshot().await,
-            Command::DumpState => self.handle_dump_state().await,
-            Command::Load { path } => self.handle_load(&path).await,
-            Command::Play => self.handle_play().await,
-            Command::Pause => self.handle_pause().await,
-            Command::Stop => self.handle_stop().await,
-            Command::Seek { position } => self.handle_seek(position).await,
-            Command::SetVolume { volume } => self.handle_set_volume(volume).await,
-            Command::ListDevices => self.handle_list_devices().await,
-            Command::SetDevice { device } => self.handle_set_device(&device).await,
+            Command::Status => self.handle_status(),
+            Command::GetSnapshot => self.handle_get_snapshot(),
+            Command::DumpState => self.handle_dump_state(),
+            Command::Load { path } => self.handle_load(&path),
+            Command::Play => self.handle_play(),
+            Command::Pause => self.handle_pause(),
+            Command::Stop => self.handle_stop(),
+            Command::Seek { position } => self.handle_seek(position),
+            Command::SetVolume { volume } => self.handle_set_volume(volume),
+            Command::ListDevices => self.handle_list_devices(),
+            Command::SetDevice { device } => self.handle_set_device(&device),
             Command::LoadPlugins {
                 plugins,
                 input_channels,
                 output_channels,
-            } => {
-                self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
-                    .await
-            }
+            } => self.handle_load_plugins_with_channels(plugins, input_channels, output_channels),
             Command::LoadPluginArtifact {
                 artifact,
                 base_generation,
-            } => {
-                self.handle_load_plugin_artifact(artifact, base_generation)
-                    .await
-            }
+            } => self.handle_load_plugin_artifact(artifact, base_generation),
             Command::SetInputChannels { channels } => {
                 self.handle_set_pipeline_channels(Some(channels), None)
-                    .await
             }
             Command::SetOutputChannels { channels } => {
                 self.handle_set_pipeline_channels(None, Some(channels))
-                    .await
             }
             Command::SetPipelineChannels {
                 input_channels,
                 output_channels,
-            } => {
-                self.handle_set_pipeline_channels(input_channels, output_channels)
-                    .await
-            }
-            Command::GetLoudness => self.handle_get_loudness().await,
-            Command::GetMetering => self.handle_get_metering().await,
-            Command::GetPlugins => self.handle_get_plugins().await,
-            Command::GetAvailablePlugins => self.handle_get_available_plugins().await,
-            Command::AddPlugin { plugin, index } => self.handle_add_plugin(plugin, index).await,
-            Command::RemovePlugin { index } => self.handle_remove_plugin(index).await,
+            } => self.handle_set_pipeline_channels(input_channels, output_channels),
+            Command::GetLoudness => self.handle_get_loudness(),
+            Command::GetMetering => self.handle_get_metering(),
+            Command::GetPlugins => self.handle_get_plugins(),
+            Command::GetAvailablePlugins => self.handle_get_available_plugins(),
+            Command::AddPlugin { plugin, index } => self.handle_add_plugin(plugin, index),
+            Command::RemovePlugin { index } => self.handle_remove_plugin(index),
             Command::UpdatePlugin { index, parameters } => {
-                self.handle_update_plugin(index, parameters).await
+                self.handle_update_plugin(index, parameters)
             }
-            Command::ReorderPlugins { order } => self.handle_reorder_plugins(order).await,
-            Command::DriverStatus => self.handle_driver_status().await,
+            Command::ReorderPlugins { order } => self.handle_reorder_plugins(order),
+            Command::DriverStatus => self.handle_driver_status(),
             Command::Shutdown => {
                 *self.running.lock() = false;
                 Response::ok_empty()
             }
             // Encryption commands
-            Command::SetEncryption { enabled } => self.handle_set_encryption(enabled).await,
-            Command::EncryptionStatus => self.handle_encryption_status().await,
-            Command::RotateEncryptionKey => self.handle_rotate_encryption_key().await,
+            Command::SetEncryption { enabled } => self.handle_set_encryption(enabled),
+            Command::EncryptionStatus => self.handle_encryption_status(),
+            Command::RotateEncryptionKey => self.handle_rotate_encryption_key(),
             // Driver config commands
-            Command::SetSampleRate { rate } => self.handle_set_sample_rate(rate).await,
-            Command::SetBufferFrames { frames } => self.handle_set_buffer_frames(frames).await,
-            Command::GetDriverConfig => self.handle_get_driver_config().await,
+            Command::SetSampleRate { rate } => self.handle_set_sample_rate(rate),
+            Command::SetBufferFrames { frames } => self.handle_set_buffer_frames(frames),
+            Command::GetDriverConfig => self.handle_get_driver_config(),
         }
     }
 
@@ -335,11 +317,11 @@ impl AudioDaemon {
         })
     }
 
-    pub(super) async fn handle_get_snapshot(&self) -> Response {
+    pub(super) fn handle_get_snapshot(&self) -> Response {
         Response::ok(self.snapshot_json())
     }
 
-    pub(super) async fn handle_dump_state(&self) -> Response {
+    pub(super) fn handle_dump_state(&self) -> Response {
         let state = self.system_state.lock();
         let user_graph = state.user_graph();
         let user_plugins = state.user_plugins();
@@ -352,7 +334,7 @@ impl AudioDaemon {
         }))
     }
 
-    pub(super) async fn handle_status(&self) -> Response {
+    pub(super) fn handle_status(&self) -> Response {
         let (state, engine_state, volume, muted) = {
             let manager = self.manager.lock();
             (
@@ -447,7 +429,7 @@ impl AudioDaemon {
         }))
     }
 
-    pub(super) async fn handle_load(&self, path: &str) -> Response {
+    pub(super) fn handle_load(&self, path: &str) -> Response {
         let mut manager = self.manager.lock();
         match manager.load_file(path) {
             Ok(_) => Response::ok_empty(),
@@ -455,7 +437,7 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_play(&self) -> Response {
+    pub(super) fn handle_play(&self) -> Response {
         let mut manager = self.manager.lock();
         let output_device = self.system_state.lock().selected_output_device();
         match manager.start_playback(output_device, vec![], 2) {
@@ -464,7 +446,7 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_pause(&self) -> Response {
+    pub(super) fn handle_pause(&self) -> Response {
         let manager = self.manager.lock();
         match manager.pause() {
             Ok(_) => Response::ok_empty(),
@@ -472,7 +454,7 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_stop(&self) -> Response {
+    pub(super) fn handle_stop(&self) -> Response {
         // Lock-order invariant: driver_manager -> manager. The config
         // watcher thread also acquires them in this order. Using the
         // `lock_order::lock_with_order_warning` helper turns silent
@@ -490,7 +472,7 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_seek(&self, position: f64) -> Response {
+    pub(super) fn handle_seek(&self, position: f64) -> Response {
         let manager = self.manager.lock();
         match manager.seek(position) {
             Ok(_) => Response::ok_empty(),
@@ -498,20 +480,20 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_set_volume(&self, volume: f32) -> Response {
+    pub(super) fn handle_set_volume(&self, volume: f32) -> Response {
         let manager = self.manager.lock();
         let _ = manager.set_volume(volume);
         Response::ok_empty()
     }
 
-    pub(super) async fn handle_list_devices(&self) -> Response {
+    pub(super) fn handle_list_devices(&self) -> Response {
         match list_audio_devices() {
             Ok(devices) => Response::ok(serde_json::json!({ "devices": devices })),
             Err(e) => Response::err(format!("Failed to list devices: {}", e)),
         }
     }
 
-    pub(super) async fn handle_set_device(&self, device: &str) -> Response {
+    pub(super) fn handle_set_device(&self, device: &str) -> Response {
         use cpal::traits::DeviceTrait;
         let is_asio = sotf_audio::devices::is_asio_device(device);
         let host = sotf_audio::devices::get_host_for_device(Some(device));
@@ -701,7 +683,7 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_load_plugins_with_channels(
+    pub(super) fn handle_load_plugins_with_channels(
         &self,
         plugins: Vec<PluginConfig>,
         input_channels: usize,
@@ -745,7 +727,7 @@ impl AudioDaemon {
         )
     }
 
-    pub(super) async fn handle_load_plugin_artifact(
+    pub(super) fn handle_load_plugin_artifact(
         &self,
         artifact: Value,
         base_generation: Option<u64>,
@@ -765,7 +747,6 @@ impl AudioDaemon {
                     (state.input_channels(), state.output_channels())
                 };
                 self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
-                    .await
             }
             Ok(PluginArtifactPlan::Graph { graph }) => {
                 let (input_channels, output_channels) = {
@@ -773,7 +754,6 @@ impl AudioDaemon {
                     (state.input_channels(), state.output_channels())
                 };
                 self.handle_load_plugin_graph_with_channels(graph, input_channels, output_channels)
-                    .await
             }
             Ok(PluginArtifactPlan::UnsupportedGraph { reason }) => Response::err(format!(
                 "Unsupported graph plugin artifact: {}. Use a graph-aware loader instead of flattening it into the rack.",
@@ -783,7 +763,7 @@ impl AudioDaemon {
         }
     }
 
-    async fn handle_load_plugin_graph_with_channels(
+    fn handle_load_plugin_graph_with_channels(
         &self,
         graph: sotf_audio::engine::PluginGraphConfig,
         input_channels: usize,
@@ -853,7 +833,7 @@ impl AudioDaemon {
         )
     }
 
-    pub(super) async fn handle_set_pipeline_channels(
+    pub(super) fn handle_set_pipeline_channels(
         &self,
         input_channels: Option<usize>,
         output_channels: Option<usize>,
@@ -883,18 +863,16 @@ impl AudioDaemon {
                 next_input_channels,
                 next_output_channels,
             )
-            .await
         } else {
             self.handle_load_plugins_with_channels(
                 plugins,
                 next_input_channels,
                 next_output_channels,
             )
-            .await
         }
     }
 
-    pub(super) async fn handle_get_loudness(&self) -> Response {
+    pub(super) fn handle_get_loudness(&self) -> Response {
         let manager = self.manager.lock();
         match manager.get_loudness() {
             Some(loudness) => Response::ok(loudness_info_to_json(&loudness)),
@@ -902,7 +880,7 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_get_metering(&self) -> Response {
+    pub(super) fn handle_get_metering(&self) -> Response {
         Response::ok(self.metering_snapshot())
     }
 
@@ -910,7 +888,7 @@ impl AudioDaemon {
     // Plugin management handlers
     // =========================================================================
 
-    pub(super) async fn handle_get_plugins(&self) -> Response {
+    pub(super) fn handle_get_plugins(&self) -> Response {
         let state = self.system_state.lock();
         if let Some(graph) = state.user_graph() {
             return Response::ok(serde_json::json!({
@@ -940,50 +918,52 @@ impl AudioDaemon {
         }))
     }
 
-    pub(super) async fn handle_get_available_plugins(&self) -> Response {
-        let excluded = [
-            "loudness_monitor",
-            "spectrum_analyzer",
-            "resampler",
-            "hal_input",
-            "hal_output",
-            "band_split",
-            "band_merge",
-            "ab_compare",
-            "fletcher_munson",
-        ];
+    pub(super) fn handle_get_available_plugins(&self) -> Response {
+        static AVAILABLE_PLUGINS: OnceLock<Value> = OnceLock::new();
 
-        let available: Vec<Value> = PluginType::all()
-            .into_iter()
-            .filter(|pt| {
-                let engine_type = plugin_type_to_engine_str(pt);
-                !excluded.contains(&engine_type)
-            })
-            .map(|pt| {
-                let engine_type = plugin_type_to_engine_str(&pt);
-                let category = plugin_type_category(&pt);
-                let default_settings = sotf_audio::PluginSettings::default_for(&pt);
-                let default_parameters = default_settings.to_plugin_config(48_000.0).parameters;
-                serde_json::json!({
-                    "type": engine_type,
-                    "name": pt.name(),
-                    "description": pt.description(),
-                    "category": category,
-                    "maturity": format!("{:?}", pt.maturity()),
-                    "default_parameters": default_parameters,
-                    "parameters": plugin_parameter_descriptors(&default_settings),
+        let available = AVAILABLE_PLUGINS.get_or_init(|| {
+            let excluded = [
+                "loudness_monitor",
+                "spectrum_analyzer",
+                "resampler",
+                "hal_input",
+                "hal_output",
+                "band_split",
+                "band_merge",
+                "ab_compare",
+                "fletcher_munson",
+            ];
+
+            let plugins: Vec<Value> = PluginType::all()
+                .into_iter()
+                .filter(|pt| {
+                    let engine_type = plugin_type_to_engine_str(pt);
+                    !excluded.contains(&engine_type)
                 })
-            })
-            .collect();
+                .map(|pt| {
+                    let engine_type = plugin_type_to_engine_str(&pt);
+                    let category = plugin_type_category(&pt);
+                    let default_settings = sotf_audio::PluginSettings::default_for(&pt);
+                    let default_parameters = default_settings.to_plugin_config(48_000.0).parameters;
+                    serde_json::json!({
+                        "type": engine_type,
+                        "name": pt.name(),
+                        "description": pt.description(),
+                        "category": category,
+                        "maturity": format!("{:?}", pt.maturity()),
+                        "default_parameters": default_parameters,
+                        "parameters": plugin_parameter_descriptors(&default_settings),
+                    })
+                })
+                .collect();
 
-        Response::ok(serde_json::json!({ "plugins": available }))
+            serde_json::json!({ "plugins": plugins })
+        });
+
+        Response::ok(available.clone())
     }
 
-    pub(super) async fn handle_add_plugin(
-        &self,
-        plugin: PluginConfig,
-        index: Option<usize>,
-    ) -> Response {
+    pub(super) fn handle_add_plugin(&self, plugin: PluginConfig, index: Option<usize>) -> Response {
         let mut plugins = {
             let state = self.system_state.lock();
             if state.user_graph().is_some() {
@@ -997,10 +977,10 @@ impl AudioDaemon {
             Some(i) if i <= plugins.len() => plugins.insert(i, plugin),
             _ => plugins.push(plugin),
         }
-        self.reload_plugins_with_user_plugins(plugins).await
+        self.reload_plugins_with_user_plugins(plugins)
     }
 
-    pub(super) async fn handle_remove_plugin(&self, index: usize) -> Response {
+    pub(super) fn handle_remove_plugin(&self, index: usize) -> Response {
         let mut plugins = {
             let state = self.system_state.lock();
             if state.user_graph().is_some() {
@@ -1018,10 +998,10 @@ impl AudioDaemon {
             ));
         }
         plugins.remove(index);
-        self.reload_plugins_with_user_plugins(plugins).await
+        self.reload_plugins_with_user_plugins(plugins)
     }
 
-    pub(super) async fn handle_update_plugin(&self, index: usize, parameters: Value) -> Response {
+    pub(super) fn handle_update_plugin(&self, index: usize, parameters: Value) -> Response {
         let mut plugins = {
             let state = self.system_state.lock();
             if state.user_graph().is_some() {
@@ -1039,10 +1019,10 @@ impl AudioDaemon {
             ));
         }
         plugins[index].parameters = parameters;
-        self.reload_plugins_with_user_plugins(plugins).await
+        self.reload_plugins_with_user_plugins(plugins)
     }
 
-    pub(super) async fn handle_reorder_plugins(&self, order: Vec<usize>) -> Response {
+    pub(super) fn handle_reorder_plugins(&self, order: Vec<usize>) -> Response {
         let plugins = {
             let state = self.system_state.lock();
             if state.user_graph().is_some() {
@@ -1077,13 +1057,10 @@ impl AudioDaemon {
         for (new_pos, &old_pos) in order.iter().enumerate() {
             reordered[new_pos] = old[old_pos].clone();
         }
-        self.reload_plugins_with_user_plugins(reordered).await
+        self.reload_plugins_with_user_plugins(reordered)
     }
 
-    pub(super) async fn reload_plugins_with_user_plugins(
-        &self,
-        plugins: Vec<PluginConfig>,
-    ) -> Response {
+    pub(super) fn reload_plugins_with_user_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
         let prepared_plan = {
             let pipeline = self.system_state.lock();
             pipeline.prepare_plan(
@@ -1119,7 +1096,6 @@ impl AudioDaemon {
                     plan.spec.input_channels,
                     plan.spec.output_channels,
                 )
-                .await
             }
             Err(e) => {
                 log::error!("Failed to hot-update plugin chain: {}", e);
@@ -1128,7 +1104,7 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_driver_status(&self) -> Response {
+    pub(super) fn handle_driver_status(&self) -> Response {
         let status = get_driver_status(&self.driver_manager.lock());
         Response::ok(serde_json::json!({
             "platform_supported": status.platform_supported,
@@ -1187,7 +1163,7 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_set_encryption(&self, enabled: bool) -> Response {
+    pub(super) fn handle_set_encryption(&self, enabled: bool) -> Response {
         let mut key_manager = self.key_manager.lock();
         key_manager.set_enabled(enabled);
 
@@ -1217,7 +1193,7 @@ impl AudioDaemon {
         }))
     }
 
-    pub(super) async fn handle_encryption_status(&self) -> Response {
+    pub(super) fn handle_encryption_status(&self) -> Response {
         let key_manager = self.key_manager.lock();
         let status = key_manager.status();
 
@@ -1228,7 +1204,7 @@ impl AudioDaemon {
         }))
     }
 
-    pub(super) async fn handle_rotate_encryption_key(&self) -> Response {
+    pub(super) fn handle_rotate_encryption_key(&self) -> Response {
         let mut key_manager = self.key_manager.lock();
 
         match key_manager.force_rotate() {
@@ -1258,7 +1234,7 @@ impl AudioDaemon {
     // Driver config handlers
     // =========================================================================
 
-    pub(super) async fn handle_set_sample_rate(&self, rate: u32) -> Response {
+    pub(super) fn handle_set_sample_rate(&self, rate: u32) -> Response {
         const SUPPORTED: [u32; 6] = [44100, 48000, 88200, 96000, 176400, 192000];
 
         if !SUPPORTED.contains(&rate) {
@@ -1297,7 +1273,7 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_set_buffer_frames(&self, frames: u32) -> Response {
+    pub(super) fn handle_set_buffer_frames(&self, frames: u32) -> Response {
         if !(64..=4096).contains(&frames) {
             return Response::err(format!(
                 "Buffer frames must be between 64 and 4096, got: {}",
@@ -1324,7 +1300,7 @@ impl AudioDaemon {
         }
     }
 
-    pub(super) async fn handle_get_driver_config(&self) -> Response {
+    pub(super) fn handle_get_driver_config(&self) -> Response {
         let driver = self.driver_manager.lock();
         let status = driver.status();
 
@@ -1408,7 +1384,7 @@ impl AudioDaemon {
                                     cmd.name()
                                 ))
                             } else {
-                                self.runtime.block_on(self.handle_command(cmd))
+                                self.handle_command(cmd)
                             }
                         }
                         Err(e) => Response::err(format!("Invalid command: {}", e)),
@@ -1499,15 +1475,7 @@ impl AudioDaemon {
                         }
                     };
 
-                    // Clone daemon for client thread
-                    let daemon = AudioDaemon {
-                        manager: Arc::clone(&self.manager),
-                        running: Arc::clone(&self.running),
-                        driver_manager: Arc::clone(&self.driver_manager),
-                        system_state: Arc::clone(&self.system_state),
-                        key_manager: Arc::clone(&self.key_manager),
-                        runtime: Arc::clone(&self.runtime),
-                    };
+                    let daemon = self.clone();
 
                     std::thread::spawn(move || {
                         daemon.handle_client(stream, peer_class);

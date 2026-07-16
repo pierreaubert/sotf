@@ -53,13 +53,27 @@ mod tests;
 mod types;
 
 use audio_daemon::AudioDaemon;
+use misc::acquire_daemon_instance_lock;
+use security::{ensure_secure_socket_dir, get_secure_socket_path};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
 
+    // Serialize startup before touching the session key or stale socket. A
+    // losing second daemon must not rotate the active daemon's audio key.
+    let secure_socket_path = get_secure_socket_path();
+    ensure_secure_socket_dir(&secure_socket_path)?;
+    let _instance_lock = acquire_daemon_instance_lock(&secure_socket_path)?;
+
     let daemon = AudioDaemon::new();
+
+    // A fresh key per daemon lifetime guarantees that resetting the shared
+    // frame counter during mmap initialization cannot reuse an AEAD nonce.
+    // This is deliberately daemon-owned: the mmap layer must not mutate key
+    // files behind KeyManager's cached cipher/fingerprint.
+    daemon.key_manager.lock().force_rotate()?;
 
     // Setup signal handling for graceful shutdown — use the daemon's own
     // running flag so Ctrl-C actually stops the accept loop.

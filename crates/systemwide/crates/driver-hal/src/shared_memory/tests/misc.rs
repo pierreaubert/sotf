@@ -130,6 +130,18 @@ fn sequential_audio(frame_count: usize, channel_count: usize, offset: usize) -> 
         .collect()
 }
 
+fn encrypted_staging_buffers() -> (Vec<u8>, Vec<f32>) {
+    let max_samples = super::super::consts::pre_alloc_capacity_samples();
+    let ciphertext_capacity = super::super::encrypted::encrypted_record_total_bytes(max_samples)
+        .expect("maximum encrypted record size should fit");
+    let encrypted_capacity = super::super::encrypted::encrypted_record_slots(max_samples)
+        .expect("maximum encrypted record slots should fit");
+    (
+        Vec::with_capacity(ciphertext_capacity),
+        Vec::with_capacity(encrypted_capacity),
+    )
+}
+
 #[test]
 fn test_encrypted_available_read_frames_reports_plaintext_frames() {
     let temp_file = create_mock_shared_memory(48_000, 512, 2);
@@ -138,8 +150,7 @@ fn test_encrypted_available_read_frames_reports_plaintext_frames() {
     buffer.set_key_fingerprint(*cipher.fingerprint());
     buffer.set_encrypted(true);
 
-    let mut ciphertext_buf = Vec::new();
-    let mut encrypted_buf = Vec::new();
+    let (mut ciphertext_buf, mut encrypted_buf) = encrypted_staging_buffers();
     let samples = sequential_audio(192, 2, 0);
 
     assert_eq!(
@@ -195,7 +206,7 @@ fn test_read_audio_handles_inverted_ring_positions() {
 fn test_available_read_frames_clamps_overfull_ring() {
     let temp_file = create_mock_shared_memory(48_000, 512, 2);
     let buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
-    let capacity = buffer.audio_capacity as u64;
+    let capacity = buffer.current_audio_capacity() as u64;
 
     buffer
         .header()
@@ -203,7 +214,10 @@ fn test_available_read_frames_clamps_overfull_ring() {
         .store(capacity + 128, Ordering::Release);
     buffer.header().read_position.store(0, Ordering::Release);
 
-    assert_eq!(buffer.available_read_frames(), buffer.audio_capacity / 2);
+    assert_eq!(
+        buffer.available_read_frames(),
+        buffer.current_audio_capacity() / 2
+    );
 }
 
 #[test]
@@ -214,8 +228,7 @@ fn test_encrypted_hal_sized_records_read_back_in_plaintext_order() {
     buffer.set_key_fingerprint(*cipher.fingerprint());
     buffer.set_encrypted(true);
 
-    let mut ciphertext_buf = Vec::new();
-    let mut encrypted_buf = Vec::new();
+    let (mut ciphertext_buf, mut encrypted_buf) = encrypted_staging_buffers();
     let mut expected = Vec::new();
 
     for chunk in 0..5 {
@@ -259,8 +272,7 @@ fn test_hal_input_reader_stages_partial_encrypted_record() {
     buffer.set_key_fingerprint(*writer_cipher.fingerprint());
     buffer.set_encrypted(true);
 
-    let mut ciphertext_buf = Vec::new();
-    let mut encrypted_buf = Vec::new();
+    let (mut ciphertext_buf, mut encrypted_buf) = encrypted_staging_buffers();
     let mut expected = Vec::new();
 
     for chunk in 0..6 {
@@ -277,13 +289,15 @@ fn test_hal_input_reader_stages_partial_encrypted_record() {
         );
     }
 
+    let (ciphertext_buf, encrypted_samples_buf) = encrypted_staging_buffers();
+    let sample_capacity = super::super::consts::pre_alloc_capacity_samples();
     let mut reader = HalInputReader {
         buffer: Some(buffer),
         cipher: Some(reader_cipher),
-        encrypted_samples_buf: Vec::new(),
-        ciphertext_buf: Vec::new(),
-        decrypted_record_buf: Vec::new(),
-        pending_decrypted_samples: Vec::new(),
+        encrypted_samples_buf,
+        ciphertext_buf,
+        decrypted_record_buf: Vec::with_capacity(sample_capacity),
+        pending_decrypted_samples: Vec::with_capacity(sample_capacity),
         pending_sample_offset: 0,
     };
 
@@ -363,8 +377,7 @@ fn test_corrupt_encrypted_record_is_dropped() {
     buffer.set_key_fingerprint(*cipher.fingerprint());
     buffer.set_encrypted(true);
 
-    let mut ciphertext_buf = Vec::new();
-    let mut encrypted_buf = Vec::new();
+    let (mut ciphertext_buf, mut encrypted_buf) = encrypted_staging_buffers();
     let corrupt = sequential_audio(192, 2, 0);
     let good = sequential_audio(192, 2, corrupt.len());
 

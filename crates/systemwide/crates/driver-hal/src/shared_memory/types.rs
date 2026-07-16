@@ -70,6 +70,11 @@ pub(super) fn read_encrypted_with_staging(
                 copied_samples += to_copy;
 
                 if to_copy < sample_count {
+                    let pending_count = sample_count - to_copy;
+                    if pending_decrypted_samples.capacity() < pending_count {
+                        output[copied_samples..].fill(0.0);
+                        return copied_samples / channel_count;
+                    }
                     pending_decrypted_samples.clear();
                     pending_decrypted_samples
                         .extend_from_slice(&decrypted_record_buf[to_copy..sample_count]);
@@ -78,12 +83,18 @@ pub(super) fn read_encrypted_with_staging(
                 }
             }
             EncryptedRecordRead::OutputTooSmall { sample_count } => {
-                // Worst-case sample_count is MAX_HAL_BUFFER_FRAMES *
-                // MAX_HAL_CHANNEL_COUNT, which `HalInputReader::new`
-                // pre-allocates for. If a caller hand-constructs the
-                // reader with smaller capacity (e.g. in tests) the resize
-                // will allocate the first time — RT-safety relies on the
-                // production constructor.
+                // Production readers reserve the protocol maximum in `new`.
+                // Never grow here: a malformed record or hand-constructed
+                // undersized reader must fail silent instead of allocating on
+                // the audio thread.
+                if decrypted_record_buf.capacity() < sample_count {
+                    if copied_samples == 0 {
+                        output.fill(0.0);
+                    } else {
+                        output[copied_samples..].fill(0.0);
+                    }
+                    return copied_samples / channel_count;
+                }
                 decrypted_record_buf.resize(sample_count, 0.0);
             }
             EncryptedRecordRead::Corrupt { .. } | EncryptedRecordRead::InvalidHeader => {

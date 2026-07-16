@@ -3,6 +3,40 @@ use serde_json::Value;
 use sotf_audio::PluginConfig;
 use std::os::unix::net::{UnixListener, UnixStream};
 
+/// Process-lifetime lock that serializes daemon startup for one user.
+///
+/// The lock is acquired before encryption-key rotation or stale-socket
+/// cleanup, so a second daemon cannot disturb the active daemon's transport
+/// state before discovering that the IPC socket is already in use.
+pub(super) struct DaemonInstanceLock {
+    _file: std::fs::File,
+}
+
+pub(super) fn acquire_daemon_instance_lock(
+    secure_socket_path: &std::path::Path,
+) -> std::io::Result<DaemonInstanceLock> {
+    let lock_path = secure_socket_path.with_extension("lock");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)?;
+
+    file.try_lock().map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::AddrInUse,
+            format!(
+                "another sotf-daemon instance holds {}: {}",
+                lock_path.display(),
+                error
+            ),
+        )
+    })?;
+
+    Ok(DaemonInstanceLock { _file: file })
+}
+
 pub(super) fn env_path_is_set(key: &str) -> bool {
     std::env::var_os(key).is_some_and(|value| !value.as_os_str().is_empty())
 }

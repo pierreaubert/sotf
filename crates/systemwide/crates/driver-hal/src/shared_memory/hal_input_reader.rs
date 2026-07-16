@@ -127,8 +127,6 @@ impl HalInputReader {
     /// no longer matches the header, returns silence.
     pub fn read(&mut self, buffer: &mut [f32]) -> usize {
         if let Some(buf) = &self.buffer {
-            buf.refresh_daemon_heartbeat();
-
             if buf.is_encrypted() {
                 let header_fingerprint = buf.key_fingerprint();
                 let fingerprint_ok = self
@@ -198,10 +196,7 @@ impl HalInputReader {
         let shared_frames = self
             .buffer
             .as_ref()
-            .map(|b| {
-                b.refresh_daemon_heartbeat();
-                b.available_read_frames()
-            })
+            .map(|b| b.available_read_frames())
             .unwrap_or(0);
         let pending_samples = self
             .pending_decrypted_samples

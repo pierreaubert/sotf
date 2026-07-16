@@ -19,15 +19,7 @@ pub(super) fn samples_to_bytes_into(samples: &[f32], output: &mut [u8]) {
 
 /// Get a mutable byte view of f32 samples (zero-copy).
 pub(super) fn samples_as_bytes_mut(samples: &mut [f32]) -> &mut [u8] {
-    let ptr = samples.as_mut_ptr() as *mut u8;
-    let len = samples.len() * 4;
-    // SAFETY: `f32` has alignment 4 ≥ alignment of `u8` (1), `len` equals
-    // `samples.len() * size_of::<f32>()` so the slice stays within the
-    // backing allocation, and the returned lifetime is tied to the caller's
-    // `&mut [f32]` borrow so no aliasing reference can exist. Every bit
-    // pattern is a valid `u8`, so reinterpreting `f32` bits as bytes is
-    // always defined.
-    unsafe { std::slice::from_raw_parts_mut(ptr, len) }
+    bytemuck::cast_slice_mut(samples)
 }
 
 /// Convert f32 samples back to encrypted ciphertext bytes

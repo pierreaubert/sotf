@@ -719,7 +719,6 @@ mod ipc_safety_tests {
     }
 
     fn test_daemon_with_driver(state: Arc<Mutex<FakeDriverState>>) -> AudioDaemon {
-        let runtime = tokio::runtime::Runtime::new().expect("test runtime");
         AudioDaemon {
             manager: Arc::new(Mutex::new(AudioEngineManager::new())),
             running: Arc::new(Mutex::new(true)),
@@ -728,7 +727,6 @@ mod ipc_safety_tests {
             )))),
             system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
-            runtime: Arc::new(runtime),
         }
     }
 
@@ -960,9 +958,7 @@ mod ipc_safety_tests {
         state.lock().status.channel_count = 10;
         let daemon = test_daemon_with_driver(state);
 
-        let response = daemon
-            .runtime
-            .block_on(daemon.handle_command(Command::DriverStatus));
+        let response = daemon.handle_command(Command::DriverStatus);
 
         assert!(response.success);
         let data = response.data.expect("driver_status data");
@@ -976,13 +972,11 @@ mod ipc_safety_tests {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(state);
 
-        let response = daemon
-            .runtime
-            .block_on(daemon.handle_command(Command::LoadPlugins {
-                plugins: vec![test_plugin("eq")],
-                input_channels: 2,
-                output_channels: 64,
-            }));
+        let response = daemon.handle_command(Command::LoadPlugins {
+            plugins: vec![test_plugin("eq")],
+            input_channels: 2,
+            output_channels: 64,
+        });
 
         assert!(!response.success);
         assert!(
@@ -1000,18 +994,14 @@ mod ipc_safety_tests {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(state);
 
-        let response = daemon
-            .runtime
-            .block_on(daemon.handle_command(Command::LoadPlugins {
-                plugins: vec![test_plugin("eq")],
-                input_channels: 10,
-                output_channels: 2,
-            }));
+        let response = daemon.handle_command(Command::LoadPlugins {
+            plugins: vec![test_plugin("eq")],
+            input_channels: 10,
+            output_channels: 2,
+        });
         assert!(response.success);
 
-        let response = daemon
-            .runtime
-            .block_on(daemon.handle_command(Command::SetOutputChannels { channels: 6 }));
+        let response = daemon.handle_command(Command::SetOutputChannels { channels: 6 });
 
         assert!(response.success);
         let state = daemon.system_state.lock();
@@ -1025,13 +1015,10 @@ mod ipc_safety_tests {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(state);
 
-        let response =
-            daemon
-                .runtime
-                .block_on(daemon.handle_command(Command::SetPipelineChannels {
-                    input_channels: None,
-                    output_channels: None,
-                }));
+        let response = daemon.handle_command(Command::SetPipelineChannels {
+            input_channels: None,
+            output_channels: None,
+        });
 
         assert!(!response.success);
         assert!(
@@ -1392,7 +1379,7 @@ mod command_roundtrip_tests {
 
     fn run_command(cmd: Command) -> Response {
         let daemon = AudioDaemon::new();
-        daemon.runtime.block_on(daemon.handle_command(cmd))
+        daemon.handle_command(cmd)
     }
 
     fn response_value(resp: &Response) -> Value {
@@ -1868,9 +1855,7 @@ mod command_roundtrip_tests {
     #[test]
     fn handle_shutdown_returns_ok_and_stops_daemon() {
         let daemon = AudioDaemon::new();
-        let resp = daemon
-            .runtime
-            .block_on(daemon.handle_command(Command::Shutdown));
+        let resp = daemon.handle_command(Command::Shutdown);
         assert!(resp.success);
         assert!(!*daemon.running.lock());
     }
@@ -1897,7 +1882,6 @@ mod command_roundtrip_tests {
         // of whether the `hal` feature (which selects the platform HAL) is
         // enabled. The KeyManager implementation is also feature-dependent,
         // so we normalize the encryption block before snapshotting.
-        let runtime = Arc::new(tokio::runtime::Runtime::new().expect("test runtime"));
         let daemon = AudioDaemon {
             manager: Arc::new(Mutex::new(AudioEngineManager::new())),
             running: Arc::new(Mutex::new(true)),
@@ -1906,11 +1890,8 @@ mod command_roundtrip_tests {
             )))),
             system_state: Arc::new(Mutex::new(SystemwideState::default())),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
-            runtime,
         };
-        let resp = daemon
-            .runtime
-            .block_on(daemon.handle_command(Command::Status));
+        let resp = daemon.handle_command(Command::Status);
         assert!(resp.success, "{:?}", resp.error);
         let mut data = resp.data.expect("status data");
         data["encryption"]["enabled"] = serde_json::json!(false);

@@ -2704,6 +2704,7 @@ dependencies = [
 name = "driver-hal"
 version = "0.1.12"
 dependencies = [
+ "bytemuck",
  "chacha20poly1305",
  "driver-common",
  "hex",
@@ -9985,7 +9986,6 @@ dependencies = [
  "sotf-engine",
  "sotf-plugins",
  "tempfile",
- "tokio",
 ]
 
 [[package]]

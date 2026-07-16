@@ -38,9 +38,14 @@ External processes (Swift menubar app, GPUI configbar) control the daemon over a
 ### Platform support
 
 - **macOS**: Full support via CoreAudio HAL driver (`--features hal`)
-- **Linux**: PipeWire filter node (planned, `driver-common` trait is ready)
-- **Windows**: APO + shared memory (planned)
+- **Linux**: Daemon and `NullDriver` fallback are supported; a native PipeWire
+  filter node is planned
+- **Windows**: The `driver-common` / `NullDriver` contract is portable; the
+  daemon transport and native APO driver are planned
 - **Fallback**: `NullDriver` compiles everywhere, reports `platform_supported: false`
+
+Linux and Windows checks validate the existing fallback contract; they do not
+imply that system audio is captured on those platforms yet.
 
 ## Building
 
@@ -77,6 +82,18 @@ Configbar model suites. The process-level scenarios start `sotf-daemon` with
 exercise coherent snapshots, 2 → 10 → 2 channel changes, transactional plugin
 artifact rejection, shutdown, and restart without installing or touching the
 CoreAudio HAL bundle.
+
+## Runtime safety contract
+
+- Only one daemon may own a runtime socket. A sibling `.lock` file serializes
+  startup before key rotation and stale-socket cleanup.
+- The daemon rotates the shared-audio key once per process lifetime before
+  opening the transport.
+- Rust and Swift access the shared-memory header with matching acquire/release
+  atomics and a tested C layout.
+- CoreAudio callback staging is preallocated to the maximum supported HAL
+  geometry; encrypted IO refuses to allocate on the real-time path.
+- Compile Swift with `SOTF_AUDIO_TRACE` only for explicit audio-path tracing.
 
 ## IPC protocol
 

@@ -10,6 +10,19 @@
   nonlinear topology, with stable IDs, connections, settings, transactional
   edits, save/load round trips, and true per-node bypass.
 
+## Review-driven startup and IPC hardening
+
+- Serialize daemon startup with a process-lifetime lock acquired before
+  encryption-key rotation or stale-socket handling.
+- Make startup key rotation daemon-owned so every process lifetime uses a fresh
+  key without desynchronizing `KeyManager` from shared memory.
+- Remove the unused Tokio runtime and call the synchronous engine/driver command
+  handlers directly from client threads.
+- Cache available-plugin descriptors with `OnceLock` instead of rebuilding
+  plugin defaults for every discovery request.
+- Extend regression coverage for startup ordering, real Unix-socket IPC, and
+  Swift atomic shared-memory publication.
+
 ## Diagnostics and recovery UX (QA-SYS-003)
 
 - Added the executable `just systemwide-lab` macOS gate. It combines daemon

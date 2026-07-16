@@ -41,6 +41,42 @@ The current code is split into four major surfaces:
 The daemon also depends on the workspace audio engine and plugin stack:
 `sotf_audio::manager::AudioEngineManager`, `sotf-engine`, and `sotf-plugins`.
 
+## Review Hardening Status
+
+The July 2026 systemwide review follow-up tightened the existing macOS and
+cross-platform fallback paths without claiming new native Linux or Windows
+capture drivers:
+
+- Daemon startup is serialized by a process-lifetime lock beside the selected
+  Unix socket. The winning process acquires that lock before stale-socket
+  handling or encryption-key rotation, so a second process cannot disturb the
+  active daemon's transport state.
+- The daemon owns startup key rotation. Every daemon lifetime starts with a
+  fresh AEAD key before shared-memory audio begins, which makes resetting the
+  frame counter safe; the mmap layer no longer rotates keys behind
+  `KeyManager`'s cached state.
+- IPC command handlers are synchronous because they call synchronous engine
+  and driver APIs. The unused Tokio runtime was removed, and immutable
+  available-plugin metadata is cached once per process.
+- Every shared header field used across Rust and Swift is accessed atomically.
+  Swift uses C11 acquire loads and release stores exposed by
+  `BridgingHeader.h`; Rust uses matching atomic types and orderings. Contract
+  tests pin the shared-header size and field offsets on both sides.
+- Ring capacity is derived from the current atomic geometry rather than a
+  process-local cached geometry. Both Swift read and write paths re-check the
+  `configuring` gate before publishing ring positions after copying.
+- Encrypted real-time paths preallocate for the maximum supported HAL frame and
+  channel geometry. They reject an oversized record or undersized staging
+  allocation instead of growing a vector in the audio callback.
+- Audio-path wall-clock heartbeat refresh and default debug tracing were
+  removed. Swift IO tracing is available only when `SOTF_AUDIO_TRACE` is
+  compiled in.
+
+On Linux, the daemon continues to use the cross-platform `NullDriver` unless a
+test selects the deterministic lab driver. On Windows, only `driver-common` and
+the `NullDriver` contract are currently portable; a Windows APO implementation
+remains planned work.
+
 ## Component View
 
 ```mermaid

@@ -27,6 +27,26 @@ private let kEncryptedRecordMagic: UInt32 = 0x5345_4131
 private let kEncryptedRecordHeaderBytes = 24
 private let kEncryptedRecordHeaderFloats = kEncryptedRecordHeaderBytes / 4
 
+@inline(__always)
+private func atomicLoad(_ pointer: UnsafeMutablePointer<UInt32>) -> UInt32 {
+    sotf_atomic_load_u32(pointer)
+}
+
+@inline(__always)
+private func atomicLoad(_ pointer: UnsafeMutablePointer<UInt64>) -> UInt64 {
+    sotf_atomic_load_u64(pointer)
+}
+
+@inline(__always)
+private func atomicStore(_ pointer: UnsafeMutablePointer<UInt32>, _ value: UInt32) {
+    sotf_atomic_store_u32(pointer, value)
+}
+
+@inline(__always)
+private func atomicStore(_ pointer: UnsafeMutablePointer<UInt64>, _ value: UInt64) {
+    sotf_atomic_store_u64(pointer, value)
+}
+
 private func currentUnixMillis() -> UInt64 {
     return clock_gettime_nsec_np(CLOCK_REALTIME) / 1_000_000
 }
@@ -148,9 +168,8 @@ final class SharedAudioBuffer {
 
     /// Whether we're connected to shared memory
     var isConnected: Bool {
-        let hasMem = sharedMemory != nil
-        let hasMagic = header?.pointee.magic == kSharedMemoryMagic
-        return hasMem && hasMagic
+        guard sharedMemory != nil, let header = header else { return false }
+        return atomicLoad(&header.pointee.magic) == kSharedMemoryMagic
     }
 
     /// Whether the Rust engine is connected.
@@ -161,18 +180,18 @@ final class SharedAudioBuffer {
     /// because Swift treats `nil != 0` as true for optional comparisons —
     /// callers then see `engineReady=1, isConnected=0` which is nonsense.
     var engineReady: Bool {
-        guard let header = header, header.pointee.engineReady != 0 else {
+        guard let header = header, atomicLoad(&header.pointee.engineReady) != 0 else {
             return false
         }
 
         // Protocol v4 treats engineReady as valid only while the daemon keeps
         // refreshing its heartbeat. This prevents CoreAudio from filling the
         // ring forever after a daemon crash/stall leaves engineReady stuck at 1.
-        if header.pointee.version < 4 {
+        if atomicLoad(&header.pointee.version) < 4 {
             return true
         }
 
-        let heartbeat = header.pointee.daemonHeartbeatMs
+        let heartbeat = atomicLoad(&header.pointee.daemonHeartbeatMs)
         guard heartbeat != 0 else {
             return false
         }
@@ -187,12 +206,12 @@ final class SharedAudioBuffer {
     /// Debug: get connection state details
     var connectionStateDebug: String {
         let hasMem = sharedMemory != nil
-        let magic = header?.pointee.magic ?? 0
+        let magic = header.map { atomicLoad(&$0.pointee.magic) } ?? 0
         let expectedMagic = kSharedMemoryMagic
         let magicMatch = magic == expectedMagic
-        let version = header?.pointee.version ?? 0
-        let engineFlag = header?.pointee.engineReady ?? 0
-        let heartbeat = (version >= 4) ? (header?.pointee.daemonHeartbeatMs ?? 0) : 0
+        let version = header.map { atomicLoad(&$0.pointee.version) } ?? 0
+        let engineFlag = header.map { atomicLoad(&$0.pointee.engineReady) } ?? 0
+        let heartbeat = (version >= 4) ? (header.map { atomicLoad(&$0.pointee.daemonHeartbeatMs) } ?? 0) : 0
         let heartbeatAge: String
         if heartbeat == 0 {
             heartbeatAge = "none"
@@ -272,7 +291,7 @@ final class SharedAudioBuffer {
         // ring positions, encryption session, config-negotiation state. Wiping
         // those silently flips engineReady from 1 → 0 behind the daemon's back
         // and stops the audio path. Only fresh memory should be zeroed.
-        let alreadyInitialized = (header.pointee.magic == kSharedMemoryMagic)
+        let alreadyInitialized = (atomicLoad(&header.pointee.magic) == kSharedMemoryMagic)
 
         if !alreadyInitialized {
             halLog("SharedMemory: existing file is not daemon-initialized")
@@ -289,26 +308,24 @@ final class SharedAudioBuffer {
         // Geometry can legitimately change across coreaudiod re-spawns even
         // when the daemon was running (different sample rate, different buffer
         // size). The daemon tolerates this through its config-negotiation path.
-        header.pointee.magic = kSharedMemoryMagic
-        header.pointee.version = kSharedMemoryVersion
-        header.pointee.sampleRate = sampleRate
-        header.pointee.bufferFrames = bufferFrames
-        header.pointee.channelCount = channelCount
-        header.pointee.actualSampleRate = sampleRate
-        header.pointee.actualBufferFrames = bufferFrames
-        header.pointee.driverReady = 1
+        atomicStore(&header.pointee.magic, kSharedMemoryMagic)
+        atomicStore(&header.pointee.version, kSharedMemoryVersion)
+        atomicStore(&header.pointee.sampleRate, sampleRate)
+        atomicStore(&header.pointee.bufferFrames, bufferFrames)
+        atomicStore(&header.pointee.channelCount, channelCount)
+        atomicStore(&header.pointee.actualSampleRate, sampleRate)
+        atomicStore(&header.pointee.actualBufferFrames, bufferFrames)
+        atomicStore(&header.pointee.driverReady, 1)
 
-        OSMemoryBarrier()
-
-        halLog("SharedMemory: initialized (version \(kSharedMemoryVersion), fresh=\(!alreadyInitialized), engineReady=\(header.pointee.engineReady))")
+        let engineReady = atomicLoad(&header.pointee.engineReady)
+        halLog("SharedMemory: initialized (version \(kSharedMemoryVersion), fresh=\(!alreadyInitialized), engineReady=\(engineReady))")
         return true
     }
 
     /// Close shared memory
     func closeSharedMemory() {
         if let header = header {
-            header.pointee.driverReady = 0
-            OSMemoryBarrier()
+            atomicStore(&header.pointee.driverReady, 0)
         }
 
         if let mem = sharedMemory, memorySize > 0 {
@@ -327,48 +344,46 @@ final class SharedAudioBuffer {
     /// Set active state
     func setActive(_ active: Bool) {
         guard let header = header else { return }
-        header.pointee.active = active ? 1 : 0
-        OSMemoryBarrier()
+        atomicStore(&header.pointee.active, active ? 1 : 0)
     }
 
     /// Signal configuration change to Rust engine
     func signalConfigChange() {
         guard let header = header else { return }
-        header.pointee.configChanged = 1
-        OSMemoryBarrier()
+        atomicStore(&header.pointee.configChanged, 1)
     }
 
     /// Update sample rate (called when CoreAudio changes the device sample rate)
     /// This uses the config negotiation protocol to notify the daemon
     func updateSampleRate(_ sampleRate: UInt32) {
         guard let header = header else { return }
-        header.pointee.sampleRate = sampleRate
+        atomicStore(&header.pointee.sampleRate, sampleRate)
         // Use config negotiation so daemon knows to reconfigure
-        header.pointee.requestedSampleRate = sampleRate
-        header.pointee.requestedBufferFrames = header.pointee.bufferFrames
-        header.pointee.configStatus = 0  // pending
-        header.pointee.configSource = 1  // HAL initiated
-        OSMemoryBarrier()
-        header.pointee.configChanged = 1
+        atomicStore(&header.pointee.requestedSampleRate, sampleRate)
+        atomicStore(
+            &header.pointee.requestedBufferFrames,
+            atomicLoad(&header.pointee.bufferFrames)
+        )
+        atomicStore(&header.pointee.configStatus, 0)  // pending
+        atomicStore(&header.pointee.configSource, 1)  // HAL initiated
+        atomicStore(&header.pointee.configChanged, 1)
         halLog("updateSampleRate: requested \(sampleRate)Hz via config negotiation")
     }
 
     private func fingerprintMatches(_ headerFingerprint: UInt64, _ cipherFingerprint: [UInt8]) -> Bool {
         guard cipherFingerprint.count == 8 else { return false }
 
+        var difference: UInt8 = 0
         for index in 0..<8 {
             let shift = UInt64((7 - index) * 8)
             let byte = UInt8((headerFingerprint >> shift) & 0xff)
-            if byte != cipherFingerprint[index] {
-                return false
-            }
+            difference |= byte ^ cipherFingerprint[index]
         }
-        return true
+        return difference == 0
     }
 
     private func cipherMatchingHeader(_ header: UnsafeMutablePointer<SharedAudioHeader>) -> AudioCipher? {
-        OSMemoryBarrier()
-        let headerFingerprint = header.pointee.keyFingerprint
+        let headerFingerprint = atomicLoad(&header.pointee.keyFingerprint)
 
         if let cipher = EncryptionKeyManager.shared.getCipher(),
            fingerprintMatches(headerFingerprint, cipher.getFingerprint()) {
@@ -474,18 +489,21 @@ final class SharedAudioBuffer {
     func writeAudio(_ buffer: UnsafePointer<Float>, frameCount: Int, channelCount: Int) -> Int {
         guard let header = header, let audioData = audioData else { return 0 }
         guard frameCount > 0, channelCount > 0, audioCapacity > 0 else { return 0 }
-        if header.pointee.configuring != 0 {
+        if atomicLoad(&header.pointee.configuring) != 0 {
             return 0
         }
 
         // Check for encryption
-        if header.pointee.encrypted != 0 {
+        if atomicLoad(&header.pointee.encrypted) != 0 {
             if let cipher = cipherMatchingHeader(header) {
                 let sampleCount = frameCount * channelCount
                 let ciphertextLen = sampleCount * MemoryLayout<Float>.size + 16
                 let totalBytes = kEncryptedRecordHeaderBytes + ciphertextLen
                 guard totalBytes <= encryptedPayloadScratch.count else {
-                    header.pointee.encryptionOverflowCount += 1
+                    _ = sotf_atomic_fetch_add_u64_previous(
+                        &header.pointee.encryptionOverflowCount,
+                        1
+                    )
                     return 0
                 }
 
@@ -532,8 +550,8 @@ final class SharedAudioBuffer {
         let samplesToWrite = min(sampleCount, writableCapacity)
         let sourceOffset = sampleCount - samplesToWrite
         let sourceBuffer = buffer.advanced(by: sourceOffset)
-        let writePos = header.pointee.writePosition
-        let readPos = header.pointee.readPosition
+        let writePos = atomicLoad(&header.pointee.writePosition)
+        let readPos = atomicLoad(&header.pointee.readPosition)
 
         // This is a live capture stream. If the daemon falls behind during a
         // reconnect/client switch, drop stale samples and always publish the
@@ -548,8 +566,7 @@ final class SharedAudioBuffer {
         let adjustedReadPos = effectiveReadPos + UInt64(samplesToDrop)
 
         if adjustedReadPos != readPos {
-            OSMemoryBarrier()
-            header.pointee.readPosition = adjustedReadPos
+            atomicStore(&header.pointee.readPosition, adjustedReadPos)
         }
 
         let writeIndex = Int(writePos % UInt64(audioCapacity))
@@ -562,16 +579,19 @@ final class SharedAudioBuffer {
             memcpy(audioData, sourceBuffer.advanced(by: firstPart), secondPart * MemoryLayout<Float>.size)
         }
 
-        // Update write position atomically
-        OSMemoryBarrier()
-        if header.pointee.active == 0 {
-            header.pointee.active = 1
+        // Do not publish a position computed from stale geometry if a daemon
+        // reconfiguration began while this IO cycle was copying samples.
+        if atomicLoad(&header.pointee.configuring) != 0 {
+            return 0
         }
-        header.pointee.writePosition = writePos + UInt64(samplesToWrite)
+        if atomicLoad(&header.pointee.active) == 0 {
+            atomicStore(&header.pointee.active, 1)
+        }
+        atomicStore(&header.pointee.writePosition, writePos + UInt64(samplesToWrite))
 
         // TRACE: Log successful write to shared memory ring buffer
         // Note: Avoid logging every frame in production (use os_signpost for performance tracing)
-        #if DEBUG
+        #if SOTF_AUDIO_TRACE
         if samplesToWrite > 0 {
             let newWritePos = writePos + UInt64(samplesToWrite)
             halLog("[SHM TRACE] write: \(samplesToWrite/channelCount) frames, dropped=\(samplesToDrop/channelCount) frames, wpos=\(newWritePos), rpos=\(adjustedReadPos)")
@@ -584,7 +604,7 @@ final class SharedAudioBuffer {
     /// Helper to write raw bytes (ciphertext) to ring buffer
     private func writeRawBytes(_ bytes: [UInt8], byteCount: Int, originalFrameCount: Int) -> Int {
         guard let header = header, let audioData = audioData else { return 0 }
-        if header.pointee.configuring != 0 {
+        if atomicLoad(&header.pointee.configuring) != 0 {
             return 0
         }
         
@@ -593,12 +613,12 @@ final class SharedAudioBuffer {
         guard floatCount > 0, audioCapacity > 0 else { return 0 }
 
         if floatCount > audioCapacity {
-            header.pointee.encryptionOverflowCount += 1
+            _ = sotf_atomic_fetch_add_u64_previous(&header.pointee.encryptionOverflowCount, 1)
             return 0
         }
         
-        let writePos = header.pointee.writePosition
-        let readPos = header.pointee.readPosition
+        let writePos = atomicLoad(&header.pointee.writePosition)
+        let readPos = atomicLoad(&header.pointee.readPosition)
         let used = clampedUsedSampleCount(
             writePos: writePos,
             readPos: readPos,
@@ -607,12 +627,10 @@ final class SharedAudioBuffer {
         let available = audioCapacity - used
         
         if floatCount > available {
-            header.pointee.encryptionOverflowCount += 1
-            OSMemoryBarrier()
-            header.pointee.readPosition = writePos
+            _ = sotf_atomic_fetch_add_u64_previous(&header.pointee.encryptionOverflowCount, 1)
+            atomicStore(&header.pointee.readPosition, writePos)
         } else if writePos < readPos {
-            OSMemoryBarrier()
-            header.pointee.readPosition = writePos
+            atomicStore(&header.pointee.readPosition, writePos)
         }
         
         let writeIndex = Int(writePos % UInt64(audioCapacity))
@@ -636,11 +654,13 @@ final class SharedAudioBuffer {
             }
         }
         
-        OSMemoryBarrier()
-        if header.pointee.active == 0 {
-            header.pointee.active = 1
+        if atomicLoad(&header.pointee.configuring) != 0 {
+            return 0
         }
-        header.pointee.writePosition = writePos + UInt64(floatCount)
+        if atomicLoad(&header.pointee.active) == 0 {
+            atomicStore(&header.pointee.active, 1)
+        }
+        atomicStore(&header.pointee.writePosition, writePos + UInt64(floatCount))
         
         return originalFrameCount
     }
@@ -653,14 +673,18 @@ final class SharedAudioBuffer {
             memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
             return 0
         }
+        if atomicLoad(&header.pointee.configuring) != 0 {
+            memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
+            return 0
+        }
 
         // Check for encryption
-        if header.pointee.encrypted != 0 {
+        if atomicLoad(&header.pointee.encrypted) != 0 {
             if let cipher = cipherMatchingHeader(header) {
                 let requestedSampleCount = frameCount * channelCount
-                let writePos = header.pointee.writePosition
-                let readPos = header.pointee.readPosition
-                let available = Int(writePos - readPos)
+                let writePos = atomicLoad(&header.pointee.writePosition)
+                let readPos = atomicLoad(&header.pointee.readPosition)
+                let available = writePos >= readPos ? Int(writePos - readPos) : 0
 
                 if available >= kEncryptedRecordHeaderFloats {
                     copyRawBytes(
@@ -671,16 +695,17 @@ final class SharedAudioBuffer {
                     )
 
                     guard let record = parseEncryptedRecordHeader(encryptedHeaderScratch) else {
-                        OSMemoryBarrier()
-                        header.pointee.readPosition = writePos
+                        atomicStore(&header.pointee.readPosition, writePos)
                         memset(buffer, 0, requestedSampleCount * MemoryLayout<Float>.size)
                         return 0
                     }
 
                     if record.floatCount <= available && record.sampleCount <= requestedSampleCount {
                         guard record.totalBytes <= encryptedPayloadScratch.count else {
-                            OSMemoryBarrier()
-                            header.pointee.readPosition = readPos + UInt64(record.floatCount)
+                            atomicStore(
+                                &header.pointee.readPosition,
+                                readPos + UInt64(record.floatCount)
+                            )
                             memset(buffer, 0, requestedSampleCount * MemoryLayout<Float>.size)
                             return 0
                         }
@@ -701,8 +726,14 @@ final class SharedAudioBuffer {
                             )
                         }
 
-                        OSMemoryBarrier()
-                        header.pointee.readPosition = readPos + UInt64(record.floatCount)
+                        if atomicLoad(&header.pointee.configuring) != 0 {
+                            memset(buffer, 0, requestedSampleCount * MemoryLayout<Float>.size)
+                            return 0
+                        }
+                        atomicStore(
+                            &header.pointee.readPosition,
+                            readPos + UInt64(record.floatCount)
+                        )
 
                         if decryptedCount > 0 {
                             if decryptedCount < requestedSampleCount {
@@ -724,11 +755,11 @@ final class SharedAudioBuffer {
 
         // Standard unencrypted read
         let sampleCount = frameCount * channelCount
-        let writePos = header.pointee.writePosition
-        let readPos = header.pointee.readPosition
+        let writePos = atomicLoad(&header.pointee.writePosition)
+        let readPos = atomicLoad(&header.pointee.readPosition)
 
         // Calculate available data
-        let available = Int(writePos - readPos)
+        let available = writePos >= readPos ? Int(writePos - readPos) : 0
         let toRead = min(sampleCount, available)
 
         if toRead <= 0 {
@@ -752,12 +783,14 @@ final class SharedAudioBuffer {
             memset(buffer.advanced(by: toRead), 0, (sampleCount - toRead) * MemoryLayout<Float>.size)
         }
 
-        // Update read position atomically
-        OSMemoryBarrier()
-        header.pointee.readPosition = readPos + UInt64(toRead)
+        if atomicLoad(&header.pointee.configuring) != 0 {
+            memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
+            return 0
+        }
+        atomicStore(&header.pointee.readPosition, readPos + UInt64(toRead))
 
         // TRACE: Log successful read from shared memory ring buffer
-        #if DEBUG
+        #if SOTF_AUDIO_TRACE
         if toRead > 0 {
             let newReadPos = readPos + UInt64(toRead)
             halLog("[SHM TRACE] read: \(toRead/channelCount) frames, wpos=\(writePos), rpos=\(newReadPos)")
@@ -795,41 +828,40 @@ final class SharedAudioBuffer {
     private func readRawBytes(_ buffer: inout [UInt8], floatCount: Int) {
         guard let header = header else { return }
         
-        let readPos = header.pointee.readPosition
+        let readPos = atomicLoad(&header.pointee.readPosition)
         copyRawBytes(at: readPos, into: &buffer, byteCount: buffer.count, floatCount: floatCount)
 
-        OSMemoryBarrier()
-        header.pointee.readPosition = readPos + UInt64(floatCount)
+        atomicStore(&header.pointee.readPosition, readPos + UInt64(floatCount))
     }
 
     // MARK: - Config Negotiation Methods (version 3+)
 
     /// Check if configuration change is pending
     func configChanged() -> Bool {
-        OSMemoryBarrier()
-        return header?.pointee.configChanged != 0
+        guard let header = header else { return false }
+        return atomicLoad(&header.pointee.configChanged) != 0
     }
 
     /// Get config source (1=HAL initiated, 2=Daemon initiated)
     func configSource() -> UInt32 {
-        OSMemoryBarrier()
-        return header?.pointee.configSource ?? 0
+        guard let header = header else { return 0 }
+        return atomicLoad(&header.pointee.configSource)
     }
 
     /// Get actual sample rate (set by responder after negotiation)
     ///
     /// Caller should check `getConfigStatus()` first, which performs a memory barrier.
     func getActualSampleRate() -> UInt32 {
-        OSMemoryBarrier()
-        return header?.pointee.actualSampleRate ?? 0
+        guard let header = header else { return 0 }
+        return atomicLoad(&header.pointee.actualSampleRate)
     }
 
     /// Get actual buffer frames (set by responder after negotiation)
     ///
     /// Caller should check `getConfigStatus()` first, which performs a memory barrier.
     func getActualBufferFrames() -> UInt32 {
-        OSMemoryBarrier()
-        return header?.pointee.actualBufferFrames ?? 0
+        guard let header = header else { return 0 }
+        return atomicLoad(&header.pointee.actualBufferFrames)
     }
 
     /// Get config status (0=pending, 1=accepted, 2=negotiated, 3=error)
@@ -837,28 +869,28 @@ final class SharedAudioBuffer {
     /// This function includes a memory barrier to ensure visibility of
     /// the status and all related config values from the responder.
     func getConfigStatus() -> UInt32 {
-        OSMemoryBarrier()
-        return header?.pointee.configStatus ?? 0
+        guard let header = header else { return 0 }
+        return atomicLoad(&header.pointee.configStatus)
     }
 
     /// Get config error code (only valid when configStatus=3)
     ///
     /// Caller should check `getConfigStatus()` first, which performs a memory barrier.
     func getConfigErrorCode() -> UInt32 {
-        OSMemoryBarrier()
-        return header?.pointee.configErrorCode ?? 0
+        guard let header = header else { return 0 }
+        return atomicLoad(&header.pointee.configErrorCode)
     }
 
     /// Get requested sample rate (set by the config requester)
     func getRequestedSampleRate() -> UInt32 {
-        OSMemoryBarrier()
-        return header?.pointee.requestedSampleRate ?? 0
+        guard let header = header else { return 0 }
+        return atomicLoad(&header.pointee.requestedSampleRate)
     }
 
     /// Get requested buffer frames (set by the config requester)
     func getRequestedBufferFrames() -> UInt32 {
-        OSMemoryBarrier()
-        return header?.pointee.requestedBufferFrames ?? 0
+        guard let header = header else { return 0 }
+        return atomicLoad(&header.pointee.requestedBufferFrames)
     }
 
     /// Get requested/current channel count.
@@ -867,30 +899,26 @@ final class SharedAudioBuffer {
     /// initiated channel changes publish the desired count in `channelCount`
     /// before setting `configChanged`.
     func getRequestedChannelCount() -> UInt32 {
-        OSMemoryBarrier()
-        return header?.pointee.channelCount ?? 0
+        guard let header = header else { return 0 }
+        return atomicLoad(&header.pointee.channelCount)
     }
 
     /// Request a configuration change (called by HAL when client changes sample rate)
     /// Sets configSource=1 (HAL initiated) and configChanged=1
     ///
-    /// Memory ordering: All non-atomic fields are written first, then a memory
-    /// barrier ensures they are visible before setting configChanged. The
-    /// configChanged flag acts as the notification point for the responder.
+    /// Memory ordering: values are release-stored before `configChanged`; the
+    /// responder uses acquire loads so it observes one coherent request.
     func requestConfigChange(sampleRate: UInt32, bufferFrames: UInt32, channelCount: UInt32) {
         guard let header = header else { return }
-        if header.pointee.configuring != 0 {
+        if atomicLoad(&header.pointee.configuring) != 0 {
             return
         }
-        header.pointee.requestedSampleRate = sampleRate
-        header.pointee.requestedBufferFrames = bufferFrames
-        header.pointee.channelCount = channelCount
-        header.pointee.configStatus = 0  // pending
-        header.pointee.configSource = 1  // HAL initiated
-        // Memory barrier ensures non-atomic writes are visible before flag
-        OSMemoryBarrier()
-        header.pointee.configChanged = 1
-        // Note: No trailing barrier needed - configChanged acts as the release point
+        atomicStore(&header.pointee.requestedSampleRate, sampleRate)
+        atomicStore(&header.pointee.requestedBufferFrames, bufferFrames)
+        atomicStore(&header.pointee.channelCount, channelCount)
+        atomicStore(&header.pointee.configStatus, 0)  // pending
+        atomicStore(&header.pointee.configSource, 1)  // HAL initiated
+        atomicStore(&header.pointee.configChanged, 1)
     }
 
     /// Wait for daemon to acknowledge config change
@@ -898,8 +926,7 @@ final class SharedAudioBuffer {
     func waitForConfigAck(timeout: Int) -> Bool {
         let start = DispatchTime.now()
         while true {
-            OSMemoryBarrier()
-            let status = header?.pointee.configStatus ?? 0
+            let status = getConfigStatus()
             if status != 0 {  // Not pending anymore
                 return status == 1  // 1 = accepted
             }
@@ -913,26 +940,23 @@ final class SharedAudioBuffer {
     /// Set config status (atomic)
     func setConfigStatus(_ status: UInt32) {
         guard let header = header else { return }
-        header.pointee.configStatus = status
-        OSMemoryBarrier()
+        atomicStore(&header.pointee.configStatus, status)
     }
 
     /// Acknowledge a daemon-initiated config change.
     func acknowledgeConfigChange(actualSampleRate: UInt32, actualBufferFrames: UInt32, status: UInt32, errorCode: UInt32) {
         guard let header = header else { return }
-        header.pointee.actualSampleRate = actualSampleRate
-        header.pointee.actualBufferFrames = actualBufferFrames
-        header.pointee.configErrorCode = errorCode
-        OSMemoryBarrier()
-        header.pointee.configStatus = status
-        header.pointee.configChanged = 0
+        atomicStore(&header.pointee.actualSampleRate, actualSampleRate)
+        atomicStore(&header.pointee.actualBufferFrames, actualBufferFrames)
+        atomicStore(&header.pointee.configErrorCode, errorCode)
+        atomicStore(&header.pointee.configStatus, status)
+        atomicStore(&header.pointee.configChanged, 0)
     }
 
     /// Clear config changed flag (called after handling daemon-initiated change)
     func clearConfigChanged() {
         guard let header = header else { return }
-        header.pointee.configChanged = 0
-        OSMemoryBarrier()
+        atomicStore(&header.pointee.configChanged, 0)
     }
 
     deinit {

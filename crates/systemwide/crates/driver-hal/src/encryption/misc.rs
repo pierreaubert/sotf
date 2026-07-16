@@ -98,38 +98,3 @@ pub fn load_session_key() -> std::io::Result<[u8; 32]> {
     file.read_exact(&mut key)?;
     Ok(key)
 }
-
-/// Generate a fresh random session key and persist it to disk, overwriting
-/// any previous key at the canonical session-key path.
-///
-/// This is called from `SharedAudioBuffer::initialize_header` so that
-/// resetting `frame_counter` to 0 never reuses an old `(key, nonce)` pair.
-/// All I/O happens on the daemon's non-RT initialisation path.
-pub fn rotate_session_key() -> std::io::Result<[u8; 32]> {
-    use std::io::Write;
-    let key = generate_key();
-    let path = get_session_key_path();
-    if let Some(parent) = path.parent()
-        && !parent.exists()
-    {
-        std::fs::create_dir_all(parent)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).ok();
-        }
-    }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(&path)?;
-    file.write_all(&key)?;
-    file.sync_all().ok();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).ok();
-    }
-    Ok(key)
-}

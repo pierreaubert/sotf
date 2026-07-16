@@ -99,7 +99,7 @@ pub(super) fn parse_encrypted_record_header(
     })
 }
 
-const _: () = assert!(std::mem::size_of::<SharedAudioHeader>() <= 256);
+const _: () = assert!(std::mem::size_of::<SharedAudioHeader>() == 136);
 
 const _: () = assert!(std::mem::align_of::<SharedAudioHeader>() == 8);
 

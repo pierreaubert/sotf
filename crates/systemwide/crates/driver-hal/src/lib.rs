@@ -47,6 +47,8 @@
 //!
 //! Per-call trace logging is gated behind the `audio-trace` feature flag.
 
+#![deny(unsafe_op_in_unsafe_fn)]
+
 #[cfg(target_os = "macos")]
 pub mod driver;
 #[cfg(target_os = "macos")]
