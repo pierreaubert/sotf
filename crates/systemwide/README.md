@@ -68,12 +68,16 @@ cargo run --bin sotf-daemon --features hal --release
 #   /tmp/autoeq_audio.sock       (legacy, SOTF_LEGACY_SOCKET=1)
 ```
 
-### Local Lab
+### Automated tests
 
-Run an isolated daemon without installing the HAL driver:
+Run the committed systemwide contract/component gates from the repository root:
 
 ```bash
-just systemwide-lab
+just test-systemwide-macos
+just test-systemwide-linux-arm64
+
+# Run both sequentially, with macOS first.
+just test-systemwide-macos-linux-arm64
 ```
 
 This runs the daemon/state, real Unix-socket IPC, HAL protocol/streaming, and
@@ -82,6 +86,19 @@ Configbar model suites. The process-level scenarios start `sotf-daemon` with
 exercise coherent snapshots, 2 → 10 → 2 channel changes, transactional plugin
 artifact rejection, shutdown, and restart without installing or touching the
 CoreAudio HAL bundle.
+The macOS gate runs the Rust HAL, shared-protocol, daemon, and real local
+Unix-socket IPC tests; package-scoped strict Clippy; and Swift type-checks for
+the menu-bar client and HAL driver. The Linux recipe builds a pinned test image
+and runs the portable HAL streaming guards, shared-protocol tests, daemon
+component/IPC tests, and package-scoped strict Clippy natively under
+`linux/arm64`. Its Cargo registry, Git checkout, and target caches live in named
+Docker volumes; the source tree is mounted read-only.
+
+Neither gate installs the HAL bundle or changes the system output device. The
+ignored installed-HAL tests remain a manual macOS smoke layer. The full
+`systemwide-lab` HAL-simulator and audio-fixture harness described in
+[ARCHITECTURE.md](ARCHITECTURE.md#debugging-without-installing-and-manual-testing)
+is still planned and does not yet have a `just systemwide-lab` recipe.
 
 ## Runtime safety contract
 

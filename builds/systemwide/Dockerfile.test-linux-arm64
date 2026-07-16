@@ -1,0 +1,26 @@
+FROM rust:1.95-bookworm
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        clang \
+        cmake \
+        libasound2-dev \
+        libclang-dev \
+        libsqlite3-dev \
+        libssl-dev \
+        ninja-build \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Match the pinned Linux ARM64 build image even though rust-toolchain.toml uses
+# the floating "stable" channel. This avoids downloading a second toolchain at
+# container startup and keeps local/CI runs reproducible.
+ENV RUSTUP_TOOLCHAIN=1.95.0
+
+RUN rustup component add clippy
+
+WORKDIR /project
