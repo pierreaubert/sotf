@@ -193,6 +193,15 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     }
 
                     app.playback.position_secs = new_position;
+                    if app.current_screen == Screen::EarTraining
+                        && let Some(loop_start) = app.ui.ear_training.should_loop(new_position)
+                    {
+                        if let Err(error) = player.seek(loop_start) {
+                            log::warn!("Failed to seek TUI ear-training loop: {error}");
+                        } else {
+                            app.playback.position_secs = loop_start;
+                        }
+                    }
                     app.playback.loudness_info = new_loudness;
                     app.playback.signal_path = Some(new_signal_path);
                     app.media_control.last_position_secs = new_position;

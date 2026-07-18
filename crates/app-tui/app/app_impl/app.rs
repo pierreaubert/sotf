@@ -20,6 +20,7 @@ pub struct UiState {
     pub error_message: Option<String>,
     pub needs_redraw: bool,
     pub language: crate::i18n::Language,
+    pub ear_training: super::super::types::EarTrainingTuiState,
 }
 
 pub struct ModalState {
@@ -260,6 +261,7 @@ impl App {
                 error_message: None,
                 needs_redraw: true,
                 language: crate::i18n::Language::from_environment(),
+                ear_training: super::super::types::EarTrainingTuiState::default(),
             },
             modal: ModalState {
                 metadata_editor: None,

@@ -9,6 +9,7 @@ pub use sotf_audio_player::library::LibrarySortOrder;
 pub use sotf_audio_player::{ChannelGroup, ChannelInfo};
 
 mod consts;
+mod ear_training_tui_state;
 mod federation_edit_state;
 mod federation_tui_state;
 mod headphone_eq_step;
@@ -24,6 +25,7 @@ mod spinorama_eq_tui_state;
 mod spinorama_step;
 
 pub use consts::*;
+pub use ear_training_tui_state::*;
 pub use federation_edit_state::*;
 pub use federation_tui_state::*;
 pub use headphone_eq_step::*;
@@ -46,6 +48,7 @@ pub enum Screen {
     Playlists,
     Plugins,
     Devices,
+    EarTraining,
     Configure,
 }
 

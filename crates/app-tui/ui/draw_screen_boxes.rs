@@ -11,6 +11,7 @@ pub(crate) fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
         (Screen::Playlists, 'Y'),
         (Screen::Plugins, 'P'),
         (Screen::Devices, 'O'),
+        (Screen::EarTraining, 'E'),
         (Screen::Configure, 'C'),
     ];
 

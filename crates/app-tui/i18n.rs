@@ -123,6 +123,7 @@ impl TuiTranslations {
             (Language::English, Screen::Playlists) => "Playlists",
             (Language::English, Screen::Plugins) => "Plugins",
             (Language::English, Screen::Devices) => "Devices",
+            (Language::English, Screen::EarTraining) => "Ear Training",
             (Language::English, Screen::Configure) => "Configure",
             (Language::French, Screen::Loading) => "Chargement",
             (Language::French, Screen::Library) => "Bibliothèque",
@@ -130,6 +131,7 @@ impl TuiTranslations {
             (Language::French, Screen::Playlists) => "Listes de lecture",
             (Language::French, Screen::Plugins) => "Modules",
             (Language::French, Screen::Devices) => "Périphériques",
+            (Language::French, Screen::EarTraining) => "Entraînement auditif",
             (Language::French, Screen::Configure) => "Configuration",
             (Language::German, Screen::Loading) => "Laden",
             (Language::German, Screen::Library) => "Mediathek",
@@ -137,6 +139,7 @@ impl TuiTranslations {
             (Language::German, Screen::Playlists) => "Wiedergabelisten",
             (Language::German, Screen::Plugins) => "Plugins",
             (Language::German, Screen::Devices) => "Geräte",
+            (Language::German, Screen::EarTraining) => "Gehörtraining",
             (Language::German, Screen::Configure) => "Konfiguration",
             (Language::Spanish, Screen::Loading) => "Cargando",
             (Language::Spanish, Screen::Library) => "Biblioteca",
@@ -144,6 +147,7 @@ impl TuiTranslations {
             (Language::Spanish, Screen::Playlists) => "Listas",
             (Language::Spanish, Screen::Plugins) => "Complementos",
             (Language::Spanish, Screen::Devices) => "Dispositivos",
+            (Language::Spanish, Screen::EarTraining) => "Entrenamiento auditivo",
             (Language::Spanish, Screen::Configure) => "Configuración",
         }
     }
@@ -782,6 +786,167 @@ const SPANISH_UI: &[(&str, &str)] = &[
 ];
 
 const DYNAMIC_TRANSLATIONS: &[DynamicTranslation] = &[
+    dynamic_translation(
+        "Frequency band",
+        "Bande de fréquences",
+        "Frequenzband",
+        "Banda de frecuencia",
+    ),
+    dynamic_translation(
+        "Boost or cut",
+        "Accentuation ou atténuation",
+        "Anhebung oder Absenkung",
+        "Realce o recorte",
+    ),
+    dynamic_translation(
+        "Gain amount",
+        "Valeur du gain",
+        "Pegelbetrag",
+        "Cantidad de ganancia",
+    ),
+    dynamic_translation("Boost", "Accentuation", "Anhebung", "Realce"),
+    dynamic_translation("Cut", "Atténuation", "Absenkung", "Recorte"),
+    dynamic_translation(
+        "Boost + cut",
+        "Accentuation + atténuation",
+        "Anhebung + Absenkung",
+        "Realce + recorte",
+    ),
+    dynamic_translation("Foundations", "Fondamentaux", "Grundlagen", "Fundamentos"),
+    dynamic_translation(
+        "Frequency regions",
+        "Régions fréquentielles",
+        "Frequenzbereiche",
+        "Regiones de frecuencia",
+    ),
+    dynamic_translation(
+        "Hearing cuts",
+        "Entendre les atténuations",
+        "Absenkungen hören",
+        "Escuchar recortes",
+    ),
+    dynamic_translation("Fine bands", "Bandes fines", "Feine Bänder", "Bandas finas"),
+    dynamic_translation("Mastery", "Maîtrise", "Meisterschaft", "Dominio"),
+    dynamic_translation(
+        "Start with Foundations at 12 dB.",
+        "Commencez par les Fondamentaux à 12 dB.",
+        "Mit Grundlagen bei 12 dB beginnen.",
+        "Empiece con Fundamentos a 12 dB.",
+    ),
+    dynamic_translation(
+        "Focus around {} Hz, then reduce gain by 3 dB.",
+        "Travaillez autour de {} Hz, puis réduisez le gain de 3 dB.",
+        "Auf den Bereich um {} Hz konzentrieren, dann den Pegel um 3 dB senken.",
+        "Concéntrese alrededor de {} Hz y reduzca la ganancia 3 dB.",
+    ),
+    dynamic_translation(
+        "Try a boost/cut identification session.",
+        "Essayez une session d’identification accentuation/atténuation.",
+        "Eine Sitzung zur Erkennung von Anhebung/Absenkung versuchen.",
+        "Pruebe una sesión de identificación de realce/recorte.",
+    ),
+    dynamic_translation(
+        "No track selected",
+        "Aucune piste sélectionnée",
+        "Kein Titel ausgewählt",
+        "Ninguna pista seleccionada",
+    ),
+    dynamic_translation("not set", "non définie", "nicht gesetzt", "sin definir"),
+    dynamic_translation("Exercise: ", "Exercice : ", "Übung: ", "Ejercicio: "),
+    dynamic_translation("Bands:", "Bandes :", "Bänder:", "Bandas:"),
+    dynamic_translation("Gain:", "Gain :", "Pegel:", "Ganancia:"),
+    dynamic_translation("Trials:", "Essais :", "Runden:", "Pruebas:"),
+    dynamic_translation("Change:", "Modification :", "Änderung:", "Cambio:"),
+    dynamic_translation("Adaptive:", "Adaptatif :", "Adaptiv:", "Adaptativo:"),
+    dynamic_translation("Source:", "Source :", "Quelle:", "Fuente:"),
+    dynamic_translation("Loop:", "Boucle :", "Schleife:", "Bucle:"),
+    dynamic_translation(
+        "e exercise · a adaptive · c change",
+        "e exercice · a adaptatif · c modification",
+        "e Übung · a adaptiv · c Änderung",
+        "e ejercicio · a adaptativo · c cambio",
+    ),
+    dynamic_translation(
+        "b/B bands · g/G gain · v/V Q · t/T trials",
+        "b/B bandes · g/G gain · v/V Q · t/T essais",
+        "b/B Bänder · g/G Pegel · v/V Q · t/T Runden",
+        "b/B bandas · g/G ganancia · v/V Q · t/T pruebas",
+    ),
+    dynamic_translation(
+        "i add source · ,/. source · [/] loop · \\ toggle",
+        "i ajouter source · ,/. source · [/] boucle · \\ activer",
+        "i Quelle hinzu · ,/. Quelle · [/] Schleife · \\ umschalten",
+        "i añadir fuente · ,/. fuente · [/] bucle · \\ activar",
+    ),
+    dynamic_translation(
+        "Practice setup",
+        "Configuration de la pratique",
+        "Übungseinstellungen",
+        "Configuración de práctica",
+    ),
+    dynamic_translation(
+        "Press s to start",
+        "Appuyez sur s pour commencer",
+        "s zum Starten drücken",
+        "Pulse s para empezar",
+    ),
+    dynamic_translation(
+        "{}   1 original · 2 filtered · ←/→ answer · Enter submit/next",
+        "{}   1 original · 2 filtré · ←/→ réponse · Entrée valider/suivant",
+        "{}   1 Original · 2 gefiltert · ←/→ Antwort · Enter senden/weiter",
+        "{}   1 original · 2 filtrado · ←/→ respuesta · Intro enviar/siguiente",
+    ),
+    dynamic_translation(
+        "EQ change",
+        "Modification EQ",
+        "EQ-Änderung",
+        "Cambio de EQ",
+    ),
+    dynamic_translation(
+        "Listen before answering",
+        "Écoutez avant de répondre",
+        "Vor der Antwort anhören",
+        "Escuche antes de responder",
+    ),
+    dynamic_translation(
+        "Start a session to reveal answer choices",
+        "Démarrez une session pour afficher les réponses",
+        "Sitzung starten, um Antworten zu sehen",
+        "Inicie una sesión para ver las respuestas",
+    ),
+    dynamic_translation(
+        "Your answer",
+        "Votre réponse",
+        "Ihre Antwort",
+        "Su respuesta",
+    ),
+    dynamic_translation(
+        "Guided courses · ↑/↓ select · Enter start",
+        "Cours guidés · ↑/↓ choisir · Entrée démarrer",
+        "Geführte Kurse · ↑/↓ wählen · Enter starten",
+        "Cursos guiados · ↑/↓ elegir · Intro iniciar",
+    ),
+    dynamic_translation("Sessions:", "Sessions :", "Sitzungen:", "Sesiones:"),
+    dynamic_translation("Accuracy:", "Précision :", "Genauigkeit:", "Precisión:"),
+    dynamic_translation(
+        "70% streak:",
+        "Série à 70 % :",
+        "70%-Serie:",
+        "Racha del 70 %:",
+    ),
+    dynamic_translation("Coach:", "Conseil :", "Coach:", "Consejo:"),
+    dynamic_translation(
+        "Progress and coaching",
+        "Progression et conseils",
+        "Fortschritt und Coaching",
+        "Progreso y consejos",
+    ),
+    dynamic_translation(
+        "Recent sessions",
+        "Sessions récentes",
+        "Letzte Sitzungen",
+        "Sesiones recientes",
+    ),
     dynamic_translation(
         "APO files can only be loaded for EQ plugins",
         "Les fichiers APO ne peuvent être chargés que pour les modules d’EQ",
@@ -4311,6 +4476,46 @@ const DYNAMIC_TRANSLATIONS: &[DynamicTranslation] = &[
 ];
 
 const FRENCH_ACTIONS: &[(&str, &str)] = &[
+    (
+        "Practice / Courses / Progress",
+        "Pratique / Cours / Progression",
+    ),
+    (
+        "Start or restart session",
+        "Démarrer ou recommencer la session",
+    ),
+    (
+        "Listen to original / filtered",
+        "Écouter l’original / le signal filtré",
+    ),
+    ("Select answer", "Choisir la réponse"),
+    ("Submit answer / next trial", "Valider / essai suivant"),
+    (
+        "Exercise / adaptive / boost-cut mode",
+        "Exercice / adaptatif / mode accentuation-atténuation",
+    ),
+    (
+        "Adjust bands, gain, Q, trials",
+        "Régler bandes, gain, Q et essais",
+    ),
+    (
+        "Add / previous / next training source",
+        "Ajouter / source précédente / suivante",
+    ),
+    (
+        "Set loop bounds / toggle loop",
+        "Définir les bornes / activer la boucle",
+    ),
+    (
+        "Return to library and clean audition path",
+        "Retourner à la bibliothèque et nettoyer l’écoute",
+    ),
+    ("Practice/Courses/Progress", "Pratique/Cours/Progression"),
+    ("Start session", "Démarrer la session"),
+    ("Original/filtered", "Original/filtré"),
+    ("Choose/submit", "Choisir/valider"),
+    ("Exercise/adaptive/change", "Exercice/adaptatif/changement"),
+    ("Loop controls", "Commandes de boucle"),
     ("", ""),
     (
         "(when editing a plugin)",
@@ -4516,6 +4721,49 @@ const FRENCH_ACTIONS: &[(&str, &str)] = &[
 ];
 
 const GERMAN_ACTIONS: &[(&str, &str)] = &[
+    (
+        "Practice / Courses / Progress",
+        "Übung / Kurse / Fortschritt",
+    ),
+    (
+        "Start or restart session",
+        "Sitzung starten oder neu starten",
+    ),
+    (
+        "Listen to original / filtered",
+        "Original / gefiltert anhören",
+    ),
+    ("Select answer", "Antwort auswählen"),
+    (
+        "Submit answer / next trial",
+        "Antwort senden / nächste Runde",
+    ),
+    (
+        "Exercise / adaptive / boost-cut mode",
+        "Übung / adaptiv / Anhebung-Absenkung",
+    ),
+    (
+        "Adjust bands, gain, Q, trials",
+        "Bänder, Pegel, Q und Runden anpassen",
+    ),
+    (
+        "Add / previous / next training source",
+        "Quelle hinzufügen / vorherige / nächste",
+    ),
+    (
+        "Set loop bounds / toggle loop",
+        "Schleifengrenzen setzen / Schleife umschalten",
+    ),
+    (
+        "Return to library and clean audition path",
+        "Zur Mediathek und Hörpfad entfernen",
+    ),
+    ("Practice/Courses/Progress", "Übung/Kurse/Fortschritt"),
+    ("Start session", "Sitzung starten"),
+    ("Original/filtered", "Original/gefiltert"),
+    ("Choose/submit", "Auswählen/senden"),
+    ("Exercise/adaptive/change", "Übung/adaptiv/Änderung"),
+    ("Loop controls", "Schleifensteuerung"),
     ("", ""),
     ("(when editing a plugin)", "(beim Bearbeiten eines Plugins)"),
     (
@@ -4718,6 +4966,46 @@ const GERMAN_ACTIONS: &[(&str, &str)] = &[
 ];
 
 const SPANISH_ACTIONS: &[(&str, &str)] = &[
+    (
+        "Practice / Courses / Progress",
+        "Práctica / Cursos / Progreso",
+    ),
+    ("Start or restart session", "Iniciar o reiniciar la sesión"),
+    (
+        "Listen to original / filtered",
+        "Escuchar original / filtrado",
+    ),
+    ("Select answer", "Seleccionar respuesta"),
+    (
+        "Submit answer / next trial",
+        "Enviar respuesta / siguiente prueba",
+    ),
+    (
+        "Exercise / adaptive / boost-cut mode",
+        "Ejercicio / adaptativo / realce-recorte",
+    ),
+    (
+        "Adjust bands, gain, Q, trials",
+        "Ajustar bandas, ganancia, Q y pruebas",
+    ),
+    (
+        "Add / previous / next training source",
+        "Añadir / fuente anterior / siguiente",
+    ),
+    (
+        "Set loop bounds / toggle loop",
+        "Definir límites / activar el bucle",
+    ),
+    (
+        "Return to library and clean audition path",
+        "Volver a la biblioteca y limpiar la escucha",
+    ),
+    ("Practice/Courses/Progress", "Práctica/Cursos/Progreso"),
+    ("Start session", "Iniciar sesión"),
+    ("Original/filtered", "Original/filtrado"),
+    ("Choose/submit", "Elegir/enviar"),
+    ("Exercise/adaptive/change", "Ejercicio/adaptativo/cambio"),
+    ("Loop controls", "Controles de bucle"),
     ("", ""),
     ("(when editing a plugin)", "(al editar un complemento)"),
     (

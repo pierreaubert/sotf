@@ -6,6 +6,7 @@ use sotf_media_controls::MediaControlEvent;
 use std::time::Duration;
 
 pub mod devices;
+pub mod ear_training;
 pub mod file_explorer;
 pub mod level_meters;
 pub mod library;
@@ -49,6 +50,7 @@ pub(super) fn cycle_string(current: &str, options: &[&str], delta: i32) -> Strin
 }
 
 use devices::handle_devices_keys;
+use ear_training::handle_ear_training_keys;
 use file_explorer::handle_file_explorer_mode;
 use library::handle_library_keys;
 use metadata::handle_metadata_editor_mode;
@@ -187,21 +189,32 @@ pub(super) fn dispatch_shared_command(
     command: SharedCommand,
 ) -> Option<PlayerCommand> {
     match command {
-        SharedCommand::Quit | SharedCommand::ExitApplication => {
+        SharedCommand::Quit => {
+            app.leave_ear_training();
             app.should_quit = true;
             None
         }
+        SharedCommand::ExitApplication => {
+            if app.current_screen == Screen::EarTraining {
+                app.switch_screen(Screen::Library);
+            } else {
+                app.should_quit = true;
+            }
+            None
+        }
         SharedCommand::CycleScreens => {
-            app.current_screen = match app.current_screen {
+            let screen = match app.current_screen {
                 Screen::Loading => Screen::Loading,
                 Screen::Library => Screen::Queue,
                 Screen::Queue => Screen::Playlists,
                 Screen::Playlists => Screen::Plugins,
                 Screen::Plugins => Screen::Devices,
                 Screen::Devices => Screen::Configure,
-                Screen::Configure => Screen::Library,
+                Screen::Configure => Screen::EarTraining,
+                Screen::EarTraining => Screen::Library,
             };
-            app.input_mode = if app.current_screen == Screen::Configure {
+            app.switch_screen(screen);
+            app.input_mode = if screen == Screen::Configure {
                 InputMode::Configure
             } else {
                 InputMode::Normal
@@ -215,12 +228,13 @@ pub(super) fn dispatch_shared_command(
                 KeyCode::Char('P') => (Screen::Plugins, InputMode::Normal),
                 KeyCode::Char('O') => (Screen::Devices, InputMode::Normal),
                 KeyCode::Char('Y') => (Screen::Playlists, InputMode::Normal),
+                KeyCode::Char('E') => (Screen::EarTraining, InputMode::Normal),
                 KeyCode::Char('C') | KeyCode::Char('N') => {
                     (Screen::Configure, InputMode::Configure)
                 }
                 _ => unreachable!("non-screen chord resolved as SwitchScreen: {key:?}"),
             };
-            app.current_screen = screen;
+            app.switch_screen(screen);
             app.input_mode = mode;
             None
         }
@@ -362,6 +376,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         Screen::Playlists => playlists::handle_playlists_keys(app, key),
         Screen::Plugins => handle_plugins_keys(app, key),
         Screen::Devices => handle_devices_keys(app, key),
+        Screen::EarTraining => handle_ear_training_keys(app, key),
         Screen::Configure => conf::handle_tab_bar_keys(app, key),
     }
 }
