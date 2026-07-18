@@ -30,7 +30,7 @@ pub(crate) fn draw_loss_chart(
 
     let datasets = vec![
         Dataset::default()
-            .name("Loss")
+            .name(crate::tui_text!(app, "Loss"))
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line)
             .style(Style::default().fg(app.theme.accent_primary))
@@ -48,7 +48,10 @@ pub(crate) fn draw_loss_chart(
         Span::raw(format!("{:.4}", y_hi)),
     ];
 
-    let title = format!("Loss History  ({} iterations)", x_bound as usize);
+    let title = crate::tui_text!(
+        app,
+        format!("Loss History  ({} iterations)", x_bound as usize)
+    );
 
     let chart = Chart::new(datasets)
         .style(
@@ -59,14 +62,14 @@ pub(crate) fn draw_loss_chart(
         .block(Block::default().borders(Borders::ALL).title(title))
         .x_axis(
             Axis::default()
-                .title("Iteration")
+                .title(crate::tui_text!(app, "Iteration"))
                 .style(Style::default().fg(app.theme.fg_secondary))
                 .labels(x_labels)
                 .bounds([0.0, x_bound]),
         )
         .y_axis(
             Axis::default()
-                .title("Loss")
+                .title(crate::tui_text!(app, "Loss"))
                 .style(Style::default().fg(app.theme.fg_secondary))
                 .labels(y_labels)
                 .bounds([y_lo, y_hi]),
@@ -85,13 +88,13 @@ pub(crate) fn draw_freq_response_chart(
     filter_response: &[f64],
 ) {
     if frequencies.len() < 2 {
-        let placeholder = Paragraph::new("No curve data")
+        let placeholder = Paragraph::new(crate::tui_text!(app, "No curve data"))
             .style(Style::default().fg(app.theme.fg_secondary))
             .alignment(Alignment::Center)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Frequency Response"),
+                    .title(crate::tui_text!(app, "Frequency Response")),
             );
         f.render_widget(placeholder, area);
         return;
@@ -140,19 +143,19 @@ pub(crate) fn draw_freq_response_chart(
 
     let datasets = vec![
         Dataset::default()
-            .name("Input")
+            .name(crate::tui_text!(app, "Input"))
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line)
             .style(Style::default().fg(Color::Gray))
             .data(&input_data),
         Dataset::default()
-            .name("Corrected")
+            .name(crate::tui_text!(app, "Corrected"))
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line)
             .style(Style::default().fg(app.theme.accent_success))
             .data(&corrected_data),
         Dataset::default()
-            .name("Filter")
+            .name(crate::tui_text!(app, "Filter"))
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line)
             .style(Style::default().fg(app.theme.accent_primary))
@@ -180,7 +183,10 @@ pub(crate) fn draw_freq_response_chart(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Frequency Response (Gray=Input  Green=Corrected  Blue=Filter)"),
+                .title(crate::tui_text!(
+                    app,
+                    "Frequency Response (Gray=Input  Green=Corrected  Blue=Filter)"
+                )),
         )
         .x_axis(
             Axis::default()

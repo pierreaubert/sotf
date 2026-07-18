@@ -31,6 +31,10 @@ fn test_loudness_monitor_stereo() {
     // Process audio
     let mut output = vec![0.0; input.len()];
     monitor.process(&input, &mut output, &context).unwrap();
+    assert_eq!(
+        output, input,
+        "the loudness analyzer must be bit-transparent"
+    );
 
     // Get loudness data
     let data_opt = monitor.get_data();
@@ -48,6 +52,11 @@ fn test_loudness_monitor_stereo() {
 
     // Peak should be around 0.1
     assert!(loudness.peak > 0.05 && loudness.peak < 0.15);
+    assert!(
+        (loudness.momentary_lufs - -20.0).abs() < 0.2,
+        "1 kHz stereo sine at -20 dBFS measured {:.3} LUFS",
+        loudness.momentary_lufs
+    );
 }
 
 #[test]
@@ -129,6 +138,10 @@ fn test_spectrum_analyzer_stereo() {
     // Process audio
     let mut output = vec![0.0; input.len()];
     analyzer.process(&input, &mut output, &context).unwrap();
+    assert_eq!(
+        output, input,
+        "the spectrum analyzer must be bit-transparent"
+    );
 
     // Get spectrum data
     let data_opt = analyzer.get_data();

@@ -9,7 +9,7 @@ use super::render::render_settings_heading;
 use super::types::ScheduleBoundary;
 use crate::app::types::DensityMode;
 use crate::components::design::Ds;
-use crate::i18n::Language;
+use crate::i18n::{AppearanceTranslations, Language};
 use crate::theme::{CommunityThemeId, ThemeAccentPreference, ThemeId};
 use crate::ui::PlayerView;
 use crate::ui::{DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX};
@@ -56,6 +56,7 @@ impl PlayerView {
     pub(crate) fn render_theme_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let text = AppearanceTranslations::for_language(state.app.ui_state.language);
         let theme_id = state.app.ui_state.theme_id;
         let design_language = state.app.ui_state.design_language.clone();
         let density_mode = state.app.ui_state.density_mode;
@@ -92,7 +93,7 @@ impl PlayerView {
                         ButtonSet::new("design-language-select")
                             .size(ButtonSetSize::Sm)
                             .options(vec![
-                                ButtonSetOption::new("system", "System"),
+                                ButtonSetOption::new("system", text.system),
                                 ButtonSetOption::new(
                                     DesignLanguage::AppleHig.as_str(),
                                     DesignLanguage::AppleHig.label(),
@@ -169,9 +170,7 @@ impl PlayerView {
                         div()
                             .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
-                            .child(
-                                "Standard shows one primary destination at a time. Expert enables the dense Library | Queue | Rack workspace.",
-                            ),
+                            .child(text.navigation_mode_description),
                     ),
             )
             .child(
@@ -198,13 +197,13 @@ impl PlayerView {
                                             .text_size(d.text_sm)
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(theme.text_primary)
-                                            .child("Text size"),
+                                            .child(text.text_size),
                                     )
                                     .child(
                                         div()
                                             .text_size(d.text_xs)
                                             .text_color(theme.text_secondary)
-                                            .child("Scales the interface immediately and is saved with Appearance."),
+                                            .child(text.text_size_description),
                                     ),
                             )
                             .child({
@@ -295,13 +294,13 @@ impl PlayerView {
                                     .text_size(d.text_lg)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(theme.text_primary)
-                                    .child("Live preview"),
+                                    .child(text.live_preview),
                             )
                             .child(
                                 div()
                                     .text_size(d.text_sm)
                                     .text_color(theme.text_secondary)
-                                    .child("Now Playing, Library, Queue, and Studio use this scale and density."),
+                                    .child(text.preview_description),
                             ),
                     ),
             )
@@ -316,10 +315,10 @@ impl PlayerView {
                         ButtonSet::new("theme-mode-select")
                             .size(ButtonSetSize::Sm)
                             .options(vec![
-                                ButtonSetOption::new("follow_system", "System"),
-                                ButtonSetOption::new("light", "Light"),
-                                ButtonSetOption::new("dark", "Dark"),
-                                ButtonSetOption::new("scheduled", "Scheduled"),
+                                ButtonSetOption::new("follow_system", text.system),
+                                ButtonSetOption::new("light", text.light),
+                                ButtonSetOption::new("dark", text.dark),
+                                ButtonSetOption::new("scheduled", text.scheduled),
                             ])
                             .selected(theme_mode_value(&theme_mode_preference))
                             .theme(theme.to_button_set_theme())
@@ -426,7 +425,7 @@ impl PlayerView {
                             Toggle::new("theme-reduce-motion")
                                 .size(ToggleSize::Sm)
                                 .checked(reduce_motion)
-                                .label("Reduce motion")
+                                .label(text.reduce_motion)
                                 .style(ToggleStyle::Segmented)
                                 .theme(theme.to_toggle_theme())
                                 .on_change({
@@ -479,7 +478,7 @@ impl PlayerView {
                                 div()
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
-                                    .child("Custom theme JSON"),
+                                    .child(text.custom_theme_json),
                             )
                             .child(
                                 Input::new("community-theme-json-input")
@@ -502,7 +501,7 @@ impl PlayerView {
                                     .flex()
                                     .gap(d.grid)
                                     .child(
-                                        Button::new("community-theme-import-apply", "Import")
+                                        Button::new("community-theme-import-apply", text.import)
                                             .variant(ButtonVariant::Primary)
                                             .size(ButtonSize::Xs)
                                             .theme(theme.to_button_theme())
@@ -534,7 +533,7 @@ impl PlayerView {
                                             )),
                                     )
                                     .child(
-                                        Button::new("community-theme-import-clear", "Clear")
+                                        Button::new("community-theme-import-clear", text.clear)
                                             .variant(ButtonVariant::Secondary)
                                             .size(ButtonSize::Xs)
                                             .theme(theme.to_button_theme())
@@ -644,6 +643,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
+        let text = AppearanceTranslations::for_language(self.state.read(cx).app.ui_state.language);
         div()
             .flex()
             .flex_col()
@@ -785,7 +785,7 @@ impl PlayerView {
                                 div()
                                     .text_size(d.text_xs)
                                     .text_color(preview_theme.text_muted)
-                                    .child("Buttons"),
+                                    .child(text.buttons),
                             )
                             .child(
                                 div()
@@ -793,40 +793,46 @@ impl PlayerView {
                                     .flex_wrap()
                                     .gap(d.grid)
                                     .child(
-                                        Button::new("preview-primary", "Pri")
-                                            .aria_label("Primary variant preview")
+                                        Button::new("preview-primary", text.primary_abbreviation)
+                                            .aria_label(text.primary_preview)
                                             .variant(ButtonVariant::Primary)
                                             .size(ButtonSize::Xs)
                                             .theme(preview_theme.to_button_theme())
                                             .build(),
                                     )
                                     .child(
-                                        Button::new("preview-secondary", "Sec")
-                                            .aria_label("Secondary variant preview")
-                                            .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Xs)
-                                            .theme(preview_theme.to_button_theme())
-                                            .build(),
+                                        Button::new(
+                                            "preview-secondary",
+                                            text.secondary_abbreviation,
+                                        )
+                                        .aria_label(text.secondary_preview)
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Xs)
+                                        .theme(preview_theme.to_button_theme())
+                                        .build(),
                                     )
                                     .child(
-                                        Button::new("preview-destructive", "Del")
-                                            .aria_label("Destructive variant preview")
-                                            .variant(ButtonVariant::Destructive)
-                                            .size(ButtonSize::Xs)
-                                            .theme(preview_theme.to_button_theme())
-                                            .build(),
+                                        Button::new(
+                                            "preview-destructive",
+                                            text.destructive_abbreviation,
+                                        )
+                                        .aria_label(text.destructive_preview)
+                                        .variant(ButtonVariant::Destructive)
+                                        .size(ButtonSize::Xs)
+                                        .theme(preview_theme.to_button_theme())
+                                        .build(),
                                     )
                                     .child(
-                                        Button::new("preview-ghost", "Gho")
-                                            .aria_label("Ghost variant preview")
+                                        Button::new("preview-ghost", text.ghost_abbreviation)
+                                            .aria_label(text.ghost_preview)
                                             .variant(ButtonVariant::Ghost)
                                             .size(ButtonSize::Xs)
                                             .theme(preview_theme.to_button_theme())
                                             .build(),
                                     )
                                     .child(
-                                        Button::new("preview-outline", "Out")
-                                            .aria_label("Outline variant preview")
+                                        Button::new("preview-outline", text.outline_abbreviation)
+                                            .aria_label(text.outline_preview)
                                             .variant(ButtonVariant::Outline)
                                             .size(ButtonSize::Xs)
                                             .theme(preview_theme.to_button_theme())
@@ -840,14 +846,14 @@ impl PlayerView {
                                     .child(
                                         Toggle::new("preview-toggle-off")
                                             .checked(false)
-                                            .label("Off".to_string())
+                                            .label(text.off)
                                             .style(ToggleStyle::Segmented)
                                             .theme(preview_theme.to_toggle_theme()),
                                     )
                                     .child(
                                         Toggle::new("preview-toggle-on")
                                             .checked(true)
-                                            .label("On".to_string())
+                                            .label(text.on)
                                             .style(ToggleStyle::Segmented)
                                             .theme(preview_theme.to_toggle_theme()),
                                     ),

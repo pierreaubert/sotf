@@ -1,3 +1,11 @@
+# 0.5.38
+
+## Fixes
+
+- Corrected host latency reporting to one full FFT frame. Streamed impulse
+  measurements showed that the previous `fft_size - hop_size` value
+  under-compensated at host block sizes smaller than the STFT hop.
+
 # 0.5.37
 
 ## Fixes (from code review 2026-05-11)

@@ -1,5 +1,6 @@
 use super::waveform_element::WaveformElement;
 use crate::app::constants::spacing;
+use crate::app::i18n::FooterTranslations;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
 use crate::components::design::Ds;
@@ -104,6 +105,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = FooterTranslations::for_language(state.app.ui_state.language);
         let library_active = state.app.library_state.scan_in_progress;
         let replay_gain_active = state.app.scan.ctrl.replay_gain_manager.in_progress;
         let waveform_active = state.app.scan.ctrl.waveform_manager.in_progress;
@@ -205,7 +207,7 @@ impl PlayerView {
             })
             .child(div().flex_1())
             .child(
-                Button::new("hide-scan-status", "Hide")
+                Button::new("hide-scan-status", text.hide)
                     .variant(ButtonVariant::Ghost)
                     .size(ButtonSize::Xs)
                     .theme(theme.to_button_theme())
@@ -306,6 +308,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = &state.app.ui_state.theme;
+        let text = FooterTranslations::for_language(state.app.ui_state.language);
         let translations = state.app.ui_state.translations.clone();
         let window_width = state.app.ui_state.window_width;
         let window_height = state.app.ui_state.window_height;
@@ -584,6 +587,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let _text = FooterTranslations::for_language(state.app.ui_state.language);
         let theme = &state.app.ui_state.theme;
         let no_track_label = translations.playback_no_track;
 
@@ -615,13 +619,13 @@ impl PlayerView {
                         .text_size(d.text_sm)
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(accent)
-                        .child("HAL Input Active"),
+                        .child(_text.hal_input_active),
                 )
                 .child(
                     div()
                         .text_size(d.text_xs)
                         .text_color(text_secondary)
-                        .child("Processing system audio"),
+                        .child(_text.processing_system_audio),
                 )
                 .child(
                     div()
@@ -822,6 +826,7 @@ impl PlayerView {
                             // Previous track
                             .child({
                                 let tt = theme_clone.clone();
+                                let label = text.previous_track;
                                 div()
                                     .id("transport-prev-wrapper")
                                     .on_click(cx.listener(
@@ -833,9 +838,7 @@ impl PlayerView {
                                             );
                                         },
                                     ))
-                                    .tooltip(move |_window, cx| {
-                                        footer_tooltip("Previous Track", &tt, cx)
-                                    })
+                                    .tooltip(move |_window, cx| footer_tooltip(label, &tt, cx))
                                     .child(
                                         IconButton::with_child(
                                             "transport-prev",
@@ -846,17 +849,17 @@ impl PlayerView {
                                         .variant(IconButtonVariant::Ghost)
                                         .size(IconButtonSize::Sm)
                                         .rounded_full()
+                                        .aria_label(label)
                                         .theme(theme_clone.to_icon_button_theme()),
                                     )
                             })
                             // Seek backward
                             .child({
                                 let tt = theme_clone.clone();
+                                let label = text.seek_back_30s;
                                 div()
                                     .id("transport-seek-back-wrapper")
-                                    .tooltip(move |_window, cx| {
-                                        footer_tooltip("Seek Back 30s", &tt, cx)
-                                    })
+                                    .tooltip(move |_window, cx| footer_tooltip(label, &tt, cx))
                                     .on_click(cx.listener(
                                         |view, _event: &ClickEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
@@ -881,6 +884,7 @@ impl PlayerView {
                                         .variant(IconButtonVariant::Ghost)
                                         .size(IconButtonSize::Sm)
                                         .rounded_full()
+                                        .aria_label(label)
                                         .theme(theme_clone.to_icon_button_theme()),
                                     )
                             })
@@ -894,7 +898,7 @@ impl PlayerView {
                                     IconName::Play
                                 };
                                 let tt = theme_clone.clone();
-                                let play_label = if is_playing { "Pause" } else { "Play" };
+                                let play_label = if is_playing { text.pause } else { text.play };
                                 let wrapper = div()
                                     .id("transport-play-wrapper")
                                     .on_click(cx.listener(
@@ -918,6 +922,7 @@ impl PlayerView {
                                         .size(IconButtonSize::Md)
                                         .rounded_full()
                                         .selected(true)
+                                        .aria_label(play_label)
                                         .theme(theme_clone.to_icon_button_theme()),
                                     );
                                 #[cfg(feature = "dev-api")]
@@ -927,11 +932,10 @@ impl PlayerView {
                             // Seek forward
                             .child({
                                 let tt = theme_clone.clone();
+                                let label = text.seek_forward_30s;
                                 div()
                                     .id("transport-seek-fwd-wrapper")
-                                    .tooltip(move |_window, cx| {
-                                        footer_tooltip("Seek Forward 30s", &tt, cx)
-                                    })
+                                    .tooltip(move |_window, cx| footer_tooltip(label, &tt, cx))
                                     .on_click(cx.listener(
                                         |view, _event: &ClickEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
@@ -957,17 +961,17 @@ impl PlayerView {
                                         .variant(IconButtonVariant::Ghost)
                                         .size(IconButtonSize::Sm)
                                         .rounded_full()
+                                        .aria_label(label)
                                         .theme(theme_clone.to_icon_button_theme()),
                                     )
                             })
                             // Next track
                             .child({
                                 let tt = theme_clone.clone();
+                                let label = text.next_track;
                                 div()
                                     .id("transport-next-wrapper")
-                                    .tooltip(move |_window, cx| {
-                                        footer_tooltip("Next Track", &tt, cx)
-                                    })
+                                    .tooltip(move |_window, cx| footer_tooltip(label, &tt, cx))
                                     .on_click(cx.listener(
                                         |view, _event: &ClickEvent, window, cx| {
                                             view.next_track(
@@ -987,6 +991,7 @@ impl PlayerView {
                                         .variant(IconButtonVariant::Ghost)
                                         .size(IconButtonSize::Sm)
                                         .rounded_full()
+                                        .aria_label(label)
                                         .theme(theme_clone.to_icon_button_theme()),
                                     )
                             }),
@@ -1074,6 +1079,7 @@ impl PlayerView {
                             el.child(
                                 div()
                                     .px(d.pad_y_half)
+                                    // intentional: micro-badge optical padding is below the 4px spacing grid
                                     .py(px(1.0))
                                     .rounded(d.r_sm)
                                     .bg(theme.warning)
@@ -1086,6 +1092,7 @@ impl PlayerView {
                             el.child(
                                 div()
                                     .px(d.pad_y_half)
+                                    // intentional: micro-badge optical padding is below the 4px spacing grid
                                     .py(px(1.0))
                                     .rounded(d.r_sm)
                                     .bg(theme.error)
@@ -1110,7 +1117,8 @@ impl PlayerView {
         } else {
             IconName::Play
         };
-        let play_label = if is_playing { "Pause" } else { "Play" };
+        let text = FooterTranslations::for_language(self.state.read(cx).app.ui_state.language);
+        let play_label = if is_playing { text.pause } else { text.play };
 
         div()
             .id("footer-compact-transport")
@@ -1121,12 +1129,13 @@ impl PlayerView {
             .child({
                 let theme_clone = theme.clone();
                 let tt = theme.clone();
+                let label = text.previous_track;
                 div()
                     .id("compact-transport-prev-wrapper")
                     .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
                         view.prev_track(&crate::app::actions::PrevTrack, window, cx);
                     }))
-                    .tooltip(move |_window, cx| footer_tooltip("Previous Track", &tt, cx))
+                    .tooltip(move |_window, cx| footer_tooltip(label, &tt, cx))
                     .child(
                         IconButton::with_child(
                             "compact-transport-prev",
@@ -1137,6 +1146,7 @@ impl PlayerView {
                         .variant(IconButtonVariant::Ghost)
                         .size(IconButtonSize::Sm)
                         .rounded_full()
+                        .aria_label(label)
                         .theme(theme_clone.to_icon_button_theme()),
                     )
             })
@@ -1160,18 +1170,20 @@ impl PlayerView {
                         .size(IconButtonSize::Sm)
                         .rounded_full()
                         .selected(true)
+                        .aria_label(play_label)
                         .theme(theme_clone.to_icon_button_theme()),
                     )
             })
             .child({
                 let theme_clone = theme.clone();
                 let tt = theme.clone();
+                let label = text.next_track;
                 div()
                     .id("compact-transport-next-wrapper")
                     .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
                         view.next_track(&crate::app::actions::NextTrack, window, cx);
                     }))
-                    .tooltip(move |_window, cx| footer_tooltip("Next Track", &tt, cx))
+                    .tooltip(move |_window, cx| footer_tooltip(label, &tt, cx))
                     .child(
                         IconButton::with_child(
                             "compact-transport-next",
@@ -1182,6 +1194,7 @@ impl PlayerView {
                         .variant(IconButtonVariant::Ghost)
                         .size(IconButtonSize::Sm)
                         .rounded_full()
+                        .aria_label(label)
                         .theme(theme_clone.to_icon_button_theme()),
                     )
             })

@@ -70,6 +70,19 @@ itest:
 [group('test')]
 atest: test-negative test-proptest ntest itest
 
+# Run the isolated macOS systemwide-audio lab. This does not install or touch
+# the CoreAudio HAL bundle; subprocess tests use temporary Unix sockets and
+# the deterministic lab driver.
+[group('test')]
+[macos]
+systemwide-lab:
+	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" cargo test -p sotf-daemon --bin sotf-daemon testkit
+	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" cargo test -p sotf-daemon --test daemon_state_tests
+	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" cargo test -p sotf-daemon --features hal --test ipc_line_tests -- --test-threads=1
+	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" cargo test -p driver-hal --lib
+	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" cargo test -p driver-hal --test streaming_regression_tests
+	SOTF_SYSTEMWIDE_RUNTIME_DIR="/private/tmp/sotf-systemwide-lab-$USER" swift test --package-path crates/systemwide/crates/daemon/configbar --scratch-path target/configbar-swiftpm
+
 # ----------------------------------------------------------------------
 # COVERAGE
 # ----------------------------------------------------------------------

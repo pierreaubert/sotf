@@ -13,19 +13,21 @@ impl PlayerView {
     pub(crate) fn render_room_eq_load_data(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
+        let workflow_text =
+            crate::app::i18n::RoomEqWorkflowTranslations::for_language(state.app.ui_state.language);
         let theme = state.app.ui_state.theme.clone();
+        let runtime_text =
+            crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language);
         let error_message = state
             .app
             .measurement_state
             .room_eq_state
             .error_message
-            .clone();
-        let status_message = state
-            .app
-            .measurement_state
-            .room_eq_state
-            .status_message
-            .clone();
+            .as_deref()
+            .map(|message| runtime_text.translate(message).into_owned());
+        let status_message = runtime_text
+            .translate(&state.app.measurement_state.room_eq_state.status_message)
+            .into_owned();
         let has_measurements = state.app.measurement_state.room_eq_state.has_measurements();
 
         // Check if there are valid recordings in the recording state
@@ -45,9 +47,7 @@ impl PlayerView {
                     .size(TextSize::Md),
             )
             .child(
-                Text::new(
-                    "Load measurement data from a previous recording session or import from a JSON file.",
-                )
+                Text::new(workflow_text.load_measurement_description)
                 .size(TextSize::Xs)
                 .color(theme.text_secondary),
             )
@@ -78,7 +78,7 @@ impl PlayerView {
                                         ),
                                 )
                                 .child(
-                                    Button::new("dismiss_error", "Dismiss")
+                                    Button::new("dismiss_error", workflow_text.dismiss)
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Xs)
                                         .theme(theme.to_button_theme())
@@ -122,7 +122,10 @@ impl PlayerView {
                                             .color(theme.text_secondary),
                                         )
                                         .child(if has_recording_session_data {
-                                            Button::new("load_from_recording", "Load from Recording")
+                                            Button::new(
+                                                "load_from_recording",
+                                                workflow_text.load_from_recording,
+                                            )
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
@@ -130,7 +133,10 @@ impl PlayerView {
                                                         view.load_room_eq_from_recording(cx);
                                                     }))
                                         } else {
-                                            Button::new("go_to_recording", "Go to Recording")
+                                            Button::new(
+                                                "go_to_recording",
+                                                workflow_text.go_to_recording,
+                                            )
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
@@ -161,7 +167,10 @@ impl PlayerView {
                                                 .color(theme.text_secondary),
                                         )
                                         .child(
-                                            Button::new("load_from_file", "Import from File")
+                                            Button::new(
+                                                "load_from_file",
+                                                workflow_text.import_from_file,
+                                            )
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())

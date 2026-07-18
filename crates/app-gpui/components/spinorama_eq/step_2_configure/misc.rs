@@ -1,7 +1,7 @@
 use crate::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
 use crate::components::autoeq::{
-    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, DetailLevel, EqDesignConfig,
-    GoalsConfig, SPINORAMA_LOSS_TYPE_OPTIONS,
+    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, EqDesignConfig, GoalsConfig,
+    SPINORAMA_LOSS_TYPE_OPTIONS,
 };
 use crate::components::design::Ds;
 use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
@@ -23,6 +23,11 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
+        let report_text = RoomEqReportTranslations::for_language(state.app.ui_state.language);
+        let workflow_text =
+            crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
+        let discovery_text =
+            crate::app::i18n::EqDiscoveryTranslations::for_language(state.app.ui_state.language);
         let theme = state.app.ui_state.theme.clone();
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
 
@@ -81,7 +86,7 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
-            detail_level: DetailLevel::Expert,
+            detail_level: spinorama.detail_level,
             selected_preset: Some(spinorama.selected_preset.clone()),
             opt_mode_open: spinorama.dropdowns.opt_mode_open,
             fir_phase_open: spinorama.dropdowns.fir_phase_open,
@@ -97,6 +102,7 @@ impl PlayerView {
 
         // Build the AutoEQ form with handlers
         let autoeq_form = AutoEqForm::new("spinorama-eq-optimizer-form")
+            .language(state.app.ui_state.language)
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
             .allowed_opt_modes(allowed_modes)
@@ -900,8 +906,15 @@ impl PlayerView {
 
         // Optimization status
         let progress = spinorama.progress;
-        let status_msg = spinorama.status_message.clone();
-        let error_msg = spinorama.error_message.clone();
+        let runtime_text =
+            crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language);
+        let status_msg = runtime_text
+            .translate(&spinorama.status_message)
+            .into_owned();
+        let error_msg = spinorama
+            .error_message
+            .as_deref()
+            .map(|message| runtime_text.translate(message).into_owned());
         let optimization_status = spinorama.optimization_status;
         let is_optimizing = spinorama.is_optimizing();
         let is_completed = optimization_status == OptimizationStatus::Completed;
@@ -923,9 +936,7 @@ impl PlayerView {
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
-            .child(Text::caption(
-                "Spinorama EQ currently supports PEQ/IIR output in this workflow.",
-            ))
+            .child(Text::caption(discovery_text.spinorama_iir_only))
             .child(
                 Card::new()
                     .background(theme.surface)
@@ -1071,7 +1082,7 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(if is_optimizing {
-                                Button::new("cancel_spinorama_optimization", "Cancel")
+                                Button::new("cancel_spinorama_optimization", discovery_text.cancel)
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Md)
                                     .full_width(true)
@@ -1080,14 +1091,17 @@ impl PlayerView {
                                         view.cancel_spinorama_optimization(cx);
                                     }))
                             } else {
-                                Button::new("start_spinorama_optimization", "Generate Speaker EQ")
-                                    .variant(ButtonVariant::Primary)
-                                    .size(ButtonSize::Md)
-                                    .full_width(true)
-                                    .theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(|view, _, _, cx| {
-                                        view.start_spinorama_optimization(cx);
-                                    }))
+                                Button::new(
+                                    "start_spinorama_optimization",
+                                    discovery_text.generate_speaker_eq,
+                                )
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Md)
+                                .full_width(true)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.start_spinorama_optimization(cx);
+                                }))
                             })
                             .when(show_progress, |vstack| {
                                 let display_progress = if is_completed {
@@ -1107,22 +1121,22 @@ impl PlayerView {
                                             .gap(d.gap)
                                             .child(
                                                 Text::new(if is_optimizing {
-                                                    "Optimizing...".to_string()
+                                                    workflow_text.optimizing.to_string()
                                                 } else {
-                                                    format!("Progress: {:.0}%", display_progress)
+                                                    workflow_text.progress(display_progress)
                                                 })
                                                 .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                             )
                                             .when(is_completed, |el| {
                                                 el.child(
-                                                    Badge::new("Success")
+                                                    Badge::new(workflow_text.success)
                                                         .variant(BadgeVariant::Success),
                                                 )
                                             })
                                             .when(is_failed, |el| {
                                                 el.child(
-                                                    Badge::new("Failed")
+                                                    Badge::new(workflow_text.failed)
                                                         .variant(BadgeVariant::Error),
                                                 )
                                             }),
@@ -1169,10 +1183,10 @@ impl PlayerView {
 
                 // Build chart with loss curve (and optionally score curve on secondary axis)
                 let mut chart_builder = line(&iterations, &losses)
-                    .title("Optimization Process")
-                    .x_label("Iteration")
-                    .y_label("Loss")
-                    .label("Loss")
+                    .title(report_text.optimization_process)
+                    .x_label(report_text.iterations)
+                    .y_label(report_text.loss)
+                    .label(report_text.loss)
                     .color(rgba_to_u32(
                         theme.plugin_palette.graph_colors.filter_response,
                     ))
@@ -1237,3 +1251,4 @@ impl PlayerView {
             })
     }
 }
+use crate::app::i18n::RoomEqReportTranslations;

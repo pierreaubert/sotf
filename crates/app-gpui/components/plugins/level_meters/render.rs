@@ -5,6 +5,7 @@ use super::misc::peak_spread_db;
 use super::misc::should_use_peak_spread;
 use crate::app::ChannelGroup;
 use crate::app::constants::spacing;
+use crate::app::i18n::LevelMeterTranslations;
 use crate::components::design::Ds;
 use crate::level_meter_render::{
     ChannelMeterData, GroupMeterData, build_channel_meter_data, db_tick_label, format_width_percent,
@@ -57,7 +58,7 @@ pub fn render_gr_meter(
                         .text_size(d.text_xs)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_secondary)
-                        .child("Gain Reduction"),
+                        .child("GR"),
                 )
                 .child(
                     div()
@@ -137,7 +138,7 @@ pub fn render_peak_meter(d: &Ds, peak_db: f64, ceiling_db: f64, theme: &Theme) -
                 .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_secondary)
-                .child("Peak"),
+                .child("dBFS"),
         )
         // Meter
         .child(
@@ -302,6 +303,7 @@ pub fn render_gradient_meter(
 pub fn render_lufs_with_true_peak(
     d: &Ds,
     loudness: Option<&sotf_audio_player::LoudnessData>,
+    text: LevelMeterTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let (
@@ -365,7 +367,7 @@ pub fn render_lufs_with_true_peak(
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .mb(d.grid)
-                        .child("True Peak"),
+                        .child(text.true_peak),
                 )
                 // Left channel bar (uses same scale as ticks)
                 .child(PlayerView::render_meter_bar(
@@ -433,7 +435,7 @@ pub fn render_lufs_with_true_peak(
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
                         .mb(d.grid)
-                        .child("LUFS"),
+                        .child(text.lufs),
                 )
                 // Integrated LUFS (uses same scale as ticks)
                 .child(PlayerView::render_meter_bar(
@@ -504,7 +506,7 @@ pub fn render_lufs_with_true_peak(
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
                             .mb(d.grid)
-                            .child("Peak Spread"),
+                            .child(text.peak_spread),
                     )
                     .child(PlayerView::render_peak_spread_bar(
                         d,
@@ -529,7 +531,7 @@ pub fn render_lufs_with_true_peak(
                                     .justify_between()
                                     .text_size(d.text_xs)
                                     .text_color(meter_theme.color_text_muted)
-                                    .child(div().child("Even"))
+                                    .child(div().child(text.even))
                                     .child(div().child("6 dB"))
                                     .child(div().child("12 dB"))
                                     .child(div().child("24+")),
@@ -550,7 +552,7 @@ pub fn render_lufs_with_true_peak(
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
                             .mb(d.grid)
-                            .child("Stereo Width"),
+                            .child(text.stereo_width),
                     )
                     .child(PlayerView::render_width_bar(
                         d,
@@ -575,9 +577,9 @@ pub fn render_lufs_with_true_peak(
                                     .justify_between()
                                     .text_size(d.text_xs)
                                     .text_color(meter_theme.color_text_muted)
-                                    .child(div().child("Mono"))
+                                    .child(div().child(text.mono))
                                     .child(div().child("50%"))
-                                    .child(div().child("Wide")),
+                                    .child(div().child(text.wide)),
                             )
                             .child(div().w(px(meter_theme.value_width))),
                     )
@@ -881,6 +883,7 @@ impl PlayerView {
     /// Render separate Meters panel (for queue screen)
     pub fn render_meters_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
+        let text = LevelMeterTranslations::for_language(self.state.read(cx).app.ui_state.language);
         // Pre-compute only the render data while the state read lock is held.
         // Previously this cloned the full `groups`, `peak_hold`, `loudness`
         // and `theme` values on every frame.
@@ -918,7 +921,7 @@ impl PlayerView {
                         .text_size(d.text_sm)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_align(TextAlign::Center)
-                        .child("Level Meters"),
+                        .child(text.level_meters),
                 ),
             )
             .child({
@@ -1019,15 +1022,17 @@ impl PlayerView {
         &self,
         d: &Ds,
         loudness: Option<&sotf_audio_player::LoudnessData>,
+        text: LevelMeterTranslations,
         theme: &Theme,
     ) -> impl IntoElement {
         // Call the standalone function
-        render_lufs_with_true_peak(d, loudness, theme)
+        render_lufs_with_true_peak(d, loudness, text, theme)
     }
 
     /// Render separate LUFS panel
     pub fn render_lufs_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
+        let text = LevelMeterTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (theme, loudness) = {
             let state = self.state.read(cx);
             (
@@ -1047,6 +1052,6 @@ impl PlayerView {
             .w_full()
             .p(d.card)
             .bg(theme.background)
-            .child(self.render_lufs_with_true_peak(&d, loudness.as_deref(), &theme))
+            .child(self.render_lufs_with_true_peak(&d, loudness.as_deref(), text, &theme))
     }
 }

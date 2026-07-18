@@ -1,3 +1,4 @@
+use crate::app::i18n::{LevelMeterTranslations, PhoneTranslations};
 use crate::app::types::{MeterDisplayMode, Screen};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
@@ -20,6 +21,7 @@ impl PlayerView {
         let layout = state.layout.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let meter_text = LevelMeterTranslations::for_language(state.app.ui_state.language);
 
         let meters_ratio = layout.meters_panel_ratio;
         let meter_display_mode = state.app.level_meters.display_mode;
@@ -134,7 +136,7 @@ impl PlayerView {
             // Separator (Queue <-> Right meters)
             .child({
                 PaneDivider::vertical("meters-divider", CollapseDirection::Right)
-                    .label("Meters")
+                            .label(meter_text.meters)
                     .collapsed(meters_collapsed)
                     .theme(divider_theme.clone())
                     .on_toggle({
@@ -225,7 +227,7 @@ impl PlayerView {
                                                             }
                                                         }),
                                                     )
-                                                    .child("LUFS"),
+                                        .child(meter_text.lufs),
                                             )
                                             // Levels button
                                             .child(
@@ -258,7 +260,7 @@ impl PlayerView {
                                                             }
                                                         }),
                                                     )
-                                                    .child("Meters"),
+                                        .child(meter_text.meters),
                                             ),
                                     ),
                             )
@@ -287,7 +289,7 @@ impl PlayerView {
                                             "lufs-levels-divider",
                                             CollapseDirection::Down,
                                         )
-                                        .label("Level Meters")
+                            .label(meter_text.level_meters)
                                         .collapsed(level_meters_collapsed)
                                         .theme(divider_theme.clone())
                                         .on_toggle({
@@ -532,9 +534,11 @@ impl PlayerView {
     }
 
     pub(super) fn render_magic_radio_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let text = PhoneTranslations::for_language(state.app.ui_state.language);
 
-        Button::new("magic-radio-btn", "Magic Radio")
+        Button::new("magic-radio-btn", text.magic_radio)
             .size(ButtonSize::Xs)
             .theme(theme.to_button_theme())
             .on_click_event(cx.listener(|view, _event: &ClickEvent, _window, cx| {

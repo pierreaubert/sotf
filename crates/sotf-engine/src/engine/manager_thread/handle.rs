@@ -17,6 +17,7 @@ pub(super) fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioE
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::super::super::{AudioEngineState, PlaybackState, ThreadEvent};
     use super::handle_thread_event;

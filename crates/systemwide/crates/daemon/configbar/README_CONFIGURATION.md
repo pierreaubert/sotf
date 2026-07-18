@@ -236,7 +236,7 @@ cargo run --release --bin sotf_daemon
 
 ### Custom Plugin Chains
 
-Use the "Edit Plugins" button to create complex processing chains with:
+Use the "Edit Plugins" button to create linear processing racks with:
 - Parametric EQ
 - Compressor
 - Limiter
@@ -246,10 +246,16 @@ Use the "Edit Plugins" button to create complex processing chains with:
 - Upmixer
 - Loudness compensation
 
+Loading an engine graph artifact (`{"graph":{"nodes":[...],"edges":[...]}}`)
+switches the same window to the graph editor. It preserves node IDs and routing
+and supports add/remove/reorder, connect/disconnect, parameter editing, and
+per-node bypass. Invalid candidates are rejected without replacing the active
+graph.
+
 ### Saving Configurations
 
-Use "Save Configuration..." to export your plugin chain as JSON.
-Use "Load Configuration..." to restore a saved configuration.
+Use "Save Configuration..." to export the current rack or graph as JSON.
+Use "Load Configuration..." to restore it without flattening graph topology.
 
 ## System Requirements
 

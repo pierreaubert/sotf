@@ -7,9 +7,9 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(Text::section_header("Filter Design").color(theme.header_color))
+            .child(Text::section_header(translations.autoeq_form.filter_design).color(theme.header_color))
             .child(
-                Text::new("Configure filter characteristics and frequency ranges")
+                Text::new(translations.autoeq_filter_config_desc)
                     .size(TextSize::Xs)
                     .color(theme.description_color),
             ),
@@ -22,7 +22,10 @@
 
     // --- IIR Subsection ---
     if is_iir {
-        section = section.child(Text::label("IIR Parameters").color(theme.header_color));
+        section = section.child(
+            Text::label(translations.autoeq_form.parameters.iir_parameters)
+                .color(theme.header_color),
+        );
 
         // Sample rate + Num filters (side by side)
         let mut sr_input = NumberInput::new((base_id.clone(), "fd-sample-rate"))
@@ -31,7 +34,7 @@
             .max(ParamLimits::SAMPLE_RATE.max)
             .step(ParamLimits::SAMPLE_RATE.step)
             .decimals(0)
-            .label("Sample Rate (Hz)")
+            .label(translations.autoeq_form.parameters.sample_rate_hz)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -47,7 +50,7 @@
             .max(ParamLimits::NUM_FILTERS.max)
             .step(ParamLimits::NUM_FILTERS.step)
             .decimals(0)
-            .label("Number of Filters")
+            .label(translations.autoeq_form.parameters.number_filters)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -71,7 +74,7 @@
             .collect();
 
         let mut peq_select = Select::new((base_id.clone(), "fd-peq-model"))
-            .label("Filter Type")
+            .label(translations.autoeq_form.parameters.filter_type)
             .options(peq_options)
             .selected(&config.eq_design.peq_model)
             .is_open(ui_state.peq_model_open)
@@ -97,7 +100,7 @@
             .max(ParamLimits::FREQUENCY.max)
             .step(ParamLimits::FREQUENCY.step)
             .decimals(0)
-            .label("Min Freq (Hz)")
+            .label(translations.autoeq_form.min_frequency_hz)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -113,7 +116,7 @@
             .max(ParamLimits::FREQUENCY.max)
             .step(ParamLimits::FREQUENCY.step)
             .decimals(0)
-            .label("Max Freq (Hz)")
+            .label(translations.autoeq_form.max_frequency_hz)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -137,7 +140,7 @@
             .max(ParamLimits::Q.max)
             .step(ParamLimits::Q.step)
             .decimals(1)
-            .label("Min Q")
+            .label(translations.autoeq_form.parameters.min_q)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -153,7 +156,7 @@
             .max(ParamLimits::Q.max)
             .step(ParamLimits::Q.step)
             .decimals(1)
-            .label("Max Q")
+            .label(translations.autoeq_form.parameters.max_q)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -177,7 +180,7 @@
             .max(ParamLimits::DB.max)
             .step(ParamLimits::DB.step)
             .decimals(1)
-            .label("Min dB")
+            .label(translations.autoeq_form.parameters.min_db)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -193,7 +196,7 @@
             .max(ParamLimits::DB.max)
             .step(ParamLimits::DB.step)
             .decimals(1)
-            .label("Max dB")
+            .label(translations.autoeq_form.parameters.max_db)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -217,7 +220,7 @@
             .max(ParamLimits::SPACING_WEIGHT.max)
             .step(ParamLimits::SPACING_WEIGHT.step)
             .decimals(1)
-            .label("Spacing Weight")
+            .label(translations.autoeq_form.parameters.spacing_weight)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -233,7 +236,7 @@
             .max(ParamLimits::MIN_SPACING_OCT.max)
             .step(ParamLimits::MIN_SPACING_OCT.step)
             .decimals(2)
-            .label("Min Spacing (oct)")
+            .label(translations.autoeq_form.parameters.min_spacing_oct)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -253,7 +256,10 @@
 
     // --- FIR Subsection ---
     if is_fir {
-        section = section.child(Text::label("FIR Parameters").color(theme.header_color));
+        section = section.child(
+            Text::label(translations.autoeq_form.parameters.fir_parameters)
+                .color(theme.header_color),
+        );
 
         let mut taps_input = NumberInput::new((base_id.clone(), "fd-fir-taps"))
             .value(config.eq_design.fir_taps as f64)
@@ -280,7 +286,7 @@
             .collect();
 
         let mut phase_select = Select::new((base_id.clone(), "fd-fir-phase"))
-            .label("Regularization")
+            .label(translations.autoeq_form.parameters.regularization)
             .options(phase_options)
             .selected(&config.eq_design.fir_phase)
             .is_open(ui_state.fir_phase_open)
@@ -302,8 +308,10 @@
 
     // --- Crossover Subsection ---
     if is_mixed {
-        section =
-            section.child(Text::label("Crossover Configuration").color(theme.header_color));
+        section = section.child(
+            Text::label(translations.autoeq_form.parameters.crossover_configuration)
+                .color(theme.header_color),
+        );
 
         let mut xo_freq_input = NumberInput::new((base_id.clone(), "fd-xo-freq"))
             .value(config.v2.mixed_crossover_freq)
@@ -311,7 +319,7 @@
             .max(ParamLimits::MIXED_CROSSOVER_FREQ.max)
             .step(ParamLimits::MIXED_CROSSOVER_FREQ.step)
             .decimals(0)
-            .label("Crossover Freq (Hz)")
+            .label(translations.autoeq_form.parameters.crossover_frequency_hz)
             .size(NumberInputSize::Sm)
             .disabled(disabled)
             .theme(theme.number_input_theme.clone());
@@ -327,7 +335,7 @@
             .collect();
 
         let mut xo_type_select = Select::new((base_id.clone(), "fd-xo-type"))
-            .label("Crossover Type")
+            .label(translations.autoeq_form.parameters.crossover_type)
             .options(xo_type_options)
             .selected(&config.v2.mixed_crossover_type)
             .is_open(ui_state.mixed_crossover_type_open)
@@ -350,7 +358,7 @@
             .collect();
 
         let mut fir_band_select = Select::new((base_id.clone(), "fd-fir-band"))
-            .label("FIR Band")
+            .label(translations.autoeq_form.parameters.fir_band)
             .options(fir_band_options)
             .selected(&config.v2.mixed_fir_band)
             .is_open(ui_state.mixed_fir_band_open)
@@ -378,7 +386,10 @@
 
     // --- Bass Management Subsection ---
     if !hide_bass_management {
-        section = section.child(Text::label("Bass Management").color(theme.header_color));
+        section = section.child(
+            Text::label(translations.autoeq_form.parameters.bass_management)
+                .color(theme.header_color),
+        );
 
         // Excursion Protection
         {
@@ -396,7 +407,7 @@
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
-                        Text::new("Excursion Protection")
+                    Text::new(translations.autoeq_excursion_protection)
                             .size(TextSize::Xs)
                             .color(theme.label_color),
                     )
@@ -418,7 +429,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Auto-detect F3")
+                                    Text::new(translations.autoeq_auto_detect_f3)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -432,7 +443,7 @@
                         .max(500.0)
                         .step(1.0)
                         .decimals(0)
-                        .label("Manual F3 (Hz)")
+                .label(translations.autoeq_form.parameters.manual_f3_hz)
                         .size(NumberInputSize::Sm)
                         .disabled(disabled)
                         .theme(theme.number_input_theme.clone());
@@ -450,7 +461,7 @@
                     .collect();
 
                 let mut hp_select = Select::new((base_id.clone(), "fd-excursion-hp-type"))
-                    .label("Filter Type")
+                .label(translations.autoeq_form.parameters.filter_type)
                     .options(hp_options)
                     .selected(&config.room_correction.excursion_filter_type)
                     .is_open(ui_state.excursion_filter_type_open)
@@ -472,7 +483,7 @@
                     .max(8.0)
                     .step(2.0)
                     .decimals(0)
-                    .label("Order")
+            .label(translations.autoeq_form.parameters.order)
                     .size(NumberInputSize::Sm)
                     .disabled(disabled)
                     .theme(theme.number_input_theme.clone());
@@ -495,7 +506,7 @@
                     .max(1.0)
                     .step(0.05)
                     .decimals(2)
-                    .label("Safety Margin (oct)")
+                .label(translations.autoeq_form.parameters.safety_margin_oct)
                     .size(NumberInputSize::Sm)
                     .disabled(disabled)
                     .theme(theme.number_input_theme.clone());
@@ -525,7 +536,7 @@
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
-                        Text::new("Schroeder Split")
+                    Text::new(translations.autoeq_schroeder_split)
                             .size(TextSize::Xs)
                             .color(theme.label_color),
                     )
@@ -539,7 +550,7 @@
                     .max(ParamLimits::SCHROEDER_FREQ.max)
                     .step(ParamLimits::SCHROEDER_FREQ.step)
                     .decimals(0)
-                    .label("Split Freq (Hz)")
+            .label(translations.autoeq_form.parameters.split_frequency_hz)
                     .size(NumberInputSize::Sm)
                     .disabled(disabled)
                     .theme(theme.number_input_theme.clone());
@@ -557,7 +568,7 @@
                     .max(20.0)
                     .step(0.5)
                     .decimals(1)
-                    .label("LF Max Q")
+            .label(translations.autoeq_form.parameters.lf_max_q)
                     .size(NumberInputSize::Sm)
                     .disabled(disabled)
                     .theme(theme.number_input_theme.clone());
@@ -573,7 +584,7 @@
                     .max(5.0)
                     .step(0.1)
                     .decimals(1)
-                    .label("HF Max Q")
+            .label(translations.autoeq_form.parameters.hf_max_q)
                     .size(NumberInputSize::Sm)
                     .disabled(disabled)
                     .theme(theme.number_input_theme.clone());
@@ -613,14 +624,22 @@
                 section = section.child(
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
-                        .child(Text::new("Allow LF Boost").size(TextSize::Xs).color(theme.label_color))
+                            .child(
+                                Text::new(translations.autoeq_allow_lf_boost)
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
                         .child(boost_toggle),
                 );
 
                 section = section.child(
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
-                        .child(Text::new("HF Shelving Only").size(TextSize::Xs).color(theme.label_color))
+                            .child(
+                                Text::new(translations.autoeq_hf_shelving)
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
                         .child(shelve_toggle),
                 );
             }

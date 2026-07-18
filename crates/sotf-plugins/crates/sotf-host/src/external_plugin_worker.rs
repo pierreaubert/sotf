@@ -48,6 +48,7 @@ impl ExternalPluginWorker {
                 layout.output_channels
             ));
         }
+        shared.publish_worker_latency_samples(plugin.latency_samples());
 
         Ok(Self {
             shared,
@@ -123,6 +124,7 @@ mod tests {
     struct ScalePlugin {
         channels: usize,
         factor: f32,
+        latency_samples: usize,
     }
 
     impl Plugin for ScalePlugin {
@@ -136,6 +138,10 @@ mod tests {
 
         fn output_channels(&self) -> usize {
             self.channels
+        }
+
+        fn latency_samples(&self) -> usize {
+            self.latency_samples
         }
 
         fn parameters(&self) -> Vec<Parameter> {
@@ -208,9 +214,11 @@ mod tests {
             Box::new(ScalePlugin {
                 channels: 2,
                 factor: 4.0,
+                latency_samples: 96,
             }),
         )
         .unwrap();
+        assert_eq!(host_shared.worker_latency_samples(), Some(96));
 
         let input = vec![0.25, -0.5, 1.0, -1.0];
         let mut output = vec![0.0; input.len()];

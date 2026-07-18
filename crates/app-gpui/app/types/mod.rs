@@ -24,6 +24,7 @@ pub enum Screen {
     HeadphoneEq,
     Spinorama,
     PluginGraph,
+    ListeningTest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -47,6 +48,30 @@ impl PhoneHomeShelf {
 }
 
 impl Screen {
+    pub const fn all() -> &'static [Self] {
+        &[
+            Self::Home,
+            Self::HomeShelf,
+            Self::NowPlaying,
+            Self::Library,
+            Self::Streams,
+            Self::Queue,
+            Self::Playlists,
+            Self::Spectrum,
+            Self::Settings,
+            Self::SettingsDetail,
+            Self::StudioHub,
+            Self::EqCurve,
+            Self::Studio,
+            Self::Recording,
+            Self::RoomEq,
+            Self::HeadphoneEq,
+            Self::Spinorama,
+            Self::PluginGraph,
+            Self::ListeningTest,
+        ]
+    }
+
     pub fn primary_destinations() -> &'static [Self] {
         const DESTINATIONS: &[Screen] = &[
             Screen::Home,
@@ -88,6 +113,7 @@ impl Screen {
                 | Screen::RoomEq
                 | Screen::HeadphoneEq
                 | Screen::Spinorama
+                | Screen::ListeningTest
                 | Screen::Spectrum
                 | Screen::EqCurve
                 | Screen::Studio
@@ -107,6 +133,7 @@ impl Screen {
             "roomeq" => Some(Screen::RoomEq),
             "headphoneeq" => Some(Screen::HeadphoneEq),
             "spinorama" => Some(Screen::Spinorama),
+            "listening-test" => Some(Screen::ListeningTest),
             "settings" => Some(Screen::Settings),
             "settings-detail" => Some(Screen::SettingsDetail),
             _ => None,

@@ -48,8 +48,11 @@ pub fn render_mb_expander_plugin(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: MbExpanderRenderState,
+    available_width: f32,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
+    let compact = available_width < 720.0;
     let get_param_idx = |base_idx: usize| -> usize {
         if state.selected_band_idx > 0 {
             state.selected_band_idx * 100 + base_idx
@@ -64,11 +67,11 @@ pub fn render_mb_expander_plugin(
         .flex_col()
         .flex_shrink_0()
         .gap(d.gap_md)
-        .child(render_section_title(d, "GLOBAL", theme))
+        .child(render_section_title(d, text.label("GLOBAL"), theme))
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Bands",
+            text.label("Bands"),
             state.num_bands as f64,
             pk(ME, "num_bands").min_f64(),
             pk(ME, "num_bands").max_f64(),
@@ -82,7 +85,7 @@ pub fn render_mb_expander_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "XOver 1",
+            text.label("XOver 1"),
             state.crossover_freq_1,
             pk(ME, "crossover_freq_1").min_f64(),
             pk(ME, "crossover_freq_1").max_f64(),
@@ -98,7 +101,7 @@ pub fn render_mb_expander_plugin(
         global_col = global_col.child(render_knob(
             entity.clone(),
             plugin_idx,
-            "XOver 2",
+            text.label("XOver 2"),
             state.crossover_freq_2,
             pk(ME, "crossover_freq_2").min_f64(),
             pk(ME, "crossover_freq_2").max_f64(),
@@ -114,7 +117,7 @@ pub fn render_mb_expander_plugin(
         global_col = global_col.child(render_knob(
             entity.clone(),
             plugin_idx,
-            "XOver 3",
+            text.label("XOver 3"),
             state.crossover_freq_3,
             pk(ME, "crossover_freq_3").min_f64(),
             pk(ME, "crossover_freq_3").max_f64(),
@@ -130,7 +133,7 @@ pub fn render_mb_expander_plugin(
         global_col = global_col.child(render_knob(
             entity.clone(),
             plugin_idx,
-            "XOver 4",
+            text.label("XOver 4"),
             state.crossover_freq_4,
             pk(ME, "crossover_freq_4").min_f64(),
             pk(ME, "crossover_freq_4").max_f64(),
@@ -148,7 +151,7 @@ pub fn render_mb_expander_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Preset",
+            text.label("Preset"),
             state.crossover_preset as f64,
             pk(ME, "crossover_preset").min_f64(),
             pk(ME, "crossover_preset").max_f64(),
@@ -166,12 +169,13 @@ pub fn render_mb_expander_plugin(
             state.detection_mode,
             state.selected_param,
             state.is_editing,
+            text,
             theme,
         ))
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Lookahead",
+            text.label("Lookahead"),
             state.lookahead_ms,
             pk(ME, "lookahead_ms").min_f64(),
             pk(ME, "lookahead_ms").max_f64(),
@@ -187,6 +191,7 @@ pub fn render_mb_expander_plugin(
     // Band tabs
     let band_tabs = div()
         .flex()
+        .flex_wrap()
         .justify_center()
         .border_b_1()
         .border_color(theme.border)
@@ -259,18 +264,25 @@ pub fn render_mb_expander_plugin(
     );
 
     // Band sliders
-    let sliders = div()
-        .flex()
+    let slider_layout = if compact {
+        div().flex().flex_col().items_center().w_full()
+    } else {
+        div().flex().flex_wrap().justify_center()
+    };
+    let sliders = slider_layout
         .gap(d.section)
         .child(
             div()
                 .flex()
                 .flex_col()
                 .gap(d.grid)
-                .child(render_section_title(d, "DYNAMICS", theme))
+                .when(compact, |section| section.w_full())
+                .child(render_section_title(d, text.label("DYNAMICS"), theme))
                 .child(
                     div()
                         .flex()
+                        .flex_wrap()
+                        .justify_center()
                         .gap(d.gap)
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
@@ -355,10 +367,13 @@ pub fn render_mb_expander_plugin(
                 .flex()
                 .flex_col()
                 .gap(d.grid)
-                .child(render_section_title(d, "TIMING", theme))
+                .when(compact, |section| section.w_full())
+                .child(render_section_title(d, text.label("TIMING"), theme))
                 .child(
                     div()
                         .flex()
+                        .flex_wrap()
+                        .justify_center()
                         .gap(d.gap)
                         .child(render_vertical_slider_with_ticks(
                             entity.clone(),
@@ -412,7 +427,9 @@ pub fn render_mb_expander_plugin(
         .flex()
         .flex_col()
         .flex_1()
+        .min_w_0()
         .gap(d.gap_md)
+        .when(compact, |column| column.w_full())
         .child(band_tabs)
         .child(sliders);
 
@@ -426,7 +443,7 @@ pub fn render_mb_expander_plugin(
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
-                    "Active",
+                    text.label("Active"),
                     state.active,
                     get_param_idx(17),
                     state.selected_param,
@@ -436,7 +453,7 @@ pub fn render_mb_expander_plugin(
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
-                    "Solo",
+                    text.label("Solo"),
                     state.solo,
                     get_param_idx(15),
                     state.selected_param,
@@ -446,7 +463,7 @@ pub fn render_mb_expander_plugin(
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
-                    "Bypass",
+                    text.label("Bypass"),
                     state.bypass,
                     get_param_idx(14),
                     state.selected_param,
@@ -456,7 +473,7 @@ pub fn render_mb_expander_plugin(
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
-                    "AutoGain",
+                    text.label("AutoGain"),
                     state.auto_makeup,
                     get_param_idx(16),
                     state.selected_param,
@@ -472,11 +489,11 @@ pub fn render_mb_expander_plugin(
         .flex_col()
         .flex_shrink_0()
         .gap(d.gap_md)
-        .child(render_section_title(d, "OUTPUT", theme))
+        .child(render_section_title(d, text.label("OUTPUT"), theme))
         .child(render_toggle(
             entity.clone(),
             plugin_idx,
-            "Link Ch",
+            text.label("Link Ch"),
             state.link_channels,
             15,
             state.selected_param,
@@ -486,7 +503,7 @@ pub fn render_mb_expander_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Mix",
+            text.label("Mix"),
             state.mix * 100.0,
             pk(ME, "mix").min_f64() * 100.0,
             pk(ME, "mix").max_f64() * 100.0,
@@ -498,15 +515,38 @@ pub fn render_mb_expander_plugin(
             theme,
         ));
 
-    // === Main layout: 3 columns, centered ===
-    div().w_full().flex().justify_center().p(d.pad_x).child(
-        div()
-            .flex()
-            .gap(d.section)
+    // Keep the dense band editor inside the available rack width. At compact
+    // desktop widths it leads the flow and the global/output columns wrap
+    // below it; the enclosing rack supplies vertical scrolling.
+    let content = div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .items_start()
+        .justify_center()
+        .gap(d.section)
+        .when(compact, |layout| layout.flex_col().items_center());
+
+    let content = if compact {
+        content.child(center_col).child(
+            div()
+                .w_full()
+                .flex()
+                .flex_wrap()
+                .items_start()
+                .justify_center()
+                .gap(d.section)
+                .child(global_col)
+                .child(right_col),
+        )
+    } else {
+        content
             .child(global_col)
             .child(center_col)
-            .child(right_col),
-    )
+            .child(right_col)
+    };
+
+    div().w_full().min_w_0().p(d.pad_x).child(content)
 }
 
 fn render_detection_mode_selector(
@@ -516,6 +556,7 @@ fn render_detection_mode_selector(
     current: i32,
     selected_param: usize,
     is_editing: bool,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let param_idx = 16;
@@ -533,7 +574,7 @@ fn render_detection_mode_selector(
             div()
                 .text_size(d.text_xs)
                 .text_color(theme.text_muted)
-                .child("Detection"),
+                .child(text.detection),
         )
         .child(
             div()
@@ -572,3 +613,4 @@ fn render_detection_mode_selector(
                 ),
         )
 }
+use crate::app::i18n::PluginCommonTranslations;

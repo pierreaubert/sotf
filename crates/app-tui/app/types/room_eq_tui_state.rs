@@ -1,3 +1,4 @@
+use sotf_audio_player::room_eq_types::{RoomEqEasyLayout, validate_room_eq_easy_layout};
 use sotf_audio_player::ui_models::room_eq::RoomEqScreenModel;
 use std::collections::VecDeque;
 
@@ -10,6 +11,8 @@ use std::collections::VecDeque;
 pub struct RoomEqTuiState {
     /// Shared, UI-agnostic Room EQ domain model.
     pub model: RoomEqScreenModel,
+    /// Explicit layout selected by the terminal beginner workflow.
+    pub easy_layout: RoomEqEasyLayout,
 
     /// When true, focus is on the step tabs row; Left/Right/Tab cycle steps.
     /// When false, focus is inside the current step's content.
@@ -74,6 +77,21 @@ pub struct RoomEqTuiState {
 }
 
 impl RoomEqTuiState {
+    pub fn infer_easy_layout(&mut self) {
+        let channel_names = self
+            .model
+            .channel_measurements
+            .iter()
+            .map(|measurement| measurement.channel_name.as_str())
+            .collect::<Vec<_>>();
+        if let Some(layout) = RoomEqEasyLayout::ALL.into_iter().find(|layout| {
+            validate_room_eq_easy_layout(*layout, channel_names.iter().copied()).is_ok()
+        }) {
+            self.easy_layout = layout;
+            layout.configure_preset_defaults(&mut self.model.simple_preset);
+        }
+    }
+
     /// Total number of speakers being optimized.
     ///
     /// Falls back to the number of channel results when measurements have

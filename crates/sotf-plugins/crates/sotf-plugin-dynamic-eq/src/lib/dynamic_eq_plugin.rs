@@ -667,7 +667,9 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
                         let level_db = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
                         let gr = band.cores[ch]
                             .calculate_gain_reduction(level_db, threshold, band_ratio, knee);
-                        let smoothed = band.cores[ch].apply_envelope(ch, gr);
+                        // Each entry in `cores` owns state for exactly one channel,
+                        // so its internal channel index is always zero.
+                        let smoothed = band.cores[ch].apply_envelope(0, gr);
 
                         let proportion =
                             DynEqBand::modulation_proportion(band.target_gain_db, smoothed);

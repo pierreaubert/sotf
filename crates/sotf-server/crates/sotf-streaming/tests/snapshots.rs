@@ -105,7 +105,7 @@ fn snapshot_status_http_response_body() {
     // The bind_addr contains an ephemeral port; redact it for stability.
     if let Some(addr) = value.get_mut("bind_addr").and_then(|v| v.as_str()) {
         *value.get_mut("bind_addr").unwrap() =
-            serde_json::json!(addr.replace(addr.split(':').last().unwrap_or(""), "<port>"));
+            serde_json::json!(addr.replace(addr.split(':').next_back().unwrap_or(""), "<port>"));
     }
     insta::assert_json_snapshot!(sort_json_keys(value));
 }

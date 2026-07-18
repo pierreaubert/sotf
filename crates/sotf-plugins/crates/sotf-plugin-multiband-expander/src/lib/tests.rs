@@ -1961,7 +1961,7 @@ fn test_multiband_expander_data() {
     let mut data = MultibandExpanderData::new(2, 1);
     data.update(&[1.0, 2.0], &[true, false], &[-10.0, -20.0], &[500.0]);
     assert_eq!((*data.attenuation_db)[0], 1.0);
-    assert_eq!((*data.is_open)[0], true);
+    assert!((*data.is_open)[0]);
     assert_eq!((*data.band_levels_db)[1], -20.0);
     assert_eq!((*data.crossover_frequencies)[0], 500.0);
 }

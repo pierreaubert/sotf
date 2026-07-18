@@ -15,6 +15,7 @@
 //! Parameters that are read-only or known to require a concrete backend resource
 //! are skipped with an explanatory comment rather than failing the test.
 
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::{Parameter, ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugins::factory::{SUPPORTED_PLUGIN_TYPES, create_plugin};
 
@@ -111,85 +112,111 @@ fn default_params(plugin_type: &str) -> serde_json::Value {
     }
 }
 
-/// Parameters that are read-only or cannot be round-tripped by design.
-/// Each entry is `(plugin_type, param_id, reason)`.
-const SKIPPED_PARAMETERS: &[(&str, &str, &str)] = &[
-    (
-        "resampler",
-        "ratio",
-        "ratio is fixed when dynamic_ratio is disabled in the factory default",
-    ),
-    (
-        "band_merge",
-        "reconstruction_error_db",
-        "read-only meter value not accepted by set_parameter",
-    ),
-    (
-        "binaural_decoder",
-        "sofa_file",
-        "file path cannot be invented safely in a cross-plugin test",
-    ),
-    (
-        "convolution",
-        "ir_file",
-        "file path cannot be invented safely in a cross-plugin test",
-    ),
-    (
-        "eq",
-        "filters",
-        "serialized filter list cannot be invented safely in a cross-plugin test",
-    ),
-    (
-        "gate",
-        "sidechain_external",
-        "enabling external sidechain requires interleaved sidechain channels not provided here",
-    ),
-    (
-        "upmixer",
-        "speaker_config",
-        "changing speaker configuration alters the output channel count",
-    ),
-    (
-        "upmixer",
-        "binaural_preview",
-        "binaural preview switches the plugin to 2-channel headphone output",
-    ),
-    (
-        "dynamic_eq",
-        "link_channels",
-        "enabling stereo link triggers an out-of-bounds access in the dynamics core",
-    ),
-    (
-        "denoiser",
-        "clear_profile",
-        "one-shot trigger parameter; get returns the reset state, not the set value",
-    ),
-    (
-        "wiener_denoiser",
-        "clear_profile",
-        "one-shot trigger parameter; get returns the reset state, not the set value",
-    ),
-    (
-        "binaural_decoder",
-        "input_channels",
-        "changing the input channel count after creation is not supported by this plugin",
-    ),
-    (
-        "band_merge",
-        "bands",
-        "changing the band count after creation changes the channel topology",
-    ),
-    (
-        "ambisonics_decoder",
-        "dual_band",
-        "toggling dual-band mode requires a buffer resize that is not applied here",
-    ),
+#[derive(Clone, Copy, Debug)]
+enum ExceptionContract {
+    ConditionalSetter,
+    ReadOnly,
+    RequiresProcessFixture,
+    Trigger,
+}
+
+struct ParameterException {
+    plugin_type: &'static str,
+    parameter_id: &'static str,
+    contract: ExceptionContract,
+    reason: &'static str,
+}
+
+/// Non-standard parameter contracts. These are executable specifications in
+/// `documented_parameter_exceptions_are_exact_and_enforced`, not silent skips.
+const PARAMETER_EXCEPTIONS: &[ParameterException] = &[
+    ParameterException {
+        plugin_type: "resampler",
+        parameter_id: "ratio",
+        contract: ExceptionContract::ConditionalSetter,
+        reason: "ratio is mutable only while dynamic_ratio is enabled",
+    },
+    ParameterException {
+        plugin_type: "band_merge",
+        parameter_id: "reconstruction_error_db",
+        contract: ExceptionContract::ReadOnly,
+        reason: "read-only reconstruction meter",
+    },
+    ParameterException {
+        plugin_type: "gate",
+        parameter_id: "sidechain_external",
+        contract: ExceptionContract::RequiresProcessFixture,
+        reason: "processing requires interleaved main and sidechain channels",
+    },
+    ParameterException {
+        plugin_type: "denoiser",
+        parameter_id: "clear_profile",
+        contract: ExceptionContract::Trigger,
+        reason: "one-shot trigger resets after execution",
+    },
+    ParameterException {
+        plugin_type: "wiener_denoiser",
+        parameter_id: "clear_profile",
+        contract: ExceptionContract::Trigger,
+        reason: "alias of denoiser one-shot trigger",
+    },
 ];
 
 fn is_skipped(plugin_type: &str, param_id: &str) -> bool {
-    SKIPPED_PARAMETERS
+    PARAMETER_EXCEPTIONS
         .iter()
-        .any(|(t, p, _)| *t == plugin_type && *p == param_id)
+        .any(|entry| entry.plugin_type == plugin_type && entry.parameter_id == param_id)
+}
+
+#[test]
+fn documented_parameter_exceptions_are_exact_and_enforced() {
+    for exception in PARAMETER_EXCEPTIONS {
+        assert!(!exception.reason.is_empty());
+        let channels = channels_for_type(exception.plugin_type);
+        let params = default_params(exception.plugin_type);
+        let mut plugin = create_and_init_plugin(exception.plugin_type, &params, channels)
+            .unwrap_or_else(|error| panic!("{}: {error}", exception.plugin_type));
+        let parameter = plugin
+            .parameters()
+            .into_iter()
+            .find(|parameter| parameter.id.as_str() == exception.parameter_id)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{}/{} no longer exists; remove its exception",
+                    exception.plugin_type, exception.parameter_id
+                )
+            });
+        let id = parameter.id.clone();
+
+        match exception.contract {
+            ExceptionContract::ConditionalSetter | ExceptionContract::ReadOnly => {
+                let current = plugin
+                    .get_parameter(&id)
+                    .expect("parameter must be readable");
+                assert!(
+                    plugin.set_parameter(id, current).is_err(),
+                    "{}/{} unexpectedly became directly writable",
+                    exception.plugin_type,
+                    exception.parameter_id
+                );
+            }
+            ExceptionContract::RequiresProcessFixture => {
+                let current = plugin.get_parameter(&id);
+                let value = deterministic_value(&parameter, current.as_ref());
+                plugin.set_parameter(id.clone(), value.clone()).unwrap();
+                let restored = plugin
+                    .get_parameter(&id)
+                    .expect("parameter must be readable");
+                assert_values_equal(&value, &restored);
+            }
+            ExceptionContract::Trigger => {
+                plugin
+                    .set_parameter(id.clone(), ParameterValue::Bool(true))
+                    .unwrap();
+                assert_eq!(plugin.get_parameter(&id), Some(ParameterValue::Bool(false)));
+            }
+        }
+    }
 }
 
 /// Build a deterministic legal value for `param`.
@@ -324,6 +351,19 @@ fn all_plugins_roundtrip_parameters() {
             let param_id_str = param.id.as_str();
             let id = ParameterId::from(param_id_str);
 
+            // Structural parameters are serialized into a new plugin instance by
+            // the host. They are discoverable/readable here, but must not be
+            // exercised through a live process block with stale topology or
+            // scratch buffers.
+            if param.update_mode == UpdateMode::Structural {
+                if plugin_parameter_is_missing(plugin_type, &params, channels, &id) {
+                    failures.push(format!(
+                        "{plugin_type}/{param_id_str}: structural parameter is not readable"
+                    ));
+                }
+                continue;
+            }
+
             if is_skipped(plugin_type, param_id_str) {
                 continue;
             }
@@ -380,4 +420,16 @@ fn all_plugins_roundtrip_parameters() {
         "parameter round-trip failures:\n{}",
         failures.join("\n")
     );
+}
+
+fn plugin_parameter_is_missing(
+    plugin_type: &str,
+    params: &serde_json::Value,
+    channels: usize,
+    id: &ParameterId,
+) -> bool {
+    create_and_init_plugin(plugin_type, params, channels)
+        .ok()
+        .and_then(|plugin| plugin.get_parameter(id))
+        .is_none()
 }

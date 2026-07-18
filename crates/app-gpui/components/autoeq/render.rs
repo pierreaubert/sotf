@@ -24,6 +24,7 @@ use super::form::{
 };
 use super::theme::AutoEqFormTheme;
 use super::ui_state::DetailLevel;
+use crate::i18n::Translations;
 
 #[allow(clippy::too_many_lines)]
 impl RenderOnce for AutoEqForm {
@@ -64,6 +65,7 @@ impl RenderOnce for AutoEqForm {
         let hide_broadband_matching = self.visibility.hide_broadband_matching;
         let loss_type_options_override = self.visibility.loss_type_options_override;
         let available_width = self.meta.available_width;
+        let translations = Translations::for_language(self.meta.language);
         let layout_mode = self.meta.layout_mode;
         // Wrap callbacks in Rc for sharing
         let on_opt_mode_change_rc = self.eq_design.on_opt_mode_change.map(std::rc::Rc::new);

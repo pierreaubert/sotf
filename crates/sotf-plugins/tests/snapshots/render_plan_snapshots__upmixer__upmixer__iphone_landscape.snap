@@ -12,16 +12,15 @@ expression: plan
   "label_position": "below",
   "orientation": "horizontal",
   "knob_size": "sm",
-  "group_direction": "row",
+  "group_direction": "column",
   "slider_height": 120.0,
-  "show_visualizations": true,
+  "show_visualizations": false,
   "columns_visible": [
+    "config",
     "main",
     "output"
   ],
-  "columns_collapsed": [
-    "config"
-  ],
+  "columns_collapsed": [],
   "config_controls": [
     {
       "param_index": 0,

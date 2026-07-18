@@ -6,9 +6,12 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(Text::section_header("Goals & Configuration").color(theme.header_color))
             .child(
-                Text::new("Optimization goals and target curve")
+                Text::section_header(translations.autoeq_optimization_goals)
+                    .color(theme.header_color),
+            )
+            .child(
+                Text::new(translations.autoeq_what_optimize)
                     .size(TextSize::Xs)
                     .color(theme.description_color),
             ),
@@ -22,7 +25,7 @@
             .collect();
 
         let mut system_type_select = Select::new((base_id.clone(), "goals-system-type"))
-            .label("System Type")
+            .label(translations.autoeq_form.system_type)
             .options(system_type_options)
             .selected(&config.goals.system_type)
             .is_open(ui_state.system_type_open)
@@ -58,7 +61,7 @@
         .collect();
 
     let mut loss_type_select = Select::new((base_id.clone(), "goals-loss-type"))
-        .label("Optimization Mode")
+        .label(translations.autoeq_form.optimization_mode)
         .options(loss_type_options)
         .selected(&config.goals.loss_type)
         .is_open(ui_state.loss_type_open)
@@ -101,7 +104,7 @@
     };
 
     let mut target_curve_select = Select::new((base_id.clone(), "goals-target-curve"))
-        .label("Target Curve")
+        .label(translations.autoeq_form.target_curve)
         .options(target_curve_options)
         .selected(&config.goals.target_curve)
         .is_open(ui_state.target_curve_open)
@@ -128,7 +131,10 @@
     {
         let h = handler.clone();
         section = section.child(
-            Button::new("edit-custom-target", "Edit Target Curve")
+            Button::new(
+                "edit-custom-target",
+                translations.autoeq_form.sections.edit_custom_target_curve,
+            )
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Xs)
                 .on_click(move |w, cx| {

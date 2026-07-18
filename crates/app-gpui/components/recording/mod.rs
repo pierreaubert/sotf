@@ -78,13 +78,9 @@ impl PlayerView {
         let d = crate::components::design::Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let title = state.app.ui_state.translations.screen_recording;
         let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.measurement_state.recording_state.step;
-        let all_recorded = state
-            .app
-            .measurement_state
-            .recording_state
-            .all_channels_recorded();
         let is_recording = state.app.measurement_state.recording_state.is_recording();
 
         // Build wizard steps from `RecordingStep::all()` so new
@@ -131,32 +127,10 @@ impl PlayerView {
         let wizard_theme = WizardTheme::from(&ui_kit_theme);
         let button_theme = ButtonTheme::from(&ui_kit_theme);
 
-        let has_output_dir = state
-            .app
-            .measurement_state
-            .recording_state
-            .recording_directory
-            .is_some();
-
-        // Determine if next button should be disabled
-        let next_disabled = match current_step {
-            RecordingStep::Config => !has_output_dir,
-            // SplCalibration is optional — users without an external
-            // SPL meter can skip it and GD-Opt v2 degrades the
-            // `"no_spl_calibration"` advisory rather than refusing.
-            RecordingStep::SplCalibration => false,
-            RecordingStep::Capture => !all_recorded || is_recording,
-            // Probe is optional; always allow advancing past it.
-            RecordingStep::Probe => false,
-            // BassAnchor is optional (GD-Opt v2 marks it a confidence
-            // upgrade, not a requirement); advance freely.
-            RecordingStep::BassAnchor => false,
-            RecordingStep::Evaluating => false,
-            RecordingStep::Saving => false,
-        };
+        let next_disabled = !state.app.can_advance_workflow_step();
 
         let header = WizardHeader::new()
-            .title("Recording")
+            .title(title)
             .steps(steps)
             .step_statuses(step_statuses)
             .current_step(step_index)
@@ -181,17 +155,8 @@ impl PlayerView {
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
-                            // Back navigates via `RecordingStep::previous()`
-                            // so inserting a new variant can't silently
-                            // skip it — same lesson as Room EQ.
                             view.state.update(cx, |state, _| {
-                                let step = state.app.measurement_state.recording_state.step;
-                                if step == RecordingStep::Config {
-                                    state.app.ui_state.current_screen =
-                                        state.app.ui_state.last_screen;
-                                } else if let Some(prev) = step.previous() {
-                                    state.app.measurement_state.recording_state.step = prev;
-                                }
+                                state.app.move_workflow_step(false);
                             });
                             cx.notify();
                         }),
@@ -205,22 +170,7 @@ impl PlayerView {
                     .theme(button_theme.clone())
                     .on_click_event(cx.listener(|view, _, _, cx| {
                         view.state.update(cx, |state, _| {
-                            let step = state.app.measurement_state.recording_state.step;
-                            // Transitioning out of Config still needs
-                            // to initialise channel recordings before
-                            // advancing — preserve that side-effect.
-                            if step == RecordingStep::Config {
-                                state
-                                    .app
-                                    .measurement_state
-                                    .recording_state
-                                    .init_channel_recordings();
-                            }
-                            if step == RecordingStep::Saving {
-                                state.app.ui_state.current_screen = state.app.ui_state.last_screen;
-                            } else if let Some(next) = step.next() {
-                                state.app.measurement_state.recording_state.step = next;
-                            }
+                            state.app.move_workflow_step(true);
                         });
                         cx.notify();
                     })),

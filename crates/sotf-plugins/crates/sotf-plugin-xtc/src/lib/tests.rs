@@ -1,3 +1,6 @@
+// These tests intentionally vary small groups of fields from the default baseline.
+#![allow(clippy::field_reassign_with_default)]
+
 use super::*;
 use crate::load::load_roomeq_recommended_filters;
 use filters::{
@@ -1490,24 +1493,18 @@ fn test_itd_modeling_serde() {
     assert_eq!(ed.itd_modeling, "explicit_delay");
 }
 
-/// Test that `latency_samples()` reports `fft_size - hop_size` rather than `fft_size`.
-///
-/// Because the plugin starts draining output immediately after the first STFT frame
-/// (incrementing `output_accumulator_fill` by `hop_size` right away), the first audio
-/// sample appears after `fft_size - hop_size` input samples, not after `fft_size`.
-/// For a 1024-point FFT with 75% overlap (hop = 256): latency = 768, not 1024.
+/// Host latency is one full FFT frame. The output appears in the host block that
+/// completes that frame, so the observable delay may be up to one block shorter.
 #[test]
-fn test_latency_is_fft_size_minus_hop_size() {
+fn test_latency_is_full_fft_frame() {
     let params = XtcPluginParams::default();
     let fft_size = params.fft_size;
-    let hop_size = fft_size / 4; // 75% overlap
     let plugin = XtcPlugin::new(params, 48000).unwrap();
 
-    let expected = fft_size - hop_size;
     let reported = plugin.latency_samples();
     assert_eq!(
-        reported, expected,
-        "latency_samples() should return fft_size - hop_size = {expected}, got {reported}"
+        reported, fft_size,
+        "latency_samples() should return one full FFT frame ({fft_size}), got {reported}"
     );
 }
 
@@ -1842,8 +1839,7 @@ fn test_new_invalid_fft_size_too_large() {
 fn test_latency_samples_matches_expected() {
     let params = XtcPluginParams::default();
     let plugin = XtcPlugin::new(params.clone(), 48000).unwrap();
-    let expected = params.fft_size - params.fft_size / 4;
-    assert_eq!(plugin.latency_samples(), expected);
+    assert_eq!(plugin.latency_samples(), params.fft_size);
 }
 
 #[test]

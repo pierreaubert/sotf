@@ -1,7 +1,9 @@
 use super::interactive_chart_state_wrapper::InteractiveChartStateWrapper;
 use super::room_eq_dropdowns::RoomEqDropdowns;
 use super::room_eq_review_graph_settings_set::RoomEqReviewGraphSettingsSet;
-use sotf_audio_player::room_eq_types::CustomTargetCurve;
+use sotf_audio_player::room_eq_types::{
+    CustomTargetCurve, RoomEqEasyLayout, validate_room_eq_easy_layout,
+};
 use sotf_audio_player::ui_models::room_eq::RoomEqScreenModel;
 use std::ops::{Deref, DerefMut};
 
@@ -38,6 +40,8 @@ pub struct RoomEqState {
     pub detail_level: sotf_audio_player::autoeq::DetailLevel,
     /// Currently selected preset id
     pub selected_preset: String,
+    /// Explicit speaker layout used by the beginner RoomEQ workflow.
+    pub easy_layout: RoomEqEasyLayout,
 }
 
 impl Default for RoomEqState {
@@ -55,6 +59,7 @@ impl Default for RoomEqState {
             show_advanced_config: false,
             detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
             selected_preset: "full-range".to_string(),
+            easy_layout: RoomEqEasyLayout::Stereo20,
         }
     }
 }
@@ -90,6 +95,20 @@ impl RoomEqState {
             recording_directory: recording_state.recording_directory.clone(),
         };
         self.model.load_from_recording(&player_state);
+
+        let channel_names = self
+            .model
+            .channel_measurements
+            .iter()
+            .map(|measurement| measurement.channel_name.as_str())
+            .collect::<Vec<_>>();
+        if let Some(layout) = RoomEqEasyLayout::ALL
+            .into_iter()
+            .find(|layout| validate_room_eq_easy_layout(*layout, &channel_names).is_ok())
+        {
+            self.easy_layout = layout;
+            layout.configure_preset_defaults(&mut self.model.simple_preset);
+        }
     }
 
     /// Normalize an SPL curve so its average over 1–2 kHz is 0 dB.

@@ -1,9 +1,10 @@
 use crate::app::types::OptimizationStatus;
 use crate::components::autoeq::{
-    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, DetailLevel, EqDesignConfig,
-    GoalsConfig, OptimizationType,
+    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, EqDesignConfig, GoalsConfig,
+    OptimizationType,
 };
 use crate::components::design::Ds;
+use crate::i18n::HeadphoneEqTranslations;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -25,6 +26,11 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = HeadphoneEqTranslations::for_language(state.app.ui_state.language);
+        let workflow_text =
+            crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
+        let discovery_text =
+            crate::app::i18n::EqDiscoveryTranslations::for_language(state.app.ui_state.language);
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id, cx));
         let headphone_eq = &state.app.measurement_state.headphone_eq_state;
@@ -78,7 +84,7 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
-            detail_level: DetailLevel::Expert,
+            detail_level: headphone_eq.detail_level,
             selected_preset: Some(headphone_eq.selected_preset.clone()),
             algo_open: headphone_eq.dropdowns.algorithm_open,
             peq_model_open: headphone_eq.dropdowns.peq_model_open,
@@ -92,6 +98,7 @@ impl PlayerView {
 
         // Build the AutoEQ form with handlers
         let autoeq_form = AutoEqForm::new("headphone-eq-optimizer-form")
+            .language(state.app.ui_state.language)
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
             .optimization_type(OptimizationType::Headphone)
@@ -729,13 +736,13 @@ impl PlayerView {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Configure Optimization")
+                Text::new(translations.configure_optimization)
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Set the optimization parameters for your headphone EQ.")
+                Text::new(translations.configure_optimization_description)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -743,7 +750,7 @@ impl PlayerView {
             .when(headphone_eq.model.requires_custom_target_path(), |vstack| {
                 let custom_target_path = headphone_eq.model.custom_target_path.clone();
                 let path_text = if custom_target_path.is_empty() {
-                    "No target curve selected".to_string()
+                    translations.no_target_curve.to_string()
                 } else {
                     custom_target_path
                 };
@@ -754,7 +761,7 @@ impl PlayerView {
                         .header_background(theme.background_secondary)
                         .border(theme.border)
                         .header(
-                            Text::new("Custom Target Curve")
+                            Text::new(translations.custom_target_curve)
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
@@ -762,11 +769,9 @@ impl PlayerView {
                             VStack::new()
                                 .spacing(StackSpacing::Sm)
                                 .child(
-                                    Text::new(
-                                        "Choose a CSV target curve to use with the custom preset.",
-                                    )
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_secondary),
+                                    Text::new(discovery_text.custom_target_help)
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_secondary),
                                 )
                                 .child(
                                     HStack::new()
@@ -789,13 +794,16 @@ impl PlayerView {
                                                 .child(path_text),
                                         )
                                         .child(
-                                            Button::new("browse-custom-target", "Browse...")
-                                                .variant(ButtonVariant::Secondary)
-                                                .size(ButtonSize::Sm)
-                                                .theme(button_theme.clone())
-                                                .on_click_event(cx.listener(|view, _, _, cx| {
-                                                    view.browse_headphone_eq_target(cx);
-                                                })),
+                                            Button::new(
+                                                "browse-custom-target",
+                                                discovery_text.browse,
+                                            )
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Sm)
+                                            .theme(button_theme.clone())
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                                view.browse_headphone_eq_target(cx);
+                                            })),
                                         ),
                                 ),
                         ),
@@ -808,13 +816,18 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Generate Headphone EQ")
+                        Text::new(translations.generate_headphone_eq)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
                     .content({
                         let progress = headphone_eq.progress;
-                        let status_msg = headphone_eq.status_message.clone();
+                        let status_msg =
+                            crate::app::i18n::RuntimeMessageTranslations::for_language(
+                                state.app.ui_state.language,
+                            )
+                            .translate(&headphone_eq.status_message)
+                            .into_owned();
                         let optimization_status = headphone_eq.optimization_status;
                         let is_optimizing = headphone_eq.model.is_optimizing();
                         let is_completed = optimization_status == OptimizationStatus::Completed;
@@ -824,7 +837,7 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(if is_optimizing {
-                                Button::new("cancel_optimization", "Cancel")
+                                Button::new("cancel_optimization", discovery_text.cancel)
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Md)
                                     .full_width(true)
@@ -833,14 +846,17 @@ impl PlayerView {
                                         view.cancel_headphone_eq_optimization(cx);
                                     }))
                             } else {
-                                Button::new("start_optimization", "Generate Headphone EQ")
-                                    .variant(ButtonVariant::Primary)
-                                    .size(ButtonSize::Md)
-                                    .full_width(true)
-                                    .theme(button_theme.clone())
-                                    .on_click_event(cx.listener(|view, _, _, cx| {
-                                        view.start_headphone_eq_optimization(cx);
-                                    }))
+                                Button::new(
+                                    "start_optimization",
+                                    discovery_text.generate_headphone_eq,
+                                )
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Md)
+                                .full_width(true)
+                                .theme(button_theme.clone())
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.start_headphone_eq_optimization(cx);
+                                }))
                             })
                             .when(show_progress, |vstack| {
                                 let display_progress = if is_completed {
@@ -865,22 +881,22 @@ impl PlayerView {
                                             })
                                             .child(
                                                 Text::new(if is_optimizing {
-                                                    "Optimizing...".to_string()
+                                                    workflow_text.optimizing.to_string()
                                                 } else {
-                                                    format!("Progress: {:.0}%", display_progress)
+                                                    workflow_text.progress(display_progress)
                                                 })
                                                 .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                             )
                                             .when(is_completed, |el| {
                                                 el.child(
-                                                    Badge::new("Success")
+                                                    Badge::new(workflow_text.success)
                                                         .variant(BadgeVariant::Success),
                                                 )
                                             })
                                             .when(is_failed, |el| {
                                                 el.child(
-                                                    Badge::new("Failed")
+                                                    Badge::new(workflow_text.failed)
                                                         .variant(BadgeVariant::Error),
                                                 )
                                             }),

@@ -675,6 +675,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = SettingsSurfaceTranslations::for_language(state.app.ui_state.language);
         let current_threads = state.app.ui_state.scanner_threads;
         let max_cores = state.app.ui_state.max_cpu_cores;
 
@@ -696,7 +697,7 @@ impl PlayerView {
                 div()
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::BOLD)
-                    .child("Scanner Threads"),
+                    .child(text.scanner_threads),
             )
             .child(
                 div()
@@ -715,13 +716,13 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(gpui_ui_kit::StackSpacing::Xs)
                                     .child(
-                                        Text::new("Thread Count")
+                                        Text::new(text.thread_count)
                                             .size(TextSize::Sm)
                                             .weight(TextWeight::Bold)
                                             .color(theme.text_primary),
                                     )
                                     .child(
-                                        Text::new("Number of threads for background scanning (waveform, bliss, replaygain). Lower values reduce memory usage.")
+                                        Text::new(text.thread_count_description)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
@@ -742,7 +743,8 @@ impl PlayerView {
                                             state.app.ui_state.scanner_threads = Some(threads);
                                             state
                                                 .app
-                                                .scan.ctrl
+                                                .scan
+                                                .ctrl
                                                 .set_num_threads(Some(threads as usize));
                                         });
                                     }),
@@ -751,3 +753,4 @@ impl PlayerView {
             )
     }
 }
+use crate::app::i18n::SettingsSurfaceTranslations;

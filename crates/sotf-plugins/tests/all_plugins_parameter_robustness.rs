@@ -115,7 +115,7 @@ fn interleaved_sine(channels: usize, frames: usize, freq: f32) -> Vec<f32> {
     buf
 }
 
-fn process_plugin(plugin: &mut Box<dyn Plugin>, channels: usize, plugin_type: &str) {
+fn process_plugin(plugin: &mut Box<dyn Plugin>, channels: usize) {
     plugin.initialize(SAMPLE_RATE).expect("initialize failed");
     let input = interleaved_sine(channels, FRAMES, 440.0);
     let output_channels = plugin.output_channels();
@@ -127,10 +127,6 @@ fn process_plugin(plugin: &mut Box<dyn Plugin>, channels: usize, plugin_type: &s
             &ProcessContext::new(SAMPLE_RATE, FRAMES),
         )
         .expect("process failed");
-
-    if KNOWN_NON_FINITE_WITH_DEFAULTS.contains(&plugin_type) {
-        return;
-    }
 
     assert!(
         output.iter().all(|s| s.is_finite()),
@@ -159,7 +155,7 @@ fn all_plugins_instantiate_with_defaults() {
 
         match create_plugin(plugin_type, &params, channels, SAMPLE_RATE) {
             Ok(mut plugin) => {
-                process_plugin(&mut plugin, channels, plugin_type);
+                process_plugin(&mut plugin, channels);
             }
             Err(err) => {
                 failures.push(format!("{plugin_type}: {err}"));
@@ -174,9 +170,10 @@ fn all_plugins_instantiate_with_defaults() {
     );
 }
 
-/// Parameter ids that are known to fail a get/set round-trip with their legal
-/// current value. Each entry is `(plugin_type, param_id, reason)`.
-const KNOWN_ROUNDTRIP_FAILURES: &[(&str, &str, &str)] = &[
+/// Parameter ids whose setter is expected to reject their legal current value.
+/// Each entry is `(plugin_type, param_id, reason)`. Structural parameters are
+/// changed through serialized host rebuilds, not the realtime setter.
+const EXPECTED_SET_REJECTIONS: &[(&str, &str, &str)] = &[
     (
         "resampler",
         "ratio",
@@ -187,12 +184,27 @@ const KNOWN_ROUNDTRIP_FAILURES: &[(&str, &str, &str)] = &[
         "reconstruction_error_db",
         "parameter is reported but not accepted by set_parameter",
     ),
+    (
+        "convolution",
+        "use_nupc",
+        "structural parameter changed through a host rebuild",
+    ),
+    (
+        "convolution",
+        "zero_latency_head",
+        "structural parameter changed through a host rebuild",
+    ),
+    (
+        "convolution",
+        "head_taps",
+        "structural parameter changed through a host rebuild",
+    ),
 ];
 
 #[test]
 fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
     let mut unexpected_failures = Vec::new();
-    let mut known_failures_seen = Vec::new();
+    let mut expected_rejections_seen = Vec::new();
 
     for &plugin_type in SUPPORTED_PLUGIN_TYPES {
         if plugin_type == "external"
@@ -220,11 +232,11 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
                 && let Err(err) = plugin.set_parameter(id, value)
             {
                 let key = (plugin_type, param.id.as_str());
-                let is_known = KNOWN_ROUNDTRIP_FAILURES
+                let is_expected = EXPECTED_SET_REJECTIONS
                     .iter()
                     .any(|(t, p, _)| *t == key.0 && *p == key.1);
-                if is_known {
-                    known_failures_seen.push(format!("{plugin_type}/{}", param.id));
+                if is_expected {
+                    expected_rejections_seen.push(format!("{plugin_type}/{}", param.id));
                 } else {
                     unexpected_failures.push(format!(
                         "{plugin_type}/{}: round-trip failed: {err}",
@@ -234,7 +246,7 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
             }
         }
 
-        process_plugin(&mut plugin, channels, plugin_type);
+        process_plugin(&mut plugin, channels);
     }
 
     assert!(
@@ -243,13 +255,13 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
         unexpected_failures.join("\n")
     );
 
-    // Ensure the known-failure list does not drift from reality.
+    // Ensure the expected-rejection list does not drift from reality.
     assert_eq!(
-        known_failures_seen.len(),
-        KNOWN_ROUNDTRIP_FAILURES.len(),
-        "expected {} known round-trip failures, got {}; some may have been fixed",
-        KNOWN_ROUNDTRIP_FAILURES.len(),
-        known_failures_seen.len()
+        expected_rejections_seen.len(),
+        EXPECTED_SET_REJECTIONS.len(),
+        "expected {} documented setter rejections, got {}; some may have been fixed",
+        EXPECTED_SET_REJECTIONS.len(),
+        expected_rejections_seen.len()
     );
 }
 
@@ -258,12 +270,6 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
 /// existing behavior so the cross-cutting test stays green while fixes are
 /// planned per-plugin.
 const KNOWN_TO_ACCEPT_UNKNOWN_PARAMS: &[&str] = &[];
-
-/// Plugins that produce non-finite output when driven with the default test
-/// signal. These still participate in instantiation and parameter round-trip
-/// tests; the finite-output assertion is skipped while the root cause is
-/// investigated per-plugin.
-const KNOWN_NON_FINITE_WITH_DEFAULTS: &[&str] = &["loudness_compensation", "fletcher_munson"];
 
 #[test]
 fn all_plugins_reject_unknown_parameters() {

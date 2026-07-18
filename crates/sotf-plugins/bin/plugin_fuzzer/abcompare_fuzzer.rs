@@ -26,7 +26,7 @@ use super::pnd_fuzzer::PndFuzzer;
 use super::spectrum_analyzer_fuzzer::SpectrumAnalyzerFuzzer;
 use super::upmixer_fuzzer::UpmixerFuzzer;
 use super::xtc_fuzzer::XtcFuzzer;
-use rand::Rng;
+use rand::RngExt;
 use rand::rngs::StdRng;
 use sotf_plugins::{ABComparePlugin, ABComparePluginParams, Plugin};
 

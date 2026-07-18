@@ -24,6 +24,9 @@ private func getSessionKeyPath() -> String {
     if let overridePath = environment["SOTF_HAL_SESSION_KEY_PATH"], !overridePath.isEmpty {
         return overridePath
     }
+    if let runtimeDir = environment["SOTF_SYSTEMWIDE_RUNTIME_DIR"], !runtimeDir.isEmpty {
+        return URL(fileURLWithPath: runtimeDir).appendingPathComponent("session.key").path
+    }
 
     var uid: uid_t = 0
     var gid: gid_t = 0

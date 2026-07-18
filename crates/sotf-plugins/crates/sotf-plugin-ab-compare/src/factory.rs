@@ -160,9 +160,15 @@ fn build_graph(
             .get(&edge.to)
             .ok_or_else(|| format!("Unknown node id in edge: {}", edge.to))?;
 
-        let graph_edge = match &edge.channel_map {
-            Some(map) => GraphEdge::with_channels(from_id, to_id, map.clone()),
-            None => GraphEdge::new(from_id, to_id),
+        let graph_edge = match (&edge.channel_map, edge.destination_offset) {
+            (Some(map), destination_offset) => {
+                GraphEdge::with_channel_route(from_id, to_id, map.clone(), destination_offset)
+            }
+            (None, 0) => GraphEdge::new(from_id, to_id),
+            (None, destination_offset) => {
+                let source_channels = (0..num_channels).collect();
+                GraphEdge::with_channel_route(from_id, to_id, source_channels, destination_offset)
+            }
         };
         host.add_edge(graph_edge)?;
     }

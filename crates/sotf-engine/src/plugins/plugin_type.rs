@@ -322,3 +322,25 @@ impl PluginType {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_app_plugin_type_has_a_canonical_factory_catalog_entry() {
+        let mut missing = Vec::new();
+        for plugin_type in PluginType::all() {
+            let wire_name = plugin_type.wire_name();
+            match sotf_plugins::catalog_entry(wire_name) {
+                Some(entry) if entry.canonical_type == wire_name => {}
+                Some(entry) => missing.push(format!(
+                    "{wire_name} resolves to non-canonical entry {}",
+                    entry.canonical_type
+                )),
+                None => missing.push(format!("{wire_name} is absent from the plugin catalog")),
+            }
+        }
+        assert!(missing.is_empty(), "{}", missing.join("\n"));
+    }
+}

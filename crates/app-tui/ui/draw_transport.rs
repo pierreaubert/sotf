@@ -5,7 +5,7 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(app.theme.border_color))
-        .title(" Transport ");
+        .title(crate::tui_text!(app, " Transport "));
     let inner = block.inner(area);
     f.render_widget(block, area);
 

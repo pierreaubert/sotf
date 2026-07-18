@@ -194,9 +194,18 @@ fn test_seek_position_accuracy() {
 
     for target_pos in test_positions {
         engine.seek(target_pos).unwrap();
-        std::thread::sleep(Duration::from_millis(100));
-
-        let state = engine.get_state();
+        let seek_started = Instant::now();
+        let state = loop {
+            let state = engine.get_state();
+            if !state.seeking {
+                break state;
+            }
+            assert!(
+                seek_started.elapsed() < Duration::from_secs(5),
+                "Seek to {target_pos}s never completed"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        };
         let error = (state.position - target_pos).abs();
 
         println!(
@@ -204,7 +213,8 @@ fn test_seek_position_accuracy() {
             target_pos, state.position, error
         );
 
-        // Allow 500ms tolerance for seeking
+        // Allow 500ms tolerance for the callback/position update after the
+        // engine's authoritative seek-complete signal.
         assert!(
             error < 0.5,
             "Seek position error too large: target={}, actual={}, error={}",

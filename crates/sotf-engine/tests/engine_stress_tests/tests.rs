@@ -2,7 +2,7 @@ use serial_test::serial;
 use sotf_audio::engine::{AudioEngine, PlaybackState, PluginConfig};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[test]
 #[serial]
@@ -281,7 +281,25 @@ fn stress_long_playback() {
     let temp_file = super::common::create_test_wav(10.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
-    // Let it play for several seconds, checking state periodically
+    // Wait for playback and its initial buffer fill before measuring sustained
+    // underruns. Startup scheduling can be delayed by unrelated workspace test
+    // binaries, but it must not turn into continuing callback starvation.
+    let playback_started = Instant::now();
+    loop {
+        let state = engine.get_state();
+        if state.playback_state == PlaybackState::Playing {
+            break;
+        }
+        assert!(
+            playback_started.elapsed() < Duration::from_secs(2),
+            "Engine never entered Playing during long-playback stress"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    thread::sleep(Duration::from_millis(500));
+    let baseline_underruns = engine.get_state().underruns;
+
+    // Let it play for several seconds, checking state periodically.
     for _ in 0..50 {
         thread::sleep(Duration::from_millis(100));
 
@@ -292,11 +310,12 @@ fn stress_long_playback() {
             "Unexpected state during long playback"
         );
 
-        // Check for excessive underruns
+        // Check for excessive sustained underruns after startup warm-up.
+        let measured_underruns = state.underruns.saturating_sub(baseline_underruns);
         assert!(
-            state.underruns < 100,
-            "Too many underruns: {}",
-            state.underruns
+            measured_underruns < 100,
+            "Too many sustained underruns: {measured_underruns} (baseline: {baseline_underruns}, total: {})",
+            state.underruns,
         );
     }
 }

@@ -711,6 +711,12 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
 
+    type FakeChromecastReceiver = (
+        u16,
+        mpsc::Receiver<String>,
+        std::thread::JoinHandle<Result<(), String>>,
+    );
+
     fn test_device() -> CastDevice {
         CastDevice {
             device_type: crate::CastDeviceType::Chromecast,
@@ -781,11 +787,7 @@ mod tests {
         Some(stream)
     }
 
-    fn spawn_fake_chromecast_receiver() -> std::io::Result<(
-        u16,
-        mpsc::Receiver<String>,
-        std::thread::JoinHandle<Result<(), String>>,
-    )> {
+    fn spawn_fake_chromecast_receiver() -> std::io::Result<FakeChromecastReceiver> {
         let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))?;
         let port = listener.local_addr().unwrap().port();
         let (tx, rx) = mpsc::channel();

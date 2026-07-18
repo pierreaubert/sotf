@@ -250,9 +250,10 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let title = state.app.ui_state.translations.screen_spinorama;
         let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.measurement_state.spinorama_eq_state.step;
-        let can_go_next = state.app.measurement_state.spinorama_eq_state.can_advance();
+        let can_go_next = state.app.can_advance_workflow_step();
         let is_busy = state
             .app
             .measurement_state
@@ -287,7 +288,7 @@ impl PlayerView {
         let button_theme = ButtonTheme::from(&ui_kit_theme);
 
         let header = WizardHeader::new()
-            .title("Spinorama EQ")
+            .title(title)
             .steps(steps)
             .step_statuses(step_statuses)
             .current_step(step_index)
@@ -310,23 +311,7 @@ impl PlayerView {
                     .theme(button_theme.clone())
                     .on_click_event(cx.listener(|view, _, _, cx| {
                         view.state.update(cx, |state, _| {
-                            match state.app.measurement_state.spinorama_eq_state.step {
-                                SpinoramaStep::SelectSpeaker => {
-                                    state.app.ui_state.current_screen =
-                                        state.app.ui_state.last_screen;
-                                }
-                                _ => {
-                                    if let Some(prev) = state
-                                        .app
-                                        .measurement_state
-                                        .spinorama_eq_state
-                                        .step
-                                        .previous()
-                                    {
-                                        state.app.measurement_state.spinorama_eq_state.step = prev;
-                                    }
-                                }
-                            }
+                            state.app.move_workflow_step(false);
                         });
                         cx.notify();
                     })),
@@ -339,19 +324,7 @@ impl PlayerView {
                     .theme(button_theme.clone())
                     .on_click_event(cx.listener(|view, _, _, cx| {
                         view.state.update(cx, |state, _| {
-                            match state.app.measurement_state.spinorama_eq_state.step {
-                                SpinoramaStep::Export => {
-                                    state.app.ui_state.current_screen =
-                                        state.app.ui_state.last_screen;
-                                }
-                                _ => {
-                                    if let Some(next) =
-                                        state.app.measurement_state.spinorama_eq_state.step.next()
-                                    {
-                                        state.app.measurement_state.spinorama_eq_state.step = next;
-                                    }
-                                }
-                            }
+                            state.app.move_workflow_step(true);
                         });
                         cx.notify();
                     })),

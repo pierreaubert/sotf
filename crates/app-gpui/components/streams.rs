@@ -9,6 +9,7 @@ use gpui_ui_kit::{
 
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
+use crate::i18n::StreamsTranslations;
 use crate::ui::PlayerView;
 
 impl PlayerView {
@@ -27,6 +28,9 @@ impl PlayerView {
                 state.app.stream_state.last_status.clone(),
             )
         };
+
+        let translations =
+            StreamsTranslations::for_language(self.state.read(cx).app.ui_state.language);
 
         div()
             .id("streams-screen")
@@ -50,17 +54,15 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Xs)
                             .child(
-                                Text::new("Streams")
+                                Text::new(translations.title)
                                     .size(TextSize::Lg)
                                     .weight(TextWeight::Bold)
                                     .color(theme.text_primary),
                             )
                             .child(
-                                Text::new(
-                                    "HTTPS streams, local SOTF media URLs, HLS, Spotify, and Tidal",
-                                )
-                                .size(TextSize::Xs)
-                                .color(theme.text_secondary),
+                                Text::new(translations.subtitle)
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary),
                             ),
                     ),
             )
@@ -99,7 +101,7 @@ impl PlayerView {
                         .border_color(theme.border)
                         .text_size(d.text_sm)
                         .text_color(theme.text_muted)
-                        .child("No saved streams"),
+                        .child(translations.no_saved_streams),
                 )
             })
             .children(
@@ -120,6 +122,8 @@ impl PlayerView {
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let translations =
+            StreamsTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let state_for_name = self.state.clone();
         let state_for_url = self.state.clone();
         let state_for_hint = self.state.clone();
@@ -145,7 +149,7 @@ impl PlayerView {
                         div().flex_1().child(
                             Input::new("stream-name-input")
                                 .value(name)
-                                .placeholder("Name")
+                                .placeholder(translations.name)
                                 .size(InputSize::Sm)
                                 .on_text_change(move |value, _window, cx| {
                                     state_for_name.update(cx, |state, _cx| {
@@ -171,7 +175,7 @@ impl PlayerView {
                         Toggle::new("stream-seekable-toggle")
                             .size(ToggleSize::Sm)
                             .checked(seekable)
-                            .label("Seekable")
+                            .label(translations.seekable)
                             .style(ToggleStyle::Segmented)
                             .theme(theme.to_toggle_theme())
                             .on_change(move |enabled, _window, cx| {
@@ -189,7 +193,7 @@ impl PlayerView {
                         div().flex_1().child(
                             Input::new("stream-url-input")
                                 .value(url)
-                                .placeholder("https://example.com/live.m3u8 or spotify:track:id")
+                                .placeholder(translations.url_placeholder)
                                 .size(InputSize::Sm)
                                 .on_text_change(move |value, _window, cx| {
                                     state_for_url.update(cx, |state, _cx| {
@@ -199,7 +203,7 @@ impl PlayerView {
                         ),
                     )
                     .child(
-                        Button::new("stream-save", "Save")
+                        Button::new("stream-save", translations.save)
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
@@ -212,7 +216,7 @@ impl PlayerView {
                             }),
                     )
                     .child(
-                        Button::new("stream-play-input", "Play")
+                        Button::new("stream-play-input", translations.play)
                             .variant(ButtonVariant::Primary)
                             .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
@@ -248,6 +252,8 @@ impl PlayerView {
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let translations =
+            StreamsTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let state_for_select = self.state.clone();
         let state_for_play = self.state.clone();
         let state_for_queue = self.state.clone();
@@ -308,39 +314,45 @@ impl PlayerView {
                     ),
             )
             .child(
-                Button::new(SharedString::from(format!("stream-play-{index}")), "Play")
-                    .variant(ButtonVariant::Primary)
-                    .size(ButtonSize::Sm)
-                    .theme(theme.to_button_theme())
-                    .on_click(move |_, cx| {
-                        state_for_play.update(cx, |state, _cx| {
-                            match state.app.play_stream_now(stream_for_play.clone()) {
-                                Ok(Some(source)) => PlayerView::play_track(state, source),
-                                Ok(None) => {}
-                                Err(err) => state.app.record_stream_error(err),
-                            }
-                        });
-                    }),
+                Button::new(
+                    SharedString::from(format!("stream-play-{index}")),
+                    translations.play,
+                )
+                .variant(ButtonVariant::Primary)
+                .size(ButtonSize::Sm)
+                .theme(theme.to_button_theme())
+                .on_click(move |_, cx| {
+                    state_for_play.update(cx, |state, _cx| {
+                        match state.app.play_stream_now(stream_for_play.clone()) {
+                            Ok(Some(source)) => PlayerView::play_track(state, source),
+                            Ok(None) => {}
+                            Err(err) => state.app.record_stream_error(err),
+                        }
+                    });
+                }),
             )
             .child(
-                Button::new(SharedString::from(format!("stream-queue-{index}")), "Queue")
-                    .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Sm)
-                    .theme(theme.to_button_theme())
-                    .on_click(move |_, cx| {
-                        state_for_queue.update(cx, |state, _cx| {
-                            match state.app.add_stream_to_queue(stream_for_queue.clone()) {
-                                Ok(Some(source)) => PlayerView::play_track(state, source),
-                                Ok(None) => {}
-                                Err(err) => state.app.record_stream_error(err),
-                            }
-                        });
-                    }),
+                Button::new(
+                    SharedString::from(format!("stream-queue-{index}")),
+                    translations.queue,
+                )
+                .variant(ButtonVariant::Secondary)
+                .size(ButtonSize::Sm)
+                .theme(theme.to_button_theme())
+                .on_click(move |_, cx| {
+                    state_for_queue.update(cx, |state, _cx| {
+                        match state.app.add_stream_to_queue(stream_for_queue.clone()) {
+                            Ok(Some(source)) => PlayerView::play_track(state, source),
+                            Ok(None) => {}
+                            Err(err) => state.app.record_stream_error(err),
+                        }
+                    });
+                }),
             )
             .child(
                 Button::new(
                     SharedString::from(format!("stream-remove-{index}")),
-                    "Remove",
+                    translations.remove,
                 )
                 .variant(ButtonVariant::Ghost)
                 .size(ButtonSize::Sm)

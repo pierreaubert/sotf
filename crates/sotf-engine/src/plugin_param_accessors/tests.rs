@@ -85,14 +85,19 @@ fn validate_engine_keys_exist_in_dsp_plugin() {
 
         // Create the DSP plugin via the factory
         let config = settings.to_plugin_config(44100.0);
-        let plugin =
-            match sotf_plugins::create_plugin(&config.plugin_type, &config.parameters, 2, 44100) {
-                Ok(p) => p,
-                Err(e) => {
-                    all_errors.push(format!("{}: failed to create DSP plugin: {}", name, e));
-                    continue;
-                }
-            };
+        let input_channels = settings.required_input_channels().unwrap_or(2);
+        let plugin = match sotf_plugins::create_plugin(
+            &config.plugin_type,
+            &config.parameters,
+            input_channels,
+            44100,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                all_errors.push(format!("{}: failed to create DSP plugin: {}", name, e));
+                continue;
+            }
+        };
 
         let dsp_params = plugin.parameters();
         let dsp_keys: std::collections::HashSet<&str> =

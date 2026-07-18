@@ -11,6 +11,7 @@
 
 use super::common::{render_knob, render_section_title, render_toggle};
 use crate::app::AppState;
+use crate::app::i18n::PluginCommonTranslations;
 use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
 use crate::theme::Theme;
@@ -38,16 +39,17 @@ pub fn render_mute_solo_plugin(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: ChannelMuteSoloRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let channel_count = state.channel_states.len();
 
     let channel_names: Vec<&str> = match channel_count {
-        1 => vec!["Mono"],
-        2 => vec!["Left", "Right"],
+        1 => vec![text.label("Mono")],
+        2 => vec![text.label("Left"), text.label("Right")],
         6 => vec!["FL", "FR", "C", "LFE", "RL", "RR"],
         8 => vec!["FL", "FR", "C", "LFE", "RL", "RR", "SL", "SR"],
-        _ => (0..channel_count).map(|_| "Ch").collect(),
+        _ => (0..channel_count).map(|_| text.label("Ch")).collect(),
     };
 
     // === LEFT COLUMN: Setup ===
@@ -56,11 +58,11 @@ pub fn render_mute_solo_plugin(
         .flex_col()
         .flex_shrink_0()
         .gap(d.gap_md)
-        .child(render_section_title(d, "SETUP", theme))
+        .child(render_section_title(d, text.label("SETUP"), theme))
         .child(render_toggle(
             entity.clone(),
             plugin_idx,
-            "Enabled",
+            text.label("Enabled"),
             state.enabled,
             0,
             state.selected_param,
@@ -70,7 +72,7 @@ pub fn render_mute_solo_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Dim Gain",
+            text.label("Dim Gain"),
             state.dim_gain_db,
             pk(CMS, "dim_gain_db").min_f64(),
             pk(CMS, "dim_gain_db").max_f64(),
@@ -84,7 +86,7 @@ pub fn render_mute_solo_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Fade Time",
+            text.label("Fade Time"),
             state.fade_ms,
             pk(CMS, "fade_ms").min_f64(),
             pk(CMS, "fade_ms").max_f64(),
@@ -108,10 +110,13 @@ pub fn render_mute_solo_plugin(
         .flex_col()
         .flex_1()
         .gap(d.gap_md)
-        .child(render_section_title(d, "CHANNELS", theme))
+        .child(render_section_title(d, text.label("CHANNELS"), theme))
         .child(div().flex().gap(d.gap_md).flex_wrap().children(
             state.channel_states.iter().enumerate().map(|(i, s)| {
-                let name = channel_names.get(i).copied().unwrap_or("Ch");
+                let name = channel_names
+                    .get(i)
+                    .copied()
+                    .unwrap_or_else(|| text.label("Ch"));
                 let is_muted = s.muted;
                 let is_soloed = s.soloed;
                 let is_dimmed = s.dimmed;

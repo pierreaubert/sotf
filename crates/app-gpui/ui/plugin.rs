@@ -26,6 +26,17 @@ macro_rules! state_method_handler {
 }
 
 impl PlayerView {
+    fn adjust_selected_plugin_param(state: &mut AppState, delta: f64) {
+        let selected = state.app.plugin_state.selected_plugin_index;
+        state.app.plugin_state.editing_plugin_index = state
+            .app
+            .plugin_state
+            .graph
+            .get_plugin(selected)
+            .map(|_| selected);
+        state.app.adjust_selected_param(delta);
+    }
+
     /// Apply a pending plugin update to the audio engine.
     /// Called from the timer callback when there's a pending update.
     fn apply_plugin_update(state: &mut AppState, update_type: PluginUpdateType) {
@@ -211,42 +222,42 @@ impl PlayerView {
 
     fn increment_plugin_param(&mut self, _: &IncrementPluginParam, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.adjust_selected_param(1.0);
+            Self::adjust_selected_plugin_param(state, 1.0);
         });
         cx.notify();
     }
 
     fn decrement_plugin_param(&mut self, _: &DecrementPluginParam, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.adjust_selected_param(-1.0);
+            Self::adjust_selected_plugin_param(state, -1.0);
         });
         cx.notify();
     }
 
     fn increment_plugin_param_large(&mut self, _: &IncrementPluginParamLarge, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.adjust_selected_param(10.0);
+            Self::adjust_selected_plugin_param(state, 10.0);
         });
         cx.notify();
     }
 
     fn decrement_plugin_param_large(&mut self, _: &DecrementPluginParamLarge, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.adjust_selected_param(-10.0);
+            Self::adjust_selected_plugin_param(state, -10.0);
         });
         cx.notify();
     }
 
     fn increment_plugin_param_small(&mut self, _: &IncrementPluginParamSmall, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.adjust_selected_param(0.1);
+            Self::adjust_selected_plugin_param(state, 0.1);
         });
         cx.notify();
     }
 
     fn decrement_plugin_param_small(&mut self, _: &DecrementPluginParamSmall, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.adjust_selected_param(-0.1);
+            Self::adjust_selected_plugin_param(state, -0.1);
         });
         cx.notify();
     }

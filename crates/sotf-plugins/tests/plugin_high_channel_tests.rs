@@ -441,6 +441,102 @@ fn mono_to_stereo_from_1ch_is_finite() {
 }
 
 #[test]
+fn factory_reports_exact_channel_layouts_for_channel_changing_plugins() {
+    let cases = [
+        ("mono_to_stereo", serde_json::json!({}), 1, 2),
+        ("upmixer", serde_json::json!({}), 2, 6),
+        ("aae", serde_json::json!({}), 2, 6),
+        ("downmix", serde_json::json!({"input_channels": 6}), 6, 2),
+        (
+            "binaural_decoder",
+            default_params("binaural_decoder", 6),
+            6,
+            2,
+        ),
+        (
+            "band_split",
+            serde_json::json!({"num_bands": 2, "frequency": 1000.0, "type": "lr4"}),
+            3,
+            6,
+        ),
+        ("band_merge", serde_json::json!({"bands": 2}), 6, 3),
+        ("aec", serde_json::json!({}), 2, 1),
+        ("beamformer", serde_json::json!({"num_mics": 4}), 4, 1),
+        (
+            "ambisonics_decoder",
+            serde_json::json!({"order": 1, "target_layout": "5.1"}),
+            4,
+            6,
+        ),
+        (
+            "matrix",
+            serde_json::json!({
+                "input_channels": 4,
+                "output_channels": 2,
+                "matrix": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+            }),
+            4,
+            2,
+        ),
+    ];
+
+    for (plugin_type, params, input_channels, output_channels) in cases {
+        let plugin = create_plugin(plugin_type, &params, input_channels, SAMPLE_RATE)
+            .unwrap_or_else(|err| panic!("{plugin_type}@{input_channels}ch failed: {err}"));
+        assert_eq!(plugin.input_channels(), input_channels, "{plugin_type}");
+        assert_eq!(plugin.output_channels(), output_channels, "{plugin_type}");
+        assert!(
+            plugin.supports_channel_config(input_channels, output_channels),
+            "{plugin_type} rejected its declared layout"
+        );
+        assert!(
+            !plugin.supports_channel_config(input_channels + 1, output_channels),
+            "{plugin_type} accepted an undeclared input layout"
+        );
+        assert!(
+            !plugin.supports_channel_config(input_channels, output_channels + 1),
+            "{plugin_type} accepted an undeclared output layout"
+        );
+    }
+}
+
+#[test]
+fn factory_rejects_mismatched_channel_layout_configuration() {
+    let cases = [
+        ("mono_to_stereo", serde_json::json!({}), 2),
+        ("binaural_decoder", default_params("binaural_decoder", 6), 2),
+        ("aec", serde_json::json!({}), 1),
+        ("beamformer", serde_json::json!({"num_mics": 2}), 4),
+        (
+            "ambisonics_decoder",
+            serde_json::json!({"order": 1, "target_layout": "5.1"}),
+            2,
+        ),
+        ("band_merge", serde_json::json!({"bands": 2}), 3),
+        (
+            "matrix",
+            serde_json::json!({
+                "input_channels": 2,
+                "output_channels": 1,
+                "matrix": [1.0, 0.0]
+            }),
+            4,
+        ),
+    ];
+
+    for (plugin_type, params, graph_channels) in cases {
+        let err = match create_plugin(plugin_type, &params, graph_channels, SAMPLE_RATE) {
+            Ok(_) => panic!("{plugin_type} unexpectedly accepted {graph_channels} channels"),
+            Err(err) => err,
+        };
+        assert!(
+            err.contains("channel") || err.contains("microphone") || err.contains("divisible"),
+            "{plugin_type} returned a non-actionable layout error: {err}"
+        );
+    }
+}
+
+#[test]
 fn ab_compare_switching_preserves_channel_layout_at_stereo() {
     let channels = 2;
     let mut plugin = create_plugin(
@@ -914,15 +1010,29 @@ fn stft_plugins_return_context_num_frames() {
 /// so hosts can compensate for their group delay.
 fn latency_reporting_plugins() -> Vec<(&'static str, serde_json::Value)> {
     vec![
+        ("limiter", default_params("limiter", 2)),
+        ("convolution", default_params("convolution", 2)),
+        ("upmixer", default_params("upmixer", 2)),
+        ("mono_to_stereo", default_params("mono_to_stereo", 1)),
+        (
+            "multiband_expander",
+            serde_json::json!({"lookahead_ms": 5.0}),
+        ),
+        ("fir_designer", default_params("fir_designer", 2)),
         ("linear_phase_eq", default_params("linear_phase_eq", 2)),
         (
             "spectral_compressor",
             default_params("spectral_compressor", 2),
         ),
         ("denoiser", default_params("denoiser", 2)),
+        ("speech_denoiser", serde_json::json!({"enabled": false})),
+        ("pnd", default_params("pnd", 2)),
         ("binaural_decoder", default_params("binaural_decoder", 2)),
         ("downmix", default_params("downmix", 2)),
-        ("upmixer", default_params("upmixer", 2)),
+        ("resampler", default_params("resampler", 2)),
+        ("xtc", default_params("xtc", 2)),
+        ("aec", default_params("aec", 2)),
+        ("beamformer", default_params("beamformer", 2)),
         (
             "crossover",
             serde_json::json!({
@@ -964,6 +1074,193 @@ fn latency_reporting_plugins_expose_nonzero_latency() {
     assert!(
         failures.is_empty(),
         "latency reporting failures:\n{}",
+        failures.join("\n")
+    );
+}
+
+fn zero_latency_plugin_configurations() -> Vec<(&'static str, serde_json::Value)> {
+    vec![
+        ("gain", default_params("gain", 2)),
+        ("eq", default_params("eq", 2)),
+        ("compressor", default_params("compressor", 2)),
+        ("expander", default_params("expander", 2)),
+        ("gate", default_params("gate", 2)),
+        ("delay", default_params("delay", 2)),
+        ("aae", default_params("aae", 2)),
+        (
+            "multiband_compressor",
+            default_params("multiband_compressor", 2),
+        ),
+        (
+            "multiband_expander",
+            default_params("multiband_expander", 2),
+        ),
+        ("de_esser", default_params("de_esser", 2)),
+        ("dynamic_eq", default_params("dynamic_eq", 2)),
+        ("stereo_imager", default_params("stereo_imager", 2)),
+        ("transient_shaper", default_params("transient_shaper", 2)),
+        ("saturation", default_params("saturation", 2)),
+        (
+            "loudness_compensation",
+            default_params("loudness_compensation", 2),
+        ),
+        ("fletcher_munson", default_params("fletcher_munson", 2)),
+        ("crossfeed", default_params("crossfeed", 2)),
+        ("hiss_reducer", default_params("hiss_reducer", 2)),
+        ("declick", default_params("declick", 2)),
+        (
+            "ambisonics_decoder",
+            default_params("ambisonics_decoder", 4),
+        ),
+        ("matrix", default_params("matrix", 2)),
+        ("channel_mute_solo", default_params("channel_mute_solo", 2)),
+        ("band_split", default_params("band_split", 2)),
+        ("band_merge", default_params("band_merge", 2)),
+        ("crossover", default_params("crossover", 2)),
+        ("beamformer", serde_json::json!({"beamformer_type": 2})),
+    ]
+}
+
+fn measure_impulse_delays(
+    plugin: &mut dyn Plugin,
+    block_size: usize,
+) -> Result<(usize, usize, usize), String> {
+    let reported = plugin.latency_samples();
+    let input_channels = plugin.input_channels();
+    let output_channels = plugin.output_channels();
+    let impulse_frame = block_size * 2;
+    let minimum_frames = impulse_frame + reported + block_size * 8;
+    let total_frames = minimum_frames.div_ceil(block_size) * block_size;
+    let mut input = vec![0.0f32; total_frames * input_channels];
+    for channel in 0..input_channels {
+        input[impulse_frame * input_channels + channel] = 1.0 / (channel + 1) as f32;
+    }
+    let mut output = vec![0.0f32; total_frames * output_channels];
+
+    plugin.reset();
+    for frame in (0..total_frames).step_by(block_size) {
+        let input_start = frame * input_channels;
+        let output_start = frame * output_channels;
+        let returned = plugin.process(
+            &input[input_start..input_start + block_size * input_channels],
+            &mut output[output_start..output_start + block_size * output_channels],
+            &ProcessContext::new(SAMPLE_RATE, block_size),
+        )?;
+        if returned > block_size {
+            return Err(format!(
+                "returned {returned} frames for a {block_size}-frame latency probe"
+            ));
+        }
+    }
+
+    let onset_frame = output
+        .chunks_exact(output_channels)
+        .position(|samples| samples.iter().any(|sample| sample.abs() > 1e-6));
+    let (peak_frame, peak) = output
+        .chunks_exact(output_channels)
+        .enumerate()
+        .map(|(frame, samples)| {
+            let peak = samples.iter().copied().map(f32::abs).fold(0.0, f32::max);
+            (frame, peak)
+        })
+        .max_by(|(_, a), (_, b)| a.total_cmp(b))
+        .unwrap();
+    if peak <= 1e-6 {
+        return Err("impulse probe produced no measurable output".to_string());
+    }
+    let onset_frame = onset_frame.expect("a measurable peak must have an onset");
+
+    Ok((
+        reported,
+        onset_frame.saturating_sub(impulse_frame),
+        peak_frame.saturating_sub(impulse_frame),
+    ))
+}
+
+#[test]
+fn reported_latency_matches_streamed_impulse_peak() {
+    let mut failures = Vec::new();
+
+    // Convolution has a dedicated delta-IR matrix covering uniform, NUPC, and
+    // zero-latency-head modes. Resampler latency is expressed in output-rate
+    // frames and has dedicated rubato/chunking tests, so neither belongs in this
+    // same-rate impulse-peak probe.
+    for (plugin_type, params) in latency_reporting_plugins()
+        .into_iter()
+        .filter(|(plugin_type, _)| !matches!(*plugin_type, "convolution" | "resampler"))
+    {
+        let channels = required_input_channels(plugin_type).unwrap_or(2);
+        let result = (|| {
+            let mut plugin = create_plugin(plugin_type, &params, channels, SAMPLE_RATE)?;
+            plugin.initialize(SAMPLE_RATE)?;
+            let block_sizes: &[usize] = if plugin_type == "speech_denoiser" {
+                &[480]
+            } else {
+                &[128, 256, 512]
+            };
+            for &block_size in block_sizes {
+                let (reported, onset, peak) = measure_impulse_delays(plugin.as_mut(), block_size)?;
+                let onset_error = reported.abs_diff(onset);
+                let peak_error = reported.abs_diff(peak);
+                if onset_error.min(peak_error) > block_size {
+                    return Err(format!(
+                        "{plugin_type}: reported {reported} samples, measured onset {onset}, peak {peak}, block {block_size}"
+                    ));
+                }
+            }
+            Ok::<(), String>(())
+        })();
+        if let Err(error) = result {
+            failures.push(error);
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "latency measurement failures:\n{}",
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn zero_latency_configurations_are_causal_within_one_block() {
+    let mut failures = Vec::new();
+
+    for (plugin_type, params) in zero_latency_plugin_configurations() {
+        let channels = required_input_channels(plugin_type).unwrap_or_else(|| {
+            if plugin_type == "ambisonics_decoder" {
+                4
+            } else {
+                2
+            }
+        });
+        let result = (|| {
+            let mut plugin = create_plugin(plugin_type, &params, channels, SAMPLE_RATE)?;
+            plugin.initialize(SAMPLE_RATE)?;
+            if plugin.latency_samples() != 0 {
+                return Err(format!(
+                    "{plugin_type}: expected zero-latency configuration, reported {}",
+                    plugin.latency_samples()
+                ));
+            }
+            for block_size in [128, 512] {
+                let (_, onset, _) = measure_impulse_delays(plugin.as_mut(), block_size)?;
+                if onset > block_size {
+                    return Err(format!(
+                        "{plugin_type}: zero-latency configuration first responded after {onset} samples with block {block_size}"
+                    ));
+                }
+            }
+            Ok::<(), String>(())
+        })();
+        if let Err(error) = result {
+            failures.push(error);
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "zero-latency contract failures:\n{}",
         failures.join("\n")
     );
 }

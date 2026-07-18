@@ -39,6 +39,9 @@ pub struct PlayerView {
     pub(crate) grid_scroll_handle: ScrollHandle,
     /// Track if we've done initial focus (for macOS menu activation)
     pub(super) needs_initial_focus: bool,
+    /// Off-screen visual QA pins synthetic viewport dimensions in AppState;
+    /// do not replace them with the hidden platform window's default bounds.
+    pub(super) suppress_geometry_sync: bool,
     /// Frame counter for throttling updates (increments every 100ms)
     pub(super) update_frame_count: u64,
     /// Task for debounced window geometry saving. Only one task is in
@@ -266,6 +269,7 @@ impl PlayerView {
             last_saved_window_bounds: None,
             grid_scroll_handle: ScrollHandle::new(),
             needs_initial_focus: true,
+            suppress_geometry_sync: false,
             update_frame_count: 0,
             geometry_save_task: None,
             geometry_save_pending: false,
@@ -278,6 +282,15 @@ impl PlayerView {
             midi_input,
             midi_focused_plugin: None,
         }
+    }
+
+    /// Builds the real player view without activating an off-screen QA window.
+    #[cfg(feature = "visual-qa")]
+    pub fn new_for_visual_qa(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
+        let mut view = Self::new(state, cx);
+        view.needs_initial_focus = false;
+        view.suppress_geometry_sync = true;
+        view
     }
 
     /// Spawn a background task to compute library statistics
@@ -909,27 +922,57 @@ impl PlayerView {
         cx.notify();
     }
 
+    pub(super) fn previous_workflow_step(
+        &mut self,
+        _: &PreviousWorkflowStep,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _| {
+            state.app.move_workflow_step(false);
+        });
+        cx.notify();
+    }
+
+    pub(super) fn next_workflow_step(
+        &mut self,
+        _: &NextWorkflowStep,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _| {
+            state.app.move_workflow_step(true);
+        });
+        cx.notify();
+    }
+
     pub(super) fn remove_item(&mut self, _: &RemoveItem, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Block if in text input mode
             if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 return;
             }
-            if state.app.ui_state.current_screen == Screen::Queue {
-                let effect = state
-                    .app
-                    .remove_from_queue(state.app.queue_state.selected_index);
-                match effect {
-                    QueuePlaybackEffect::Reload(source) | QueuePlaybackEffect::Play(source) => {
-                        Self::play_track(state, source);
-                    }
-                    QueuePlaybackEffect::Stop => {
-                        if let Err(e) = state.player.stop() {
-                            log::warn!("[UI] Failed to stop player after queue removal: {}", e);
+            match state.app.ui_state.current_screen {
+                Screen::Queue => {
+                    let effect = state
+                        .app
+                        .remove_from_queue(state.app.queue_state.selected_index);
+                    match effect {
+                        QueuePlaybackEffect::Reload(source) | QueuePlaybackEffect::Play(source) => {
+                            Self::play_track(state, source);
                         }
+                        QueuePlaybackEffect::Stop => {
+                            if let Err(e) = state.player.stop() {
+                                log::warn!("[UI] Failed to stop player after queue removal: {}", e);
+                            }
+                        }
+                        QueuePlaybackEffect::None => {}
                     }
-                    QueuePlaybackEffect::None => {}
                 }
+                Screen::Studio => state
+                    .app
+                    .remove_plugin(state.app.plugin_state.selected_plugin_index),
+                _ => {}
             }
         });
         cx.notify();

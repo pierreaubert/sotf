@@ -1,12 +1,13 @@
 use super::configured::configured_output_device_from_env;
 use super::consts::MAX_HAL_CHANNELS;
-use super::misc::build_driver_plugin_chain;
 use super::misc::is_safe_output_device_name;
 use super::misc::sanitize_user_plugins;
+use super::misc::{build_driver_plugin_chain, build_driver_plugin_graph};
 use super::pipeline_spec::PipelineSpec;
 use super::types::AppliedPipeline;
 use super::types::PipelinePlan;
 use sotf_audio::PluginConfig;
+use sotf_audio::engine::PluginGraphConfig;
 
 #[derive(Debug, Default)]
 pub(super) struct PipelineSupervisor {
@@ -22,6 +23,10 @@ impl PipelineSupervisor {
 
     pub(super) fn user_plugins(&self) -> Vec<PluginConfig> {
         self.desired.user_plugins.clone()
+    }
+
+    pub(super) fn user_graph(&self) -> Option<PluginGraphConfig> {
+        self.desired.user_graph.clone()
     }
 
     pub(super) fn input_channels(&self) -> usize {
@@ -116,13 +121,42 @@ impl PipelineSupervisor {
             spec: PipelineSpec {
                 output_device,
                 user_plugins,
+                user_graph: None,
                 input_channels,
                 output_channels,
             },
             runtime_plugins,
+            runtime_graph: None,
             input_loudness_index,
             output_loudness_index,
         })
+    }
+
+    pub(super) fn prepare_graph_plan(
+        &self,
+        user_graph: PluginGraphConfig,
+        input_channels: usize,
+        output_channels: usize,
+        driver_input_fallback_channels: usize,
+    ) -> Result<PipelinePlan, String> {
+        let mut plan = self.prepare_plan(
+            Vec::new(),
+            input_channels,
+            output_channels,
+            driver_input_fallback_channels,
+        )?;
+        let (runtime_graph, input_loudness_index, output_loudness_index) =
+            build_driver_plugin_graph(
+                user_graph.clone(),
+                plan.spec.input_channels,
+                plan.spec.output_channels,
+            )?;
+        plan.spec.user_graph = Some(user_graph);
+        plan.runtime_plugins.clear();
+        plan.runtime_graph = Some(runtime_graph);
+        plan.input_loudness_index = input_loudness_index;
+        plan.output_loudness_index = output_loudness_index;
+        Ok(plan)
     }
 
     pub(super) fn prepare_with_selected_device(
@@ -136,12 +170,21 @@ impl PipelineSupervisor {
             applied: self.applied.clone(),
             generation: self.generation,
         };
-        supervisor.prepare_plan(
-            next.user_plugins,
-            next.input_channels,
-            next.output_channels,
-            next.input_channels,
-        )
+        if let Some(graph) = next.user_graph {
+            supervisor.prepare_graph_plan(
+                graph,
+                next.input_channels,
+                next.output_channels,
+                next.input_channels,
+            )
+        } else {
+            supervisor.prepare_plan(
+                next.user_plugins,
+                next.input_channels,
+                next.output_channels,
+                next.input_channels,
+            )
+        }
     }
 
     pub(super) fn commit_applied(&mut self, plan: &PipelinePlan) {

@@ -155,10 +155,12 @@ fn test_upmixer_real_audio_loopback() {
     );
 
     if buffer.is_empty() {
-        println!(
-            "WARNING: Captured 0 samples. Loopback might not be working or permission denied."
-        );
-        panic!("No audio captured from loopback device");
+        let callback_count = engine.get_state().playback_callback_count;
+        if callback_count == 0 {
+            eprintln!("Skipping upmixer loopback assertion: virtual output produced no callbacks");
+            return;
+        }
+        panic!("No audio captured despite {callback_count} output callbacks");
     }
 
     // Verify channel content

@@ -245,7 +245,7 @@ mod tests {
             assert!(store.contains("REVOKED"));
             assert!(store.remove("REVOKED").expect("remove"));
             assert!(!store.contains("REVOKED"));
-        }
+        };
 
         // Reload from disk and confirm the revocation persisted.
         let store = TrustedClientStore::load(tmp.path()).expect("reload");

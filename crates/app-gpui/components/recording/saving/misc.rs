@@ -379,12 +379,10 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
-        let status_message = state
-            .app
-            .measurement_state
-            .recording_state
-            .status_message
-            .clone();
+        let status_message =
+            crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language)
+                .translate(&state.app.measurement_state.recording_state.status_message)
+                .into_owned();
         let view = cx.entity().clone();
 
         let can_save = has_recordings && recording_dir.is_some();

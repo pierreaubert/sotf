@@ -861,6 +861,29 @@ fn test_learn_noise_resets_mcra() {
     );
 }
 
+#[test]
+fn test_clear_profile_trigger_clears_state_and_resets_value() {
+    let mut plugin = DenoiserPlugin::from_params(1, DenoiserPluginParams::default());
+    plugin.noise_profile.has_noise_profile = true;
+    plugin.noise_profile.use_captured_profile = true;
+    plugin.noise_profile.is_learning = true;
+
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("clear_profile"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+
+    assert!(!plugin.noise_profile.has_noise_profile);
+    assert!(!plugin.noise_profile.use_captured_profile);
+    assert!(!plugin.noise_profile.is_learning);
+    assert_eq!(
+        plugin.parametric_get_parameter(&ParameterId::from("clear_profile")),
+        Some(ParameterValue::Bool(false))
+    );
+}
+
 /// Issue #2: Harmonic/percussive mode must NOT pull a high Wiener gain DOWN to 0.5.
 ///
 /// Old formula: `gain * (1 - 0.5 * w) + w * 0.5`

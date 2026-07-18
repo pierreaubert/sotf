@@ -15,6 +15,9 @@ impl PlayerView {
     pub(crate) fn render_recording_probe_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let theme = state.app.ui_state.theme.clone();
         let rec = &state.app.measurement_state.recording_state;
         let pc = rec.probe_capture.clone();
@@ -45,13 +48,9 @@ impl PlayerView {
                             .size(TextSize::Md),
                     )
                     .child(
-                        Text::new(
-                            "Measures per-channel acoustic delay with a narrowband probe. \
-                             Results and the raw WAV are saved alongside the sweep \
-                             recordings so the Room EQ optimizer can use them automatically.",
-                        )
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
+                        Text::new(recording_text.probe_description)
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
                     )
                     .child(probe_number_row(
                         cx,
@@ -283,11 +282,9 @@ impl PlayerView {
                 .background(theme.surface)
                 .border(theme.border)
                 .content(
-                    Text::new(
-                        "No probe captured yet — run the probe to measure per-channel delays.",
-                    )
-                    .size(TextSize::Xs)
-                    .color(theme.text_secondary),
+                    Text::new(recording_text.no_probe_captured)
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
                 )
                 .into_any_element()
         };

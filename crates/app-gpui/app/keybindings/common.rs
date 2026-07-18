@@ -18,6 +18,20 @@ pub(super) fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("secondary-4", actions::SwitchToRoomEQ, None),
         KeyBinding::new("secondary-5", actions::SwitchToHeadphoneEQ, None),
         KeyBinding::new("secondary-6", actions::SwitchToSpinorama, None),
+        // Documented, preset-independent screen jumps.
+        KeyBinding::new("shift-l", actions::SwitchToLibrary, Some("PlayerView")),
+        KeyBinding::new("shift-q", actions::SwitchToQueue, Some("PlayerView")),
+        KeyBinding::new("shift-p", actions::SwitchToStudio, Some("PlayerView")),
+        KeyBinding::new("shift-o", actions::SwitchToDevices, Some("PlayerView")),
+        KeyBinding::new("shift-d", actions::SwitchToDirectories, Some("PlayerView")),
+        // Shared domain-wizard navigation. Keep this in PlayerView so focused
+        // text and number inputs retain their native Alt+Arrow behavior.
+        KeyBinding::new(
+            "alt-left",
+            actions::PreviousWorkflowStep,
+            Some("PlayerView"),
+        ),
+        KeyBinding::new("alt-right", actions::NextWorkflowStep, Some("PlayerView")),
         // Menu bar actions (platform convention) - keep global
         KeyBinding::new("secondary-,", actions::OpenConfig, None),
         KeyBinding::new("secondary-q", actions::QuitApp, None),
@@ -51,7 +65,13 @@ pub(super) fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("8", actions::SetFilterSurround, Some("PlayerView")),
         KeyBinding::new("9", actions::SetFilterSurround71, Some("PlayerView")),
         KeyBinding::new("0", actions::SetFilterSurroundPlus, Some("PlayerView")),
-        // === PluginRack keybindings ===
+    ]
+}
+
+/// Rack bindings are appended after preset bindings so the rack-specific
+/// meaning wins when `PlayerView` and `PluginRack` contexts are both active.
+pub(super) fn plugin_rack_bindings() -> Vec<KeyBinding> {
+    vec![
         // Quick add plugins (Shift+number keys)
         KeyBinding::new("!", actions::QuickAddEQ, Some("PluginRack")),
         KeyBinding::new("@", actions::QuickAddUpmixer, Some("PluginRack")),

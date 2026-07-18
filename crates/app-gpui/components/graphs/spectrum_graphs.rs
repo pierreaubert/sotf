@@ -90,7 +90,7 @@ pub fn render_spectrum_heatmap(
             .w(px(config.width))
             .h(px(config.height))
             .text_color(theme.error)
-            .child("Data dimension mismatch")
+            .child("!")
             .into_any_element();
     }
 

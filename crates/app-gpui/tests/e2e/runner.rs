@@ -3,7 +3,7 @@
 //! Orchestrates the execution of test scenarios, managing the test context,
 //! window creation, and result collection.
 
-use gpui::{TestAppContext, VisualTestContext, WindowHandle, prelude::*};
+use gpui::{Pixels, Size, TestAppContext, VisualTestContext, WindowHandle, prelude::*};
 use std::error::Error;
 
 /// Result of running an E2E test scenario.
@@ -60,6 +60,11 @@ impl TestResult {
 pub trait TestScenario {
     /// Human-readable name for this scenario.
     fn name(&self) -> &'static str;
+
+    /// Optional explicit viewport for layout-sensitive scenarios.
+    fn window_size(&self) -> Option<Size<Pixels>> {
+        None
+    }
 
     /// Set up the test environment before running.
     /// This is called before the window is created.
@@ -139,6 +144,9 @@ impl<S: TestScenario> E2ERunner<S> {
             PlayerView::new(app_state, cx)
         });
 
+        if let Some(window_size) = self.scenario.window_size() {
+            cx.simulate_window_resize(window.into(), window_size);
+        }
         let mut visual_cx = VisualTestContext::from_window(window.into(), cx);
 
         // Pump the loop to let the UI settle

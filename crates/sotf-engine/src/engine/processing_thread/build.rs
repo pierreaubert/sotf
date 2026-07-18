@@ -91,6 +91,25 @@ pub fn build_plugin_host_with_policy(
     Ok((host, warnings))
 }
 
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::build_plugin_graph_host;
+    use crate::engine::{PluginGraphConfig, PluginGraphNodeConfig};
+
+    #[test]
+    fn serialized_graph_bypass_reaches_plugin_host() {
+        let mut node = PluginGraphNodeConfig::try_new(7, "gain", serde_json::json!({}), 2).unwrap();
+        node.bypassed = true;
+        let graph = PluginGraphConfig::try_new(vec![node], vec![]).unwrap();
+
+        let (host, warnings) = build_plugin_graph_host(&graph, 48_000, 2).unwrap();
+
+        assert!(warnings.is_empty());
+        assert!(host.is_node_bypassed(0).unwrap());
+    }
+}
+
 /// Build a plugin host from a graph config (DAG topology).
 ///
 /// Unlike `build_plugin_host` which chains plugins linearly, this uses
@@ -135,6 +154,9 @@ pub fn build_plugin_graph_host_with_policy(
         ) {
             Ok(plugin) => {
                 let host_id = host.add_node(format!("node_{}", node_config.id), plugin)?;
+                if node_config.bypassed {
+                    host.bypass_node(host_id)?;
+                }
                 id_map.insert(node_config.id, host_id);
             }
             Err(e) => {

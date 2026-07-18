@@ -5,7 +5,7 @@
 use crate::driver::AppDriver;
 use crate::runner::{E2ERunner, TestScenario};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
-use sotf_audio_player_gpui::app::Screen;
+use sotf_audio_player_gpui::app::{InputMode, Screen};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
@@ -279,6 +279,179 @@ impl TestScenario for MultipleScreenNavigationScenario {
 }
 
 // =============================================================================
+// Pointer-free Graph Editing
+// =============================================================================
+
+struct KeyboardGraphEditingScenario;
+
+impl TestScenario for KeyboardGraphEditingScenario {
+    fn name(&self) -> &'static str {
+        "Keyboard Graph Editing"
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        window: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut driver = AppDriver::new(cx, window);
+        driver.navigate_to(Screen::PluginGraph);
+
+        driver.simulate_keystrokes("tab");
+        driver.run_until_parked();
+        let selection_count = driver.read_app(|app| {
+            app.plugin_state
+                .graph_state
+                .graph_selection
+                .selected_nodes
+                .len()
+        });
+        if selection_count != 1 {
+            return Err("Tab should select exactly one graph node".into());
+        }
+
+        let initial_plugins = driver.read_app(|app| app.plugin_state.graph.nodes.len());
+        driver.simulate_keystrokes("a");
+        driver.run_until_parked();
+        let source_id = driver
+            .read_app(|app| {
+                app.plugin_state
+                    .graph_state
+                    .graph_selection
+                    .selected_nodes
+                    .iter()
+                    .copied()
+                    .next()
+            })
+            .ok_or("A should select the plugin it adds")?;
+
+        driver.simulate_keystrokes("] a");
+        driver.run_until_parked();
+        let target_id = driver
+            .read_app(|app| {
+                app.plugin_state
+                    .graph_state
+                    .graph_selection
+                    .selected_nodes
+                    .iter()
+                    .copied()
+                    .next()
+            })
+            .ok_or("second keyboard add should select its plugin")?;
+        let added_plugins = driver.read_app(|app| app.plugin_state.graph.nodes.len());
+        if added_plugins != initial_plugins + 2 {
+            return Err("A should add the palette plugin without a pointer".into());
+        }
+
+        driver.update_app(|app, _cx| {
+            app.plugin_state
+                .graph_state
+                .graph_selection
+                .select_node(source_id, false);
+        });
+        driver.simulate_keystrokes("c");
+        driver.run_until_parked();
+        driver.update_app(|app, _cx| {
+            app.plugin_state
+                .graph_state
+                .graph_selection
+                .select_node(target_id, false);
+        });
+        let connections_before = driver.read_app(|app| app.plugin_state.graph.connections.len());
+        driver.simulate_keystrokes("c");
+        driver.run_until_parked();
+        let connections_after = driver.read_app(|app| app.plugin_state.graph.connections.len());
+        if connections_after != connections_before + 1 {
+            return Err("C should connect the armed source to the selected target".into());
+        }
+
+        driver.simulate_keystrokes("x");
+        driver.run_until_parked();
+        let disconnected = driver.read_app(|app| app.plugin_state.graph.connections.len());
+        if disconnected != connections_before {
+            return Err("X should disconnect the selected node".into());
+        }
+
+        driver.update_app(|app, _cx| {
+            app.plugin_state
+                .graph_state
+                .graph_selection
+                .select_node(source_id, false);
+        });
+        let x_before = driver.read_app(|app| {
+            app.plugin_state
+                .graph
+                .nodes
+                .get(&source_id)
+                .map(|node| node.position.x)
+        });
+        driver.simulate_keystrokes("right");
+        driver.run_until_parked();
+        let x_after = driver.read_app(|app| {
+            app.plugin_state
+                .graph
+                .nodes
+                .get(&source_id)
+                .map(|node| node.position.x)
+        });
+        if x_before
+            .zip(x_after)
+            .is_none_or(|(before, after)| after <= before)
+        {
+            return Err("Arrow keys should move the selected graph node".into());
+        }
+
+        let enabled_before = driver.read_app(|app| {
+            app.plugin_state
+                .graph
+                .nodes
+                .get(&source_id)
+                .map(|node| node.plugin.enabled)
+        });
+        driver.simulate_keystrokes("b");
+        driver.run_until_parked();
+        let enabled_after = driver.read_app(|app| {
+            app.plugin_state
+                .graph
+                .nodes
+                .get(&source_id)
+                .map(|node| node.plugin.enabled)
+        });
+        if enabled_before
+            .zip(enabled_after)
+            .is_none_or(|(before, after)| before == after)
+        {
+            return Err("B should toggle the selected plugin bypass".into());
+        }
+
+        driver.simulate_keystrokes("delete");
+        driver.run_until_parked();
+        if driver.read_app(|app| app.plugin_state.graph.nodes.contains_key(&source_id)) {
+            return Err("Delete should remove the selected plugin".into());
+        }
+
+        driver.update_app(|app, _cx| {
+            app.plugin_state
+                .graph_state
+                .graph_selection
+                .select_node(target_id, false);
+        });
+        driver.simulate_keystrokes("enter");
+        driver.run_until_parked();
+        let editing = driver.read_app(|app| {
+            app.ui_state.input_mode == InputMode::EditingPluginNode
+                && app.plugin_state.graph_state.editing_graph_node_uuid == Some(target_id)
+                && app.plugin_state.graph_state.editing_plugin_node.is_some()
+        });
+        if !editing {
+            return Err("Enter should open the selected plugin editor".into());
+        }
+
+        Ok(())
+    }
+}
+
+// =============================================================================
 // Test Registration
 // =============================================================================
 
@@ -350,6 +523,18 @@ async fn test_multiple_screen_navigation(cx: &mut TestAppContext) {
     assert!(
         result.is_ok(),
         "Multiple screen navigation test failed: {:?}",
+        result.err()
+    );
+}
+
+#[gpui::test]
+async fn test_keyboard_graph_editing(cx: &mut TestAppContext) {
+    let scenario = KeyboardGraphEditingScenario;
+    let runner = E2ERunner::new(scenario);
+    let result = runner.run(cx).await;
+    assert!(
+        result.is_ok(),
+        "Keyboard graph editing test failed: {:?}",
         result.err()
     );
 }

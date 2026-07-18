@@ -1,4 +1,5 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
+use crate::app::i18n::RoomEqReportTranslations;
 use crate::components::design::Ds;
 use gpui::prelude::*;
 use gpui::*;
@@ -67,6 +68,7 @@ pub(super) fn render_pipeline_step_strip(
 }
 
 pub(super) fn render_pipeline_phase_readout(
+    text: RoomEqReportTranslations,
     theme: &crate::app::theme::Theme,
     current_step: Option<sotf_audio_player::autoeq::PipelineStepId>,
     step_history: &std::collections::HashMap<
@@ -116,7 +118,7 @@ pub(super) fn render_pipeline_phase_readout(
             HStack::new()
                 .spacing(StackSpacing::Xs)
                 .child(
-                    Text::new("Current phase:")
+                    Text::new(text.current_phase)
                         .size(TextSize::Xs)
                         .color(theme.text_secondary),
                 )

@@ -36,6 +36,38 @@ pub(super) fn secure_socket_path_from_env(
     PathBuf::from(format!("/tmp/sotf-{}/daemon.sock", uid))
 }
 
+pub(super) fn daemon_session_key_path_from_env(
+    path_override: Option<OsString>,
+    runtime_dir: Option<OsString>,
+    home: Option<OsString>,
+) -> PathBuf {
+    if let Some(path) = non_empty_path(path_override) {
+        return path;
+    }
+    if let Some(path) = non_empty_path(runtime_dir) {
+        return path.join("daemon-session.key");
+    }
+
+    non_empty_path(home)
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join(".config/sotf/session.key")
+}
+
+pub(super) fn hal_session_key_path_from_env(
+    path_override: Option<OsString>,
+    runtime_dir: Option<OsString>,
+    uid: u32,
+) -> PathBuf {
+    if let Some(path) = non_empty_path(path_override) {
+        return path;
+    }
+    if let Some(path) = non_empty_path(runtime_dir) {
+        return path.join("session.key");
+    }
+
+    PathBuf::from(format!("/tmp/sotf-{uid}/session.key"))
+}
+
 /// Ensure the socket directory exists with secure permissions
 pub fn ensure_secure_socket_dir(socket_path: &Path) -> std::io::Result<()> {
     if let Some(parent) = socket_path.parent()

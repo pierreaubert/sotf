@@ -17,6 +17,7 @@ use super::consts::x_to_freq;
 use super::consts::y_to_level;
 use super::target_control_point_drag::TargetControlPointDrag;
 use crate::app::AppState;
+use crate::app::i18n::RoomEqReportTranslations;
 use crate::app::types::{CustomTargetCurve, TargetCurveControlPoint};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -112,6 +113,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let report_text = RoomEqReportTranslations::for_language(state.app.ui_state.language);
         let is_open = state
             .app
             .measurement_state
@@ -274,6 +276,7 @@ impl PlayerView {
                     .child(render_target_curve_graph(
                         state_entity.clone(),
                         &custom_curve,
+                        report_text,
                         &theme,
                     ))
                     .child(
@@ -375,6 +378,7 @@ fn render_preset_option(
 fn render_target_curve_graph(
     entity: Entity<AppState>,
     curve: &CustomTargetCurve,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> impl IntoElement {
     let plot_width = calculate_plot_width();
@@ -405,7 +409,7 @@ fn render_target_curve_graph(
         .size(CHART_WIDTH, CHART_HEIGHT)
         .color(0x3b82f6) // Blue
         .stroke_width(2.5)
-        .label("Target Curve")
+        .label(text.target_curve)
         .theme(chart_theme);
 
     let chart_element = match chart_builder.build() {
@@ -418,7 +422,7 @@ fn render_target_curve_graph(
             .justify_center()
             .bg(theme.plugin_palette.eq_curve_colors.background)
             .text_color(theme.text_secondary)
-            .child("Unable to render chart")
+            .child(text.chart_unavailable)
             .into_any_element(),
     };
 

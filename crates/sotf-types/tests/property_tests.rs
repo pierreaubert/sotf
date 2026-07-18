@@ -28,6 +28,7 @@ fn plugin_graph_node_strategy(id: usize) -> impl Strategy<Value = PluginGraphNod
                 plugin_type,
                 parameters: json!({}),
                 input_channels,
+                bypassed: false,
             },
         )
 }

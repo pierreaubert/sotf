@@ -7,11 +7,11 @@
         VStack::new()
             .spacing(StackSpacing::None)
             .child(
-                Text::section_header("Multiple Measurements Per Speaker")
+                Text::section_header(translations.autoeq_multi_measurement)
                     .color(theme.header_color),
             )
             .child(
-                Text::new("Strategy for combining multiple measurement positions")
+                Text::new(translations.autoeq_strategy_multiple)
                     .size(TextSize::Xs)
                     .color(theme.description_color),
             ),
@@ -31,7 +31,11 @@
     section = section.child(
         HStack::new()
             .justify(StackJustify::SpaceBetween)
-            .child(Text::new("Enable Multi-Measurement").size(TextSize::Xs).color(theme.label_color))
+                .child(
+                    Text::new(translations.autoeq_enable_multi_measurement)
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
             .child(mm_toggle),
     );
 
@@ -43,7 +47,7 @@
             .collect();
 
         let mut strategy_select = Select::new((base_id.clone(), "mm-strategy"))
-            .label("Strategy")
+            .label(translations.autoeq_form.strategy)
             .options(strategy_options)
             .selected(&config.system_optimization.multi_measurement_strategy)
             .is_open(ui_state.multi_measurement_strategy_open)
@@ -70,7 +74,7 @@
                 .max(ParamLimits::VARIANCE_LAMBDA.max)
                 .step(ParamLimits::VARIANCE_LAMBDA.step)
                 .decimals(1)
-                .label("Variance Lambda")
+                .label(translations.autoeq_form.parameters.variance_lambda)
                 .size(NumberInputSize::Sm)
                 .disabled(disabled)
                 .theme(theme.number_input_theme.clone());
@@ -86,7 +90,8 @@
         // Per-measurement weights (for weighted_sum strategy)
         if config.system_optimization.multi_measurement_strategy == "weighted_sum" && !config.system_optimization.multi_measurement_weights.is_empty() {
             section = section.child(
-                Text::label("Measurement Weights").color(theme.header_color),
+            Text::label(translations.autoeq_form.per_measurement_weights)
+                .color(theme.header_color),
             );
 
             for (i, weight) in config.system_optimization.multi_measurement_weights.iter().enumerate() {

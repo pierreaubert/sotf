@@ -45,7 +45,10 @@ pub(super) mod encryption_impl {
 
         pub fn force_rotate(&mut self) -> std::io::Result<()> {
             log::warn!("Encryption not available on this platform");
-            Ok(())
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "encryption key rotation requires the macOS HAL-enabled daemon build",
+            ))
         }
 
         #[allow(dead_code)]

@@ -29,13 +29,17 @@ pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
         })
         .split(area);
 
-    let help_text = match state.mode {
-        FederationMode::List => {
-            " a=Add  e/Enter=Edit  d=Delete  t=Test+Scan  s=Scan  Space=Toggle  Esc=Back"
+    let help_text = crate::tui_text!(
+        app,
+        match state.mode {
+            FederationMode::List => {
+                " a=Add  e/Enter=Edit  d=Delete  t=Test+Scan  s=Scan  Space=Toggle  Esc=Back"
+            }
+            FederationMode::EditSource =>
+                " Up/Down=Navigate  Enter=Edit field  s/Tab=Save  Esc=Cancel",
+            FederationMode::AddSource => " Up/Down=Select type  Enter=Confirm  Esc=Cancel",
         }
-        FederationMode::EditSource => " Up/Down=Navigate  Enter=Edit field  s/Tab=Save  Esc=Cancel",
-        FederationMode::AddSource => " Up/Down=Select type  Enter=Confirm  Esc=Cancel",
-    };
+    );
     let help = Paragraph::new(help_text).style(Style::default().fg(app.theme.fg_secondary));
     f.render_widget(help, chunks[0]);
 
@@ -55,24 +59,27 @@ fn draw_source_list(f: &mut Frame, area: Rect, app: &App) {
     let state = &app.federation.state;
 
     if state.sources.is_empty() {
-        let text = Paragraph::new(" No sources configured. Press 'a' to add one.")
-            .style(Style::default().fg(app.theme.fg_secondary))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Library Sources "),
-            );
+        let text = Paragraph::new(crate::tui_text!(
+            app,
+            " No sources configured. Press 'a' to add one."
+        ))
+        .style(Style::default().fg(app.theme.fg_secondary))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(crate::tui_text!(app, " Library Sources ")),
+        );
         f.render_widget(text, area);
         return;
     }
 
     let header = Row::new(vec![
         Cell::from(" "),
-        Cell::from("Name"),
-        Cell::from("Type"),
-        Cell::from("Priority"),
-        Cell::from("Status"),
-        Cell::from("Enabled"),
+        Cell::from(crate::tui_text!(app, "Name")),
+        Cell::from(crate::tui_text!(app, "Type")),
+        Cell::from(crate::tui_text!(app, "Priority")),
+        Cell::from(crate::tui_text!(app, "Status")),
+        Cell::from(crate::tui_text!(app, "Enabled")),
     ])
     .style(
         Style::default()
@@ -86,17 +93,22 @@ fn draw_source_list(f: &mut Frame, area: Rect, app: &App) {
         .enumerate()
         .map(|(i, source)| {
             let is_selected = i == state.selected_idx;
-            let status = state
+            let status_source = state
                 .statuses
                 .get(&source.source_id)
                 .map_or("untested", |s| s.label());
-            let status_style = match status {
+            let status_style = match status_source {
                 "connected" => Style::default().fg(app.theme.accent_success),
                 "error" => Style::default().fg(app.theme.accent_error),
                 "testing..." => Style::default().fg(app.theme.accent_warning),
                 _ => Style::default().fg(app.theme.fg_secondary),
             };
-            let enabled_str = if source.is_enabled { "yes" } else { "no" };
+            let status = crate::tui_text!(app, status_source);
+            let enabled_str = if source.is_enabled {
+                crate::tui_text!(app, "yes")
+            } else {
+                crate::tui_text!(app, "no")
+            };
 
             let style = if is_selected {
                 Style::default()
@@ -110,7 +122,7 @@ fn draw_source_list(f: &mut Frame, area: Rect, app: &App) {
             Row::new(vec![
                 Cell::from(if is_selected { ">" } else { " " }),
                 Cell::from(source.display_name.as_str()),
-                Cell::from(source.connection.type_name()),
+                Cell::from(crate::tui_text!(app, source.connection.type_name())),
                 Cell::from(format!("{}", source.priority)),
                 Cell::from(Span::styled(
                     status,
@@ -137,7 +149,10 @@ fn draw_source_list(f: &mut Frame, area: Rect, app: &App) {
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!(" Library Sources ({}) ", state.sources.len())),
+            .title(crate::tui_text!(
+                app,
+                format!(" Library Sources ({}) ", state.sources.len())
+            )),
     );
 
     f.render_widget(table, area);
@@ -150,9 +165,12 @@ fn draw_edit_form(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let title = if edit.is_new {
-        format!(" New {} Source ", edit.source.connection.type_name())
+        crate::tui_text!(
+            app,
+            format!(" New {} Source ", edit.source.connection.type_name())
+        )
     } else {
-        format!(" Edit: {} ", edit.source.display_name)
+        crate::tui_text!(app, format!(" Edit: {} ", edit.source.display_name))
     };
 
     let mut lines: Vec<Line> = Vec::new();
@@ -160,11 +178,12 @@ fn draw_edit_form(f: &mut Frame, area: Rect, app: &App) {
         let is_selected = i == edit.selected_field;
         let is_editing = is_selected && edit.editing_value;
 
-        let label = edit.field_label(i);
+        let label = crate::tui_text!(app, edit.field_label(i));
         let value = if is_editing {
             format!("{}|", edit.edit_buffer)
         } else {
-            edit.field_value(i)
+            crate::i18n::TuiTranslations::for_language(app.ui.language)
+                .dynamic_or_verbatim(&edit.field_value(i))
         };
 
         let style = if is_editing {
@@ -216,7 +235,10 @@ fn draw_add_source(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 Style::default().fg(app.theme.fg_primary)
             };
-            ListItem::new(Line::from(Span::styled(format!("  {label}"), style)))
+            ListItem::new(Line::from(Span::styled(
+                format!("  {}", crate::tui_text!(app, *label)),
+                style,
+            )))
         })
         .collect();
 
@@ -227,7 +249,7 @@ fn draw_add_source(f: &mut Frame, area: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Select source type "),
+                .title(crate::tui_text!(app, " Select source type ")),
         )
         .highlight_style(
             Style::default()
@@ -253,7 +275,10 @@ fn draw_diagnostic_panel(f: &mut Frame, area: Rect, app: &App) {
 
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(Span::styled(
-        format!("  Connection diagnostic: {}:{}", diag.host, diag.port),
+        crate::tui_text!(
+            app,
+            format!("  Connection diagnostic: {}:{}", diag.host, diag.port)
+        ),
         Style::default()
             .fg(app.theme.fg_secondary)
             .add_modifier(Modifier::BOLD),
@@ -281,7 +306,7 @@ fn draw_diagnostic_panel(f: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(" Diagnostic ");
+        .title(crate::tui_text!(app, " Diagnostic "));
     let para = Paragraph::new(lines).block(block);
     f.render_widget(para, area);
 }

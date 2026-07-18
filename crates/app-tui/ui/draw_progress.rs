@@ -24,7 +24,7 @@ pub(crate) fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title("Scanning Library");
+        .title(crate::tui_text!(app, "Scanning Library"));
 
     f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
@@ -40,12 +40,12 @@ pub(crate) fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
     let lines = vec![
         Line::from(""),
         Line::from(vec![Span::styled(
-            "Scanning directories for audio files...",
+            crate::tui_text!(app, "Scanning directories for audio files..."),
             Style::default().fg(app.theme.title_color),
         )]),
         Line::from(""),
         Line::from(vec![
-            Span::raw("Tracks found: "),
+            Span::raw(crate::tui_text!(app, "Tracks found: ")),
             Span::styled(
                 format!("{}", app.scan.progress_tracks),
                 Style::default()
@@ -54,7 +54,7 @@ pub(crate) fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
             ),
         ]),
         Line::from(vec![
-            Span::raw("Albums found: "),
+            Span::raw(crate::tui_text!(app, "Albums found: ")),
             Span::styled(
                 format!("{}", app.scan.progress_albums),
                 Style::default()
@@ -64,7 +64,7 @@ pub(crate) fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
-            "Please wait...",
+            crate::tui_text!(app, "Please wait..."),
             Style::default()
                 .fg(app.theme.fg_secondary)
                 .add_modifier(Modifier::ITALIC),
@@ -103,7 +103,7 @@ pub(crate) fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title("Database Maintenance");
+        .title(crate::tui_text!(app, "Database Maintenance"));
 
     f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
@@ -126,12 +126,12 @@ pub(crate) fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
     let lines = vec![
         Line::from(""),
         Line::from(vec![Span::styled(
-            "Checking database for missing files...",
+            crate::tui_text!(app, "Checking database for missing files..."),
             Style::default().fg(app.theme.title_color),
         )]),
         Line::from(""),
         Line::from(vec![
-            Span::raw("Progress: "),
+            Span::raw(crate::tui_text!(app, "Progress: ")),
             Span::styled(
                 format!(
                     "{} / {} ({}%)",
@@ -146,7 +146,7 @@ pub(crate) fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
-            "Please wait...",
+            crate::tui_text!(app, "Please wait..."),
             Style::default()
                 .fg(app.theme.fg_secondary)
                 .add_modifier(Modifier::ITALIC),
@@ -185,7 +185,7 @@ pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title("ReplayGain Analysis");
+        .title(crate::tui_text!(app, "ReplayGain Analysis"));
 
     f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
@@ -208,12 +208,12 @@ pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
     let lines = vec![
         Line::from(""),
         Line::from(vec![Span::styled(
-            "Analyzing tracks for ReplayGain...",
+            crate::tui_text!(app, "Analyzing tracks for ReplayGain..."),
             Style::default().fg(app.theme.title_color),
         )]),
         Line::from(""),
         Line::from(vec![
-            Span::raw("Progress: "),
+            Span::raw(crate::tui_text!(app, "Progress: ")),
             Span::styled(
                 format!(
                     "{} / {} ({}%)",
@@ -228,14 +228,14 @@ pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::raw("Succeeded: "),
+            Span::raw(crate::tui_text!(app, "Succeeded: ")),
             Span::styled(
                 format!("{}", app.scan.replay_gain_manager.succeeded),
                 Style::default()
                     .fg(app.theme.accent_success)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::raw("  Failed: "),
+            Span::raw(crate::tui_text!(app, "  Failed: ")),
             Span::styled(
                 format!("{}", app.scan.replay_gain_manager.failed),
                 Style::default()
@@ -245,7 +245,7 @@ pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
-            "Please wait...",
+            crate::tui_text!(app, "Please wait..."),
             Style::default()
                 .fg(app.theme.fg_secondary)
                 .add_modifier(Modifier::ITALIC),

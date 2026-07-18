@@ -53,6 +53,15 @@ impl PlayerView {
         self.switch_screen_with_trigger(Screen::PluginGraph, "SwitchToPluginGraph", cx);
     }
 
+    fn switch_to_listening_test(
+        &mut self,
+        _: &SwitchToListeningTest,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.switch_screen_with_trigger(Screen::ListeningTest, "SwitchToListeningTest", cx);
+    }
+
     fn switch_to_spinorama(
         &mut self,
         _: &SwitchToSpinorama,
@@ -66,6 +75,21 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             state.app.set_screen(Screen::Settings, "SwitchToDevices");
             state.app.ui_state.active_settings_tab = crate::app::SettingsTab::AudioDevice;
+        });
+        cx.notify();
+    }
+
+    fn switch_to_directories(
+        &mut self,
+        _: &SwitchToDirectories,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state
+                .app
+                .set_screen(Screen::Settings, "SwitchToDirectories");
+            state.app.ui_state.active_settings_tab = crate::app::SettingsTab::Library;
         });
         cx.notify();
     }
@@ -96,12 +120,7 @@ impl PlayerView {
         self.switch_screen_with_trigger(Screen::HeadphoneEq, "SwitchToHeadphoneEQ", cx);
     }
 
-    fn switch_to_spectrum(
-        &mut self,
-        _: &SwitchToSpectrum,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn switch_to_spectrum(&mut self, _: &SwitchToSpectrum, _: &mut Window, cx: &mut Context<Self>) {
         self.switch_screen_with_trigger(Screen::Spectrum, "SwitchToSpectrum", cx);
     }
 }

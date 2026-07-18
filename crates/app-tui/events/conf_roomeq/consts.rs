@@ -1,5 +1,7 @@
 use crate::app::App;
-use sotf_audio_player::room_eq_types::{OptimizationStatus, ctc_system_config_for_speaker_names};
+use sotf_audio_player::room_eq_types::{
+    OptimizationStatus, RoomEqWizardMode, apply_room_eq_easy_layout,
+};
 use std::sync::{Arc, Mutex};
 
 /// Total number of adjustable fields in the Room EQ configure step
@@ -14,12 +16,43 @@ pub(super) static ROOM_OPT_PROGRESS: std::sync::OnceLock<
     Arc<Mutex<Option<sotf_audio_player::autoeq::RoomOptimizationProgress>>>,
 > = std::sync::OnceLock::new();
 
-pub(super) fn spawn_room_eq_optimization(app: &mut App) {
+fn prepare_room_eq_config(app: &mut App) -> Result<autoeq::roomeq::RoomConfig, String> {
     if app.room_eq.model.channel_measurements.is_empty() {
-        app.room_eq.model.optimization_status = OptimizationStatus::Failed;
-        app.room_eq.model.error_message = Some("No measurements loaded".to_string());
-        return;
+        return Err("No measurements loaded".to_string());
     }
+
+    if app.room_eq.model.wizard_mode == RoomEqWizardMode::Simple {
+        let channel_names = app
+            .room_eq
+            .model
+            .channel_measurements
+            .iter()
+            .map(|measurement| measurement.channel_name.clone())
+            .collect::<Vec<_>>();
+        let mut preset = app.room_eq.model.simple_preset.clone();
+        if let Err(error) = apply_room_eq_easy_layout(
+            app.room_eq.easy_layout,
+            &channel_names,
+            &mut preset,
+            &mut app.room_eq.model.optimizer_config,
+        ) {
+            return Err(error.to_string());
+        }
+        app.room_eq.model.simple_preset = preset;
+    }
+
+    Ok(app.room_eq.model.to_room_config())
+}
+
+pub(super) fn spawn_room_eq_optimization(app: &mut App) {
+    let room_config = match prepare_room_eq_config(app) {
+        Ok(config) => config,
+        Err(error) => {
+            app.room_eq.model.optimization_status = OptimizationStatus::Failed;
+            app.room_eq.model.error_message = Some(error);
+            return;
+        }
+    };
 
     app.room_eq.model.optimization_status = OptimizationStatus::Running;
     app.room_eq.model.error_message = None;
@@ -39,14 +72,10 @@ pub(super) fn spawn_room_eq_optimization(app: &mut App) {
     app.room_eq.opt_log_scroll = 0;
 
     // Build curves from loaded measurements
-    let measurements = app.room_eq.model.channel_measurements.clone();
-    let config = app.room_eq.model.optimizer_config.clone();
     // Probe-based arrival times from the Delay Detection step (None if the
     // user skipped that step; in that case the optimizer falls back to
     // WAV-onset detection for each channel).
     let probe_arrivals = app.room_eq.model.delay_detection.probe_arrival_map();
-    let ctc_config = app.room_eq.model.ctc_config.clone();
-    let ctc_measurements = app.room_eq.model.ctc_measurements.clone();
 
     let result_slot = ROOM_OPT_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
@@ -64,66 +93,9 @@ pub(super) fn spawn_room_eq_optimization(app: &mut App) {
     }
 
     std::thread::spawn(move || {
-        use autoeq::MeasurementSource;
-        use autoeq::roomeq::{CallbackAction, RoomConfig, SpeakerConfig};
+        use autoeq::roomeq::CallbackAction;
         use sotf_audio_player::autoeq::{
             run_room_optimization, run_room_optimization_with_probe_arrivals,
-        };
-
-        // Convert measurements to speaker configs. Multi-mic / multi-
-        // position takes ride along as `InMemoryMultiple` so the
-        // optimizer averages every position into one EQ chain per
-        // channel; single-take channels stay on `InMemory`.
-        let curve_from_result =
-            |result: &sotf_audio_player::recording_types::RecordingResult| -> autoeq::Curve {
-                let freq: Vec<f64> = result.frequencies.iter().map(|&f| f as f64).collect();
-                let spl: Vec<f64> = result.magnitude_db.iter().map(|&db| db as f64).collect();
-                autoeq::Curve {
-                    freq: ndarray::Array1::from(freq),
-                    spl: ndarray::Array1::from(spl),
-                    phase: None,
-                    ..Default::default()
-                }
-            };
-
-        let mut speakers = std::collections::HashMap::new();
-        for m in &measurements {
-            let primary_curve = curve_from_result(&m.measurement);
-            let source = if m.multi_mic_measurements.is_empty() {
-                MeasurementSource::InMemory(primary_curve)
-            } else {
-                let mut curves = Vec::with_capacity(m.multi_mic_measurements.len() + 1);
-                curves.push(primary_curve);
-                curves.extend(m.multi_mic_measurements.iter().map(curve_from_result));
-                MeasurementSource::InMemoryMultiple(curves)
-            };
-            speakers.insert(m.channel_name.clone(), SpeakerConfig::Single(source));
-        }
-
-        let optimizer = config.to_optimizer_config();
-
-        let ctc = ctc_config.or_else(|| {
-            ctc_measurements.map(|measurements| autoeq::roomeq::CtcConfig {
-                enabled: true,
-                matrix_source: "measured".to_string(),
-                measurements: Some(measurements),
-                ..Default::default()
-            })
-        });
-        let system = ctc.as_ref().filter(|ctc| ctc.enabled).and_then(|_| {
-            ctc_system_config_for_speaker_names(speakers.keys().map(String::as_str), None)
-        });
-
-        let room_config = RoomConfig {
-            version: autoeq::roomeq::default_config_version(),
-            system,
-            speakers,
-            crossovers: None,
-            target_curve: None,
-            optimizer,
-            recording_config: None,
-            ctc,
-            cea2034_cache: None,
         };
 
         let progress_slot2 = progress_slot.clone();
@@ -148,4 +120,83 @@ pub(super) fn spawn_room_eq_optimization(app: &mut App) {
             *guard = Some(result);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prepare_room_eq_config;
+    use crate::events::tests::make_app;
+    use sotf_audio_player::recording_types::RecordingResult;
+    use sotf_audio_player::room_eq_types::{
+        ChannelMeasurement, RoomEqEasyLayout, RoomEqWizardMode,
+    };
+
+    fn measurement(channel: usize, name: &str) -> ChannelMeasurement {
+        ChannelMeasurement {
+            channel_name: name.to_string(),
+            measurement: RecordingResult {
+                channel,
+                wav_path: None,
+                csv_path: None,
+                frequencies: vec![20.0, 1_000.0, 20_000.0],
+                magnitude_db: vec![0.0; 3],
+                phase_deg: vec![0.0; 3],
+                impulse_response: None,
+                impulse_time_ms: None,
+                thd_percent: None,
+                harmonic_distortion_db: None,
+                excess_group_delay_ms: None,
+                rt60_ms: None,
+                clarity_c50_db: None,
+                clarity_c80_db: None,
+                spectrogram_db: None,
+            },
+            is_group: false,
+            group_drivers: Vec::new(),
+            multi_mic_measurements: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn beginner_layout_is_validated_before_tui_optimization() {
+        let mut app = make_app();
+        app.room_eq.model.wizard_mode = RoomEqWizardMode::Simple;
+        app.room_eq.easy_layout = RoomEqEasyLayout::Stereo21;
+        app.room_eq.model.channel_measurements = vec![measurement(0, "L")];
+
+        let error = prepare_room_eq_config(&mut app).unwrap_err();
+        assert!(error.contains("missing"));
+        assert!(app.room_eq.model.simple_preset.bass_management.is_empty());
+    }
+
+    #[test]
+    fn tui_beginner_stereo_21_uses_shared_bass_managed_room_config() {
+        let mut app = make_app();
+        app.room_eq.model.wizard_mode = RoomEqWizardMode::Simple;
+        app.room_eq.easy_layout = RoomEqEasyLayout::Stereo21;
+        app.room_eq.model.channel_measurements = vec![
+            measurement(0, "L"),
+            measurement(1, "R"),
+            measurement(2, "LFE"),
+        ];
+        app.room_eq.model.init_speaker_configs();
+
+        let config = prepare_room_eq_config(&mut app).unwrap();
+
+        assert_eq!(app.room_eq.model.simple_preset.bass_management, "Standard");
+        assert!(config.optimizer.schroeder_split.is_some());
+        assert!(
+            config
+                .crossovers
+                .as_ref()
+                .is_some_and(|crossovers| crossovers.contains_key("bass_management"))
+        );
+        assert!(
+            config
+                .system
+                .as_ref()
+                .and_then(|system| system.subwoofers.as_ref())
+                .is_some()
+        );
+    }
 }

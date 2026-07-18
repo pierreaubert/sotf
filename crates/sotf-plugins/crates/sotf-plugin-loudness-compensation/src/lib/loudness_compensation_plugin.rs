@@ -14,6 +14,7 @@ use crate::params::PARAMS as LC;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
+use sotf_host::param_bridge::apply_spec_update_modes;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
@@ -241,6 +242,7 @@ impl LoudnessCompensationPlugin {
             .with_description("Engine playback volume (dB, set automatically)")
             .with_group("Auto"),
         ];
+        apply_spec_update_modes(&mut self.cached_parameters, LC);
     }
 
     /// Expected filter count per channel for manual mode: 2x lowshelf + 1x mid peak + 2x highshelf = 5

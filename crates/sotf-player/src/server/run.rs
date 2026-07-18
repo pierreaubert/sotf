@@ -312,7 +312,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
 
                 let discovery_config = config.api.clone();
                 let discovery_ip = get_local_ipv4();
-            let pairing_enabled = state.pairing_window_valid();
+                let pairing_enabled = state.pairing_window_valid();
                 eprintln!(
                     "SOTF API discovery advertising _sotf._tcp for {}:{}",
                     discovery_ip, discovery_config.port

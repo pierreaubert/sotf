@@ -1,3 +1,4 @@
+use crate::app::i18n::HeadphoneGraphTranslations;
 use crate::components::design::Ds;
 use crate::components::graphs::common::{colors, rgba_to_u32, theme_to_chart_theme};
 use crate::theme::Theme;
@@ -12,6 +13,7 @@ impl PlayerView {
         &self,
         d: &Ds,
         result: &crate::app::types::HeadphoneEqResult,
+        text: HeadphoneGraphTranslations,
         theme: &Theme,
         available_width: f32,
     ) -> impl IntoElement {
@@ -30,23 +32,32 @@ impl PlayerView {
             .gap(d.section_xl)
             .child(render_response_comparison_plot(
                 result,
+                text,
                 theme,
                 graph_width,
                 graph_height,
             ))
             .child(render_filter_response_plot(
                 result,
+                text,
                 theme,
                 graph_width,
                 graph_height,
             ))
             .child(render_filter_vs_deviation_plot(
                 result,
+                text,
                 theme,
                 graph_width,
                 graph_height,
             ))
-            .child(render_error_plot(result, theme, graph_width, graph_height))
+            .child(render_error_plot(
+                result,
+                text,
+                theme,
+                graph_width,
+                graph_height,
+            ))
     }
 }
 
@@ -62,6 +73,7 @@ fn unzip_response(data: Option<&Vec<(f64, f64)>>) -> (Vec<f64>, Vec<f64>) {
 /// Render Plot 1: Individual IIR filters and combined response using gpui-px
 fn render_filter_response_plot(
     result: &crate::app::types::HeadphoneEqResult,
+    text: HeadphoneGraphTranslations,
     theme: &Theme,
     width: f32,
     height: f32,
@@ -74,8 +86,8 @@ fn render_filter_response_plot(
         .x_scale(ScaleType::Log)
         .y_label("Amplitude (dB SPL)")
         .y_range(-10.0, 10.0)
-        .title("Filter Response")
-        .label("Sum")
+        .title(text.filter_response)
+        .label(text.sum)
         .stroke_width(2.0)
         .theme(chart_theme)
         .size(width, height);
@@ -108,6 +120,7 @@ fn render_filter_response_plot(
 /// Render Plot 2: Filter response vs deviation from target using gpui-px
 fn render_filter_vs_deviation_plot(
     result: &crate::app::types::HeadphoneEqResult,
+    text: HeadphoneGraphTranslations,
     theme: &Theme,
     width: f32,
     height: f32,
@@ -121,8 +134,8 @@ fn render_filter_vs_deviation_plot(
         .x_label("Frequency (Hz)")
         .y_label("Amplitude (dB SPL)")
         .y_range(-10.0, 10.0)
-        .label("Deviation")
-        .title("Filter Response v.s. Deviation")
+        .label(text.deviation)
+        .title(text.filter_vs_deviation)
         .stroke_width(2.0)
         .theme(chart_theme)
         .size(width, height)
@@ -145,6 +158,7 @@ fn render_filter_vs_deviation_plot(
 /// Render Plot 3: Error curve (deviation - filter) using gpui-px
 fn render_error_plot(
     result: &crate::app::types::HeadphoneEqResult,
+    text: HeadphoneGraphTranslations,
     theme: &Theme,
     width: f32,
     height: f32,
@@ -167,8 +181,8 @@ fn render_error_plot(
         .y_range(-2.0, 2.0)
         .x_label("Frequency (Hz)")
         .y_label("Amplitude (dB SPL)")
-        .title("Error details")
-        .label("Error")
+        .title(text.error_details)
+        .label(text.error)
         .color(error_color)
         .stroke_width(2.0)
         .theme(chart_theme)
@@ -189,6 +203,7 @@ fn render_error_plot(
 /// Render Plot 4: Response comparison (input, corrected, target) using gpui-px
 fn render_response_comparison_plot(
     result: &crate::app::types::HeadphoneEqResult,
+    text: HeadphoneGraphTranslations,
     theme: &Theme,
     width: f32,
     height: f32,
@@ -199,8 +214,8 @@ fn render_response_comparison_plot(
     let (_, corrected) = unzip_response(result.corrected_response.as_ref());
     let chart = line(&freqs, &original)
         .x_scale(ScaleType::Log)
-        .title("Original v.s. Corrected v.s. Target")
-        .label("Original")
+        .title(text.original_corrected_target)
+        .label(text.original)
         .stroke_width(1.5)
         .theme(chart_theme)
         .size(width, height)

@@ -215,6 +215,9 @@ pub(super) fn render_spectrum(
 ) -> AnyElement {
     use super::super::ui_spectrum;
     let d = Ds::from_cx(cx);
+    let text = crate::app::i18n::SpectrumTranslations::for_language(
+        ctx.entity.read(cx).app.ui_state.language,
+    );
     if let PluginSettings::SpectrumAnalyzer {
         num_bins,
         min_freq,
@@ -241,6 +244,7 @@ pub(super) fn render_spectrum(
                 selected_param: ctx.selected_param,
                 data: ctx.plugin_data.as_ref().and_then(|d| d.downcast_ref()),
             },
+            text,
             ctx.theme,
         )
         .into_any_element()
@@ -340,6 +344,9 @@ pub(super) fn render_upmixer(
             )
         };
         let d = Ds::from_cx(cx);
+        let text = crate::app::i18n::PluginCommonTranslations::for_language(
+            ctx.entity.read(cx).app.ui_state.language,
+        );
         super::super::render_upmixer_plugin(
             &d,
             ctx.entity.clone(),
@@ -400,6 +407,7 @@ pub(super) fn render_upmixer(
                 spatial_spider,
             },
             ctx.available_width,
+            text,
             ctx.theme,
             ctx.plugin_theme,
         )
@@ -435,6 +443,9 @@ pub(super) fn render_mute_solo(
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,
             },
+            crate::app::i18n::PluginCommonTranslations::for_language(
+                ctx.entity.read(cx).app.ui_state.language,
+            ),
             ctx.theme,
         )
         .into_any_element()
@@ -484,11 +495,15 @@ pub(super) fn render_loudness(
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
     let d = Ds::from_cx(cx);
+    let text = crate::app::i18n::LevelMeterTranslations::for_language(
+        ctx.entity.read(cx).app.ui_state.language,
+    );
     super::super::render_loudness_monitor_plugin(
         &d,
         ctx.loudness.clone(),
         ctx.plugin_idx,
         ctx.is_editing,
+        text,
         ctx.theme,
     )
     .into_any_element()
@@ -499,6 +514,9 @@ pub(super) fn render_mb_compressor(
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
     let d = Ds::from_cx(cx);
+    let text = crate::app::i18n::PluginCommonTranslations::for_language(
+        ctx.entity.read(cx).app.ui_state.language,
+    );
     use super::super::ui_mb_compressor;
     if let PluginSettings::MultibandCompressor {
         num_bands,
@@ -581,6 +599,7 @@ pub(super) fn render_mb_compressor(
                 selected_param: ctx.selected_param,
                 selected_band_idx,
             },
+            text,
             ctx.theme,
         )
         .into_any_element()
@@ -594,6 +613,9 @@ pub(super) fn render_mb_expander(
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
     let d = Ds::from_cx(cx);
+    let text = crate::app::i18n::PluginCommonTranslations::for_language(
+        ctx.entity.read(cx).app.ui_state.language,
+    );
     use super::super::ui_mb_expander;
     if let PluginSettings::MultibandExpander {
         num_bands,
@@ -681,6 +703,8 @@ pub(super) fn render_mb_expander(
                 selected_param: ctx.selected_param,
                 selected_band_idx,
             },
+            ctx.available_width,
+            text,
             ctx.theme,
         )
         .into_any_element()

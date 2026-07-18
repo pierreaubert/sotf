@@ -122,6 +122,7 @@ pub(in crate::engine::manager_thread) fn validate_plugin_configs(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use sotf_types::PluginConfig;

@@ -12,7 +12,7 @@ use super::room::room_eq_step_next_wrap;
 use super::room::room_eq_step_prev_wrap;
 use crate::app::{App, FilePickerMode, FilePickerOrigin, InputMode};
 use crossterm::event::{KeyCode, KeyEvent};
-use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep};
+use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqEasyLayout, RoomEqStep};
 
 pub fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     // Esc: exit editing if active, then two-level focus (content → step tab → configure tab)
@@ -81,6 +81,27 @@ pub fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
                 }
                 KeyCode::Char('2') => {
                     app.room_eq.model.wizard_mode = RoomEqWizardMode::Full;
+                }
+                KeyCode::Char('3') => {
+                    app.room_eq.model.wizard_mode = RoomEqWizardMode::Simple;
+                    app.room_eq.easy_layout = RoomEqEasyLayout::Stereo20;
+                    app.room_eq
+                        .easy_layout
+                        .configure_preset_defaults(&mut app.room_eq.model.simple_preset);
+                }
+                KeyCode::Char('4') => {
+                    app.room_eq.model.wizard_mode = RoomEqWizardMode::Simple;
+                    app.room_eq.easy_layout = RoomEqEasyLayout::Stereo21;
+                    app.room_eq
+                        .easy_layout
+                        .configure_preset_defaults(&mut app.room_eq.model.simple_preset);
+                }
+                KeyCode::Char('5') => {
+                    app.room_eq.model.wizard_mode = RoomEqWizardMode::Simple;
+                    app.room_eq.easy_layout = RoomEqEasyLayout::Surround51;
+                    app.room_eq
+                        .easy_layout
+                        .configure_preset_defaults(&mut app.room_eq.model.simple_preset);
                 }
                 _ => {}
             }
@@ -437,7 +458,9 @@ mod tests {
     use crate::app::{FilePickerOrigin, InputMode, Screen};
     use crate::events::tests::{key, make_app};
     use sotf_audio_player::recording_types::DelayProbeResults;
-    use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep, RoomEqWizardMode};
+    use sotf_audio_player::room_eq_types::{
+        OptimizationStatus, RoomEqEasyLayout, RoomEqStep, RoomEqWizardMode,
+    };
 
     fn app_on_room_eq_content() -> App {
         let mut app = make_app();
@@ -893,6 +916,30 @@ mod tests {
             app.room_eq.model.wizard_mode,
             RoomEqWizardMode::Full
         ));
+    }
+
+    #[test]
+    fn process_layout_shortcuts_select_beginner_layout_and_defaults() {
+        for (key_code, expected) in [
+            ('3', RoomEqEasyLayout::Stereo20),
+            ('4', RoomEqEasyLayout::Stereo21),
+            ('5', RoomEqEasyLayout::Surround51),
+        ] {
+            let mut app = app_on_room_eq_content();
+            app.room_eq.model.step = RoomEqStep::Process;
+            handle_room_eq_keys(&mut app, key(KeyCode::Char(key_code)));
+
+            assert_eq!(app.room_eq.easy_layout, expected);
+            assert_eq!(app.room_eq.model.wizard_mode, RoomEqWizardMode::Simple);
+            assert_eq!(
+                app.room_eq.model.simple_preset.bass_management,
+                if expected.uses_bass_management() {
+                    "Standard"
+                } else {
+                    ""
+                }
+            );
+        }
     }
 
     #[test]

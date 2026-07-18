@@ -29,6 +29,7 @@ pub fn render_dynamic_eq_plugin(
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let d = Ds::from_cx(cx);
+    let text = PluginCommonTranslations::for_language(entity.read(cx).app.ui_state.language);
     let PluginSettings::DynamicEq {
         num_bands,
         threshold,
@@ -69,6 +70,7 @@ pub fn render_dynamic_eq_plugin(
             *mix,
             selected_param,
             is_editing,
+            text,
             theme,
         ))
         .child(render_band_tabs(
@@ -89,6 +91,7 @@ pub fn render_dynamic_eq_plugin(
             selected_band_idx,
             selected_param,
             is_editing,
+            text,
             theme,
         ))
         .into_any_element()
@@ -109,6 +112,7 @@ fn render_global_controls(
     mix: f64,
     selected_param: usize,
     is_editing: bool,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let params = specs::PARAMS;
@@ -124,7 +128,7 @@ fn render_global_controls(
                 .text_size(d.text_sm)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_primary)
-                .child("Global"),
+                .child(text.global),
         )
         .child(
             div()
@@ -135,7 +139,7 @@ fn render_global_controls(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Bands",
+                    text.label("Bands"),
                     num_bands,
                     pk(params, "num_bands").min_f64(),
                     pk(params, "num_bands").max_f64(),
@@ -150,7 +154,7 @@ fn render_global_controls(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Thresh",
+                    text.label("Thresh"),
                     threshold,
                     pk(params, "threshold").min_f64(),
                     pk(params, "threshold").max_f64(),
@@ -165,7 +169,7 @@ fn render_global_controls(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Ratio",
+                    text.label("Ratio"),
                     ratio,
                     pk(params, "ratio").min_f64(),
                     pk(params, "ratio").max_f64(),
@@ -180,7 +184,7 @@ fn render_global_controls(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Attack",
+                    text.label("Attack"),
                     attack,
                     pk(params, "attack").min_f64(),
                     pk(params, "attack").max_f64(),
@@ -195,7 +199,7 @@ fn render_global_controls(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Release",
+                    text.label("Release"),
                     release,
                     pk(params, "release").min_f64(),
                     pk(params, "release").max_f64(),
@@ -210,7 +214,7 @@ fn render_global_controls(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Knee",
+                    text.label("Knee"),
                     knee,
                     pk(params, "knee").min_f64(),
                     pk(params, "knee").max_f64(),
@@ -225,7 +229,7 @@ fn render_global_controls(
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
-                    "Link",
+                    text.label("Link"),
                     link_channels,
                     6,
                     selected_param,
@@ -235,7 +239,7 @@ fn render_global_controls(
                 .child(render_knob_sized(
                     entity,
                     plugin_idx,
-                    "Mix",
+                    text.label("Mix"),
                     mix,
                     pk(params, "mix").min_f64(),
                     pk(params, "mix").max_f64(),
@@ -332,6 +336,7 @@ fn render_selected_band(
     selected_band_idx: usize,
     selected_param: usize,
     is_editing: bool,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let band = bands.get(selected_band_idx).cloned().unwrap_or_default();
@@ -361,7 +366,7 @@ fn render_selected_band(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Freq",
+                    text.label("Freq"),
                     band.frequency as f64,
                     pk(bt, "frequency").min_f64(),
                     pk(bt, "frequency").max_f64(),
@@ -376,7 +381,7 @@ fn render_selected_band(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Q",
+                    text.label("Q"),
                     band.q as f64,
                     pk(bt, "q").min_f64(),
                     pk(bt, "q").max_f64(),
@@ -391,7 +396,7 @@ fn render_selected_band(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Gain",
+                    text.label("Gain"),
                     band.gain as f64,
                     pk(bt, "gain").min_f64(),
                     pk(bt, "gain").max_f64(),
@@ -406,7 +411,7 @@ fn render_selected_band(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Thresh",
+                    text.label("Thresh"),
                     band.band_threshold as f64,
                     pk(bt, "band_threshold").min_f64(),
                     pk(bt, "band_threshold").max_f64(),
@@ -421,7 +426,7 @@ fn render_selected_band(
                 .child(render_knob_sized(
                     entity.clone(),
                     plugin_idx,
-                    "Ratio",
+                    text.label("Ratio"),
                     band.band_ratio as f64,
                     pk(bt, "band_ratio").min_f64(),
                     pk(bt, "band_ratio").max_f64(),
@@ -436,7 +441,7 @@ fn render_selected_band(
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
-                    "Active",
+                    text.label("Active"),
                     band.active,
                     base + 5,
                     selected_param,
@@ -446,7 +451,7 @@ fn render_selected_band(
                 .child(render_toggle(
                     entity,
                     plugin_idx,
-                    "Solo",
+                    text.label("Solo"),
                     band.solo,
                     base + 6,
                     selected_param,
@@ -455,3 +460,4 @@ fn render_selected_band(
                 )),
         )
 }
+use crate::app::i18n::PluginCommonTranslations;

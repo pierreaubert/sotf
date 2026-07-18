@@ -20,9 +20,9 @@ pub(super) fn bytes_to_samples(bytes: &[u8]) -> Vec<f32> {
 
 /// Generate a new random 256-bit encryption key
 pub fn generate_key() -> [u8; 32] {
-    use rand::TryRngCore;
+    use rand::TryRng;
     let mut key = [0u8; 32];
-    rand::rngs::OsRng
+    rand::rngs::SysRng
         .try_fill_bytes(&mut key)
         .expect("OS RNG must succeed");
     key
@@ -45,17 +45,48 @@ pub fn fingerprint_to_hex(fingerprint: &[u8; 8]) -> String {
 
 /// Get the path to the session encryption key.
 pub fn get_session_key_path() -> std::path::PathBuf {
+    let explicit_path = std::env::var_os("SOTF_HAL_SESSION_KEY_PATH");
+    let runtime_dir = std::env::var_os("SOTF_SYSTEMWIDE_RUNTIME_DIR");
+    let home = std::env::var_os("HOME");
+
     #[cfg(unix)]
     {
+        // SAFETY: getuid() has no preconditions and does not dereference memory.
         let uid = unsafe { libc::getuid() };
         let hal_key_path = std::path::PathBuf::from(format!("/tmp/sotf-{}/session.key", uid));
-        if hal_key_path.exists() {
-            return hal_key_path;
-        }
+        session_key_path_from_env(explicit_path, runtime_dir, home, uid, hal_key_path.exists())
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    std::path::PathBuf::from(home).join(".config/sotf/session.key")
+    #[cfg(not(unix))]
+    session_key_path_from_env(explicit_path, runtime_dir, home, 0, false)
+}
+
+pub(crate) fn session_key_path_from_env(
+    explicit_path: Option<std::ffi::OsString>,
+    runtime_dir: Option<std::ffi::OsString>,
+    home: Option<std::ffi::OsString>,
+    uid: u32,
+    legacy_hal_key_exists: bool,
+) -> std::path::PathBuf {
+    let non_empty = |value: Option<std::ffi::OsString>| {
+        value
+            .map(std::path::PathBuf::from)
+            .filter(|path| !path.as_os_str().is_empty())
+    };
+
+    if let Some(path) = non_empty(explicit_path) {
+        return path;
+    }
+    if let Some(path) = non_empty(runtime_dir) {
+        return path.join("session.key");
+    }
+    if legacy_hal_key_exists {
+        return std::path::PathBuf::from(format!("/tmp/sotf-{uid}/session.key"));
+    }
+
+    non_empty(home)
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+        .join(".config/sotf/session.key")
 }
 
 /// Load the session encryption key from disk

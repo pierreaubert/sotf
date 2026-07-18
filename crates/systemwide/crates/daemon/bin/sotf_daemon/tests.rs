@@ -9,7 +9,8 @@ use super::misc::push_metering_faults;
 use super::misc::sanitize_user_plugins;
 use super::misc::transport_snapshot_and_faults;
 use super::misc::{
-    build_driver_plugin_chain, is_safe_output_device_name, parameter_descriptor_to_json,
+    build_driver_plugin_chain, build_driver_plugin_graph, is_safe_output_device_name,
+    parameter_descriptor_to_json,
 };
 use super::pipeline_reconfigure_outcome::handle_driver_config_change;
 use super::pipeline_reconfigure_outcome::reconfigure_audio_pipeline;
@@ -28,6 +29,7 @@ use driver_common::DriverConfig;
 use parking_lot::Mutex;
 use serde_json::Value;
 use sotf_audio::PluginConfig;
+use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
 use sotf_audio::manager::AudioEngineManager;
 use sotf_audio::plugins::PluginType;
 use std::io::{BufRead, BufReader, Cursor, Write};
@@ -201,6 +203,40 @@ fn build_driver_plugin_chain_wraps_user_plugins_with_monitors() {
 }
 
 #[test]
+fn build_driver_plugin_graph_preserves_topology_and_adds_monitor_boundaries() {
+    let graph = PluginGraphConfig::try_new(
+        vec![
+            PluginGraphNodeConfig::try_new(10, "gain", serde_json::json!({}), 2).unwrap(),
+            PluginGraphNodeConfig::try_new(20, "eq", serde_json::json!({"filters": []}), 2)
+                .unwrap(),
+            PluginGraphNodeConfig::try_new(30, "gain", serde_json::json!({}), 2).unwrap(),
+        ],
+        vec![
+            PluginGraphEdgeConfig::new(10, 20),
+            PluginGraphEdgeConfig::new(10, 30),
+        ],
+    )
+    .unwrap();
+
+    let (runtime, input_idx, output_idx) = build_driver_plugin_graph(graph, 2, 2).unwrap();
+
+    assert_eq!(input_idx, 0);
+    assert_eq!(output_idx, 4);
+    assert_eq!(runtime.nodes.len(), 5);
+    assert_eq!(runtime.edges.len(), 5);
+    assert_eq!(runtime.nodes[0].plugin_type, "loudness_monitor");
+    assert_eq!(runtime.nodes[4].plugin_type, "loudness_monitor");
+    assert!(runtime.nodes.iter().any(|node| node.id == 10));
+    assert!(
+        runtime
+            .edges
+            .iter()
+            .any(|edge| edge.from_node == 10 && edge.to_node == 20)
+    );
+    runtime.validate().unwrap();
+}
+
+#[test]
 fn empty_loudness_json_clamps_channels_and_shapes_defaults() {
     let zero = super::consts::empty_loudness_json(0);
     assert_eq!(zero["momentary"], -60.0);
@@ -240,6 +276,7 @@ fn pipeline_spec_to_json_reports_plugin_types_and_count() {
     let spec = PipelineSpec {
         output_device: Some("ADAM Audio D3V".to_string()),
         user_plugins: vec![test_plugin("eq"), test_plugin("gain")],
+        user_graph: None,
         input_channels: 2,
         output_channels: 6,
     };
@@ -774,10 +811,14 @@ mod ipc_safety_tests {
     #[test]
     fn apply_pipeline_plan_starts_engine_with_negotiated_timing() {
         let source = include_str!("audio_daemon.rs");
+        let call = source
+            .split("start_hal_playback_with_driver_config(")
+            .nth(1)
+            .and_then(|tail| tail.split(");").next())
+            .expect("HAL playback start call");
         assert!(
-            source.contains(
-                "effective_driver_sample_rate,\n            effective_driver_buffer_frames,"
-            ),
+            call.contains("effective_driver_sample_rate")
+                && call.contains("effective_driver_buffer_frames"),
             "HAL playback restart must use negotiated driver timing"
         );
     }
@@ -1037,6 +1078,54 @@ mod ipc_safety_tests {
     }
 
     #[test]
+    fn testkit_load_plugin_artifact_applies_engine_graph_without_flattening() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+
+        let response = send_owner_ipc_command(
+            &daemon,
+            r#"{"command":"load_plugin_artifact","artifact":{"graph":{"nodes":[{"id":7,"plugin_type":"gain","parameters":{"gain_db":-3.0},"input_channels":2}],"edges":[]}}}"#,
+        );
+
+        assert_eq!(response["success"], true, "{response}");
+        let state = daemon.system_state.lock();
+        assert!(state.user_plugins().is_empty());
+        let graph = state.user_graph().expect("graph desired state");
+        assert_eq!(graph.nodes.len(), 1);
+        assert_eq!(graph.nodes[0].id, 7);
+        assert_eq!(graph.nodes[0].parameters["gain_db"], -3.0);
+        assert!(state.applied_generation().is_some());
+    }
+
+    #[test]
+    fn testkit_stale_graph_generation_is_rejected_without_overwrite() {
+        let state = fake_driver_state();
+        let daemon = test_daemon_with_driver(state);
+        let first = send_owner_ipc_command(
+            &daemon,
+            r#"{"command":"load_plugin_artifact","artifact":{"graph":{"nodes":[{"id":7,"plugin_type":"gain","parameters":{"gain_db":-3.0},"input_channels":2}],"edges":[]}}}"#,
+        );
+        assert_eq!(first["success"], true, "{first}");
+
+        let stale = send_owner_ipc_command(
+            &daemon,
+            r#"{"command":"load_plugin_artifact","base_generation":0,"artifact":{"graph":{"nodes":[{"id":99,"plugin_type":"gain","parameters":{"gain_db":6.0},"input_channels":2}],"edges":[]}}}"#,
+        );
+
+        assert_eq!(stale["success"], false);
+        assert!(
+            stale["error"]
+                .as_str()
+                .is_some_and(|error| error.contains("generation conflict"))
+        );
+        let state = daemon.system_state.lock();
+        assert_eq!(state.applied_generation(), Some(1));
+        let graph = state.user_graph().unwrap();
+        assert_eq!(graph.nodes[0].id, 7);
+        assert_eq!(graph.nodes[0].parameters["gain_db"], -3.0);
+    }
+
+    #[test]
     fn testkit_unix_ipc_invalid_plugin_load_preserves_pipeline_state() {
         let state = fake_driver_state();
         let daemon = test_daemon_with_driver(state);
@@ -1236,9 +1325,18 @@ mod ipc_safety_tests {
         let response =
             send_owner_ipc_command(&daemon, r#"{"command":"set_encryption","enabled":true}"#);
 
-        assert_eq!(response["success"], true);
-        assert!(response["data"]["enabled"].is_boolean());
-        assert!(response["data"]["fingerprint"].is_string());
+        if cfg!(all(target_os = "macos", feature = "hal")) {
+            assert_eq!(response["success"], true);
+            assert_eq!(response["data"]["enabled"], true);
+            assert!(response["data"]["fingerprint"].is_string());
+        } else {
+            assert_eq!(response["success"], false);
+            assert!(
+                response["error"]
+                    .as_str()
+                    .is_some_and(|error| error.contains("no session cipher"))
+            );
+        }
     }
 
     #[test]
@@ -1251,6 +1349,30 @@ mod ipc_safety_tests {
         assert_eq!(response["success"], true);
         assert!(!*daemon.running.lock());
     }
+}
+
+#[test]
+fn pipeline_supervisor_preserves_graph_when_output_device_changes() {
+    let graph = PluginGraphConfig::try_new(
+        vec![PluginGraphNodeConfig::try_new(42, "gain", serde_json::json!({}), 2).unwrap()],
+        vec![],
+    )
+    .unwrap();
+    let mut supervisor = PipelineSupervisor::default();
+    let initial = supervisor
+        .prepare_graph_plan(graph.clone(), 2, 2, 2)
+        .unwrap();
+    supervisor.commit_applied(&initial);
+
+    let next = supervisor
+        .prepare_with_selected_device("Built-in Output".to_string())
+        .unwrap();
+
+    assert!(next.spec.user_plugins.is_empty());
+    let retained = next.spec.user_graph.as_ref().expect("retained graph");
+    assert_eq!(retained.nodes[0].id, 42);
+    assert!(next.runtime_graph.is_some());
+    assert_eq!(supervisor.applied_generation(), Some(1));
 }
 
 /// Phase 4.2: full command/response round-trips without a real audio device.
@@ -1715,12 +1837,21 @@ mod command_roundtrip_tests {
 
     #[test]
     #[serial]
-    fn handle_set_encryption_succeeds() {
+    fn handle_set_encryption_reports_build_capability() {
         let resp = run_command(Command::SetEncryption { enabled: true });
-        assert!(resp.success, "{:?}", resp.error);
-        let data = resp.data.expect("encryption data");
-        assert!(data.get("enabled").is_some());
-        assert!(data.get("fingerprint").is_some());
+        if cfg!(all(target_os = "macos", feature = "hal")) {
+            assert!(resp.success, "{:?}", resp.error);
+            let data = resp.data.expect("encryption data");
+            assert_eq!(data["enabled"], true);
+            assert!(data.get("fingerprint").is_some());
+        } else {
+            assert!(!resp.success);
+            assert!(
+                resp.error
+                    .as_deref()
+                    .is_some_and(|error| error.contains("no session cipher"))
+            );
+        }
     }
 
     #[test]

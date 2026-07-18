@@ -16,6 +16,7 @@ use super::types::PaletteItemType;
 use crate::app::types::Screen;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
+use crate::i18n::PluginGraphTranslations;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -44,6 +45,7 @@ impl PlayerView {
                 theme,
                 input_devices,
                 output_devices,
+                language,
             ) = {
                 let state = self.state.read(cx);
                 let output_device_name = state
@@ -68,8 +70,10 @@ impl PlayerView {
                     state.app.ui_state.theme.clone(),
                     state.app.audio_device_state.input_devices.clone(),
                     state.app.audio_device_state.output_devices.clone(),
+                    state.app.ui_state.language,
                 )
             };
+            let graph_text = PluginGraphTranslations::for_language(language);
 
             let workflow_graph =
                 build_workflow_graph(&plugin_graph, &output_device_name, output_channels);
@@ -79,7 +83,7 @@ impl PlayerView {
 
             // Set theme and menu items
             let workflow_theme = create_workflow_theme(&theme);
-            let menu_items = build_menu_items(&input_devices, &output_devices);
+            let menu_items = build_menu_items(&input_devices, &output_devices, graph_text);
 
             // Clone state for the callback
             let state_for_dblclick = self.state.clone();
@@ -149,14 +153,14 @@ impl PlayerView {
                 // a `plugin_node_id` in user_data; non-plugin nodes
                 // (Player / Input / Output) fall through to the default
                 // canvas menu so the user can still add/replace devices.
-                canvas.set_node_menu_items(|node_data| {
+                canvas.set_node_menu_items(move |node_data| {
                     let is_plugin = node_data
                         .user_data
                         .get("node_type")
                         .and_then(|v| v.as_str())
                         == Some(NODE_TYPE_PLUGIN);
                     if is_plugin {
-                        Some(plugin_node_menu_items())
+                        Some(plugin_node_menu_items(graph_text))
                     } else {
                         None
                     }
@@ -214,6 +218,7 @@ impl PlayerView {
             .bg(theme.background)
             // Header
             .child(self.render_graph_header(node_count, connection_count, plugin_count, cx))
+            .child(self.render_graph_keyboard_bar(cx))
             // Main content: sidebar + canvas
             .child(
                 div()
@@ -333,6 +338,8 @@ impl PlayerView {
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let graph_text =
+            PluginGraphTranslations::for_language(self.state.read(cx).app.ui_state.language);
 
         let (
             signal_path_source_rate,
@@ -401,7 +408,7 @@ impl PlayerView {
                             .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
-                            .child("SIGNAL"),
+                            .child(graph_text.nodes.signal),
                     )
                     .child(
                         div()
@@ -435,18 +442,20 @@ impl PlayerView {
                         el.child(
                             div()
                                 .px(d.pad_y_half)
+                                // intentional: micro-badge optical padding is below the 4px spacing grid
                                 .py(px(1.0))
                                 .rounded(d.r_sm)
                                 .bg(theme.warning)
                                 .text_size(d.text_xs)
                                 .text_color(theme.text_on_accent)
-                                .child("SRC"),
+                                .child(graph_text.nodes.source),
                         )
                     })
                     .when(signal_path_issues, |el| {
                         el.child(
                             div()
                                 .px(d.pad_y_half)
+                                // intentional: micro-badge optical padding is below the 4px spacing grid
                                 .py(px(1.0))
                                 .rounded(d.r_sm)
                                 .bg(theme.error)
@@ -499,7 +508,7 @@ impl PlayerView {
                                     cx.notify();
                                 }),
                             )
-                            .child("Reset View"),
+                            .child(graph_text.nodes.reset_view),
                     ),
             )
     }
@@ -508,6 +517,8 @@ impl PlayerView {
     pub(super) fn render_graph_palette(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let graph_text =
+            PluginGraphTranslations::for_language(self.state.read(cx).app.ui_state.language);
 
         // Input sources
         let input_items = vec![("Player", PaletteItemType::Player, theme.success)];
@@ -605,7 +616,7 @@ impl PlayerView {
                     .text_size(d.text_xs)
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.text_muted)
-                    .child("INPUT"),
+                    .child(graph_text.nodes.input),
             )
             .child(
                 div()
@@ -647,7 +658,7 @@ impl PlayerView {
                     .text_size(d.text_xs)
                     .font_weight(FontWeight::BOLD)
                     .text_color(theme.text_muted)
-                    .child("PLUGINS"),
+                    .child(graph_text.nodes.plugins),
             )
             // Plugin categories
             .children(plugin_categories.into_iter().map(|(category, plugins)| {
@@ -699,6 +710,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let graph_text = PluginGraphTranslations::for_language(state.app.ui_state.language);
 
         // Get the node being edited
         let node_id = state.app.plugin_state.graph_state.editing_plugin_node;
@@ -851,7 +863,7 @@ impl PlayerView {
                                             .text_color(theme.text_secondary)
                                             .cursor_pointer()
                                             .hover(|s| s.bg(theme.surface_hover))
-                                            .child("Load"),
+                                            .child(graph_text.nodes.load),
                                     )
                                     // Save button
                                     .child(
@@ -865,7 +877,7 @@ impl PlayerView {
                                             .text_color(theme.text_secondary)
                                             .cursor_pointer()
                                             .hover(|s| s.bg(theme.surface_hover))
-                                            .child("Save"),
+                                            .child(graph_text.nodes.save),
                                     )
                                     // Close button
                                     .child({
@@ -897,7 +909,7 @@ impl PlayerView {
                                                         .editing_graph_node_uuid = None;
                                                 });
                                             })
-                                            .child("Close")
+                                            .child(graph_text.nodes.close)
                                     }),
                             ),
                     )
@@ -939,6 +951,8 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let graph_text =
+            PluginGraphTranslations::for_language(self.state.read(cx).app.ui_state.language);
         match node_type {
             NODE_TYPE_PLUGIN => {
                 // If we have actual plugin settings, render the real plugin UI.
@@ -960,13 +974,13 @@ impl PlayerView {
                                 .text_size(d.text_lg)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_primary)
-                                .child("Parametric EQ"),
+                                .child(graph_text.nodes.parametric_eq),
                         )
                         .child(
                             div()
                                 .text_size(d.text_sm)
                                 .text_color(theme.text_muted)
-                                .child("No plugin data available"),
+                                .child(graph_text.nodes.no_plugin_data),
                         )
                         .into_any_element(),
                     Some("Gain") => div()
@@ -978,13 +992,13 @@ impl PlayerView {
                                 .text_size(d.text_lg)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_primary)
-                                .child("Gain"),
+                                .child(graph_text.nodes.gain),
                         )
                         .child(
                             div()
                                 .text_size(d.text_sm)
                                 .text_color(theme.text_muted)
-                                .child("No plugin data available"),
+                                .child(graph_text.nodes.no_plugin_data),
                         )
                         .into_any_element(),
                     _ => div()
@@ -1003,13 +1017,13 @@ impl PlayerView {
                         .text_size(d.text_lg)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
-                        .child("Audio Player"),
+                        .child(graph_text.nodes.audio_player),
                 )
                 .child(
                     div()
                         .text_size(d.text_sm)
                         .text_color(theme.text_muted)
-                        .child("This node represents the audio file playback source."),
+                        .child(graph_text.nodes.audio_player_description),
                 )
                 .into_any_element(),
             NODE_TYPE_OUTPUT_DEVICE => div()
@@ -1021,13 +1035,13 @@ impl PlayerView {
                         .text_size(d.text_lg)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
-                        .child("Output Device"),
+                        .child(graph_text.nodes.output_device),
                 )
                 .child(
                     div()
                         .text_size(d.text_sm)
                         .text_color(theme.text_muted)
-                        .child("This node represents the audio output destination."),
+                        .child(graph_text.nodes.output_device_description),
                 )
                 .into_any_element(),
             NODE_TYPE_INPUT_DEVICE => div()
@@ -1039,19 +1053,19 @@ impl PlayerView {
                         .text_size(d.text_lg)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_primary)
-                        .child("Input Device"),
+                        .child(graph_text.nodes.input_device),
                 )
                 .child(
                     div()
                         .text_size(d.text_sm)
                         .text_color(theme.text_muted)
-                        .child("This node represents an audio input source."),
+                        .child(graph_text.nodes.input_device_description),
                 )
                 .into_any_element(),
             _ => div()
                 .text_size(d.text_sm)
                 .text_color(theme.text_muted)
-                .child("Unknown node type")
+                .child(graph_text.nodes.unknown_node_type)
                 .into_any_element(),
         }
     }

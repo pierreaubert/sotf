@@ -1,5 +1,6 @@
 use crate::app::constants::spacing;
 use crate::app::federation::test_federation_connection;
+use crate::app::i18n::FederationTranslations;
 use crate::components::design::Ds;
 use crate::components::settings::settings_section_label;
 use crate::ui::PlayerView;
@@ -21,6 +22,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let text = FederationTranslations::for_language(state.app.ui_state.language);
         let sources = state.app.federation.sources.clone();
 
         let mut content = div()
@@ -32,13 +34,13 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                    .child("Streaming"),
+                    .child(text.streaming),
             )
             .child(
                 div()
                     .text_size(d.text_xs)
                     .text_color(theme.text_secondary)
-                    .child("Configure streaming services, radio stations, and remote players."),
+                    .child(text.description),
             )
             // Add Source buttons
             .child(
@@ -76,11 +78,9 @@ impl PlayerView {
                     .border_1()
                     .border_color(theme.border)
                     .child(
-                        Text::new(
-                            "No remote sources configured yet. Add one using the buttons above.",
-                        )
-                        .size(TextSize::Sm)
-                        .color(theme.text_muted),
+                        Text::new(text.no_remote_sources)
+                            .size(TextSize::Sm)
+                            .color(theme.text_muted),
                     ),
             );
         } else {
@@ -129,6 +129,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
+        let text = FederationTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let type_name = source.connection.type_name();
         let is_enabled = source.is_enabled;
         let display_name = source.display_name.clone();
@@ -259,7 +260,7 @@ impl PlayerView {
                     .child(
                         Button::new(
                             SharedString::from(format!("test-source-{source_idx}")),
-                            "Test",
+                            text.test,
                         )
                         .variant(ButtonVariant::Secondary)
                         .size(ButtonSize::Xs)
@@ -288,7 +289,7 @@ impl PlayerView {
                     .child(
                         Button::new(
                             SharedString::from(format!("scan-source-{source_idx}")),
-                            "Scan",
+                            text.scan,
                         )
                         .variant(ButtonVariant::Secondary)
                         .size(ButtonSize::Xs)
@@ -312,7 +313,7 @@ impl PlayerView {
                         div()
                             .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
-                            .child("Status:"),
+                                .child(text.status),
                     )
                     .child(
                         div()
@@ -489,6 +490,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let ui_text = FederationTranslations::for_language(state.app.ui_state.language);
         let progress = state.app.federation.scan_progress.clone();
 
         let (text, pct) = match &progress {
@@ -552,8 +554,8 @@ impl PlayerView {
             )
             // Cancel button
             .child(
-                Button::new("cancel-federation-scan", "x")
-                    .aria_label("Cancel federation scan")
+                Button::new("cancel-federation-scan", "\u{2715}")
+                    .aria_label(ui_text.cancel_scan)
                     .variant(ButtonVariant::Ghost)
                     .size(ButtonSize::Xs)
                     .theme(theme.to_button_theme())

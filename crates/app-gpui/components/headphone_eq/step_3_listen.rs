@@ -1,4 +1,5 @@
 use crate::components::design::Ds;
+use crate::i18n::{HeadphoneEqTranslations, HeadphoneGraphTranslations};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -13,19 +14,21 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = HeadphoneEqTranslations::for_language(state.app.ui_state.language);
+        let graph_text = HeadphoneGraphTranslations::for_language(state.app.ui_state.language);
         let headphone_eq = &state.app.measurement_state.headphone_eq_state;
         let result = headphone_eq.result.as_ref();
 
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Listen & Preview")
+                Text::new(translations.listen_preview)
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Preview the optimized EQ and apply it to your playback.")
+                Text::new(translations.listen_preview_description)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -48,7 +51,7 @@ impl PlayerView {
                             .header_background(theme.background_secondary)
                             .border(theme.border)
                             .header(
-                                Text::new("Optimization Results")
+                                Text::new(translations.optimization_results)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -91,13 +94,13 @@ impl PlayerView {
                             .header_background(theme.background_secondary)
                             .border(theme.border)
                             .header(
-                                Text::new("Response Visualization")
+                                Text::new(translations.response_visualization)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
-                            .content(
-                                self.render_optimization_result_graphs(&d, result, &theme, 1200.0),
-                            ),
+                            .content(self.render_optimization_result_graphs(
+                                &d, result, graph_text, &theme, 1200.0,
+                            )),
                     )
                     .child(
                         Card::new()
@@ -105,7 +108,7 @@ impl PlayerView {
                             .header_background(theme.background_secondary)
                             .border(theme.border)
                             .header(
-                                Text::new("EQ Filters")
+                                Text::new(translations.eq_filters)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -192,12 +195,12 @@ impl PlayerView {
                         .header_background(theme.background_secondary)
                         .border(theme.border)
                         .header(
-                            Text::new("No Results")
+                            Text::new(translations.no_results)
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
                         .content(
-                            Text::new("Go back and run optimization to generate an EQ curve.")
+                            Text::new(translations.no_results_description)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         ),

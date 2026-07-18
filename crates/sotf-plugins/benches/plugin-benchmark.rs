@@ -8,7 +8,7 @@
 // - Different buffer sizes and sample rates
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use sotf_plugins::{GainPlugin, ParametricPluginAdapter, PluginHost, ProcessContext};
+use sotf_plugins::{GainPlugin, ParametricPluginAdapter, Plugin, PluginHost, ProcessContext};
 use std::hint::black_box;
 
 // ============================================================================
@@ -20,16 +20,21 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
 
     // Single plugin, various buffer sizes
     for &buffer_size in &[256, 512, 1024, 2048] {
-        let mut plugin = GainPlugin::new(2, 3.0);
+        let mut plugin = ParametricPluginAdapter::new(GainPlugin::new(2, 3.0));
         plugin.initialize(48000).unwrap();
 
-        let mut buffer = vec![0.5f32; buffer_size * 2];
+        let input = vec![0.5f32; buffer_size * 2];
+        let mut output = vec![0.0f32; buffer_size * 2];
         let context = ProcessContext::new(48000, buffer_size);
 
         group.bench_function(format!("process_{}frames", buffer_size), |b| {
             b.iter(|| {
                 plugin
-                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -37,17 +42,22 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
 
     // Different sample rates
     for &sample_rate in &[44100, 48000, 96000, 192000] {
-        let mut plugin = GainPlugin::new(2, 0.0);
+        let mut plugin = ParametricPluginAdapter::new(GainPlugin::new(2, 0.0));
         plugin.initialize(sample_rate).unwrap();
 
         let buffer_size = 512;
-        let mut buffer = vec![0.5f32; buffer_size * 2];
+        let input = vec![0.5f32; buffer_size * 2];
+        let mut output = vec![0.0f32; buffer_size * 2];
         let context = ProcessContext::new(sample_rate, buffer_size);
 
         group.bench_function(format!("process_{}hz", sample_rate), |b| {
             b.iter(|| {
                 plugin
-                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -55,17 +65,22 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
 
     // Different gain values
     for &gain_db in &[-60.0, -12.0, 0.0, 6.0, 12.0, 24.0] {
-        let mut plugin = GainPlugin::new(2, gain_db);
+        let mut plugin = ParametricPluginAdapter::new(GainPlugin::new(2, gain_db));
         plugin.initialize(48000).unwrap();
 
         let buffer_size = 512;
-        let mut buffer = vec![0.5f32; buffer_size * 2];
+        let input = vec![0.5f32; buffer_size * 2];
+        let mut output = vec![0.0f32; buffer_size * 2];
         let context = ProcessContext::new(48000, buffer_size);
 
         group.bench_function(format!("process_{}db", gain_db), |b| {
             b.iter(|| {
                 plugin
-                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -73,17 +88,22 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
 
     // Different channel configurations
     for &channels in &[1, 2, 4, 8] {
-        let mut plugin = GainPlugin::new(channels, 0.0);
+        let mut plugin = ParametricPluginAdapter::new(GainPlugin::new(channels, 0.0));
         plugin.initialize(48000).unwrap();
 
         let buffer_size = 512;
-        let mut buffer = vec![0.5f32; buffer_size * channels];
+        let input = vec![0.5f32; buffer_size * channels];
+        let mut output = vec![0.0f32; buffer_size * channels];
         let context = ProcessContext::new(48000, buffer_size);
 
         group.bench_function(format!("process_{}ch", channels), |b| {
             b.iter(|| {
                 plugin
-                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -168,25 +188,30 @@ fn benchmark_host_chain(c: &mut Criterion) {
 }
 
 // ============================================================================
-// In-Place Processing Benchmarks
+// Direct Plugin Processing Benchmarks
 // ============================================================================
 
-fn benchmark_inplace_processing(c: &mut Criterion) {
-    let mut group = c.benchmark_group("InPlace");
+fn benchmark_direct_plugin_processing(c: &mut Criterion) {
+    let mut group = c.benchmark_group("DirectPlugin");
 
     let buffer_size = 1024;
 
     for &channels in &[1, 2, 4] {
-        let mut plugin = GainPlugin::new(channels, 3.0);
+        let mut plugin = ParametricPluginAdapter::new(GainPlugin::new(channels, 3.0));
         plugin.initialize(48000).unwrap();
 
-        let mut buffer = vec![0.5f32; buffer_size * channels];
+        let input = vec![0.5f32; buffer_size * channels];
+        let mut output = vec![0.0f32; buffer_size * channels];
         let context = ProcessContext::new(48000, buffer_size);
 
         group.bench_function(format!("gain_{}ch", channels), |b| {
             b.iter(|| {
                 plugin
-                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -213,16 +238,21 @@ fn benchmark_per_sample_cost(c: &mut Criterion) {
 
     for &(name, channels, buffer_size) in &configurations {
         if name.starts_with("gain") {
-            let mut plugin = GainPlugin::new(channels, 0.0);
+            let mut plugin = ParametricPluginAdapter::new(GainPlugin::new(channels, 0.0));
             plugin.initialize(48000).unwrap();
 
-            let mut buffer = vec![0.5f32; buffer_size * channels];
+            let input = vec![0.5f32; buffer_size * channels];
+            let mut output = vec![0.0f32; buffer_size * channels];
             let context = ProcessContext::new(48000, buffer_size);
 
             group.bench_function(name, |b| {
                 b.iter(|| {
                     plugin
-                        .process_in_place(black_box(&mut buffer), black_box(&context))
+                        .process(
+                            black_box(&input),
+                            black_box(&mut output),
+                            black_box(&context),
+                        )
                         .unwrap();
                 })
             });
@@ -264,7 +294,7 @@ criterion_group!(
     benches,
     benchmark_gain_plugin,
     benchmark_host_chain,
-    benchmark_inplace_processing,
+    benchmark_direct_plugin_processing,
     benchmark_per_sample_cost,
 );
 criterion_main!(benches);

@@ -1,5 +1,5 @@
 use super::PluginFuzzer;
-use rand::Rng;
+use rand::RngExt;
 use rand::rngs::StdRng;
 use sotf_plugins::{Plugin, UpmixerPlugin, UpmixerPluginParams};
 

@@ -35,3 +35,16 @@ pub enum RoomEqApplyOutcome {
     Rack(RackApplyOutcome),
     Graph(GraphApplyOutcome),
 }
+
+/// Summary of an easy-mode headphone chain inserted into the user graph.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HeadphoneEasyApplyOutcome {
+    /// Number of non-negligible PEQ filters applied.
+    pub active_filters: usize,
+    /// Conservative preamp attenuation applied before the EQ.
+    pub preamp_db: f64,
+    /// Calibrated listening level assumed by ISO-226 compensation.
+    pub playback_level_db: f64,
+    /// Reference level at which no compensation is required.
+    pub reference_level_db: f64,
+}

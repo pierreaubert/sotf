@@ -1,4 +1,6 @@
-use super::misc::secure_socket_path_from_env;
+use super::misc::{
+    daemon_session_key_path_from_env, hal_session_key_path_from_env, secure_socket_path_from_env,
+};
 use std::path::PathBuf;
 
 /// Get the secure socket path for this user
@@ -78,16 +80,24 @@ pub(super) fn get_peer_uid(fd: std::os::unix::io::RawFd) -> Result<u32, String> 
     Ok(cred.uid)
 }
 
-/// Key file path: ~/.config/sotf/session.key
+/// Daemon-private key path. Lab runtime overrides keep this out of the real
+/// user configuration directory.
 #[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(dead_code))]
 pub(super) fn get_key_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join(".config/sotf/session.key")
+    daemon_session_key_path_from_env(
+        std::env::var_os("SOTF_DAEMON_SESSION_KEY_PATH"),
+        std::env::var_os("SOTF_SYSTEMWIDE_RUNTIME_DIR"),
+        std::env::var_os("HOME"),
+    )
 }
 
 /// HAL-readable copy of the session key.
 pub(crate) fn get_hal_key_path() -> PathBuf {
-    PathBuf::from(format!("/tmp/sotf-{}/session.key", get_current_uid()))
+    hal_session_key_path_from_env(
+        std::env::var_os("SOTF_HAL_SESSION_KEY_PATH"),
+        std::env::var_os("SOTF_SYSTEMWIDE_RUNTIME_DIR"),
+        get_current_uid(),
+    )
 }
 
 /// Return the current daemon UID. Pub wrapper around the internal helper

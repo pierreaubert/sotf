@@ -29,13 +29,15 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
 
         let translations = state.app.ui_state.translations.clone();
+        let workflow_text =
+            crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
                 // Header
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(Heading::h4("Evaluate Recordings"))
+                    .child(Heading::h4(workflow_text.evaluate_recordings))
                     .child(
                         Text::new(translations.recording_evaluating_desc)
                             .size(TextSize::Xs)
@@ -59,6 +61,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let recording_state = &state.app.measurement_state.recording_state;
 
         let selected_channel = recording_state.plot_selected_channel;
@@ -67,7 +72,7 @@ impl PlayerView {
         let smoothing_dropdown_open = recording_state.plot_smoothing_dropdown_open;
 
         // Build channel options
-        let mut channel_options = vec![SelectOption::new("all", "All Channels")];
+        let mut channel_options = vec![SelectOption::new("all", recording_text.all_channels)];
         for (idx, rec) in recording_state.channel_recordings.iter().enumerate() {
             if rec.result.is_some() {
                 channel_options.push(SelectOption::new(
@@ -272,6 +277,7 @@ impl PlayerView {
     pub(super) fn render_magnitude_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -287,7 +293,7 @@ impl PlayerView {
                     self.render_magnitude_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme)
+                    self.render_no_data_placeholder(&d, &theme, language)
                         .into_any_element()
                 }),
         )
@@ -297,6 +303,7 @@ impl PlayerView {
     pub(super) fn render_phase_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -312,7 +319,7 @@ impl PlayerView {
                     self.render_phase_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme)
+                    self.render_no_data_placeholder(&d, &theme, language)
                         .into_any_element()
                 }),
         )
@@ -322,6 +329,7 @@ impl PlayerView {
     pub(super) fn render_group_delay_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -337,7 +345,7 @@ impl PlayerView {
                     self.render_group_delay_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme)
+                    self.render_no_data_placeholder(&d, &theme, language)
                         .into_any_element()
                 }),
         )
@@ -347,6 +355,7 @@ impl PlayerView {
     pub(super) fn render_impulse_response_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let results = self.get_filtered_results(cx);
@@ -360,7 +369,7 @@ impl PlayerView {
                     self.render_impulse_response_chart(&results, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme)
+                    self.render_no_data_placeholder(&d, &theme, language)
                         .into_any_element()
                 }),
         )
@@ -370,6 +379,7 @@ impl PlayerView {
     pub(super) fn render_distortion_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -385,7 +395,7 @@ impl PlayerView {
                     self.render_distortion_chart(&d, &results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme)
+                    self.render_no_data_placeholder(&d, &theme, language)
                         .into_any_element()
                 }),
         )
@@ -395,6 +405,7 @@ impl PlayerView {
     pub(super) fn render_rt60_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -410,7 +421,7 @@ impl PlayerView {
                     self.render_rt60_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme)
+                    self.render_no_data_placeholder(&d, &theme, language)
                         .into_any_element()
                 }),
         )
@@ -420,6 +431,7 @@ impl PlayerView {
     pub(super) fn render_clarity_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
@@ -435,7 +447,7 @@ impl PlayerView {
                     self.render_clarity_chart(&results, smoothing, &theme)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme)
+                    self.render_no_data_placeholder(&d, &theme, language)
                         .into_any_element()
                 }),
         )
@@ -445,6 +457,7 @@ impl PlayerView {
     pub(super) fn render_spectrogram_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
+        let language = state.app.ui_state.language;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let sample_rate = state
@@ -465,7 +478,7 @@ impl PlayerView {
                     self.render_spectrogram_chart(&d, &results, &theme, sample_rate)
                         .into_any_element()
                 } else {
-                    self.render_no_data_placeholder(&d, &theme)
+                    self.render_no_data_placeholder(&d, &theme, language)
                         .into_any_element()
                 }),
         )
@@ -614,7 +627,9 @@ impl PlayerView {
         &self,
         d: &Ds,
         theme: &crate::theme::Theme,
+        language: crate::app::i18n::Language,
     ) -> impl IntoElement {
+        let text = crate::app::i18n::RecordingWorkflowTranslations::for_language(language);
         div()
             .h(px(200.0)) // intentional: empty-state placeholder height
             .w_full()
@@ -624,8 +639,8 @@ impl PlayerView {
             .items_center()
             .justify_center()
             .child(
-                EmptyState::new("No Recordings Available")
-                    .description("Go back to the Capture step to record frequency responses")
+                EmptyState::new(text.no_recordings_available)
+                    .description(text.go_back_to_capture)
                     .icon("🎙️"),
             )
     }

@@ -224,6 +224,7 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
                 app.room_eq.model.channel_measurements = channels;
                 app.room_eq.model.init_speaker_configs();
                 app.room_eq.model.apply_smart_defaults(None);
+                app.room_eq.infer_easy_layout();
                 app.room_eq.load_error = None;
                 // Pre-seed Delay Detection form from the recording
                 // session metadata when the file carries it. Only fields

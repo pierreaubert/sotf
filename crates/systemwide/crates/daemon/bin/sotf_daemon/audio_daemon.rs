@@ -8,6 +8,7 @@ use super::driver_manager::{DriverManager, get_driver_status};
 use super::loudness::loudness_data_to_json;
 use super::loudness::loudness_info_to_json;
 use super::misc::bind_unix_socket;
+use super::misc::build_driver_plugin_chain;
 use super::misc::is_safe_output_device_name;
 use super::misc::list_audio_devices;
 use super::misc::push_metering_faults;
@@ -137,8 +138,12 @@ impl AudioDaemon {
                 self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
                     .await
             }
-            Command::LoadPluginArtifact { artifact } => {
-                self.handle_load_plugin_artifact(artifact).await
+            Command::LoadPluginArtifact {
+                artifact,
+                base_generation,
+            } => {
+                self.handle_load_plugin_artifact(artifact, base_generation)
+                    .await
             }
             Command::SetInputChannels { channels } => {
                 self.handle_set_pipeline_channels(Some(channels), None)
@@ -335,9 +340,15 @@ impl AudioDaemon {
     }
 
     pub(super) async fn handle_dump_state(&self) -> Response {
+        let state = self.system_state.lock();
+        let user_graph = state.user_graph();
+        let user_plugins = state.user_plugins();
+        drop(state);
         Response::ok(serde_json::json!({
             "snapshot": self.snapshot_json(),
-            "plugins": self.system_state.lock().user_plugins(),
+            "topology": if user_graph.is_some() { "graph" } else { "rack" },
+            "plugins": user_plugins,
+            "graph": user_graph,
         }))
     }
 
@@ -642,15 +653,32 @@ impl AudioDaemon {
         );
 
         let mut manager = self.manager.lock();
-        manager.set_loudness_plugin_index(plan.output_loudness_index);
-        let result = manager.start_hal_playback_with_driver_config(
-            plan.spec.output_device.clone(),
-            plan.runtime_plugins.clone(),
-            plan.spec.output_channels,
-            effective_driver_sample_rate,
-            effective_driver_buffer_frames,
-            plan.spec.input_channels,
-        );
+        let bootstrap_plugins = if plan.runtime_graph.is_some() {
+            build_driver_plugin_chain(Vec::new()).0
+        } else {
+            plan.runtime_plugins.clone()
+        };
+        let mut result = manager
+            .start_hal_playback_with_driver_config(
+                plan.spec.output_device.clone(),
+                bootstrap_plugins,
+                plan.spec.output_channels,
+                effective_driver_sample_rate,
+                effective_driver_buffer_frames,
+                plan.spec.input_channels,
+            )
+            .map_err(|error| error.to_string());
+        if result.is_ok()
+            && let Some(graph) = plan.runtime_graph.clone()
+        {
+            result = manager.update_plugin_graph(graph);
+            if result.is_err() {
+                let _ = manager.stop();
+            }
+        }
+        if result.is_ok() {
+            manager.set_loudness_plugin_index(plan.output_loudness_index);
+        }
         drop(manager);
 
         match result {
@@ -717,7 +745,19 @@ impl AudioDaemon {
         )
     }
 
-    pub(super) async fn handle_load_plugin_artifact(&self, artifact: Value) -> Response {
+    pub(super) async fn handle_load_plugin_artifact(
+        &self,
+        artifact: Value,
+        base_generation: Option<u64>,
+    ) -> Response {
+        if let Some(base_generation) = base_generation {
+            let current_generation = self.system_state.lock().applied_generation().unwrap_or(0);
+            if base_generation != current_generation {
+                return Response::err(format!(
+                    "Plugin artifact generation conflict: editor based on generation {base_generation}, current generation is {current_generation}. Refresh before applying."
+                ));
+            }
+        }
         match plan_plugin_artifact(artifact) {
             Ok(PluginArtifactPlan::RackChain { plugins }) => {
                 let (input_channels, output_channels) = {
@@ -727,12 +767,90 @@ impl AudioDaemon {
                 self.handle_load_plugins_with_channels(plugins, input_channels, output_channels)
                     .await
             }
+            Ok(PluginArtifactPlan::Graph { graph }) => {
+                let (input_channels, output_channels) = {
+                    let state = self.system_state.lock();
+                    (state.input_channels(), state.output_channels())
+                };
+                self.handle_load_plugin_graph_with_channels(graph, input_channels, output_channels)
+                    .await
+            }
             Ok(PluginArtifactPlan::UnsupportedGraph { reason }) => Response::err(format!(
                 "Unsupported graph plugin artifact: {}. Use a graph-aware loader instead of flattening it into the rack.",
                 reason
             )),
             Err(e) => Response::err(format!("Invalid plugin artifact: {}", e)),
         }
+    }
+
+    async fn handle_load_plugin_graph_with_channels(
+        &self,
+        graph: sotf_audio::engine::PluginGraphConfig,
+        input_channels: usize,
+        output_channels: usize,
+    ) -> Response {
+        let (current_input_channels, current_output_channels) = {
+            let state = self.system_state.lock();
+            (state.input_channels(), state.output_channels())
+        };
+        let channel_geometry_changed =
+            input_channels != current_input_channels || output_channels != current_output_channels;
+        let driver_status = self.driver_manager.lock().status();
+        let driver_sample_rate = if driver_status.sample_rate > 0 {
+            driver_status.sample_rate
+        } else {
+            48_000
+        };
+        let driver_buffer_frames = if driver_status.buffer_frames > 0 {
+            driver_status.buffer_frames
+        } else {
+            512
+        };
+        let fallback_input_channels = if driver_status.channel_count > 0 {
+            driver_status.channel_count as usize
+        } else {
+            self.system_state.lock().input_channels().max(2)
+        };
+        let plan = match self.system_state.lock().prepare_graph_plan(
+            graph,
+            input_channels,
+            output_channels,
+            fallback_input_channels,
+        ) {
+            Ok(plan) => plan,
+            Err(error) => return Response::err(error),
+        };
+
+        if !channel_geometry_changed
+            && self.manager.lock().get_state() != sotf_audio::manager::StreamingState::Idle
+        {
+            let runtime_graph = plan
+                .runtime_graph
+                .clone()
+                .expect("graph plan must contain runtime graph");
+            let mut manager = self.manager.lock();
+            if let Err(error) = manager.update_plugin_graph(runtime_graph) {
+                return Response::err(format!(
+                    "Failed to apply plugin graph; previous pipeline remains active: {error}"
+                ));
+            }
+            manager.set_loudness_plugin_index(plan.output_loudness_index);
+            drop(manager);
+            self.system_state.lock().commit_applied(&plan);
+            return Response::ok(serde_json::json!({
+                "topology": "graph",
+                "nodes": plan.spec.user_graph.as_ref().map_or(0, |graph| graph.nodes.len()),
+                "edges": plan.spec.user_graph.as_ref().map_or(0, |graph| graph.edges.len()),
+                "generation": self.system_state.lock().applied_generation(),
+            }));
+        }
+
+        self.apply_pipeline_plan(
+            plan,
+            driver_status,
+            driver_sample_rate,
+            driver_buffer_frames,
+        )
     }
 
     pub(super) async fn handle_set_pipeline_channels(
@@ -746,10 +864,11 @@ impl AudioDaemon {
             );
         }
 
-        let (plugins, current_input_channels, current_output_channels) = {
+        let (plugins, graph, current_input_channels, current_output_channels) = {
             let state = self.system_state.lock();
             (
                 state.user_plugins(),
+                state.user_graph(),
                 state.input_channels(),
                 state.output_channels(),
             )
@@ -758,8 +877,21 @@ impl AudioDaemon {
         let next_input_channels = input_channels.unwrap_or(current_input_channels);
         let next_output_channels = output_channels.unwrap_or(current_output_channels);
 
-        self.handle_load_plugins_with_channels(plugins, next_input_channels, next_output_channels)
+        if let Some(graph) = graph {
+            self.handle_load_plugin_graph_with_channels(
+                graph,
+                next_input_channels,
+                next_output_channels,
+            )
             .await
+        } else {
+            self.handle_load_plugins_with_channels(
+                plugins,
+                next_input_channels,
+                next_output_channels,
+            )
+            .await
+        }
     }
 
     pub(super) async fn handle_get_loudness(&self) -> Response {
@@ -779,7 +911,17 @@ impl AudioDaemon {
     // =========================================================================
 
     pub(super) async fn handle_get_plugins(&self) -> Response {
-        let plugins = self.system_state.lock().user_plugins();
+        let state = self.system_state.lock();
+        if let Some(graph) = state.user_graph() {
+            return Response::ok(serde_json::json!({
+                "topology": "graph",
+                "graph": graph,
+                "plugins": [],
+                "generation": state.applied_generation(),
+            }));
+        }
+        let plugins = state.user_plugins();
+        drop(state);
         let result: Vec<Value> = plugins
             .iter()
             .enumerate()
@@ -791,7 +933,11 @@ impl AudioDaemon {
                 })
             })
             .collect();
-        Response::ok(serde_json::json!({ "plugins": result }))
+        Response::ok(serde_json::json!({
+            "topology": "rack",
+            "plugins": result,
+            "generation": self.system_state.lock().applied_generation(),
+        }))
     }
 
     pub(super) async fn handle_get_available_plugins(&self) -> Response {
@@ -838,7 +984,15 @@ impl AudioDaemon {
         plugin: PluginConfig,
         index: Option<usize>,
     ) -> Response {
-        let mut plugins = self.system_state.lock().user_plugins();
+        let mut plugins = {
+            let state = self.system_state.lock();
+            if state.user_graph().is_some() {
+                return Response::err(
+                    "A graph pipeline is active; edit and reload the graph artifact instead of using rack mutation commands.",
+                );
+            }
+            state.user_plugins()
+        };
         match index {
             Some(i) if i <= plugins.len() => plugins.insert(i, plugin),
             _ => plugins.push(plugin),
@@ -847,7 +1001,15 @@ impl AudioDaemon {
     }
 
     pub(super) async fn handle_remove_plugin(&self, index: usize) -> Response {
-        let mut plugins = self.system_state.lock().user_plugins();
+        let mut plugins = {
+            let state = self.system_state.lock();
+            if state.user_graph().is_some() {
+                return Response::err(
+                    "A graph pipeline is active; edit and reload the graph artifact instead of using rack mutation commands.",
+                );
+            }
+            state.user_plugins()
+        };
         if index >= plugins.len() {
             return Response::err(format!(
                 "Plugin index {} out of range (have {})",
@@ -860,7 +1022,15 @@ impl AudioDaemon {
     }
 
     pub(super) async fn handle_update_plugin(&self, index: usize, parameters: Value) -> Response {
-        let mut plugins = self.system_state.lock().user_plugins();
+        let mut plugins = {
+            let state = self.system_state.lock();
+            if state.user_graph().is_some() {
+                return Response::err(
+                    "A graph pipeline is active; edit and reload the graph artifact instead of using rack mutation commands.",
+                );
+            }
+            state.user_plugins()
+        };
         if index >= plugins.len() {
             return Response::err(format!(
                 "Plugin index {} out of range (have {})",
@@ -873,7 +1043,15 @@ impl AudioDaemon {
     }
 
     pub(super) async fn handle_reorder_plugins(&self, order: Vec<usize>) -> Response {
-        let plugins = self.system_state.lock().user_plugins();
+        let plugins = {
+            let state = self.system_state.lock();
+            if state.user_graph().is_some() {
+                return Response::err(
+                    "A graph pipeline is active; edit and reload the graph artifact instead of using rack mutation commands.",
+                );
+            }
+            state.user_plugins()
+        };
         let n = plugins.len();
 
         if order.len() != n {
@@ -1012,6 +1190,12 @@ impl AudioDaemon {
     pub(super) async fn handle_set_encryption(&self, enabled: bool) -> Response {
         let mut key_manager = self.key_manager.lock();
         key_manager.set_enabled(enabled);
+
+        if enabled && !key_manager.is_enabled() {
+            return Response::err(
+                "Encryption unavailable: the daemon has no session cipher; use the macOS HAL-enabled build and verify session-key runtime access",
+            );
+        }
 
         // On macOS with HAL, update shared memory encryption flag if the HAL
         // shared memory is available. Missing shared memory is normal when the

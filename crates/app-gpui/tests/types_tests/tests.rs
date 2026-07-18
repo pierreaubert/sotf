@@ -1,5 +1,9 @@
 use sotf_audio_player::PluginType;
-use sotf_audio_player_gpui::app::types::{DensityMode, HeadphoneEqState, SpinoramaEqState};
+use sotf_audio_player_gpui::app::types::{
+    ChannelMeasurement, DensityMode, HeadphoneEqResult, HeadphoneEqState, HeadphoneEqStep,
+    OptimizationStatus, RecordingResult, RoomEqSpeakerConfig, SpinoramaEqResult, SpinoramaEqState,
+    SpinoramaStep,
+};
 use sotf_audio_player_gpui::{
     App, CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState, ContextMenuType,
     CrossoverType, InputMode, LayoutMode, LibraryStats, MeasureState, MeterDisplayMode,
@@ -896,4 +900,244 @@ fn test_plugin_view_mode_default() {
 #[test]
 fn test_plugin_view_mode_variants() {
     assert_ne!(PluginViewMode::Rack, PluginViewMode::Graph);
+}
+
+fn workflow_recording_result() -> RecordingResult {
+    RecordingResult {
+        channel: 0,
+        wav_path: None,
+        csv_path: None,
+        frequencies: vec![100.0, 1_000.0],
+        magnitude_db: vec![0.0, 0.0],
+        phase_deg: vec![0.0, 0.0],
+        impulse_response: None,
+        impulse_time_ms: None,
+        thd_percent: None,
+        harmonic_distortion_db: None,
+        excess_group_delay_ms: None,
+        rt60_ms: None,
+        clarity_c50_db: None,
+        clarity_c80_db: None,
+        spectrogram_db: None,
+    }
+}
+
+fn workflow_headphone_result() -> HeadphoneEqResult {
+    HeadphoneEqResult {
+        biquads: Vec::new(),
+        pre_score: 0.0,
+        post_score: 0.0,
+        original_response: None,
+        corrected_response: None,
+        target_response: None,
+        filter_response: None,
+        deviation_response: None,
+        error_response: None,
+        individual_responses: None,
+    }
+}
+
+fn workflow_spinorama_result() -> SpinoramaEqResult {
+    SpinoramaEqResult {
+        biquads: Vec::new(),
+        pre_score: 0.0,
+        post_score: 0.0,
+        original_response: None,
+        corrected_response: None,
+        target_response: None,
+    }
+}
+
+fn start_workflow(app: &mut App, screen: Screen) {
+    app.ui_state.last_screen = Screen::Library;
+    app.ui_state.current_screen = screen;
+}
+
+#[test]
+fn recording_workflow_navigation_validates_and_initializes_channels() {
+    let mut app = App::new();
+    start_workflow(&mut app, Screen::Recording);
+    let recording = &mut app.measurement_state.recording_state;
+    recording.step = RecordingStep::Config;
+    recording.recording_directory = Some("/tmp/keyboard-recording".to_string());
+    recording.playback_config.channel_mappings = vec![ChannelMapping::single(0, "L")];
+
+    assert!(app.move_workflow_step(true));
+    assert_eq!(
+        app.measurement_state.recording_state.step,
+        RecordingStep::SplCalibration
+    );
+    assert_eq!(
+        app.measurement_state
+            .recording_state
+            .channel_recordings
+            .len(),
+        1
+    );
+    assert!(app.move_workflow_step(false));
+    assert_eq!(
+        app.measurement_state.recording_state.step,
+        RecordingStep::Config
+    );
+    assert!(app.move_workflow_step(true));
+    assert!(app.move_workflow_step(true));
+    assert_eq!(
+        app.measurement_state.recording_state.step,
+        RecordingStep::Capture
+    );
+    assert!(!app.move_workflow_step(true));
+
+    for recording in &mut app.measurement_state.recording_state.channel_recordings {
+        recording.state = ChannelRecordingState::Done;
+    }
+    for expected in [
+        RecordingStep::Probe,
+        RecordingStep::BassAnchor,
+        RecordingStep::Evaluating,
+        RecordingStep::Saving,
+    ] {
+        assert!(app.move_workflow_step(true));
+        assert_eq!(app.measurement_state.recording_state.step, expected);
+    }
+    assert!(app.move_workflow_step(true));
+    assert_eq!(app.ui_state.current_screen, Screen::Library);
+}
+
+#[test]
+fn room_eq_workflow_navigation_enforces_each_data_gate() {
+    let mut app = App::new();
+    start_workflow(&mut app, Screen::RoomEq);
+    let room_eq = &mut app.measurement_state.room_eq_state;
+    room_eq.step = RoomEqStep::LoadData;
+    room_eq.channel_measurements.clear();
+    room_eq.speaker_configs.clear();
+    room_eq.optimization_status = OptimizationStatus::Idle;
+
+    assert!(!app.move_workflow_step(true));
+    app.measurement_state
+        .room_eq_state
+        .channel_measurements
+        .push(ChannelMeasurement {
+            channel_name: "L".to_string(),
+            measurement: workflow_recording_result(),
+            is_group: false,
+            group_drivers: Vec::new(),
+            multi_mic_measurements: Vec::new(),
+        });
+    for expected in [
+        RoomEqStep::Delay,
+        RoomEqStep::Process,
+        RoomEqStep::Configure,
+    ] {
+        assert!(app.move_workflow_step(true));
+        assert_eq!(app.measurement_state.room_eq_state.step, expected);
+    }
+    assert!(!app.move_workflow_step(true));
+    app.measurement_state
+        .room_eq_state
+        .speaker_configs
+        .push(RoomEqSpeakerConfig::default());
+    assert!(app.move_workflow_step(true));
+    assert_eq!(
+        app.measurement_state.room_eq_state.step,
+        RoomEqStep::Optimize
+    );
+    assert!(!app.move_workflow_step(true));
+    app.measurement_state.room_eq_state.optimization_status = OptimizationStatus::Completed;
+    assert!(app.move_workflow_step(true));
+    assert_eq!(app.measurement_state.room_eq_state.step, RoomEqStep::Review);
+    assert!(app.move_workflow_step(true));
+    assert_eq!(app.measurement_state.room_eq_state.step, RoomEqStep::Export);
+    assert!(app.move_workflow_step(false));
+    assert_eq!(app.measurement_state.room_eq_state.step, RoomEqStep::Review);
+    assert!(app.move_workflow_step(true));
+    assert!(app.move_workflow_step(true));
+    assert_eq!(app.ui_state.current_screen, Screen::Library);
+}
+
+#[test]
+fn headphone_workflow_navigation_enforces_optimization_and_result_gates() {
+    let mut app = App::new();
+    start_workflow(&mut app, Screen::HeadphoneEq);
+    let headphone = &mut app.measurement_state.headphone_eq_state.model;
+    headphone.step = HeadphoneEqStep::MeasurementTarget;
+    headphone.measurement_path.clear();
+    headphone.optimization_status = OptimizationStatus::Idle;
+    headphone.result = None;
+
+    assert!(!app.move_workflow_step(true));
+    app.measurement_state
+        .headphone_eq_state
+        .model
+        .measurement_path = "/tmp/headphone.csv".to_string();
+    assert!(app.move_workflow_step(true));
+    assert_eq!(
+        app.measurement_state.headphone_eq_state.step,
+        HeadphoneEqStep::Optimization
+    );
+    app.measurement_state
+        .headphone_eq_state
+        .model
+        .optimization_status = OptimizationStatus::Running;
+    assert!(!app.move_workflow_step(false));
+    assert!(!app.move_workflow_step(true));
+    app.measurement_state
+        .headphone_eq_state
+        .model
+        .optimization_status = OptimizationStatus::Completed;
+    assert!(app.move_workflow_step(true));
+    assert_eq!(
+        app.measurement_state.headphone_eq_state.step,
+        HeadphoneEqStep::Listen
+    );
+    assert!(!app.move_workflow_step(true));
+    app.measurement_state.headphone_eq_state.model.result = Some(workflow_headphone_result());
+    assert!(app.move_workflow_step(true));
+    assert_eq!(
+        app.measurement_state.headphone_eq_state.step,
+        HeadphoneEqStep::Export
+    );
+    assert!(app.move_workflow_step(true));
+    assert_eq!(app.ui_state.current_screen, Screen::Library);
+}
+
+#[test]
+fn spinorama_workflow_navigation_enforces_optimization_and_result_gates() {
+    let mut app = App::new();
+    start_workflow(&mut app, Screen::Spinorama);
+    let spinorama = &mut app.measurement_state.spinorama_eq_state.model;
+    spinorama.step = SpinoramaStep::SelectSpeaker;
+    spinorama.selected_speaker = None;
+    spinorama.optimization_status = OptimizationStatus::Idle;
+    spinorama.result = None;
+
+    assert!(!app.move_workflow_step(true));
+    app.measurement_state
+        .spinorama_eq_state
+        .model
+        .selected_speaker = Some("Keyboard Speaker".to_string());
+    assert!(app.move_workflow_step(true));
+    assert_eq!(
+        app.measurement_state.spinorama_eq_state.step,
+        SpinoramaStep::Configure
+    );
+    assert!(!app.move_workflow_step(true));
+    app.measurement_state
+        .spinorama_eq_state
+        .model
+        .optimization_status = OptimizationStatus::Completed;
+    assert!(app.move_workflow_step(true));
+    assert_eq!(
+        app.measurement_state.spinorama_eq_state.step,
+        SpinoramaStep::Review
+    );
+    assert!(!app.move_workflow_step(true));
+    app.measurement_state.spinorama_eq_state.model.result = Some(workflow_spinorama_result());
+    assert!(app.move_workflow_step(true));
+    assert_eq!(
+        app.measurement_state.spinorama_eq_state.step,
+        SpinoramaStep::Export
+    );
+    assert!(app.move_workflow_step(true));
+    assert_eq!(app.ui_state.current_screen, Screen::Library);
 }

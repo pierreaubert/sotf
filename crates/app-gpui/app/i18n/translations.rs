@@ -1,43 +1,5942 @@
 use super::language::Language;
 
+#[derive(Debug, Clone, Copy)]
+pub struct RoomEqEasyTranslations {
+    language: Language,
+    pub layout: &'static str,
+    pub stereo20_description: &'static str,
+    pub stereo21_description: &'static str,
+    pub surround51_description: &'static str,
+    pub measured_roles: &'static str,
+    pub channels_loaded: &'static str,
+}
+
+impl RoomEqEasyTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                language,
+                layout: "Speaker layout",
+                stereo20_description: "Stereo correction without crossover routing.",
+                stereo21_description: "Stereo plus subwoofer with standard LR24 bass management.",
+                surround51_description: "5.1 surround with standard LR24 bass management and editable routing.",
+                measured_roles: "Required measured channels",
+                channels_loaded: "channels loaded",
+            },
+            Language::French => Self {
+                language,
+                layout: "Configuration des enceintes",
+                stereo20_description: "Correction stéréo sans routage de filtre répartiteur.",
+                stereo21_description: "Stéréo avec caisson et gestion standard des graves LR24.",
+                surround51_description: "Surround 5.1 avec gestion standard des graves LR24 et routage modifiable.",
+                measured_roles: "Canaux mesurés requis",
+                channels_loaded: "canaux chargés",
+            },
+            Language::German => Self {
+                language,
+                layout: "Lautsprecheranordnung",
+                stereo20_description: "Stereokorrektur ohne Frequenzweichen-Routing.",
+                stereo21_description: "Stereo plus Subwoofer mit standardmäßigem LR24-Bassmanagement.",
+                surround51_description: "5.1-Surround mit LR24-Bassmanagement und bearbeitbarem Routing.",
+                measured_roles: "Erforderliche Messkanäle",
+                channels_loaded: "Kanäle geladen",
+            },
+            Language::Spanish => Self {
+                language,
+                layout: "Configuración de altavoces",
+                stereo20_description: "Corrección estéreo sin enrutamiento de cruce.",
+                stereo21_description: "Estéreo con subwoofer y gestión de graves LR24 estándar.",
+                surround51_description: "Sonido envolvente 5.1 con gestión LR24 y enrutamiento editable.",
+                measured_roles: "Canales medidos necesarios",
+                channels_loaded: "canales cargados",
+            },
+        }
+    }
+
+    pub fn description(
+        self,
+        layout: sotf_audio_player::room_eq_types::RoomEqEasyLayout,
+    ) -> &'static str {
+        use sotf_audio_player::room_eq_types::RoomEqEasyLayout;
+        match layout {
+            RoomEqEasyLayout::Stereo20 => self.stereo20_description,
+            RoomEqEasyLayout::Stereo21 => self.stereo21_description,
+            RoomEqEasyLayout::Surround51 => self.surround51_description,
+        }
+    }
+
+    pub fn configuration_title(
+        self,
+        layout: sotf_audio_player::room_eq_types::RoomEqEasyLayout,
+        channel_count: usize,
+    ) -> String {
+        format!(
+            "{} — {} ({} {})",
+            self.layout,
+            layout.label(),
+            channel_count,
+            self.channels_loaded
+        )
+    }
+
+    pub fn invalid_layout(
+        self,
+        error: &sotf_audio_player::room_eq_types::RoomEqEasyLayoutError,
+    ) -> String {
+        let detail = error.to_string();
+        match self.language {
+            Language::English => {
+                format!("The measurements do not match the selected layout: {detail}")
+            }
+            Language::French => {
+                format!("Les mesures ne correspondent pas à la configuration choisie : {detail}")
+            }
+            Language::German => {
+                format!("Die Messungen passen nicht zur gewählten Anordnung: {detail}")
+            }
+            Language::Spanish => {
+                format!("Las mediciones no coinciden con la configuración elegida: {detail}")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct HeadphoneEasyTranslations {
+    language: Language,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub safety: &'static str,
+    pub apply: &'static str,
+    pub undo: &'static str,
+    pub edit_in_studio: &'static str,
+    pub no_result: &'static str,
+    pub no_undo: &'static str,
+    pub restored: &'static str,
+}
+
+impl HeadphoneEasyTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                language,
+                title: "Easy listening chain",
+                description: "Creates an editable safety preamp → Headphone EQ → ISO-226 loudness-compensation chain.",
+                safety: "Assumes a calibrated 70 dB SPL listening level and an 83 dB SPL reference. Start playback low: compensation and preamp headroom do not replace hearing-safe volume limits.",
+                apply: "Apply easy chain",
+                undo: "Undo",
+                edit_in_studio: "Edit in Studio",
+                no_result: "No optimization result to apply",
+                no_undo: "No Headphone easy-mode apply to undo",
+                restored: "Restored the previous DSP chain",
+            },
+            Language::French => Self {
+                language,
+                title: "Chaîne d’écoute simplifiée",
+                description: "Crée une chaîne modifiable : préampli de sécurité → égalisation casque → compensation de sonie ISO 226.",
+                safety: "Suppose un niveau d’écoute calibré à 70 dB SPL et une référence à 83 dB SPL. Commencez à faible volume : la compensation et la réserve du préampli ne remplacent pas une limite d’écoute sûre.",
+                apply: "Appliquer la chaîne",
+                undo: "Annuler",
+                edit_in_studio: "Modifier dans Studio",
+                no_result: "Aucun résultat d’optimisation à appliquer",
+                no_undo: "Aucune application simplifiée du casque à annuler",
+                restored: "Chaîne DSP précédente restaurée",
+            },
+            Language::German => Self {
+                language,
+                title: "Einfache Hörkette",
+                description: "Erstellt eine editierbare Kette: Sicherheitsvorverstärkung → Kopfhörer-EQ → ISO-226-Lautheitskompensation.",
+                safety: "Setzt einen kalibrierten Hörpegel von 70 dB SPL und 83 dB SPL Referenz voraus. Starten Sie leise: Kompensation und Vorverstärker-Headroom ersetzen keine sichere Lautstärkebegrenzung.",
+                apply: "Einfache Kette anwenden",
+                undo: "Rückgängig",
+                edit_in_studio: "In Studio bearbeiten",
+                no_result: "Kein Optimierungsergebnis zum Anwenden",
+                no_undo: "Keine einfache Kopfhörer-Anwendung zum Rückgängigmachen",
+                restored: "Vorherige DSP-Kette wiederhergestellt",
+            },
+            Language::Spanish => Self {
+                language,
+                title: "Cadena de escucha sencilla",
+                description: "Crea una cadena editable: preamplificador de seguridad → EQ de auriculares → compensación de sonoridad ISO 226.",
+                safety: "Supone un nivel de escucha calibrado de 70 dB SPL y una referencia de 83 dB SPL. Empieza con volumen bajo: la compensación y el margen del preamplificador no sustituyen un límite auditivo seguro.",
+                apply: "Aplicar cadena sencilla",
+                undo: "Deshacer",
+                edit_in_studio: "Editar en Studio",
+                no_result: "No hay un resultado de optimización que aplicar",
+                no_undo: "No hay una aplicación sencilla de auriculares que deshacer",
+                restored: "Se restauró la cadena DSP anterior",
+            },
+        }
+    }
+
+    pub fn applied(self, filters: usize, preamp_db: f64) -> String {
+        match self.language {
+            Language::French => format!(
+                "Chaîne casque sûre appliquée ({filters} filtres, préampli {preamp_db:.1} dB)"
+            ),
+            Language::German => format!(
+                "Sichere Kopfhörerkette angewendet ({filters} Filter, {preamp_db:.1} dB Vorverstärkung)"
+            ),
+            Language::Spanish => format!(
+                "Cadena segura de auriculares aplicada ({filters} filtros, preamplificador {preamp_db:.1} dB)"
+            ),
+            Language::English => format!(
+                "Applied safe Headphone chain ({filters} filters, {preamp_db:.1} dB preamp)"
+            ),
+        }
+    }
+
+    pub fn summary(self, filters: usize, preamp_db: f64) -> String {
+        match self.language {
+            Language::French => format!(
+                "{filters} filtres appliqués avec un préampli de sécurité de {preamp_db:.1} dB ; gain automatique de sonie activé."
+            ),
+            Language::German => format!(
+                "{filters} Filter mit {preamp_db:.1} dB Sicherheitsvorverstärkung angewendet; Lautheits-Autogain ist aktiv."
+            ),
+            Language::Spanish => format!(
+                "{filters} filtros aplicados con preamplificador de seguridad de {preamp_db:.1} dB; la ganancia automática de sonoridad está activa."
+            ),
+            Language::English => format!(
+                "Applied {filters} filters with {preamp_db:.1} dB safety preamp; loudness auto-gain is enabled."
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct HeadphoneEqTranslations {
+    pub title: &'static str,
+    pub measurement_step: &'static str,
+    pub optimization_step: &'static str,
+    pub listen_step: &'static str,
+    pub close: &'static str,
+    pub back: &'static str,
+    pub select_measurement: &'static str,
+    pub select_measurement_description: &'static str,
+    pub measurement_file: &'static str,
+    pub measurement_file_description: &'static str,
+    pub headphone_search: &'static str,
+    pub search_placeholder: &'static str,
+    pub available_headphones: &'static str,
+    pub frequency_response: &'static str,
+    pub configure_optimization: &'static str,
+    pub configure_optimization_description: &'static str,
+    pub custom_target_curve: &'static str,
+    pub generate_headphone_eq: &'static str,
+    pub listen_preview: &'static str,
+    pub listen_preview_description: &'static str,
+    pub optimization_results: &'static str,
+    pub response_visualization: &'static str,
+    pub eq_filters: &'static str,
+    pub no_results: &'static str,
+    pub no_results_description: &'static str,
+    pub apply_export: &'static str,
+    pub apply_export_description: &'static str,
+    pub export: &'static str,
+    pub export_description: &'static str,
+    pub no_target_curve: &'static str,
+}
+
+impl HeadphoneEqTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                title: "Headphone EQ",
+                measurement_step: "Measurement",
+                optimization_step: "Optimization",
+                listen_step: "Listen",
+                close: "Close",
+                back: "Back",
+                select_measurement: "Select Measurement",
+                select_measurement_description: "Choose your headphone measurement source.",
+                measurement_file: "Measurement File",
+                measurement_file_description: "Select a CSV file with your headphone's frequency-response measurement.",
+                headphone_search: "Headphone Search",
+                search_placeholder: "Type to search headphones…",
+                available_headphones: "Available Headphones",
+                frequency_response: "Frequency Response",
+                configure_optimization: "Configure Optimization",
+                configure_optimization_description: "Set the optimization parameters for headphone EQ.",
+                custom_target_curve: "Custom Target Curve",
+                generate_headphone_eq: "Generate Headphone EQ",
+                listen_preview: "Listen & Preview",
+                listen_preview_description: "Preview the optimized EQ and apply it to playback.",
+                optimization_results: "Optimization Results",
+                response_visualization: "Response Visualization",
+                eq_filters: "EQ Filters",
+                no_results: "No Results",
+                no_results_description: "Go back and run optimization to generate an EQ curve.",
+                apply_export: "Apply & Export",
+                apply_export_description: "Apply the EQ to playback or export it in various formats.",
+                export: "Export",
+                export_description: "Select an export format and save the EQ.",
+                no_target_curve: "No target curve selected",
+            },
+            Language::French => Self {
+                title: "Égalisation casque",
+                measurement_step: "Mesure",
+                optimization_step: "Optimisation",
+                listen_step: "Écoute",
+                close: "Fermer",
+                back: "Retour",
+                select_measurement: "Sélectionner une mesure",
+                select_measurement_description: "Choisissez la source de mesure de votre casque.",
+                measurement_file: "Fichier de mesure",
+                measurement_file_description: "Sélectionnez un fichier CSV contenant la réponse en fréquence du casque.",
+                headphone_search: "Recherche de casque",
+                search_placeholder: "Rechercher un casque…",
+                available_headphones: "Casques disponibles",
+                frequency_response: "Réponse en fréquence",
+                configure_optimization: "Configurer l’optimisation",
+                configure_optimization_description: "Définissez les paramètres d’optimisation de l’égalisation casque.",
+                custom_target_curve: "Courbe cible personnalisée",
+                generate_headphone_eq: "Générer l’égalisation casque",
+                listen_preview: "Écouter et prévisualiser",
+                listen_preview_description: "Prévisualisez l’égalisation optimisée et appliquez-la à la lecture.",
+                optimization_results: "Résultats de l’optimisation",
+                response_visualization: "Visualisation de la réponse",
+                eq_filters: "Filtres d’égalisation",
+                no_results: "Aucun résultat",
+                no_results_description: "Revenez en arrière et lancez l’optimisation pour générer une courbe.",
+                apply_export: "Appliquer et exporter",
+                apply_export_description: "Appliquez l’égalisation à la lecture ou exportez-la dans divers formats.",
+                export: "Exporter",
+                export_description: "Sélectionnez un format d’exportation et enregistrez l’égalisation.",
+                no_target_curve: "Aucune courbe cible sélectionnée",
+            },
+            Language::German => Self {
+                title: "Kopfhörer-EQ",
+                measurement_step: "Messung",
+                optimization_step: "Optimierung",
+                listen_step: "Anhören",
+                close: "Schließen",
+                back: "Zurück",
+                select_measurement: "Messung auswählen",
+                select_measurement_description: "Wählen Sie die Messquelle für Ihren Kopfhörer.",
+                measurement_file: "Messdatei",
+                measurement_file_description: "Wählen Sie eine CSV-Datei mit dem Frequenzgang des Kopfhörers.",
+                headphone_search: "Kopfhörersuche",
+                search_placeholder: "Kopfhörer suchen…",
+                available_headphones: "Verfügbare Kopfhörer",
+                frequency_response: "Frequenzgang",
+                configure_optimization: "Optimierung konfigurieren",
+                configure_optimization_description: "Legen Sie die Optimierungsparameter für den Kopfhörer-EQ fest.",
+                custom_target_curve: "Benutzerdefinierte Zielkurve",
+                generate_headphone_eq: "Kopfhörer-EQ erzeugen",
+                listen_preview: "Anhören und Vorschau",
+                listen_preview_description: "Hören Sie den optimierten EQ vor und wenden Sie ihn auf die Wiedergabe an.",
+                optimization_results: "Optimierungsergebnisse",
+                response_visualization: "Frequenzgangdarstellung",
+                eq_filters: "EQ-Filter",
+                no_results: "Keine Ergebnisse",
+                no_results_description: "Gehen Sie zurück und starten Sie die Optimierung, um eine EQ-Kurve zu erzeugen.",
+                apply_export: "Anwenden und exportieren",
+                apply_export_description: "Wenden Sie den EQ auf die Wiedergabe an oder exportieren Sie ihn.",
+                export: "Exportieren",
+                export_description: "Wählen Sie ein Exportformat und speichern Sie den EQ.",
+                no_target_curve: "Keine Zielkurve ausgewählt",
+            },
+            Language::Spanish => Self {
+                title: "EQ de auriculares",
+                measurement_step: "Medición",
+                optimization_step: "Optimización",
+                listen_step: "Escuchar",
+                close: "Cerrar",
+                back: "Atrás",
+                select_measurement: "Seleccionar medición",
+                select_measurement_description: "Elige la fuente de medición de tus auriculares.",
+                measurement_file: "Archivo de medición",
+                measurement_file_description: "Selecciona un archivo CSV con la respuesta en frecuencia de los auriculares.",
+                headphone_search: "Buscar auriculares",
+                search_placeholder: "Buscar auriculares…",
+                available_headphones: "Auriculares disponibles",
+                frequency_response: "Respuesta en frecuencia",
+                configure_optimization: "Configurar optimización",
+                configure_optimization_description: "Define los parámetros de optimización del EQ de auriculares.",
+                custom_target_curve: "Curva objetivo personalizada",
+                generate_headphone_eq: "Generar EQ de auriculares",
+                listen_preview: "Escuchar y previsualizar",
+                listen_preview_description: "Previsualiza el EQ optimizado y aplícalo a la reproducción.",
+                optimization_results: "Resultados de la optimización",
+                response_visualization: "Visualización de la respuesta",
+                eq_filters: "Filtros de EQ",
+                no_results: "Sin resultados",
+                no_results_description: "Vuelve atrás y ejecuta la optimización para generar una curva de EQ.",
+                apply_export: "Aplicar y exportar",
+                apply_export_description: "Aplica el EQ a la reproducción o expórtalo en varios formatos.",
+                export: "Exportar",
+                export_description: "Selecciona un formato de exportación y guarda el EQ.",
+                no_target_curve: "No hay ninguna curva objetivo seleccionada",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StreamsTranslations {
+    pub title: &'static str,
+    pub subtitle: &'static str,
+    pub no_saved_streams: &'static str,
+    pub name: &'static str,
+    pub seekable: &'static str,
+    pub url_placeholder: &'static str,
+    pub save: &'static str,
+    pub play: &'static str,
+    pub queue: &'static str,
+    pub remove: &'static str,
+}
+
+impl StreamsTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                title: "Streams",
+                subtitle: "HTTPS streams, local SOTF media URLs, HLS, Spotify, and Tidal",
+                no_saved_streams: "No saved streams",
+                name: "Name",
+                seekable: "Seekable",
+                url_placeholder: "https://example.com/live.m3u8 or spotify:track:id",
+                save: "Save",
+                play: "Play",
+                queue: "Queue",
+                remove: "Remove",
+            },
+            Language::French => Self {
+                title: "Flux",
+                subtitle: "Flux HTTPS, URL multimédias SOTF locales, HLS, Spotify et Tidal",
+                no_saved_streams: "Aucun flux enregistré",
+                name: "Nom",
+                seekable: "Navigation possible",
+                url_placeholder: "https://exemple.fr/direct.m3u8 ou spotify:track:id",
+                save: "Enregistrer",
+                play: "Lire",
+                queue: "File d’attente",
+                remove: "Supprimer",
+            },
+            Language::German => Self {
+                title: "Streams",
+                subtitle: "HTTPS-Streams, lokale SOTF-Medien-URLs, HLS, Spotify und Tidal",
+                no_saved_streams: "Keine gespeicherten Streams",
+                name: "Name",
+                seekable: "Suchlauf möglich",
+                url_placeholder: "https://beispiel.de/live.m3u8 oder spotify:track:id",
+                save: "Speichern",
+                play: "Abspielen",
+                queue: "Warteschlange",
+                remove: "Entfernen",
+            },
+            Language::Spanish => Self {
+                title: "Emisiones",
+                subtitle: "Emisiones HTTPS, URL multimedia locales de SOTF, HLS, Spotify y Tidal",
+                no_saved_streams: "No hay emisiones guardadas",
+                name: "Nombre",
+                seekable: "Permite desplazamiento",
+                url_placeholder: "https://ejemplo.es/directo.m3u8 o spotify:track:id",
+                save: "Guardar",
+                play: "Reproducir",
+                queue: "Cola",
+                remove: "Eliminar",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PluginRackTranslations {
+    pub signal_chain: &'static str,
+    pub graph_routing_title: &'static str,
+    pub graph_routing_description: &'static str,
+    pub open_graph_view: &'static str,
+    pub preset_name_placeholder: &'static str,
+    pub ok: &'static str,
+    pub save_new: &'static str,
+    pub empty_rack: &'static str,
+    pub load: &'static str,
+    pub save: &'static str,
+    pub applying: &'static str,
+    pub no_plugin_selected: &'static str,
+    pub add_plugin_to_start: &'static str,
+    pub configuration: &'static str,
+    pub view: &'static str,
+    pub skin: &'static str,
+    pub output: &'static str,
+    pub binaural_preview: &'static str,
+    pub plugin_presets: &'static str,
+    pub plugin_configuration: &'static str,
+    pub native_ui: &'static str,
+    pub simple: &'static str,
+    pub add_plugin_for_comparison: &'static str,
+    pub move_plugin_up: &'static str,
+    pub move_plugin_down: &'static str,
+    pub remove_plugin: &'static str,
+}
+
+impl PluginRackTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                signal_chain: "Signal Chain",
+                graph_routing_title: "Signal chain uses graph routing",
+                graph_routing_description: "The current plugin chain has parallel paths or routed bass management and cannot be shown in the linear rack. Open the graph view to inspect, edit, or remove plugins.",
+                open_graph_view: "Open Graph View",
+                preset_name_placeholder: "Preset name…",
+                ok: "OK",
+                save_new: "+ Save",
+                empty_rack: "Click + to add plugins",
+                load: "Load",
+                save: "Save",
+                applying: "Applying…",
+                no_plugin_selected: "No plugin selected",
+                add_plugin_to_start: "Add a plugin to get started",
+                configuration: "Configuration",
+                view: "View",
+                skin: "Skin",
+                output: "Output",
+                binaural_preview: "Binaural Preview",
+                plugin_presets: "Plugin presets",
+                plugin_configuration: "Plugin configuration",
+                native_ui: "Native UI",
+                simple: "Simple",
+                add_plugin_for_comparison: "Add plugin for comparison",
+                move_plugin_up: "Move plugin up",
+                move_plugin_down: "Move plugin down",
+                remove_plugin: "Remove plugin",
+            },
+            Language::French => Self {
+                signal_chain: "Chaîne de traitement",
+                graph_routing_title: "La chaîne utilise un routage en graphe",
+                graph_routing_description: "La chaîne actuelle contient des chemins parallèles ou une gestion des graves routée et ne peut pas être affichée dans le rack linéaire. Ouvrez le graphe pour inspecter, modifier ou supprimer des modules.",
+                open_graph_view: "Ouvrir le graphe",
+                preset_name_placeholder: "Nom du préréglage…",
+                ok: "OK",
+                save_new: "+ Enregistrer",
+                empty_rack: "Cliquez sur + pour ajouter des modules",
+                load: "Charger",
+                save: "Enregistrer",
+                applying: "Application…",
+                no_plugin_selected: "Aucun module sélectionné",
+                add_plugin_to_start: "Ajoutez un module pour commencer",
+                configuration: "Configuration",
+                view: "Vue",
+                skin: "Habillage",
+                output: "Sortie",
+                binaural_preview: "Aperçu binaural",
+                plugin_presets: "Préréglages du module",
+                plugin_configuration: "Configuration du module",
+                native_ui: "Interface native",
+                simple: "Simple",
+                add_plugin_for_comparison: "Ajouter un module à comparer",
+                move_plugin_up: "Déplacer le module vers le haut",
+                move_plugin_down: "Déplacer le module vers le bas",
+                remove_plugin: "Supprimer le module",
+            },
+            Language::German => Self {
+                signal_chain: "Signalkette",
+                graph_routing_title: "Die Signalkette verwendet Graph-Routing",
+                graph_routing_description: "Die aktuelle Signalkette enthält parallele Pfade oder geroutetes Bassmanagement und kann nicht im linearen Rack angezeigt werden. Öffnen Sie die Graphansicht, um Plugins zu prüfen, zu bearbeiten oder zu entfernen.",
+                open_graph_view: "Graphansicht öffnen",
+                preset_name_placeholder: "Preset-Name…",
+                ok: "OK",
+                save_new: "+ Speichern",
+                empty_rack: "Mit + Plugins hinzufügen",
+                load: "Laden",
+                save: "Speichern",
+                applying: "Wird angewendet…",
+                no_plugin_selected: "Kein Plugin ausgewählt",
+                add_plugin_to_start: "Fügen Sie zunächst ein Plugin hinzu",
+                configuration: "Konfiguration",
+                view: "Ansicht",
+                skin: "Darstellung",
+                output: "Ausgang",
+                binaural_preview: "Binaurale Vorschau",
+                plugin_presets: "Plugin-Presets",
+                plugin_configuration: "Plugin-Konfiguration",
+                native_ui: "Native Oberfläche",
+                simple: "Einfach",
+                add_plugin_for_comparison: "Plugin zum Vergleich hinzufügen",
+                move_plugin_up: "Plugin nach oben verschieben",
+                move_plugin_down: "Plugin nach unten verschieben",
+                remove_plugin: "Plugin entfernen",
+            },
+            Language::Spanish => Self {
+                signal_chain: "Cadena de señal",
+                graph_routing_title: "La cadena usa enrutamiento por grafo",
+                graph_routing_description: "La cadena actual contiene rutas paralelas o gestión de graves enrutada y no puede mostrarse en el rack lineal. Abra la vista de grafo para inspeccionar, editar o eliminar complementos.",
+                open_graph_view: "Abrir vista de grafo",
+                preset_name_placeholder: "Nombre del preajuste…",
+                ok: "Aceptar",
+                save_new: "+ Guardar",
+                empty_rack: "Pulse + para añadir complementos",
+                load: "Cargar",
+                save: "Guardar",
+                applying: "Aplicando…",
+                no_plugin_selected: "Ningún complemento seleccionado",
+                add_plugin_to_start: "Añada un complemento para empezar",
+                configuration: "Configuración",
+                view: "Vista",
+                skin: "Apariencia",
+                output: "Salida",
+                binaural_preview: "Vista previa binaural",
+                plugin_presets: "Preajustes del complemento",
+                plugin_configuration: "Configuración del complemento",
+                native_ui: "Interfaz nativa",
+                simple: "Simple",
+                add_plugin_for_comparison: "Añadir complemento para comparar",
+                move_plugin_up: "Mover complemento arriba",
+                move_plugin_down: "Mover complemento abajo",
+                remove_plugin: "Eliminar complemento",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TutorialSlideTranslations {
+    pub title: &'static str,
+    pub content: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TutorialTranslations {
+    pub screens: &'static [TutorialSlideTranslations; 7],
+    pub previous: &'static str,
+    pub next: &'static str,
+    pub get_started: &'static str,
+}
+
+static ENGLISH_TUTORIAL_SCREENS: [TutorialSlideTranslations; 7] = [
+    TutorialSlideTranslations {
+        title: "Welcome to SOTF Player",
+        content: &[
+            "SOTF is a high-fidelity audio player with built-in DSP processing.",
+            "Browse your music library, build a queue, and play through real-time audio plugins.",
+            "Use the navigation bar to open Library, Queue, Studio, and the other workflows.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Plugin Rack",
+        content: &[
+            "The Studio screen hosts your plugin rack: a chain of audio processors applied in real time.",
+            "Add tools such as crossfeed or Fletcher–Munson compensation for headphone listening.",
+            "EQ, compressor, gate, limiter, upmixer, and more can be reordered or bypassed.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Recording",
+        content: &[
+            "Measure loudspeakers or a room with sweep signals or pink noise.",
+            "Connect a calibrated microphone, select the input and output channels, and capture response data.",
+            "Recordings are saved as CSV files for Room EQ optimization.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Spinorama EQ",
+        content: &[
+            "Optimize loudspeaker EQ from measurement data provided by spinorama.org.",
+            "Find a model, choose a target curve, and let the optimizer design parametric EQ filters.",
+            "Export the result or load it directly into the plugin rack.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Headphone EQ",
+        content: &[
+            "Match a Harman or another headphone target for accurate reproduction.",
+            "Load a headphone response and optimize parametric EQ filters against the target.",
+            "Choose among several optimization algorithms to refine the result.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Room EQ",
+        content: &[
+            "Correct room acoustics for stereo and multichannel systems.",
+            "Use measurements or recordings to generate editable correction for each channel.",
+            "Configure crossovers, target curves, and optimization modes.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Preferences",
+        content: &[
+            "Customize the theme, language, keybindings, audio device, and font scale in Settings.",
+            "Manage music folders, scanner threads, and background analysis.",
+            "Save and load plugin presets from Settings.",
+        ],
+    },
+];
+
+static FRENCH_TUTORIAL_SCREENS: [TutorialSlideTranslations; 7] = [
+    TutorialSlideTranslations {
+        title: "Bienvenue dans SOTF Player",
+        content: &[
+            "SOTF est un lecteur audio haute fidélité avec traitement DSP intégré.",
+            "Parcourez votre bibliothèque, préparez une file et utilisez des modules audio en temps réel.",
+            "La barre de navigation ouvre la Bibliothèque, la File d’attente, le Studio et les autres flux de travail.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Chaîne de modules",
+        content: &[
+            "L’écran Studio contient votre chaîne de modules : des processeurs audio appliqués en temps réel.",
+            "Ajoutez par exemple une diaphonie croisée ou une compensation Fletcher–Munson pour l’écoute au casque.",
+            "Égaliseur, compresseur, gate, limiteur, upmixer et autres peuvent être réordonnés ou contournés.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Enregistrement",
+        content: &[
+            "Mesurez des enceintes ou une pièce avec des balayages ou du bruit rose.",
+            "Branchez un microphone étalonné, choisissez les canaux d’entrée et de sortie, puis capturez la réponse.",
+            "Les enregistrements sont sauvegardés en CSV pour l’optimisation de la correction de salle.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Égalisation Spinorama",
+        content: &[
+            "Optimisez une enceinte à partir des mesures fournies par spinorama.org.",
+            "Choisissez un modèle et une courbe cible, puis laissez l’optimiseur concevoir les filtres paramétriques.",
+            "Exportez le résultat ou chargez-le directement dans la chaîne de modules.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Égalisation casque",
+        content: &[
+            "Adaptez la réponse à une cible Harman ou à une autre cible casque pour une reproduction fidèle.",
+            "Chargez la réponse d’un casque et optimisez les filtres paramétriques selon la cible.",
+            "Choisissez parmi plusieurs algorithmes d’optimisation pour affiner le résultat.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Correction de salle",
+        content: &[
+            "Corrigez l’acoustique d’une pièce pour les systèmes stéréo et multicanaux.",
+            "Utilisez des mesures ou des enregistrements pour créer une correction modifiable par canal.",
+            "Configurez les filtres de coupure, les courbes cibles et les modes d’optimisation.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Préférences",
+        content: &[
+            "Réglez le thème, la langue, les raccourcis, le périphérique audio et l’échelle de police dans Paramètres.",
+            "Gérez les dossiers musicaux, les threads d’analyse et l’analyse en arrière-plan.",
+            "Sauvegardez et chargez les préréglages de modules depuis Paramètres.",
+        ],
+    },
+];
+
+static GERMAN_TUTORIAL_SCREENS: [TutorialSlideTranslations; 7] = [
+    TutorialSlideTranslations {
+        title: "Willkommen bei SOTF Player",
+        content: &[
+            "SOTF ist ein Hi-Fi-Audioplayer mit integrierter DSP-Verarbeitung.",
+            "Durchsuchen Sie Ihre Mediathek, erstellen Sie eine Warteschlange und nutzen Sie Echtzeit-Audioplugins.",
+            "Über die Navigationsleiste öffnen Sie Mediathek, Warteschlange, Studio und weitere Arbeitsabläufe.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Plugin-Kette",
+        content: &[
+            "Im Studio liegt Ihre Plugin-Kette: eine Folge von Audioprozessoren, die in Echtzeit arbeitet.",
+            "Fügen Sie etwa Crossfeed oder Fletcher–Munson-Kompensation für die Kopfhörerwiedergabe hinzu.",
+            "EQ, Kompressor, Gate, Limiter, Upmixer und weitere Plugins lassen sich umordnen oder umgehen.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Aufnahme",
+        content: &[
+            "Messen Sie Lautsprecher oder einen Raum mit Sweeps oder rosa Rauschen.",
+            "Schließen Sie ein kalibriertes Mikrofon an, wählen Sie Ein- und Ausgangskanäle und erfassen Sie die Antwort.",
+            "Aufnahmen werden als CSV-Dateien für die Raum-EQ-Optimierung gespeichert.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Spinorama-EQ",
+        content: &[
+            "Optimieren Sie Lautsprecher anhand der Messdaten von spinorama.org.",
+            "Wählen Sie ein Modell und eine Zielkurve; der Optimierer entwirft die parametrischen EQ-Filter.",
+            "Exportieren Sie das Ergebnis oder laden Sie es direkt in die Plugin-Kette.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Kopfhörer-EQ",
+        content: &[
+            "Passen Sie den Frequenzgang für eine genaue Wiedergabe an ein Harman- oder anderes Kopfhörerziel an.",
+            "Laden Sie den Kopfhörerfrequenzgang und optimieren Sie parametrische EQ-Filter für das Ziel.",
+            "Wählen Sie aus mehreren Optimierungsalgorithmen, um das Ergebnis zu verfeinern.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Raum-EQ",
+        content: &[
+            "Korrigieren Sie die Raumakustik für Stereo- und Mehrkanalsysteme.",
+            "Erzeugen Sie aus Messungen oder Aufnahmen eine bearbeitbare Korrektur für jeden Kanal.",
+            "Konfigurieren Sie Frequenzweichen, Zielkurven und Optimierungsmodi.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Einstellungen",
+        content: &[
+            "Passen Sie unter Einstellungen Theme, Sprache, Tastenbelegung, Audiogerät und Schriftgröße an.",
+            "Verwalten Sie Musikordner, Scanner-Threads und Hintergrundanalysen.",
+            "Speichern und laden Sie Plugin-Presets unter Einstellungen.",
+        ],
+    },
+];
+
+static SPANISH_TUTORIAL_SCREENS: [TutorialSlideTranslations; 7] = [
+    TutorialSlideTranslations {
+        title: "Le damos la bienvenida a SOTF Player",
+        content: &[
+            "SOTF es un reproductor de alta fidelidad con procesamiento DSP integrado.",
+            "Explore su biblioteca, prepare una cola y reproduzca con complementos de audio en tiempo real.",
+            "Use la barra de navegación para abrir Biblioteca, Cola, Estudio y los demás flujos de trabajo.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Cadena de complementos",
+        content: &[
+            "La pantalla Estudio contiene la cadena de complementos: procesadores de audio aplicados en tiempo real.",
+            "Añada, por ejemplo, diafonía o compensación Fletcher–Munson para escuchar con auriculares.",
+            "Ecualizador, compresor, puerta, limitador, upmixer y otros se pueden reordenar u omitir.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Grabación",
+        content: &[
+            "Mida altavoces o una sala con barridos o ruido rosa.",
+            "Conecte un micrófono calibrado, seleccione los canales de entrada y salida y capture la respuesta.",
+            "Las grabaciones se guardan como archivos CSV para optimizar la ecualización de sala.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Ecualización Spinorama",
+        content: &[
+            "Optimice un altavoz a partir de los datos de medición de spinorama.org.",
+            "Elija un modelo y una curva objetivo; el optimizador diseñará los filtros paramétricos.",
+            "Exporte el resultado o cárguelo directamente en la cadena de complementos.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Ecualización de auriculares",
+        content: &[
+            "Ajuste la respuesta a un objetivo Harman u otro objetivo de auriculares para una reproducción precisa.",
+            "Cargue la respuesta de unos auriculares y optimice filtros paramétricos según el objetivo.",
+            "Elija entre varios algoritmos de optimización para afinar el resultado.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Ecualización de sala",
+        content: &[
+            "Corrija la acústica de una sala en sistemas estéreo y multicanal.",
+            "Use mediciones o grabaciones para generar una corrección editable por canal.",
+            "Configure cruces, curvas objetivo y modos de optimización.",
+        ],
+    },
+    TutorialSlideTranslations {
+        title: "Preferencias",
+        content: &[
+            "Configure el tema, idioma, atajos, dispositivo de audio y escala de fuente en Ajustes.",
+            "Gestione carpetas de música, hilos de análisis y análisis en segundo plano.",
+            "Guarde y cargue preajustes de complementos desde Ajustes.",
+        ],
+    },
+];
+
+impl TutorialTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                screens: &ENGLISH_TUTORIAL_SCREENS,
+                previous: "Previous",
+                next: "Next",
+                get_started: "Get Started",
+            },
+            Language::French => Self {
+                screens: &FRENCH_TUTORIAL_SCREENS,
+                previous: "Précédent",
+                next: "Suivant",
+                get_started: "Commencer",
+            },
+            Language::German => Self {
+                screens: &GERMAN_TUTORIAL_SCREENS,
+                previous: "Zurück",
+                next: "Weiter",
+                get_started: "Loslegen",
+            },
+            Language::Spanish => Self {
+                screens: &SPANISH_TUTORIAL_SCREENS,
+                previous: "Anterior",
+                next: "Siguiente",
+                get_started: "Comenzar",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MetadataFieldTranslations {
+    pub title: &'static str,
+    pub artist: &'static str,
+    pub album_artist: &'static str,
+    pub year: &'static str,
+    pub year_placeholder: &'static str,
+    pub genre: &'static str,
+    pub composer: &'static str,
+    pub disc: &'static str,
+    pub track: &'static str,
+    pub conductor: &'static str,
+    pub performer: &'static str,
+    pub isrc: &'static str,
+    pub ensemble: &'static str,
+    pub edition: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MetadataEditorTranslations {
+    language: Language,
+    pub fields: MetadataFieldTranslations,
+    pub target: &'static str,
+    pub preview: &'static str,
+    pub search_musicbrainz: &'static str,
+    pub searching_musicbrainz: &'static str,
+    pub untitled: &'static str,
+    pub unknown: &'static str,
+    pub tag_writing_unsupported: &'static str,
+    pub preview_before_applying: &'static str,
+    pub unsupported_before_apply: &'static str,
+    pub backups_created: &'static str,
+    pub cancel: &'static str,
+    pub apply_changes: &'static str,
+}
+
+impl MetadataEditorTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                language,
+                fields: MetadataFieldTranslations {
+                    title: "Title",
+                    artist: "Artist",
+                    album_artist: "Album Artist",
+                    year: "Year",
+                    year_placeholder: "YYYY",
+                    genre: "Genre",
+                    composer: "Composer",
+                    disc: "Disc",
+                    track: "Track",
+                    conductor: "Conductor",
+                    performer: "Performer",
+                    isrc: "ISRC",
+                    ensemble: "Ensemble",
+                    edition: "Edition",
+                },
+                target: "Target",
+                preview: "Preview",
+                search_musicbrainz: "Search MusicBrainz",
+                searching_musicbrainz: "Searching MusicBrainz…",
+                untitled: "Untitled",
+                unknown: "Unknown",
+                tag_writing_unsupported: "tag writing unsupported",
+                preview_before_applying: "Preview before applying changes",
+                unsupported_before_apply: "Unsupported files must be fixed before applying",
+                backups_created: "Backups are created beside edited files",
+                cancel: "Cancel",
+                apply_changes: "Apply Changes",
+            },
+            Language::French => Self {
+                language,
+                fields: MetadataFieldTranslations {
+                    title: "Titre",
+                    artist: "Artiste",
+                    album_artist: "Artiste de l’album",
+                    year: "Année",
+                    year_placeholder: "AAAA",
+                    genre: "Genre",
+                    composer: "Compositeur",
+                    disc: "Disque",
+                    track: "Piste",
+                    conductor: "Chef d’orchestre",
+                    performer: "Interprète",
+                    isrc: "ISRC",
+                    ensemble: "Ensemble",
+                    edition: "Édition",
+                },
+                target: "Cible",
+                preview: "Aperçu",
+                search_musicbrainz: "Rechercher dans MusicBrainz",
+                searching_musicbrainz: "Recherche dans MusicBrainz…",
+                untitled: "Sans titre",
+                unknown: "Inconnu",
+                tag_writing_unsupported: "écriture des balises non prise en charge",
+                preview_before_applying: "Prévisualisez avant d’appliquer les modifications",
+                unsupported_before_apply: "Les fichiers non pris en charge doivent être corrigés avant l’application",
+                backups_created: "Des sauvegardes sont créées à côté des fichiers modifiés",
+                cancel: "Annuler",
+                apply_changes: "Appliquer les modifications",
+            },
+            Language::German => Self {
+                language,
+                fields: MetadataFieldTranslations {
+                    title: "Titel",
+                    artist: "Interpret",
+                    album_artist: "Albuminterpret",
+                    year: "Jahr",
+                    year_placeholder: "JJJJ",
+                    genre: "Genre",
+                    composer: "Komponist",
+                    disc: "Disc",
+                    track: "Titelnummer",
+                    conductor: "Dirigent",
+                    performer: "Ausführender",
+                    isrc: "ISRC",
+                    ensemble: "Ensemble",
+                    edition: "Ausgabe",
+                },
+                target: "Ziel",
+                preview: "Vorschau",
+                search_musicbrainz: "MusicBrainz durchsuchen",
+                searching_musicbrainz: "MusicBrainz wird durchsucht…",
+                untitled: "Ohne Titel",
+                unknown: "Unbekannt",
+                tag_writing_unsupported: "Tag-Schreiben wird nicht unterstützt",
+                preview_before_applying: "Änderungen vor dem Anwenden prüfen",
+                unsupported_before_apply: "Nicht unterstützte Dateien müssen vor dem Anwenden korrigiert werden",
+                backups_created: "Sicherungen werden neben den bearbeiteten Dateien erstellt",
+                cancel: "Abbrechen",
+                apply_changes: "Änderungen anwenden",
+            },
+            Language::Spanish => Self {
+                language,
+                fields: MetadataFieldTranslations {
+                    title: "Título",
+                    artist: "Artista",
+                    album_artist: "Artista del álbum",
+                    year: "Año",
+                    year_placeholder: "AAAA",
+                    genre: "Género",
+                    composer: "Compositor",
+                    disc: "Disco",
+                    track: "Pista",
+                    conductor: "Director",
+                    performer: "Intérprete",
+                    isrc: "ISRC",
+                    ensemble: "Conjunto",
+                    edition: "Edición",
+                },
+                target: "Destino",
+                preview: "Vista previa",
+                search_musicbrainz: "Buscar en MusicBrainz",
+                searching_musicbrainz: "Buscando en MusicBrainz…",
+                untitled: "Sin título",
+                unknown: "Desconocido",
+                tag_writing_unsupported: "no se admite la escritura de etiquetas",
+                preview_before_applying: "Previsualice antes de aplicar los cambios",
+                unsupported_before_apply: "Los archivos no compatibles deben corregirse antes de aplicar los cambios",
+                backups_created: "Las copias de seguridad se crean junto a los archivos editados",
+                cancel: "Cancelar",
+                apply_changes: "Aplicar cambios",
+            },
+        }
+    }
+
+    pub fn target_label(self, target: &str) -> String {
+        format!("{}: {target}", self.target)
+    }
+
+    pub fn preview_summary(
+        self,
+        affected_files: usize,
+        unsupported_writes: usize,
+        has_sidecar: bool,
+    ) -> String {
+        match self.language {
+            Language::English => format!(
+                "{affected_files} file(s), {unsupported_writes} unsupported, sidecar {}",
+                if has_sidecar { "yes" } else { "no" }
+            ),
+            Language::French => format!(
+                "{affected_files} fichier(s), {unsupported_writes} non pris en charge, fichier annexe {}",
+                if has_sidecar { "oui" } else { "non" }
+            ),
+            Language::German => format!(
+                "{affected_files} Datei(en), {unsupported_writes} nicht unterstützt, Begleitdatei {}",
+                if has_sidecar { "ja" } else { "nein" }
+            ),
+            Language::Spanish => format!(
+                "{affected_files} archivo(s), {unsupported_writes} no compatibles, archivo auxiliar {}",
+                if has_sidecar { "sí" } else { "no" }
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FileDialogTranslations {
+    pub press_escape_to_skip: &'static str,
+    pub enter_apo_path: &'static str,
+    pub enter_sofa_path: &'static str,
+    pub load_or_cancel: &'static str,
+    pub existing_presets: &'static str,
+    pub save_name_or_overwrite: &'static str,
+    pub save_hint: &'static str,
+    pub preset_name_or_select: &'static str,
+    pub available_presets: &'static str,
+    pub no_presets_found: &'static str,
+    pub load_hint: &'static str,
+}
+
+impl FileDialogTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                press_escape_to_skip: "Press ESC to skip",
+                enter_apo_path: "Enter path to APO file:",
+                enter_sofa_path: "Enter path to SOFA file:",
+                load_or_cancel: "Enter: Load file | ESC: Cancel",
+                existing_presets: "Existing presets (↑/↓ to select):",
+                save_name_or_overwrite: "Enter preset name (or select existing to overwrite):",
+                save_hint: "Enter: Save | Click/↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel",
+                preset_name_or_select: "Enter preset name or select from list:",
+                available_presets: "Available presets (↑/↓ to select):",
+                no_presets_found: "No presets found. Save a preset first with 's'.",
+                load_hint: "Enter: Load | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel",
+            },
+            Language::French => Self {
+                press_escape_to_skip: "Appuyez sur Échap pour ignorer",
+                enter_apo_path: "Saisissez le chemin du fichier APO :",
+                enter_sofa_path: "Saisissez le chemin du fichier SOFA :",
+                load_or_cancel: "Entrée : charger | Échap : annuler",
+                existing_presets: "Préréglages existants (↑/↓ pour sélectionner) :",
+                save_name_or_overwrite: "Saisissez un nom de préréglage (ou choisissez-en un à remplacer) :",
+                save_hint: "Entrée : enregistrer | Clic/↑/↓ : sélectionner | Tab : compléter | Échap : annuler",
+                preset_name_or_select: "Saisissez un nom ou choisissez dans la liste :",
+                available_presets: "Préréglages disponibles (↑/↓ pour sélectionner) :",
+                no_presets_found: "Aucun préréglage. Enregistrez-en d’abord un avec « s ».",
+                load_hint: "Entrée : charger | ↑/↓ : sélectionner | Tab : compléter | Échap : annuler",
+            },
+            Language::German => Self {
+                press_escape_to_skip: "Zum Überspringen ESC drücken",
+                enter_apo_path: "Pfad zur APO-Datei eingeben:",
+                enter_sofa_path: "Pfad zur SOFA-Datei eingeben:",
+                load_or_cancel: "Eingabe: Datei laden | ESC: Abbrechen",
+                existing_presets: "Vorhandene Presets (↑/↓ zum Auswählen):",
+                save_name_or_overwrite: "Preset-Namen eingeben (oder vorhandenes zum Überschreiben wählen):",
+                save_hint: "Eingabe: Speichern | Klick/↑/↓: Auswählen | Tab: Vervollständigen | ESC: Abbrechen",
+                preset_name_or_select: "Preset-Namen eingeben oder aus der Liste wählen:",
+                available_presets: "Verfügbare Presets (↑/↓ zum Auswählen):",
+                no_presets_found: "Keine Presets gefunden. Speichern Sie zuerst eines mit „s“.",
+                load_hint: "Eingabe: Laden | ↑/↓: Auswählen | Tab: Vervollständigen | ESC: Abbrechen",
+            },
+            Language::Spanish => Self {
+                press_escape_to_skip: "Pulse ESC para omitir",
+                enter_apo_path: "Introduzca la ruta del archivo APO:",
+                enter_sofa_path: "Introduzca la ruta del archivo SOFA:",
+                load_or_cancel: "Intro: cargar archivo | ESC: cancelar",
+                existing_presets: "Preajustes existentes (↑/↓ para seleccionar):",
+                save_name_or_overwrite: "Introduzca un nombre (o seleccione uno existente para sobrescribirlo):",
+                save_hint: "Intro: guardar | Clic/↑/↓: seleccionar | Tab: completar | ESC: cancelar",
+                preset_name_or_select: "Introduzca un nombre o seleccione de la lista:",
+                available_presets: "Preajustes disponibles (↑/↓ para seleccionar):",
+                no_presets_found: "No se encontraron preajustes. Guarde uno primero con «s».",
+                load_hint: "Intro: cargar | ↑/↓: seleccionar | Tab: completar | ESC: cancelar",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WorkflowTranslations {
+    language: Language,
+    pub success: &'static str,
+    pub failed: &'static str,
+    pub loading: &'static str,
+    pub loading_versions: &'static str,
+    pub no_versions_available: &'static str,
+    pub phase_data: &'static str,
+    pub downloading_measurement: &'static str,
+    pub signal_recording: &'static str,
+    pub audio_device_configuration: &'static str,
+    pub evaluate_recordings: &'static str,
+    pub empty_pass_through: &'static str,
+    pub optimizing: &'static str,
+}
+
+impl WorkflowTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                language,
+                success: "Success",
+                failed: "Failed",
+                loading: "Loading…",
+                loading_versions: "Loading versions…",
+                no_versions_available: "No versions available",
+                phase_data: "Phase Data:",
+                downloading_measurement: "Downloading measurement…",
+                signal_recording: "Signal Recording",
+                audio_device_configuration: "Audio Device Configuration",
+                evaluate_recordings: "Evaluate Recordings",
+                empty_pass_through: "Empty (pass-through)",
+                optimizing: "Optimizing…",
+            },
+            Language::French => Self {
+                language,
+                success: "Réussi",
+                failed: "Échec",
+                loading: "Chargement…",
+                loading_versions: "Chargement des versions…",
+                no_versions_available: "Aucune version disponible",
+                phase_data: "Données de phase :",
+                downloading_measurement: "Téléchargement de la mesure…",
+                signal_recording: "Enregistrement du signal",
+                audio_device_configuration: "Configuration du périphérique audio",
+                evaluate_recordings: "Évaluer les enregistrements",
+                empty_pass_through: "Vide (passage direct)",
+                optimizing: "Optimisation…",
+            },
+            Language::German => Self {
+                language,
+                success: "Erfolgreich",
+                failed: "Fehlgeschlagen",
+                loading: "Wird geladen…",
+                loading_versions: "Versionen werden geladen…",
+                no_versions_available: "Keine Versionen verfügbar",
+                phase_data: "Phasendaten:",
+                downloading_measurement: "Messung wird heruntergeladen…",
+                signal_recording: "Signalaufnahme",
+                audio_device_configuration: "Audiogeräte-Konfiguration",
+                evaluate_recordings: "Aufnahmen auswerten",
+                empty_pass_through: "Leer (Durchleitung)",
+                optimizing: "Optimierung…",
+            },
+            Language::Spanish => Self {
+                language,
+                success: "Correcto",
+                failed: "Fallido",
+                loading: "Cargando…",
+                loading_versions: "Cargando versiones…",
+                no_versions_available: "No hay versiones disponibles",
+                phase_data: "Datos de fase:",
+                downloading_measurement: "Descargando medición…",
+                signal_recording: "Grabación de señal",
+                audio_device_configuration: "Configuración del dispositivo de audio",
+                evaluate_recordings: "Evaluar grabaciones",
+                empty_pass_through: "Vacío (paso directo)",
+                optimizing: "Optimizando…",
+            },
+        }
+    }
+
+    pub fn progress(self, percent: f32) -> String {
+        match self.language {
+            Language::English => format!("Progress: {percent:.0}%"),
+            Language::French => format!("Progression : {percent:.0} %"),
+            Language::German => format!("Fortschritt: {percent:.0} %"),
+            Language::Spanish => format!("Progreso: {percent:.0} %"),
+        }
+    }
+
+    pub fn iteration_loss(self, iteration: usize, loss: f64) -> String {
+        match self.language {
+            Language::English => format!("Iteration: {iteration} | Loss: {loss:.4}"),
+            Language::French => format!("Itération : {iteration} | Perte : {loss:.4}"),
+            Language::German => format!("Iteration: {iteration} | Verlust: {loss:.4}"),
+            Language::Spanish => format!("Iteración: {iteration} | Pérdida: {loss:.4}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RoomEqWorkflowTranslations {
+    pub load_measurement_description: &'static str,
+    pub no_channels_configured: &'static str,
+    pub delay_optimizer_help: &'static str,
+    pub negligible_delay_warning: &'static str,
+    pub delay_probe_help: &'static str,
+    pub no_optimization_results: &'static str,
+    pub choose_configuration: &'static str,
+    pub simple_mode_description: &'static str,
+    pub full_mode_description: &'static str,
+    pub single: &'static str,
+    pub multi_driver: &'static str,
+    pub dismiss: &'static str,
+    pub load_from_recording: &'static str,
+    pub go_to_recording: &'static str,
+    pub import_from_file: &'static str,
+    pub reset_to_defaults: &'static str,
+    pub select: &'static str,
+}
+
+impl RoomEqWorkflowTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                load_measurement_description: "Load measurement data from a previous recording session or import from a JSON file.",
+                no_channels_configured: "No channels configured. Load measurement data first.",
+                delay_optimizer_help: "Delays are sent to the optimizer automatically. Edit a value to override it, or leave it unchanged.",
+                negligible_delay_warning: "⚠ Delays below 0.3 ms have negligible audible impact; consider setting them to 0.",
+                delay_probe_help: "Run the Probe step in the Recording wizard to capture per-channel delays, or enter values manually after loading a file with probe results.",
+                no_optimization_results: "No optimization results yet. Run optimization first.",
+                choose_configuration: "Choose how to configure the optimization. You can return here at any time.",
+                simple_mode_description: "Guided presets for common setups. Choose target distance, loss function, and processing mode; the remaining settings are handled for you.",
+                full_mode_description: "All parameters in two organized blocks: Acoustic (what to fix) and Optimizer (how to fix). Full control over every parameter.",
+                single: "Single",
+                multi_driver: "Multi-Driver",
+                dismiss: "Dismiss",
+                load_from_recording: "Load from Recording",
+                go_to_recording: "Go to Recording",
+                import_from_file: "Import from File",
+                reset_to_defaults: "Reset to defaults",
+                select: "Select",
+            },
+            Language::French => Self {
+                load_measurement_description: "Chargez les mesures d’une session précédente ou importez un fichier JSON.",
+                no_channels_configured: "Aucun canal configuré. Chargez d’abord les mesures.",
+                delay_optimizer_help: "Les délais sont transmis automatiquement à l’optimiseur. Modifiez une valeur pour la remplacer ou laissez-la inchangée.",
+                negligible_delay_warning: "⚠ Les délais inférieurs à 0,3 ms ont un impact audible négligeable ; envisagez de les mettre à 0.",
+                delay_probe_help: "Exécutez l’étape Sonde de l’assistant d’enregistrement pour mesurer les délais par canal, ou saisissez-les après avoir chargé un fichier contenant les résultats.",
+                no_optimization_results: "Aucun résultat d’optimisation. Lancez d’abord l’optimisation.",
+                choose_configuration: "Choisissez comment configurer l’optimisation. Vous pourrez revenir ici à tout moment.",
+                simple_mode_description: "Préréglages guidés pour les installations courantes. Choisissez la distance cible, la fonction de perte et le mode de traitement ; le reste est automatique.",
+                full_mode_description: "Tous les paramètres sont répartis en deux blocs : Acoustique (quoi corriger) et Optimiseur (comment corriger). Contrôle complet de chaque paramètre.",
+                single: "Unique",
+                multi_driver: "Multivoie",
+                dismiss: "Fermer",
+                load_from_recording: "Charger depuis l’enregistrement",
+                go_to_recording: "Aller à l’enregistrement",
+                import_from_file: "Importer depuis un fichier",
+                reset_to_defaults: "Rétablir les valeurs par défaut",
+                select: "Sélectionner",
+            },
+            Language::German => Self {
+                load_measurement_description: "Laden Sie Messdaten einer früheren Aufnahmesitzung oder importieren Sie eine JSON-Datei.",
+                no_channels_configured: "Keine Kanäle konfiguriert. Laden Sie zuerst Messdaten.",
+                delay_optimizer_help: "Verzögerungen werden automatisch an den Optimierer übergeben. Ändern Sie einen Wert zum Überschreiben oder lassen Sie ihn unverändert.",
+                negligible_delay_warning: "⚠ Verzögerungen unter 0,3 ms sind kaum hörbar; erwägen Sie, sie auf 0 zu setzen.",
+                delay_probe_help: "Führen Sie den Sondenschritt im Aufnahmeassistenten aus, um kanalweise Verzögerungen zu messen, oder geben Sie Werte nach dem Laden einer Datei mit Sondenergebnissen manuell ein.",
+                no_optimization_results: "Noch keine Optimierungsergebnisse. Starten Sie zuerst die Optimierung.",
+                choose_configuration: "Wählen Sie, wie die Optimierung konfiguriert werden soll. Sie können jederzeit hierher zurückkehren.",
+                simple_mode_description: "Geführte Presets für übliche Setups. Wählen Sie Zielabstand, Verlustfunktion und Verarbeitungsmodus; die übrigen Einstellungen werden automatisch gesetzt.",
+                full_mode_description: "Alle Parameter in zwei geordneten Blöcken: Akustik (was korrigiert wird) und Optimierer (wie korrigiert wird). Vollständige Kontrolle über jeden Parameter.",
+                single: "Einzeln",
+                multi_driver: "Mehrwege",
+                dismiss: "Schließen",
+                load_from_recording: "Aus Aufnahme laden",
+                go_to_recording: "Zur Aufnahme",
+                import_from_file: "Aus Datei importieren",
+                reset_to_defaults: "Standardwerte wiederherstellen",
+                select: "Auswählen",
+            },
+            Language::Spanish => Self {
+                load_measurement_description: "Cargue mediciones de una sesión anterior o importe un archivo JSON.",
+                no_channels_configured: "No hay canales configurados. Cargue primero las mediciones.",
+                delay_optimizer_help: "Los retardos se envían automáticamente al optimizador. Edite un valor para sustituirlo o déjelo sin cambios.",
+                negligible_delay_warning: "⚠ Los retardos inferiores a 0,3 ms tienen un impacto audible despreciable; considere ponerlos a 0.",
+                delay_probe_help: "Ejecute el paso Sonda del asistente de grabación para medir los retardos por canal, o introdúzcalos manualmente tras cargar un archivo con resultados de sonda.",
+                no_optimization_results: "Aún no hay resultados. Ejecute primero la optimización.",
+                choose_configuration: "Elija cómo configurar la optimización. Puede volver aquí en cualquier momento.",
+                simple_mode_description: "Preajustes guiados para configuraciones habituales. Elija distancia objetivo, función de pérdida y modo de procesamiento; el resto se configura automáticamente.",
+                full_mode_description: "Todos los parámetros en dos bloques: Acústica (qué corregir) y Optimizador (cómo corregir). Control total de cada parámetro.",
+                single: "Individual",
+                multi_driver: "Multivía",
+                dismiss: "Cerrar",
+                load_from_recording: "Cargar desde la grabación",
+                go_to_recording: "Ir a Grabación",
+                import_from_file: "Importar desde archivo",
+                reset_to_defaults: "Restablecer valores predeterminados",
+                select: "Seleccionar",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EqDiscoveryTranslations {
+    pub speaker_search_description: &'static str,
+    pub loading_speakers: &'static str,
+    pub spinorama_after_select: &'static str,
+    pub headphone_search_description: &'static str,
+    pub loading_headphones: &'static str,
+    pub custom_target_help: &'static str,
+    pub spinorama_iir_only: &'static str,
+    pub search_speakers: &'static str,
+    pub search_headphones: &'static str,
+    pub save_eq_file: &'static str,
+    pub cancel: &'static str,
+    pub generate_speaker_eq: &'static str,
+    pub generate_headphone_eq: &'static str,
+    pub browse: &'static str,
+    pub refresh: &'static str,
+    pub load_from_file: &'static str,
+    pub download_from_spinorama: &'static str,
+}
+
+impl EqDiscoveryTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                speaker_search_description: "Type your speaker brand and model to search the database.",
+                loading_speakers: "Loading speakers from spinorama.org…",
+                spinorama_after_select: "Spinorama data appears after selecting a speaker with a CEA2034 measurement.",
+                headphone_search_description: "Type your headphone brand and model to search the database.",
+                loading_headphones: "Loading headphones from spinorama.org…",
+                custom_target_help: "Choose a CSV target curve to use with the custom preset.",
+                spinorama_iir_only: "Spinorama EQ currently supports PEQ/IIR output in this workflow.",
+                search_speakers: "Search speakers",
+                search_headphones: "Search headphones",
+                save_eq_file: "Save EQ File",
+                cancel: "Cancel",
+                generate_speaker_eq: "Generate Speaker EQ",
+                generate_headphone_eq: "Generate Headphone EQ",
+                browse: "Browse…",
+                refresh: "Refresh",
+                load_from_file: "Load from File",
+                download_from_spinorama: "Download from spinorama.org",
+            },
+            Language::French => Self {
+                speaker_search_description: "Saisissez la marque et le modèle de l’enceinte pour rechercher dans la base.",
+                loading_speakers: "Chargement des enceintes depuis spinorama.org…",
+                spinorama_after_select: "Les données Spinorama apparaissent après la sélection d’une enceinte avec une mesure CEA2034.",
+                headphone_search_description: "Saisissez la marque et le modèle du casque pour rechercher dans la base.",
+                loading_headphones: "Chargement des casques depuis spinorama.org…",
+                custom_target_help: "Choisissez une courbe cible CSV à utiliser avec le préréglage personnalisé.",
+                spinorama_iir_only: "Ce flux Spinorama EQ prend actuellement en charge une sortie PEQ/IIR.",
+                search_speakers: "Rechercher des enceintes",
+                search_headphones: "Rechercher des casques",
+                save_eq_file: "Enregistrer le fichier EQ",
+                cancel: "Annuler",
+                generate_speaker_eq: "Générer l’EQ d’enceinte",
+                generate_headphone_eq: "Générer l’EQ du casque",
+                browse: "Parcourir…",
+                refresh: "Actualiser",
+                load_from_file: "Charger depuis un fichier",
+                download_from_spinorama: "Télécharger depuis spinorama.org",
+            },
+            Language::German => Self {
+                speaker_search_description: "Geben Sie Hersteller und Modell des Lautsprechers ein, um die Datenbank zu durchsuchen.",
+                loading_speakers: "Lautsprecher werden von spinorama.org geladen…",
+                spinorama_after_select: "Spinorama-Daten erscheinen nach Auswahl eines Lautsprechers mit CEA2034-Messung.",
+                headphone_search_description: "Geben Sie Hersteller und Modell des Kopfhörers ein, um die Datenbank zu durchsuchen.",
+                loading_headphones: "Kopfhörer werden von spinorama.org geladen…",
+                custom_target_help: "Wählen Sie eine CSV-Zielkurve für das benutzerdefinierte Preset.",
+                spinorama_iir_only: "Dieser Spinorama-EQ-Ablauf unterstützt derzeit PEQ/IIR-Ausgabe.",
+                search_speakers: "Lautsprecher suchen",
+                search_headphones: "Kopfhörer suchen",
+                save_eq_file: "EQ-Datei speichern",
+                cancel: "Abbrechen",
+                generate_speaker_eq: "Lautsprecher-EQ erzeugen",
+                generate_headphone_eq: "Kopfhörer-EQ erzeugen",
+                browse: "Durchsuchen…",
+                refresh: "Aktualisieren",
+                load_from_file: "Aus Datei laden",
+                download_from_spinorama: "Von spinorama.org herunterladen",
+            },
+            Language::Spanish => Self {
+                speaker_search_description: "Escriba la marca y el modelo del altavoz para buscar en la base de datos.",
+                loading_speakers: "Cargando altavoces de spinorama.org…",
+                spinorama_after_select: "Los datos de Spinorama aparecen al seleccionar un altavoz con medición CEA2034.",
+                headphone_search_description: "Escriba la marca y el modelo de los auriculares para buscar en la base de datos.",
+                loading_headphones: "Cargando auriculares de spinorama.org…",
+                custom_target_help: "Elija una curva objetivo CSV para usar con el preajuste personalizado.",
+                spinorama_iir_only: "Este flujo de Spinorama EQ admite actualmente salida PEQ/IIR.",
+                search_speakers: "Buscar altavoces",
+                search_headphones: "Buscar auriculares",
+                save_eq_file: "Guardar archivo EQ",
+                cancel: "Cancelar",
+                generate_speaker_eq: "Generar EQ de altavoz",
+                generate_headphone_eq: "Generar EQ de auriculares",
+                browse: "Examinar…",
+                refresh: "Actualizar",
+                load_from_file: "Cargar desde archivo",
+                download_from_spinorama: "Descargar de spinorama.org",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RecordingWorkflowTranslations {
+    language: Language,
+    pub sweep_frequency_range_only: &'static str,
+    pub no_channels_configured: &'static str,
+    pub spl_calibration_instructions: &'static str,
+    pub timestamped_subdirectory: &'static str,
+    pub bass_precision_description: &'static str,
+    pub bass_anchor_description: &'static str,
+    pub probe_description: &'static str,
+    pub no_probe_captured: &'static str,
+    pub cancel: &'static str,
+    pub add_speaker: &'static str,
+    pub remove_speaker: &'static str,
+    pub add: &'static str,
+    pub playback_device: &'static str,
+    pub recording_device: &'static str,
+    pub microphone_calibration: &'static str,
+    pub output_directory: &'static str,
+    pub advanced_measurement_quality: &'static str,
+    pub single: &'static str,
+    pub multi: &'static str,
+    pub no_recordings_available: &'static str,
+    pub go_back_to_capture: &'static str,
+    pub all_channels: &'static str,
+    pub run_bass_anchor: &'static str,
+}
+
+impl RecordingWorkflowTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                language,
+                sweep_frequency_range_only: "Frequency-range configuration is available only for sweep signals.",
+                no_channels_configured: "No channels configured. Go back and configure your devices.",
+                spl_calibration_instructions: "Play a 1 kHz reference tone, read the dB SPL shown by your handheld meter at the listening position, and enter it below. GD-Opt v2 uses this offset to target sweep levels deterministically without driving the subwoofer into phase-contaminating harmonic distortion.",
+                timestamped_subdirectory: "A timestamped subdirectory is created for each recording session.",
+                bass_precision_description: "Increase bass precision to improve group-delay accuracy below 100 Hz. Higher settings require longer recordings.",
+                bass_anchor_description: "Plays a low-frequency tone burst per channel so GD-Opt v2 can anchor the first bass bin of the sweep-derived phase. This step is optional; use Next if the system cannot play the selected bass frequency.",
+                probe_description: "Measures per-channel acoustic delay with a narrowband probe. Results and the raw WAV are saved beside the sweep recordings for automatic Room EQ use.",
+                no_probe_captured: "No probe captured yet. Run the probe to measure per-channel delays.",
+                cancel: "Cancel",
+                add_speaker: "+ Add Speaker",
+                remove_speaker: "− Remove Speaker",
+                add: "+ Add",
+                playback_device: "Playback Device",
+                recording_device: "Recording Device",
+                microphone_calibration: "Microphone Calibration",
+                output_directory: "Output Directory",
+                advanced_measurement_quality: "Advanced: Measurement Quality",
+                single: "Single",
+                multi: "Multi",
+                no_recordings_available: "No Recordings Available",
+                go_back_to_capture: "Go back to the Capture step to record frequency responses",
+                all_channels: "All Channels",
+                run_bass_anchor: "Run Bass Anchor",
+            },
+            Language::French => Self {
+                language,
+                sweep_frequency_range_only: "La plage de fréquences est configurable uniquement pour les signaux de balayage.",
+                no_channels_configured: "Aucun canal configuré. Revenez en arrière et configurez les périphériques.",
+                spl_calibration_instructions: "Lisez une tonalité de référence à 1 kHz, relevez le niveau dB SPL indiqué par le sonomètre à la position d’écoute et saisissez-le ci-dessous. GD-Opt v2 utilise ce décalage pour cibler les niveaux de balayage sans pousser le caisson vers une distorsion harmonique qui fausserait la phase.",
+                timestamped_subdirectory: "Un sous-dossier horodaté est créé pour chaque session d’enregistrement.",
+                bass_precision_description: "Augmentez la précision des graves pour améliorer celle du délai de groupe sous 100 Hz. Les valeurs élevées allongent l’enregistrement.",
+                bass_anchor_description: "Lit une rafale basse fréquence par canal afin que GD-Opt v2 ancre le premier point grave de la phase issue du balayage. Cette étape est facultative ; utilisez Suivant si le système ne peut pas lire la fréquence choisie.",
+                probe_description: "Mesure le délai acoustique par canal avec une sonde à bande étroite. Les résultats et le WAV brut sont enregistrés avec les balayages pour Room EQ.",
+                no_probe_captured: "Aucune sonde capturée. Exécutez-la pour mesurer les délais par canal.",
+                cancel: "Annuler",
+                add_speaker: "+ Ajouter une enceinte",
+                remove_speaker: "− Supprimer une enceinte",
+                add: "+ Ajouter",
+                playback_device: "Périphérique de lecture",
+                recording_device: "Périphérique d’enregistrement",
+                microphone_calibration: "Étalonnage du microphone",
+                output_directory: "Dossier de sortie",
+                advanced_measurement_quality: "Avancé : qualité des mesures",
+                single: "Unique",
+                multi: "Multiple",
+                no_recordings_available: "Aucun enregistrement disponible",
+                go_back_to_capture: "Revenez à l’étape Capture pour enregistrer les réponses en fréquence",
+                all_channels: "Tous les canaux",
+                run_bass_anchor: "Lancer l’ancrage des graves",
+            },
+            Language::German => Self {
+                language,
+                sweep_frequency_range_only: "Der Frequenzbereich kann nur für Sweep-Signale konfiguriert werden.",
+                no_channels_configured: "Keine Kanäle konfiguriert. Gehen Sie zurück und konfigurieren Sie die Geräte.",
+                spl_calibration_instructions: "Spielen Sie einen 1-kHz-Referenzton ab, lesen Sie den dB-SPL-Wert des Handmessgeräts am Hörplatz ab und geben Sie ihn unten ein. GD-Opt v2 nutzt den Versatz für reproduzierbare Sweep-Pegel, ohne den Subwoofer in phasenverfälschende harmonische Verzerrung zu treiben.",
+                timestamped_subdirectory: "Für jede Aufnahmesitzung wird ein Unterordner mit Zeitstempel erstellt.",
+                bass_precision_description: "Erhöhen Sie die Basspräzision für genauere Gruppenlaufzeit unter 100 Hz. Höhere Einstellungen benötigen längere Aufnahmen.",
+                bass_anchor_description: "Spielt pro Kanal einen Tieftonimpuls, damit GD-Opt v2 den ersten Basspunkt der aus dem Sweep abgeleiteten Phase verankern kann. Der Schritt ist optional; verwenden Sie Weiter, wenn das System die gewählte Bassfrequenz nicht wiedergeben kann.",
+                probe_description: "Misst die akustische Verzögerung pro Kanal mit einer Schmalbandsonde. Ergebnisse und Roh-WAV werden neben den Sweep-Aufnahmen für Room EQ gespeichert.",
+                no_probe_captured: "Noch keine Sonde aufgenommen. Starten Sie die Sonde, um kanalweise Verzögerungen zu messen.",
+                cancel: "Abbrechen",
+                add_speaker: "+ Lautsprecher hinzufügen",
+                remove_speaker: "− Lautsprecher entfernen",
+                add: "+ Hinzufügen",
+                playback_device: "Wiedergabegerät",
+                recording_device: "Aufnahmegerät",
+                microphone_calibration: "Mikrofonkalibrierung",
+                output_directory: "Ausgabeordner",
+                advanced_measurement_quality: "Erweitert: Messqualität",
+                single: "Einzeln",
+                multi: "Mehrfach",
+                no_recordings_available: "Keine Aufnahmen verfügbar",
+                go_back_to_capture: "Gehen Sie zum Aufnahmeschritt zurück, um Frequenzgänge aufzunehmen",
+                all_channels: "Alle Kanäle",
+                run_bass_anchor: "Bassanker starten",
+            },
+            Language::Spanish => Self {
+                language,
+                sweep_frequency_range_only: "El rango de frecuencias solo se configura para señales de barrido.",
+                no_channels_configured: "No hay canales configurados. Vuelva atrás y configure los dispositivos.",
+                spl_calibration_instructions: "Reproduzca un tono de referencia de 1 kHz, lea los dB SPL del sonómetro en la posición de escucha e introdúzcalos abajo. GD-Opt v2 usa este desfase para fijar niveles de barrido reproducibles sin llevar el subwoofer a una distorsión armónica que contamine la fase.",
+                timestamped_subdirectory: "Se crea un subdirectorio con fecha y hora para cada sesión de grabación.",
+                bass_precision_description: "Aumente la precisión de graves para mejorar la del retardo de grupo por debajo de 100 Hz. Los ajustes altos requieren grabaciones más largas.",
+                bass_anchor_description: "Reproduce una ráfaga de baja frecuencia por canal para que GD-Opt v2 ancle el primer punto grave de la fase derivada del barrido. El paso es opcional; use Siguiente si el sistema no reproduce la frecuencia elegida.",
+                probe_description: "Mide el retardo acústico por canal con una sonda de banda estrecha. Los resultados y el WAV original se guardan junto a los barridos para Room EQ.",
+                no_probe_captured: "Aún no se ha capturado la sonda. Ejecútela para medir los retardos por canal.",
+                cancel: "Cancelar",
+                add_speaker: "+ Añadir altavoz",
+                remove_speaker: "− Eliminar altavoz",
+                add: "+ Añadir",
+                playback_device: "Dispositivo de reproducción",
+                recording_device: "Dispositivo de grabación",
+                microphone_calibration: "Calibración del micrófono",
+                output_directory: "Directorio de salida",
+                advanced_measurement_quality: "Avanzado: calidad de medición",
+                single: "Individual",
+                multi: "Múltiple",
+                no_recordings_available: "No hay grabaciones disponibles",
+                go_back_to_capture: "Vuelva al paso Captura para grabar respuestas de frecuencia",
+                all_channels: "Todos los canales",
+                run_bass_anchor: "Ejecutar anclaje de graves",
+            },
+        }
+    }
+
+    pub fn seconds(self, seconds: u32) -> String {
+        match self.language {
+            Language::English => format!("{seconds} seconds"),
+            Language::French => format!("{seconds} secondes"),
+            Language::German => format!("{seconds} Sekunden"),
+            Language::Spanish => format!("{seconds} segundos"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ContextMenuTranslations {
+    pub suspend_incompatible_and_play: &'static str,
+    pub remove_incompatible_and_play: &'static str,
+    pub cancel_playback: &'static str,
+    pub play_now: &'static str,
+    pub add_to_queue: &'static str,
+    pub edit_metadata: &'static str,
+    pub play_from_here: &'static str,
+    pub remove_from_queue: &'static str,
+    pub toggle_enabled: &'static str,
+    pub move_up: &'static str,
+    pub move_down: &'static str,
+    pub remove_plugin: &'static str,
+    pub remove_directory: &'static str,
+    pub rescan_library: &'static str,
+}
+
+impl ContextMenuTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                suspend_incompatible_and_play: "Suspend incompatible and play",
+                remove_incompatible_and_play: "Remove incompatible and play",
+                cancel_playback: "Cancel playback",
+                play_now: "Play Now",
+                add_to_queue: "Add to Queue",
+                edit_metadata: "Edit Metadata",
+                play_from_here: "Play from Here",
+                remove_from_queue: "Remove from Queue",
+                toggle_enabled: "Toggle Enabled",
+                move_up: "Move Up",
+                move_down: "Move Down",
+                remove_plugin: "Remove Plugin",
+                remove_directory: "Remove Directory",
+                rescan_library: "Rescan Library",
+            },
+            Language::French => Self {
+                suspend_incompatible_and_play: "Suspendre les modules incompatibles et lire",
+                remove_incompatible_and_play: "Supprimer les modules incompatibles et lire",
+                cancel_playback: "Annuler la lecture",
+                play_now: "Lire maintenant",
+                add_to_queue: "Ajouter à la file d’attente",
+                edit_metadata: "Modifier les métadonnées",
+                play_from_here: "Lire à partir d’ici",
+                remove_from_queue: "Retirer de la file d’attente",
+                toggle_enabled: "Activer ou désactiver",
+                move_up: "Déplacer vers le haut",
+                move_down: "Déplacer vers le bas",
+                remove_plugin: "Supprimer le module",
+                remove_directory: "Supprimer le dossier",
+                rescan_library: "Réanalyser la bibliothèque",
+            },
+            Language::German => Self {
+                suspend_incompatible_and_play: "Inkompatible Plugins aussetzen und abspielen",
+                remove_incompatible_and_play: "Inkompatible Plugins entfernen und abspielen",
+                cancel_playback: "Wiedergabe abbrechen",
+                play_now: "Jetzt abspielen",
+                add_to_queue: "Zur Warteschlange hinzufügen",
+                edit_metadata: "Metadaten bearbeiten",
+                play_from_here: "Ab hier abspielen",
+                remove_from_queue: "Aus Warteschlange entfernen",
+                toggle_enabled: "Aktivierung umschalten",
+                move_up: "Nach oben verschieben",
+                move_down: "Nach unten verschieben",
+                remove_plugin: "Plugin entfernen",
+                remove_directory: "Verzeichnis entfernen",
+                rescan_library: "Mediathek neu scannen",
+            },
+            Language::Spanish => Self {
+                suspend_incompatible_and_play: "Suspender incompatibles y reproducir",
+                remove_incompatible_and_play: "Eliminar incompatibles y reproducir",
+                cancel_playback: "Cancelar reproducción",
+                play_now: "Reproducir ahora",
+                add_to_queue: "Añadir a la cola",
+                edit_metadata: "Editar metadatos",
+                play_from_here: "Reproducir desde aquí",
+                remove_from_queue: "Eliminar de la cola",
+                toggle_enabled: "Cambiar activación",
+                move_up: "Mover arriba",
+                move_down: "Mover abajo",
+                remove_plugin: "Eliminar complemento",
+                remove_directory: "Eliminar directorio",
+                rescan_library: "Volver a analizar la biblioteca",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DialogTranslations {
+    language: Language,
+    pub global_keybindings: &'static str,
+    pub jump_to_screens: &'static str,
+    pub increase_volume: &'static str,
+    pub decrease_volume: &'static str,
+    pub show_keyboard_shortcuts: &'static str,
+    pub show_help_support: &'static str,
+    pub about: DialogAboutTranslations,
+    pub help_fix_issues: &'static str,
+    pub view_source_and_docs: &'static str,
+    pub press_escape_or_help_to_close: &'static str,
+    pub press_escape_or_question_to_close: &'static str,
+    pub empty_library_welcome: &'static str,
+    pub empty_library_title: &'static str,
+    pub empty_library_description: &'static str,
+    pub not_now: &'static str,
+    pub add_music_folders: &'static str,
+    pub add_remote_source: &'static str,
+    pub edit_metadata: &'static str,
+    pub preview: &'static str,
+    pub search_musicbrainz: &'static str,
+    pub load_apo: &'static str,
+    pub load_sofa: &'static str,
+    pub save_plugin_preset: &'static str,
+    pub load_plugin_preset: &'static str,
+    pub keyboard_shortcuts: &'static str,
+    pub channel_conflict: &'static str,
+    pub dont_show_again: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DialogAboutTranslations {
+    pub about_title: &'static str,
+    pub app_name: &'static str,
+    pub github_repository: &'static str,
+    pub source_code_and_docs: &'static str,
+    pub report_issues: &'static str,
+    pub bug_tracker: &'static str,
+    pub feature_requests: &'static str,
+    pub github_discussions: &'static str,
+    pub community_forum: &'static str,
+    pub audio_science_review: &'static str,
+    pub license_gpl: &'static str,
+    pub open_source_license: &'static str,
+    pub press_escape_to_close: &'static str,
+    pub close: &'static str,
+    pub help_support_title: &'static str,
+    pub request_new_features: &'static str,
+    pub share_feature_ideas: &'static str,
+    pub report_bugs: &'static str,
+}
+
+impl DialogTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                language,
+                global_keybindings: "GLOBAL KEYBINDINGS",
+                jump_to_screens: "Jump to Library/Queue/Plugins/Devices/Directories",
+                increase_volume: "Increase volume",
+                decrease_volume: "Decrease volume",
+                show_keyboard_shortcuts: "Show keyboard shortcuts",
+                show_help_support: "Show help & support",
+                about: DialogAboutTranslations {
+                    about_title: "About SOTF Player",
+                    app_name: "SOTF Player",
+                    github_repository: "GitHub Repository",
+                    source_code_and_docs: "Source code and documentation",
+                    report_issues: "Report Issues",
+                    bug_tracker: "Bug tracker",
+                    feature_requests: "Feature Requests",
+                    github_discussions: "GitHub Discussions",
+                    community_forum: "Community Forum",
+                    audio_science_review: "Audio Science Review",
+                    license_gpl: "License (GPL v3)",
+                    open_source_license: "Open Source License",
+                    press_escape_to_close: "Press ESC to close",
+                    close: "Close",
+                    help_support_title: "Help & Support",
+                    request_new_features: "Request New Features",
+                    share_feature_ideas: "Share your ideas for new features",
+                    report_bugs: "Report Bugs",
+                },
+                help_fix_issues: "Help us fix issues you encounter",
+                view_source_and_docs: "View source code and documentation",
+                press_escape_or_help_to_close: "Press ESC or Shift-? to close",
+                press_escape_or_question_to_close: "Press ESC or ? to close",
+                empty_library_welcome: "Welcome to SOTF Player",
+                empty_library_title: "Your music library is empty",
+                empty_library_description: "Would you like to add music folders or remote sources?",
+                not_now: "Not Now",
+                add_music_folders: "Add Music Folders",
+                add_remote_source: "Add Remote Source",
+                edit_metadata: "Edit Metadata",
+                preview: "Preview",
+                search_musicbrainz: "Search MusicBrainz",
+                load_apo: "Load APO File for EQ Plugin",
+                load_sofa: "Load SOFA File for Binaural Decoder",
+                save_plugin_preset: "Save Plugin Preset",
+                load_plugin_preset: "Load Plugin Preset",
+                keyboard_shortcuts: "Keyboard Shortcuts",
+                channel_conflict: "Channel Conflict",
+                dont_show_again: "Don't show again",
+            },
+            Language::French => Self {
+                language,
+                global_keybindings: "RACCOURCIS GLOBAUX",
+                jump_to_screens: "Ouvrir Bibliothèque/File d’attente/Modules/Appareils/Dossiers",
+                increase_volume: "Augmenter le volume",
+                decrease_volume: "Diminuer le volume",
+                show_keyboard_shortcuts: "Afficher les raccourcis clavier",
+                show_help_support: "Afficher l’aide et l’assistance",
+                about: DialogAboutTranslations {
+                    about_title: "À propos de SOTF Player",
+                    app_name: "SOTF Player",
+                    github_repository: "Dépôt GitHub",
+                    source_code_and_docs: "Code source et documentation",
+                    report_issues: "Signaler des problèmes",
+                    bug_tracker: "Suivi des anomalies",
+                    feature_requests: "Demandes de fonctionnalités",
+                    github_discussions: "Discussions GitHub",
+                    community_forum: "Forum communautaire",
+                    audio_science_review: "Audio Science Review",
+                    license_gpl: "Licence (GPL v3)",
+                    open_source_license: "Licence libre",
+                    press_escape_to_close: "Appuyez sur Échap pour fermer",
+                    close: "Fermer",
+                    help_support_title: "Aide et assistance",
+                    request_new_features: "Proposer des fonctionnalités",
+                    share_feature_ideas: "Partagez vos idées de nouvelles fonctionnalités",
+                    report_bugs: "Signaler des anomalies",
+                },
+                help_fix_issues: "Aidez-nous à corriger les problèmes rencontrés",
+                view_source_and_docs: "Voir le code source et la documentation",
+                press_escape_or_help_to_close: "Appuyez sur Échap ou Maj-? pour fermer",
+                press_escape_or_question_to_close: "Appuyez sur Échap ou ? pour fermer",
+                empty_library_welcome: "Bienvenue dans SOTF Player",
+                empty_library_title: "Votre bibliothèque musicale est vide",
+                empty_library_description: "Voulez-vous ajouter des dossiers musicaux ou des sources distantes ?",
+                not_now: "Pas maintenant",
+                add_music_folders: "Ajouter des dossiers musicaux",
+                add_remote_source: "Ajouter une source distante",
+                edit_metadata: "Modifier les métadonnées",
+                preview: "Aperçu",
+                search_musicbrainz: "Rechercher dans MusicBrainz",
+                load_apo: "Charger un fichier APO pour le module EQ",
+                load_sofa: "Charger un fichier SOFA pour le décodeur binaural",
+                save_plugin_preset: "Enregistrer le préréglage du module",
+                load_plugin_preset: "Charger un préréglage de module",
+                keyboard_shortcuts: "Raccourcis clavier",
+                channel_conflict: "Conflit de canaux",
+                dont_show_again: "Ne plus afficher",
+            },
+            Language::German => Self {
+                language,
+                global_keybindings: "GLOBALE TASTENKÜRZEL",
+                jump_to_screens: "Zu Mediathek/Warteschlange/Plugins/Geräten/Ordnern wechseln",
+                increase_volume: "Lautstärke erhöhen",
+                decrease_volume: "Lautstärke verringern",
+                show_keyboard_shortcuts: "Tastenkürzel anzeigen",
+                show_help_support: "Hilfe und Support anzeigen",
+                about: DialogAboutTranslations {
+                    about_title: "Über SOTF Player",
+                    app_name: "SOTF Player",
+                    github_repository: "GitHub-Repository",
+                    source_code_and_docs: "Quellcode und Dokumentation",
+                    report_issues: "Probleme melden",
+                    bug_tracker: "Fehlerverfolgung",
+                    feature_requests: "Funktionswünsche",
+                    github_discussions: "GitHub-Diskussionen",
+                    community_forum: "Community-Forum",
+                    audio_science_review: "Audio Science Review",
+                    license_gpl: "Lizenz (GPL v3)",
+                    open_source_license: "Open-Source-Lizenz",
+                    press_escape_to_close: "Zum Schließen ESC drücken",
+                    close: "Schließen",
+                    help_support_title: "Hilfe und Support",
+                    request_new_features: "Neue Funktionen anfragen",
+                    share_feature_ideas: "Teilen Sie Ihre Ideen für neue Funktionen",
+                    report_bugs: "Fehler melden",
+                },
+                help_fix_issues: "Helfen Sie uns, aufgetretene Probleme zu beheben",
+                view_source_and_docs: "Quellcode und Dokumentation anzeigen",
+                press_escape_or_help_to_close: "Zum Schließen ESC oder Umschalt-? drücken",
+                press_escape_or_question_to_close: "Zum Schließen ESC oder ? drücken",
+                empty_library_welcome: "Willkommen bei SOTF Player",
+                empty_library_title: "Ihre Musikbibliothek ist leer",
+                empty_library_description: "Möchten Sie Musikordner oder entfernte Quellen hinzufügen?",
+                not_now: "Nicht jetzt",
+                add_music_folders: "Musikordner hinzufügen",
+                add_remote_source: "Entfernte Quelle hinzufügen",
+                edit_metadata: "Metadaten bearbeiten",
+                preview: "Vorschau",
+                search_musicbrainz: "MusicBrainz durchsuchen",
+                load_apo: "APO-Datei für das EQ-Plugin laden",
+                load_sofa: "SOFA-Datei für den binauralen Decoder laden",
+                save_plugin_preset: "Plugin-Preset speichern",
+                load_plugin_preset: "Plugin-Preset laden",
+                keyboard_shortcuts: "Tastenkürzel",
+                channel_conflict: "Kanalkonflikt",
+                dont_show_again: "Nicht mehr anzeigen",
+            },
+            Language::Spanish => Self {
+                language,
+                global_keybindings: "ATAJOS GLOBALES",
+                jump_to_screens: "Ir a Biblioteca/Cola/Complementos/Dispositivos/Carpetas",
+                increase_volume: "Aumentar el volumen",
+                decrease_volume: "Reducir el volumen",
+                show_keyboard_shortcuts: "Mostrar atajos de teclado",
+                show_help_support: "Mostrar ayuda y soporte",
+                about: DialogAboutTranslations {
+                    about_title: "Acerca de SOTF Player",
+                    app_name: "SOTF Player",
+                    github_repository: "Repositorio de GitHub",
+                    source_code_and_docs: "Código fuente y documentación",
+                    report_issues: "Informar de problemas",
+                    bug_tracker: "Seguimiento de errores",
+                    feature_requests: "Solicitudes de funciones",
+                    github_discussions: "Debates de GitHub",
+                    community_forum: "Foro de la comunidad",
+                    audio_science_review: "Audio Science Review",
+                    license_gpl: "Licencia (GPL v3)",
+                    open_source_license: "Licencia de código abierto",
+                    press_escape_to_close: "Pulse ESC para cerrar",
+                    close: "Cerrar",
+                    help_support_title: "Ayuda y soporte",
+                    request_new_features: "Solicitar nuevas funciones",
+                    share_feature_ideas: "Comparta sus ideas para nuevas funciones",
+                    report_bugs: "Informar de errores",
+                },
+                help_fix_issues: "Ayúdenos a corregir los problemas que encuentre",
+                view_source_and_docs: "Ver el código fuente y la documentación",
+                press_escape_or_help_to_close: "Pulse ESC o Mayús-? para cerrar",
+                press_escape_or_question_to_close: "Pulse ESC o ? para cerrar",
+                empty_library_welcome: "Bienvenido a SOTF Player",
+                empty_library_title: "Su biblioteca musical está vacía",
+                empty_library_description: "¿Desea añadir carpetas de música o fuentes remotas?",
+                not_now: "Ahora no",
+                add_music_folders: "Añadir carpetas de música",
+                add_remote_source: "Añadir fuente remota",
+                edit_metadata: "Editar metadatos",
+                preview: "Vista previa",
+                search_musicbrainz: "Buscar en MusicBrainz",
+                load_apo: "Cargar archivo APO para el complemento EQ",
+                load_sofa: "Cargar archivo SOFA para el decodificador binaural",
+                save_plugin_preset: "Guardar preajuste del complemento",
+                load_plugin_preset: "Cargar preajuste del complemento",
+                keyboard_shortcuts: "Atajos de teclado",
+                channel_conflict: "Conflicto de canales",
+                dont_show_again: "No volver a mostrar",
+            },
+        }
+    }
+
+    pub fn screen_name(self, screen: crate::app::types::Screen) -> &'static str {
+        use crate::app::types::Screen;
+
+        match (self.language, screen) {
+            (Language::French, Screen::Home | Screen::HomeShelf) => "Accueil",
+            (Language::French, Screen::NowPlaying) => "Lecture en cours",
+            (Language::French, Screen::Library) => "Bibliothèque",
+            (Language::French, Screen::Streams) => "Flux",
+            (Language::French, Screen::Queue) => "File d’attente",
+            (Language::French, Screen::Playlists) => "Listes de lecture",
+            (Language::French, Screen::Spectrum) => "Spectre",
+            (Language::French, Screen::Settings | Screen::SettingsDetail) => "Paramètres",
+            (Language::French, Screen::StudioHub | Screen::Studio) => "Studio",
+            (Language::French, Screen::EqCurve) => "Courbe d’égalisation",
+            (Language::French, Screen::Recording) => "Enregistrement",
+            (Language::French, Screen::RoomEq) => "Correction de salle",
+            (Language::French, Screen::HeadphoneEq) => "Égalisation casque",
+            (Language::French, Screen::Spinorama) => "Spinorama",
+            (Language::French, Screen::PluginGraph) => "Graphe des modules",
+            (Language::French, Screen::ListeningTest) => "Test d’écoute",
+            (Language::German, Screen::Home | Screen::HomeShelf) => "Startseite",
+            (Language::German, Screen::NowPlaying) => "Aktuelle Wiedergabe",
+            (Language::German, Screen::Library) => "Mediathek",
+            (Language::German, Screen::Streams) => "Streams",
+            (Language::German, Screen::Queue) => "Warteschlange",
+            (Language::German, Screen::Playlists) => "Wiedergabelisten",
+            (Language::German, Screen::Spectrum) => "Spektrum",
+            (Language::German, Screen::Settings | Screen::SettingsDetail) => "Einstellungen",
+            (Language::German, Screen::StudioHub | Screen::Studio) => "Studio",
+            (Language::German, Screen::EqCurve) => "EQ-Kurve",
+            (Language::German, Screen::Recording) => "Aufnahme",
+            (Language::German, Screen::RoomEq) => "Raum-EQ",
+            (Language::German, Screen::HeadphoneEq) => "Kopfhörer-EQ",
+            (Language::German, Screen::Spinorama) => "Spinorama",
+            (Language::German, Screen::PluginGraph) => "Plugin-Graph",
+            (Language::German, Screen::ListeningTest) => "Hörtest",
+            (Language::Spanish, Screen::Home | Screen::HomeShelf) => "Inicio",
+            (Language::Spanish, Screen::NowPlaying) => "Reproduciendo",
+            (Language::Spanish, Screen::Library) => "Biblioteca",
+            (Language::Spanish, Screen::Streams) => "Emisiones",
+            (Language::Spanish, Screen::Queue) => "Cola",
+            (Language::Spanish, Screen::Playlists) => "Listas de reproducción",
+            (Language::Spanish, Screen::Spectrum) => "Espectro",
+            (Language::Spanish, Screen::Settings | Screen::SettingsDetail) => "Ajustes",
+            (Language::Spanish, Screen::StudioHub | Screen::Studio) => "Studio",
+            (Language::Spanish, Screen::EqCurve) => "Curva de EQ",
+            (Language::Spanish, Screen::Recording) => "Grabación",
+            (Language::Spanish, Screen::RoomEq) => "EQ de sala",
+            (Language::Spanish, Screen::HeadphoneEq) => "EQ de auriculares",
+            (Language::Spanish, Screen::Spinorama) => "Spinorama",
+            (Language::Spanish, Screen::PluginGraph) => "Grafo de complementos",
+            (Language::Spanish, Screen::ListeningTest) => "Prueba de escucha",
+            (Language::English, Screen::Home | Screen::HomeShelf) => "Home",
+            (Language::English, Screen::NowPlaying) => "Now Playing",
+            (Language::English, Screen::Library) => "Library",
+            (Language::English, Screen::Streams) => "Streams",
+            (Language::English, Screen::Queue) => "Queue",
+            (Language::English, Screen::Playlists) => "Playlists",
+            (Language::English, Screen::Spectrum) => "Spectrum",
+            (Language::English, Screen::Settings | Screen::SettingsDetail) => "Settings",
+            (Language::English, Screen::StudioHub | Screen::Studio) => "Studio",
+            (Language::English, Screen::EqCurve) => "EQ Curve",
+            (Language::English, Screen::Recording) => "Recording",
+            (Language::English, Screen::RoomEq) => "Room EQ",
+            (Language::English, Screen::HeadphoneEq) => "Headphone EQ",
+            (Language::English, Screen::Spinorama) => "Spinorama",
+            (Language::English, Screen::PluginGraph) => "Plugin Graph",
+            (Language::English, Screen::ListeningTest) => "Listening Test",
+        }
+    }
+
+    pub fn screen_overview(self, screen: crate::app::types::Screen) -> &'static str {
+        use crate::app::types::Screen;
+
+        match (self.language, screen) {
+            (Language::French, Screen::Home | Screen::HomeShelf) => {
+                "Parcourez les albums et ouvrez un rayon pour afficher toute sa sélection."
+            }
+            (Language::French, Screen::NowPlaying | Screen::Queue) => {
+                "Gérez la lecture en cours, l’ordre de la file et les indicateurs de niveau."
+            }
+            (Language::French, Screen::Library) => {
+                "Recherchez, triez et filtrez votre collection musicale."
+            }
+            (Language::French, Screen::Streams) => {
+                "Ajoutez, modifiez et lancez des flux audio distants."
+            }
+            (Language::French, Screen::Playlists) => {
+                "Parcourez les listes de lecture et ajoutez leur contenu à la file."
+            }
+            (Language::French, Screen::Spectrum) => {
+                "Inspectez le spectre fréquentiel en temps réel du signal lu."
+            }
+            (Language::French, Screen::Settings | Screen::SettingsDetail) => {
+                "Configurez la bibliothèque, l’audio, l’apparence, les modules et les services."
+            }
+            (Language::French, Screen::StudioHub) => {
+                "Choisissez un flux de travail Studio pour le traitement ou la mesure."
+            }
+            (Language::French, Screen::EqCurve) => {
+                "Inspectez la réponse d’égalisation et ouvrez l’éditeur de filtres."
+            }
+            (Language::French, Screen::Studio) => {
+                "Construisez et modifiez la chaîne de traitement audio."
+            }
+            (Language::French, Screen::Recording) => {
+                "Enregistrez des mesures acoustiques avec un microphone étalonné."
+            }
+            (Language::French, Screen::RoomEq) => {
+                "Transformez des mesures multicanales en correction de salle modifiable."
+            }
+            (Language::French, Screen::HeadphoneEq) => {
+                "Adaptez une mesure de casque à une courbe cible et appliquez les filtres."
+            }
+            (Language::French, Screen::Spinorama) => {
+                "Recherchez une enceinte mesurée et optimisez son égalisation."
+            }
+            (Language::French, Screen::PluginGraph) => {
+                "Modifiez les nœuds, ports et connexions de la chaîne sans pointeur."
+            }
+            (Language::French, Screen::ListeningTest) => {
+                "Comparez deux chemins DSP avec appariement de niveau et essais à l’aveugle."
+            }
+            (Language::German, Screen::Home | Screen::HomeShelf) => {
+                "Durchsuchen Sie Alben und öffnen Sie ein Regal, um die gesamte Auswahl zu sehen."
+            }
+            (Language::German, Screen::NowPlaying | Screen::Queue) => {
+                "Verwalten Sie Wiedergabe, Warteschlangenreihenfolge und Pegelanzeigen."
+            }
+            (Language::German, Screen::Library) => {
+                "Durchsuchen, sortieren und filtern Sie Ihre Musiksammlung."
+            }
+            (Language::German, Screen::Streams) => {
+                "Fügen Sie entfernte Audiostreams hinzu, bearbeiten und starten Sie sie."
+            }
+            (Language::German, Screen::Playlists) => {
+                "Durchsuchen Sie Wiedergabelisten und fügen Sie Inhalte zur Warteschlange hinzu."
+            }
+            (Language::German, Screen::Spectrum) => {
+                "Prüfen Sie das Echtzeit-Frequenzspektrum des Wiedergabesignals."
+            }
+            (Language::German, Screen::Settings | Screen::SettingsDetail) => {
+                "Konfigurieren Sie Mediathek, Audio, Darstellung, Plugins und Dienste."
+            }
+            (Language::German, Screen::StudioHub) => {
+                "Wählen Sie einen Studio-Arbeitsablauf für Verarbeitung oder Messung."
+            }
+            (Language::German, Screen::EqCurve) => {
+                "Prüfen Sie den EQ-Frequenzgang und öffnen Sie den Filtereditor."
+            }
+            (Language::German, Screen::Studio) => {
+                "Erstellen und bearbeiten Sie die Audio-Signalkette."
+            }
+            (Language::German, Screen::Recording) => {
+                "Nehmen Sie akustische Messungen mit einem kalibrierten Mikrofon auf."
+            }
+            (Language::German, Screen::RoomEq) => {
+                "Erzeugen Sie aus Mehrkanalmessungen eine bearbeitbare Raumkorrektur."
+            }
+            (Language::German, Screen::HeadphoneEq) => {
+                "Passen Sie eine Kopfhörermessung an eine Zielkurve an und wenden Sie Filter an."
+            }
+            (Language::German, Screen::Spinorama) => {
+                "Suchen Sie einen gemessenen Lautsprecher und optimieren Sie dessen EQ."
+            }
+            (Language::German, Screen::PluginGraph) => {
+                "Bearbeiten Sie Knoten, Ports und Verbindungen der Signalkette ohne Zeiger."
+            }
+            (Language::German, Screen::ListeningTest) => {
+                "Vergleichen Sie zwei DSP-Pfade mit Pegelabgleich und Blindversuchen."
+            }
+            (Language::Spanish, Screen::Home | Screen::HomeShelf) => {
+                "Explore álbumes y abra un estante para ver toda su selección."
+            }
+            (Language::Spanish, Screen::NowPlaying | Screen::Queue) => {
+                "Gestione la reproducción, el orden de la cola y los medidores de nivel."
+            }
+            (Language::Spanish, Screen::Library) => "Busque, ordene y filtre su colección musical.",
+            (Language::Spanish, Screen::Streams) => {
+                "Añada, edite e inicie emisiones de audio remotas."
+            }
+            (Language::Spanish, Screen::Playlists) => {
+                "Explore listas de reproducción y añada su contenido a la cola."
+            }
+            (Language::Spanish, Screen::Spectrum) => {
+                "Inspeccione el espectro de frecuencias en tiempo real de la reproducción."
+            }
+            (Language::Spanish, Screen::Settings | Screen::SettingsDetail) => {
+                "Configure la biblioteca, el audio, la apariencia, los complementos y los servicios."
+            }
+            (Language::Spanish, Screen::StudioHub) => {
+                "Elija un flujo de Studio para procesamiento o medición."
+            }
+            (Language::Spanish, Screen::EqCurve) => {
+                "Inspeccione la respuesta de EQ y abra el editor de filtros."
+            }
+            (Language::Spanish, Screen::Studio) => {
+                "Cree y edite la cadena de procesamiento de audio."
+            }
+            (Language::Spanish, Screen::Recording) => {
+                "Registre mediciones acústicas con un micrófono calibrado."
+            }
+            (Language::Spanish, Screen::RoomEq) => {
+                "Convierta mediciones multicanal en una corrección de sala editable."
+            }
+            (Language::Spanish, Screen::HeadphoneEq) => {
+                "Ajuste una medición de auriculares a una curva objetivo y aplique los filtros."
+            }
+            (Language::Spanish, Screen::Spinorama) => {
+                "Busque un altavoz medido y optimice su ecualización."
+            }
+            (Language::Spanish, Screen::PluginGraph) => {
+                "Edite nodos, puertos y conexiones de la cadena sin puntero."
+            }
+            (Language::Spanish, Screen::ListeningTest) => {
+                "Compare dos rutas DSP con ajuste de nivel y pruebas a ciegas."
+            }
+            (Language::English, Screen::Home | Screen::HomeShelf) => {
+                "Browse albums and open a shelf to see its complete selection."
+            }
+            (Language::English, Screen::NowPlaying | Screen::Queue) => {
+                "Manage current playback, queue order, and level meters."
+            }
+            (Language::English, Screen::Library) => {
+                "Search, sort, and filter your music collection."
+            }
+            (Language::English, Screen::Streams) => "Add, edit, and play remote audio streams.",
+            (Language::English, Screen::Playlists) => {
+                "Browse playlists and add their content to the queue."
+            }
+            (Language::English, Screen::Spectrum) => {
+                "Inspect the real-time frequency spectrum of the playback signal."
+            }
+            (Language::English, Screen::Settings | Screen::SettingsDetail) => {
+                "Configure the library, audio, appearance, plugins, and services."
+            }
+            (Language::English, Screen::StudioHub) => {
+                "Choose a Studio workflow for processing or measurement."
+            }
+            (Language::English, Screen::EqCurve) => {
+                "Inspect the EQ response and open the filter editor."
+            }
+            (Language::English, Screen::Studio) => "Build and edit the audio processing chain.",
+            (Language::English, Screen::Recording) => {
+                "Record acoustic measurements with a calibrated microphone."
+            }
+            (Language::English, Screen::RoomEq) => {
+                "Turn multichannel measurements into editable room correction."
+            }
+            (Language::English, Screen::HeadphoneEq) => {
+                "Match a headphone measurement to a target curve and apply the filters."
+            }
+            (Language::English, Screen::Spinorama) => {
+                "Find a measured speaker and optimize its equalization."
+            }
+            (Language::English, Screen::PluginGraph) => {
+                "Edit chain nodes, ports, and connections without a pointer."
+            }
+            (Language::English, Screen::ListeningTest) => {
+                "Compare two DSP paths with level matching and blind trials."
+            }
+        }
+    }
+
+    pub fn keyboard_shortcuts_for(self, screen: &'static str) -> String {
+        match self.language {
+            Language::French => format!("Raccourcis clavier — {screen}"),
+            Language::German => format!("Tastenkürzel — {screen}"),
+            Language::Spanish => format!("Atajos de teclado — {screen}"),
+            Language::English => format!("Keyboard Shortcuts — {screen}"),
+        }
+    }
+
+    pub fn screen_keybindings(self, screen: &'static str) -> String {
+        match self.language {
+            Language::French => format!("RACCOURCIS — {}", screen.to_uppercase()),
+            Language::German => format!("TASTENKÜRZEL — {}", screen.to_uppercase()),
+            Language::Spanish => format!("ATAJOS — {}", screen.to_uppercase()),
+            Language::English => format!("{} KEYBINDINGS", screen.to_uppercase()),
+        }
+    }
+
+    pub fn version(self, version: &str) -> String {
+        match self.language {
+            Language::French => format!("Version {version}"),
+            Language::German => format!("Version {version}"),
+            Language::Spanish => format!("Versión {version}"),
+            Language::English => format!("Version {version}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ServerSettingsTranslations {
+    pub serves_media: &'static str,
+    pub sotf_api: &'static str,
+    pub url: &'static str,
+    pub token: &'static str,
+    pub scan_to_add: &'static str,
+    pub mpd_server: &'static str,
+    pub tls: &'static str,
+    pub authentication: &'static str,
+    pub client_certificate_help: &'static str,
+    pub dlna_server: &'static str,
+    pub protocol: &'static str,
+    pub http_compatibility: &'static str,
+    pub remote_players: &'static str,
+    pub api_address_help: &'static str,
+    pub api_token_help: &'static str,
+    pub no_remote_players: &'static str,
+    pub selected: &'static str,
+    pub certificate: &'static str,
+    pub password: &'static str,
+    pub add_server: &'static str,
+    pub scan_qr: &'static str,
+    pub test: &'static str,
+    pub select: &'static str,
+    pub remove: &'static str,
+    pub enable: &'static str,
+    pub disable: &'static str,
+}
+
+impl ServerSettingsTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                serves_media: "This machine serves your media",
+                sotf_api: "SOTF API",
+                url: "URL",
+                token: "Token",
+                scan_to_add: "Scan to add this SOTF API server. The bearer token is included.",
+                mpd_server: "MPD Server",
+                tls: "TLS",
+                authentication: "Authentication",
+                client_certificate_help: "Clients authenticate with a TLS certificate. Add trusted client fingerprints to allow access.",
+                dlna_server: "DLNA Server",
+                protocol: "Protocol",
+                http_compatibility: "HTTP (no TLS — device compatibility)",
+                remote_players: "Remote SOTF Players",
+                api_address_help: "Use the SOTF API address, for example http://192.168.1.102:8732. This is separate from MPD port 6600.",
+                api_token_help: "Enter the API authentication token shown in the server’s SOTF API settings. This token is not saved in remote_servers.json.",
+                no_remote_players: "No remote SOTF players have been saved yet.",
+                selected: "Selected",
+                certificate: "Certificate",
+                password: "Password",
+                add_server: "Add Server",
+                scan_qr: "Scan QR",
+                test: "Test",
+                select: "Select",
+                remove: "Remove",
+                enable: "Enable",
+                disable: "Disable",
+            },
+            Language::French => Self {
+                serves_media: "Cette machine diffuse vos médias",
+                sotf_api: "API SOTF",
+                url: "URL",
+                token: "Jeton",
+                scan_to_add: "Scannez pour ajouter ce serveur API SOTF. Le jeton d’accès est inclus.",
+                mpd_server: "Serveur MPD",
+                tls: "TLS",
+                authentication: "Authentification",
+                client_certificate_help: "Les clients s’authentifient avec un certificat TLS. Ajoutez les empreintes des clients approuvés pour autoriser l’accès.",
+                dlna_server: "Serveur DLNA",
+                protocol: "Protocole",
+                http_compatibility: "HTTP (sans TLS — compatibilité des appareils)",
+                remote_players: "Lecteurs SOTF distants",
+                api_address_help: "Utilisez l’adresse de l’API SOTF, par exemple http://192.168.1.102:8732. Elle est distincte du port MPD 6600.",
+                api_token_help: "Saisissez le jeton d’authentification affiché dans les paramètres API SOTF du serveur. Ce jeton n’est pas enregistré dans remote_servers.json.",
+                no_remote_players: "Aucun lecteur SOTF distant n’est encore enregistré.",
+                selected: "Sélectionné",
+                certificate: "Certificat",
+                password: "Mot de passe",
+                add_server: "Ajouter un serveur",
+                scan_qr: "Scanner le QR",
+                test: "Tester",
+                select: "Sélectionner",
+                remove: "Supprimer",
+                enable: "Activer",
+                disable: "Désactiver",
+            },
+            Language::German => Self {
+                serves_media: "Dieser Computer stellt Ihre Medien bereit",
+                sotf_api: "SOTF-API",
+                url: "URL",
+                token: "Token",
+                scan_to_add: "Scannen Sie den Code, um diesen SOTF-API-Server hinzuzufügen. Das Zugriffstoken ist enthalten.",
+                mpd_server: "MPD-Server",
+                tls: "TLS",
+                authentication: "Authentifizierung",
+                client_certificate_help: "Clients authentifizieren sich mit einem TLS-Zertifikat. Fügen Sie Fingerabdrücke vertrauenswürdiger Clients hinzu, um den Zugriff zu erlauben.",
+                dlna_server: "DLNA-Server",
+                protocol: "Protokoll",
+                http_compatibility: "HTTP (ohne TLS — Gerätekompatibilität)",
+                remote_players: "Entfernte SOTF-Player",
+                api_address_help: "Verwenden Sie die SOTF-API-Adresse, zum Beispiel http://192.168.1.102:8732. Sie ist vom MPD-Port 6600 getrennt.",
+                api_token_help: "Geben Sie das Authentifizierungstoken aus den SOTF-API-Einstellungen des Servers ein. Dieses Token wird nicht in remote_servers.json gespeichert.",
+                no_remote_players: "Es wurden noch keine entfernten SOTF-Player gespeichert.",
+                selected: "Ausgewählt",
+                certificate: "Zertifikat",
+                password: "Passwort",
+                add_server: "Server hinzufügen",
+                scan_qr: "QR scannen",
+                test: "Testen",
+                select: "Auswählen",
+                remove: "Entfernen",
+                enable: "Aktivieren",
+                disable: "Deaktivieren",
+            },
+            Language::Spanish => Self {
+                serves_media: "Este equipo sirve sus archivos multimedia",
+                sotf_api: "API de SOTF",
+                url: "URL",
+                token: "Token",
+                scan_to_add: "Escanee para añadir este servidor de API de SOTF. Se incluye el token de acceso.",
+                mpd_server: "Servidor MPD",
+                tls: "TLS",
+                authentication: "Autenticación",
+                client_certificate_help: "Los clientes se autentican con un certificado TLS. Añada las huellas de clientes de confianza para permitir el acceso.",
+                dlna_server: "Servidor DLNA",
+                protocol: "Protocolo",
+                http_compatibility: "HTTP (sin TLS — compatibilidad de dispositivos)",
+                remote_players: "Reproductores SOTF remotos",
+                api_address_help: "Use la dirección de la API de SOTF, por ejemplo http://192.168.1.102:8732. Es independiente del puerto MPD 6600.",
+                api_token_help: "Introduzca el token de autenticación mostrado en los ajustes de la API de SOTF del servidor. Este token no se guarda en remote_servers.json.",
+                no_remote_players: "Aún no se han guardado reproductores SOTF remotos.",
+                selected: "Seleccionado",
+                certificate: "Certificado",
+                password: "Contraseña",
+                add_server: "Añadir servidor",
+                scan_qr: "Escanear QR",
+                test: "Probar",
+                select: "Seleccionar",
+                remove: "Quitar",
+                enable: "Activar",
+                disable: "Desactivar",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PhoneTranslations {
+    pub home: &'static str,
+    pub screen_guide: &'static str,
+    pub show_tutorial: &'static str,
+    pub home_empty: &'static str,
+    pub see_all: &'static str,
+    pub search_library: &'static str,
+    pub queue_empty: &'static str,
+    pub up_next: &'static str,
+    pub plugin_chain: &'static str,
+    pub add: &'static str,
+    pub no_plugin_selected: &'static str,
+    pub add_filter: &'static str,
+    pub reset: &'static str,
+    pub delete_filter: &'static str,
+    pub no_touch_parameters: &'static str,
+    pub edit: &'static str,
+    pub filters: &'static str,
+    pub open_rack_editor: &'static str,
+    pub remove: &'static str,
+    pub no_saved_streams: &'static str,
+    pub play: &'static str,
+    pub back: &'static str,
+    pub next: &'static str,
+    pub search_shortcuts: &'static str,
+    pub magic_radio: &'static str,
+    pub back_to_genres: &'static str,
+}
+
+impl PhoneTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                home: "Home",
+                screen_guide: "Screen Guide",
+                show_tutorial: "Show Tutorial",
+                home_empty: "Add albums to your library to build Home shelves.",
+                see_all: "See all",
+                search_library: "Search albums, artists, tracks",
+                queue_empty: "Queue is empty.",
+                up_next: "Up Next",
+                plugin_chain: "Plugin Chain",
+                add: "Add",
+                no_plugin_selected: "No plugin selected.",
+                add_filter: "+ Add Filter",
+                reset: "Reset",
+                delete_filter: "Delete Filter",
+                no_touch_parameters: "No touch-editable parameters for this plugin yet.",
+                edit: "Edit",
+                filters: "Filters",
+                open_rack_editor: "Open Rack Editor",
+                remove: "Remove",
+                no_saved_streams: "No saved streams",
+                play: "Play",
+                back: "Back",
+                next: "Next",
+                search_shortcuts: "Search shortcuts",
+                magic_radio: "Magic Radio",
+                back_to_genres: "← Back to Genres",
+            },
+            Language::French => Self {
+                home: "Accueil",
+                screen_guide: "Guide des écrans",
+                show_tutorial: "Afficher le tutoriel",
+                home_empty: "Ajoutez des albums à votre bibliothèque pour créer les rayons d’accueil.",
+                see_all: "Tout voir",
+                search_library: "Rechercher des albums, artistes ou pistes",
+                queue_empty: "La file d’attente est vide.",
+                up_next: "À suivre",
+                plugin_chain: "Chaîne de traitement",
+                add: "Ajouter",
+                no_plugin_selected: "Aucun module sélectionné.",
+                add_filter: "+ Ajouter un filtre",
+                reset: "Réinitialiser",
+                delete_filter: "Supprimer le filtre",
+                no_touch_parameters: "Ce module ne propose pas encore de paramètres tactiles.",
+                edit: "Modifier",
+                filters: "Filtres",
+                open_rack_editor: "Ouvrir l’éditeur de rack",
+                remove: "Supprimer",
+                no_saved_streams: "Aucun flux enregistré",
+                play: "Lire",
+                back: "Retour",
+                next: "Suivant",
+                search_shortcuts: "Rechercher des raccourcis",
+                magic_radio: "Radio magique",
+                back_to_genres: "← Retour aux genres",
+            },
+            Language::German => Self {
+                home: "Startseite",
+                screen_guide: "Bildschirmübersicht",
+                show_tutorial: "Tutorial anzeigen",
+                home_empty: "Fügen Sie Ihrer Mediathek Alben hinzu, um Startseitenregale zu erstellen.",
+                see_all: "Alle anzeigen",
+                search_library: "Alben, Künstler und Titel durchsuchen",
+                queue_empty: "Die Warteschlange ist leer.",
+                up_next: "Als Nächstes",
+                plugin_chain: "Signalkette",
+                add: "Hinzufügen",
+                no_plugin_selected: "Kein Plugin ausgewählt.",
+                add_filter: "+ Filter hinzufügen",
+                reset: "Zurücksetzen",
+                delete_filter: "Filter löschen",
+                no_touch_parameters: "Für dieses Plugin sind noch keine Touch-Parameter verfügbar.",
+                edit: "Bearbeiten",
+                filters: "Filter",
+                open_rack_editor: "Rack-Editor öffnen",
+                remove: "Entfernen",
+                no_saved_streams: "Keine gespeicherten Streams",
+                play: "Abspielen",
+                back: "Zurück",
+                next: "Weiter",
+                search_shortcuts: "Tastenkürzel durchsuchen",
+                magic_radio: "Magic Radio",
+                back_to_genres: "← Zurück zu den Genres",
+            },
+            Language::Spanish => Self {
+                home: "Inicio",
+                screen_guide: "Guía de pantallas",
+                show_tutorial: "Mostrar tutorial",
+                home_empty: "Añada álbumes a su biblioteca para crear estantes de inicio.",
+                see_all: "Ver todo",
+                search_library: "Buscar álbumes, artistas y pistas",
+                queue_empty: "La cola está vacía.",
+                up_next: "A continuación",
+                plugin_chain: "Cadena de señal",
+                add: "Añadir",
+                no_plugin_selected: "Ningún complemento seleccionado.",
+                add_filter: "+ Añadir filtro",
+                reset: "Restablecer",
+                delete_filter: "Eliminar filtro",
+                no_touch_parameters: "Este complemento aún no tiene parámetros editables de forma táctil.",
+                edit: "Editar",
+                filters: "Filtros",
+                open_rack_editor: "Abrir editor de rack",
+                remove: "Eliminar",
+                no_saved_streams: "No hay emisiones guardadas",
+                play: "Reproducir",
+                back: "Atrás",
+                next: "Siguiente",
+                search_shortcuts: "Buscar atajos",
+                magic_radio: "Radio mágica",
+                back_to_genres: "← Volver a los géneros",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RoomEqReportTranslations {
+    chart: RoomEqChartTranslations,
+}
+
+impl std::ops::Deref for RoomEqReportTranslations {
+    type Target = RoomEqChartTranslations;
+
+    fn deref(&self) -> &Self::Target {
+        &self.chart
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RoomEqChartTranslations {
+    overview: RoomEqOverviewTranslations,
+    pub crossover_frequencies: &'static str,
+    pub original_vs_corrected: &'static str,
+    pub sum: &'static str,
+    pub original: &'static str,
+    pub tonal_balance: &'static str,
+    pub phase_response: &'static str,
+    pub ir: &'static str,
+    pub group_delay: &'static str,
+    pub smoothing: &'static str,
+    pub auto: &'static str,
+    pub trend: &'static str,
+    pub normalize: &'static str,
+    pub channel: &'static str,
+    pub main_ms: &'static str,
+    pub pre_peak_db: &'static str,
+    pub post_peak_db: &'static str,
+    pub pre_audible_db: &'static str,
+    pub post_audible_db: &'static str,
+    pub penalty: &'static str,
+    pub fir_temporal_masking: &'static str,
+    pub epa_temporal_masking: &'static str,
+    pub modal: &'static str,
+    pub fir_ir: &'static str,
+    pub current_phase: &'static str,
+    pub optimization_process: &'static str,
+    pub iterations: &'static str,
+    pub loss: &'static str,
+    pub target_curve: &'static str,
+    pub chart_unavailable: &'static str,
+}
+
+impl std::ops::Deref for RoomEqChartTranslations {
+    type Target = RoomEqOverviewTranslations;
+
+    fn deref(&self) -> &Self::Target {
+        &self.overview
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RoomEqOverviewTranslations {
+    pub optimization_summary: &'static str,
+    pub bass_management: &'static str,
+    pub bass_routing_graph: &'static str,
+    pub rms_programme_gain: &'static str,
+    pub all_channels_overview: &'static str,
+    pub epa_scores: &'static str,
+    pub metric: &'static str,
+    pub before_eq: &'static str,
+    pub after_eq: &'static str,
+    pub delta: &'static str,
+    pub preference: &'static str,
+    pub evaluation: &'static str,
+    pub potency: &'static str,
+    pub activity: &'static str,
+    pub sharpness_acum: &'static str,
+    pub roughness: &'static str,
+    pub total_loudness_sone: &'static str,
+    pub loudness_balance: &'static str,
+    pub epa_interpretation: &'static str,
+    pub eq_filters: &'static str,
+    pub impulse_response: &'static str,
+    pub type_label: &'static str,
+    pub crossover_label: &'static str,
+    pub room_eq_filters: &'static str,
+    pub broadband_precorrection_filters: &'static str,
+}
+
+impl RoomEqReportTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                chart: RoomEqChartTranslations {
+                    overview: RoomEqOverviewTranslations {
+                        optimization_summary: "Optimization Summary",
+                        bass_management: "Bass Management",
+                        bass_routing_graph: "Bass Management Routing Graph",
+                        rms_programme_gain: "RMS programme gain",
+                        all_channels_overview: "All Channels Overview",
+                        epa_scores: "EPA Psychoacoustic Scores",
+                        metric: "Metric",
+                        before_eq: "Before EQ",
+                        after_eq: "After EQ",
+                        delta: "Delta",
+                        preference: "Preference",
+                        evaluation: "Evaluation",
+                        potency: "Potency",
+                        activity: "Activity",
+                        sharpness_acum: "Sharpness (acum)",
+                        roughness: "Roughness",
+                        total_loudness_sone: "Total loudness (sone)",
+                        loudness_balance: "Loudness balance",
+                        epa_interpretation: "Higher is better for Preference / Evaluation / Total loudness / Loudness balance; lower is better for Activity / Sharpness deviation / Roughness.",
+                        eq_filters: "EQ Filters",
+                        impulse_response: "Impulse Response",
+                        type_label: "Type:",
+                        crossover_label: "Crossover:",
+                        room_eq_filters: "Room EQ Filters",
+                        broadband_precorrection_filters: "Broadband Pre-correction Filters",
+                    },
+                    crossover_frequencies: "Crossover Frequencies",
+                    original_vs_corrected: "Original vs Corrected",
+                    sum: "Sum",
+                    original: "Original",
+                    tonal_balance: "Tonal Balance",
+                    phase_response: "Phase Response",
+                    ir: "IR",
+                    group_delay: "Group Delay",
+                    smoothing: "Smoothing",
+                    auto: "Auto",
+                    trend: "Trend",
+                    normalize: "Normalize",
+                    channel: "Channel",
+                    main_ms: "Main (ms)",
+                    pre_peak_db: "Pre peak (dB)",
+                    post_peak_db: "Post peak (dB)",
+                    pre_audible_db: "Pre audible (dB)",
+                    post_audible_db: "Post audible (dB)",
+                    penalty: "Penalty",
+                    fir_temporal_masking: "FIR Temporal Masking",
+                    epa_temporal_masking: "EPA Temporal Masking",
+                    modal: "Modal",
+                    fir_ir: "FIR IR",
+                    current_phase: "Current phase:",
+                    optimization_process: "Optimization Process",
+                    iterations: "Iterations",
+                    loss: "Loss",
+                    target_curve: "Target Curve",
+                    chart_unavailable: "Unable to render chart",
+                },
+            },
+            Language::French => Self {
+                chart: RoomEqChartTranslations {
+                    overview: RoomEqOverviewTranslations {
+                        optimization_summary: "Résumé de l’optimisation",
+                        bass_management: "Gestion des graves",
+                        bass_routing_graph: "Graphe de routage des graves",
+                        rms_programme_gain: "Gain RMS du programme",
+                        all_channels_overview: "Vue d’ensemble des canaux",
+                        epa_scores: "Scores psychoacoustiques EPA",
+                        metric: "Mesure",
+                        before_eq: "Avant EQ",
+                        after_eq: "Après EQ",
+                        delta: "Écart",
+                        preference: "Préférence",
+                        evaluation: "Évaluation",
+                        potency: "Puissance",
+                        activity: "Activité",
+                        sharpness_acum: "Acuité (acum)",
+                        roughness: "Rugosité",
+                        total_loudness_sone: "Sonie totale (sone)",
+                        loudness_balance: "Équilibre de sonie",
+                        epa_interpretation: "Une valeur élevée est préférable pour Préférence / Évaluation / Sonie totale / Équilibre de sonie ; une valeur faible est préférable pour Activité / Écart d’acuité / Rugosité.",
+                        eq_filters: "Filtres d’égalisation",
+                        impulse_response: "Réponse impulsionnelle",
+                        type_label: "Type :",
+                        crossover_label: "Filtre répartiteur :",
+                        room_eq_filters: "Filtres de correction de salle",
+                        broadband_precorrection_filters: "Filtres de précorrection large bande",
+                    },
+                    crossover_frequencies: "Fréquences de coupure",
+                    original_vs_corrected: "Original et corrigé",
+                    sum: "Somme",
+                    original: "Original",
+                    tonal_balance: "Équilibre tonal",
+                    phase_response: "Réponse de phase",
+                    ir: "RI",
+                    group_delay: "Retard de groupe",
+                    smoothing: "Lissage",
+                    auto: "Auto",
+                    trend: "Tendance",
+                    normalize: "Normaliser",
+                    channel: "Canal",
+                    main_ms: "Principal (ms)",
+                    pre_peak_db: "Pic avant (dB)",
+                    post_peak_db: "Pic après (dB)",
+                    pre_audible_db: "Audible avant (dB)",
+                    post_audible_db: "Audible après (dB)",
+                    penalty: "Pénalité",
+                    fir_temporal_masking: "Masquage temporel FIR",
+                    epa_temporal_masking: "Masquage temporel EPA",
+                    modal: "Modal",
+                    fir_ir: "RI FIR",
+                    current_phase: "Phase actuelle :",
+                    optimization_process: "Processus d’optimisation",
+                    iterations: "Itérations",
+                    loss: "Perte",
+                    target_curve: "Courbe cible",
+                    chart_unavailable: "Impossible d’afficher le graphique",
+                },
+            },
+            Language::German => Self {
+                chart: RoomEqChartTranslations {
+                    overview: RoomEqOverviewTranslations {
+                        optimization_summary: "Optimierungsübersicht",
+                        bass_management: "Bassmanagement",
+                        bass_routing_graph: "Routing-Graph des Bassmanagements",
+                        rms_programme_gain: "RMS-Programmverstärkung",
+                        all_channels_overview: "Übersicht aller Kanäle",
+                        epa_scores: "Psychoakustische EPA-Werte",
+                        metric: "Messgröße",
+                        before_eq: "Vor EQ",
+                        after_eq: "Nach EQ",
+                        delta: "Differenz",
+                        preference: "Präferenz",
+                        evaluation: "Bewertung",
+                        potency: "Potenz",
+                        activity: "Aktivität",
+                        sharpness_acum: "Schärfe (acum)",
+                        roughness: "Rauigkeit",
+                        total_loudness_sone: "Gesamtlautheit (Sone)",
+                        loudness_balance: "Lautheitsbalance",
+                        epa_interpretation: "Höher ist besser für Präferenz / Bewertung / Gesamtlautheit / Lautheitsbalance; niedriger ist besser für Aktivität / Schärfeabweichung / Rauigkeit.",
+                        eq_filters: "EQ-Filter",
+                        impulse_response: "Impulsantwort",
+                        type_label: "Typ:",
+                        crossover_label: "Frequenzweiche:",
+                        room_eq_filters: "Raum-EQ-Filter",
+                        broadband_precorrection_filters: "Breitband-Vorkorrekturfilter",
+                    },
+                    crossover_frequencies: "Trennfrequenzen",
+                    original_vs_corrected: "Original und korrigiert",
+                    sum: "Summe",
+                    original: "Original",
+                    tonal_balance: "Tonale Balance",
+                    phase_response: "Phasengang",
+                    ir: "IR",
+                    group_delay: "Gruppenlaufzeit",
+                    smoothing: "Glättung",
+                    auto: "Auto",
+                    trend: "Trend",
+                    normalize: "Normalisieren",
+                    channel: "Kanal",
+                    main_ms: "Hauptsignal (ms)",
+                    pre_peak_db: "Vor-Pegelspitze (dB)",
+                    post_peak_db: "Nach-Pegelspitze (dB)",
+                    pre_audible_db: "Vorher hörbar (dB)",
+                    post_audible_db: "Nachher hörbar (dB)",
+                    penalty: "Strafwert",
+                    fir_temporal_masking: "Zeitliche FIR-Maskierung",
+                    epa_temporal_masking: "Zeitliche EPA-Maskierung",
+                    modal: "Modal",
+                    fir_ir: "FIR-IR",
+                    current_phase: "Aktuelle Phase:",
+                    optimization_process: "Optimierungsverlauf",
+                    iterations: "Iterationen",
+                    loss: "Verlust",
+                    target_curve: "Zielkurve",
+                    chart_unavailable: "Diagramm kann nicht angezeigt werden",
+                },
+            },
+            Language::Spanish => Self {
+                chart: RoomEqChartTranslations {
+                    overview: RoomEqOverviewTranslations {
+                        optimization_summary: "Resumen de optimización",
+                        bass_management: "Gestión de graves",
+                        bass_routing_graph: "Grafo de enrutamiento de graves",
+                        rms_programme_gain: "Ganancia RMS del programa",
+                        all_channels_overview: "Resumen de todos los canales",
+                        epa_scores: "Puntuaciones psicoacústicas EPA",
+                        metric: "Métrica",
+                        before_eq: "Antes de EQ",
+                        after_eq: "Después de EQ",
+                        delta: "Diferencia",
+                        preference: "Preferencia",
+                        evaluation: "Evaluación",
+                        potency: "Potencia",
+                        activity: "Actividad",
+                        sharpness_acum: "Agudeza (acum)",
+                        roughness: "Aspereza",
+                        total_loudness_sone: "Sonoridad total (sone)",
+                        loudness_balance: "Equilibrio de sonoridad",
+                        epa_interpretation: "Un valor alto es mejor para Preferencia / Evaluación / Sonoridad total / Equilibrio de sonoridad; uno bajo es mejor para Actividad / Desviación de agudeza / Aspereza.",
+                        eq_filters: "Filtros de EQ",
+                        impulse_response: "Respuesta al impulso",
+                        type_label: "Tipo:",
+                        crossover_label: "Crossover:",
+                        room_eq_filters: "Filtros de EQ de sala",
+                        broadband_precorrection_filters: "Filtros de precorrección de banda ancha",
+                    },
+                    crossover_frequencies: "Frecuencias de cruce",
+                    original_vs_corrected: "Original y corregido",
+                    sum: "Suma",
+                    original: "Original",
+                    tonal_balance: "Equilibrio tonal",
+                    phase_response: "Respuesta de fase",
+                    ir: "RI",
+                    group_delay: "Retardo de grupo",
+                    smoothing: "Suavizado",
+                    auto: "Auto",
+                    trend: "Tendencia",
+                    normalize: "Normalizar",
+                    channel: "Canal",
+                    main_ms: "Principal (ms)",
+                    pre_peak_db: "Pico previo (dB)",
+                    post_peak_db: "Pico posterior (dB)",
+                    pre_audible_db: "Audible previo (dB)",
+                    post_audible_db: "Audible posterior (dB)",
+                    penalty: "Penalización",
+                    fir_temporal_masking: "Enmascaramiento temporal FIR",
+                    epa_temporal_masking: "Enmascaramiento temporal EPA",
+                    modal: "Modal",
+                    fir_ir: "RI FIR",
+                    current_phase: "Fase actual:",
+                    optimization_process: "Proceso de optimización",
+                    iterations: "Iteraciones",
+                    loss: "Pérdida",
+                    target_curve: "Curva objetivo",
+                    chart_unavailable: "No se puede mostrar el gráfico",
+                },
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LevelMeterTranslations {
+    pub gain_reduction: &'static str,
+    pub peak: &'static str,
+    pub true_peak: &'static str,
+    pub lufs: &'static str,
+    pub peak_spread: &'static str,
+    pub even: &'static str,
+    pub stereo_width: &'static str,
+    pub mono: &'static str,
+    pub wide: &'static str,
+    pub meters: &'static str,
+    pub level_meters: &'static str,
+}
+
+impl LevelMeterTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                gain_reduction: "Gain Reduction",
+                peak: "Peak",
+                true_peak: "True Peak",
+                lufs: "LUFS",
+                peak_spread: "Peak Spread",
+                even: "Even",
+                stereo_width: "Stereo Width",
+                mono: "Mono",
+                wide: "Wide",
+                meters: "Meters",
+                level_meters: "Level Meters",
+            },
+            Language::French => Self {
+                gain_reduction: "Réduction de gain",
+                peak: "Crête",
+                true_peak: "Crête vraie",
+                lufs: "LUFS",
+                peak_spread: "Écart de crête",
+                even: "Uniforme",
+                stereo_width: "Largeur stéréo",
+                mono: "Mono",
+                wide: "Large",
+                meters: "Indicateurs",
+                level_meters: "Indicateurs de niveau",
+            },
+            Language::German => Self {
+                gain_reduction: "Pegelreduktion",
+                peak: "Spitze",
+                true_peak: "True Peak",
+                lufs: "LUFS",
+                peak_spread: "Spitzenstreuung",
+                even: "Gleichmäßig",
+                stereo_width: "Stereobreite",
+                mono: "Mono",
+                wide: "Breit",
+                meters: "Anzeigen",
+                level_meters: "Pegelanzeigen",
+            },
+            Language::Spanish => Self {
+                gain_reduction: "Reducción de ganancia",
+                peak: "Pico",
+                true_peak: "Pico verdadero",
+                lufs: "LUFS",
+                peak_spread: "Dispersión de picos",
+                even: "Uniforme",
+                stereo_width: "Anchura estéreo",
+                mono: "Mono",
+                wide: "Amplio",
+                meters: "Medidores",
+                level_meters: "Medidores de nivel",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EqViewTranslations {
+    pub no_bands: &'static str,
+    pub chart_unavailable: &'static str,
+    pub all_channels: &'static str,
+    pub per_channel: &'static str,
+    pub type_label: &'static str,
+    pub algorithm: &'static str,
+    pub active: &'static str,
+}
+
+impl EqViewTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                no_bands: "No bands",
+                chart_unavailable: "Unable to render chart",
+                all_channels: "All Channels",
+                per_channel: "Per Channel",
+                type_label: "Type",
+                algorithm: "Algorithm",
+                active: "Active",
+            },
+            Language::French => Self {
+                no_bands: "Aucune bande",
+                chart_unavailable: "Impossible d’afficher le graphique",
+                all_channels: "Tous les canaux",
+                per_channel: "Par canal",
+                type_label: "Type",
+                algorithm: "Algorithme",
+                active: "Actif",
+            },
+            Language::German => Self {
+                no_bands: "Keine Bänder",
+                chart_unavailable: "Diagramm kann nicht angezeigt werden",
+                all_channels: "Alle Kanäle",
+                per_channel: "Pro Kanal",
+                type_label: "Typ",
+                algorithm: "Algorithmus",
+                active: "Aktiv",
+            },
+            Language::Spanish => Self {
+                no_bands: "Sin bandas",
+                chart_unavailable: "No se puede mostrar el gráfico",
+                all_channels: "Todos los canales",
+                per_channel: "Por canal",
+                type_label: "Tipo",
+                algorithm: "Algoritmo",
+                active: "Activo",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AppearanceTranslations {
+    pub text_size: &'static str,
+    pub text_size_description: &'static str,
+    pub live_preview: &'static str,
+    pub preview_description: &'static str,
+    pub reduce_motion: &'static str,
+    pub custom_theme_json: &'static str,
+    pub buttons: &'static str,
+    pub off: &'static str,
+    pub on: &'static str,
+    pub navigation_mode_description: &'static str,
+    pub import: &'static str,
+    pub clear: &'static str,
+    pub primary_preview: &'static str,
+    pub secondary_preview: &'static str,
+    pub destructive_preview: &'static str,
+    pub ghost_preview: &'static str,
+    pub outline_preview: &'static str,
+    pub primary_abbreviation: &'static str,
+    pub secondary_abbreviation: &'static str,
+    pub destructive_abbreviation: &'static str,
+    pub ghost_abbreviation: &'static str,
+    pub outline_abbreviation: &'static str,
+    pub system: &'static str,
+    pub light: &'static str,
+    pub dark: &'static str,
+    pub scheduled: &'static str,
+}
+
+impl AppearanceTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                text_size: "Text size",
+                text_size_description: "Scales the interface immediately and is saved with Appearance.",
+                live_preview: "Live preview",
+                preview_description: "Now Playing, Library, Queue, and Studio use this scale and density.",
+                reduce_motion: "Reduce motion",
+                custom_theme_json: "Custom theme JSON",
+                buttons: "Buttons",
+                off: "Off",
+                on: "On",
+                navigation_mode_description: "Standard shows one primary destination at a time. Expert enables the dense Library | Queue | Rack workspace.",
+                import: "Import",
+                clear: "Clear",
+                primary_preview: "Primary variant preview",
+                secondary_preview: "Secondary variant preview",
+                destructive_preview: "Destructive variant preview",
+                ghost_preview: "Ghost variant preview",
+                outline_preview: "Outline variant preview",
+                primary_abbreviation: "Pri",
+                secondary_abbreviation: "Sec",
+                destructive_abbreviation: "Del",
+                ghost_abbreviation: "Gho",
+                outline_abbreviation: "Out",
+                system: "System",
+                light: "Light",
+                dark: "Dark",
+                scheduled: "Scheduled",
+            },
+            Language::French => Self {
+                text_size: "Taille du texte",
+                text_size_description: "Redimensionne immédiatement l’interface et enregistre le choix dans Apparence.",
+                live_preview: "Aperçu en direct",
+                preview_description: "Lecture en cours, Bibliothèque, File d’attente et Studio utilisent cette échelle et cette densité.",
+                reduce_motion: "Réduire les animations",
+                custom_theme_json: "JSON du thème personnalisé",
+                buttons: "Boutons",
+                off: "Désactivé",
+                on: "Activé",
+                navigation_mode_description: "Le mode Standard affiche une destination principale à la fois. Le mode Expert active l’espace dense Bibliothèque | File | Rack.",
+                import: "Importer",
+                clear: "Effacer",
+                primary_preview: "Aperçu de la variante principale",
+                secondary_preview: "Aperçu de la variante secondaire",
+                destructive_preview: "Aperçu de la variante destructive",
+                ghost_preview: "Aperçu de la variante fantôme",
+                outline_preview: "Aperçu de la variante contour",
+                primary_abbreviation: "Pri",
+                secondary_abbreviation: "Sec",
+                destructive_abbreviation: "Sup",
+                ghost_abbreviation: "Fan",
+                outline_abbreviation: "Con",
+                system: "Système",
+                light: "Clair",
+                dark: "Sombre",
+                scheduled: "Planifié",
+            },
+            Language::German => Self {
+                text_size: "Textgröße",
+                text_size_description: "Skaliert die Oberfläche sofort und speichert die Auswahl unter Darstellung.",
+                live_preview: "Live-Vorschau",
+                preview_description: "Aktuelle Wiedergabe, Mediathek, Warteschlange und Studio verwenden diese Skalierung und Dichte.",
+                reduce_motion: "Bewegung reduzieren",
+                custom_theme_json: "Benutzerdefiniertes Theme-JSON",
+                buttons: "Schaltflächen",
+                off: "Aus",
+                on: "Ein",
+                navigation_mode_description: "Standard zeigt jeweils ein Hauptziel. Experte aktiviert den kompakten Arbeitsbereich Mediathek | Warteschlange | Rack.",
+                import: "Importieren",
+                clear: "Leeren",
+                primary_preview: "Vorschau der primären Variante",
+                secondary_preview: "Vorschau der sekundären Variante",
+                destructive_preview: "Vorschau der destruktiven Variante",
+                ghost_preview: "Vorschau der transparenten Variante",
+                outline_preview: "Vorschau der Konturvariante",
+                primary_abbreviation: "Pri",
+                secondary_abbreviation: "Sek",
+                destructive_abbreviation: "Lö",
+                ghost_abbreviation: "Tra",
+                outline_abbreviation: "Kon",
+                system: "System",
+                light: "Hell",
+                dark: "Dunkel",
+                scheduled: "Zeitplan",
+            },
+            Language::Spanish => Self {
+                text_size: "Tamaño del texto",
+                text_size_description: "Escala la interfaz inmediatamente y guarda la selección en Apariencia.",
+                live_preview: "Vista previa en directo",
+                preview_description: "Reproduciendo, Biblioteca, Cola y Studio usan esta escala y densidad.",
+                reduce_motion: "Reducir movimiento",
+                custom_theme_json: "JSON del tema personalizado",
+                buttons: "Botones",
+                off: "Desactivado",
+                on: "Activado",
+                navigation_mode_description: "Estándar muestra un destino principal cada vez. Experto activa el espacio denso Biblioteca | Cola | Rack.",
+                import: "Importar",
+                clear: "Borrar",
+                primary_preview: "Vista previa de la variante principal",
+                secondary_preview: "Vista previa de la variante secundaria",
+                destructive_preview: "Vista previa de la variante destructiva",
+                ghost_preview: "Vista previa de la variante fantasma",
+                outline_preview: "Vista previa de la variante de contorno",
+                primary_abbreviation: "Pri",
+                secondary_abbreviation: "Sec",
+                destructive_abbreviation: "Eli",
+                ghost_abbreviation: "Fan",
+                outline_abbreviation: "Con",
+                system: "Sistema",
+                light: "Claro",
+                dark: "Oscuro",
+                scheduled: "Programado",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SpeakerGraphTranslations {
+    pub original: &'static str,
+    pub total: &'static str,
+    pub on_axis: &'static str,
+    pub pir_unavailable: &'static str,
+    pub horizontal_unavailable: &'static str,
+    pub no_horizontal_curves: &'static str,
+    pub vertical_unavailable: &'static str,
+    pub no_vertical_curves: &'static str,
+    pub search_speakers: &'static str,
+    pub origin_version: &'static str,
+}
+
+impl SpeakerGraphTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                original: "Original",
+                total: "Total",
+                on_axis: "On Axis",
+                pir_unavailable: "PIR data not available",
+                horizontal_unavailable: "Horizontal directivity data not available",
+                no_horizontal_curves: "No horizontal curves found",
+                vertical_unavailable: "Vertical directivity data not available",
+                no_vertical_curves: "No vertical curves found",
+                search_speakers: "Type to search speakers…",
+                origin_version: "Origin / Version",
+            },
+            Language::French => Self {
+                original: "Original",
+                total: "Total",
+                on_axis: "Dans l’axe",
+                pir_unavailable: "Données PIR indisponibles",
+                horizontal_unavailable: "Données de directivité horizontale indisponibles",
+                no_horizontal_curves: "Aucune courbe horizontale trouvée",
+                vertical_unavailable: "Données de directivité verticale indisponibles",
+                no_vertical_curves: "Aucune courbe verticale trouvée",
+                search_speakers: "Rechercher des enceintes…",
+                origin_version: "Origine / Version",
+            },
+            Language::German => Self {
+                original: "Original",
+                total: "Gesamt",
+                on_axis: "Auf Achse",
+                pir_unavailable: "PIR-Daten nicht verfügbar",
+                horizontal_unavailable: "Horizontale Richtwirkungsdaten nicht verfügbar",
+                no_horizontal_curves: "Keine horizontalen Kurven gefunden",
+                vertical_unavailable: "Vertikale Richtwirkungsdaten nicht verfügbar",
+                no_vertical_curves: "Keine vertikalen Kurven gefunden",
+                search_speakers: "Lautsprecher suchen…",
+                origin_version: "Quelle / Version",
+            },
+            Language::Spanish => Self {
+                original: "Original",
+                total: "Total",
+                on_axis: "En eje",
+                pir_unavailable: "Datos PIR no disponibles",
+                horizontal_unavailable: "Datos de directividad horizontal no disponibles",
+                no_horizontal_curves: "No se encontraron curvas horizontales",
+                vertical_unavailable: "Datos de directividad vertical no disponibles",
+                no_vertical_curves: "No se encontraron curvas verticales",
+                search_speakers: "Buscar altavoces…",
+                origin_version: "Origen / Versión",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct HeadphoneGraphTranslations {
+    pub filter_response: &'static str,
+    pub sum: &'static str,
+    pub deviation: &'static str,
+    pub filter_vs_deviation: &'static str,
+    pub error_details: &'static str,
+    pub error: &'static str,
+    pub original_corrected_target: &'static str,
+    pub original: &'static str,
+}
+
+impl HeadphoneGraphTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                filter_response: "Filter Response",
+                sum: "Sum",
+                deviation: "Deviation",
+                filter_vs_deviation: "Filter Response vs Deviation",
+                error_details: "Error Details",
+                error: "Error",
+                original_corrected_target: "Original vs Corrected vs Target",
+                original: "Original",
+            },
+            Language::French => Self {
+                filter_response: "Réponse des filtres",
+                sum: "Somme",
+                deviation: "Écart",
+                filter_vs_deviation: "Réponse des filtres et écart",
+                error_details: "Détail de l’erreur",
+                error: "Erreur",
+                original_corrected_target: "Original, corrigé et cible",
+                original: "Original",
+            },
+            Language::German => Self {
+                filter_response: "Filterantwort",
+                sum: "Summe",
+                deviation: "Abweichung",
+                filter_vs_deviation: "Filterantwort und Abweichung",
+                error_details: "Fehlerdetails",
+                error: "Fehler",
+                original_corrected_target: "Original, korrigiert und Ziel",
+                original: "Original",
+            },
+            Language::Spanish => Self {
+                filter_response: "Respuesta de filtros",
+                sum: "Suma",
+                deviation: "Desviación",
+                filter_vs_deviation: "Respuesta de filtros y desviación",
+                error_details: "Detalles del error",
+                error: "Error",
+                original_corrected_target: "Original, corregido y objetivo",
+                original: "Original",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct KeybindingTranslations {
+    language: Language,
+    pub keymap_preset: &'static str,
+    pub comparison: &'static str,
+    pub action: &'static str,
+    pub default_preset: &'static str,
+}
+
+impl KeybindingTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                language,
+                keymap_preset: "Keymap Preset",
+                comparison: "Keybinding Comparison",
+                action: "Action",
+                default_preset: "Default",
+            },
+            Language::French => Self {
+                language,
+                keymap_preset: "Préréglage du clavier",
+                comparison: "Comparaison des raccourcis",
+                action: "Action",
+                default_preset: "Par défaut",
+            },
+            Language::German => Self {
+                language,
+                keymap_preset: "Tastenbelegungs-Preset",
+                comparison: "Vergleich der Tastenbelegungen",
+                action: "Aktion",
+                default_preset: "Standard",
+            },
+            Language::Spanish => Self {
+                language,
+                keymap_preset: "Preajuste de teclas",
+                comparison: "Comparación de atajos",
+                action: "Acción",
+                default_preset: "Predeterminado",
+            },
+        }
+    }
+
+    pub fn category_name(
+        self,
+        category: crate::app::keybindings::KeybindingCategory,
+    ) -> &'static str {
+        use crate::app::keybindings::KeybindingCategory;
+
+        match (self.language, category) {
+            (Language::English, KeybindingCategory::Playback) => "Playback",
+            (Language::English, KeybindingCategory::Navigation) => "Navigation",
+            (Language::English, KeybindingCategory::ScreenSwitch) => "Screen Switching",
+            (Language::English, KeybindingCategory::Library) => "Library",
+            (Language::English, KeybindingCategory::Queue) => "Queue",
+            (Language::English, KeybindingCategory::Plugins) => "Plugins",
+            (Language::English, KeybindingCategory::ListeningTests) => "Listening Tests",
+            (Language::English, KeybindingCategory::LevelMeters) => "Level Meters",
+            (Language::English, KeybindingCategory::System) => "System",
+            (Language::French, KeybindingCategory::Playback) => "Lecture",
+            (Language::French, KeybindingCategory::Navigation) => "Navigation",
+            (Language::French, KeybindingCategory::ScreenSwitch) => "Changement d’écran",
+            (Language::French, KeybindingCategory::Library) => "Bibliothèque",
+            (Language::French, KeybindingCategory::Queue) => "File d’attente",
+            (Language::French, KeybindingCategory::Plugins) => "Modules",
+            (Language::French, KeybindingCategory::ListeningTests) => "Tests d’écoute",
+            (Language::French, KeybindingCategory::LevelMeters) => "Indicateurs de niveau",
+            (Language::French, KeybindingCategory::System) => "Système",
+            (Language::German, KeybindingCategory::Playback) => "Wiedergabe",
+            (Language::German, KeybindingCategory::Navigation) => "Navigation",
+            (Language::German, KeybindingCategory::ScreenSwitch) => "Bildschirmwechsel",
+            (Language::German, KeybindingCategory::Library) => "Mediathek",
+            (Language::German, KeybindingCategory::Queue) => "Warteschlange",
+            (Language::German, KeybindingCategory::Plugins) => "Plugins",
+            (Language::German, KeybindingCategory::ListeningTests) => "Hörtests",
+            (Language::German, KeybindingCategory::LevelMeters) => "Pegelanzeigen",
+            (Language::German, KeybindingCategory::System) => "System",
+            (Language::Spanish, KeybindingCategory::Playback) => "Reproducción",
+            (Language::Spanish, KeybindingCategory::Navigation) => "Navegación",
+            (Language::Spanish, KeybindingCategory::ScreenSwitch) => "Cambio de pantalla",
+            (Language::Spanish, KeybindingCategory::Library) => "Biblioteca",
+            (Language::Spanish, KeybindingCategory::Queue) => "Cola",
+            (Language::Spanish, KeybindingCategory::Plugins) => "Complementos",
+            (Language::Spanish, KeybindingCategory::ListeningTests) => "Pruebas de escucha",
+            (Language::Spanish, KeybindingCategory::LevelMeters) => "Medidores de nivel",
+            (Language::Spanish, KeybindingCategory::System) => "Sistema",
+        }
+    }
+
+    pub fn preset_description(self, preset: crate::app::keybindings::KeymapPreset) -> &'static str {
+        use crate::app::keybindings::KeymapPreset;
+
+        match (self.language, preset) {
+            (Language::English, KeymapPreset::Default) => {
+                "Default shortcuts optimized for the audio player"
+            }
+            (Language::English, KeymapPreset::Vim) => "Vim-style navigation",
+            (Language::English, KeymapPreset::Emacs) => "Emacs-style navigation",
+            (Language::English, KeymapPreset::VSCode) => "VSCode-style shortcuts",
+            (Language::French, KeymapPreset::Default) => {
+                "Raccourcis par défaut optimisés pour le lecteur audio"
+            }
+            (Language::French, KeymapPreset::Vim) => "Navigation de style Vim",
+            (Language::French, KeymapPreset::Emacs) => "Navigation de style Emacs",
+            (Language::French, KeymapPreset::VSCode) => "Raccourcis de style VSCode",
+            (Language::German, KeymapPreset::Default) => {
+                "Für den Audioplayer optimierte Standardbelegung"
+            }
+            (Language::German, KeymapPreset::Vim) => "Navigation im Vim-Stil",
+            (Language::German, KeymapPreset::Emacs) => "Navigation im Emacs-Stil",
+            (Language::German, KeymapPreset::VSCode) => "Tastenkürzel im VSCode-Stil",
+            (Language::Spanish, KeymapPreset::Default) => {
+                "Atajos predeterminados optimizados para el reproductor"
+            }
+            (Language::Spanish, KeymapPreset::Vim) => "Navegación al estilo Vim",
+            (Language::Spanish, KeymapPreset::Emacs) => "Navegación al estilo Emacs",
+            (Language::Spanish, KeymapPreset::VSCode) => "Atajos al estilo VSCode",
+        }
+    }
+
+    pub fn preset_name(self, preset: crate::app::keybindings::KeymapPreset) -> &'static str {
+        use crate::app::keybindings::KeymapPreset;
+
+        match preset {
+            KeymapPreset::Default => self.default_preset,
+            KeymapPreset::Vim => "Vim",
+            KeymapPreset::Emacs => "Emacs",
+            KeymapPreset::VSCode => "VSCode",
+        }
+    }
+
+    pub fn action_description(self, action: &'static str) -> &'static str {
+        let translations = match self.language {
+            Language::English => return action,
+            Language::French => FRENCH_KEYBINDING_ACTIONS,
+            Language::German => GERMAN_KEYBINDING_ACTIONS,
+            Language::Spanish => SPANISH_KEYBINDING_ACTIONS,
+        };
+
+        translations
+            .iter()
+            .find_map(|(source, translation)| (*source == action).then_some(*translation))
+            .unwrap_or_else(|| panic!("missing localized keybinding action: {action}"))
+    }
+}
+
+const FRENCH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
+    ("Add album to queue", "Ajouter l’album à la file"),
+    ("Add plugins", "Ajouter des modules"),
+    ("Add selected plugin", "Ajouter le module sélectionné"),
+    ("Add to queue", "Ajouter à la file"),
+    (
+        "Arm source / connect to selected node",
+        "Armer la source ou connecter le nœud sélectionné",
+    ),
+    ("Back to Studio", "Retour au Studio"),
+    ("Back to settings", "Retour aux paramètres"),
+    ("Cancel/close", "Annuler ou fermer"),
+    (
+        "Capture current chain as path A or B",
+        "Capturer la chaîne actuelle comme chemin A ou B",
+    ),
+    (
+        "Choose the plugin added by A",
+        "Choisir le module ajouté avec A",
+    ),
+    ("Clear entire queue", "Vider toute la file"),
+    ("Clear mutes/solos", "Effacer les modes muet et solo"),
+    (
+        "Collapse/expand artists in tree view",
+        "Réduire ou développer les artistes dans l’arborescence",
+    ),
+    (
+        "Commit the first/A or second/B answer",
+        "Valider la réponse premier/A ou second/B",
+    ),
+    ("Cycle channel filter", "Changer le filtre de canaux"),
+    ("Cycle language", "Changer de langue"),
+    ("Cycle sort order", "Changer l’ordre de tri"),
+    ("Cycle theme", "Changer de thème"),
+    ("Decrease font size", "Réduire la taille de police"),
+    ("Delete plugin", "Supprimer le module"),
+    ("Devices", "Périphériques"),
+    ("Directory Manager", "Gestionnaire de dossiers"),
+    (
+        "Disconnect selected node",
+        "Déconnecter le nœud sélectionné",
+    ),
+    ("Edit plugin", "Modifier le module"),
+    ("Edit selected EQ", "Modifier l’égaliseur sélectionné"),
+    ("Edit selected plugin", "Modifier le module sélectionné"),
+    ("Expand/collapse", "Développer ou réduire"),
+    (
+        "Expand/collapse album tracks",
+        "Développer ou réduire les pistes de l’album",
+    ),
+    (
+        "Filter: All/Mono/Stereo/Multi/Mixed",
+        "Filtrer : Tous/Mono/Stéréo/Multi/Mixte",
+    ),
+    ("First/last page", "Première ou dernière page"),
+    ("Go to queue screen", "Ouvrir l’écran de la file"),
+    ("Increase font size", "Augmenter la taille de police"),
+    ("Jump by page", "Avancer par page"),
+    ("Library", "Bibliothèque"),
+    (
+        "Move between stream fields",
+        "Passer d’un champ de flux à l’autre",
+    ),
+    ("Move plugin down", "Descendre le module"),
+    ("Move plugin up", "Monter le module"),
+    ("Move selected node", "Déplacer le nœud sélectionné"),
+    ("Move through queue", "Parcourir la file"),
+    ("Move up/down", "Monter ou descendre"),
+    (
+        "Navigate albums/artists",
+        "Parcourir les albums et les artistes",
+    ),
+    ("Navigate between steps", "Parcourir les étapes"),
+    ("Navigate playlists", "Parcourir les listes de lecture"),
+    ("Navigate queue items", "Parcourir les éléments de la file"),
+    ("Next track", "Piste suivante"),
+    (
+        "Next/prev meter group",
+        "Groupe d’indicateurs suivant ou précédent",
+    ),
+    ("Open album", "Ouvrir l’album"),
+    ("Open playlist", "Ouvrir la liste de lecture"),
+    (
+        "Open selected studio tool",
+        "Ouvrir l’outil Studio sélectionné",
+    ),
+    ("Page up/down", "Page précédente ou suivante"),
+    (
+        "Play available trial cues",
+        "Lire les extraits d’essai disponibles",
+    ),
+    (
+        "Play selected album from start",
+        "Lire l’album sélectionné depuis le début",
+    ),
+    ("Play stream", "Lire le flux"),
+    ("Play/Pause", "Lecture/Pause"),
+    (
+        "Play/Pause synchronized transport",
+        "Lecture/Pause du transport synchronisé",
+    ),
+    ("Plugins", "Modules"),
+    ("Previous track", "Piste précédente"),
+    ("Previous/next page", "Page précédente ou suivante"),
+    (
+        "Prepare deterministic level and latency matching",
+        "Préparer l’alignement déterministe du niveau et de la latence",
+    ),
+    (
+        "Proceed to next step or finish",
+        "Passer à l’étape suivante ou terminer",
+    ),
+    ("Queue", "File d’attente"),
+    ("Quick add plugins", "Ajouter rapidement des modules"),
+    ("Quit", "Quitter"),
+    ("Remove from queue", "Retirer de la file"),
+    ("Remove item", "Supprimer l’élément"),
+    ("Remove playlist", "Supprimer la liste de lecture"),
+    ("Remove selected plugin", "Supprimer le module sélectionné"),
+    ("Reset font size", "Réinitialiser la taille de police"),
+    ("Save/Load preset", "Sauvegarder ou charger un préréglage"),
+    ("Screen guide", "Guide de l’écran"),
+    ("Search", "Rechercher"),
+    ("Search albums", "Rechercher des albums"),
+    ("Select connection port", "Choisir le port de connexion"),
+    ("Select next", "Sélectionner le suivant"),
+    (
+        "Select next / previous node",
+        "Sélectionner le nœud suivant ou précédent",
+    ),
+    ("Select previous", "Sélectionner le précédent"),
+    (
+        "Set filter (All/Mono/Stereo/Multi/Mixed)",
+        "Définir le filtre (Tous/Mono/Stéréo/Multi/Mixte)",
+    ),
+    (
+        "Set sort (Artist/Album/Title/Year)",
+        "Définir le tri (Artiste/Album/Titre/Année)",
+    ),
+    ("Settings", "Paramètres"),
+    ("Show help", "Afficher l’aide"),
+    ("Show keyboard shortcuts", "Afficher les raccourcis clavier"),
+    (
+        "Sort by Artist/Album/Title/Year",
+        "Trier par Artiste/Album/Titre/Année",
+    ),
+    (
+        "Start blind A/B or ABX trial",
+        "Démarrer un essai aveugle A/B ou ABX",
+    ),
+    ("Toggle dim", "Activer ou désactiver l’atténuation"),
+    ("Toggle mute", "Activer ou désactiver le mode muet"),
+    ("Toggle on/off", "Activer ou désactiver"),
+    (
+        "Toggle selected plugin bypass",
+        "Contourner ou réactiver le module sélectionné",
+    ),
+    ("Toggle solo", "Activer ou désactiver le solo"),
+    (
+        "Toggle tree view / flat view",
+        "Basculer entre arborescence et liste",
+    ),
+    (
+        "Toggle tree/list view",
+        "Basculer entre arborescence et liste",
+    ),
+    ("Volume down", "Baisser le volume"),
+    ("Volume up", "Augmenter le volume"),
+];
+
+const GERMAN_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
+    ("Add album to queue", "Album zur Warteschlange hinzufügen"),
+    ("Add plugins", "Plugins hinzufügen"),
+    ("Add selected plugin", "Ausgewähltes Plugin hinzufügen"),
+    ("Add to queue", "Zur Warteschlange hinzufügen"),
+    (
+        "Arm source / connect to selected node",
+        "Quelle vormerken oder mit ausgewähltem Knoten verbinden",
+    ),
+    ("Back to Studio", "Zurück zum Studio"),
+    ("Back to settings", "Zurück zu den Einstellungen"),
+    ("Cancel/close", "Abbrechen oder schließen"),
+    (
+        "Capture current chain as path A or B",
+        "Aktuelle Kette als Pfad A oder B übernehmen",
+    ),
+    (
+        "Choose the plugin added by A",
+        "Mit A hinzuzufügendes Plugin wählen",
+    ),
+    ("Clear entire queue", "Gesamte Warteschlange leeren"),
+    ("Clear mutes/solos", "Stumm- und Soloschaltungen aufheben"),
+    (
+        "Collapse/expand artists in tree view",
+        "Interpreten in der Baumansicht ein- oder ausklappen",
+    ),
+    (
+        "Commit the first/A or second/B answer",
+        "Antwort Erstes/A oder Zweites/B bestätigen",
+    ),
+    ("Cycle channel filter", "Kanalfilter wechseln"),
+    ("Cycle language", "Sprache wechseln"),
+    ("Cycle sort order", "Sortierung wechseln"),
+    ("Cycle theme", "Theme wechseln"),
+    ("Decrease font size", "Schrift verkleinern"),
+    ("Delete plugin", "Plugin löschen"),
+    ("Devices", "Geräte"),
+    ("Directory Manager", "Ordnerverwaltung"),
+    ("Disconnect selected node", "Ausgewählten Knoten trennen"),
+    ("Edit plugin", "Plugin bearbeiten"),
+    ("Edit selected EQ", "Ausgewählten EQ bearbeiten"),
+    ("Edit selected plugin", "Ausgewähltes Plugin bearbeiten"),
+    ("Expand/collapse", "Ein- oder ausklappen"),
+    (
+        "Expand/collapse album tracks",
+        "Albumtitel ein- oder ausklappen",
+    ),
+    (
+        "Filter: All/Mono/Stereo/Multi/Mixed",
+        "Filtern: Alle/Mono/Stereo/Mehrkanal/Gemischt",
+    ),
+    ("First/last page", "Erste oder letzte Seite"),
+    ("Go to queue screen", "Warteschlange öffnen"),
+    ("Increase font size", "Schrift vergrößern"),
+    ("Jump by page", "Seitenweise springen"),
+    ("Library", "Mediathek"),
+    (
+        "Move between stream fields",
+        "Zwischen Stream-Feldern wechseln",
+    ),
+    ("Move plugin down", "Plugin nach unten verschieben"),
+    ("Move plugin up", "Plugin nach oben verschieben"),
+    ("Move selected node", "Ausgewählten Knoten verschieben"),
+    ("Move through queue", "Warteschlange durchlaufen"),
+    ("Move up/down", "Nach oben oder unten verschieben"),
+    (
+        "Navigate albums/artists",
+        "Alben und Interpreten durchsuchen",
+    ),
+    ("Navigate between steps", "Zwischen Schritten wechseln"),
+    ("Navigate playlists", "Wiedergabelisten durchsuchen"),
+    ("Navigate queue items", "Warteschlangenelemente durchsuchen"),
+    ("Next track", "Nächster Titel"),
+    (
+        "Next/prev meter group",
+        "Nächste oder vorherige Pegelgruppe",
+    ),
+    ("Open album", "Album öffnen"),
+    ("Open playlist", "Wiedergabeliste öffnen"),
+    (
+        "Open selected studio tool",
+        "Ausgewähltes Studio-Werkzeug öffnen",
+    ),
+    ("Page up/down", "Seite vor oder zurück"),
+    (
+        "Play available trial cues",
+        "Verfügbare Testsignale abspielen",
+    ),
+    (
+        "Play selected album from start",
+        "Ausgewähltes Album von Anfang an abspielen",
+    ),
+    ("Play stream", "Stream abspielen"),
+    ("Play/Pause", "Wiedergabe/Pause"),
+    (
+        "Play/Pause synchronized transport",
+        "Synchronisierten Transport starten oder pausieren",
+    ),
+    ("Plugins", "Plugins"),
+    ("Previous track", "Vorheriger Titel"),
+    ("Previous/next page", "Vorherige oder nächste Seite"),
+    (
+        "Prepare deterministic level and latency matching",
+        "Deterministischen Pegel- und Latenzabgleich vorbereiten",
+    ),
+    (
+        "Proceed to next step or finish",
+        "Zum nächsten Schritt wechseln oder abschließen",
+    ),
+    ("Queue", "Warteschlange"),
+    ("Quick add plugins", "Plugins schnell hinzufügen"),
+    ("Quit", "Beenden"),
+    ("Remove from queue", "Aus Warteschlange entfernen"),
+    ("Remove item", "Element entfernen"),
+    ("Remove playlist", "Wiedergabeliste entfernen"),
+    ("Remove selected plugin", "Ausgewähltes Plugin entfernen"),
+    ("Reset font size", "Schriftgröße zurücksetzen"),
+    ("Save/Load preset", "Preset speichern oder laden"),
+    ("Screen guide", "Bildschirmhilfe"),
+    ("Search", "Suchen"),
+    ("Search albums", "Alben suchen"),
+    ("Select connection port", "Verbindungsport auswählen"),
+    ("Select next", "Nächstes auswählen"),
+    (
+        "Select next / previous node",
+        "Nächsten oder vorherigen Knoten auswählen",
+    ),
+    ("Select previous", "Vorheriges auswählen"),
+    (
+        "Set filter (All/Mono/Stereo/Multi/Mixed)",
+        "Filter setzen (Alle/Mono/Stereo/Mehrkanal/Gemischt)",
+    ),
+    (
+        "Set sort (Artist/Album/Title/Year)",
+        "Sortierung setzen (Interpret/Album/Titel/Jahr)",
+    ),
+    ("Settings", "Einstellungen"),
+    ("Show help", "Hilfe anzeigen"),
+    ("Show keyboard shortcuts", "Tastenkürzel anzeigen"),
+    (
+        "Sort by Artist/Album/Title/Year",
+        "Nach Interpret/Album/Titel/Jahr sortieren",
+    ),
+    (
+        "Start blind A/B or ABX trial",
+        "Blinden A/B- oder ABX-Versuch starten",
+    ),
+    ("Toggle dim", "Absenkung umschalten"),
+    ("Toggle mute", "Stummschaltung umschalten"),
+    ("Toggle on/off", "Ein- oder ausschalten"),
+    (
+        "Toggle selected plugin bypass",
+        "Bypass des ausgewählten Plugins umschalten",
+    ),
+    ("Toggle solo", "Solo umschalten"),
+    (
+        "Toggle tree view / flat view",
+        "Zwischen Baum- und Listenansicht wechseln",
+    ),
+    (
+        "Toggle tree/list view",
+        "Zwischen Baum- und Listenansicht wechseln",
+    ),
+    ("Volume down", "Leiser"),
+    ("Volume up", "Lauter"),
+];
+
+const SPANISH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
+    ("Add album to queue", "Añadir el álbum a la cola"),
+    ("Add plugins", "Añadir complementos"),
+    ("Add selected plugin", "Añadir el complemento seleccionado"),
+    ("Add to queue", "Añadir a la cola"),
+    (
+        "Arm source / connect to selected node",
+        "Preparar el origen o conectarlo al nodo seleccionado",
+    ),
+    ("Back to Studio", "Volver a Estudio"),
+    ("Back to settings", "Volver a Ajustes"),
+    ("Cancel/close", "Cancelar o cerrar"),
+    (
+        "Capture current chain as path A or B",
+        "Capturar la cadena actual como ruta A o B",
+    ),
+    (
+        "Choose the plugin added by A",
+        "Elegir el complemento que se añadirá con A",
+    ),
+    ("Clear entire queue", "Vaciar toda la cola"),
+    ("Clear mutes/solos", "Desactivar silencios y solos"),
+    (
+        "Collapse/expand artists in tree view",
+        "Contraer o expandir artistas en la vista de árbol",
+    ),
+    (
+        "Commit the first/A or second/B answer",
+        "Confirmar la respuesta primero/A o segundo/B",
+    ),
+    ("Cycle channel filter", "Cambiar el filtro de canales"),
+    ("Cycle language", "Cambiar el idioma"),
+    ("Cycle sort order", "Cambiar el orden"),
+    ("Cycle theme", "Cambiar el tema"),
+    ("Decrease font size", "Reducir la fuente"),
+    ("Delete plugin", "Eliminar complemento"),
+    ("Devices", "Dispositivos"),
+    ("Directory Manager", "Gestor de carpetas"),
+    (
+        "Disconnect selected node",
+        "Desconectar el nodo seleccionado",
+    ),
+    ("Edit plugin", "Editar complemento"),
+    ("Edit selected EQ", "Editar el ecualizador seleccionado"),
+    ("Edit selected plugin", "Editar el complemento seleccionado"),
+    ("Expand/collapse", "Expandir o contraer"),
+    (
+        "Expand/collapse album tracks",
+        "Expandir o contraer las pistas del álbum",
+    ),
+    (
+        "Filter: All/Mono/Stereo/Multi/Mixed",
+        "Filtrar: Todo/Mono/Estéreo/Multicanal/Mixto",
+    ),
+    ("First/last page", "Primera o última página"),
+    ("Go to queue screen", "Abrir la pantalla de cola"),
+    ("Increase font size", "Aumentar la fuente"),
+    ("Jump by page", "Saltar por páginas"),
+    ("Library", "Biblioteca"),
+    (
+        "Move between stream fields",
+        "Moverse entre campos del flujo",
+    ),
+    ("Move plugin down", "Bajar el complemento"),
+    ("Move plugin up", "Subir el complemento"),
+    ("Move selected node", "Mover el nodo seleccionado"),
+    ("Move through queue", "Recorrer la cola"),
+    ("Move up/down", "Mover arriba o abajo"),
+    ("Navigate albums/artists", "Recorrer álbumes y artistas"),
+    ("Navigate between steps", "Recorrer los pasos"),
+    ("Navigate playlists", "Recorrer las listas"),
+    ("Navigate queue items", "Recorrer los elementos de la cola"),
+    ("Next track", "Pista siguiente"),
+    (
+        "Next/prev meter group",
+        "Grupo de medidores siguiente o anterior",
+    ),
+    ("Open album", "Abrir álbum"),
+    ("Open playlist", "Abrir lista"),
+    (
+        "Open selected studio tool",
+        "Abrir la herramienta de Estudio seleccionada",
+    ),
+    ("Page up/down", "Página anterior o siguiente"),
+    (
+        "Play available trial cues",
+        "Reproducir las señales de prueba disponibles",
+    ),
+    (
+        "Play selected album from start",
+        "Reproducir el álbum seleccionado desde el principio",
+    ),
+    ("Play stream", "Reproducir flujo"),
+    ("Play/Pause", "Reproducir/Pausar"),
+    (
+        "Play/Pause synchronized transport",
+        "Reproducir o pausar el transporte sincronizado",
+    ),
+    ("Plugins", "Complementos"),
+    ("Previous track", "Pista anterior"),
+    ("Previous/next page", "Página anterior o siguiente"),
+    (
+        "Prepare deterministic level and latency matching",
+        "Preparar la igualación determinista de nivel y latencia",
+    ),
+    (
+        "Proceed to next step or finish",
+        "Ir al paso siguiente o finalizar",
+    ),
+    ("Queue", "Cola"),
+    ("Quick add plugins", "Añadir complementos rápidamente"),
+    ("Quit", "Salir"),
+    ("Remove from queue", "Quitar de la cola"),
+    ("Remove item", "Quitar elemento"),
+    ("Remove playlist", "Quitar lista"),
+    (
+        "Remove selected plugin",
+        "Quitar el complemento seleccionado",
+    ),
+    ("Reset font size", "Restablecer la fuente"),
+    ("Save/Load preset", "Guardar o cargar un preajuste"),
+    ("Screen guide", "Guía de la pantalla"),
+    ("Search", "Buscar"),
+    ("Search albums", "Buscar álbumes"),
+    ("Select connection port", "Seleccionar puerto de conexión"),
+    ("Select next", "Seleccionar siguiente"),
+    (
+        "Select next / previous node",
+        "Seleccionar el nodo siguiente o anterior",
+    ),
+    ("Select previous", "Seleccionar anterior"),
+    (
+        "Set filter (All/Mono/Stereo/Multi/Mixed)",
+        "Definir filtro (Todo/Mono/Estéreo/Multicanal/Mixto)",
+    ),
+    (
+        "Set sort (Artist/Album/Title/Year)",
+        "Definir orden (Artista/Álbum/Título/Año)",
+    ),
+    ("Settings", "Ajustes"),
+    ("Show help", "Mostrar ayuda"),
+    ("Show keyboard shortcuts", "Mostrar atajos de teclado"),
+    (
+        "Sort by Artist/Album/Title/Year",
+        "Ordenar por Artista/Álbum/Título/Año",
+    ),
+    (
+        "Start blind A/B or ABX trial",
+        "Iniciar una prueba ciega A/B o ABX",
+    ),
+    ("Toggle dim", "Activar o desactivar atenuación"),
+    ("Toggle mute", "Activar o desactivar silencio"),
+    ("Toggle on/off", "Activar o desactivar"),
+    (
+        "Toggle selected plugin bypass",
+        "Omitir o reactivar el complemento seleccionado",
+    ),
+    ("Toggle solo", "Activar o desactivar solo"),
+    (
+        "Toggle tree view / flat view",
+        "Alternar entre vista de árbol y lista",
+    ),
+    (
+        "Toggle tree/list view",
+        "Alternar entre vista de árbol y lista",
+    ),
+    ("Volume down", "Bajar volumen"),
+    ("Volume up", "Subir volumen"),
+];
+
+#[derive(Debug, Clone, Copy)]
+pub struct FooterTranslations {
+    pub hal_input_active: &'static str,
+    pub processing_system_audio: &'static str,
+    pub hide: &'static str,
+    pub previous_track: &'static str,
+    pub seek_back_30s: &'static str,
+    pub play: &'static str,
+    pub pause: &'static str,
+    pub seek_forward_30s: &'static str,
+    pub next_track: &'static str,
+}
+
+impl FooterTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                hal_input_active: "HAL Input Active",
+                processing_system_audio: "Processing system audio",
+                hide: "Hide",
+                previous_track: "Previous track",
+                seek_back_30s: "Seek back 30 seconds",
+                play: "Play",
+                pause: "Pause",
+                seek_forward_30s: "Seek forward 30 seconds",
+                next_track: "Next track",
+            },
+            Language::French => Self {
+                hal_input_active: "Entrée HAL active",
+                processing_system_audio: "Traitement de l’audio système",
+                hide: "Masquer",
+                previous_track: "Piste précédente",
+                seek_back_30s: "Reculer de 30 secondes",
+                play: "Lecture",
+                pause: "Pause",
+                seek_forward_30s: "Avancer de 30 secondes",
+                next_track: "Piste suivante",
+            },
+            Language::German => Self {
+                hal_input_active: "HAL-Eingang aktiv",
+                processing_system_audio: "Systemaudio wird verarbeitet",
+                hide: "Ausblenden",
+                previous_track: "Vorheriger Titel",
+                seek_back_30s: "30 Sekunden zurück",
+                play: "Wiedergabe",
+                pause: "Pause",
+                seek_forward_30s: "30 Sekunden vor",
+                next_track: "Nächster Titel",
+            },
+            Language::Spanish => Self {
+                hal_input_active: "Entrada HAL activa",
+                processing_system_audio: "Procesando el audio del sistema",
+                hide: "Ocultar",
+                previous_track: "Pista anterior",
+                seek_back_30s: "Retroceder 30 segundos",
+                play: "Reproducir",
+                pause: "Pausa",
+                seek_forward_30s: "Avanzar 30 segundos",
+                next_track: "Pista siguiente",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AudioDeviceTranslations {
+    pub audio_source: &'static str,
+    pub file_player: &'static str,
+    pub hal_device: &'static str,
+    pub hal_configuration: &'static str,
+    pub sample_rate: &'static str,
+    pub channels: &'static str,
+    pub buffer_size: &'static str,
+    pub wireless_devices: &'static str,
+}
+
+impl AudioDeviceTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                audio_source: "Audio Source",
+                file_player: "File Player",
+                hal_device: "HAL Device",
+                hal_configuration: "HAL Configuration",
+                sample_rate: "Sample Rate",
+                channels: "Channels",
+                buffer_size: "Buffer Size",
+                wireless_devices: "AirPlay and Bluetooth",
+            },
+            Language::French => Self {
+                audio_source: "Source audio",
+                file_player: "Lecteur de fichiers",
+                hal_device: "Périphérique HAL",
+                hal_configuration: "Configuration HAL",
+                sample_rate: "Fréquence d’échantillonnage",
+                channels: "Canaux",
+                buffer_size: "Taille du tampon",
+                wireless_devices: "AirPlay et Bluetooth",
+            },
+            Language::German => Self {
+                audio_source: "Audioquelle",
+                file_player: "Dateiplayer",
+                hal_device: "HAL-Gerät",
+                hal_configuration: "HAL-Konfiguration",
+                sample_rate: "Abtastrate",
+                channels: "Kanäle",
+                buffer_size: "Puffergröße",
+                wireless_devices: "AirPlay und Bluetooth",
+            },
+            Language::Spanish => Self {
+                audio_source: "Fuente de audio",
+                file_player: "Reproductor de archivos",
+                hal_device: "Dispositivo HAL",
+                hal_configuration: "Configuración HAL",
+                sample_rate: "Frecuencia de muestreo",
+                channels: "Canales",
+                buffer_size: "Tamaño del búfer",
+                wireless_devices: "AirPlay y Bluetooth",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RecordingTranslations {
+    pub ctc_matrix: &'static str,
+    pub loopback_input: &'static str,
+    pub positions: &'static str,
+    pub calibration_graph_unavailable: &'static str,
+    pub cancel_session: &'static str,
+    pub continue_action: &'static str,
+    pub reported_dbspl: &'static str,
+}
+
+impl RecordingTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                ctc_matrix: "CTC Matrix",
+                loopback_input: "Loopback Input",
+                positions: "Positions",
+                calibration_graph_unavailable: "Unable to render calibration graph",
+                cancel_session: "Cancel session",
+                continue_action: "Continue",
+                reported_dbspl: "Reported dB SPL",
+            },
+            Language::French => Self {
+                ctc_matrix: "Matrice CTC",
+                loopback_input: "Entrée de bouclage",
+                positions: "Positions",
+                calibration_graph_unavailable: "Impossible d’afficher le graphique d’étalonnage",
+                cancel_session: "Annuler la session",
+                continue_action: "Continuer",
+                reported_dbspl: "Niveau déclaré en dB SPL",
+            },
+            Language::German => Self {
+                ctc_matrix: "CTC-Matrix",
+                loopback_input: "Loopback-Eingang",
+                positions: "Positionen",
+                calibration_graph_unavailable: "Kalibrierungsdiagramm kann nicht angezeigt werden",
+                cancel_session: "Sitzung abbrechen",
+                continue_action: "Weiter",
+                reported_dbspl: "Gemeldeter dB-SPL-Wert",
+            },
+            Language::Spanish => Self {
+                ctc_matrix: "Matriz CTC",
+                loopback_input: "Entrada de retorno",
+                positions: "Posiciones",
+                calibration_graph_unavailable: "No se puede mostrar el gráfico de calibración",
+                cancel_session: "Cancelar sesión",
+                continue_action: "Continuar",
+                reported_dbspl: "dB SPL indicado",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FederationTranslations {
+    pub streaming: &'static str,
+    pub description: &'static str,
+    pub status: &'static str,
+    pub no_remote_sources: &'static str,
+    pub cancel_scan: &'static str,
+    pub test: &'static str,
+    pub scan: &'static str,
+}
+
+impl FederationTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                streaming: "Streaming",
+                description: "Configure streaming services, radio stations, and remote players.",
+                status: "Status:",
+                no_remote_sources: "No remote sources configured yet. Add one using the buttons above.",
+                cancel_scan: "Cancel federation scan",
+                test: "Test",
+                scan: "Scan",
+            },
+            Language::French => Self {
+                streaming: "Diffusion",
+                description: "Configurez les services de diffusion, les radios et les lecteurs distants.",
+                status: "État :",
+                no_remote_sources: "Aucune source distante configurée. Ajoutez-en une avec les boutons ci-dessus.",
+                cancel_scan: "Annuler l’analyse de fédération",
+                test: "Tester",
+                scan: "Analyser",
+            },
+            Language::German => Self {
+                streaming: "Streaming",
+                description: "Konfigurieren Sie Streamingdienste, Radiosender und entfernte Player.",
+                status: "Status:",
+                no_remote_sources: "Noch keine entfernten Quellen konfiguriert. Fügen Sie oben eine hinzu.",
+                cancel_scan: "Verbundscan abbrechen",
+                test: "Testen",
+                scan: "Scannen",
+            },
+            Language::Spanish => Self {
+                streaming: "Emisiones",
+                description: "Configure servicios de emisión, emisoras de radio y reproductores remotos.",
+                status: "Estado:",
+                no_remote_sources: "Aún no hay fuentes remotas configuradas. Añada una con los botones superiores.",
+                cancel_scan: "Cancelar análisis de federación",
+                test: "Probar",
+                scan: "Analizar",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SpectrumTranslations {
+    pub no_signal: &'static str,
+    pub tilt: &'static str,
+    pub reference: &'static str,
+    pub analyzer: &'static str,
+    pub bins: &'static str,
+    pub minimum_frequency: &'static str,
+    pub maximum_frequency: &'static str,
+    pub smoothing: &'static str,
+    pub none: &'static str,
+    pub standard: &'static str,
+    pub min_frequency_short: &'static str,
+}
+
+impl SpectrumTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                no_signal: "No signal",
+                tilt: "Tilt",
+                reference: "Reference",
+                analyzer: "Spectrum Analyzer",
+                bins: "Bins",
+                minimum_frequency: "Min Hz",
+                maximum_frequency: "Max Hz",
+                smoothing: "Smoothing",
+                none: "None",
+                standard: "Standard",
+                min_frequency_short: "Min Freq",
+            },
+            Language::French => Self {
+                no_signal: "Aucun signal",
+                tilt: "Inclinaison",
+                reference: "Référence",
+                analyzer: "Analyseur de spectre",
+                bins: "Bins",
+                minimum_frequency: "Hz min.",
+                maximum_frequency: "Hz max.",
+                smoothing: "Lissage",
+                none: "Aucune",
+                standard: "Standard",
+                min_frequency_short: "Fréq. min.",
+            },
+            Language::German => Self {
+                no_signal: "Kein Signal",
+                tilt: "Neigung",
+                reference: "Referenz",
+                analyzer: "Spektrumanalysator",
+                bins: "Bins",
+                minimum_frequency: "Min. Hz",
+                maximum_frequency: "Max. Hz",
+                smoothing: "Glättung",
+                none: "Keine",
+                standard: "Standard",
+                min_frequency_short: "Min. Frequenz",
+            },
+            Language::Spanish => Self {
+                no_signal: "Sin señal",
+                tilt: "Inclinación",
+                reference: "Referencia",
+                analyzer: "Analizador de espectro",
+                bins: "Bins",
+                minimum_frequency: "Hz mín.",
+                maximum_frequency: "Hz máx.",
+                smoothing: "Suavizado",
+                none: "Ninguna",
+                standard: "Estándar",
+                min_frequency_short: "Frec. mín.",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CastTranslations {
+    pub cast: &'static str,
+    pub no_devices: &'static str,
+    pub preferences: &'static str,
+    pub refresh: &'static str,
+}
+
+impl CastTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                cast: "Cast",
+                no_devices: "No Cast devices found",
+                preferences: "Preferences",
+                refresh: "Refresh",
+            },
+            Language::French => Self {
+                cast: "Diffuser",
+                no_devices: "Aucun appareil de diffusion trouvé",
+                preferences: "Préférences",
+                refresh: "Actualiser",
+            },
+            Language::German => Self {
+                cast: "Übertragen",
+                no_devices: "Keine Übertragungsgeräte gefunden",
+                preferences: "Einstellungen",
+                refresh: "Aktualisieren",
+            },
+            Language::Spanish => Self {
+                cast: "Transmitir",
+                no_devices: "No se encontraron dispositivos de transmisión",
+                preferences: "Preferencias",
+                refresh: "Actualizar",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PlaybackApplyTranslations {
+    pub title: &'static str,
+    pub description: &'static str,
+    pub clear_eq: &'static str,
+}
+
+impl PlaybackApplyTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                title: "Apply to Playback",
+                description: "Apply the EQ to your current playback to hear the difference.",
+                clear_eq: "Clear EQ",
+            },
+            Language::French => Self {
+                title: "Appliquer à la lecture",
+                description: "Appliquez l’égalisation à la lecture en cours pour entendre la différence.",
+                clear_eq: "Effacer l’EQ",
+            },
+            Language::German => Self {
+                title: "Auf Wiedergabe anwenden",
+                description: "Wenden Sie den EQ auf die aktuelle Wiedergabe an, um den Unterschied zu hören.",
+                clear_eq: "EQ entfernen",
+            },
+            Language::Spanish => Self {
+                title: "Aplicar a la reproducción",
+                description: "Aplique la EQ a la reproducción actual para escuchar la diferencia.",
+                clear_eq: "Borrar EQ",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PluginCommonTranslations {
+    language: Language,
+    pub global: &'static str,
+    pub bands: &'static str,
+    pub detection: &'static str,
+    pub resolution: &'static str,
+    pub reset_hint: &'static str,
+    pub load: &'static str,
+    pub configuration: &'static str,
+}
+
+impl PluginCommonTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                language,
+                global: "Global",
+                bands: "Bands",
+                detection: "Detection",
+                resolution: "Resolution",
+                reset_hint: "Double-click a control to reset it",
+                load: "Load",
+                configuration: "Configuration",
+            },
+            Language::French => Self {
+                language,
+                global: "Global",
+                bands: "Bandes",
+                detection: "Détection",
+                resolution: "Résolution",
+                reset_hint: "Double-cliquez sur un contrôle pour le réinitialiser",
+                load: "Charger",
+                configuration: "Configuration",
+            },
+            Language::German => Self {
+                language,
+                global: "Global",
+                bands: "Bänder",
+                detection: "Erkennung",
+                resolution: "Auflösung",
+                reset_hint: "Steuerelement zum Zurücksetzen doppelklicken",
+                load: "Laden",
+                configuration: "Konfiguration",
+            },
+            Language::Spanish => Self {
+                language,
+                global: "Global",
+                bands: "Bandas",
+                detection: "Detección",
+                resolution: "Resolución",
+                reset_hint: "Haga doble clic en un control para restablecerlo",
+                load: "Cargar",
+                configuration: "Configuración",
+            },
+        }
+    }
+
+    pub fn description(self, plugin_type: &sotf_audio_player::PluginType) -> &'static str {
+        use sotf_audio_player::PluginType;
+
+        match self.language {
+            Language::English => match plugin_type {
+                PluginType::EQ => "Shape frequency balance with parametric filters.",
+                PluginType::Gain => "Adjust the overall signal level.",
+                PluginType::AAE => {
+                    "Enhance room ambience adaptively with processing inspired by LARES."
+                }
+                PluginType::Upmixer => "Expand stereo into a configurable multichannel output.",
+                PluginType::Compressor => "Reduce dynamic range above a threshold.",
+                PluginType::Limiter => "Keep peaks below a defined output ceiling.",
+                PluginType::Gate => "Attenuate signals that fall below a threshold.",
+                PluginType::Expander => "Increase dynamic contrast below a threshold.",
+                PluginType::MultibandCompressor => {
+                    "Compress independent frequency bands with separate dynamics."
+                }
+                PluginType::MultibandExpander => {
+                    "Expand independent frequency bands with separate dynamics."
+                }
+                PluginType::LoudnessCompensation => {
+                    "Adapt tonal balance to the listening level using equal-loudness curves."
+                }
+                PluginType::FletcherMunson => {
+                    "Apply classic equal-loudness compensation for quieter listening."
+                }
+                PluginType::BinauralDecoder => "Render spatial audio for headphones with an HRTF.",
+                PluginType::Convolution => {
+                    "Apply an impulse response with low-latency FFT convolution."
+                }
+                PluginType::LoudnessMonitor => {
+                    "Measure programme loudness, peaks, and loudness range."
+                }
+                PluginType::SpectrumAnalyzer => {
+                    "Display the real-time frequency spectrum without changing audio."
+                }
+                PluginType::ChannelMuteSolo => "Mute, solo, and trim individual channels.",
+                PluginType::Matrix => "Route and mix channels with a configurable matrix.",
+                PluginType::XTC => {
+                    "Reduce loudspeaker crosstalk for a focused stereo listening position."
+                }
+                PluginType::Denoiser => "Reduce steady background noise with spectral processing.",
+                PluginType::Declick => "Detect and repair short clicks in the time domain.",
+                PluginType::HissReducer => "Reduce broadband high-frequency hiss.",
+                PluginType::SpeechDenoiser => "Suppress noise in speech with the RNNoise model.",
+                PluginType::Pnd => "Reduce periodic or tonal noise components.",
+                PluginType::ABCompare => "Compare two processing paths with matched switching.",
+                PluginType::Crossover => "Split channels into frequency bands for loudspeakers.",
+                PluginType::BandSplit => "Split a signal into independently routed bands.",
+                PluginType::BandMerge => "Recombine compatible bands into one signal.",
+                PluginType::Downmix => "Fold multichannel audio into fewer output channels.",
+                PluginType::MonoToStereo => "Create a stereo output from a mono input.",
+                PluginType::Crossfeed => {
+                    "Blend headphone channels to approximate loudspeaker listening."
+                }
+                PluginType::Delay => "Delay channels for timing and alignment.",
+                PluginType::Aec => "Cancel acoustic echo from a reference signal.",
+                PluginType::Beamformer => "Combine microphone channels for directional pickup.",
+                PluginType::AmbisonicsDecoder => {
+                    "Decode first-order Ambisonics into a loudspeaker or binaural layout."
+                }
+                PluginType::StereoImager => "Adjust stereo width in independent frequency bands.",
+                PluginType::DeEsser => "Reduce harsh sibilance in speech and vocals.",
+                PluginType::TransientShaper => {
+                    "Adjust the attack and sustain portions of transients."
+                }
+                PluginType::Saturation => {
+                    "Add controlled harmonic colour with saturation or exciter modes."
+                }
+                PluginType::DynamicEq => "Apply frequency-selective compression and expansion.",
+                PluginType::FirDesigner => "Design an FIR filter from magnitude and phase targets.",
+                PluginType::LinearPhaseEq => "Apply parametric EQ as linear-phase FIR convolution.",
+                PluginType::SpectralCompressor => {
+                    "Control dynamics independently in FFT frequency bins."
+                }
+            },
+            Language::French => match plugin_type {
+                PluginType::EQ => "Modelez l’équilibre spectral avec des filtres paramétriques.",
+                PluginType::Gain => "Réglez le niveau général du signal.",
+                PluginType::AAE => {
+                    "Renforcez l’ambiance de la pièce avec un traitement adaptatif inspiré de LARES."
+                }
+                PluginType::Upmixer => {
+                    "Étendez la stéréo vers une sortie multicanale configurable."
+                }
+                PluginType::Compressor => "Réduisez la dynamique au-dessus d’un seuil.",
+                PluginType::Limiter => "Maintenez les crêtes sous un plafond de sortie.",
+                PluginType::Gate => "Atténuez les signaux sous un seuil.",
+                PluginType::Expander => "Augmentez le contraste dynamique sous un seuil.",
+                PluginType::MultibandCompressor => {
+                    "Compressez séparément plusieurs bandes de fréquences."
+                }
+                PluginType::MultibandExpander => {
+                    "Étendez séparément plusieurs bandes de fréquences."
+                }
+                PluginType::LoudnessCompensation => {
+                    "Adaptez l’équilibre tonal au niveau d’écoute avec des courbes isosoniques."
+                }
+                PluginType::FletcherMunson => {
+                    "Appliquez la compensation isosonique classique à faible niveau."
+                }
+                PluginType::BinauralDecoder => "Restituez l’audio spatial au casque avec une HRTF.",
+                PluginType::Convolution => {
+                    "Appliquez une réponse impulsionnelle par convolution FFT à faible latence."
+                }
+                PluginType::LoudnessMonitor => "Mesurez la sonie, les crêtes et la plage de sonie.",
+                PluginType::SpectrumAnalyzer => {
+                    "Affichez le spectre en temps réel sans modifier l’audio."
+                }
+                PluginType::ChannelMuteSolo => "Coupez, isolez et ajustez chaque canal.",
+                PluginType::Matrix => {
+                    "Routez et mélangez les canaux avec une matrice configurable."
+                }
+                PluginType::XTC => {
+                    "Réduisez la diaphonie des enceintes pour une position d’écoute précise."
+                }
+                PluginType::Denoiser => "Réduisez le bruit de fond stable par traitement spectral.",
+                PluginType::Declick => {
+                    "Détectez et réparez les clics brefs dans le domaine temporel."
+                }
+                PluginType::HissReducer => "Réduisez le souffle large bande dans les aigus.",
+                PluginType::SpeechDenoiser => {
+                    "Supprimez le bruit de la parole avec le modèle RNNoise."
+                }
+                PluginType::Pnd => "Réduisez les composantes de bruit périodiques ou tonales.",
+                PluginType::ABCompare => {
+                    "Comparez deux chemins de traitement avec une commutation alignée."
+                }
+                PluginType::Crossover => "Répartissez les canaux en bandes pour les haut-parleurs.",
+                PluginType::BandSplit => "Séparez un signal en bandes routables indépendamment.",
+                PluginType::BandMerge => "Recombinez des bandes compatibles en un signal.",
+                PluginType::Downmix => "Réduisez un mixage multicanal vers moins de sorties.",
+                PluginType::MonoToStereo => "Créez une sortie stéréo depuis une entrée mono.",
+                PluginType::Crossfeed => {
+                    "Mélangez les canaux du casque pour simuler l’écoute sur enceintes."
+                }
+                PluginType::Delay => "Retardez les canaux pour le calage temporel.",
+                PluginType::Aec => "Annulez l’écho acoustique à partir d’un signal de référence.",
+                PluginType::Beamformer => {
+                    "Combinez les microphones pour une captation directionnelle."
+                }
+                PluginType::AmbisonicsDecoder => {
+                    "Décodez l’Ambisonie du premier ordre vers des enceintes ou un casque."
+                }
+                PluginType::StereoImager => {
+                    "Réglez la largeur stéréo dans plusieurs bandes de fréquences."
+                }
+                PluginType::DeEsser => "Réduisez les sifflantes agressives de la voix.",
+                PluginType::TransientShaper => "Réglez l’attaque et le maintien des transitoires.",
+                PluginType::Saturation => {
+                    "Ajoutez une coloration harmonique contrôlée ou de l’excitation."
+                }
+                PluginType::DynamicEq => {
+                    "Appliquez compression et expansion de façon sélective en fréquence."
+                }
+                PluginType::FirDesigner => {
+                    "Concevez un filtre FIR à partir de cibles d’amplitude et de phase."
+                }
+                PluginType::LinearPhaseEq => {
+                    "Appliquez un égaliseur paramétrique par convolution FIR à phase linéaire."
+                }
+                PluginType::SpectralCompressor => {
+                    "Contrôlez séparément la dynamique de chaque bin FFT."
+                }
+            },
+            Language::German => match plugin_type {
+                PluginType::EQ => "Formen Sie den Frequenzgang mit parametrischen Filtern.",
+                PluginType::Gain => "Passen Sie den Gesamtpegel des Signals an.",
+                PluginType::AAE => {
+                    "Verstärken Sie Raumatmosphäre adaptiv mit LARES-inspirierter Verarbeitung."
+                }
+                PluginType::Upmixer => {
+                    "Erweitern Sie Stereo auf eine konfigurierbare Mehrkanalausgabe."
+                }
+                PluginType::Compressor => {
+                    "Verringern Sie die Dynamik oberhalb eines Schwellenwerts."
+                }
+                PluginType::Limiter => "Halten Sie Spitzen unter einer Ausgangsgrenze.",
+                PluginType::Gate => "Dämpfen Sie Signale unterhalb eines Schwellenwerts.",
+                PluginType::Expander => {
+                    "Erhöhen Sie den Dynamikkontrast unterhalb eines Schwellenwerts."
+                }
+                PluginType::MultibandCompressor => {
+                    "Komprimieren Sie mehrere Frequenzbänder unabhängig."
+                }
+                PluginType::MultibandExpander => {
+                    "Expandieren Sie mehrere Frequenzbänder unabhängig."
+                }
+                PluginType::LoudnessCompensation => {
+                    "Passen Sie die Klangbalance mit Kurven gleicher Lautheit an den Hörpegel an."
+                }
+                PluginType::FletcherMunson => {
+                    "Wenden Sie klassische Lautheitskorrektur für leises Hören an."
+                }
+                PluginType::BinauralDecoder => {
+                    "Geben Sie räumliches Audio mit einer HRTF über Kopfhörer wieder."
+                }
+                PluginType::Convolution => {
+                    "Wenden Sie eine Impulsantwort mit latenzarmer FFT-Faltung an."
+                }
+                PluginType::LoudnessMonitor => {
+                    "Messen Sie Programmlautheit, Spitzen und Lautheitsbereich."
+                }
+                PluginType::SpectrumAnalyzer => {
+                    "Zeigen Sie das Echtzeitspektrum an, ohne das Audio zu verändern."
+                }
+                PluginType::ChannelMuteSolo => {
+                    "Schalten Sie einzelne Kanäle stumm, solo oder passen Sie ihren Pegel an."
+                }
+                PluginType::Matrix => {
+                    "Routen und mischen Sie Kanäle mit einer konfigurierbaren Matrix."
+                }
+                PluginType::XTC => {
+                    "Reduzieren Sie Lautsprecherübersprechen für eine feste Hörposition."
+                }
+                PluginType::Denoiser => {
+                    "Reduzieren Sie gleichmäßiges Hintergrundrauschen spektral."
+                }
+                PluginType::Declick => "Erkennen und reparieren Sie kurze Klicks im Zeitbereich.",
+                PluginType::HissReducer => "Reduzieren Sie breitbandiges Hochfrequenzrauschen.",
+                PluginType::SpeechDenoiser => {
+                    "Unterdrücken Sie Sprachrauschen mit dem RNNoise-Modell."
+                }
+                PluginType::Pnd => "Reduzieren Sie periodische oder tonale Rauschanteile.",
+                PluginType::ABCompare => {
+                    "Vergleichen Sie zwei Verarbeitungswege mit abgestimmtem Umschalten."
+                }
+                PluginType::Crossover => {
+                    "Teilen Sie Kanäle in Frequenzbänder für Lautsprecher auf."
+                }
+                PluginType::BandSplit => "Teilen Sie ein Signal in getrennt routbare Bänder.",
+                PluginType::BandMerge => "Führen Sie kompatible Bänder wieder zusammen.",
+                PluginType::Downmix => "Mischen Sie Mehrkanalaudio auf weniger Ausgänge herunter.",
+                PluginType::MonoToStereo => "Erzeugen Sie Stereo aus einem Monoeingang.",
+                PluginType::Crossfeed => {
+                    "Mischen Sie Kopfhörerkanäle für eine lautsprecherähnliche Wiedergabe."
+                }
+                PluginType::Delay => "Verzögern Sie Kanäle für Zeit- und Laufzeitausrichtung.",
+                PluginType::Aec => "Unterdrücken Sie akustisches Echo mit einem Referenzsignal.",
+                PluginType::Beamformer => "Kombinieren Sie Mikrofonkanäle für gerichtete Aufnahme.",
+                PluginType::AmbisonicsDecoder => {
+                    "Dekodieren Sie Ambisonics erster Ordnung für Lautsprecher oder Kopfhörer."
+                }
+                PluginType::StereoImager => {
+                    "Passen Sie die Stereobreite in getrennten Frequenzbändern an."
+                }
+                PluginType::DeEsser => "Reduzieren Sie scharfe Zischlaute in Sprache und Gesang.",
+                PluginType::TransientShaper => "Passen Sie Attack und Sustain von Transienten an.",
+                PluginType::Saturation => {
+                    "Fügen Sie kontrollierte harmonische Färbung oder Anregung hinzu."
+                }
+                PluginType::DynamicEq => {
+                    "Wenden Sie frequenzselektive Kompression und Expansion an."
+                }
+                PluginType::FirDesigner => {
+                    "Entwerfen Sie einen FIR-Filter aus Amplituden- und Phasenzielen."
+                }
+                PluginType::LinearPhaseEq => {
+                    "Wenden Sie parametrischen EQ als linearphasige FIR-Faltung an."
+                }
+                PluginType::SpectralCompressor => {
+                    "Regeln Sie die Dynamik in einzelnen FFT-Frequenzbins."
+                }
+            },
+            Language::Spanish => match plugin_type {
+                PluginType::EQ => "Modele el equilibrio tonal con filtros paramétricos.",
+                PluginType::Gain => "Ajuste el nivel general de la señal.",
+                PluginType::AAE => {
+                    "Mejore el ambiente de sala con procesamiento adaptativo inspirado en LARES."
+                }
+                PluginType::Upmixer => "Expanda estéreo a una salida multicanal configurable.",
+                PluginType::Compressor => "Reduzca la dinámica por encima de un umbral.",
+                PluginType::Limiter => "Mantenga los picos por debajo de un techo de salida.",
+                PluginType::Gate => "Atenúe las señales que queden bajo un umbral.",
+                PluginType::Expander => "Aumente el contraste dinámico bajo un umbral.",
+                PluginType::MultibandCompressor => {
+                    "Comprima por separado varias bandas de frecuencia."
+                }
+                PluginType::MultibandExpander => {
+                    "Expanda por separado varias bandas de frecuencia."
+                }
+                PluginType::LoudnessCompensation => {
+                    "Adapte el equilibrio tonal al nivel de escucha con curvas isofónicas."
+                }
+                PluginType::FletcherMunson => {
+                    "Aplique compensación isofónica clásica para escuchar a bajo nivel."
+                }
+                PluginType::BinauralDecoder => {
+                    "Reproduzca audio espacial por auriculares mediante una HRTF."
+                }
+                PluginType::Convolution => {
+                    "Aplique una respuesta al impulso con convolución FFT de baja latencia."
+                }
+                PluginType::LoudnessMonitor => {
+                    "Mida sonoridad de programa, picos y rango de sonoridad."
+                }
+                PluginType::SpectrumAnalyzer => {
+                    "Muestre el espectro en tiempo real sin alterar el audio."
+                }
+                PluginType::ChannelMuteSolo => "Silencie, aísle y ajuste canales individuales.",
+                PluginType::Matrix => "Enrute y mezcle canales con una matriz configurable.",
+                PluginType::XTC => {
+                    "Reduzca la diafonía de altavoces para una posición de escucha precisa."
+                }
+                PluginType::Denoiser => {
+                    "Reduzca ruido de fondo estable mediante proceso espectral."
+                }
+                PluginType::Declick => "Detecte y repare clics breves en el dominio temporal.",
+                PluginType::HissReducer => "Reduzca siseo de alta frecuencia de banda ancha.",
+                PluginType::SpeechDenoiser => "Suprima ruido en voz mediante el modelo RNNoise.",
+                PluginType::Pnd => "Reduzca componentes de ruido periódicas o tonales.",
+                PluginType::ABCompare => "Compare dos rutas de proceso con conmutación igualada.",
+                PluginType::Crossover => "Divida canales en bandas para altavoces.",
+                PluginType::BandSplit => "Separe una señal en bandas enrutables por separado.",
+                PluginType::BandMerge => "Recombine bandas compatibles en una señal.",
+                PluginType::Downmix => "Reduzca audio multicanal a menos canales de salida.",
+                PluginType::MonoToStereo => "Cree una salida estéreo desde una entrada mono.",
+                PluginType::Crossfeed => {
+                    "Mezcle canales de auriculares para aproximar la escucha con altavoces."
+                }
+                PluginType::Delay => "Retrase canales para ajustar tiempo y alineación.",
+                PluginType::Aec => "Cancele eco acústico a partir de una señal de referencia.",
+                PluginType::Beamformer => {
+                    "Combine canales de micrófono para una captación direccional."
+                }
+                PluginType::AmbisonicsDecoder => {
+                    "Decodifique Ambisonics de primer orden para altavoces o auriculares."
+                }
+                PluginType::StereoImager => {
+                    "Ajuste la anchura estéreo en bandas de frecuencia independientes."
+                }
+                PluginType::DeEsser => "Reduzca sibilancia agresiva en voz y canto.",
+                PluginType::TransientShaper => {
+                    "Ajuste el ataque y el sostenimiento de los transitorios."
+                }
+                PluginType::Saturation => {
+                    "Añada color armónico controlado con saturación o excitación."
+                }
+                PluginType::DynamicEq => {
+                    "Aplique compresión y expansión selectivas por frecuencia."
+                }
+                PluginType::FirDesigner => {
+                    "Diseñe un filtro FIR desde objetivos de magnitud y fase."
+                }
+                PluginType::LinearPhaseEq => {
+                    "Aplique EQ paramétrica como convolución FIR de fase lineal."
+                }
+                PluginType::SpectralCompressor => {
+                    "Controle la dinámica por separado en cada bin FFT."
+                }
+            },
+        }
+    }
+
+    pub fn label(self, label: &'static str) -> &'static str {
+        let translations = match self.language {
+            Language::English => return label,
+            Language::French => FRENCH_PLUGIN_LABELS,
+            Language::German => GERMAN_PLUGIN_LABELS,
+            Language::Spanish => SPANISH_PLUGIN_LABELS,
+        };
+
+        translations
+            .iter()
+            .find_map(|(source, translation)| (*source == label).then_some(*translation))
+            .unwrap_or_else(|| panic!("missing localized plugin label: {label}"))
+    }
+}
+
+const FRENCH_PLUGIN_LABELS: &[(&str, &str)] = &[
+    ("SETUP", "CONFIGURATION"),
+    ("CHANNELS", "CANAUX"),
+    ("GLOBAL", "GLOBAL"),
+    ("DYNAMICS", "DYNAMIQUE"),
+    ("TIMING", "TEMPORISATION"),
+    ("OUTPUT", "SORTIE"),
+    ("Primary", "Principal"),
+    ("Spatial", "Spatial"),
+    ("Output", "Sortie"),
+    ("LFE & Bass", "LFE et graves"),
+    ("SubHarmonic", "Sous-harmonique"),
+    ("Dialogue", "Dialogue"),
+    ("Ambient", "Ambiance"),
+    ("Height", "Hauteur"),
+    ("HR Direct", "Direct HR"),
+    ("Decorrelation", "Décorrélation"),
+    ("Analysis", "Analyse"),
+    ("Diagnostic", "Diagnostic"),
+    ("Source Extraction", "Extraction des sources"),
+    ("Bands", "Bandes"),
+    ("Thresh", "Seuil"),
+    ("Ratio", "Rapport"),
+    ("Attack", "Attaque"),
+    ("Release", "Relâchement"),
+    ("Mix", "Mixage"),
+    ("Freq", "Fréq."),
+    ("Gain", "Gain"),
+    ("Active", "Actif"),
+    ("Solo", "Solo"),
+    ("Q", "Q"),
+    ("Mono", "Mono"),
+    ("Left", "Gauche"),
+    ("Right", "Droite"),
+    ("Ch", "Can."),
+    ("Enabled", "Activé"),
+    ("Dim Gain", "Gain d’atténuation"),
+    ("Fade Time", "Durée du fondu"),
+    ("Knee", "Coude"),
+    ("Link", "Lier"),
+    ("Bins", "Bins"),
+    ("Min Hz", "Hz min."),
+    ("Max Hz", "Hz max."),
+    ("Smooth", "Lissage"),
+    ("AutoGain", "Gain automatique"),
+    ("Bypass", "Contourner"),
+    ("Link Amt", "Quantité de liaison"),
+    ("Link Ch", "Lier les canaux"),
+    ("Lookahead", "Anticipation"),
+    ("M/S Mode", "Mode M/S"),
+    ("Preset", "Préréglage"),
+    ("SC Tilt", "Pente du sidechain"),
+    ("XOver 1", "Coupure 1"),
+    ("XOver 2", "Coupure 2"),
+    ("XOver 3", "Coupure 3"),
+    ("XOver 4", "Coupure 4"),
+    ("AG Max", "Gain auto max."),
+    ("AG Smooth", "Lissage du gain auto"),
+    ("Amb Boost", "Renfort d’ambiance"),
+    ("Bandpass", "Passe-bande"),
+    ("Boost", "Renfort"),
+    ("Centroid", "Centroïde"),
+    ("Coherence", "Cohérence"),
+    ("Density", "Densité"),
+    ("Dir Leak", "Fuite directionnelle"),
+    ("Duration", "Durée"),
+    ("HF Cap", "Limite des aigus"),
+    ("LFE Cut", "Coupure LFE"),
+    ("LFE Gain", "Gain LFE"),
+    ("LFO Rate", "Vitesse du LFO"),
+    ("Rear Boost", "Renfort arrière"),
+    ("Safety", "Sécurité"),
+    ("Sharpen", "Accentuation"),
+    ("Threshold", "Seuil"),
+    ("Trans Red", "Réduction des transitoires"),
+    ("Variance", "Variance"),
+    ("Voice Hi", "Voix haute"),
+    ("Voice Lo", "Voix basse"),
+    ("Weight", "Pondération"),
+];
+
+const GERMAN_PLUGIN_LABELS: &[(&str, &str)] = &[
+    ("SETUP", "EINRICHTUNG"),
+    ("CHANNELS", "KANÄLE"),
+    ("GLOBAL", "GLOBAL"),
+    ("DYNAMICS", "DYNAMIK"),
+    ("TIMING", "ZEITVERHALTEN"),
+    ("OUTPUT", "AUSGANG"),
+    ("Primary", "Primär"),
+    ("Spatial", "Räumlich"),
+    ("Output", "Ausgang"),
+    ("LFE & Bass", "LFE und Bass"),
+    ("SubHarmonic", "Subharmonisch"),
+    ("Dialogue", "Dialog"),
+    ("Ambient", "Ambiente"),
+    ("Height", "Höhe"),
+    ("HR Direct", "HR direkt"),
+    ("Decorrelation", "Dekorrelation"),
+    ("Analysis", "Analyse"),
+    ("Diagnostic", "Diagnose"),
+    ("Source Extraction", "Quellenextraktion"),
+    ("Bands", "Bänder"),
+    ("Thresh", "Schwelle"),
+    ("Ratio", "Verhältnis"),
+    ("Attack", "Attack"),
+    ("Release", "Release"),
+    ("Mix", "Mischung"),
+    ("Freq", "Freq."),
+    ("Gain", "Pegel"),
+    ("Active", "Aktiv"),
+    ("Solo", "Solo"),
+    ("Q", "Q"),
+    ("Mono", "Mono"),
+    ("Left", "Links"),
+    ("Right", "Rechts"),
+    ("Ch", "Kan."),
+    ("Enabled", "Aktiviert"),
+    ("Dim Gain", "Absenkungspegel"),
+    ("Fade Time", "Überblendzeit"),
+    ("Knee", "Knie"),
+    ("Link", "Koppeln"),
+    ("Bins", "Bins"),
+    ("Min Hz", "Min. Hz"),
+    ("Max Hz", "Max. Hz"),
+    ("Smooth", "Glättung"),
+    ("AutoGain", "Auto-Gain"),
+    ("Bypass", "Bypass"),
+    ("Link Amt", "Kopplungsanteil"),
+    ("Link Ch", "Kanäle koppeln"),
+    ("Lookahead", "Vorausschau"),
+    ("M/S Mode", "M/S-Modus"),
+    ("Preset", "Preset"),
+    ("SC Tilt", "Sidechain-Neigung"),
+    ("XOver 1", "Trennfrequenz 1"),
+    ("XOver 2", "Trennfrequenz 2"),
+    ("XOver 3", "Trennfrequenz 3"),
+    ("XOver 4", "Trennfrequenz 4"),
+    ("AG Max", "Auto-Gain max."),
+    ("AG Smooth", "Auto-Gain-Glättung"),
+    ("Amb Boost", "Ambiente-Anhebung"),
+    ("Bandpass", "Bandpass"),
+    ("Boost", "Anhebung"),
+    ("Centroid", "Zentroid"),
+    ("Coherence", "Kohärenz"),
+    ("Density", "Dichte"),
+    ("Dir Leak", "Richtungsleck"),
+    ("Duration", "Dauer"),
+    ("HF Cap", "Höhenbegrenzung"),
+    ("LFE Cut", "LFE-Trennung"),
+    ("LFE Gain", "LFE-Pegel"),
+    ("LFO Rate", "LFO-Rate"),
+    ("Rear Boost", "Rückkanal-Anhebung"),
+    ("Safety", "Sicherheit"),
+    ("Sharpen", "Schärfung"),
+    ("Threshold", "Schwelle"),
+    ("Trans Red", "Transientenreduktion"),
+    ("Variance", "Varianz"),
+    ("Voice Hi", "Stimme hoch"),
+    ("Voice Lo", "Stimme tief"),
+    ("Weight", "Gewichtung"),
+];
+
+const SPANISH_PLUGIN_LABELS: &[(&str, &str)] = &[
+    ("SETUP", "CONFIGURACIÓN"),
+    ("CHANNELS", "CANALES"),
+    ("GLOBAL", "GLOBAL"),
+    ("DYNAMICS", "DINÁMICA"),
+    ("TIMING", "TIEMPOS"),
+    ("OUTPUT", "SALIDA"),
+    ("Primary", "Principal"),
+    ("Spatial", "Espacial"),
+    ("Output", "Salida"),
+    ("LFE & Bass", "LFE y graves"),
+    ("SubHarmonic", "Subarmónico"),
+    ("Dialogue", "Diálogo"),
+    ("Ambient", "Ambiente"),
+    ("Height", "Altura"),
+    ("HR Direct", "HR directo"),
+    ("Decorrelation", "Descorrelación"),
+    ("Analysis", "Análisis"),
+    ("Diagnostic", "Diagnóstico"),
+    ("Source Extraction", "Extracción de fuentes"),
+    ("Bands", "Bandas"),
+    ("Thresh", "Umbral"),
+    ("Ratio", "Relación"),
+    ("Attack", "Ataque"),
+    ("Release", "Liberación"),
+    ("Mix", "Mezcla"),
+    ("Freq", "Frec."),
+    ("Gain", "Ganancia"),
+    ("Active", "Activo"),
+    ("Solo", "Solo"),
+    ("Q", "Q"),
+    ("Mono", "Mono"),
+    ("Left", "Izquierda"),
+    ("Right", "Derecha"),
+    ("Ch", "Can."),
+    ("Enabled", "Activado"),
+    ("Dim Gain", "Ganancia de atenuación"),
+    ("Fade Time", "Duración del fundido"),
+    ("Knee", "Codo"),
+    ("Link", "Vincular"),
+    ("Bins", "Bins"),
+    ("Min Hz", "Hz mín."),
+    ("Max Hz", "Hz máx."),
+    ("Smooth", "Suavizado"),
+    ("AutoGain", "Ganancia automática"),
+    ("Bypass", "Omitir"),
+    ("Link Amt", "Cantidad de vínculo"),
+    ("Link Ch", "Vincular canales"),
+    ("Lookahead", "Anticipación"),
+    ("M/S Mode", "Modo M/S"),
+    ("Preset", "Preajuste"),
+    ("SC Tilt", "Inclinación del sidechain"),
+    ("XOver 1", "Cruce 1"),
+    ("XOver 2", "Cruce 2"),
+    ("XOver 3", "Cruce 3"),
+    ("XOver 4", "Cruce 4"),
+    ("AG Max", "Ganancia aut. máx."),
+    ("AG Smooth", "Suavizado de ganancia aut."),
+    ("Amb Boost", "Refuerzo de ambiente"),
+    ("Bandpass", "Paso de banda"),
+    ("Boost", "Refuerzo"),
+    ("Centroid", "Centroide"),
+    ("Coherence", "Coherencia"),
+    ("Density", "Densidad"),
+    ("Dir Leak", "Fuga direccional"),
+    ("Duration", "Duración"),
+    ("HF Cap", "Límite de agudos"),
+    ("LFE Cut", "Corte LFE"),
+    ("LFE Gain", "Ganancia LFE"),
+    ("LFO Rate", "Velocidad LFO"),
+    ("Rear Boost", "Refuerzo trasero"),
+    ("Safety", "Seguridad"),
+    ("Sharpen", "Realce"),
+    ("Threshold", "Umbral"),
+    ("Trans Red", "Reducción de transitorios"),
+    ("Variance", "Varianza"),
+    ("Voice Hi", "Voz alta"),
+    ("Voice Lo", "Voz baja"),
+    ("Weight", "Peso"),
+];
+
+#[derive(Debug, Clone, Copy)]
+pub struct SettingsSurfaceTranslations {
+    pub scanner_threads: &'static str,
+    pub thread_count: &'static str,
+    pub thread_count_description: &'static str,
+    pub metadata_services: &'static str,
+    pub musicbrainz_description: &'static str,
+    pub musicbrainz: &'static str,
+    pub external_plugins: &'static str,
+    pub miscellaneous: &'static str,
+    pub max_cpu_cores: &'static str,
+    pub stable: &'static str,
+    pub beta: &'static str,
+    pub alpha: &'static str,
+    pub activate_external_plugins: &'static str,
+    pub scan_external_plugins: &'static str,
+}
+
+impl SettingsSurfaceTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                scanner_threads: "Scanner Threads",
+                thread_count: "Thread Count",
+                thread_count_description: "Number of threads for background scanning (waveform, Bliss, ReplayGain). Lower values reduce memory usage.",
+                metadata_services: "Metadata Services",
+                musicbrainz_description: "MusicBrainz search works without an account. Optional credentials are reserved for user-data features.",
+                musicbrainz: "MusicBrainz",
+                external_plugins: "External Plugins",
+                miscellaneous: "Miscellaneous",
+                max_cpu_cores: "Maximum CPU Cores",
+                stable: "Stable",
+                beta: "Beta",
+                alpha: "Alpha",
+                activate_external_plugins: "Activate External Plugins",
+                scan_external_plugins: "Scan External Plugins",
+            },
+            Language::French => Self {
+                scanner_threads: "Threads d’analyse",
+                thread_count: "Nombre de threads",
+                thread_count_description: "Nombre de threads pour l’analyse en arrière-plan (forme d’onde, Bliss, ReplayGain). Une valeur basse réduit la mémoire utilisée.",
+                metadata_services: "Services de métadonnées",
+                musicbrainz_description: "La recherche MusicBrainz fonctionne sans compte. Les identifiants facultatifs sont réservés aux fonctions de données utilisateur.",
+                musicbrainz: "MusicBrainz",
+                external_plugins: "Modules externes",
+                miscellaneous: "Divers",
+                max_cpu_cores: "Nombre maximal de cœurs CPU",
+                stable: "Stable",
+                beta: "Bêta",
+                alpha: "Alpha",
+                activate_external_plugins: "Activer les modules externes",
+                scan_external_plugins: "Analyser les modules externes",
+            },
+            Language::German => Self {
+                scanner_threads: "Scan-Threads",
+                thread_count: "Thread-Anzahl",
+                thread_count_description: "Anzahl der Threads für Hintergrundanalysen (Wellenform, Bliss, ReplayGain). Niedrigere Werte benötigen weniger Speicher.",
+                metadata_services: "Metadatendienste",
+                musicbrainz_description: "Die MusicBrainz-Suche funktioniert ohne Konto. Optionale Zugangsdaten sind für Benutzerdatenfunktionen reserviert.",
+                musicbrainz: "MusicBrainz",
+                external_plugins: "Externe Plugins",
+                miscellaneous: "Verschiedenes",
+                max_cpu_cores: "Maximale CPU-Kerne",
+                stable: "Stabil",
+                beta: "Beta",
+                alpha: "Alpha",
+                activate_external_plugins: "Externe Plugins aktivieren",
+                scan_external_plugins: "Externe Plugins suchen",
+            },
+            Language::Spanish => Self {
+                scanner_threads: "Hilos de análisis",
+                thread_count: "Número de hilos",
+                thread_count_description: "Número de hilos para el análisis en segundo plano (forma de onda, Bliss, ReplayGain). Los valores bajos reducen el uso de memoria.",
+                metadata_services: "Servicios de metadatos",
+                musicbrainz_description: "La búsqueda en MusicBrainz funciona sin cuenta. Las credenciales opcionales se reservan para funciones de datos de usuario.",
+                musicbrainz: "MusicBrainz",
+                external_plugins: "Complementos externos",
+                miscellaneous: "Varios",
+                max_cpu_cores: "Máximo de núcleos de CPU",
+                stable: "Estable",
+                beta: "Beta",
+                alpha: "Alfa",
+                activate_external_plugins: "Activar complementos externos",
+                scan_external_plugins: "Buscar complementos externos",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PluginGraphTranslations {
+    pub nodes: PluginGraphNodeTranslations,
+    pub keyboard_editor: &'static str,
+    pub selected: &'static str,
+    pub none_selected: &'static str,
+    pub add_plugin: &'static str,
+    pub connect_source: &'static str,
+    pub no_connect_source: &'static str,
+    pub keyboard_hint: &'static str,
+    pub special_node_read_only: &'static str,
+    pub select_node_first: &'static str,
+    pub connection_created: &'static str,
+    pub connection_failed: &'static str,
+    pub disconnected: &'static str,
+    pub plugin_added: &'static str,
+    pub node_removed: &'static str,
+    pub input_sources: &'static str,
+    pub player_audio_files: &'static str,
+    pub output_devices: &'static str,
+    pub no_output_devices: &'static str,
+    pub dynamics: &'static str,
+    pub spatial: &'static str,
+    pub monitor: &'static str,
+    pub denoising: &'static str,
+    pub utility: &'static str,
+    pub edit_parameters: &'static str,
+    pub bypass_activate: &'static str,
+    pub solo: &'static str,
+    pub remove: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PluginGraphNodeTranslations {
+    pub signal: &'static str,
+    pub source: &'static str,
+    pub reset_view: &'static str,
+    pub input: &'static str,
+    pub plugins: &'static str,
+    pub load: &'static str,
+    pub save: &'static str,
+    pub close: &'static str,
+    pub parametric_eq: &'static str,
+    pub no_plugin_data: &'static str,
+    pub gain: &'static str,
+    pub audio_player: &'static str,
+    pub audio_player_description: &'static str,
+    pub output_device: &'static str,
+    pub output_device_description: &'static str,
+    pub input_device: &'static str,
+    pub input_device_description: &'static str,
+    pub unknown_node_type: &'static str,
+}
+
+impl PluginGraphNodeTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                signal: "Signal",
+                source: "Source",
+                reset_view: "Reset View",
+                input: "Input",
+                plugins: "Plugins",
+                load: "Load",
+                save: "Save",
+                close: "Close",
+                parametric_eq: "Parametric EQ",
+                no_plugin_data: "No plugin data available",
+                gain: "Gain",
+                audio_player: "Audio Player",
+                audio_player_description: "This node represents the audio-file playback source.",
+                output_device: "Output Device",
+                output_device_description: "This node represents the audio-output destination.",
+                input_device: "Input Device",
+                input_device_description: "This node represents the audio-input source.",
+                unknown_node_type: "Unknown node type",
+            },
+            Language::French => Self {
+                signal: "Signal",
+                source: "Source",
+                reset_view: "Réinitialiser la vue",
+                input: "Entrée",
+                plugins: "Plugins",
+                load: "Charger",
+                save: "Enregistrer",
+                close: "Fermer",
+                parametric_eq: "Égaliseur paramétrique",
+                no_plugin_data: "Aucune donnée de plugin disponible",
+                gain: "Gain",
+                audio_player: "Lecteur audio",
+                audio_player_description: "Ce nœud représente la source de lecture du fichier audio.",
+                output_device: "Périphérique de sortie",
+                output_device_description: "Ce nœud représente la destination de sortie audio.",
+                input_device: "Périphérique d’entrée",
+                input_device_description: "Ce nœud représente la source d’entrée audio.",
+                unknown_node_type: "Type de nœud inconnu",
+            },
+            Language::German => Self {
+                signal: "Signal",
+                source: "Quelle",
+                reset_view: "Ansicht zurücksetzen",
+                input: "Eingang",
+                plugins: "Plugins",
+                load: "Laden",
+                save: "Speichern",
+                close: "Schließen",
+                parametric_eq: "Parametrischer EQ",
+                no_plugin_data: "Keine Plugin-Daten verfügbar",
+                gain: "Verstärkung",
+                audio_player: "Audio-Player",
+                audio_player_description: "Dieser Knoten stellt die Wiedergabequelle der Audiodatei dar.",
+                output_device: "Ausgabegerät",
+                output_device_description: "Dieser Knoten stellt das Ziel der Audioausgabe dar.",
+                input_device: "Eingabegerät",
+                input_device_description: "Dieser Knoten stellt die Quelle der Audioeingabe dar.",
+                unknown_node_type: "Unbekannter Knotentyp",
+            },
+            Language::Spanish => Self {
+                signal: "Señal",
+                source: "Origen",
+                reset_view: "Restablecer vista",
+                input: "Entrada",
+                plugins: "Plugins",
+                load: "Cargar",
+                save: "Guardar",
+                close: "Cerrar",
+                parametric_eq: "EQ paramétrico",
+                no_plugin_data: "No hay datos del plugin disponibles",
+                gain: "Ganancia",
+                audio_player: "Reproductor de audio",
+                audio_player_description: "Este nodo representa el origen de reproducción del archivo de audio.",
+                output_device: "Dispositivo de salida",
+                output_device_description: "Este nodo representa el destino de la salida de audio.",
+                input_device: "Dispositivo de entrada",
+                input_device_description: "Este nodo representa el origen de la entrada de audio.",
+                unknown_node_type: "Tipo de nodo desconocido",
+            },
+        }
+    }
+}
+
+impl PluginGraphTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                nodes: PluginGraphNodeTranslations::for_language(Language::English),
+                keyboard_editor: "Keyboard graph editor",
+                selected: "Selected",
+                none_selected: "None",
+                add_plugin: "Plugin to add",
+                connect_source: "Connection source",
+                no_connect_source: "Not armed",
+                keyboard_hint: "Tab select · [/] choose plugin · A add · Enter edit · B bypass · C connect · X disconnect · arrows move · Delete remove",
+                special_node_read_only: "Input and output nodes cannot be removed or bypassed.",
+                select_node_first: "Select a graph node first.",
+                connection_created: "Connection created.",
+                connection_failed: "The selected nodes cannot be connected.",
+                disconnected: "Connections removed.",
+                plugin_added: "Plugin added.",
+                node_removed: "Plugin removed.",
+                input_sources: "Input Sources",
+                player_audio_files: "Player (Audio Files)",
+                output_devices: "Output Devices",
+                no_output_devices: "(no output devices)",
+                dynamics: "Dynamics",
+                spatial: "Spatial",
+                monitor: "Monitor",
+                denoising: "Denoising",
+                utility: "Utility",
+                edit_parameters: "Edit Parameters",
+                bypass_activate: "Bypass / Activate",
+                solo: "Solo",
+                remove: "Remove",
+            },
+            Language::French => Self {
+                nodes: PluginGraphNodeTranslations::for_language(Language::French),
+                keyboard_editor: "Éditeur de graphe au clavier",
+                selected: "Sélection",
+                none_selected: "Aucune",
+                add_plugin: "Plugin à ajouter",
+                connect_source: "Source de connexion",
+                no_connect_source: "Non armée",
+                keyboard_hint: "Tab sélectionner · [/] choisir · A ajouter · Entrée modifier · B contourner · C connecter · X déconnecter · flèches déplacer · Suppr retirer",
+                special_node_read_only: "Les nœuds d’entrée et de sortie ne peuvent pas être retirés ni contournés.",
+                select_node_first: "Sélectionnez d’abord un nœud du graphe.",
+                connection_created: "Connexion créée.",
+                connection_failed: "Les nœuds sélectionnés ne peuvent pas être connectés.",
+                disconnected: "Connexions supprimées.",
+                plugin_added: "Plugin ajouté.",
+                node_removed: "Plugin supprimé.",
+                input_sources: "Sources d’entrée",
+                player_audio_files: "Lecteur (fichiers audio)",
+                output_devices: "Périphériques de sortie",
+                no_output_devices: "(aucun périphérique de sortie)",
+                dynamics: "Dynamique",
+                spatial: "Spatial",
+                monitor: "Contrôle",
+                denoising: "Réduction du bruit",
+                utility: "Utilitaires",
+                edit_parameters: "Modifier les paramètres",
+                bypass_activate: "Contourner / Activer",
+                solo: "Solo",
+                remove: "Supprimer",
+            },
+            Language::German => Self {
+                nodes: PluginGraphNodeTranslations::for_language(Language::German),
+                keyboard_editor: "Tastatur-Grapheneditor",
+                selected: "Ausgewählt",
+                none_selected: "Keine Auswahl",
+                add_plugin: "Hinzuzufügendes Plugin",
+                connect_source: "Verbindungsquelle",
+                no_connect_source: "Nicht aktiviert",
+                keyboard_hint: "Tab auswählen · [/] Plugin wählen · A hinzufügen · Eingabe bearbeiten · B Bypass · C verbinden · X trennen · Pfeile verschieben · Entf entfernen",
+                special_node_read_only: "Ein- und Ausgangsknoten können nicht entfernt oder umgangen werden.",
+                select_node_first: "Wählen Sie zuerst einen Graphenknoten aus.",
+                connection_created: "Verbindung erstellt.",
+                connection_failed: "Die ausgewählten Knoten können nicht verbunden werden.",
+                disconnected: "Verbindungen entfernt.",
+                plugin_added: "Plugin hinzugefügt.",
+                node_removed: "Plugin entfernt.",
+                input_sources: "Eingangsquellen",
+                player_audio_files: "Player (Audiodateien)",
+                output_devices: "Ausgabegeräte",
+                no_output_devices: "(keine Ausgabegeräte)",
+                dynamics: "Dynamik",
+                spatial: "Räumlich",
+                monitor: "Monitoring",
+                denoising: "Rauschminderung",
+                utility: "Werkzeuge",
+                edit_parameters: "Parameter bearbeiten",
+                bypass_activate: "Umgehen / Aktivieren",
+                solo: "Solo",
+                remove: "Entfernen",
+            },
+            Language::Spanish => Self {
+                nodes: PluginGraphNodeTranslations::for_language(Language::Spanish),
+                keyboard_editor: "Editor de grafo con teclado",
+                selected: "Seleccionado",
+                none_selected: "Ninguno",
+                add_plugin: "Plugin que añadir",
+                connect_source: "Origen de conexión",
+                no_connect_source: "Sin preparar",
+                keyboard_hint: "Tab seleccionar · [/] elegir plugin · A añadir · Intro editar · B omitir · C conectar · X desconectar · flechas mover · Supr quitar",
+                special_node_read_only: "Los nodos de entrada y salida no se pueden quitar ni omitir.",
+                select_node_first: "Selecciona primero un nodo del grafo.",
+                connection_created: "Conexión creada.",
+                connection_failed: "Los nodos seleccionados no se pueden conectar.",
+                disconnected: "Conexiones eliminadas.",
+                plugin_added: "Plugin añadido.",
+                node_removed: "Plugin eliminado.",
+                input_sources: "Fuentes de entrada",
+                player_audio_files: "Reproductor (archivos de audio)",
+                output_devices: "Dispositivos de salida",
+                no_output_devices: "(no hay dispositivos de salida)",
+                dynamics: "Dinámica",
+                spatial: "Espacial",
+                monitor: "Monitorización",
+                denoising: "Reducción de ruido",
+                utility: "Utilidades",
+                edit_parameters: "Editar parámetros",
+                bypass_activate: "Omitir / Activar",
+                solo: "Solo",
+                remove: "Eliminar",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ListeningTestTranslations {
+    pub setup: ListeningTestSetupTranslations,
+    pub trial: ListeningTestTrialTranslations,
+    pub status: ListeningTestStatusTranslations,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListeningTestSetupTranslations {
+    pub title: &'static str,
+    pub subtitle: &'static str,
+    pub load_session: &'static str,
+    pub save_session: &'static str,
+    pub use_current: &'static str,
+    pub load_path: &'static str,
+    pub simple_rack: &'static str,
+    pub add_processor: &'static str,
+    pub edit_graph: &'static str,
+    pub edit_json: &'static str,
+    pub editing: &'static str,
+    pub remove: &'static str,
+    pub graph_hint: &'static str,
+    pub done: &'static str,
+    pub level_title: &'static str,
+    pub level_description: &'static str,
+    pub measure_prepare: &'static str,
+    pub plugin: &'static str,
+    pub plugins: &'static str,
+    pub nodes: &'static str,
+    pub routes: &'static str,
+    pub current_chain: &'static str,
+    pub path_json_filter: &'static str,
+    pub session_filter: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListeningTestTrialTranslations {
+    pub title: &'static str,
+    pub start_blind_ab: &'static str,
+    pub start_abx: &'static str,
+    pub no_session: &'static str,
+    pub play_first: &'static str,
+    pub play_second: &'static str,
+    pub reference_a: &'static str,
+    pub reference_b: &'static str,
+    pub unknown_x: &'static str,
+    pub prefer_first: &'static str,
+    pub prefer_second: &'static str,
+    pub x_is_a: &'static str,
+    pub x_is_b: &'static str,
+    pub confidence: &'static str,
+    pub notes_placeholder: &'static str,
+    pub trials: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListeningTestStatusTranslations {
+    pub select_paths: &'static str,
+    pub captured: &'static str,
+    pub load_or_prepare: &'static str,
+    pub select_paths_and_track: &'static str,
+    pub measuring: &'static str,
+    pub no_session: &'static str,
+    pub add_ab_plugin: &'static str,
+    pub cue_active: &'static str,
+    pub answer_committed: &'static str,
+    pub path_loaded: &'static str,
+    pub session_loaded: &'static str,
+    pub session_saved: &'static str,
+    pub graph_updated: &'static str,
+    pub params_object: &'static str,
+    pub params_invalid: &'static str,
+    pub params_updated: &'static str,
+    pub rack_updated: &'static str,
+    pub processor_added: &'static str,
+    pub processor_removed: &'static str,
+    pub rack_reordered: &'static str,
+    pub graph_converted: &'static str,
+    pub prepared: &'static str,
+    pub trial_started: &'static str,
+    pub select_path: &'static str,
+    pub select_graph_path: &'static str,
+    pub not_selected: &'static str,
+    pub pass_through: &'static str,
+    pub linear_rack: &'static str,
+    pub routed_graph: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct AutoEqFormTranslations {
+    pub preset: &'static str,
+    pub filter_design: &'static str,
+    pub optimization_quality: &'static str,
+    pub home_cinema: &'static str,
+    pub delay_correction: &'static str,
+    pub target: &'static str,
+    pub optimization_goal: &'static str,
+    pub capability: &'static str,
+    pub strategy: &'static str,
+    pub per_measurement_weights: &'static str,
+    pub reference_channel: &'static str,
+    pub min_frequency_hz: &'static str,
+    pub max_frequency_hz: &'static str,
+    pub max_delay_ms: &'static str,
+    pub primary_seat: &'static str,
+    pub max_deviation_db: &'static str,
+    pub slope_db_oct: &'static str,
+    pub reference_frequency_hz: &'static str,
+    pub bass_boost_db: &'static str,
+    pub shelf_frequency_hz: &'static str,
+    pub system_type: &'static str,
+    pub optimization_mode: &'static str,
+    pub target_curve: &'static str,
+    pub room_configuration: &'static str,
+    pub optimizer_configuration: &'static str,
+    pub parameters: AutoEqParameterTranslations,
+    pub blocks: AutoEqBlockTranslations,
+    pub sections: AutoEqSectionTranslations,
+}
+
+#[derive(Debug, Clone)]
+pub struct AutoEqSectionTranslations {
+    pub recommended: &'static str,
+    pub processing: &'static str,
+    pub edit_custom_target_curve: &'static str,
+    pub flat_loss_description: &'static str,
+    pub epa_loss_description: &'static str,
+}
+
+impl AutoEqSectionTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                recommended: "Recommended",
+                processing: "Processing",
+                edit_custom_target_curve: "Edit Custom Target Curve",
+                flat_loss_description: "Flat: minimize frequency response deviation",
+                epa_loss_description: "EPA: optimize perceived quality (psychoacoustic)",
+            },
+            Language::French => Self {
+                recommended: "Recommandé",
+                processing: "Traitement",
+                edit_custom_target_curve: "Modifier la courbe cible personnalisée",
+                flat_loss_description: "Plat : minimiser l’écart de réponse en fréquence",
+                epa_loss_description: "EPA : optimiser la qualité perçue (psychoacoustique)",
+            },
+            Language::German => Self {
+                recommended: "Empfohlen",
+                processing: "Verarbeitung",
+                edit_custom_target_curve: "Benutzerdefinierte Zielkurve bearbeiten",
+                flat_loss_description: "Linear: Frequenzgangabweichung minimieren",
+                epa_loss_description: "EPA: wahrgenommene Qualität optimieren (psychoakustisch)",
+            },
+            Language::Spanish => Self {
+                recommended: "Recomendado",
+                processing: "Procesamiento",
+                edit_custom_target_curve: "Editar curva objetivo personalizada",
+                flat_loss_description: "Plano: minimizar la desviación de la respuesta en frecuencia",
+                epa_loss_description: "EPA: optimizar la calidad percibida (psicoacústica)",
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AutoEqParameterTranslations {
+    pub loss_function: &'static str,
+    pub number_filters: &'static str,
+    pub filter_type: &'static str,
+    pub variance_lambda: &'static str,
+    pub iir_parameters: &'static str,
+    pub sample_rate_hz: &'static str,
+    pub min_q: &'static str,
+    pub max_q: &'static str,
+    pub min_db: &'static str,
+    pub max_db: &'static str,
+    pub spacing_weight: &'static str,
+    pub min_spacing_oct: &'static str,
+    pub fir_parameters: &'static str,
+    pub regularization: &'static str,
+    pub crossover_configuration: &'static str,
+    pub crossover_frequency_hz: &'static str,
+    pub crossover_type: &'static str,
+    pub fir_band: &'static str,
+    pub bass_management: &'static str,
+    pub manual_f3_hz: &'static str,
+    pub order: &'static str,
+    pub safety_margin_oct: &'static str,
+    pub split_frequency_hz: &'static str,
+    pub lf_max_q: &'static str,
+    pub hf_max_q: &'static str,
+    pub smoothing: &'static str,
+    pub weights: &'static str,
+    pub smoothing_resolution: &'static str,
+    pub smooth_window_oct: &'static str,
+    pub seed: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct AutoEqBlockTranslations {
+    pub fir_taps: &'static str,
+    pub phase: &'static str,
+    pub peq_model: &'static str,
+    pub algorithm: &'static str,
+    pub population: &'static str,
+    pub max_evaluations: &'static str,
+    pub tolerance: &'static str,
+    pub absolute_tolerance: &'static str,
+    pub bo_initial: &'static str,
+    pub bo_batch: &'static str,
+    pub bo_std_stop: &'static str,
+    pub bo_acquisition: &'static str,
+    pub de_strategy: &'static str,
+    pub mutation: &'static str,
+    pub recombination: &'static str,
+    pub adaptive_weight_f: &'static str,
+    pub adaptive_weight_cr: &'static str,
+    pub local_refinement: &'static str,
+    pub local_algorithm: &'static str,
+}
+
+impl AutoEqBlockTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                fir_taps: "FIR Taps",
+                phase: "Phase",
+                peq_model: "PEQ Model",
+                algorithm: "Algorithm",
+                population: "Population",
+                max_evaluations: "Max Evaluations",
+                tolerance: "Tolerance",
+                absolute_tolerance: "Absolute Tolerance",
+                bo_initial: "BO Initial Samples",
+                bo_batch: "BO Batch Size",
+                bo_std_stop: "BO Std. Stop",
+                bo_acquisition: "BO Acquisition",
+                de_strategy: "DE Strategy",
+                mutation: "Mutation (F)",
+                recombination: "Recombination (CR)",
+                adaptive_weight_f: "Adaptive Weight F",
+                adaptive_weight_cr: "Adaptive Weight CR",
+                local_refinement: "Local Refinement",
+                local_algorithm: "Local Algorithm",
+            },
+            Language::French => Self {
+                fir_taps: "Coefficients FIR",
+                phase: "Phase",
+                peq_model: "Modèle PEQ",
+                algorithm: "Algorithme",
+                population: "Population",
+                max_evaluations: "Évaluations maximales",
+                tolerance: "Tolérance",
+                absolute_tolerance: "Tolérance absolue",
+                bo_initial: "Échantillons initiaux BO",
+                bo_batch: "Taille de lot BO",
+                bo_std_stop: "Arrêt écart-type BO",
+                bo_acquisition: "Acquisition BO",
+                de_strategy: "Stratégie DE",
+                mutation: "Mutation (F)",
+                recombination: "Recombinaison (CR)",
+                adaptive_weight_f: "Poids adaptatif F",
+                adaptive_weight_cr: "Poids adaptatif CR",
+                local_refinement: "Affinement local",
+                local_algorithm: "Algorithme local",
+            },
+            Language::German => Self {
+                fir_taps: "FIR-Koeffizienten",
+                phase: "Phase",
+                peq_model: "PEQ-Modell",
+                algorithm: "Algorithmus",
+                population: "Population",
+                max_evaluations: "Maximale Auswertungen",
+                tolerance: "Toleranz",
+                absolute_tolerance: "Absolute Toleranz",
+                bo_initial: "BO-Startstichproben",
+                bo_batch: "BO-Stapelgröße",
+                bo_std_stop: "BO-Std.-Stopp",
+                bo_acquisition: "BO-Akquisition",
+                de_strategy: "DE-Strategie",
+                mutation: "Mutation (F)",
+                recombination: "Rekombination (CR)",
+                adaptive_weight_f: "Adaptives Gewicht F",
+                adaptive_weight_cr: "Adaptives Gewicht CR",
+                local_refinement: "Lokale Verfeinerung",
+                local_algorithm: "Lokaler Algorithmus",
+            },
+            Language::Spanish => Self {
+                fir_taps: "Coeficientes FIR",
+                phase: "Fase",
+                peq_model: "Modelo PEQ",
+                algorithm: "Algoritmo",
+                population: "Población",
+                max_evaluations: "Evaluaciones máximas",
+                tolerance: "Tolerancia",
+                absolute_tolerance: "Tolerancia absoluta",
+                bo_initial: "Muestras iniciales BO",
+                bo_batch: "Tamaño de lote BO",
+                bo_std_stop: "Parada por desv. BO",
+                bo_acquisition: "Adquisición BO",
+                de_strategy: "Estrategia DE",
+                mutation: "Mutación (F)",
+                recombination: "Recombinación (CR)",
+                adaptive_weight_f: "Peso adaptativo F",
+                adaptive_weight_cr: "Peso adaptativo CR",
+                local_refinement: "Refinamiento local",
+                local_algorithm: "Algoritmo local",
+            },
+        }
+    }
+}
+
+impl AutoEqParameterTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                loss_function: "Loss Function",
+                number_filters: "Number of Filters",
+                filter_type: "Filter Type",
+                variance_lambda: "Variance Lambda",
+                iir_parameters: "IIR Parameters",
+                sample_rate_hz: "Sample Rate (Hz)",
+                min_q: "Min Q",
+                max_q: "Max Q",
+                min_db: "Min dB",
+                max_db: "Max dB",
+                spacing_weight: "Spacing Weight",
+                min_spacing_oct: "Min Spacing (oct)",
+                fir_parameters: "FIR Parameters",
+                regularization: "Regularization",
+                crossover_configuration: "Crossover Configuration",
+                crossover_frequency_hz: "Crossover Frequency (Hz)",
+                crossover_type: "Crossover Type",
+                fir_band: "FIR Band",
+                bass_management: "Bass Management",
+                manual_f3_hz: "Manual F3 (Hz)",
+                order: "Order",
+                safety_margin_oct: "Safety Margin (oct)",
+                split_frequency_hz: "Split Frequency (Hz)",
+                lf_max_q: "LF Max Q",
+                hf_max_q: "HF Max Q",
+                smoothing: "Smoothing",
+                weights: "Weights",
+                smoothing_resolution: "1/48 oct bass, 1/6 oct treble",
+                smooth_window_oct: "Smooth Window (1/N oct)",
+                seed: "Seed",
+            },
+            Language::French => Self {
+                loss_function: "Fonction de perte",
+                number_filters: "Nombre de filtres",
+                filter_type: "Type de filtre",
+                variance_lambda: "Lambda de variance",
+                iir_parameters: "Paramètres IIR",
+                sample_rate_hz: "Fréquence d’échantillonnage (Hz)",
+                min_q: "Q min.",
+                max_q: "Q max.",
+                min_db: "dB min.",
+                max_db: "dB max.",
+                spacing_weight: "Poids d’espacement",
+                min_spacing_oct: "Espacement min. (oct)",
+                fir_parameters: "Paramètres FIR",
+                regularization: "Régularisation",
+                crossover_configuration: "Configuration du crossover",
+                crossover_frequency_hz: "Fréquence de crossover (Hz)",
+                crossover_type: "Type de crossover",
+                fir_band: "Bande FIR",
+                bass_management: "Gestion des basses",
+                manual_f3_hz: "F3 manuel (Hz)",
+                order: "Ordre",
+                safety_margin_oct: "Marge de sécurité (oct)",
+                split_frequency_hz: "Fréquence de séparation (Hz)",
+                lf_max_q: "Q max. BF",
+                hf_max_q: "Q max. HF",
+                smoothing: "Lissage",
+                weights: "Pondérations",
+                smoothing_resolution: "1/48 oct. graves, 1/6 oct. aigus",
+                smooth_window_oct: "Fenêtre de lissage (1/N oct)",
+                seed: "Graine",
+            },
+            Language::German => Self {
+                loss_function: "Verlustfunktion",
+                number_filters: "Anzahl der Filter",
+                filter_type: "Filtertyp",
+                variance_lambda: "Varianz-Lambda",
+                iir_parameters: "IIR-Parameter",
+                sample_rate_hz: "Abtastrate (Hz)",
+                min_q: "Min. Q",
+                max_q: "Max. Q",
+                min_db: "Min. dB",
+                max_db: "Max. dB",
+                spacing_weight: "Abstandsgewichtung",
+                min_spacing_oct: "Min. Abstand (Okt.)",
+                fir_parameters: "FIR-Parameter",
+                regularization: "Regularisierung",
+                crossover_configuration: "Frequenzweichen-Konfiguration",
+                crossover_frequency_hz: "Trennfrequenz (Hz)",
+                crossover_type: "Frequenzweichentyp",
+                fir_band: "FIR-Band",
+                bass_management: "Bassmanagement",
+                manual_f3_hz: "Manuelle F3 (Hz)",
+                order: "Ordnung",
+                safety_margin_oct: "Sicherheitsabstand (Okt.)",
+                split_frequency_hz: "Trennfrequenz (Hz)",
+                lf_max_q: "LF Max. Q",
+                hf_max_q: "HF Max. Q",
+                smoothing: "Glättung",
+                weights: "Gewichtungen",
+                smoothing_resolution: "1/48 Okt. Bass, 1/6 Okt. Höhen",
+                smooth_window_oct: "Glättungsfenster (1/N Okt.)",
+                seed: "Startwert",
+            },
+            Language::Spanish => Self {
+                loss_function: "Función de pérdida",
+                number_filters: "Número de filtros",
+                filter_type: "Tipo de filtro",
+                variance_lambda: "Lambda de varianza",
+                iir_parameters: "Parámetros IIR",
+                sample_rate_hz: "Frecuencia de muestreo (Hz)",
+                min_q: "Q mín.",
+                max_q: "Q máx.",
+                min_db: "dB mín.",
+                max_db: "dB máx.",
+                spacing_weight: "Peso de separación",
+                min_spacing_oct: "Separación mín. (oct)",
+                fir_parameters: "Parámetros FIR",
+                regularization: "Regularización",
+                crossover_configuration: "Configuración de crossover",
+                crossover_frequency_hz: "Frecuencia de crossover (Hz)",
+                crossover_type: "Tipo de crossover",
+                fir_band: "Banda FIR",
+                bass_management: "Gestión de graves",
+                manual_f3_hz: "F3 manual (Hz)",
+                order: "Orden",
+                safety_margin_oct: "Margen de seguridad (oct)",
+                split_frequency_hz: "Frecuencia de separación (Hz)",
+                lf_max_q: "Q máx. BF",
+                hf_max_q: "Q máx. AF",
+                smoothing: "Suavizado",
+                weights: "Pesos",
+                smoothing_resolution: "1/48 oct graves, 1/6 oct agudos",
+                smooth_window_oct: "Ventana de suavizado (1/N oct)",
+                seed: "Semilla",
+            },
+        }
+    }
+}
+
+impl AutoEqFormTranslations {
+    pub fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                preset: "Preset",
+                filter_design: "Filter Design",
+                optimization_quality: "Optimization Quality",
+                home_cinema: "Home Cinema",
+                delay_correction: "Delay Correction",
+                target: "Target",
+                optimization_goal: "Optimization Goal",
+                capability: "Capability",
+                strategy: "Strategy",
+                per_measurement_weights: "Per-Measurement Weights",
+                reference_channel: "Reference Channel",
+                min_frequency_hz: "Min Frequency (Hz)",
+                max_frequency_hz: "Max Frequency (Hz)",
+                max_delay_ms: "Max Delay (ms)",
+                primary_seat: "Primary Seat",
+                max_deviation_db: "Max Deviation (dB)",
+                slope_db_oct: "Slope (dB/oct)",
+                reference_frequency_hz: "Reference Frequency (Hz)",
+                bass_boost_db: "Bass Boost (dB)",
+                shelf_frequency_hz: "Shelf Frequency (Hz)",
+                system_type: "System Type",
+                optimization_mode: "Optimization Mode",
+                target_curve: "Target Curve",
+                room_configuration: "Room Configuration",
+                optimizer_configuration: "Optimizer Configuration",
+                parameters: AutoEqParameterTranslations::for_language(Language::English),
+                blocks: AutoEqBlockTranslations::for_language(Language::English),
+                sections: AutoEqSectionTranslations::for_language(Language::English),
+            },
+            Language::French => Self {
+                preset: "Préréglage",
+                filter_design: "Conception des filtres",
+                optimization_quality: "Qualité d’optimisation",
+                home_cinema: "Home cinéma",
+                delay_correction: "Correction du délai",
+                target: "Cible",
+                optimization_goal: "Objectif d’optimisation",
+                capability: "Capacité",
+                strategy: "Stratégie",
+                per_measurement_weights: "Pondérations par mesure",
+                reference_channel: "Canal de référence",
+                min_frequency_hz: "Fréquence min. (Hz)",
+                max_frequency_hz: "Fréquence max. (Hz)",
+                max_delay_ms: "Délai max. (ms)",
+                primary_seat: "Siège principal",
+                max_deviation_db: "Écart max. (dB)",
+                slope_db_oct: "Pente (dB/oct)",
+                reference_frequency_hz: "Fréquence de référence (Hz)",
+                bass_boost_db: "Renforcement des basses (dB)",
+                shelf_frequency_hz: "Fréquence du plateau (Hz)",
+                system_type: "Type de système",
+                optimization_mode: "Mode d’optimisation",
+                target_curve: "Courbe cible",
+                room_configuration: "Configuration de la pièce",
+                optimizer_configuration: "Configuration de l’optimiseur",
+                parameters: AutoEqParameterTranslations::for_language(Language::French),
+                blocks: AutoEqBlockTranslations::for_language(Language::French),
+                sections: AutoEqSectionTranslations::for_language(Language::French),
+            },
+            Language::German => Self {
+                preset: "Voreinstellung",
+                filter_design: "Filterentwurf",
+                optimization_quality: "Optimierungsqualität",
+                home_cinema: "Heimkino",
+                delay_correction: "Verzögerungskorrektur",
+                target: "Ziel",
+                optimization_goal: "Optimierungsziel",
+                capability: "Verfahren",
+                strategy: "Strategie",
+                per_measurement_weights: "Gewichtungen pro Messung",
+                reference_channel: "Referenzkanal",
+                min_frequency_hz: "Min. Frequenz (Hz)",
+                max_frequency_hz: "Max. Frequenz (Hz)",
+                max_delay_ms: "Max. Verzögerung (ms)",
+                primary_seat: "Primärsitz",
+                max_deviation_db: "Max. Abweichung (dB)",
+                slope_db_oct: "Steigung (dB/Okt.)",
+                reference_frequency_hz: "Referenzfrequenz (Hz)",
+                bass_boost_db: "Bassanhebung (dB)",
+                shelf_frequency_hz: "Shelving-Frequenz (Hz)",
+                system_type: "Systemtyp",
+                optimization_mode: "Optimierungsmodus",
+                target_curve: "Zielkurve",
+                room_configuration: "Raumkonfiguration",
+                optimizer_configuration: "Optimiererkonfiguration",
+                parameters: AutoEqParameterTranslations::for_language(Language::German),
+                blocks: AutoEqBlockTranslations::for_language(Language::German),
+                sections: AutoEqSectionTranslations::for_language(Language::German),
+            },
+            Language::Spanish => Self {
+                preset: "Preajuste",
+                filter_design: "Diseño de filtros",
+                optimization_quality: "Calidad de optimización",
+                home_cinema: "Cine en casa",
+                delay_correction: "Corrección de retardo",
+                target: "Objetivo",
+                optimization_goal: "Objetivo de optimización",
+                capability: "Capacidad",
+                strategy: "Estrategia",
+                per_measurement_weights: "Pesos por medición",
+                reference_channel: "Canal de referencia",
+                min_frequency_hz: "Frecuencia mín. (Hz)",
+                max_frequency_hz: "Frecuencia máx. (Hz)",
+                max_delay_ms: "Retardo máx. (ms)",
+                primary_seat: "Asiento principal",
+                max_deviation_db: "Desviación máx. (dB)",
+                slope_db_oct: "Pendiente (dB/oct)",
+                reference_frequency_hz: "Frecuencia de referencia (Hz)",
+                bass_boost_db: "Refuerzo de graves (dB)",
+                shelf_frequency_hz: "Frecuencia de estante (Hz)",
+                system_type: "Tipo de sistema",
+                optimization_mode: "Modo de optimización",
+                target_curve: "Curva objetivo",
+                room_configuration: "Configuración de sala",
+                optimizer_configuration: "Configuración del optimizador",
+                parameters: AutoEqParameterTranslations::for_language(Language::Spanish),
+                blocks: AutoEqBlockTranslations::for_language(Language::Spanish),
+                sections: AutoEqSectionTranslations::for_language(Language::Spanish),
+            },
+        }
+    }
+}
+
 /// All translatable strings in the application
 #[derive(Debug, Clone)]
 pub struct Translations {
     // App title
-    pub app_title: &'static str,
 
     // Menu bar
     pub menu_file: &'static str,
     pub menu_show: &'static str,
     pub menu_view: &'static str,
-    pub menu_help: &'static str,
     pub menu_open_config: &'static str,
+    pub menu_help: &'static str,
     pub menu_quit: &'static str,
-    pub menu_recording: &'static str,
-    pub menu_room_eq: &'static str,
-    pub menu_headphone_eq: &'static str,
     pub menu_about: &'static str,
     pub menu_keyboard_shortcuts: &'static str,
 
     // Screen names
     pub screen_library: &'static str,
-    pub screen_directories: &'static str,
     pub screen_queue: &'static str,
-    pub screen_spectrum: &'static str,
     pub screen_studio: &'static str,
     pub screen_studio_rack: &'static str,
     pub screen_studio_full: &'static str,
     pub screen_tools: &'static str,
     pub screen_recording: &'static str,
     pub screen_room_eq: &'static str,
+    pub screen_listening_test: &'static str,
     pub screen_headphone_eq: &'static str,
     pub screen_spinorama: &'static str,
-    pub screen_plugins: &'static str,
-    pub screen_devices: &'static str,
     pub screen_settings: &'static str,
+    pub listening_test: ListeningTestTranslations,
+    pub autoeq_form: AutoEqFormTranslations,
 
     // Library screen
-    pub library_title: &'static str,
     pub library_albums: &'static str,
     pub library_tracks: &'static str,
     pub library_artists: &'static str,
@@ -45,39 +5944,16 @@ pub struct Translations {
     pub library_composers: &'static str,
     pub library_years: &'static str,
     pub library_search: &'static str,
-    pub library_search_placeholder: &'static str,
-    pub library_search_hint: &'static str,
-    pub library_sort: &'static str,
-    pub library_filter: &'static str,
-    pub library_view_flat: &'static str,
-    pub library_view_tree: &'static str,
     pub library_scan: &'static str,
     pub library_scanning: &'static str,
-    pub library_page: &'static str,
-    pub library_of: &'static str,
-    pub library_items_per_page: &'static str,
-    pub library_prev: &'static str,
-    pub library_next: &'static str,
     pub library_stereo_multi: &'static str,
 
     // Sort options
-    pub sort_artist: &'static str,
-    pub sort_album: &'static str,
-    pub sort_title: &'static str,
-    pub sort_year: &'static str,
 
     // Filter options
-    pub filter_all: &'static str,
-    pub filter_mono: &'static str,
-    pub filter_stereo: &'static str,
-    pub filter_multichannel: &'static str,
-    pub filter_mixed: &'static str,
 
     // Queue screen
     pub queue_title: &'static str,
-    pub queue_clear: &'static str,
-    pub queue_track: &'static str,
-    pub queue_tracks: &'static str,
     pub queue_empty: &'static str,
     pub queue_now_playing: &'static str,
     pub queue_no_track_playing: &'static str,
@@ -88,33 +5964,18 @@ pub struct Translations {
     pub queue_albums: &'static str,
 
     // Level meters
-    pub level_meters_title: &'static str,
-    pub level_meters_no_audio: &'static str,
-    pub level_meters_hint: &'static str,
 
     // Devices screen
     pub devices_title: &'static str,
-    pub devices_default: &'static str,
 
     // Spectrum screen
-    pub spectrum_title: &'static str,
-    pub spectrum_no_data: &'static str,
 
     // Directory screen
-    pub directories_title: &'static str,
     pub directories_add: &'static str,
-    pub directories_hint: &'static str,
-    pub directories_scan_hint: &'static str,
 
     // Plugins screen
-    pub plugins_title: &'static str,
-    pub plugins_chain: &'static str,
-    pub plugins_add: &'static str,
-    pub plugins_enabled: &'static str,
-    pub plugins_disabled: &'static str,
 
     // Settings screen
-    pub settings_title: &'static str,
     pub settings_theme: &'static str,
     pub settings_language: &'static str,
     pub settings_active: &'static str,
@@ -162,15 +6023,9 @@ pub struct Translations {
 
     // Settings tabs
     pub settings_tab_library: &'static str,
-    pub settings_tab_theme: &'static str,
     pub settings_tab_language: &'static str,
     pub settings_tab_keybindings: &'static str,
     pub settings_tab_audio_device: &'static str,
-    pub settings_tab_misc: &'static str,
-    pub settings_tab_recording: &'static str,
-    pub settings_tab_room_eq: &'static str,
-    pub settings_tab_headphone: &'static str,
-    pub settings_tab_spinorama: &'static str,
     pub settings_tab_federation: &'static str,
     pub settings_tab_servers: &'static str,
     pub settings_tab_release_channel: &'static str,
@@ -178,66 +6033,22 @@ pub struct Translations {
     pub settings_release_channel_description: &'static str,
 
     // Playback controls
-    pub playback_play: &'static str,
-    pub playback_pause: &'static str,
-    pub playback_stop: &'static str,
-    pub playback_next: &'static str,
-    pub playback_previous: &'static str,
-    pub playback_volume: &'static str,
     pub playback_no_track: &'static str,
     pub playback_default_device: &'static str,
-    pub playback_studio: &'static str,
-    pub playback_output_devices: &'static str,
 
     // Dialog titles
-    pub dialog_help: &'static str,
-    pub dialog_load_apo: &'static str,
-    pub dialog_load_sofa: &'static str,
-    pub dialog_save_preset: &'static str,
-    pub dialog_load_preset: &'static str,
-    pub dialog_edit_plugin: &'static str,
 
     // Dialog content
-    pub dialog_enter_path: &'static str,
-    pub dialog_enter_name: &'static str,
-    pub dialog_existing_presets: &'static str,
-    pub dialog_available_presets: &'static str,
-    pub dialog_no_presets: &'static str,
 
     // Button labels
-    pub button_save: &'static str,
-    pub button_load: &'static str,
-    pub button_cancel: &'static str,
-    pub button_close: &'static str,
-    pub button_apply: &'static str,
-    pub button_ok: &'static str,
 
     // Keyboard hints
-    pub key_enter: &'static str,
-    pub key_escape: &'static str,
-    pub key_tab: &'static str,
-    pub key_space: &'static str,
-    pub key_arrows: &'static str,
 
     // Status messages
-    pub status_scan_complete: &'static str,
-    pub status_scan_failed: &'static str,
-    pub status_preset_saved: &'static str,
-    pub status_preset_loaded: &'static str,
-    pub status_directory_added: &'static str,
-    pub status_directory_removed: &'static str,
 
     // Global keybindings
-    pub keybind_global: &'static str,
-    pub keybind_play_pause: &'static str,
-    pub keybind_next_track: &'static str,
-    pub keybind_volume: &'static str,
 
     // Mute/Solo/Dim
-    pub control_mute: &'static str,
-    pub control_solo: &'static str,
-    pub control_dim: &'static str,
-    pub control_clear_all: &'static str,
 
     // Spinorama and AutoEQ surfaces
     pub autoeq_allow_delay: &'static str,
@@ -259,7 +6070,6 @@ pub struct Translations {
     pub autoeq_how_many_filters: &'static str,
     pub autoeq_how_optimizer_evaluates: &'static str,
     pub autoeq_listening_distance: &'static str,
-    pub autoeq_local_refinement: &'static str,
     pub autoeq_multi_measurement: &'static str,
     pub autoeq_multi_seat: &'static str,
     pub autoeq_multi_seat_desc: &'static str,
@@ -321,7 +6131,6 @@ pub struct Translations {
     pub roomeq_arrival_ms: &'static str,
     pub roomeq_backup_current_rack: &'static str,
     pub roomeq_backup_rack_help: &'static str,
-    pub roomeq_broadband_precorrection: &'static str,
     pub roomeq_channel: &'static str,
     pub roomeq_channel_configuration: &'static str,
     pub roomeq_channel_result: &'static str,
@@ -329,15 +6138,12 @@ pub struct Translations {
     pub roomeq_click_next_to_review: &'static str,
     pub roomeq_configuration_check: &'static str,
     pub roomeq_configuration_summary: &'static str,
-    pub roomeq_crossover_frequencies: &'static str,
-    pub roomeq_crossover_label: &'static str,
     pub roomeq_custom_target_editor: &'static str,
     pub roomeq_customize_target: &'static str,
     pub roomeq_delay_detection_incomplete: &'static str,
     pub roomeq_delay_ms: &'static str,
     pub roomeq_done_button: &'static str,
     pub roomeq_eq_exists_in_rack: &'static str,
-    pub roomeq_eq_filters: &'static str,
     pub roomeq_error: &'static str,
     pub roomeq_export_and_apply: &'static str,
     pub roomeq_export_button: &'static str,
@@ -352,12 +6158,9 @@ pub struct Translations {
     pub roomeq_full_wizard: &'static str,
     pub roomeq_gain_db: &'static str,
     pub roomeq_graph_help: &'static str,
-    pub roomeq_graph_settings: &'static str,
-    pub roomeq_group_delay: &'static str,
     pub roomeq_iir_desc: &'static str,
     pub roomeq_import_button: &'static str,
     pub roomeq_import_from_json_desc: &'static str,
-    pub roomeq_impulse_response: &'static str,
     pub roomeq_load_measurement_data: &'static str,
     pub roomeq_mid_field_desc: &'static str,
     pub roomeq_mixed_phase_desc: &'static str,
@@ -369,37 +6172,27 @@ pub struct Translations {
     pub roomeq_optimization_process: &'static str,
     pub roomeq_optimization_progress: &'static str,
     pub roomeq_per_channel_alignment_delays: &'static str,
-    pub roomeq_phase_response: &'static str,
     pub roomeq_presets_button: &'static str,
     pub roomeq_review_desc: &'static str,
     pub roomeq_review_results: &'static str,
-    pub roomeq_room_eq_filters: &'static str,
     pub roomeq_run_optimization: &'static str,
     pub roomeq_run_optimization_desc: &'static str,
     pub roomeq_save_rack_backup: &'static str,
-    pub roomeq_score_summary: &'static str,
     pub roomeq_select_channel: &'static str,
     pub roomeq_simple_wizard: &'static str,
-    pub roomeq_smoothing_label: &'static str,
     pub roomeq_snr_db: &'static str,
     pub roomeq_start_optimization: &'static str,
-    pub roomeq_tonal_balance: &'static str,
-    pub roomeq_type_label: &'static str,
-    pub roomeq_y_axis_auto: &'static str,
 
     // Recording surface
     pub recording_actions: &'static str,
-    pub recording_advanced_measurement: &'static str,
     pub recording_all_channels_recorded: &'static str,
     pub recording_avg_spl: &'static str,
     pub recording_base_directory: &'static str,
     pub recording_bass_anchor: &'static str,
     pub recording_bass_precision: &'static str,
     pub recording_browse: &'static str,
-    pub recording_calibration_graph_error: &'static str,
     pub recording_calibration_help: &'static str,
     pub recording_capture_desc: &'static str,
-    pub recording_capture_title: &'static str,
     pub recording_ch_short: &'static str,
     pub recording_channel_column: &'static str,
     pub recording_channel_frequency_range: &'static str,
@@ -411,7 +6204,6 @@ pub struct Translations {
     pub recording_clarity: &'static str,
     pub recording_clear: &'static str,
     pub recording_config_desc: &'static str,
-    pub recording_config_title: &'static str,
     pub recording_convert_button: &'static str,
     pub recording_convert_format_title: &'static str,
     pub recording_distortion: &'static str,
@@ -419,7 +6211,6 @@ pub struct Translations {
     pub recording_end_label: &'static str,
     pub recording_enter_name_placeholder: &'static str,
     pub recording_evaluating_desc: &'static str,
-    pub recording_evaluating_title: &'static str,
     pub recording_file_label: &'static str,
     pub recording_files_config_data: &'static str,
     pub recording_files_to_save: &'static str,
@@ -433,7 +6224,6 @@ pub struct Translations {
     pub recording_load_previous: &'static str,
     pub recording_magnitude: &'static str,
     pub recording_mic_in: &'static str,
-    pub recording_microphone_calibration: &'static str,
     pub recording_name_eyebrow: &'static str,
     pub recording_name_label: &'static str,
     pub recording_name_placeholder: &'static str,
@@ -447,16 +6237,13 @@ pub struct Translations {
     pub recording_num_channels: &'static str,
     pub recording_older_format: &'static str,
     pub recording_output_device: &'static str,
-    pub recording_output_directory: &'static str,
     pub recording_phase: &'static str,
-    pub recording_playback_device: &'static str,
     pub recording_post_silence: &'static str,
     pub recording_pre_silence: &'static str,
     pub recording_probe_delay: &'static str,
     pub recording_re_record: &'static str,
     pub recording_record: &'static str,
     pub recording_record_all_channels: &'static str,
-    pub recording_recording_device: &'static str,
     pub recording_redo_all: &'static str,
     pub recording_room_dimensions: &'static str,
     pub recording_room_dimensions_help: &'static str,
@@ -469,7 +6256,6 @@ pub struct Translations {
     pub recording_save_name_help: &'static str,
     pub recording_save_recordings: &'static str,
     pub recording_saving_desc: &'static str,
-    pub recording_saving_title: &'static str,
     pub recording_select_config_placeholder: &'static str,
     pub recording_select_playback_placeholder: &'static str,
     pub recording_select_rate_placeholder: &'static str,
@@ -516,38 +6302,107 @@ impl Translations {
     /// English translations (default)
     pub fn english() -> Self {
         Self {
-            app_title: "SOTF Audio Player",
+            autoeq_form: AutoEqFormTranslations::for_language(Language::English),
 
             // Menu bar
             menu_file: "File",
             menu_show: "Show",
             menu_view: "View",
-            menu_help: "Help",
             menu_open_config: "Open Config",
+            menu_help: "Help",
             menu_quit: "Quit",
-            menu_recording: "Recording",
-            menu_room_eq: "Room EQ",
-            menu_headphone_eq: "Headphone EQ",
             menu_about: "About",
             menu_keyboard_shortcuts: "Keyboard Shortcuts",
 
             screen_library: "Library",
-            screen_directories: "Directories",
             screen_queue: "Queue",
-            screen_spectrum: "Spectrum",
             screen_studio: "Studio",
             screen_studio_rack: "Studio Rack",
             screen_studio_full: "Studio Full",
             screen_tools: "Tools",
             screen_recording: "Recording",
             screen_room_eq: "Room EQ",
+            screen_listening_test: "Listening Test",
             screen_headphone_eq: "Headphone EQ",
             screen_spinorama: "Spinorama EQ",
-            screen_plugins: "Plugins",
-            screen_devices: "Devices",
             screen_settings: "Settings",
-
-            library_title: "Library",
+            listening_test: ListeningTestTranslations {
+                setup: ListeningTestSetupTranslations {
+                    title: "Level-matched Listening Test",
+                    subtitle: "Compare two racks or routed graphs with concealed, repeatable assignments.",
+                    load_session: "Load session",
+                    save_session: "Save session",
+                    use_current: "Use current rack/graph",
+                    load_path: "Load path JSON",
+                    simple_rack: "Simple linear rack",
+                    add_processor: "Add processor",
+                    edit_graph: "Edit as routed graph",
+                    edit_json: "Edit JSON",
+                    editing: "Editing",
+                    remove: "Remove",
+                    graph_hint: "Double-click a node to edit its parameter JSON.",
+                    done: "Done",
+                    level_title: "Repeatable level match",
+                    level_description: "Renders both paths offline from the same 3-second segment at the current track position using short-term LUFS.",
+                    measure_prepare: "Measure and prepare",
+                    plugin: "plugin",
+                    plugins: "plugins",
+                    nodes: "nodes",
+                    routes: "routes",
+                    current_chain: "Current chain",
+                    path_json_filter: "A/B path JSON",
+                    session_filter: "Listening session",
+                },
+                trial: ListeningTestTrialTranslations {
+                    title: "Blind trial",
+                    start_blind_ab: "Start blind A/B",
+                    start_abx: "Start ABX",
+                    no_session: "Load a validated session after level matching, or prepare one from the selected paths and synchronized media segment.",
+                    play_first: "Play first",
+                    play_second: "Play second",
+                    reference_a: "Reference A",
+                    reference_b: "Reference B",
+                    unknown_x: "Unknown X",
+                    prefer_first: "Prefer first",
+                    prefer_second: "Prefer second",
+                    x_is_a: "X is A",
+                    x_is_b: "X is B",
+                    confidence: "% confidence",
+                    notes_placeholder: "Optional notes (revealed only with the committed record)",
+                    trials: "trials",
+                },
+                status: ListeningTestStatusTranslations {
+                    select_paths: "Select two DSP chains to begin.",
+                    captured: "Captured the current DSP topology without flattening routes.",
+                    load_or_prepare: "Load or prepare a level-matched session first.",
+                    select_paths_and_track: "Select both paths and play or queue a local track first.",
+                    measuring: "Rendering synchronized paths and measuring short-term LUFS…",
+                    no_session: "No listening-test session is loaded.",
+                    add_ab_plugin: "Add one A/B Compare plugin to the active rack before playing cues.",
+                    cue_active: "Cue active with fixed saved level correction and synchronized transport.",
+                    answer_committed: "Answer committed; the assignment is now available in the saved record.",
+                    path_loaded: "Loaded and validated path configuration.",
+                    session_loaded: "Loaded validated reproducible session.",
+                    session_saved: "Saved validated session without pending assignment disclosure.",
+                    graph_updated: "Updated routed graph topology; level matching must be prepared again.",
+                    params_object: "Plugin parameters must be a JSON object.",
+                    params_invalid: "Parameter JSON is not valid yet",
+                    params_updated: "Updated node parameters; prepare the level match again before testing.",
+                    rack_updated: "Updated rack parameters; prepare the level match again before testing.",
+                    processor_added: "Added a processor; prepare the level match again.",
+                    processor_removed: "Removed a processor; prepare the level match again.",
+                    rack_reordered: "Reordered the rack; prepare the level match again.",
+                    graph_converted: "Converted the linear path to an editable routed graph without changing order.",
+                    prepared: "Prepared fixed short-term LUFS correction for path B",
+                    trial_started: "Trial started; assignments are concealed",
+                    select_path: "Select or load a path first.",
+                    select_graph_path: "Select a graph path first.",
+                    not_selected: "Not selected",
+                    pass_through: "Pass-through",
+                    linear_rack: "Linear rack",
+                    routed_graph: "Routed graph",
+                },
+            },
             library_albums: "Albums",
             library_tracks: "Tracks",
             library_artists: "Artists",
@@ -555,36 +6410,11 @@ impl Translations {
             library_composers: "Composers",
             library_years: "Years",
             library_search: "Search",
-            library_search_placeholder: "Type to search...",
-            library_search_hint: "Press / to search",
-            library_sort: "Sort",
-            library_filter: "Filter",
-            library_view_flat: "Flat",
-            library_view_tree: "Tree",
             library_scan: "Scan",
             library_scanning: "Scanning...",
-            library_page: "Page",
-            library_of: "of",
-            library_items_per_page: "items/page",
-            library_prev: "← Prev",
-            library_next: "Next →",
             library_stereo_multi: "Stereo / Multi",
 
-            sort_artist: "Artist",
-            sort_album: "Album",
-            sort_title: "Title",
-            sort_year: "Year",
-
-            filter_all: "All",
-            filter_mono: "Mono",
-            filter_stereo: "Stereo",
-            filter_multichannel: "Multi",
-            filter_mixed: "Mixed",
-
             queue_title: "Queue",
-            queue_clear: "Clear",
-            queue_track: "Track",
-            queue_tracks: "Tracks",
             queue_empty: "Queue is empty",
             queue_now_playing: "Now Playing",
             queue_no_track_playing: "No track playing",
@@ -594,28 +6424,8 @@ impl Translations {
             queue_disc: "Disc",
             queue_albums: "albums",
 
-            level_meters_title: "Level Meters",
-            level_meters_no_audio: "No audio playing",
-            level_meters_hint: "Tab: Select group | M: Mute | Shift-M: Solo | Ctrl-M: Dim | X: Clear",
-
             devices_title: "Audio Output Devices",
-            devices_default: "Default",
-
-            spectrum_title: "Spectrum Analyzer",
-            spectrum_no_data: "No spectrum data available. Play audio to see visualization.",
-
-            directories_title: "Directory Manager",
             directories_add: "Add Directory",
-            directories_hint: "Tab: autocomplete, Enter: add, Esc: cancel",
-            directories_scan_hint: "Shift-A: Add | Shift-S: Scan | D: Remove | Enter: Expand",
-
-            plugins_title: "Plugin Chain",
-            plugins_chain: "Plugins",
-            plugins_add: "Add Plugin",
-            plugins_enabled: "Enabled",
-            plugins_disabled: "Disabled",
-
-            settings_title: "Settings",
             settings_theme: "Theme",
             settings_language: "Language",
             settings_active: "Active",
@@ -657,74 +6467,16 @@ impl Translations {
             settings_default_badge: "Default",
 
             settings_tab_library: "Local Library",
-            settings_tab_theme: "Theme",
             settings_tab_language: "Language",
             settings_tab_keybindings: "Keybindings",
             settings_tab_audio_device: "Audio Device",
-            settings_tab_misc: "Misc",
-            settings_tab_recording: "Recording",
-            settings_tab_room_eq: "Room EQ",
-            settings_tab_headphone: "Headphone",
-            settings_tab_spinorama: "Spinorama",
             settings_tab_federation: "Streaming",
             settings_tab_servers: "Server",
             settings_tab_release_channel: "Features",
             settings_release_channel_title: "Feature Release Channel",
             settings_release_channel_description: "Control which features are visible. Stable shows only production-ready features. Beta and Alpha unlock experimental features.",
-
-            playback_play: "Play",
-            playback_pause: "Pause",
-            playback_stop: "Stop",
-            playback_next: "Next",
-            playback_previous: "Previous",
-            playback_volume: "Volume",
             playback_no_track: "No track playing",
             playback_default_device: "Default",
-            playback_studio: "Studio",
-            playback_output_devices: "Output Devices",
-
-            dialog_help: "Help",
-            dialog_load_apo: "Load APO File for EQ Plugin",
-            dialog_load_sofa: "Load SOFA File for Binaural Decoder",
-            dialog_save_preset: "Save Plugin Preset",
-            dialog_load_preset: "Load Plugin Preset",
-            dialog_edit_plugin: "Edit Plugin",
-
-            dialog_enter_path: "Enter path:",
-            dialog_enter_name: "Enter preset name:",
-            dialog_existing_presets: "Existing presets:",
-            dialog_available_presets: "Available presets:",
-            dialog_no_presets: "No presets found. Save a preset first.",
-
-            button_save: "Save",
-            button_load: "Load",
-            button_cancel: "Cancel",
-            button_close: "Close",
-            button_apply: "Apply",
-            button_ok: "OK",
-
-            key_enter: "Enter",
-            key_escape: "ESC",
-            key_tab: "Tab",
-            key_space: "Space",
-            key_arrows: "↑/↓",
-
-            status_scan_complete: "Scan complete",
-            status_scan_failed: "Scan failed",
-            status_preset_saved: "Preset saved",
-            status_preset_loaded: "Preset loaded",
-            status_directory_added: "Directory added",
-            status_directory_removed: "Directory removed",
-
-            keybind_global: "GLOBAL KEYBINDINGS",
-            keybind_play_pause: "Space: Play/Pause",
-            keybind_next_track: "N: Next",
-            keybind_volume: "+/-: Volume",
-
-            control_mute: "M",
-            control_solo: "S",
-            control_dim: "D",
-            control_clear_all: "Clear all",
 
             // Spinorama and AutoEQ surfaces
             autoeq_allow_delay: "Allow Delay",
@@ -746,7 +6498,6 @@ impl Translations {
             autoeq_how_many_filters: "How many filters and what kind?",
             autoeq_how_optimizer_evaluates: "How the optimizer evaluates correction quality",
             autoeq_listening_distance: "Listening distance and target slope",
-            autoeq_local_refinement: "Local Refinement",
             autoeq_multi_measurement: "Multi-Measurement Optimization",
             autoeq_multi_seat: "Multi-Seat Optimization",
             autoeq_multi_seat_desc: "Multi-speaker alignment, timbre matching, and seat optimization",
@@ -808,7 +6559,6 @@ impl Translations {
             roomeq_arrival_ms: "Arrival (ms)",
             roomeq_backup_current_rack: "Backup Current Rack",
             roomeq_backup_rack_help: "Save a copy of your current plugin rack before applying changes.",
-            roomeq_broadband_precorrection: "Broadband Pre-correction Filters",
             roomeq_channel: "Channel",
             roomeq_channel_configuration: "Channel Configuration",
             roomeq_channel_result: "Channel Result",
@@ -816,15 +6566,12 @@ impl Translations {
             roomeq_click_next_to_review: "Click Next to review the results.",
             roomeq_configuration_check: "Configuration Check",
             roomeq_configuration_summary: "Configuration Summary",
-            roomeq_crossover_frequencies: "Crossover Frequencies",
-            roomeq_crossover_label: "Crossover:",
             roomeq_custom_target_editor: "Custom Target Curve Editor",
             roomeq_customize_target: "Customize target curve...",
             roomeq_delay_detection_incomplete: "Delay Detection did not complete",
             roomeq_delay_ms: "Delay (ms)",
             roomeq_done_button: "Done",
             roomeq_eq_exists_in_rack: "An EQ plugin exists in your rack. It will be updated with the new filters.",
-            roomeq_eq_filters: "EQ Filters",
             roomeq_error: "Error",
             roomeq_export_and_apply: "Export & Apply",
             roomeq_export_button: "Export...",
@@ -839,12 +6586,9 @@ impl Translations {
             roomeq_full_wizard: "Full Wizard",
             roomeq_gain_db: "Gain (dB)",
             roomeq_graph_help: "Click on the graph to add control points. Drag points to adjust. Double-click a point to remove it.",
-            roomeq_graph_settings: "Graph Settings",
-            roomeq_group_delay: "Group Delay",
             roomeq_iir_desc: "IIR: low latency (<5ms)",
             roomeq_import_button: "Import...",
             roomeq_import_from_json_desc: "Import measurements from a previously saved JSON file.",
-            roomeq_impulse_response: "Impulse Response",
             roomeq_load_measurement_data: "Load Measurement Data",
             roomeq_mid_field_desc: "Mid-field:  1.5–3m (couch)",
             roomeq_mixed_phase_desc: "Mixed Phase: best quality",
@@ -856,37 +6600,27 @@ impl Translations {
             roomeq_optimization_process: "Optimization Process",
             roomeq_optimization_progress: "Optimization Progress",
             roomeq_per_channel_alignment_delays: "Per-Channel Alignment Delays",
-            roomeq_phase_response: "Phase Response",
             roomeq_presets_button: "Presets ▾",
             roomeq_review_desc: "Review the optimization results before applying.",
             roomeq_review_results: "Review Results",
-            roomeq_room_eq_filters: "Room EQ Filters",
             roomeq_run_optimization: "Run Optimization",
             roomeq_run_optimization_desc: "Run the optimization process for each channel.",
             roomeq_save_rack_backup: "Save Rack Backup...",
-            roomeq_score_summary: "Score Summary",
             roomeq_select_channel: "Select Channel",
             roomeq_simple_wizard: "Simple Wizard",
-            roomeq_smoothing_label: "Smoothing:",
             roomeq_snr_db: "SNR (dB)",
             roomeq_start_optimization: "Start Optimization",
-            roomeq_tonal_balance: "Tonal Balance",
-            roomeq_type_label: "Type:",
-            roomeq_y_axis_auto: "Y-Axis Auto:",
 
             // Recording surface
             recording_actions: "ACTIONS",
-            recording_advanced_measurement: "Advanced: Measurement Quality",
             recording_all_channels_recorded: "All channels recorded",
             recording_avg_spl: "Avg SPL",
             recording_base_directory: "Base Directory:",
             recording_bass_anchor: "Bass Anchor",
             recording_bass_precision: "Bass precision:",
             recording_browse: "Browse...",
-            recording_calibration_graph_error: "Unable to render calibration graph",
             recording_calibration_help: "Load a microphone calibration file (CSV) to compensate for microphone frequency response",
             recording_capture_desc: "Test each channel individually. Signals will play sequentially with a 1-second pause between channels.",
-            recording_capture_title: "Capture",
             recording_ch_short: "Ch",
             recording_channel_column: "Channel",
             recording_channel_frequency_range: "CHANNEL FREQUENCY RANGE",
@@ -898,7 +6632,6 @@ impl Translations {
             recording_clarity: "CLARITY (C50/C80 dB)",
             recording_clear: "Clear",
             recording_config_desc: "Configure your playback and recording devices, set up channel routing, and load microphone calibration.",
-            recording_config_title: "Audio Device Configuration",
             recording_convert_button: "Convert",
             recording_convert_format_title: "Convert Recording Format",
             recording_distortion: "DISTORTION (THD+N %)",
@@ -906,7 +6639,6 @@ impl Translations {
             recording_end_label: "End:",
             recording_enter_name_placeholder: "Enter recording name",
             recording_evaluating_desc: "Review frequency response, phase, group delay, and impulse response measurements.",
-            recording_evaluating_title: "Evaluating Measurements",
             recording_file_label: "File:",
             recording_files_config_data: "- Configuration and measurement data",
             recording_files_to_save: "FILES TO SAVE",
@@ -920,7 +6652,6 @@ impl Translations {
             recording_load_previous: "Load Previous",
             recording_magnitude: "MAGNITUDE (dB)",
             recording_mic_in: "Mic In",
-            recording_microphone_calibration: "Microphone Calibration",
             recording_name_eyebrow: "RECORDING NAME",
             recording_name_label: "Name:",
             recording_name_placeholder: "Name",
@@ -934,16 +6665,13 @@ impl Translations {
             recording_num_channels: "Number of channels:",
             recording_older_format: "This recording file uses an older format.",
             recording_output_device: "Output Device",
-            recording_output_directory: "Output Directory",
             recording_phase: "PHASE (degrees)",
-            recording_playback_device: "Playback Device",
             recording_post_silence: "Post-silence (s):",
             recording_pre_silence: "Pre-silence (s):",
             recording_probe_delay: "Tone-Burst Delay Probe",
             recording_re_record: "Re-record",
             recording_record: "Record",
             recording_record_all_channels: "Record All Channels",
-            recording_recording_device: "Recording Device",
             recording_redo_all: "Redo All",
             recording_room_dimensions: "ROOM DIMENSIONS",
             recording_room_dimensions_help: "Width × Depth × Height. Optional, but lets the optimizer auto-tune the Schroeder frequency from room volume.",
@@ -956,7 +6684,6 @@ impl Translations {
             recording_save_name_help: "This name will be used for the subdirectory containing your recordings.",
             recording_save_recordings: "Save Recordings",
             recording_saving_desc: "Save your recordings and configuration to disk. Files will be saved to the directory you selected during setup.",
-            recording_saving_title: "Save Recording",
             recording_select_config_placeholder: "Select config...",
             recording_select_playback_placeholder: "Select playback device...",
             recording_select_rate_placeholder: "Select rate...",
@@ -993,38 +6720,107 @@ impl Translations {
     /// French translations
     pub fn french() -> Self {
         Self {
-            app_title: "SOTF Lecteur Audio",
+            autoeq_form: AutoEqFormTranslations::for_language(Language::French),
 
             // Menu bar
             menu_file: "Fichier",
             menu_show: "Afficher",
             menu_view: "Vue",
-            menu_help: "Aide",
             menu_open_config: "Ouvrir la configuration",
+            menu_help: "Aide",
             menu_quit: "Quitter",
-            menu_recording: "Enregistrement",
-            menu_room_eq: "EQ Pièce",
-            menu_headphone_eq: "EQ Casque",
             menu_about: "À propos",
             menu_keyboard_shortcuts: "Raccourcis clavier",
 
             screen_library: "Bibliothèque",
-            screen_directories: "Répertoires",
             screen_queue: "File d'attente",
-            screen_spectrum: "Spectre",
             screen_studio: "Studio",
             screen_studio_rack: "Studio Rack",
             screen_studio_full: "Studio Complet",
             screen_tools: "Outils",
             screen_recording: "Enregistrement",
             screen_room_eq: "EQ Pièce",
+            screen_listening_test: "Test d’écoute",
             screen_headphone_eq: "EQ Casque",
             screen_spinorama: "Spinorama EQ",
-            screen_plugins: "Plugins",
-            screen_devices: "Périphériques",
             screen_settings: "Paramètres",
-
-            library_title: "Bibliothèque",
+            listening_test: ListeningTestTranslations {
+                setup: ListeningTestSetupTranslations {
+                    title: "Test d’écoute avec niveaux égalisés",
+                    subtitle: "Comparez deux racks ou graphes routés avec des affectations masquées et reproductibles.",
+                    load_session: "Charger une session",
+                    save_session: "Enregistrer la session",
+                    use_current: "Utiliser le rack/graphe actuel",
+                    load_path: "Charger un chemin JSON",
+                    simple_rack: "Rack linéaire simple",
+                    add_processor: "Ajouter un processeur",
+                    edit_graph: "Modifier comme graphe routé",
+                    edit_json: "Modifier le JSON",
+                    editing: "Modification",
+                    remove: "Supprimer",
+                    graph_hint: "Double-cliquez sur un nœud pour modifier ses paramètres JSON.",
+                    done: "Terminé",
+                    level_title: "Égalisation de niveau reproductible",
+                    level_description: "Rend les deux chemins hors ligne à partir du même segment de 3 secondes à la position actuelle, avec LUFS court terme.",
+                    measure_prepare: "Mesurer et préparer",
+                    plugin: "plugin",
+                    plugins: "plugins",
+                    nodes: "nœuds",
+                    routes: "routages",
+                    current_chain: "Chaîne actuelle",
+                    path_json_filter: "Chemin A/B JSON",
+                    session_filter: "Session de test d’écoute",
+                },
+                trial: ListeningTestTrialTranslations {
+                    title: "Essai à l’aveugle",
+                    start_blind_ab: "Démarrer A/B à l’aveugle",
+                    start_abx: "Démarrer ABX",
+                    no_session: "Chargez une session validée après égalisation, ou préparez-en une depuis les chemins et le segment synchronisé.",
+                    play_first: "Écouter le premier",
+                    play_second: "Écouter le second",
+                    reference_a: "Référence A",
+                    reference_b: "Référence B",
+                    unknown_x: "X inconnu",
+                    prefer_first: "Préférer le premier",
+                    prefer_second: "Préférer le second",
+                    x_is_a: "X est A",
+                    x_is_b: "X est B",
+                    confidence: "% de confiance",
+                    notes_placeholder: "Notes facultatives (révélées avec le résultat validé)",
+                    trials: "essais",
+                },
+                status: ListeningTestStatusTranslations {
+                    select_paths: "Sélectionnez deux chaînes DSP pour commencer.",
+                    captured: "Topologie DSP actuelle capturée sans aplatir les routages.",
+                    load_or_prepare: "Chargez ou préparez d’abord une session avec niveaux égalisés.",
+                    select_paths_and_track: "Sélectionnez les deux chemins et lisez ou mettez en file une piste locale.",
+                    measuring: "Rendu synchronisé et mesure LUFS court terme…",
+                    no_session: "Aucune session de test d’écoute n’est chargée.",
+                    add_ab_plugin: "Ajoutez un plugin Comparaison A/B au rack actif avant d’écouter les signaux.",
+                    cue_active: "Signal actif avec correction fixe enregistrée et transport synchronisé.",
+                    answer_committed: "Réponse validée ; l’affectation est maintenant disponible dans le résultat.",
+                    path_loaded: "Configuration de chemin chargée et validée.",
+                    session_loaded: "Session reproductible validée chargée.",
+                    session_saved: "Session validée enregistrée sans révéler l’affectation en cours.",
+                    graph_updated: "Topologie du graphe mise à jour ; l’égalisation doit être recalculée.",
+                    params_object: "Les paramètres du plugin doivent être un objet JSON.",
+                    params_invalid: "Le JSON des paramètres n’est pas encore valide",
+                    params_updated: "Paramètres du nœud modifiés ; recalculez l’égalisation avant le test.",
+                    rack_updated: "Paramètres du rack modifiés ; recalculez l’égalisation avant le test.",
+                    processor_added: "Processeur ajouté ; recalculez l’égalisation.",
+                    processor_removed: "Processeur supprimé ; recalculez l’égalisation.",
+                    rack_reordered: "Rack réordonné ; recalculez l’égalisation.",
+                    graph_converted: "Chemin linéaire converti en graphe routé modifiable sans changer l’ordre.",
+                    prepared: "Correction LUFS court terme fixe préparée pour le chemin B",
+                    trial_started: "Essai démarré ; les affectations sont masquées",
+                    select_path: "Sélectionnez ou chargez d’abord un chemin.",
+                    select_graph_path: "Sélectionnez d’abord un chemin de graphe.",
+                    not_selected: "Non sélectionné",
+                    pass_through: "Transparent",
+                    linear_rack: "Rack linéaire",
+                    routed_graph: "Graphe routé",
+                },
+            },
             library_albums: "Albums",
             library_tracks: "Pistes",
             library_artists: "Artistes",
@@ -1032,36 +6828,11 @@ impl Translations {
             library_composers: "Compositeurs",
             library_years: "Années",
             library_search: "Rechercher",
-            library_search_placeholder: "Rechercher...",
-            library_search_hint: "Appuyez / pour rechercher",
-            library_sort: "Tri",
-            library_filter: "Filtre",
-            library_view_flat: "Liste",
-            library_view_tree: "Arbre",
             library_scan: "Scanner",
             library_scanning: "Scan en cours...",
-            library_page: "Page",
-            library_of: "sur",
-            library_items_per_page: "éléments/page",
-            library_prev: "← Préc",
-            library_next: "Suiv →",
             library_stereo_multi: "Stéréo / Multi",
 
-            sort_artist: "Artiste",
-            sort_album: "Album",
-            sort_title: "Titre",
-            sort_year: "Année",
-
-            filter_all: "Tous",
-            filter_mono: "Mono",
-            filter_stereo: "Stéréo",
-            filter_multichannel: "Multi",
-            filter_mixed: "Mixte",
-
             queue_title: "File d'attente",
-            queue_clear: "Vider",
-            queue_track: "Piste",
-            queue_tracks: "Pistes",
             queue_empty: "File d'attente vide",
             queue_now_playing: "En lecture",
             queue_no_track_playing: "Aucune piste en lecture",
@@ -1071,28 +6842,8 @@ impl Translations {
             queue_disc: "Disque",
             queue_albums: "albums",
 
-            level_meters_title: "Niveaux",
-            level_meters_no_audio: "Aucun audio en lecture",
-            level_meters_hint: "Tab: Groupe | M: Mute | Shift-M: Solo | Ctrl-M: Dim | X: Effacer",
-
             devices_title: "Périphériques de sortie audio",
-            devices_default: "Par défaut",
-
-            spectrum_title: "Analyseur de spectre",
-            spectrum_no_data: "Aucune donnée spectrale. Lancez la lecture pour voir la visualisation.",
-
-            directories_title: "Gestionnaire de répertoires",
             directories_add: "Ajouter un répertoire",
-            directories_hint: "Tab: compléter, Entrée: ajouter, Échap: annuler",
-            directories_scan_hint: "Shift-A: Ajouter | Shift-S: Scanner | D: Supprimer | Entrée: Développer",
-
-            plugins_title: "Chaîne de plugins",
-            plugins_chain: "Plugins",
-            plugins_add: "Ajouter un plugin",
-            plugins_enabled: "Activé",
-            plugins_disabled: "Désactivé",
-
-            settings_title: "Paramètres",
             settings_theme: "Thème",
             settings_language: "Langue",
             settings_active: "Actif",
@@ -1134,74 +6885,16 @@ impl Translations {
             settings_default_badge: "Par défaut",
 
             settings_tab_library: "Bibliothèque locale",
-            settings_tab_theme: "Thème",
             settings_tab_language: "Langue",
             settings_tab_keybindings: "Raccourcis",
             settings_tab_audio_device: "Périphérique audio",
-            settings_tab_misc: "Misc",
-            settings_tab_recording: "Enregistrement",
-            settings_tab_room_eq: "EQ Pièce",
-            settings_tab_headphone: "Casque",
-            settings_tab_spinorama: "Spinorama",
             settings_tab_federation: "Streaming",
             settings_tab_servers: "Server",
             settings_tab_release_channel: "Fonctions",
             settings_release_channel_title: "Canal de fonctionnalités",
             settings_release_channel_description: "Contrôlez les fonctionnalités visibles. Stable affiche uniquement les fonctions prêtes pour la production. Bêta et Alpha débloquent les fonctions expérimentales.",
-
-            playback_play: "Lecture",
-            playback_pause: "Pause",
-            playback_stop: "Stop",
-            playback_next: "Suivant",
-            playback_previous: "Précédent",
-            playback_volume: "Volume",
             playback_no_track: "Aucune piste en lecture",
             playback_default_device: "Par défaut",
-            playback_studio: "Studio",
-            playback_output_devices: "Périphériques de sortie",
-
-            dialog_help: "Aide",
-            dialog_load_apo: "Charger un fichier APO pour l'EQ",
-            dialog_load_sofa: "Charger un fichier SOFA pour le décodeur binaural",
-            dialog_save_preset: "Sauvegarder le preset",
-            dialog_load_preset: "Charger un preset",
-            dialog_edit_plugin: "Modifier le plugin",
-
-            dialog_enter_path: "Entrez le chemin:",
-            dialog_enter_name: "Nom du preset:",
-            dialog_existing_presets: "Presets existants:",
-            dialog_available_presets: "Presets disponibles:",
-            dialog_no_presets: "Aucun preset trouvé. Sauvegardez d'abord un preset.",
-
-            button_save: "Sauver",
-            button_load: "Charger",
-            button_cancel: "Annuler",
-            button_close: "Fermer",
-            button_apply: "Appliquer",
-            button_ok: "OK",
-
-            key_enter: "Entrée",
-            key_escape: "Échap",
-            key_tab: "Tab",
-            key_space: "Espace",
-            key_arrows: "↑/↓",
-
-            status_scan_complete: "Scan terminé",
-            status_scan_failed: "Échec du scan",
-            status_preset_saved: "Preset sauvegardé",
-            status_preset_loaded: "Preset chargé",
-            status_directory_added: "Répertoire ajouté",
-            status_directory_removed: "Répertoire supprimé",
-
-            keybind_global: "RACCOURCIS GLOBAUX",
-            keybind_play_pause: "Espace: Lecture/Pause",
-            keybind_next_track: "N: Suivant",
-            keybind_volume: "+/-: Volume",
-
-            control_mute: "M",
-            control_solo: "S",
-            control_dim: "D",
-            control_clear_all: "Tout effacer",
 
             // Spinorama and AutoEQ surfaces
             autoeq_allow_delay: "Autoriser le délai",
@@ -1223,7 +6916,6 @@ impl Translations {
             autoeq_how_many_filters: "Combien de filtres et de quel type?",
             autoeq_how_optimizer_evaluates: "Comment l'optimiseur évalue la qualité de la correction",
             autoeq_listening_distance: "Distance d'écoute et pente cible",
-            autoeq_local_refinement: "Perfectionnement local",
             autoeq_multi_measurement: "Optimisation multi-mesure",
             autoeq_multi_seat: "Optimisation multi-siège",
             autoeq_multi_seat_desc: "Alignement multi-haut-parleurs, adaptation de la couleur et optimisation des sièges",
@@ -1285,7 +6977,6 @@ impl Translations {
             roomeq_arrival_ms: "Arrivée (ms)",
             roomeq_backup_current_rack: "Sauvegarder le rack actuel",
             roomeq_backup_rack_help: "Sauvegardez une copie de votre rack de plugins actuel avant d'appliquer les changements.",
-            roomeq_broadband_precorrection: "Filtres de pré-correction en bande large",
             roomeq_channel: "Canal",
             roomeq_channel_configuration: "Configuration du canal",
             roomeq_channel_result: "Résultat du canal",
@@ -1293,15 +6984,12 @@ impl Translations {
             roomeq_click_next_to_review: "Cliquez sur Suivant pour examiner les résultats.",
             roomeq_configuration_check: "Vérification de la configuration",
             roomeq_configuration_summary: "Résumé de la configuration",
-            roomeq_crossover_frequencies: "Fréquences de croisement",
-            roomeq_crossover_label: "Croisement:",
             roomeq_custom_target_editor: "Éditeur de courbe cible personnalisée",
             roomeq_customize_target: "Personnaliser la courbe cible...",
             roomeq_delay_detection_incomplete: "La détection du délai n'a pas pu être réalisée",
             roomeq_delay_ms: "Délai (ms)",
             roomeq_done_button: "Terminé",
             roomeq_eq_exists_in_rack: "Un plugin EQ existe dans votre rack. Il sera mis à jour avec les nouveaux filtres.",
-            roomeq_eq_filters: "Filtres EQ",
             roomeq_error: "Erreur",
             roomeq_export_and_apply: "Exporter et appliquer",
             roomeq_export_button: "Exporter...",
@@ -1316,12 +7004,9 @@ impl Translations {
             roomeq_full_wizard: "Assistant complet",
             roomeq_gain_db: "Gain (dB)",
             roomeq_graph_help: "Cliquez sur le graphique pour ajouter des points de contrôle. Faites glisser les points pour les ajuster. Double-cliquez sur un point pour le supprimer.",
-            roomeq_graph_settings: "Paramètres de graphique",
-            roomeq_group_delay: "Délai de groupe",
             roomeq_iir_desc: "IIR : faible latence (<5 ms)",
             roomeq_import_button: "Importer...",
             roomeq_import_from_json_desc: "Importez les mesures d'un fichier JSON précédemment enregistré.",
-            roomeq_impulse_response: "Réponse impulsionnelle",
             roomeq_load_measurement_data: "Charger les données de mesure",
             roomeq_mid_field_desc: "Champ moyen :  1,5–3 m (canapé)",
             roomeq_mixed_phase_desc: "Phase mixte : meilleure qualité",
@@ -1333,37 +7018,27 @@ impl Translations {
             roomeq_optimization_process: "Processus d'optimisation",
             roomeq_optimization_progress: "Progression de l'optimisation",
             roomeq_per_channel_alignment_delays: "Délais d'alignement par canal",
-            roomeq_phase_response: "Réponse de phase",
             roomeq_presets_button: "Préréglages ▾",
             roomeq_review_desc: "Examinez les résultats d'optimisation avant d'appliquer.",
             roomeq_review_results: "Examen des résultats",
-            roomeq_room_eq_filters: "Filtres EQ de pièce",
             roomeq_run_optimization: "Lancer l'optimisation",
             roomeq_run_optimization_desc: "Exécutez le processus d'optimisation pour chaque canal.",
             roomeq_save_rack_backup: "Sauvegarder le rack...",
-            roomeq_score_summary: "Résumé du score",
             roomeq_select_channel: "Sélectionner un canal",
             roomeq_simple_wizard: "Assistant simple",
-            roomeq_smoothing_label: "Lissage:",
             roomeq_snr_db: "SNR (dB)",
             roomeq_start_optimization: "Démarrer l'optimisation",
-            roomeq_tonal_balance: "Équilibre tonal",
-            roomeq_type_label: "Type:",
-            roomeq_y_axis_auto: "Auto axe Y:",
 
             // Recording surface
             recording_actions: "ACTIONS",
-            recording_advanced_measurement: "Avancé : Qualité de mesure",
             recording_all_channels_recorded: "Tous les canaux enregistrés",
             recording_avg_spl: "SPL moyen",
             recording_base_directory: "Répertoire de base:",
             recording_bass_anchor: "Ancre des basses",
             recording_bass_precision: "Précision des basses:",
             recording_browse: "Parcourir...",
-            recording_calibration_graph_error: "Impossible de rendre le graphique d'étalonnage",
             recording_calibration_help: "Chargez un fichier d'étalonnage de microphone (CSV) pour compenser la réponse en fréquence du microphone",
             recording_capture_desc: "Testez chaque canal individuellement. Les signaux seront lus séquentiellement avec une pause de 1 seconde entre les canaux.",
-            recording_capture_title: "Enregistrement",
             recording_ch_short: "Can",
             recording_channel_column: "Canal",
             recording_channel_frequency_range: "PLAGE DE FRÉQUENCE PAR CANAL",
@@ -1375,7 +7050,6 @@ impl Translations {
             recording_clarity: "CLARTÉ (C50/C80 dB)",
             recording_clear: "Effacer",
             recording_config_desc: "Configurez vos appareils de lecture et d'enregistrement, mettez en place le routage des canaux et chargez l'étalonnage du microphone.",
-            recording_config_title: "Configuration des appareils audio",
             recording_convert_button: "Convertir",
             recording_convert_format_title: "Convertir le format d'enregistrement",
             recording_distortion: "DISTORSION (THD+N %)",
@@ -1383,7 +7057,6 @@ impl Translations {
             recording_end_label: "Fin:",
             recording_enter_name_placeholder: "Saisissez un nom d'enregistrement",
             recording_evaluating_desc: "Examinez la réponse en fréquence, la phase, le délai de groupe et la réponse impulsionnelle.",
-            recording_evaluating_title: "Évaluation des mesures",
             recording_file_label: "Fichier:",
             recording_files_config_data: "- Données de configuration et de mesure",
             recording_files_to_save: "FICHIERS À SAUVEGARDER",
@@ -1397,7 +7070,6 @@ impl Translations {
             recording_load_previous: "Charger précédent",
             recording_magnitude: "AMPLITUDE (dB)",
             recording_mic_in: "Entrée micro",
-            recording_microphone_calibration: "Étalonnage du microphone",
             recording_name_eyebrow: "NOM DE L'ENREGISTREMENT",
             recording_name_label: "Nom:",
             recording_name_placeholder: "Nom",
@@ -1411,16 +7083,13 @@ impl Translations {
             recording_num_channels: "Nombre de canaux:",
             recording_older_format: "Ce fichier d'enregistrement utilise un format plus ancien.",
             recording_output_device: "Périphérique de sortie",
-            recording_output_directory: "Répertoire de sortie",
             recording_phase: "PHASE (degrés)",
-            recording_playback_device: "Appareil de lecture",
             recording_post_silence: "Silence après (s):",
             recording_pre_silence: "Silence avant (s):",
             recording_probe_delay: "Sonde de délai en rafale tonale",
             recording_re_record: "Réenregistrer",
             recording_record: "Enregistrer",
             recording_record_all_channels: "Enregistrer tous les canaux",
-            recording_recording_device: "Appareil d'enregistrement",
             recording_redo_all: "Tout refaire",
             recording_room_dimensions: "DIMENSIONS DE LA PIÈCE",
             recording_room_dimensions_help: "Largeur × Profondeur × Hauteur. Optionnel, mais permet à l'optimiseur d'auto-régler la fréquence de Schroeder à partir du volume de la pièce.",
@@ -1433,7 +7102,6 @@ impl Translations {
             recording_save_name_help: "Ce nom sera utilisé pour le sous-répertoire contenant vos enregistrements.",
             recording_save_recordings: "Sauvegarder les enregistrements",
             recording_saving_desc: "Sauvegardez vos enregistrements et votre configuration sur le disque. Les fichiers seront sauvegardés dans le répertoire que vous avez sélectionné pendant la configuration.",
-            recording_saving_title: "Enregistrer l'enregistrement",
             recording_select_config_placeholder: "Sélectionner une configuration...",
             recording_select_playback_placeholder: "Sélectionner un appareil de lecture...",
             recording_select_rate_placeholder: "Sélectionner une fréquence...",
@@ -1470,38 +7138,107 @@ impl Translations {
     /// German translations
     pub fn german() -> Self {
         Self {
-            app_title: "SOTF Audioplayer",
+            autoeq_form: AutoEqFormTranslations::for_language(Language::German),
 
             // Menu bar
             menu_file: "Datei",
             menu_show: "Anzeigen",
             menu_view: "Ansicht",
-            menu_help: "Hilfe",
             menu_open_config: "Konfiguration öffnen",
+            menu_help: "Hilfe",
             menu_quit: "Beenden",
-            menu_recording: "Aufnahme",
-            menu_room_eq: "Raum-EQ",
-            menu_headphone_eq: "Kopfhörer-EQ",
             menu_about: "Über",
             menu_keyboard_shortcuts: "Tastenkürzel",
 
             screen_library: "Bibliothek",
-            screen_directories: "Verzeichnisse",
             screen_queue: "Warteschlange",
-            screen_spectrum: "Spektrum",
             screen_studio: "Studio",
             screen_studio_rack: "Studio Rack",
             screen_studio_full: "Studio Voll",
             screen_tools: "Werkzeuge",
             screen_recording: "Aufnahme",
             screen_room_eq: "Raum-EQ",
+            screen_listening_test: "Hörtest",
             screen_headphone_eq: "Kopfhörer-EQ",
             screen_spinorama: "Spinorama EQ",
-            screen_plugins: "Plugins",
-            screen_devices: "Geräte",
             screen_settings: "Einstellungen",
-
-            library_title: "Bibliothek",
+            listening_test: ListeningTestTranslations {
+                setup: ListeningTestSetupTranslations {
+                    title: "Pegelabgeglichener Hörtest",
+                    subtitle: "Vergleichen Sie zwei Racks oder Routing-Graphen mit verdeckten, reproduzierbaren Zuordnungen.",
+                    load_session: "Sitzung laden",
+                    save_session: "Sitzung speichern",
+                    use_current: "Aktuelles Rack/Graph verwenden",
+                    load_path: "Pfad-JSON laden",
+                    simple_rack: "Einfaches lineares Rack",
+                    add_processor: "Prozessor hinzufügen",
+                    edit_graph: "Als Routing-Graph bearbeiten",
+                    edit_json: "JSON bearbeiten",
+                    editing: "Bearbeitung",
+                    remove: "Entfernen",
+                    graph_hint: "Doppelklicken Sie auf einen Knoten, um sein Parameter-JSON zu bearbeiten.",
+                    done: "Fertig",
+                    level_title: "Reproduzierbarer Pegelabgleich",
+                    level_description: "Rendert beide Pfade offline aus demselben 3-Sekunden-Segment an der aktuellen Position mit Kurzzeit-LUFS.",
+                    measure_prepare: "Messen und vorbereiten",
+                    plugin: "Plugin",
+                    plugins: "Plugins",
+                    nodes: "Knoten",
+                    routes: "Routen",
+                    current_chain: "Aktuelle Kette",
+                    path_json_filter: "A/B-Pfad-JSON",
+                    session_filter: "Hörtestsitzung",
+                },
+                trial: ListeningTestTrialTranslations {
+                    title: "Blindversuch",
+                    start_blind_ab: "Blinden A/B-Test starten",
+                    start_abx: "ABX starten",
+                    no_session: "Laden Sie eine validierte Sitzung nach dem Pegelabgleich oder bereiten Sie eine aus den Pfaden und dem synchronisierten Segment vor.",
+                    play_first: "Erstes abspielen",
+                    play_second: "Zweites abspielen",
+                    reference_a: "Referenz A",
+                    reference_b: "Referenz B",
+                    unknown_x: "Unbekanntes X",
+                    prefer_first: "Erstes bevorzugen",
+                    prefer_second: "Zweites bevorzugen",
+                    x_is_a: "X ist A",
+                    x_is_b: "X ist B",
+                    confidence: "% Sicherheit",
+                    notes_placeholder: "Optionale Notizen (erst mit dem bestätigten Ergebnis sichtbar)",
+                    trials: "Versuche",
+                },
+                status: ListeningTestStatusTranslations {
+                    select_paths: "Wählen Sie zwei DSP-Ketten aus.",
+                    captured: "Aktuelle DSP-Topologie ohne Abflachung der Routen erfasst.",
+                    load_or_prepare: "Laden oder erstellen Sie zuerst eine pegelabgeglichene Sitzung.",
+                    select_paths_and_track: "Wählen Sie beide Pfade und spielen Sie einen lokalen Titel ab.",
+                    measuring: "Synchrones Rendering und Kurzzeit-LUFS-Messung…",
+                    no_session: "Keine Hörtestsitzung geladen.",
+                    add_ab_plugin: "Fügen Sie vor der Wiedergabe ein A/B-Vergleichs-Plugin zum aktiven Rack hinzu.",
+                    cue_active: "Signal mit fester Pegelkorrektur und synchronisiertem Transport aktiv.",
+                    answer_committed: "Antwort bestätigt; die Zuordnung ist jetzt im Ergebnis verfügbar.",
+                    path_loaded: "Pfadkonfiguration geladen und validiert.",
+                    session_loaded: "Validierte reproduzierbare Sitzung geladen.",
+                    session_saved: "Validierte Sitzung ohne Offenlegung der laufenden Zuordnung gespeichert.",
+                    graph_updated: "Routing-Graph aktualisiert; der Pegelabgleich muss neu erstellt werden.",
+                    params_object: "Plugin-Parameter müssen ein JSON-Objekt sein.",
+                    params_invalid: "Parameter-JSON ist noch nicht gültig",
+                    params_updated: "Knotenparameter geändert; Pegelabgleich vor dem Test neu erstellen.",
+                    rack_updated: "Rack-Parameter geändert; Pegelabgleich vor dem Test neu erstellen.",
+                    processor_added: "Prozessor hinzugefügt; Pegelabgleich neu erstellen.",
+                    processor_removed: "Prozessor entfernt; Pegelabgleich neu erstellen.",
+                    rack_reordered: "Rack umsortiert; Pegelabgleich neu erstellen.",
+                    graph_converted: "Linearer Pfad ohne Reihenfolgeänderung in einen bearbeitbaren Routing-Graph umgewandelt.",
+                    prepared: "Feste Kurzzeit-LUFS-Korrektur für Pfad B vorbereitet",
+                    trial_started: "Versuch gestartet; Zuordnungen sind verdeckt",
+                    select_path: "Wählen oder laden Sie zuerst einen Pfad.",
+                    select_graph_path: "Wählen Sie zuerst einen Graph-Pfad.",
+                    not_selected: "Nicht ausgewählt",
+                    pass_through: "Durchleitung",
+                    linear_rack: "Lineares Rack",
+                    routed_graph: "Routing-Graph",
+                },
+            },
             library_albums: "Alben",
             library_tracks: "Titel",
             library_artists: "Künstler",
@@ -1509,36 +7246,11 @@ impl Translations {
             library_composers: "Komponisten",
             library_years: "Jahre",
             library_search: "Suchen",
-            library_search_placeholder: "Suchen...",
-            library_search_hint: "Drücken Sie / zum Suchen",
-            library_sort: "Sortierung",
-            library_filter: "Filter",
-            library_view_flat: "Liste",
-            library_view_tree: "Baum",
             library_scan: "Scannen",
             library_scanning: "Scanne...",
-            library_page: "Seite",
-            library_of: "von",
-            library_items_per_page: "Einträge/Seite",
-            library_prev: "← Zurück",
-            library_next: "Weiter →",
             library_stereo_multi: "Stereo / Multi",
 
-            sort_artist: "Künstler",
-            sort_album: "Album",
-            sort_title: "Titel",
-            sort_year: "Jahr",
-
-            filter_all: "Alle",
-            filter_mono: "Mono",
-            filter_stereo: "Stereo",
-            filter_multichannel: "Multi",
-            filter_mixed: "Gemischt",
-
             queue_title: "Warteschlange",
-            queue_clear: "Leeren",
-            queue_track: "Titel",
-            queue_tracks: "Titel",
             queue_empty: "Warteschlange ist leer",
             queue_now_playing: "Aktuelle Wiedergabe",
             queue_no_track_playing: "Kein Titel wird abgespielt",
@@ -1548,28 +7260,8 @@ impl Translations {
             queue_disc: "Disc",
             queue_albums: "Alben",
 
-            level_meters_title: "Pegelanzeige",
-            level_meters_no_audio: "Keine Audiowiedergabe",
-            level_meters_hint: "Tab: Gruppe | M: Stumm | Shift-M: Solo | Ctrl-M: Dim | X: Löschen",
-
             devices_title: "Audioausgabegeräte",
-            devices_default: "Standard",
-
-            spectrum_title: "Spektrumanalysator",
-            spectrum_no_data: "Keine Spektrumdaten verfügbar. Starten Sie die Wiedergabe.",
-
-            directories_title: "Verzeichnisverwaltung",
             directories_add: "Verzeichnis hinzufügen",
-            directories_hint: "Tab: Vervollständigen, Enter: Hinzufügen, Esc: Abbrechen",
-            directories_scan_hint: "Shift-A: Hinzufügen | Shift-S: Scannen | D: Entfernen | Enter: Erweitern",
-
-            plugins_title: "Plugin-Kette",
-            plugins_chain: "Plugins",
-            plugins_add: "Plugin hinzufügen",
-            plugins_enabled: "Aktiviert",
-            plugins_disabled: "Deaktiviert",
-
-            settings_title: "Einstellungen",
             settings_theme: "Design",
             settings_language: "Sprache",
             settings_active: "Aktiv",
@@ -1611,74 +7303,16 @@ impl Translations {
             settings_default_badge: "Standard",
 
             settings_tab_library: "Lokale Bibliothek",
-            settings_tab_theme: "Thema",
             settings_tab_language: "Sprache",
             settings_tab_keybindings: "Tastenkürzel",
             settings_tab_audio_device: "Audiogerät",
-            settings_tab_misc: "Misc",
-            settings_tab_recording: "Aufnahme",
-            settings_tab_room_eq: "Raum-EQ",
-            settings_tab_headphone: "Kopfhörer",
-            settings_tab_spinorama: "Spinorama",
             settings_tab_federation: "Streaming",
             settings_tab_servers: "Server",
             settings_tab_release_channel: "Funktionen",
             settings_release_channel_title: "Feature-Kanal",
             settings_release_channel_description: "Steuern Sie, welche Funktionen sichtbar sind. Stabil zeigt nur produktionsreife Funktionen. Beta und Alpha schalten experimentelle Funktionen frei.",
-
-            playback_play: "Wiedergabe",
-            playback_pause: "Pause",
-            playback_stop: "Stopp",
-            playback_next: "Nächster",
-            playback_previous: "Vorheriger",
-            playback_volume: "Lautstärke",
             playback_no_track: "Kein Titel wird abgespielt",
             playback_default_device: "Standard",
-            playback_studio: "Studio",
-            playback_output_devices: "Ausgabegeräte",
-
-            dialog_help: "Hilfe",
-            dialog_load_apo: "APO-Datei für EQ laden",
-            dialog_load_sofa: "SOFA-Datei für Binaural-Decoder laden",
-            dialog_save_preset: "Preset speichern",
-            dialog_load_preset: "Preset laden",
-            dialog_edit_plugin: "Plugin bearbeiten",
-
-            dialog_enter_path: "Pfad eingeben:",
-            dialog_enter_name: "Preset-Name:",
-            dialog_existing_presets: "Vorhandene Presets:",
-            dialog_available_presets: "Verfügbare Presets:",
-            dialog_no_presets: "Keine Presets gefunden. Speichern Sie zuerst ein Preset.",
-
-            button_save: "Speichern",
-            button_load: "Laden",
-            button_cancel: "Abbrechen",
-            button_close: "Schließen",
-            button_apply: "Anwenden",
-            button_ok: "OK",
-
-            key_enter: "Enter",
-            key_escape: "Esc",
-            key_tab: "Tab",
-            key_space: "Leertaste",
-            key_arrows: "↑/↓",
-
-            status_scan_complete: "Scan abgeschlossen",
-            status_scan_failed: "Scan fehlgeschlagen",
-            status_preset_saved: "Preset gespeichert",
-            status_preset_loaded: "Preset geladen",
-            status_directory_added: "Verzeichnis hinzugefügt",
-            status_directory_removed: "Verzeichnis entfernt",
-
-            keybind_global: "GLOBALE TASTENKÜRZEL",
-            keybind_play_pause: "Leertaste: Wiedergabe/Pause",
-            keybind_next_track: "N: Nächster",
-            keybind_volume: "+/-: Lautstärke",
-
-            control_mute: "M",
-            control_solo: "S",
-            control_dim: "D",
-            control_clear_all: "Alle löschen",
 
             // Spinorama and AutoEQ surfaces
             autoeq_allow_delay: "Verzögerung zulassen",
@@ -1700,7 +7334,6 @@ impl Translations {
             autoeq_how_many_filters: "Wie viele Filter und welche Art?",
             autoeq_how_optimizer_evaluates: "Wie der Optimierer die Korrekturqualität bewertet",
             autoeq_listening_distance: "Hörabstand und Zielsteigung",
-            autoeq_local_refinement: "Lokale Verfeinerung",
             autoeq_multi_measurement: "Multi-Messungs-Optimierung",
             autoeq_multi_seat: "Multi-Sitz-Optimierung",
             autoeq_multi_seat_desc: "Mehrsprachige Ausrichtung, Timbre-Anpassung und Sitzoptimierung",
@@ -1762,7 +7395,6 @@ impl Translations {
             roomeq_arrival_ms: "Ankunft (ms)",
             roomeq_backup_current_rack: "Aktuelles Rack sichern",
             roomeq_backup_rack_help: "Speichern Sie eine Kopie Ihres aktuellen Plugin-Racks, bevor Sie Änderungen anwenden.",
-            roomeq_broadband_precorrection: "Breitband-Vorkorrekturfilter",
             roomeq_channel: "Kanal",
             roomeq_channel_configuration: "Kanalkonfiguration",
             roomeq_channel_result: "Kanalergebnis",
@@ -1770,15 +7402,12 @@ impl Translations {
             roomeq_click_next_to_review: "Klicken Sie auf Weiter, um die Ergebnisse zu prüfen.",
             roomeq_configuration_check: "Konfigurationsprüfung",
             roomeq_configuration_summary: "Konfigurationszusammenfassung",
-            roomeq_crossover_frequencies: "Übergagsfrequenzen",
-            roomeq_crossover_label: "Übergang:",
             roomeq_custom_target_editor: "Benutzerdefinierter Zielkurven-Editor",
             roomeq_customize_target: "Zielkurve anpassen...",
             roomeq_delay_detection_incomplete: "Verzögerungserkennung konnte nicht abgeschlossen werden",
             roomeq_delay_ms: "Verzögerung (ms)",
             roomeq_done_button: "Fertig",
             roomeq_eq_exists_in_rack: "Ein EQ-Plugin existiert in Ihrem Rack. Es wird mit den neuen Filtern aktualisiert.",
-            roomeq_eq_filters: "EQ-Filter",
             roomeq_error: "Fehler",
             roomeq_export_and_apply: "Exportieren und anwenden",
             roomeq_export_button: "Exportieren...",
@@ -1793,12 +7422,9 @@ impl Translations {
             roomeq_full_wizard: "Vollständiger Assistent",
             roomeq_gain_db: "Verstärkung (dB)",
             roomeq_graph_help: "Klicken Sie auf den Graphen, um Kontrollpunkte hinzuzufügen. Ziehen Sie Punkte, um sie anzupassen. Doppelklick auf einen Punkt, um ihn zu entfernen.",
-            roomeq_graph_settings: "Grafikeinstellungen",
-            roomeq_group_delay: "Gruppenverzögerung",
             roomeq_iir_desc: "IIR: geringe Latenz (<5 ms)",
             roomeq_import_button: "Importieren...",
             roomeq_import_from_json_desc: "Importieren Sie Messungen aus einer zuvor gespeicherten JSON-Datei.",
-            roomeq_impulse_response: "Impulsantwort",
             roomeq_load_measurement_data: "Messdaten laden",
             roomeq_mid_field_desc: "Mittelfeld:  1,5–3 m (Couch)",
             roomeq_mixed_phase_desc: "Mischphase: beste Qualität",
@@ -1810,37 +7436,27 @@ impl Translations {
             roomeq_optimization_process: "Optimierungsprozess",
             roomeq_optimization_progress: "Optimierungsfortschritt",
             roomeq_per_channel_alignment_delays: "Pro-Kanal-Ausrichtungsverzögerungen",
-            roomeq_phase_response: "Phasenreaktion",
             roomeq_presets_button: "Voreinstellungen ▾",
             roomeq_review_desc: "Überprüfen Sie die Optimierungsergebnisse vor dem Anwenden.",
             roomeq_review_results: "Ergebnisse überprüfen",
-            roomeq_room_eq_filters: "Raum-EQ-Filter",
             roomeq_run_optimization: "Optimierung ausführen",
             roomeq_run_optimization_desc: "Führen Sie den Optimierungsprozess für jeden Kanal aus.",
             roomeq_save_rack_backup: "Rack-Sicherung speichern...",
-            roomeq_score_summary: "Punktzusammenfassung",
             roomeq_select_channel: "Kanal auswählen",
             roomeq_simple_wizard: "Einfacher Assistent",
-            roomeq_smoothing_label: "Glättung:",
             roomeq_snr_db: "SNR (dB)",
             roomeq_start_optimization: "Optimierung starten",
-            roomeq_tonal_balance: "Tonales Gleichgewicht",
-            roomeq_type_label: "Typ:",
-            roomeq_y_axis_auto: "Y-Achse Automatisch:",
 
             // Recording surface
             recording_actions: "AKTIONEN",
-            recording_advanced_measurement: "Erweitert: Messqualität",
             recording_all_channels_recorded: "Alle Kanäle aufgenommen",
             recording_avg_spl: "Mittlerer SPL",
             recording_base_directory: "Basisverzeichnis:",
             recording_bass_anchor: "Bass-Anker",
             recording_bass_precision: "Bassgenauigkeit:",
             recording_browse: "Durchsuchen...",
-            recording_calibration_graph_error: "Kann Kalibrierungsgraph nicht rendern",
             recording_calibration_help: "Laden Sie eine Mikrofon-Kalibrierungsdatei (CSV), um den Frequenzgang des Mikrofons zu kompensieren",
             recording_capture_desc: "Testen Sie jeden Kanal einzeln. Signale werden sequenziell mit einer 1-Sekunden-Pause zwischen den Kanälen abgespielt.",
-            recording_capture_title: "Erfassung",
             recording_ch_short: "Kan",
             recording_channel_column: "Kanal",
             recording_channel_frequency_range: "FREQUENZBEREICH JE KANAL",
@@ -1852,7 +7468,6 @@ impl Translations {
             recording_clarity: "KLARHEIT (C50/C80 dB)",
             recording_clear: "Leeren",
             recording_config_desc: "Konfigurieren Sie Ihre Wiedergabe- und Aufnahmegeräte, richten Sie das Kanal-Routing ein und laden Sie die Mikrofonkalibrierung.",
-            recording_config_title: "Audioggerät-Konfiguration",
             recording_convert_button: "Konvertieren",
             recording_convert_format_title: "Aufnahmeformat konvertieren",
             recording_distortion: "VERZERRUNG (THD+N %)",
@@ -1860,7 +7475,6 @@ impl Translations {
             recording_end_label: "Ende:",
             recording_enter_name_placeholder: "Aufnahmenamen eingeben",
             recording_evaluating_desc: "Überprüfen Sie die Frequenzgang, Phase, Gruppenverzögerung und Impulsantwort.",
-            recording_evaluating_title: "Messungen auswerten",
             recording_file_label: "Datei:",
             recording_files_config_data: "- Konfigurations- und Messdaten",
             recording_files_to_save: "ZU SPEICHERNDE DATEIEN",
@@ -1874,7 +7488,6 @@ impl Translations {
             recording_load_previous: "Vorherige laden",
             recording_magnitude: "AMPLITUDE (dB)",
             recording_mic_in: "Mikrofon-Eingang",
-            recording_microphone_calibration: "Mikrofonkalibrierung",
             recording_name_eyebrow: "AUFNAHMENAME",
             recording_name_label: "Name:",
             recording_name_placeholder: "Name",
@@ -1888,16 +7501,13 @@ impl Translations {
             recording_num_channels: "Anzahl der Kanäle:",
             recording_older_format: "Diese Aufnahmedatei verwendet ein älteres Format.",
             recording_output_device: "Ausgabegerät",
-            recording_output_directory: "Ausgabeverzeichnis",
             recording_phase: "PHASE (Grad)",
-            recording_playback_device: "Wiedergabegerät",
             recording_post_silence: "Stille nach (s):",
             recording_pre_silence: "Stille vor (s):",
             recording_probe_delay: "Tonimpuls-Verzögerungs-Sonde",
             recording_re_record: "Erneut aufnehmen",
             recording_record: "Aufnehmen",
             recording_record_all_channels: "Alle Kanäle aufnehmen",
-            recording_recording_device: "Aufnahmegerät",
             recording_redo_all: "Alles wiederholen",
             recording_room_dimensions: "RAUMMASSE",
             recording_room_dimensions_help: "Breite × Tiefe × Höhe. Optional, aber ermöglicht dem Optimierer, die Schroeder-Frequenz aus dem Raumvolumen automatisch abzustimmen.",
@@ -1910,7 +7520,6 @@ impl Translations {
             recording_save_name_help: "Dieser Name wird für das Unterverzeichnis verwendet, das Ihre Aufnahmen enthält.",
             recording_save_recordings: "Aufnahmen speichern",
             recording_saving_desc: "Speichern Sie Ihre Aufnahmen und Konfiguration auf der Festplatte. Dateien werden in dem Verzeichnis gespeichert, das Sie während der Konfiguration ausgewählt haben.",
-            recording_saving_title: "Aufnahme speichern",
             recording_select_config_placeholder: "Konfiguration auswählen...",
             recording_select_playback_placeholder: "Wiedergabegerät auswählen...",
             recording_select_rate_placeholder: "Rate auswählen...",
@@ -1947,38 +7556,107 @@ impl Translations {
     /// Spanish translations
     pub fn spanish() -> Self {
         Self {
-            app_title: "SOTF Reproductor de Audio",
+            autoeq_form: AutoEqFormTranslations::for_language(Language::Spanish),
 
             // Menu bar
             menu_file: "Archivo",
             menu_show: "Mostrar",
             menu_view: "Ver",
-            menu_help: "Ayuda",
             menu_open_config: "Abrir configuración",
+            menu_help: "Ayuda",
             menu_quit: "Salir",
-            menu_recording: "Grabación",
-            menu_room_eq: "EQ de sala",
-            menu_headphone_eq: "EQ de auriculares",
             menu_about: "Acerca de",
             menu_keyboard_shortcuts: "Atajos de teclado",
 
             screen_library: "Biblioteca",
-            screen_directories: "Directorios",
             screen_queue: "Cola",
-            screen_spectrum: "Espectro",
             screen_studio: "Estudio",
             screen_studio_rack: "Estudio Rack",
             screen_studio_full: "Estudio Completo",
             screen_tools: "Herramientas",
             screen_recording: "Grabación",
             screen_room_eq: "EQ de sala",
+            screen_listening_test: "Prueba de escucha",
             screen_headphone_eq: "EQ de auriculares",
             screen_spinorama: "Spinorama EQ",
-            screen_plugins: "Plugins",
-            screen_devices: "Dispositivos",
             screen_settings: "Ajustes",
-
-            library_title: "Biblioteca",
+            listening_test: ListeningTestTranslations {
+                setup: ListeningTestSetupTranslations {
+                    title: "Prueba auditiva con niveles igualados",
+                    subtitle: "Compare dos racks o grafos enrutados con asignaciones ocultas y reproducibles.",
+                    load_session: "Cargar sesión",
+                    save_session: "Guardar sesión",
+                    use_current: "Usar rack/grafo actual",
+                    load_path: "Cargar ruta JSON",
+                    simple_rack: "Rack lineal sencillo",
+                    add_processor: "Añadir procesador",
+                    edit_graph: "Editar como grafo enrutado",
+                    edit_json: "Editar JSON",
+                    editing: "Editando",
+                    remove: "Eliminar",
+                    graph_hint: "Haga doble clic en un nodo para editar sus parámetros JSON.",
+                    done: "Listo",
+                    level_title: "Igualación de nivel reproducible",
+                    level_description: "Renderiza ambas rutas sin conexión desde el mismo segmento de 3 segundos en la posición actual usando LUFS a corto plazo.",
+                    measure_prepare: "Medir y preparar",
+                    plugin: "plugin",
+                    plugins: "plugins",
+                    nodes: "nodos",
+                    routes: "rutas",
+                    current_chain: "Cadena actual",
+                    path_json_filter: "Ruta A/B JSON",
+                    session_filter: "Sesión de prueba auditiva",
+                },
+                trial: ListeningTestTrialTranslations {
+                    title: "Ensayo a ciegas",
+                    start_blind_ab: "Iniciar A/B a ciegas",
+                    start_abx: "Iniciar ABX",
+                    no_session: "Cargue una sesión validada tras igualar niveles o prepare una con las rutas y el segmento sincronizado.",
+                    play_first: "Reproducir primero",
+                    play_second: "Reproducir segundo",
+                    reference_a: "Referencia A",
+                    reference_b: "Referencia B",
+                    unknown_x: "X desconocida",
+                    prefer_first: "Preferir primero",
+                    prefer_second: "Preferir segundo",
+                    x_is_a: "X es A",
+                    x_is_b: "X es B",
+                    confidence: "% de confianza",
+                    notes_placeholder: "Notas opcionales (se revelan con el resultado confirmado)",
+                    trials: "ensayos",
+                },
+                status: ListeningTestStatusTranslations {
+                    select_paths: "Seleccione dos cadenas DSP para comenzar.",
+                    captured: "Topología DSP actual capturada sin aplanar las rutas.",
+                    load_or_prepare: "Cargue o prepare primero una sesión con niveles igualados.",
+                    select_paths_and_track: "Seleccione ambas rutas y reproduzca o ponga en cola una pista local.",
+                    measuring: "Renderizando rutas sincronizadas y midiendo LUFS a corto plazo…",
+                    no_session: "No hay ninguna sesión de prueba auditiva cargada.",
+                    add_ab_plugin: "Añada un plugin de Comparación A/B al rack activo antes de reproducir señales.",
+                    cue_active: "Señal activa con corrección fija guardada y transporte sincronizado.",
+                    answer_committed: "Respuesta confirmada; la asignación ya está disponible en el resultado.",
+                    path_loaded: "Configuración de ruta cargada y validada.",
+                    session_loaded: "Sesión reproducible validada cargada.",
+                    session_saved: "Sesión validada guardada sin revelar la asignación pendiente.",
+                    graph_updated: "Topología del grafo actualizada; debe preparar de nuevo la igualación.",
+                    params_object: "Los parámetros del plugin deben ser un objeto JSON.",
+                    params_invalid: "El JSON de parámetros aún no es válido",
+                    params_updated: "Parámetros del nodo actualizados; prepare de nuevo la igualación.",
+                    rack_updated: "Parámetros del rack actualizados; prepare de nuevo la igualación.",
+                    processor_added: "Procesador añadido; prepare de nuevo la igualación.",
+                    processor_removed: "Procesador eliminado; prepare de nuevo la igualación.",
+                    rack_reordered: "Rack reordenado; prepare de nuevo la igualación.",
+                    graph_converted: "Ruta lineal convertida en grafo enrutado editable sin cambiar el orden.",
+                    prepared: "Corrección LUFS fija a corto plazo preparada para la ruta B",
+                    trial_started: "Ensayo iniciado; las asignaciones están ocultas",
+                    select_path: "Seleccione o cargue primero una ruta.",
+                    select_graph_path: "Seleccione primero una ruta de grafo.",
+                    not_selected: "No seleccionado",
+                    pass_through: "Paso directo",
+                    linear_rack: "Rack lineal",
+                    routed_graph: "Grafo enrutado",
+                },
+            },
             library_albums: "Álbumes",
             library_tracks: "Pistas",
             library_artists: "Artistas",
@@ -1986,36 +7664,11 @@ impl Translations {
             library_composers: "Compositores",
             library_years: "Años",
             library_search: "Buscar",
-            library_search_placeholder: "Buscar...",
-            library_search_hint: "Presiona / para buscar",
-            library_sort: "Ordenar",
-            library_filter: "Filtro",
-            library_view_flat: "Lista",
-            library_view_tree: "Árbol",
             library_scan: "Escanear",
             library_scanning: "Escaneando...",
-            library_page: "Página",
-            library_of: "de",
-            library_items_per_page: "elementos/página",
-            library_prev: "← Anterior",
-            library_next: "Siguiente →",
             library_stereo_multi: "Estéreo / Multi",
 
-            sort_artist: "Artista",
-            sort_album: "Álbum",
-            sort_title: "Título",
-            sort_year: "Año",
-
-            filter_all: "Todos",
-            filter_mono: "Mono",
-            filter_stereo: "Estéreo",
-            filter_multichannel: "Multi",
-            filter_mixed: "Mixto",
-
             queue_title: "Cola",
-            queue_clear: "Limpiar",
-            queue_track: "Pista",
-            queue_tracks: "Pistas",
             queue_empty: "Cola vacía",
             queue_now_playing: "Reproduciendo ahora",
             queue_no_track_playing: "No hay pista reproduciéndose",
@@ -2025,28 +7678,8 @@ impl Translations {
             queue_disc: "Disco",
             queue_albums: "álbumes",
 
-            level_meters_title: "Medidores de nivel",
-            level_meters_no_audio: "Sin audio reproduciéndose",
-            level_meters_hint: "Tab: Grupo | M: Silenciar | Shift-M: Solo | Ctrl-M: Dim | X: Limpiar",
-
             devices_title: "Dispositivos de salida de audio",
-            devices_default: "Predeterminado",
-
-            spectrum_title: "Analizador de espectro",
-            spectrum_no_data: "Sin datos de espectro. Reproduce audio para ver la visualización.",
-
-            directories_title: "Gestor de directorios",
             directories_add: "Añadir directorio",
-            directories_hint: "Tab: completar, Enter: añadir, Esc: cancelar",
-            directories_scan_hint: "Shift-A: Añadir | Shift-S: Escanear | D: Eliminar | Enter: Expandir",
-
-            plugins_title: "Cadena de plugins",
-            plugins_chain: "Plugins",
-            plugins_add: "Añadir plugin",
-            plugins_enabled: "Activado",
-            plugins_disabled: "Desactivado",
-
-            settings_title: "Ajustes",
             settings_theme: "Tema",
             settings_language: "Idioma",
             settings_active: "Activo",
@@ -2088,74 +7721,16 @@ impl Translations {
             settings_default_badge: "Predeterminado",
 
             settings_tab_library: "Biblioteca local",
-            settings_tab_theme: "Tema",
             settings_tab_language: "Idioma",
             settings_tab_keybindings: "Atajos de teclado",
             settings_tab_audio_device: "Dispositivo de audio",
-            settings_tab_misc: "Misc",
-            settings_tab_recording: "Grabación",
-            settings_tab_room_eq: "EQ de sala",
-            settings_tab_headphone: "Auriculares",
-            settings_tab_spinorama: "Spinorama",
             settings_tab_federation: "Streaming",
             settings_tab_servers: "Server",
             settings_tab_release_channel: "Funciones",
             settings_release_channel_title: "Canal de funciones",
             settings_release_channel_description: "Controle qué funciones son visibles. Estable muestra solo funciones listas para producción. Beta y Alpha desbloquean funciones experimentales.",
-
-            playback_play: "Reproducir",
-            playback_pause: "Pausa",
-            playback_stop: "Detener",
-            playback_next: "Siguiente",
-            playback_previous: "Anterior",
-            playback_volume: "Volumen",
             playback_no_track: "No hay pista reproduciéndose",
             playback_default_device: "Predeterminado",
-            playback_studio: "Estudio",
-            playback_output_devices: "Dispositivos de salida",
-
-            dialog_help: "Ayuda",
-            dialog_load_apo: "Cargar archivo APO para EQ",
-            dialog_load_sofa: "Cargar archivo SOFA para decodificador binaural",
-            dialog_save_preset: "Guardar preset",
-            dialog_load_preset: "Cargar preset",
-            dialog_edit_plugin: "Editar plugin",
-
-            dialog_enter_path: "Ingrese la ruta:",
-            dialog_enter_name: "Nombre del preset:",
-            dialog_existing_presets: "Presets existentes:",
-            dialog_available_presets: "Presets disponibles:",
-            dialog_no_presets: "No se encontraron presets. Guarde un preset primero.",
-
-            button_save: "Guardar",
-            button_load: "Cargar",
-            button_cancel: "Cancelar",
-            button_close: "Cerrar",
-            button_apply: "Aplicar",
-            button_ok: "OK",
-
-            key_enter: "Enter",
-            key_escape: "Esc",
-            key_tab: "Tab",
-            key_space: "Espacio",
-            key_arrows: "↑/↓",
-
-            status_scan_complete: "Escaneo completado",
-            status_scan_failed: "Escaneo fallido",
-            status_preset_saved: "Preset guardado",
-            status_preset_loaded: "Preset cargado",
-            status_directory_added: "Directorio añadido",
-            status_directory_removed: "Directorio eliminado",
-
-            keybind_global: "ATAJOS GLOBALES",
-            keybind_play_pause: "Espacio: Reproducir/Pausa",
-            keybind_next_track: "N: Siguiente",
-            keybind_volume: "+/-: Volumen",
-
-            control_mute: "M",
-            control_solo: "S",
-            control_dim: "D",
-            control_clear_all: "Limpiar todo",
 
             // Spinorama and AutoEQ surfaces
             autoeq_allow_delay: "Permitir retraso",
@@ -2177,7 +7752,6 @@ impl Translations {
             autoeq_how_many_filters: "Cuántos filtros y de qué tipo?",
             autoeq_how_optimizer_evaluates: "Cómo el optimizador evalúa la calidad de la corrección",
             autoeq_listening_distance: "Distancia de escucha y pendiente objetivo",
-            autoeq_local_refinement: "Refinamiento local",
             autoeq_multi_measurement: "Optimización de multi-medición",
             autoeq_multi_seat: "Optimización multi-asiento",
             autoeq_multi_seat_desc: "Alineación multi-altavoz, coincidencia de timbre y optimización de asientos",
@@ -2239,7 +7813,6 @@ impl Translations {
             roomeq_arrival_ms: "Llegada (ms)",
             roomeq_backup_current_rack: "Respaldar rack actual",
             roomeq_backup_rack_help: "Guarde una copia de su rack de plugins actual antes de aplicar los cambios.",
-            roomeq_broadband_precorrection: "Filtros de precorrección de banda ancha",
             roomeq_channel: "Canal",
             roomeq_channel_configuration: "Configuración del canal",
             roomeq_channel_result: "Resultado del canal",
@@ -2247,15 +7820,12 @@ impl Translations {
             roomeq_click_next_to_review: "Haga clic en Siguiente para revisar los resultados.",
             roomeq_configuration_check: "Verificación de configuración",
             roomeq_configuration_summary: "Resumen de configuración",
-            roomeq_crossover_frequencies: "Frecuencias de cruce",
-            roomeq_crossover_label: "Cruce:",
             roomeq_custom_target_editor: "Editor de curva objetivo personalizada",
             roomeq_customize_target: "Personalizar curva objetivo...",
             roomeq_delay_detection_incomplete: "La detección de retraso no se completó",
             roomeq_delay_ms: "Retraso (ms)",
             roomeq_done_button: "Hecho",
             roomeq_eq_exists_in_rack: "Existe un plugin EQ en su rack. Se actualizará con los nuevos filtros.",
-            roomeq_eq_filters: "Filtros EQ",
             roomeq_error: "Error",
             roomeq_export_and_apply: "Exportar y aplicar",
             roomeq_export_button: "Exportar...",
@@ -2270,12 +7840,9 @@ impl Translations {
             roomeq_full_wizard: "Asistente completo",
             roomeq_gain_db: "Ganancia (dB)",
             roomeq_graph_help: "Haga clic en el gráfico para agregar puntos de control. Arrastra puntos para ajustar. Doble clic en un punto para eliminarlo.",
-            roomeq_graph_settings: "Configuración del gráfico",
-            roomeq_group_delay: "Retardo de grupo",
             roomeq_iir_desc: "IIR: baja latencia (<5 ms)",
             roomeq_import_button: "Importar...",
             roomeq_import_from_json_desc: "Importe medidas de un archivo JSON guardado anteriormente.",
-            roomeq_impulse_response: "Respuesta al impulso",
             roomeq_load_measurement_data: "Cargar datos de medida",
             roomeq_mid_field_desc: "Campo medio:  1,5–3 m (sofá)",
             roomeq_mixed_phase_desc: "Fase mixta: mejor calidad",
@@ -2287,37 +7854,27 @@ impl Translations {
             roomeq_optimization_process: "Proceso de optimización",
             roomeq_optimization_progress: "Progreso de optimización",
             roomeq_per_channel_alignment_delays: "Retrasos de alineación por canal",
-            roomeq_phase_response: "Respuesta de fase",
             roomeq_presets_button: "Preajustes ▾",
             roomeq_review_desc: "Revise los resultados de optimización antes de aplicar.",
             roomeq_review_results: "Revisar resultados",
-            roomeq_room_eq_filters: "Filtros EQ de sala",
             roomeq_run_optimization: "Ejecutar optimización",
             roomeq_run_optimization_desc: "Ejecute el proceso de optimización para cada canal.",
             roomeq_save_rack_backup: "Guardar copia del rack...",
-            roomeq_score_summary: "Resumen de puntuación",
             roomeq_select_channel: "Seleccionar canal",
             roomeq_simple_wizard: "Asistente simple",
-            roomeq_smoothing_label: "Suavizado:",
             roomeq_snr_db: "SNR (dB)",
             roomeq_start_optimization: "Iniciar optimización",
-            roomeq_tonal_balance: "Balance tonal",
-            roomeq_type_label: "Tipo:",
-            roomeq_y_axis_auto: "Eje Y automático:",
 
             // Recording surface
             recording_actions: "ACCIONES",
-            recording_advanced_measurement: "Avanzado: Calidad de medición",
             recording_all_channels_recorded: "Todos los canales grabados",
             recording_avg_spl: "SPL medio",
             recording_base_directory: "Directorio base:",
             recording_bass_anchor: "Ancla de bajos",
             recording_bass_precision: "Precisión de bajos:",
             recording_browse: "Examinar...",
-            recording_calibration_graph_error: "No se puede renderizar el gráfico de calibración",
             recording_calibration_help: "Cargue un archivo de calibración del micrófono (CSV) para compensar la respuesta de frecuencia del micrófono",
             recording_capture_desc: "Pruebe cada canal individualmente. Las señales se reproducirán secuencialmente con una pausa de 1 segundo entre canales.",
-            recording_capture_title: "Captura",
             recording_ch_short: "Can",
             recording_channel_column: "Canal",
             recording_channel_frequency_range: "RANGO DE FRECUENCIA POR CANAL",
@@ -2329,7 +7886,6 @@ impl Translations {
             recording_clarity: "CLARIDAD (C50/C80 dB)",
             recording_clear: "Borrar",
             recording_config_desc: "Configure sus dispositivos de reproducción y grabación, configure el enrutamiento de canales y cargue la calibración del micrófono.",
-            recording_config_title: "Configuración de dispositivos de audio",
             recording_convert_button: "Convertir",
             recording_convert_format_title: "Convertir formato de grabación",
             recording_distortion: "DISTORSIÓN (THD+N %)",
@@ -2337,7 +7893,6 @@ impl Translations {
             recording_end_label: "Fin:",
             recording_enter_name_placeholder: "Ingrese un nombre de grabación",
             recording_evaluating_desc: "Revise la respuesta de frecuencia, fase, retardo de grupo y respuesta al impulso.",
-            recording_evaluating_title: "Evaluación de medidas",
             recording_file_label: "Archivo:",
             recording_files_config_data: "- Datos de configuración y medición",
             recording_files_to_save: "ARCHIVOS A GUARDAR",
@@ -2351,7 +7906,6 @@ impl Translations {
             recording_load_previous: "Cargar anterior",
             recording_magnitude: "MAGNITUD (dB)",
             recording_mic_in: "Entrada del micrófono",
-            recording_microphone_calibration: "Calibración del micrófono",
             recording_name_eyebrow: "NOMBRE DE LA GRABACIÓN",
             recording_name_label: "Nombre:",
             recording_name_placeholder: "Nombre",
@@ -2365,16 +7919,13 @@ impl Translations {
             recording_num_channels: "Número de canales:",
             recording_older_format: "Este archivo de grabación utiliza un formato más antiguo.",
             recording_output_device: "Dispositivo de salida",
-            recording_output_directory: "Directorio de salida",
             recording_phase: "FASE (grados)",
-            recording_playback_device: "Dispositivo de reproducción",
             recording_post_silence: "Silencio posterior (s):",
             recording_pre_silence: "Silencio anterior (s):",
             recording_probe_delay: "Sonda de retardo de ráfaga tonal",
             recording_re_record: "Regrabar",
             recording_record: "Grabar",
             recording_record_all_channels: "Grabar todos los canales",
-            recording_recording_device: "Dispositivo de grabación",
             recording_redo_all: "Rehacer todo",
             recording_room_dimensions: "DIMENSIONES DE LA SALA",
             recording_room_dimensions_help: "Ancho × Profundidad × Altura. Opcional, pero permite al optimizador autoajustar la frecuencia de Schroeder a partir del volumen de la sala.",
@@ -2387,7 +7938,6 @@ impl Translations {
             recording_save_name_help: "Este nombre se utilizará para el subdirectorio que contiene sus grabaciones.",
             recording_save_recordings: "Guardar grabaciones",
             recording_saving_desc: "Guarde sus grabaciones y configuración en el disco. Los archivos se guardarán en el directorio que seleccionó durante la configuración.",
-            recording_saving_title: "Guardar grabación",
             recording_select_config_placeholder: "Seleccionar configuración...",
             recording_select_playback_placeholder: "Seleccionar dispositivo de reproducción...",
             recording_select_rate_placeholder: "Seleccionar frecuencia...",

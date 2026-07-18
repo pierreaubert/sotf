@@ -3,6 +3,7 @@ use super::consts::NODE_MENU_BYPASS;
 use super::consts::NODE_MENU_EDIT;
 use super::consts::NODE_MENU_REMOVE;
 use super::consts::NODE_MENU_SOLO;
+use crate::i18n::PluginGraphTranslations;
 use crate::theme::Theme;
 use gpui::*;
 use gpui_ui_kit::MenuItem;
@@ -154,13 +155,13 @@ pub(super) fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) 
     }
 }
 
-pub(super) fn plugin_node_menu_items() -> Vec<MenuItem> {
+pub(super) fn plugin_node_menu_items(text: PluginGraphTranslations) -> Vec<MenuItem> {
     vec![
-        MenuItem::new(NODE_MENU_EDIT, "Edit Parameters"),
+        MenuItem::new(NODE_MENU_EDIT, text.edit_parameters),
         MenuItem::separator(),
-        MenuItem::new(NODE_MENU_BYPASS, "Bypass / Activate"),
-        MenuItem::new(NODE_MENU_SOLO, "Solo"),
+        MenuItem::new(NODE_MENU_BYPASS, text.bypass_activate),
+        MenuItem::new(NODE_MENU_SOLO, text.solo),
         MenuItem::separator(),
-        MenuItem::new(NODE_MENU_REMOVE, "Remove"),
+        MenuItem::new(NODE_MENU_REMOVE, text.remove),
     ]
 }

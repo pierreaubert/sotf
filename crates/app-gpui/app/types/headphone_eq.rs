@@ -4,6 +4,8 @@
 //
 // Domain types are shared via the player crate. UI-specific state stays here.
 
+use sotf_audio_player::PluginGraph;
+use sotf_audio_player::autoeq::HeadphoneEasyApplyOutcome;
 use sotf_audio_player::ui_models::headphone_eq::HeadphoneEqScreenModel;
 use std::ops::{Deref, DerefMut};
 
@@ -50,6 +52,11 @@ pub struct HeadphoneEqState {
     pub selected_preset: String,
     /// Expanded accordion sections
     pub expanded_sections: Vec<gpui::SharedString>,
+    /// Exact graph snapshot retained until the easy-mode apply is undone or
+    /// replaced by another easy-mode apply.
+    pub easy_mode_undo_graph: Option<PluginGraph>,
+    /// Safety and calibration summary for the currently applied easy chain.
+    pub easy_mode_last_apply: Option<HeadphoneEasyApplyOutcome>,
 }
 
 impl Default for HeadphoneEqState {
@@ -60,6 +67,8 @@ impl Default for HeadphoneEqState {
             detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
             selected_preset: "balanced".to_string(),
             expanded_sections: vec!["measurement".into(), "target".into(), "eq-design".into()],
+            easy_mode_undo_graph: None,
+            easy_mode_last_apply: None,
         }
     }
 }

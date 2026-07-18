@@ -211,6 +211,7 @@ pub fn render_plugin_shell(
     plugin_idx: usize,
     plugin_type: &PluginType,
     enabled: bool,
+    text: PluginCommonTranslations,
     theme: &Theme,
     content: impl IntoElement,
     on_bypass: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
@@ -218,9 +219,11 @@ pub fn render_plugin_shell(
     let accent = plugin_accent_color(plugin_type, theme);
     let icon = plugin_icon(plugin_type, false, false);
     let name = plugin_type.name().to_uppercase();
-    let description = super::ui_rack::plugin_description(plugin_type);
+    let description = super::ui_rack::plugin_description(plugin_type, text);
 
     div()
+        .w_full()
+        .min_w_0()
         .flex()
         .flex_col()
         .rounded(d.r_xl)
@@ -234,6 +237,8 @@ pub fn render_plugin_shell(
         // Header bar
         .child(
             div()
+                .w_full()
+                .min_w_0()
                 .flex()
                 .items_center()
                 .justify_between()
@@ -258,6 +263,7 @@ pub fn render_plugin_shell(
                         .child(
                             div()
                                 .flex()
+                                .flex_1()
                                 .flex_col()
                                 .min_w_0()
                                 .child(
@@ -265,6 +271,9 @@ pub fn render_plugin_shell(
                                         .text_size(d.text_sm)
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(theme.text_primary)
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .whitespace_nowrap()
                                         .child(name),
                                 )
                                 .child(
@@ -299,6 +308,7 @@ pub fn render_plugin_shell(
                     .on_click_event(move |_event, window, cx| cb(!enabled, window, cx));
 
                     div()
+                        .flex_none()
                         .flex()
                         .flex_col()
                         .items_end()
@@ -308,10 +318,11 @@ pub fn render_plugin_shell(
                             div()
                                 .text_size(d.text_xs)
                                 .text_color(theme.text_muted)
-                                .child("Double-click a control to reset it"),
+                                .child(text.reset_hint),
                         )
                 })),
         )
         // Content area with padding
-        .child(div().p(d.card).child(content))
+        .child(div().w_full().min_w_0().p(d.card).child(content))
 }
+use crate::app::i18n::PluginCommonTranslations;

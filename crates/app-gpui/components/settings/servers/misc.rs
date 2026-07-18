@@ -1,4 +1,5 @@
 use crate::app::constants::spacing;
+use crate::app::i18n::ServerSettingsTranslations;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -20,6 +21,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = ServerSettingsTranslations::for_language(state.app.ui_state.language);
         let translations = state.app.ui_state.translations.clone();
         let server_config = state.app.federation.server_config.clone();
 
@@ -32,7 +34,7 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                    .child("This machine serves your media"),
+                    .child(text.serves_media),
             )
             // SOTF API section
             .child(self.render_sotf_api_section(&server_config, &theme, &d, cx))
@@ -49,6 +51,8 @@ impl PlayerView {
         d: &Ds,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let text =
+            ServerSettingsTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let api = &server_config.api;
         let url = sotf_audio_player::server::sotf_api_server_url_for_settings(api);
         let has_token = api
@@ -82,7 +86,7 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Md)
                     .child(
-                        Text::new("SOTF API")
+                        Text::new(text.sotf_api)
                             .size(TextSize::Sm)
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary),
@@ -91,8 +95,8 @@ impl PlayerView {
                     .child(
                         ButtonSet::new("sotf-api-enabled")
                             .options(vec![
-                                ButtonSetOption::new("enabled", "Enable"),
-                                ButtonSetOption::new("disabled", "Disable"),
+                                ButtonSetOption::new("enabled", text.enable),
+                                ButtonSetOption::new("disabled", text.disable),
                             ])
                             .selected(selected_api_state)
                             .size(ButtonSetSize::Xs)
@@ -116,15 +120,17 @@ impl PlayerView {
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
                         .disabled(!api.enabled)
-                        .on_click_event(cx.listener(|view, _: &ClickEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                if let Err(err) = state.app.toggle_sotf_api_connection_qr() {
-                                    state.app.ui_state.toast_message =
-                                        Some(crate::app::ToastMessage::error(err));
-                                }
-                            });
-                            cx.notify();
-                        })),
+                        .on_click_event(cx.listener(
+                            |view, _: &ClickEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    if let Err(err) = state.app.toggle_sotf_api_connection_qr() {
+                                        state.app.ui_state.toast_message =
+                                            Some(crate::app::ToastMessage::error(err));
+                                    }
+                                });
+                                cx.notify();
+                            },
+                        )),
                     )
                     .build(),
             )
@@ -139,7 +145,7 @@ impl PlayerView {
                             .w(rems(7.5))
                             .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
-                            .child("URL"),
+                            .child(text.url),
                     )
                     .child(
                         div()
@@ -158,7 +164,7 @@ impl PlayerView {
                             .w(rems(7.5))
                             .text_size(d.text_xs)
                             .text_color(theme.text_secondary)
-                            .child("Token"),
+                            .child(text.token),
                     )
                     .child(
                         div()
@@ -184,12 +190,13 @@ impl PlayerView {
                         .gap(d.gap_md)
                         .py(d.pad_y)
                         .when_some(qr_data, |el, data| {
-                            el.child(QrCode::new(data).size(px(SERVER_QR_CODE_SIZE_PX))).child(
-                                div()
-                                    .text_size(d.text_xs)
-                                    .text_color(theme.text_muted)
-                                    .child("Scan to add this SOTF API server. The bearer token is included."),
-                            )
+                            el.child(QrCode::new(data).size(px(SERVER_QR_CODE_SIZE_PX)))
+                                .child(
+                                    div()
+                                        .text_size(d.text_xs)
+                                        .text_color(theme.text_muted)
+                                        .child(text.scan_to_add),
+                                )
                         }),
                 )
             })
@@ -203,6 +210,8 @@ impl PlayerView {
         d: &Ds,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let text =
+            ServerSettingsTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let mpd = &server_config.mpd;
         let mpd_enabled = mpd.enabled;
         let bind_address = mpd.bind_address.clone();
@@ -236,7 +245,7 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Md)
                     .child(
-                        Text::new("MPD Server")
+                        Text::new(text.mpd_server)
                             .size(TextSize::Sm)
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary),
@@ -245,15 +254,17 @@ impl PlayerView {
                     .child(
                         ButtonSet::new("mpd-enabled")
                             .options(vec![
-                                ButtonSetOption::new("enabled", "Enable"),
-                                ButtonSetOption::new("disabled", "Disable"),
+                                ButtonSetOption::new("enabled", text.enable),
+                                ButtonSetOption::new("disabled", text.disable),
                             ])
                             .selected(selected_mpd_state)
                             .size(ButtonSetSize::Xs)
                             .theme(theme.to_button_set_theme())
                             .on_change(move |value, _window, cx| {
                                 state_for_mpd_enabled.update(cx, |state, _cx| {
-                                    state.app.set_mpd_server_enabled(value.as_ref() == "enabled");
+                                    state
+                                        .app
+                                        .set_mpd_server_enabled(value.as_ref() == "enabled");
                                 });
                             }),
                     ),
@@ -304,7 +315,7 @@ impl PlayerView {
                                     .w(rems(7.5))
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
-                                    .child("TLS"),
+                                    .child(text.tls),
                             )
                             .child(
                                 Button::new(
@@ -322,13 +333,15 @@ impl PlayerView {
                                 })
                                 .size(ButtonSize::Xs)
                                 .theme(theme.to_button_theme())
-                                .on_click_event(cx.listener(move |view, _: &ClickEvent, _window, cx| {
-                                    let new_val = (!tls_enabled).to_string();
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.update_mpd_field("tls_enabled", &new_val);
-                                    });
-                                    cx.notify();
-                                })),
+                                .on_click_event(cx.listener(
+                                    move |view, _: &ClickEvent, _window, cx| {
+                                        let new_val = (!tls_enabled).to_string();
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.update_mpd_field("tls_enabled", &new_val);
+                                        });
+                                        cx.notify();
+                                    },
+                                )),
                             ),
                     )
                     // Auth mode toggle (Certificate / Password)
@@ -342,13 +355,13 @@ impl PlayerView {
                                     .w(rems(7.5))
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
-                                    .child("Auth"),
+                                    .child(text.authentication),
                             )
                             .child(
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
                                     .child(
-                                        Button::new("mpd-auth-cert", "Certificate")
+                                        Button::new("mpd-auth-cert", text.certificate)
                                             .variant(if cert_auth {
                                                 ButtonVariant::Primary
                                             } else {
@@ -359,16 +372,17 @@ impl PlayerView {
                                             .on_click_event(cx.listener(
                                                 move |view, _: &ClickEvent, _window, cx| {
                                                     view.state.update(cx, |state, _cx| {
-                                                        state
-                                                            .app
-                                                            .update_mpd_field("auth_mode", "certificate");
+                                                        state.app.update_mpd_field(
+                                                            "auth_mode",
+                                                            "certificate",
+                                                        );
                                                     });
                                                     cx.notify();
                                                 },
                                             )),
                                     )
                                     .child(
-                                        Button::new("mpd-auth-pw", "Password")
+                                        Button::new("mpd-auth-pw", text.password)
                                             .variant(if cert_auth {
                                                 ButtonVariant::Ghost
                                             } else {
@@ -379,9 +393,10 @@ impl PlayerView {
                                             .on_click_event(cx.listener(
                                                 move |view, _: &ClickEvent, _window, cx| {
                                                     view.state.update(cx, |state, _cx| {
-                                                        state
-                                                            .app
-                                                            .update_mpd_field("auth_mode", "password");
+                                                        state.app.update_mpd_field(
+                                                            "auth_mode",
+                                                            "password",
+                                                        );
                                                     });
                                                     cx.notify();
                                                 },
@@ -394,7 +409,7 @@ impl PlayerView {
                     .when(!cert_auth, |stack| {
                         stack.child(server_editable_field(
                             "mpd-password",
-                            "Password",
+                            text.password,
                             "",
                             if has_password {
                                 "Password is set (enter new to replace)"
@@ -429,7 +444,7 @@ impl PlayerView {
                                     div()
                                         .text_size(d.text_xs)
                                         .text_color(theme.text_muted)
-                                        .child("Clients authenticate via TLS certificate. Add trusted client fingerprints to allow access."),
+                                        .child(text.client_certificate_help),
                                 ),
                         )
                     })
@@ -442,8 +457,10 @@ impl PlayerView {
         server_config: &sotf_audio_player::federation_config::ServerConfig,
         theme: &crate::app::theme::Theme,
         d: &Ds,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let text =
+            ServerSettingsTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let dlna = &server_config.dlna;
         let dlna_enabled = dlna.enabled;
         let friendly_name = dlna.friendly_name.clone();
@@ -472,7 +489,7 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Md)
                     .child(
-                        Text::new("DLNA Server")
+                        Text::new(text.dlna_server)
                             .size(TextSize::Sm)
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary),
@@ -481,8 +498,8 @@ impl PlayerView {
                     .child(
                         ButtonSet::new("dlna-enabled")
                             .options(vec![
-                                ButtonSetOption::new("enabled", "Enable"),
-                                ButtonSetOption::new("disabled", "Disable"),
+                                ButtonSetOption::new("enabled", text.enable),
+                                ButtonSetOption::new("disabled", text.disable),
                             ])
                             .selected(selected_dlna_state)
                             .size(ButtonSetSize::Xs)
@@ -542,13 +559,13 @@ impl PlayerView {
                                     .w(rems(7.5))
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_secondary)
-                                    .child("Protocol"),
+                                    .child(text.protocol),
                             )
                             .child(
                                 div()
                                     .text_size(d.text_xs)
                                     .text_color(theme.text_muted)
-                                    .child("HTTP (no TLS - device compat)"),
+                                    .child(text.http_compatibility),
                             ),
                     )
                     .build(),
@@ -561,6 +578,8 @@ impl PlayerView {
         d: &Ds,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let text =
+            ServerSettingsTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let remote = {
             let state = self.state.read(cx);
             (
@@ -605,7 +624,7 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Md)
                     .child(
-                        Text::new("Remote SOTF Players")
+                        Text::new(text.remote_players)
                             .size(TextSize::Sm)
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary),
@@ -651,13 +670,13 @@ impl PlayerView {
                 div()
                     .text_size(d.text_xs)
                     .text_color(theme.text_muted)
-                    .child("Use the SOTF API address, for example http://192.168.1.102:8732. This is separate from MPD port 6600."),
+                    .child(text.api_address_help),
             )
             .child(
                 div()
                     .text_size(d.text_xs)
                     .text_color(theme.text_muted)
-                    .child("Enter the API auth token shown in the server's SOTF API settings. This token is not saved in remote_servers.json."),
+                    .child(text.api_token_help),
             )
             .when(discovery_error.is_some(), {
                 let theme = theme.clone();
@@ -720,7 +739,7 @@ impl PlayerView {
                     ))
                     .child(
                         div().flex().justify_end().child(
-                            Button::new("add-manual-sotf-remote", "Add Server")
+                            Button::new("add-manual-sotf-remote", text.add_server)
                                 .variant(ButtonVariant::Primary)
                                 .size(ButtonSize::Xs)
                                 .theme(theme.to_button_theme())
@@ -753,7 +772,7 @@ impl PlayerView {
                     .rounded(d.r_sm)
                     .text_size(d.text_xs)
                     .text_color(theme.text_muted)
-                    .child("No SOTF remote players saved yet."),
+                    .child(text.no_remote_players),
             );
         } else {
             for server in store.servers {
@@ -783,9 +802,11 @@ impl PlayerView {
         _d: &Ds,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let text =
+            ServerSettingsTranslations::for_language(self.state.read(cx).app.ui_state.language);
         #[cfg(target_os = "ios")]
         {
-            Button::new("scan-sotf-remote-qr", "Scan QR")
+            Button::new("scan-sotf-remote-qr", text.scan_qr)
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
@@ -802,7 +823,7 @@ impl PlayerView {
         }
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
-            Button::new("scan-sotf-remote-qr", "Scan QR")
+            Button::new("scan-sotf-remote-qr", text.scan_qr)
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
@@ -851,6 +872,8 @@ impl PlayerView {
         d: &Ds,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let text =
+            ServerSettingsTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let server_id_for_select = server.id.clone();
         let server_id_for_remove = server.id.clone();
         let server_id_for_test = server.id.clone();
@@ -916,7 +939,7 @@ impl PlayerView {
                                         .bg(theme.accent)
                                         .text_size(d.text_xs)
                                         .text_color(theme.text_on_accent)
-                                        .child("Selected"),
+                                        .child(text.selected),
                                 )
                             }),
                     )
@@ -949,7 +972,7 @@ impl PlayerView {
             .child(
                 Button::new(
                     SharedString::from(format!("test-sotf-remote-{server_id_for_test}")),
-                    "Test",
+                    text.test,
                 )
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Xs)
@@ -967,7 +990,7 @@ impl PlayerView {
             .child(
                 Button::new(
                     SharedString::from(format!("select-sotf-remote-{server_id_for_select}")),
-                    "Select",
+                    text.select,
                 )
                 .variant(if is_selected {
                     ButtonVariant::Primary
@@ -989,7 +1012,7 @@ impl PlayerView {
             .child(
                 Button::new(
                     SharedString::from(format!("remove-sotf-remote-{server_id_for_remove}")),
-                    "Remove",
+                    text.remove,
                 )
                 .variant(ButtonVariant::Ghost)
                 .size(ButtonSize::Xs)

@@ -71,13 +71,32 @@ Run an isolated daemon without installing the HAL driver:
 just systemwide-lab
 ```
 
-This starts `sotf-daemon` with `SOTF_SYSTEMWIDE_DRIVER=lab` and an isolated
-runtime directory. Override `SOTF_SYSTEMWIDE_RUNTIME_DIR` to choose where
-`daemon.sock` and `audio.shm` are created.
+This runs the daemon/state, real Unix-socket IPC, HAL protocol/streaming, and
+Configbar model suites. The process-level scenarios start `sotf-daemon` with
+`SOTF_SYSTEMWIDE_DRIVER=lab` in isolated temporary runtime directories. They
+exercise coherent snapshots, 2 → 10 → 2 channel changes, transactional plugin
+artifact rejection, shutdown, and restart without installing or touching the
+CoreAudio HAL bundle.
 
 ## IPC protocol
 
 JSON-over-Unix-socket, one object per line. Example:
+
+Plugin artifacts may be linear racks or validated DAGs. Engine graph artifacts
+use stable node IDs, explicit edges, channel counts, parameters, and bypass:
+
+```json
+{"command":"load_plugin_artifact","artifact":{"graph":{
+  "nodes":[
+    {"id":1,"plugin_type":"gain","parameters":{"gain_db":-3.0},"input_channels":2,"bypassed":false},
+    {"id":2,"plugin_type":"eq","parameters":{"filters":[]},"input_channels":2,"bypassed":false}
+  ],
+  "edges":[{"from_node":1,"to_node":2}]
+}}}
+```
+
+Graph candidates validate and apply transactionally. Configbar retains the rack
+for linear topology and opens its graph editor for DAG topology.
 
 ```json
 {"command": "load_plugins", "plugins": [

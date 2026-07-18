@@ -29,11 +29,11 @@
             app.playback.replay_gain_enabled = !app.playback.replay_gain_enabled;
             let mode_str = if app.playback.replay_gain_enabled {
                 match app.playback.replay_gain_mode {
-                    crate::app::ReplayGainMode::Track => "ON (Track mode)",
-                    crate::app::ReplayGainMode::Album => "ON (Album mode)",
+                    crate::app::ReplayGainMode::Track => crate::tui_text!(app, "ON (Track mode)"),
+                    crate::app::ReplayGainMode::Album => crate::tui_text!(app, "ON (Album mode)"),
                 }
             } else {
-                "OFF"
+                crate::tui_text!(app, "OFF")
             };
             app.ui.status_message = Some(format!("ReplayGain: {}", mode_str));
             if app.playback.is_playing {
@@ -49,8 +49,8 @@
                 ReplayGainMode::Album => ReplayGainMode::Track,
             };
             let mode_str = match app.playback.replay_gain_mode {
-                ReplayGainMode::Track => "Track",
-                ReplayGainMode::Album => "Album",
+                ReplayGainMode::Track => crate::tui_text!(app, "Track"),
+                ReplayGainMode::Album => crate::tui_text!(app, "Album"),
             };
             app.ui.status_message = Some(format!("ReplayGain mode: {}", mode_str));
             if app.playback.is_playing && app.playback.replay_gain_enabled {
@@ -75,4 +75,3 @@
                     .map(|device| PlayerCommand::SetOutputDevice(device.name.clone())),
             )
         }
-

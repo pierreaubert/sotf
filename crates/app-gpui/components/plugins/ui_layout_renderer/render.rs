@@ -31,7 +31,7 @@ use gpui::*;
 use gpui_audio_kit::audio::potentiometer::PotentiometerSize;
 use gpui_ui_kit::PaneDividerTheme;
 use sotf_audio_player::PluginSettings;
-use sotf_plugins::layout_solver::{KnobSize, SolvedLayout, solve_layout};
+use sotf_plugins::layout_solver::{Direction, KnobSize, SolvedLayout, solve_layout};
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
 use sotf_plugins::plugin_layout::*;
 use std::collections::HashMap;
@@ -716,6 +716,10 @@ fn render_group(
         .controls
         .iter()
         .any(|c| matches!(c.control_type, ControlType::VerticalSlider));
+    let stack_controls = solved.group_direction == Direction::Column;
+    let compact_width = solved
+        .column_width(ColumnRole::Main)
+        .unwrap_or(AUTO_COLUMN_MIN_MAIN_WIDTH);
 
     let mut col = div().flex().flex_col().gap(d.gap).flex_none();
     if !group.title.is_empty() {
@@ -723,7 +727,13 @@ fn render_group(
     }
 
     if has_sliders {
-        let mut slider_row = div().flex().gap(d.gap).items_end();
+        let mut slider_row = div()
+            .flex()
+            .gap(d.gap)
+            .items_end()
+            .when(stack_controls, |row| {
+                row.max_w(px(compact_width)).flex_wrap()
+            });
         for spec in group.controls {
             if spec.hidden {
                 continue;
@@ -1511,7 +1521,7 @@ fn render_file_picker(
                         log::warn!("No file open action for engine_key: {}", engine_key);
                     }
                 })
-                .child("Load"),
+                .child("⤓"),
         )
         .into_any_element()
 }

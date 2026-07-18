@@ -1,3 +1,4 @@
+use crate::app::i18n::RoomEqReportTranslations;
 use crate::app::types::room_eq::RoomEqReviewGraphSettings;
 use crate::components::design::Ds;
 use crate::components::graphs::common::render_empty_state;
@@ -51,6 +52,7 @@ use types::RoomEqChartSeries;
 pub(crate) fn render_room_eq_report_summary(
     d: Ds,
     report: &RoomEqReportData,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> impl IntoElement {
     let improvement = report
@@ -63,7 +65,7 @@ pub(crate) fn render_room_eq_report_summary(
         .header_background(theme.background_secondary)
         .border(theme.border)
         .header(
-            Text::new("Optimization Summary")
+            Text::new(text.optimization_summary)
                 .color(theme.text_primary)
                 .weight(TextWeight::Semibold),
         )
@@ -155,6 +157,7 @@ pub(crate) fn render_room_eq_report_summary(
 pub(crate) fn render_room_eq_bass_management_report(
     d: Ds,
     bass: &RoomEqReportBassManagement,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> impl IntoElement {
     Card::new()
@@ -164,7 +167,7 @@ pub(crate) fn render_room_eq_bass_management_report(
         // management succeeded → tint the border with `theme.success`.
         .border(theme.success)
         .header(
-            Text::new("Bass Management")
+            Text::new(text.bass_management)
                 .color(theme.text_primary)
                 .weight(TextWeight::Semibold),
         )
@@ -253,10 +256,10 @@ pub(crate) fn render_room_eq_bass_management_report(
                             .justify_start()
                             .gap(d.gap_md)
                             .when(!bass.routes.is_empty(), |row| {
-                                row.child(render_room_eq_bass_routing_chart(bass, theme))
+                                row.child(render_room_eq_bass_routing_chart(bass, text, theme))
                             })
                             .when_some(bass.headroom.as_ref(), |row, headroom| {
-                                row.child(render_room_eq_bass_headroom_chart(headroom, theme))
+                                row.child(render_room_eq_bass_headroom_chart(headroom, text, theme))
                             }),
                     )
                 })
@@ -323,6 +326,7 @@ fn render_room_eq_colored_stat_item(
 
 fn render_room_eq_bass_routing_chart(
     bass: &RoomEqReportBassManagement,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
     use d3rs::sankey::{SankeyLayout, SankeyLinkInput};
@@ -490,7 +494,7 @@ fn render_room_eq_bass_routing_chart(
             VStack::new()
                 .spacing(StackSpacing::Xs)
                 .child(
-                    Text::new("Bass Management Routing Graph")
+                    Text::new(text.bass_routing_graph)
                         .weight(TextWeight::Semibold)
                         .size(TextSize::Xs)
                         .color(theme.text_primary),
@@ -502,6 +506,7 @@ fn render_room_eq_bass_routing_chart(
 
 fn render_room_eq_bass_headroom_chart(
     headroom: &RoomEqReportBassHeadroom,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
     use gpui_px::{BarTheme, LegendPosition, bar};
@@ -533,7 +538,7 @@ fn render_room_eq_bass_headroom_chart(
     };
 
     let chart = bar(&labels, &rms)
-        .label("RMS programme gain")
+        .label(text.rms_programme_gain)
         .color(0x4a90d9)
         .add_series(&peak, Some("Coherent peak gain"), 0xe74c3c, 0.78)
         .add_series(&lfe, Some("LFE contribution"), 0xe67e22, 0.72)
@@ -739,6 +744,7 @@ fn render_room_eq_table(
 pub(crate) fn render_room_eq_report_overview(
     d: Ds,
     report: &RoomEqReportData,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
     original_settings: RoomEqReviewGraphSettings,
     eq_settings: RoomEqReviewGraphSettings,
@@ -872,7 +878,7 @@ pub(crate) fn render_room_eq_report_overview(
         .header_background(theme.background_secondary)
         .border(theme.border)
         .header(
-            Text::new("All Channels Overview")
+            Text::new(text.all_channels_overview)
                 .color(theme.text_primary)
                 .weight(TextWeight::Semibold),
         )
@@ -883,6 +889,7 @@ pub(crate) fn render_room_eq_report_overview(
 pub(crate) fn render_room_eq_report_channel(
     d: Ds,
     channel: &RoomEqReportChannel,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
     full_settings: RoomEqReviewGraphSettings,
     zoom_settings: RoomEqReviewGraphSettings,
@@ -1002,7 +1009,7 @@ pub(crate) fn render_room_eq_report_channel(
             .child(zoom_chart)
             .child(eq_chart)
             .when(has_ir, |el| {
-                el.child(render_room_eq_ir_chart(channel, theme, ir_chart_size))
+                el.child(render_room_eq_ir_chart(channel, text, theme, ir_chart_size))
             })
             .into_any_element()
     } else {
@@ -1012,7 +1019,7 @@ pub(crate) fn render_room_eq_report_channel(
             .child(zoom_chart)
             .child(eq_chart)
             .when(has_ir, |el| {
-                el.child(render_room_eq_ir_chart(channel, theme, ir_chart_size))
+                el.child(render_room_eq_ir_chart(channel, text, theme, ir_chart_size))
             })
             .into_any_element()
     };
@@ -1042,61 +1049,62 @@ pub(crate) fn render_room_eq_report_channel(
 fn render_room_eq_epa_table(
     d: Ds,
     epa: &RoomEqReportEpaComparison,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
     let rows = [
         epa_metric_row(
             "preference",
-            "Preference",
+            text.preference,
             epa.pre.preference,
             epa.post.preference,
             "{:+.2}",
         ),
         epa_metric_row(
             "evaluation",
-            "Evaluation",
+            text.evaluation,
             epa.pre.evaluation,
             epa.post.evaluation,
             "{:+.2}",
         ),
         epa_metric_row(
             "potency",
-            "Potency",
+            text.potency,
             epa.pre.potency,
             epa.post.potency,
             "{:+.2}",
         ),
         epa_metric_row(
             "activity",
-            "Activity",
+            text.activity,
             epa.pre.activity,
             epa.post.activity,
             "{:+.2}",
         ),
         epa_metric_row(
             "sharpness_acum",
-            "Sharpness (acum)",
+            text.sharpness_acum,
             epa.pre.sharpness_acum,
             epa.post.sharpness_acum,
             "{:+.2}",
         ),
         epa_metric_row(
             "roughness",
-            "Roughness",
+            text.roughness,
             epa.pre.roughness,
             epa.post.roughness,
             "{:+.3}",
         ),
         epa_metric_row(
             "total_loudness_sone",
-            "Total loudness (sone)",
+            text.total_loudness_sone,
             epa.pre.total_loudness_sone,
             epa.post.total_loudness_sone,
             "{:+.2}",
         ),
         epa_metric_row(
             "loudness_balance",
-            "Loudness balance",
+            text.loudness_balance,
             epa.pre.loudness_balance,
             epa.post.loudness_balance,
             "{:+.3}",
@@ -1105,13 +1113,11 @@ fn render_room_eq_epa_table(
 
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(render_room_eq_epa_metric_table(d, &rows, theme))
+        .child(render_room_eq_epa_metric_table(d, &rows, text, theme))
         .child(
-            Text::new(
-                "Higher is better for Preference / Evaluation / Total loudness / Loudness balance; lower is better for Activity / Sharpness deviation / Roughness.",
-            )
-            .size(TextSize::Xs)
-            .color(theme.text_secondary),
+            Text::new(text.epa_interpretation)
+                .size(TextSize::Xs)
+                .color(theme.text_secondary),
         )
         .into_any_element()
 }
@@ -1125,14 +1131,15 @@ fn render_room_eq_epa_table(
 fn render_room_eq_epa_metric_table(
     d: Ds,
     rows: &[(bool, String, String, String, String, bool)],
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
-    let headers = ["Metric", "Before EQ", "After EQ", "Delta"];
+    let headers = [text.metric, text.before_eq, text.after_eq, text.delta];
     let cols = headers.len() as u16;
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new("EPA Psychoacoustic Scores")
+            Text::new(text.epa_scores)
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -1276,6 +1283,7 @@ fn render_room_eq_filter_details(
 pub(crate) fn render_room_eq_epa_card(
     d: Ds,
     report: &RoomEqReportData,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
     let channels_with_epa: Vec<_> = report
@@ -1293,12 +1301,12 @@ pub(crate) fn render_room_eq_epa_card(
             VStack::new()
                 .spacing(StackSpacing::Xs)
                 .child(
-                    Text::new(format!("Channel: {}", channel.name))
+                    Text::new(format!("{}: {}", text.channel, channel.name))
                         .weight(TextWeight::Semibold)
                         .size(TextSize::Sm)
                         .color(theme.text_primary),
                 )
-                .child(render_room_eq_epa_table(d, epa, theme)),
+                .child(render_room_eq_epa_table(d, epa, text, theme)),
         );
     }
 
@@ -1307,7 +1315,7 @@ pub(crate) fn render_room_eq_epa_card(
         .header_background(theme.background_secondary)
         .border(theme.border)
         .header(
-            Text::new("EPA Psychoacoustic Scores")
+            Text::new(text.epa_scores)
                 .color(theme.text_primary)
                 .weight(TextWeight::Semibold),
         )
@@ -1325,6 +1333,7 @@ pub(crate) fn render_room_eq_epa_card(
 pub(crate) fn render_room_eq_filters_card(
     d: Ds,
     report: &RoomEqReportData,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
     let channels_with_filters: Vec<&RoomEqReportChannel> = report
@@ -1342,7 +1351,7 @@ pub(crate) fn render_room_eq_filters_card(
             VStack::new()
                 .spacing(StackSpacing::Xs)
                 .child(
-                    Text::new(format!("Channel: {}", channel.name))
+                    Text::new(format!("{}: {}", text.channel, channel.name))
                         .weight(TextWeight::Semibold)
                         .size(TextSize::Sm)
                         .color(theme.text_primary),
@@ -1356,7 +1365,7 @@ pub(crate) fn render_room_eq_filters_card(
         .header_background(theme.background_secondary)
         .border(theme.border)
         .header(
-            Text::new("EQ Filters")
+            Text::new(text.eq_filters)
                 .color(theme.text_primary)
                 .weight(TextWeight::Semibold),
         )
@@ -1523,6 +1532,7 @@ fn render_room_eq_curve_chart(
 
 fn render_room_eq_ir_chart(
     channel: &RoomEqReportChannel,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
     chart_size: (f32, f32),
 ) -> gpui::AnyElement {
@@ -1596,7 +1606,7 @@ fn render_room_eq_ir_chart(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new("Impulse Response")
+            Text::new(text.impulse_response)
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -1613,6 +1623,8 @@ fn render_room_eq_ir_chart(
 pub(crate) fn render_channel_config_row(
     idx: usize,
     config: &crate::app::types::RoomEqSpeakerConfig,
+    text: RoomEqReportTranslations,
+    workflow_text: crate::app::i18n::RoomEqWorkflowTranslations,
     theme: &crate::theme::Theme,
     view: &Entity<PlayerView>,
     d: Ds,
@@ -1653,67 +1665,73 @@ pub(crate) fn render_channel_config_row(
                 .gap(d.gap)
                 .items_center()
                 .child(
-                    Text::new("Type:")
+                    Text::new(text.type_label)
                         .size(TextSize::Xs)
                         .color(theme.text_secondary),
                 )
                 .child(
-                    Button::new(SharedString::from(format!("single-{}", idx)), "Single")
-                        .variant(if !is_multi {
-                            ButtonVariant::Primary
-                        } else {
-                            ButtonVariant::Secondary
-                        })
-                        .size(ButtonSize::Xs)
-                        .theme(theme.to_button_theme())
-                        .on_click({
-                            let view = view.clone();
-                            move |_, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.state.update(cx, |state, _| {
-                                        if let Some(cfg) = state
-                                            .app
-                                            .measurement_state
-                                            .room_eq_state
-                                            .speaker_configs
-                                            .get_mut(idx)
-                                        {
-                                            cfg.config_type = SpeakerConfigType::Single;
-                                        }
-                                    });
-                                    cx.notify();
+                    Button::new(
+                        SharedString::from(format!("single-{}", idx)),
+                        workflow_text.single,
+                    )
+                    .variant(if !is_multi {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Secondary
+                    })
+                    .size(ButtonSize::Xs)
+                    .theme(theme.to_button_theme())
+                    .on_click({
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    if let Some(cfg) = state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .speaker_configs
+                                        .get_mut(idx)
+                                    {
+                                        cfg.config_type = SpeakerConfigType::Single;
+                                    }
                                 });
-                            }
-                        }),
+                                cx.notify();
+                            });
+                        }
+                    }),
                 )
                 .child(
-                    Button::new(SharedString::from(format!("multi-{}", idx)), "Multi-Driver")
-                        .variant(if is_multi {
-                            ButtonVariant::Primary
-                        } else {
-                            ButtonVariant::Secondary
-                        })
-                        .size(ButtonSize::Xs)
-                        .theme(theme.to_button_theme())
-                        .on_click({
-                            let view = view.clone();
-                            move |_, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.state.update(cx, |state, _| {
-                                        if let Some(cfg) = state
-                                            .app
-                                            .measurement_state
-                                            .room_eq_state
-                                            .speaker_configs
-                                            .get_mut(idx)
-                                        {
-                                            cfg.config_type = SpeakerConfigType::MultiDriver;
-                                        }
-                                    });
-                                    cx.notify();
+                    Button::new(
+                        SharedString::from(format!("multi-{}", idx)),
+                        workflow_text.multi_driver,
+                    )
+                    .variant(if is_multi {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Secondary
+                    })
+                    .size(ButtonSize::Xs)
+                    .theme(theme.to_button_theme())
+                    .on_click({
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    if let Some(cfg) = state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .speaker_configs
+                                        .get_mut(idx)
+                                    {
+                                        cfg.config_type = SpeakerConfigType::MultiDriver;
+                                    }
                                 });
-                            }
-                        }),
+                                cx.notify();
+                            });
+                        }
+                    }),
                 ),
         )
         // Crossover type selector (only shown for multi-driver)
@@ -1724,7 +1742,7 @@ pub(crate) fn render_channel_config_row(
                     .gap(d.gap)
                     .items_center()
                     .child(
-                        Text::new("Crossover:")
+                        Text::new(text.crossover_label)
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
@@ -1878,6 +1896,7 @@ fn render_crossover_dropdown(
 pub(crate) fn render_channel_result_card(
     d: Ds,
     result: crate::app::types::ChannelOptResult,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
     y_axis_auto: bool,
@@ -1966,6 +1985,7 @@ pub(crate) fn render_channel_result_card(
                     &result.broadband_filters,
                     result.preamp_gain_db,
                     has_fir,
+                    text,
                     theme,
                     smoothing_octaves,
                     y_axis_auto,
@@ -1993,6 +2013,7 @@ pub(crate) fn render_channel_result_card(
                 original,
                 corrected,
                 result.preamp_gain_db,
+                text,
                 theme,
                 smoothing_octaves,
                 interactive_state,
@@ -2014,6 +2035,7 @@ pub(crate) fn render_channel_result_card(
                     original,
                     normalized,
                     result.preamp_gain_db,
+                    text,
                     theme,
                     smoothing_octaves,
                 ))
@@ -2026,6 +2048,7 @@ pub(crate) fn render_channel_result_card(
                 div.child(render_phase_graph(
                     result.phase_response_before.as_deref(),
                     result.phase_response_after.as_deref(),
+                    text,
                     theme,
                 ))
             },
@@ -2037,13 +2060,14 @@ pub(crate) fn render_channel_result_card(
                 div.child(render_group_delay_graph(
                     result.group_delay_before.as_deref(),
                     result.group_delay_after.as_deref(),
+                    text,
                     theme,
                 ))
             },
         )
         // Impulse response plot (if IR data available)
         .when_some(result.impulse_response.as_ref(), |div, ir| {
-            div.child(render_impulse_response_graph(ir, theme))
+            div.child(render_impulse_response_graph(ir, text, theme))
         })
         // EQ Filter details — main (IIR room correction) and broadband
         // pre-correction are shown as separate tables so users can tell them
@@ -2054,7 +2078,7 @@ pub(crate) fn render_channel_result_card(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(
-                        Text::new("Room EQ Filters")
+                        Text::new(text.room_eq_filters)
                             .weight(TextWeight::Semibold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -2067,7 +2091,7 @@ pub(crate) fn render_channel_result_card(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(
-                        Text::new("Broadband Pre-correction Filters")
+                        Text::new(text.broadband_precorrection_filters)
                             .weight(TextWeight::Semibold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -2081,7 +2105,7 @@ pub(crate) fn render_channel_result_card(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(
-                        Text::new("Crossover Frequencies")
+                        Text::new(text.crossover_frequencies)
                             .weight(TextWeight::Semibold)
                             .size(TextSize::Xs)
                             .color(theme.text_primary),
@@ -2114,6 +2138,7 @@ fn render_response_comparison_graph(
     original: &[(f64, f64)],
     corrected: &[(f64, f64)],
     _preamp_gain_db: f64,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
@@ -2268,7 +2293,7 @@ fn render_response_comparison_graph(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new("Original vs Corrected")
+            Text::new(text.original_vs_corrected)
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -2290,6 +2315,7 @@ fn render_filter_plot(
     broadband_filters: &[crate::app::types::EqFilterConfig],
     preamp_gain_db: f64,
     has_fir: bool,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
     _smoothing_octaves: f64,
     y_axis_auto: bool,
@@ -2398,7 +2424,7 @@ fn render_filter_plot(
         .x_range(20.0, 20000.0)
         .y_range(-12.0, 6.0)
         .y_label("EQ (dB)")
-        .label("Sum")
+        .label(text.sum)
         .legend_position(LegendPosition::Right)
         .color(GREEN)
         .stroke_width(2.0)
@@ -2520,7 +2546,7 @@ fn render_filter_plot(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new("EQ Filters")
+            Text::new(text.eq_filters)
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -2538,6 +2564,7 @@ fn render_tonal_histogram(
     original: &[(f64, f64)],
     corrected: &[(f64, f64)],
     preamp_gain_db: f64,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
 ) -> impl IntoElement {
@@ -2652,7 +2679,7 @@ fn render_tonal_histogram(
 
         bar(&labels, &hist_orig)
             .color(BLUE)
-            .label("Original")
+            .label(text.original)
             .theme(bar_theme)
             .size(GRAPH_WIDTH, GRAPH_HEIGHT)
             .bar_gap(4.0)
@@ -2668,7 +2695,7 @@ fn render_tonal_histogram(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new("Tonal Balance")
+            Text::new(text.tonal_balance)
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -2681,6 +2708,7 @@ fn render_tonal_histogram(
 fn render_phase_graph(
     phase_before: Option<&[(f64, f64)]>,
     phase_after: Option<&[(f64, f64)]>,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> impl IntoElement {
     use crate::components::graphs::common::theme_to_chart_theme;
@@ -2778,7 +2806,7 @@ fn render_phase_graph(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new("Phase Response")
+            Text::new(text.phase_response)
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -2790,6 +2818,7 @@ fn render_phase_graph(
 /// Render the impulse response graph
 fn render_impulse_response_graph(
     impulse_response: &[(f64, f64)],
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> impl IntoElement {
     use crate::components::graphs::common::theme_to_chart_theme;
@@ -2832,7 +2861,7 @@ fn render_impulse_response_graph(
         )
         .y_range(y_min, y_max)
         .y_label("Amplitude")
-        .label("IR")
+        .label(text.ir)
         .legend_position(LegendPosition::Bottom)
         .color(BLUE)
         .stroke_width(1.5)
@@ -2846,7 +2875,7 @@ fn render_impulse_response_graph(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new("Impulse Response")
+            Text::new(text.impulse_response)
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
@@ -2944,6 +2973,7 @@ fn render_filter_table(
 fn render_group_delay_graph(
     gd_before: Option<&[(f64, f64)]>,
     gd_after: Option<&[(f64, f64)]>,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     use crate::components::graphs::common::theme_to_chart_theme;
@@ -3051,7 +3081,7 @@ fn render_group_delay_graph(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(
-            Text::new("Group Delay")
+            Text::new(text.group_delay)
                 .weight(TextWeight::Semibold)
                 .size(TextSize::Xs)
                 .color(theme.text_primary),

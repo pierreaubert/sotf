@@ -22,6 +22,7 @@ impl PlayerView {
         let current_channel = state.app.ui_state.release_channel;
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let text = SettingsSurfaceTranslations::for_language(state.app.ui_state.language);
 
         div()
             .flex()
@@ -129,11 +130,16 @@ impl PlayerView {
                         container
                     }),
             )
-            .child(self.render_feature_table(&theme, d))
+            .child(self.render_feature_table(text, &theme, d))
     }
 
     /// Render the feature availability table grouped by Features and Plugins.
-    fn render_feature_table(&self, theme: &crate::theme::Theme, d: Ds) -> impl IntoElement {
+    fn render_feature_table(
+        &self,
+        text: SettingsSurfaceTranslations,
+        theme: &crate::theme::Theme,
+        d: Ds,
+    ) -> impl IntoElement {
         // --- Features (screens) ---
         let features: Vec<FeatureRow> = vec![
             FeatureRow {
@@ -220,7 +226,7 @@ impl PlayerView {
                     .font_weight(FontWeight::BOLD)
                     .text_color(text_secondary)
                     .text_center()
-                    .child("Stable"),
+                    .child(text.stable),
             )
             .child(
                 div()
@@ -229,7 +235,7 @@ impl PlayerView {
                     .font_weight(FontWeight::BOLD)
                     .text_color(text_secondary)
                     .text_center()
-                    .child("Beta"),
+                    .child(text.beta),
             )
             .child(
                 div()
@@ -238,7 +244,7 @@ impl PlayerView {
                     .font_weight(FontWeight::BOLD)
                     .text_color(text_secondary)
                     .text_center()
-                    .child("Alpha"),
+                    .child(text.alpha),
             );
 
         // Helper to build one table section
@@ -305,3 +311,4 @@ impl PlayerView {
             .child(build_section("Plugins", plugins))
     }
 }
+use crate::app::i18n::SettingsSurfaceTranslations;

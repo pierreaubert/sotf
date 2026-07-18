@@ -54,6 +54,9 @@ pub struct GraphEdgeConfig {
     pub to: String,
     #[serde(default)]
     pub channel_map: Option<Vec<usize>>,
+    /// First destination channel written by the selected source channels.
+    #[serde(default)]
+    pub destination_offset: usize,
 }
 
 /// Mix mode for A/B comparison

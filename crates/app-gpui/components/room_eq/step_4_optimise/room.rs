@@ -7,6 +7,7 @@ use super::misc::is_active_step;
 use super::render::render_pipeline_phase_readout;
 use super::render::render_pipeline_step_strip;
 use super::room_eq_progress_chart_series::RoomEqProgressChartSeries;
+use crate::app::i18n::RoomEqReportTranslations;
 use crate::app::types::room_eq::InteractiveChartStateWrapper;
 use crate::components::design::Ds;
 use crate::components::graphs::common::theme_to_chart_theme;
@@ -26,12 +27,20 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
+        let report_text = RoomEqReportTranslations::for_language(state.app.ui_state.language);
+        let workflow_text =
+            crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
 
         let progress = room_eq.overall_progress;
-        let status_msg = room_eq.status_message.clone();
-        let error_msg = room_eq.error_message.clone();
+        let runtime_text =
+            crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language);
+        let status_msg = runtime_text.translate(&room_eq.status_message).into_owned();
+        let error_msg = room_eq
+            .error_message
+            .as_deref()
+            .map(|message| runtime_text.translate(message).into_owned());
         let is_running = room_eq.is_optimizing();
         let is_completed = room_eq.is_optimization_complete();
         let is_failed =
@@ -247,26 +256,26 @@ impl PlayerView {
                                                     {
                                                         status_msg.clone()
                                                     } else {
-                                                        format!(
-                                                            "Iteration: {} | Loss: {:.4}",
-                                                            current_iteration, current_loss
+                                                        workflow_text.iteration_loss(
+                                                            current_iteration,
+                                                            current_loss,
                                                         )
                                                     }
                                                 } else {
-                                                    format!("Progress: {:.0}%", display_progress)
+                                                    workflow_text.progress(display_progress)
                                                 })
                                                 .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                             )
                                             .when(is_completed, |el| {
                                                 el.child(
-                                                    Badge::new("Success")
+                                                    Badge::new(workflow_text.success)
                                                         .variant(BadgeVariant::Success),
                                                 )
                                             })
                                             .when(is_failed, |el| {
                                                 el.child(
-                                                    Badge::new("Failed")
+                                                    Badge::new(workflow_text.failed)
                                                         .variant(BadgeVariant::Error),
                                                 )
                                             }),
@@ -291,6 +300,7 @@ impl PlayerView {
                                         is_failed,
                                     ))
                                     .child(render_pipeline_phase_readout(
+                                        report_text,
                                         &theme,
                                         current_pipeline_step,
                                         &step_history,
@@ -554,9 +564,9 @@ impl PlayerView {
                         .position(|ch| ch == &first_series.channel)
                         .unwrap_or(0);
                     let mut builder = line(&iters, &losses)
-                        .title("Optimization Process")
-                        .x_label("Iterations")
-                        .y_label("Loss")
+                        .title(report_text.optimization_process)
+                        .x_label(report_text.iterations)
+                        .y_label(report_text.loss)
                         .label(first_series.loss_label())
                         .x_range(x_min, x_max)
                         .y_range(y_min_domain, y_max_domain)
@@ -645,10 +655,10 @@ impl PlayerView {
                 } else {
                     // No data yet — build an empty chart
                     line(&[0.0], &[0.0])
-                        .title("Optimization Process")
-                        .x_label("Iterations")
-                        .y_label("Loss")
-                        .label("Loss")
+                        .title(report_text.optimization_process)
+                        .x_label(report_text.iterations)
+                        .y_label(report_text.loss)
+                        .label(report_text.loss)
                         .x_range(0.0, 100.0)
                         .y_range(0.0, 1.0)
                         .color(channel_colors[0])
@@ -814,14 +824,39 @@ impl PlayerView {
                 .room_eq_state
                 .wizard_mode;
             if wizard_mode == RoomEqWizardMode::Simple {
-                self.state.update(cx, |state, _| {
-                    let room_eq = &mut state.app.measurement_state.room_eq_state;
-                    let preset = room_eq.simple_preset.clone();
-                    sotf_audio_player::room_eq_types::apply_simple_preset(
-                        &preset,
-                        &mut room_eq.optimizer_config,
+                let ready = self.state.update(cx, |state, _| {
+                    let easy_translations = crate::i18n::RoomEqEasyTranslations::for_language(
+                        state.app.ui_state.language,
                     );
+                    let room_eq = &mut state.app.measurement_state.room_eq_state;
+                    let layout = room_eq.easy_layout;
+                    let channel_names = room_eq
+                        .channel_measurements
+                        .iter()
+                        .map(|measurement| measurement.channel_name.clone())
+                        .collect::<Vec<_>>();
+                    let mut preset = room_eq.simple_preset.clone();
+                    match sotf_audio_player::room_eq_types::apply_room_eq_easy_layout(
+                        layout,
+                        &channel_names,
+                        &mut preset,
+                        &mut room_eq.optimizer_config,
+                    ) {
+                        Ok(()) => {
+                            room_eq.simple_preset = preset;
+                            room_eq.error_message = None;
+                            true
+                        }
+                        Err(error) => {
+                            room_eq.error_message = Some(easy_translations.invalid_layout(&error));
+                            false
+                        }
+                    }
                 });
+                if !ready {
+                    cx.notify();
+                    return;
+                }
             }
         }
 

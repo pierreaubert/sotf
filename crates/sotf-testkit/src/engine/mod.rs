@@ -97,10 +97,11 @@ pub fn require_virtual_device() -> String {
 
 /// Create an `EngineConfig` configured for testing with a virtual audio device.
 pub fn test_engine_config() -> EngineConfig {
-    let mut config = EngineConfig::default();
-    config.output_device = Some(require_virtual_device());
-    config.allow_virtual_output = true;
-    config
+    EngineConfig {
+        output_device: Some(require_virtual_device()),
+        allow_virtual_output: true,
+        ..Default::default()
+    }
 }
 
 /// Create an `EngineConfig` with specific settings, using a virtual audio device.

@@ -38,7 +38,11 @@ pub(super) enum Command {
         output_channels: usize,
     },
     #[serde(rename = "load_plugin_artifact")]
-    LoadPluginArtifact { artifact: Value },
+    LoadPluginArtifact {
+        artifact: Value,
+        #[serde(default)]
+        base_generation: Option<u64>,
+    },
     #[serde(rename = "set_input_channels")]
     SetInputChannels { channels: usize },
     #[serde(rename = "set_output_channels")]

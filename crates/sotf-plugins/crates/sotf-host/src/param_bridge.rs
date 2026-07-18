@@ -104,7 +104,7 @@ pub fn set_parameter(
 
 /// Convert a `ParamSpec` + current f64 value into a `Parameter` for caching.
 fn spec_to_parameter(spec: &ParamSpec, value: f64) -> Parameter {
-    match spec.param_type {
+    let parameter = match spec.param_type {
         ParamType::Float { min, max, .. } => Parameter::new_float(
             spec.engine_key,
             spec.name,
@@ -126,6 +126,21 @@ fn spec_to_parameter(spec: &ParamSpec, value: f64) -> Parameter {
             Parameter::new_int(spec.engine_key, spec.name, idx, 0, num.saturating_sub(1))
         }
         ParamType::FilePath => Parameter::new_string(spec.engine_key, spec.name, String::new()),
+    };
+    parameter.with_update_mode(spec.update_mode)
+}
+
+/// Copy update policies from the canonical specs onto a manually-built
+/// parameter cache. Dynamic parameters without a matching static spec retain
+/// their explicit/default policy.
+pub fn apply_spec_update_modes(parameters: &mut [Parameter], specs: &[ParamSpec]) {
+    for parameter in parameters {
+        if let Some(spec) = specs
+            .iter()
+            .find(|spec| spec.engine_key == parameter.id.as_str())
+        {
+            parameter.update_mode = spec.update_mode;
+        }
     }
 }
 

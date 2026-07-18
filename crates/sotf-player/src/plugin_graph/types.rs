@@ -21,7 +21,7 @@ pub enum NodeRole {
 }
 
 /// Special nodes for explicit I/O routing
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SpecialNodeType {
     /// Graph audio input (from audio source)
     Input,

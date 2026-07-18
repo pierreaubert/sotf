@@ -1,6 +1,12 @@
 use gpui::StatefulInteractiveElement;
 
+use crate::app::i18n::PhoneTranslations;
+
 impl PlayerView {
+    fn phone_translations(&self, cx: &Context<Self>) -> PhoneTranslations {
+        PhoneTranslations::for_language(self.state.read(cx).app.ui_state.language)
+    }
+
     fn render_phone_shell(
         &mut self,
         current_screen: Screen,
@@ -77,6 +83,16 @@ impl PlayerView {
                 self.render_phone_tool_wrapper("Spinorama", "Speaker EQ", content, cx)
             }
             Screen::PluginGraph => self.render_phone_plugin_graph_screen(cx),
+            Screen::ListeningTest => {
+                let translations = self.state.read(cx).app.ui_state.translations.clone();
+                let content = self.render_listening_test_screen(cx).into_any_element();
+                self.render_phone_tool_wrapper(
+                    translations.screen_listening_test,
+                    translations.listening_test.trial.title,
+                    content,
+                    cx,
+                )
+            }
             Screen::Streams => self.render_streams_screen_phone(cx),
         }
     }
@@ -137,11 +153,7 @@ impl PlayerView {
                 || (screen == Screen::StudioHub && current_screen.is_studio_tool())
                 || (screen == Screen::Settings && current_screen == Screen::SettingsDetail)
                 || (screen == Screen::NowPlaying && current_screen == Screen::Queue);
-            if selected {
-                Some(icon)
-            } else {
-                None
-            }
+            if selected { Some(icon) } else { None }
         })
         .unwrap_or(IconName::Home);
 
@@ -367,6 +379,7 @@ impl PlayerView {
 
     fn render_home_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let albums: Vec<sotf_audio_player::Album> =
             self.state.read(cx).app.library_state.library.albums.clone();
@@ -382,7 +395,7 @@ impl PlayerView {
                 .bg(theme.background)
                 .text_color(theme.text_muted)
                 .child(self.render_phone_home_header(cx))
-                .child("Add albums to your library to build Home shelves.")
+                                    .child(text.home_empty)
                 .into_any_element();
         }
 
@@ -390,7 +403,7 @@ impl PlayerView {
         recently_played.sort_by_key(|album| std::cmp::Reverse(album.play_count));
 
         let mut most_played = albums.iter().collect::<Vec<_>>();
-                most_played.sort_by(|a, b| {
+        most_played.sort_by(|a, b| {
             b.play_count
                 .cmp(&a.play_count)
                 .then_with(|| a.title.cmp(&b.title))
@@ -417,12 +430,14 @@ impl PlayerView {
             .child(self.render_phone_home_shelf(
                 crate::app::PhoneHomeShelf::RecentlyPlayed,
                 recently_played.into_iter().take(12).collect(),
+                text,
                 &theme,
                 &d,
             ))
             .child(self.render_phone_home_shelf(
                 crate::app::PhoneHomeShelf::MostPlayed,
                 most_played.into_iter().take(12).collect(),
+                text,
                 &theme,
                 &d,
             ))
@@ -430,6 +445,7 @@ impl PlayerView {
                 el.child(self.render_phone_home_shelf(
                     crate::app::PhoneHomeShelf::Favorites,
                     favorites.into_iter().take(12).collect(),
+                    text,
                     &theme,
                     &d,
                 ))
@@ -437,6 +453,7 @@ impl PlayerView {
             .child(self.render_phone_home_shelf(
                 crate::app::PhoneHomeShelf::NewInLibrary,
                 recent_releases.into_iter().take(12).collect(),
+                text,
                 &theme,
                 &d,
             ))
@@ -447,6 +464,7 @@ impl PlayerView {
         &self,
         shelf: crate::app::PhoneHomeShelf,
         albums: Vec<&sotf_audio_player::Album>,
+        text: PhoneTranslations,
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> AnyElement {
@@ -480,7 +498,7 @@ impl PlayerView {
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(theme.accent)
                             .cursor_pointer()
-                            .child("See all")
+                            .child(text.see_all)
                             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                 state_for_see_all.update(cx, |state, _cx| {
                                     state.app.ui_state.phone_home_shelf = shelf;
@@ -526,9 +544,7 @@ impl PlayerView {
                 .library
                 .albums
                 .iter()
-                .filter(|album| {
-                    shelf != crate::app::PhoneHomeShelf::Favorites || album.is_favorite
-                })
+                .filter(|album| shelf != crate::app::PhoneHomeShelf::Favorites || album.is_favorite)
                 .cloned()
                 .collect();
             match shelf {
@@ -592,6 +608,7 @@ impl PlayerView {
 
     fn render_library_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let state = self.state.read(cx);
         let columns = if state.app.ui_state.window_width >= 430.0 {
             3
@@ -616,7 +633,7 @@ impl PlayerView {
                 div().flex_none().p(d.card).pb(d.grid).child(
                     gpui_ui_kit::SearchBar::new("phone-library-search")
                         .value(search_query)
-                        .placeholder("Search albums, artists, tracks")
+                            .placeholder(text.search_library)
                         .size(gpui_ui_kit::SearchBarSize::Sm)
                         .on_change(move |text, _window, cx| {
                             app_state.update(cx, |state, _| {
@@ -800,6 +817,7 @@ impl PlayerView {
 
     fn render_queue_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let (theme, rows, current_index, editing) = {
             let state = self.state.read(cx);
             let rows =
@@ -895,7 +913,7 @@ impl PlayerView {
                                 .justify_center()
                                 .min_h(rems(12.0))
                                 .text_color(theme.text_muted)
-                                .child("Queue is empty."),
+                            .child(text.queue_empty),
                         )
                     })
                     .children(rows.into_iter().map(
@@ -1604,6 +1622,7 @@ impl PlayerView {
         d: &Ds,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let text = self.phone_translations(cx);
         let (queue_rows, plugins) = {
             let state = self.state.read(cx);
             let start = state
@@ -1660,7 +1679,7 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                    .child("Up Next"),
+                                .child(text.up_next),
             )
             .children(queue_rows.into_iter().map(|item| {
                 let title = item
@@ -1697,7 +1716,7 @@ impl PlayerView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
                     .mt(d.grid)
-                    .child("Plugin Chain"),
+                                .child(text.plugin_chain),
             )
             .children(plugins.into_iter().map(|label| {
                 div()
@@ -1741,6 +1760,11 @@ impl PlayerView {
             ),
             (Screen::Streams, "Streams", IconName::ListMusic),
             (Screen::PluginGraph, "Plug Graph", IconName::Plug),
+            (
+                Screen::ListeningTest,
+                translations.screen_listening_test,
+                IconName::Headphones,
+            ),
             (
                 Screen::Spinorama,
                 translations.screen_spinorama,
@@ -1817,6 +1841,7 @@ impl PlayerView {
 
     fn render_phone_plugin_rack(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let (theme, plugins, editing_idx, add_open, release_channel, rack_editing) = {
             let state = self.state.read(cx);
             (
@@ -1885,7 +1910,9 @@ impl PlayerView {
                                     )
                                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                         state_for_back.update(cx, |state, _cx| {
-                                            state.app.set_screen(Screen::StudioHub, "PhoneRackBack");
+                                            state
+                                                .app
+                                                .set_screen(Screen::StudioHub, "PhoneRackBack");
                                         });
                                     }),
                             )
@@ -1932,7 +1959,7 @@ impl PlayerView {
                                     .text_color(theme.text_on_accent)
                                     .cursor_pointer()
                                     .child(Icon::new(IconName::Plus).size(IconSize::Sm))
-                                    .child("Add")
+                            .child(text.add)
                                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                         state_for_add.update(cx, |state, _cx| {
                                             state.app.ui_state.active_menu =
@@ -2173,6 +2200,7 @@ impl PlayerView {
 
     fn render_phone_plugin_parameter_sheet(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let (theme, title, enabled, selected_idx, settings) = {
             let state = self.state.read(cx);
             let plugin = state.app.plugin_state.get_editing_plugin().cloned();
@@ -2270,12 +2298,13 @@ impl PlayerView {
                     .p(d.card)
                     .child(match settings {
                         Some(settings) if settings.eq_global_filters().is_some() => {
-                            self.render_phone_eq_parameter_sheet(selected_idx, settings, &theme, &d)
+                    self.render_phone_eq_parameter_sheet(selected_idx, settings, text, &theme, &d)
                         }
                         Some(settings) => self.render_phone_generic_parameter_sheet(
-                            selected_idx,
-                            settings,
-                            &theme,
+                        selected_idx,
+                        settings,
+                        text,
+                        &theme,
                             &d,
                         ),
                         None => div()
@@ -2284,7 +2313,7 @@ impl PlayerView {
                             .items_center()
                             .justify_center()
                             .text_color(theme.text_muted)
-                            .child("No plugin selected.")
+                        .child(text.no_plugin_selected)
                             .into_any_element(),
                     }),
             )
@@ -2365,6 +2394,7 @@ impl PlayerView {
         &self,
         plugin_idx: usize,
         settings: sotf_audio_player::PluginSettings,
+        text: PhoneTranslations,
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> AnyElement {
@@ -2377,7 +2407,7 @@ impl PlayerView {
             .flex_col()
             .gap(d.section)
             .children(filters.iter().enumerate().map(|(band_idx, filter)| {
-                self.render_phone_eq_band(plugin_idx, band_idx, filter.clone(), theme, d)
+                self.render_phone_eq_band(plugin_idx, band_idx, filter.clone(), text, theme, d)
             }))
             .child(
                 div()
@@ -2394,7 +2424,7 @@ impl PlayerView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.accent)
                     .cursor_pointer()
-                    .child("+ Add Filter")
+                        .child(text.add_filter)
                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                         state_for_add.update(cx, |state, _cx| {
                             if let Err(err) = state.app.add_eq_band() {
@@ -2412,6 +2442,7 @@ impl PlayerView {
         plugin_idx: usize,
         band_idx: usize,
         filter: sotf_audio_player::EQFilter,
+        text: PhoneTranslations,
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> AnyElement {
@@ -2530,7 +2561,7 @@ impl PlayerView {
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
                             .cursor_pointer()
-                            .child("Reset")
+                            .child(text.reset)
                             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                 state_for_reset.update(cx, |state, _cx| {
                                     state
@@ -2554,7 +2585,7 @@ impl PlayerView {
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.error)
                             .cursor_pointer()
-                            .child("Delete Filter")
+                            .child(text.delete_filter)
                             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                 state_for_delete.update(cx, |state, _cx| {
                                     if let Err(err) = state.app.remove_eq_band(band_idx) {
@@ -2572,6 +2603,7 @@ impl PlayerView {
         &self,
         plugin_idx: usize,
         settings: sotf_audio_player::PluginSettings,
+        text: PhoneTranslations,
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> AnyElement {
@@ -2590,7 +2622,7 @@ impl PlayerView {
                         .items_center()
                         .justify_center()
                         .text_color(theme.text_muted)
-                        .child("No touch-editable parameters for this plugin yet."),
+                        .child(text.no_touch_parameters),
                 )
             })
             .children(rows.into_iter().map(|(label, value, min, max, param_idx)| {
@@ -2803,6 +2835,7 @@ impl PlayerView {
 
     fn render_phone_eq_curve(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let (theme, eq_index, filters) = {
             let state = self.state.read(cx);
             let eq_index = state
@@ -2884,7 +2917,7 @@ impl PlayerView {
                             .bg(theme.accent)
                             .text_color(theme.text_on_accent)
                             .cursor_pointer()
-                            .child("Edit")
+                            .child(text.edit)
                             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                 state_for_edit.update(cx, |state, _cx| {
                                     if let Some(idx) = eq_index {
@@ -2917,7 +2950,7 @@ impl PlayerView {
                                     .text_size(d.text_sm)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(theme.text_primary)
-                                    .child("Filters"),
+                            .child(text.filters),
                             )
                             .child(
                                 Icon::new(IconName::ChevronUp)
@@ -2991,6 +3024,7 @@ impl PlayerView {
 
     fn render_phone_plugin_graph_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let (theme, show_list, actions_open, plugins, release_channel) = {
             let state = self.state.read(cx);
             (
@@ -3043,7 +3077,7 @@ impl PlayerView {
                                     .text_color(theme.text_on_accent)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .cursor_pointer()
-                                    .child("Open Rack Editor")
+                            .child(text.open_rack_editor)
                                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                         state_for_open_rack.update(cx, |state, _cx| {
                                             state.app.set_screen(Screen::Studio, "PhoneGraphRack");
@@ -3085,7 +3119,7 @@ impl PlayerView {
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(theme.error)
                                             .cursor_pointer()
-                                            .child("Remove")
+                            .child(text.remove)
                                             .on_mouse_up(
                                                 MouseButton::Left,
                                                 move |_event, _window, cx| {
@@ -3175,6 +3209,7 @@ impl PlayerView {
 
     fn render_streams_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let (theme, show_sources, streams, last_error, last_status) = {
             let state = self.state.read(cx);
             (
@@ -3230,14 +3265,16 @@ impl PlayerView {
                             .border_1()
                             .border_color(theme.border)
                             .text_color(theme.text_muted)
-                            .child("No saved streams"),
+                            .child(text.no_saved_streams),
                     )
                 })
                 .children(
                     streams
                         .into_iter()
                         .enumerate()
-                        .map(|(idx, stream)| self.render_phone_stream_row(idx, stream, &theme, &d)),
+                    .map(|(idx, stream)| {
+                        self.render_phone_stream_row(idx, stream, text, &theme, &d)
+                    }),
                 )
                 .into_any_element()
         };
@@ -3249,6 +3286,7 @@ impl PlayerView {
         &self,
         idx: usize,
         stream: sotf_audio_player::SavedStream,
+        text: PhoneTranslations,
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> AnyElement {
@@ -3309,7 +3347,7 @@ impl PlayerView {
                     .bg(theme.accent)
                     .text_color(theme.text_on_accent)
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child("Play")
+                            .child(text.play)
                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                         cx.stop_propagation();
                         state_for_play.update(cx, |state, _cx| {
@@ -3338,6 +3376,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let (
             theme,
             subtitle_text,
@@ -3467,7 +3506,9 @@ impl PlayerView {
                                     )
                                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                                         state_for_back.update(cx, |state, _cx| {
-                                            state.app.set_screen(Screen::StudioHub, "PhoneToolBack");
+                                            state
+                                                .app
+                                                .set_screen(Screen::StudioHub, "PhoneToolBack");
                                         });
                                     }),
                             )
@@ -3509,7 +3550,7 @@ impl PlayerView {
                                                 .font_weight(FontWeight::SEMIBOLD)
                                                 .text_color(theme.text_primary)
                                                 .cursor_pointer()
-                                                .child("Back")
+                            .child(text.back)
                                                 .on_mouse_up(MouseButton::Left, {
                                                     let wizard_back = wizard_back.clone();
                                                     move |_event, _window, cx| {
@@ -3533,7 +3574,7 @@ impl PlayerView {
                                                 .font_weight(FontWeight::SEMIBOLD)
                                                 .text_color(theme.text_on_accent)
                                                 .cursor_pointer()
-                                                .child("Next")
+                            .child(text.next)
                                                 .on_mouse_up(MouseButton::Left, {
                                                     let wizard_next = wizard_next.clone();
                                                     move |_event, _window, cx| {
@@ -3691,54 +3732,12 @@ impl PlayerView {
             .into_any_element()
     }
 
-    fn move_phone_wizard_step(state: &mut crate::app::AppState, kind: &str, forward: bool) {
-        match kind {
-            "recording" => {
-                let step = state.app.measurement_state.recording_state.step;
-                let next = if forward {
-                    step.next()
-                } else {
-                    step.previous()
-                };
-                if let Some(next) = next {
-                    state.app.measurement_state.recording_state.step = next;
-                }
-            }
-            "room_eq" => {
-                let step = state.app.measurement_state.room_eq_state.step;
-                let next = if forward {
-                    step.next()
-                } else {
-                    step.previous()
-                };
-                if let Some(next) = next {
-                    state.app.measurement_state.room_eq_state.step = next;
-                }
-            }
-            "headphone_eq" => {
-                let step = state.app.measurement_state.headphone_eq_state.step;
-                let next = if forward {
-                    step.next()
-                } else {
-                    step.previous()
-                };
-                if let Some(next) = next {
-                    state.app.measurement_state.headphone_eq_state.step = next;
-                }
-            }
-            "spinorama" => {
-                let step = state.app.measurement_state.spinorama_eq_state.step;
-                let next = if forward {
-                    step.next()
-                } else {
-                    step.previous()
-                };
-                if let Some(next) = next {
-                    state.app.measurement_state.spinorama_eq_state.step = next;
-                }
-            }
-            _ => {}
-        }
+    fn move_phone_wizard_step(
+        state: &mut crate::app::AppState,
+        _kind: &str,
+        forward: bool,
+    ) {
+        state.app.move_workflow_step(forward);
     }
 
     fn render_settings_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -3839,6 +3838,7 @@ impl PlayerView {
 
     fn render_phone_keybindings_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = self.phone_translations(cx);
         let (theme, query, preset) = {
             let state = self.state.read(cx);
             (
@@ -3868,7 +3868,7 @@ impl PlayerView {
             .child(
                 gpui_ui_kit::SearchBar::new("phone-keybindings-search")
                     .value(query)
-                    .placeholder("Search shortcuts")
+                            .placeholder(text.search_shortcuts)
                     .size(gpui_ui_kit::SearchBarSize::Sm)
                     .on_change(move |text, _window, cx| {
                         state_for_search.update(cx, |state, _cx| {

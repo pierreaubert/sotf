@@ -1,4 +1,5 @@
 use super::misc::get_brand_image_path;
+use crate::app::i18n::AudioDeviceTranslations;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::state::audio_device::{HalConfig, format_buffer_size, format_sample_rate};
 #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -22,6 +23,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let _text = AudioDeviceTranslations::for_language(state.app.ui_state.language);
         let _playback_source = state.app.audio_device_state.playback_source;
 
         let mut content = VStack::new().spacing(StackSpacing::Sm);
@@ -34,15 +36,15 @@ impl PlayerView {
             let theme_for_source = theme.clone();
 
             content = content
-                .child(Text::label("Audio Source"))
+                .child(Text::label(_text.audio_source))
                 .child({
                     let state_clone = state_entity.clone();
                     let selected = if is_hal_mode { "hal" } else { "file" };
 
                     ButtonSet::new("audio-source")
                         .options(vec![
-                            ButtonSetOption::new("file", "File Player"),
-                            ButtonSetOption::new("hal", "HAL Device"),
+                            ButtonSetOption::new("file", _text.file_player),
+                            ButtonSetOption::new("hal", _text.hal_device),
                         ])
                         .selected(selected)
                         .theme(theme_for_source.to_button_set_theme())
@@ -97,7 +99,7 @@ impl PlayerView {
                     .collect();
 
                 content = content
-                    .child(Text::label("HAL Configuration"))
+                    .child(Text::label(_text.hal_configuration))
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Md)
@@ -106,7 +108,7 @@ impl PlayerView {
                                 let state_for_change = state_entity.clone();
                                 let state_for_toggle = state_entity.clone();
                                 Select::new("hal-sample-rate")
-                                    .label("Sample Rate")
+                                    .label(_text.sample_rate)
                                     .options(sample_rate_options)
                                     .selected(hal_config.sample_rate.to_string())
                                     .is_open(hal_dropdowns.sample_rate_open)
@@ -147,7 +149,7 @@ impl PlayerView {
                                 let state_for_change = state_entity.clone();
                                 let state_for_toggle = state_entity.clone();
                                 Select::new("hal-channel-count")
-                                    .label("Channels")
+                                    .label(_text.channels)
                                     .options(channel_options)
                                     .selected(hal_config.channel_count.to_string())
                                     .is_open(hal_dropdowns.channel_count_open)
@@ -188,7 +190,7 @@ impl PlayerView {
                                 let state_for_change = state_entity.clone();
                                 let state_for_toggle = state_entity.clone();
                                 Select::new("hal-buffer-size")
-                                    .label("Buffer Size")
+                                    .label(_text.buffer_size)
                                     .options(buffer_options)
                                     .selected(hal_config.buffer_frames.to_string())
                                     .is_open(hal_dropdowns.buffer_size_open)
@@ -235,7 +237,7 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Sm)
                     .align(StackAlign::Center)
-                    .child(Text::label("AirPlay and Bluetooth"))
+                    .child(Text::label(_text.wireless_devices))
                     .child(
                         Button::new("show-airplay-route-picker", "AirPlay")
                             .variant(ButtonVariant::Secondary)

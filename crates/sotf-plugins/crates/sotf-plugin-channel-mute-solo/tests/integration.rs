@@ -53,8 +53,8 @@ fn from_params_pads_and_truncates_channel_states() {
     let plugin = ChannelMuteSoloPlugin::from_params(2, params);
     // Two-channel plugin ignores the third state.
     assert_eq!(plugin.channels(), 2);
-    assert_eq!(plugin.get_channel_state(0).unwrap().muted, true);
-    assert_eq!(plugin.get_channel_state(1).unwrap().soloed, true);
+    assert!(plugin.get_channel_state(0).unwrap().muted);
+    assert!(plugin.get_channel_state(1).unwrap().soloed);
 }
 
 // ----------------------------------------------------------------------------

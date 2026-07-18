@@ -7,6 +7,7 @@ impl PlayerView {
             let layout = state.layout.read(cx);
             (state.app.ui_state.theme.clone(), layout.queue_panel_ratio)
         };
+        let library_label = self.state.read(cx).app.ui_state.translations.screen_library;
 
         div()
             .flex()
@@ -200,7 +201,7 @@ impl PlayerView {
                     tint_hover: theme.accent,
                 };
                 PaneDivider::horizontal("library-queue-divider", CollapseDirection::Up)
-                    .label("Library")
+                            .label(library_label)
                     .collapsed(library_collapsed)
                     .theme(divider_theme)
                     .on_toggle({

@@ -4,7 +4,7 @@ use super::misc::normalize_output;
 use super::misc::resample_audio;
 use super::types::Args;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rayon::prelude::*;
 use sotf_plugins::DawHost;
 use std::io::Write;

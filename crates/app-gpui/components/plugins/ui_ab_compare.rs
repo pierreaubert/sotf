@@ -40,6 +40,10 @@ pub fn render_ab_compare(
         .ab_compare_file_b
         .clone();
     let add_menu_target = state.app.plugin_state.ab_compare_state.ab_add_menu_target;
+    let workflow_text =
+        crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
+    let rack_text =
+        crate::app::i18n::PluginRackTranslations::for_language(state.app.ui_state.language);
 
     div()
         .flex()
@@ -80,6 +84,8 @@ pub fn render_ab_compare(
                     &path_a,
                     path_a_file.as_deref(),
                     add_menu_target == Some(ABPathTarget::A),
+                    workflow_text,
+                    rack_text,
                     ctx.theme,
                     cx,
                 ))
@@ -90,6 +96,8 @@ pub fn render_ab_compare(
                     &path_b,
                     path_b_file.as_deref(),
                     add_menu_target == Some(ABPathTarget::B),
+                    workflow_text,
+                    rack_text,
                     ctx.theme,
                     cx,
                 )),
@@ -104,6 +112,8 @@ fn render_path_section(
     plugins: &[PluginInRack],
     loaded_config_file: Option<&str>,
     add_menu_open: bool,
+    workflow_text: crate::app::i18n::WorkflowTranslations,
+    rack_text: crate::app::i18n::PluginRackTranslations,
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> Div {
@@ -139,7 +149,7 @@ fn render_path_section(
             .child(
                 div().flex().items_center().gap(d.grid).child(
                     Button::new(SharedString::from(format!("ab-add-{path}")), "+")
-                        .aria_label("Add plugin for comparison")
+                        .aria_label(rack_text.add_plugin_for_comparison)
                         .variant(if add_menu_open {
                             ButtonVariant::Primary
                         } else {
@@ -180,13 +190,13 @@ fn render_path_section(
         section = section.child(
             div()
                 .py(d.pad_y)
-                .child(Text::caption("Empty (pass-through)")),
+                .child(Text::caption(workflow_text.empty_pass_through)),
         );
     } else {
         let len = plugins.len();
         for (sub_idx, plugin) in plugins.iter().enumerate() {
             section = section.child(render_sub_plugin_card(
-                path, plugin_idx, sub_idx, plugin, len, theme, cx,
+                path, plugin_idx, sub_idx, plugin, len, rack_text, theme, cx,
             ));
         }
     }
@@ -250,6 +260,7 @@ fn render_sub_plugin_card(
     sub_idx: usize,
     plugin: &PluginInRack,
     total: usize,
+    rack_text: crate::app::i18n::PluginRackTranslations,
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> Div {
@@ -285,7 +296,7 @@ fn render_sub_plugin_card(
                 SharedString::from(format!("ab-up-{path}-{sub_idx}")),
                 "\u{25B2}",
             )
-            .aria_label("Move plugin up")
+            .aria_label(rack_text.move_plugin_up)
             .variant(ButtonVariant::Ghost)
             .size(ButtonSize::Xs)
             .theme(theme.to_button_theme())
@@ -312,7 +323,7 @@ fn render_sub_plugin_card(
                 SharedString::from(format!("ab-down-{path}-{sub_idx}")),
                 "\u{25BC}",
             )
-            .aria_label("Move plugin down")
+            .aria_label(rack_text.move_plugin_down)
             .variant(ButtonVariant::Ghost)
             .size(ButtonSize::Xs)
             .theme(theme.to_button_theme())
@@ -336,7 +347,7 @@ fn render_sub_plugin_card(
             SharedString::from(format!("ab-rm-{path}-{sub_idx}")),
             "\u{2715}",
         )
-        .aria_label("Remove plugin")
+        .aria_label(rack_text.remove_plugin)
         .variant(ButtonVariant::Ghost)
         .size(ButtonSize::Xs)
         .theme(theme.to_button_theme())

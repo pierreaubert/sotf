@@ -16,7 +16,9 @@
             let mut options_col = VStack::new().spacing(StackSpacing::Sm);
 
             // --- Target sub-section ---
-            target_col = target_col.child(Text::eyebrow("TARGET").color(theme.accent));
+            target_col = target_col.child(
+                Text::eyebrow(translations.autoeq_form.target.to_uppercase()).color(theme.accent),
+            );
 
             // Target Tilt
             let mut tilt_toggle = Toggle::new((base_id.clone(), "tilt-enabled"))
@@ -33,7 +35,7 @@
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
-                        Text::new("Target Tilt")
+                    Text::new(translations.autoeq_target_tilt)
                             .size(TextSize::Xs)
                             .color(theme.label_color),
                     )
@@ -72,7 +74,7 @@
                         .max(ParamLimits::TILT_SLOPE.max)
                         .step(ParamLimits::TILT_SLOPE.step)
                         .decimals(1)
-                        .label("Slope (dB/oct)")
+            .label(translations.autoeq_form.slope_db_oct)
                         .size(NumberInputSize::Sm)
                         .theme(theme.number_input_theme.clone());
 
@@ -87,7 +89,7 @@
                         .max(20000.0)
                         .step(10.0)
                         .decimals(0)
-                        .label("Ref Freq (Hz)")
+            .label(translations.autoeq_form.reference_frequency_hz)
                         .size(NumberInputSize::Sm)
                         .theme(theme.number_input_theme.clone());
 
@@ -113,7 +115,7 @@
                         .max(ParamLimits::BASS_SHELF.max)
                         .step(ParamLimits::BASS_SHELF.step)
                         .decimals(1)
-                        .label("Bass Boost (dB)")
+            .label(translations.autoeq_form.bass_boost_db)
                         .size(NumberInputSize::Sm)
                         .theme(theme.number_input_theme.clone());
 
@@ -129,7 +131,7 @@
                             .max(1000.0)
                             .step(10.0)
                             .decimals(0)
-                            .label("Shelf Freq (Hz)")
+            .label(translations.autoeq_form.shelf_frequency_hz)
                             .size(NumberInputSize::Sm)
                             .theme(theme.number_input_theme.clone());
 
@@ -171,12 +173,12 @@
                         VStack::new()
                             .spacing(StackSpacing::None)
                             .child(
-                                Text::new("Broadband Target Matching")
+                    Text::new(translations.autoeq_broadband_target)
                                     .size(TextSize::Xs)
                                     .color(theme.label_color),
                             )
                             .child(
-                                Text::new("Shelf filters for broad tonal balance")
+                    Text::new(translations.autoeq_shelf_filters)
                                     .size(TextSize::Xs)
                                     .color(theme.description_color),
                             ),
@@ -188,7 +190,13 @@
             if let Some(ref handler) = on_edit_custom_target_rc {
                 let h = handler.clone();
                 target_col = target_col.child(
-                    Button::new("edit-custom-target", "Edit Custom Target Curve")
+                    Button::new(
+                        "edit-custom-target",
+                        translations
+                            .autoeq_form
+                            .sections
+                            .edit_custom_target_curve,
+                    )
                         .variant(if config.goals.target_curve == "custom" {
                             ButtonVariant::Primary
                         } else {
@@ -202,7 +210,16 @@
             }
 
             // --- Smoothing sub-section ---
-            options_col = options_col.child(Text::eyebrow("SMOOTHING").color(theme.accent));
+            options_col = options_col.child(
+                Text::eyebrow(
+                    translations
+                        .autoeq_form
+                        .parameters
+                        .smoothing
+                        .to_uppercase(),
+                )
+                .color(theme.accent),
+            );
 
             // Psychoacoustic Smoothing
             let mut psycho_toggle = Toggle::new((base_id.clone(), "psychoacoustic"))
@@ -224,12 +241,12 @@
                         VStack::new()
                             .spacing(StackSpacing::None)
                             .child(
-                                Text::new("Psychoacoustic Smoothing")
+                    Text::new(translations.autoeq_psychoacoustic_smoothing)
                                     .size(TextSize::Xs)
                                     .color(theme.label_color),
                             )
                             .child(
-                                Text::new("1/48 oct bass, 1/6 oct treble")
+                        Text::new(translations.autoeq_form.parameters.smoothing_resolution)
                                     .size(TextSize::Xs)
                                     .color(theme.description_color),
                             ),
@@ -257,12 +274,12 @@
                         VStack::new()
                             .spacing(StackSpacing::None)
                             .child(
-                                Text::new("Curve Smoothing")
+                    Text::new(translations.autoeq_curve_smoothing)
                                     .size(TextSize::Xs)
                                     .color(theme.label_color),
                             )
                             .child(
-                                Text::new("Fixed-width octave smoothing")
+                    Text::new(translations.autoeq_fixed_octave_smoothing)
                                     .size(TextSize::Xs)
                                     .color(theme.description_color),
                             ),
@@ -277,7 +294,7 @@
                     .max(ParamLimits::SMOOTH_N.max)
                     .step(ParamLimits::SMOOTH_N.step)
                     .decimals(0)
-                    .label("Smooth Window (1/N oct)")
+            .label(translations.autoeq_form.parameters.smooth_window_oct)
                     .size(NumberInputSize::Sm)
                     .disabled(disabled)
                     .theme(theme.number_input_theme.clone());
@@ -293,7 +310,14 @@
 
             // --- Recommended sub-section ---
             options_col = options_col.child(
-                Text::eyebrow("RECOMMENDED").color(theme.accent),
+                Text::eyebrow(
+                    translations
+                        .autoeq_form
+                        .sections
+                        .recommended
+                        .to_uppercase(),
+                )
+                .color(theme.accent),
             );
 
             // Asymmetric Loss
@@ -315,12 +339,12 @@
                         VStack::new()
                             .spacing(StackSpacing::None)
                             .child(
-                                Text::new("Asymmetric Loss")
+                    Text::new(translations.autoeq_asymmetric_loss)
                                     .size(TextSize::Xs)
                                     .color(theme.label_color),
                             )
                             .child(
-                                Text::new("Penalize peaks more than dips")
+                    Text::new(translations.autoeq_penalize_peaks)
                                     .size(TextSize::Xs)
                                     .color(theme.description_color),
                             ),
@@ -343,7 +367,7 @@
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
-                        Text::new("Excursion Protection")
+                    Text::new(translations.autoeq_excursion_protection)
                             .size(TextSize::Xs)
                             .color(theme.label_color),
                     )
@@ -365,7 +389,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Auto-detect F3")
+                                    Text::new(translations.autoeq_auto_detect_f3)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -379,7 +403,7 @@
                         .max(500.0)
                         .step(1.0)
                         .decimals(0)
-                        .label("Manual F3 (Hz)")
+                .label(translations.autoeq_form.parameters.manual_f3_hz)
                         .size(NumberInputSize::Sm)
                         .theme(theme.number_input_theme.clone());
 
@@ -418,7 +442,7 @@
                     .max(8.0)
                     .step(2.0)
                     .decimals(0)
-                    .label("Order")
+                .label(translations.autoeq_form.parameters.order)
                     .size(NumberInputSize::Sm)
                     .theme(theme.number_input_theme.clone());
 
@@ -445,7 +469,7 @@
                     .max(1.0)
                     .step(0.05)
                     .decimals(2)
-                    .label("Safety Margin (oct)")
+                .label(translations.autoeq_form.parameters.safety_margin_oct)
                     .size(NumberInputSize::Sm)
                     .theme(theme.number_input_theme.clone());
 
@@ -472,7 +496,7 @@
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
-                        Text::new("Schroeder Split")
+                    Text::new(translations.autoeq_schroeder_split)
                             .size(TextSize::Xs)
                             .color(theme.label_color),
                     )
@@ -486,7 +510,7 @@
                     .max(ParamLimits::SCHROEDER_FREQ.max)
                     .step(ParamLimits::SCHROEDER_FREQ.step)
                     .decimals(0)
-                    .label("Split Freq (Hz)")
+            .label(translations.autoeq_form.parameters.split_frequency_hz)
                     .size(NumberInputSize::Sm)
                     .theme(theme.number_input_theme.clone());
 
@@ -503,7 +527,7 @@
                     .max(20.0)
                     .step(0.5)
                     .decimals(1)
-                    .label("LF Max Q")
+            .label(translations.autoeq_form.parameters.lf_max_q)
                     .size(NumberInputSize::Sm)
                     .theme(theme.number_input_theme.clone());
 
@@ -518,7 +542,7 @@
                     .max(5.0)
                     .step(0.1)
                     .decimals(1)
-                    .label("HF Max Q")
+            .label(translations.autoeq_form.parameters.hf_max_q)
                     .size(NumberInputSize::Sm)
                     .theme(theme.number_input_theme.clone());
 
@@ -562,7 +586,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Allow LF Boost")
+                                Text::new(translations.autoeq_allow_lf_boost)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -573,7 +597,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("HF Shelving Only")
+                                    Text::new(translations.autoeq_hf_shelving)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -583,7 +607,13 @@
 
             // --- Delay sub-section ---
             options_col = options_col.child(
-                Text::eyebrow("DELAY").color(theme.accent),
+                Text::eyebrow(
+                    translations
+                        .autoeq_form
+                        .delay_correction
+                        .to_uppercase(),
+                )
+                .color(theme.accent),
             );
 
             // Allow Delay
@@ -605,12 +635,12 @@
                             VStack::new()
                                 .spacing(StackSpacing::None)
                                 .child(
-                                    Text::new("Allow Delay")
+                                Text::new(translations.autoeq_allow_delay)
                                         .size(TextSize::Xs)
                                         .color(theme.label_color),
                                 )
                                 .child(
-                                    Text::new("Enable inter-speaker time alignment")
+                                Text::new(translations.autoeq_enable_time_alignment)
                                         .size(TextSize::Xs)
                                         .color(theme.description_color),
                                 ),
@@ -625,12 +655,12 @@
                             VStack::new()
                                 .spacing(StackSpacing::None)
                                 .child(
-                                    Text::new("Allow Delay")
+                                Text::new(translations.autoeq_allow_delay)
                                         .size(TextSize::Xs)
                                         .color(theme.label_color),
                                 )
                                 .child(
-                                    Text::new("Enable inter-speaker time alignment")
+                                Text::new(translations.autoeq_enable_time_alignment)
                                         .size(TextSize::Xs)
                                         .color(theme.description_color),
                                 ),
@@ -641,7 +671,8 @@
 
             // --- Home Cinema sub-section ---
             options_col = options_col.child(
-                Text::eyebrow("HOME CINEMA").color(theme.accent),
+                Text::eyebrow(translations.autoeq_form.home_cinema.to_uppercase())
+                    .color(theme.accent),
             );
 
             // Voice of God
@@ -663,12 +694,12 @@
                             VStack::new()
                                 .spacing(StackSpacing::None)
                                 .child(
-                                    Text::new("Voice of God")
+                                Text::new(translations.autoeq_voice_of_god)
                                         .size(TextSize::Xs)
                                         .color(theme.label_color),
                                 )
                                 .child(
-                                    Text::new("Timbre matching across channels")
+                                Text::new(translations.autoeq_timbre_matching)
                                         .size(TextSize::Xs)
                                         .color(theme.description_color),
                                 ),
@@ -683,12 +714,12 @@
                             VStack::new()
                                 .spacing(StackSpacing::None)
                                 .child(
-                                    Text::new("Voice of God")
+                                Text::new(translations.autoeq_voice_of_god)
                                         .size(TextSize::Xs)
                                         .color(theme.label_color),
                                 )
                                 .child(
-                                    Text::new("Timbre matching across channels")
+                                Text::new(translations.autoeq_timbre_matching)
                                         .size(TextSize::Xs)
                                         .color(theme.description_color),
                                 ),
@@ -704,7 +735,7 @@
                     .collect();
 
                 let mut ref_select = Select::new((base_id.clone(), "vog-ref-channel"))
-                    .label("Reference Channel")
+            .label(translations.autoeq_form.reference_channel)
                     .options(ref_channel_options)
                     .selected(&config.v2.vog_reference_channel)
                     .is_open(ui_state.vog_reference_channel_open)
@@ -741,7 +772,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Phase Alignment")
+                                Text::new(translations.autoeq_phase_alignment)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -755,7 +786,7 @@
                         .max(1000.0)
                         .step(1.0)
                         .decimals(0)
-                        .label("Min Freq (Hz)")
+            .label(translations.autoeq_form.min_frequency_hz)
                         .size(NumberInputSize::Sm)
                         .theme(theme.number_input_theme.clone());
 
@@ -770,7 +801,7 @@
                         .max(1000.0)
                         .step(1.0)
                         .decimals(0)
-                        .label("Max Freq (Hz)")
+            .label(translations.autoeq_form.max_frequency_hz)
                         .size(NumberInputSize::Sm)
                         .theme(theme.number_input_theme.clone());
 
@@ -804,7 +835,7 @@
                         HStack::new()
                             .justify(StackJustify::SpaceBetween)
                             .child(
-                                Text::new("Optimize Polarity")
+                                    Text::new(translations.autoeq_optimize_polarity)
                                     .size(TextSize::Xs)
                                     .color(theme.label_color),
                             )
@@ -817,7 +848,7 @@
                         .max(ParamLimits::DELAY_MS.max)
                         .step(ParamLimits::DELAY_MS.step)
                         .decimals(1)
-                        .label("Max Delay (ms)")
+            .label(translations.autoeq_form.max_delay_ms)
                         .size(NumberInputSize::Sm)
                         .theme(theme.number_input_theme.clone());
 
@@ -845,7 +876,7 @@
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Multi-Seat Optimization")
+                                Text::new(translations.autoeq_multi_seat)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -886,7 +917,7 @@
                                 .max(16.0)
                                 .step(1.0)
                                 .decimals(0)
-                                .label("Primary Seat")
+            .label(translations.autoeq_form.primary_seat)
                                 .size(NumberInputSize::Sm)
                                 .theme(theme.number_input_theme.clone());
 
@@ -904,7 +935,7 @@
                         .max(12.0)
                         .step(0.5)
                         .decimals(1)
-                        .label("Max Deviation (dB)")
+            .label(translations.autoeq_form.max_deviation_db)
                         .size(NumberInputSize::Sm)
                         .theme(theme.number_input_theme.clone());
 
@@ -933,7 +964,7 @@
                         .align(StackAlign::Center)
                         .justify(StackJustify::SpaceBetween)
                         .child(
-                            Text::new("Multi-Measurement Optimization")
+                                Text::new(translations.autoeq_multi_measurement)
                                 .size(TextSize::Xs)
                                 .color(theme.label_color),
                         )
@@ -969,8 +1000,10 @@
                     if config.system_optimization.multi_measurement_strategy == "weighted_sum"
                         && !config.system_optimization.multi_measurement_weights.is_empty()
                     {
-                        options_col =
-                            options_col.child(Text::label("Weights").color(theme.text_muted));
+                options_col = options_col.child(
+                    Text::label(translations.autoeq_form.parameters.weights)
+                        .color(theme.text_muted),
+                );
                         for (i, &weight) in config.system_optimization.multi_measurement_weights.iter().enumerate() {
                             let label = config
                                 .system_optimization
@@ -1008,7 +1041,7 @@
                                 .max(ParamLimits::VARIANCE_LAMBDA.max)
                                 .step(ParamLimits::VARIANCE_LAMBDA.step)
                                 .decimals(1)
-                                .label("Variance Lambda")
+                    .label(translations.autoeq_form.parameters.variance_lambda)
                                 .size(NumberInputSize::Xs)
                                 .theme(theme.number_input_theme.clone());
 
@@ -1029,10 +1062,11 @@
                 VStack::new()
                     .spacing(StackSpacing::None)
                     .child(
-                        Text::section_header("Room Configuration").color(theme.header_color),
+                        Text::section_header(translations.autoeq_form.room_configuration)
+                            .color(theme.header_color),
                     )
                     .child(
-                        Text::new("Target curve and room correction options")
+                Text::new(translations.autoeq_target_options)
                             .size(TextSize::Xs)
                             .color(theme.description_color),
                     ),
@@ -1058,10 +1092,11 @@
                 VStack::new()
                     .spacing(StackSpacing::None)
                     .child(
-                        Text::section_header("Optimiser Configuration").color(theme.header_color),
+                        Text::section_header(translations.autoeq_form.optimizer_configuration)
+                            .color(theme.header_color),
                     )
                     .child(
-                        Text::new("EQ design and optimisation algorithm settings")
+                    Text::new(translations.autoeq_eq_design_desc)
                             .size(TextSize::Xs)
                             .color(theme.description_color),
                     ),
@@ -1072,7 +1107,10 @@
             let mut right_col = VStack::new().spacing(StackSpacing::Sm);
 
             // Left column: EQ Design params via shared block
-            left_col = left_col.child(Text::eyebrow("EQ DESIGN").color(theme.accent));
+            left_col = left_col.child(
+                Text::eyebrow(translations.autoeq_form.filter_design.to_uppercase())
+                    .color(theme.accent),
+            );
             {
                 let eq_design_iir_before_fir = true; // room EQ: IIR shown before FIR
                 let mut block_out = left_col;
@@ -1081,7 +1119,15 @@
             }
 
             // Right column: Optimisation params via shared block
-            right_col = right_col.child(Text::eyebrow("OPTIMISATION").color(theme.accent));
+            right_col = right_col.child(
+                Text::eyebrow(
+                    translations
+                        .autoeq_form
+                        .optimization_quality
+                        .to_uppercase(),
+                )
+                .color(theme.accent),
+            );
             {
                 let mut block_out = right_col;
                 include!("render_block_optimizer.rs");

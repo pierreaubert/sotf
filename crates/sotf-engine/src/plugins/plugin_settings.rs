@@ -1510,6 +1510,11 @@ impl PluginSettings {
             Self::MonoToStereo { .. } => Some(1),
             Self::Aec { .. } => Some(2),
             Self::Beamformer { num_mics, .. } => Some(*num_mics),
+            Self::BinauralDecoder { input_channels, .. } => Some(*input_channels),
+            Self::AmbisonicsDecoder { order, .. } => {
+                let channels_per_axis = order.saturating_add(1);
+                Some(channels_per_axis.saturating_mul(channels_per_axis))
+            }
             _ => None,
         }
     }
@@ -2225,6 +2230,33 @@ impl PluginSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_plugin_default_setting_round_trips_through_preset_json() {
+        for plugin_type in PluginType::all() {
+            let settings = PluginSettings::default_for(&plugin_type);
+            let json = serde_json::to_value(&settings)
+                .unwrap_or_else(|error| panic!("{} serialize failed: {error}", plugin_type.name()));
+            let restored: PluginSettings =
+                serde_json::from_value(json.clone()).unwrap_or_else(|error| {
+                    panic!("{} deserialize failed: {error}", plugin_type.name())
+                });
+            let restored_json = serde_json::to_value(&restored).unwrap();
+
+            let expected_type = if plugin_type == PluginType::FletcherMunson {
+                PluginType::LoudnessCompensation
+            } else {
+                plugin_type.clone()
+            };
+            assert_eq!(restored.plugin_type(), expected_type);
+            assert_eq!(
+                restored_json,
+                json,
+                "{} default settings changed during preset round-trip",
+                plugin_type.name()
+            );
+        }
+    }
 
     #[test]
     fn upmixer_deserializes_legacy_flat_json() {

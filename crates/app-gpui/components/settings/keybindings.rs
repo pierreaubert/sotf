@@ -1,6 +1,7 @@
 //! Keybindings settings content
 
 use crate::app::constants::spacing;
+use crate::app::i18n::KeybindingTranslations;
 use crate::app::keybindings::{KeybindingCategory, KeymapPreset, get_documented_keybindings};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -19,9 +20,10 @@ impl PlayerView {
         let state = self.state.read(cx);
         let current_preset = state.app.ui_state.keymap_preset;
         let theme = state.app.ui_state.theme.clone();
+        let text = KeybindingTranslations::for_language(state.app.ui_state.language);
 
         // Build comparison data: action -> preset -> key
-        let comparison = build_keybinding_comparison();
+        let comparison = build_keybinding_comparison(text);
 
         // Group by category
         let mut by_category: HashMap<
@@ -49,7 +51,7 @@ impl PlayerView {
                             .text_size(d.text_sm)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
-                            .child("Keymap Preset"),
+                            .child(text.keymap_preset),
                     )
                     .child({
                         let state_entity = self.state.clone();
@@ -57,7 +59,7 @@ impl PlayerView {
                             .options(
                                 KeymapPreset::all()
                                     .iter()
-                                    .map(|p| ButtonSetOption::new(p.name(), p.name()))
+                                    .map(|p| ButtonSetOption::new(p.name(), text.preset_name(*p)))
                                     .collect(),
                             )
                             .selected(current_preset.name())
@@ -78,7 +80,7 @@ impl PlayerView {
                         div()
                             .text_size(d.text_xs)
                             .text_color(theme.text_muted)
-                            .child(current_preset.description()),
+                            .child(text.preset_description(current_preset)),
                     ),
             )
             // Comparison table
@@ -94,7 +96,7 @@ impl PlayerView {
                             .text_size(d.text_sm)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
-                            .child("Keybinding Comparison"),
+                            .child(text.comparison),
                     )
                     .child(
                         div()
@@ -109,7 +111,7 @@ impl PlayerView {
                             .rounded(d.r_md)
                             .bg(theme.surface)
                             // Table header
-                            .child(render_table_header(&d, &theme))
+                            .child(render_table_header(&d, text, &theme))
                             // Table body by category
                             .children(KeybindingCategory::all().iter().filter_map(|category| {
                                 by_category.get(category).map(|rows| {
@@ -119,6 +121,7 @@ impl PlayerView {
                                         rows,
                                         &theme,
                                         current_preset,
+                                        text,
                                     )
                                 })
                             })),
@@ -127,7 +130,11 @@ impl PlayerView {
     }
 }
 
-fn render_table_header(d: &Ds, theme: &crate::app::Theme) -> impl IntoElement {
+fn render_table_header(
+    d: &Ds,
+    text: KeybindingTranslations,
+    theme: &crate::app::Theme,
+) -> impl IntoElement {
     div()
         .flex()
         .w_full()
@@ -142,7 +149,7 @@ fn render_table_header(d: &Ds, theme: &crate::app::Theme) -> impl IntoElement {
                 .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
-                .child("Action"),
+                .child(text.action),
         )
         .child(
             div()
@@ -151,7 +158,7 @@ fn render_table_header(d: &Ds, theme: &crate::app::Theme) -> impl IntoElement {
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
                 .text_align(gpui::TextAlign::Center)
-                .child("Default"),
+                .child(text.default_preset),
         )
         .child(
             div()
@@ -188,6 +195,7 @@ fn render_category_section(
     rows: &[(String, HashMap<KeymapPreset, String>)],
     theme: &crate::app::Theme,
     current_preset: KeymapPreset,
+    text: KeybindingTranslations,
 ) -> impl IntoElement {
     let accent = theme.accent;
     let border = theme.border;
@@ -230,7 +238,7 @@ fn render_category_section(
                         .text_size(d.text_xs)
                         .font_weight(FontWeight::BOLD)
                         .text_color(accent)
-                        .child(category.name()),
+                        .child(text.category_name(category)),
                 ),
         )
         // Rows
@@ -294,8 +302,9 @@ fn render_comparison_row(
 
 /// Build a comparison of keybindings across all presets
 /// Returns: Vec<(action_description, category, HashMap<preset, key>)>
-fn build_keybinding_comparison() -> Vec<(String, KeybindingCategory, HashMap<KeymapPreset, String>)>
-{
+fn build_keybinding_comparison(
+    text: KeybindingTranslations,
+) -> Vec<(String, KeybindingCategory, HashMap<KeymapPreset, String>)> {
     // Collect all unique actions across all presets
     let mut action_map: HashMap<String, (KeybindingCategory, HashMap<KeymapPreset, String>)> =
         HashMap::new();
@@ -304,7 +313,7 @@ fn build_keybinding_comparison() -> Vec<(String, KeybindingCategory, HashMap<Key
         let bindings = get_documented_keybindings(*preset);
         for binding in bindings {
             let entry = action_map
-                .entry(binding.description.to_string())
+                .entry(text.action_description(binding.description).to_string())
                 .or_insert_with(|| (binding.category, HashMap::new()));
             entry.1.insert(*preset, binding.key.to_string());
         }
@@ -324,8 +333,9 @@ fn build_keybinding_comparison() -> Vec<(String, KeybindingCategory, HashMap<Key
             KeybindingCategory::Library => 3,
             KeybindingCategory::Queue => 4,
             KeybindingCategory::Plugins => 5,
-            KeybindingCategory::LevelMeters => 6,
-            KeybindingCategory::System => 7,
+            KeybindingCategory::ListeningTests => 6,
+            KeybindingCategory::LevelMeters => 7,
+            KeybindingCategory::System => 8,
         };
         cat_order(&a.1).cmp(&cat_order(&b.1)).then(a.0.cmp(&b.0))
     });

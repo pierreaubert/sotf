@@ -548,18 +548,81 @@ class AudioEngineClient {
 
     // MARK: - Plugin Management Commands
 
-    /// Get current plugin chain from daemon (user plugins only)
-    func getPlugins() -> [[String: Any]]? {
+    /// Get the daemon-owned rack or graph artifact without flattening topology.
+    func getPluginPipeline() -> PluginPipelineModel? {
         let command: [String: Any] = ["command": "get_plugins"]
 
         guard let response = sendCommand(command),
               response.success,
-              let data = response.data,
-              let plugins = data["plugins"]?.value as? [Any] else {
+              let data = response.data else {
             return nil
         }
 
-        return plugins.compactMap { $0 as? [String: Any] }
+        let topology = PluginPipelineTopology(
+            rawValue: data["topology"]?.value as? String ?? "rack"
+        ) ?? .rack
+        let plugins = (data["plugins"]?.value as? [Any] ?? [])
+            .compactMap { $0 as? [String: Any] }
+        let generation = numberValue(data["generation"]?.value).map(Int.init)
+
+        var graphModel: PluginGraphModel?
+        if topology == .graph,
+           let graph = data["graph"]?.value as? [String: Any],
+           let rawNodes = graph["nodes"] as? [Any],
+           let rawEdges = graph["edges"] as? [Any] {
+            let nodes = rawNodes.compactMap { raw -> PluginGraphNodeModel? in
+                guard let node = raw as? [String: Any],
+                      let id = numberValue(node["id"]).map(Int.init),
+                      let pluginType = node["plugin_type"] as? String,
+                      let inputChannels = numberValue(node["input_channels"]).map(Int.init)
+                else {
+                    return nil
+                }
+                return PluginGraphNodeModel(
+                    id: id,
+                    pluginType: pluginType,
+                    parameters: node["parameters"] as? [String: Any] ?? [:],
+                    inputChannels: inputChannels,
+                    bypassed: node["bypassed"] as? Bool ?? false
+                )
+            }
+            let edges = rawEdges.compactMap { raw -> PluginGraphEdgeModel? in
+                guard let edge = raw as? [String: Any],
+                      let fromNode = numberValue(edge["from_node"]).map(Int.init),
+                      let toNode = numberValue(edge["to_node"]).map(Int.init)
+                else {
+                    return nil
+                }
+                return PluginGraphEdgeModel(fromNode: fromNode, toNode: toNode)
+            }
+            graphModel = PluginGraphModel(nodes: nodes, edges: edges)
+        }
+
+        return PluginPipelineModel(
+            topology: topology,
+            plugins: plugins,
+            graph: graphModel,
+            generation: generation
+        )
+    }
+
+    /// Compatibility helper for rack-only callers.
+    func getPlugins() -> [[String: Any]]? {
+        guard let pipeline = getPluginPipeline(), pipeline.topology == .rack else {
+            return nil
+        }
+        return pipeline.plugins
+    }
+
+    func loadPluginGraph(_ graph: PluginGraphModel, baseGeneration: Int?) -> Bool {
+        var command: [String: Any] = [
+            "command": "load_plugin_artifact",
+            "artifact": ["graph": graph.artifact],
+        ]
+        if let baseGeneration {
+            command["base_generation"] = baseGeneration
+        }
+        return sendCommand(command)?.success ?? false
     }
 
     /// Get available plugin types from daemon
@@ -2732,10 +2795,16 @@ struct ConfigurationView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             // Query daemon for the current active plugin list
-            if let currentPlugins = client.getPlugins() {
+            if let pipeline = client.getPluginPipeline() {
                 do {
+                    let artifact: Any
+                    if let graph = pipeline.graph {
+                        artifact = ["graph": graph.artifact]
+                    } else {
+                        artifact = appGpuiPreset(from: pipeline.plugins)
+                    }
                     let data = try JSONSerialization.data(
-                        withJSONObject: appGpuiPreset(from: currentPlugins),
+                        withJSONObject: artifact,
                         options: .prettyPrinted
                     )
                     try data.write(to: url)

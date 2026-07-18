@@ -1,7 +1,7 @@
 use super::super::{
     AudioEngineState, ConfigWatcher, DecoderThread, EngineConfig, GcThread, ManagerCommand,
     ManagerResponse, PlaybackCommand, PlaybackThread, PluginDataCache, ProcessingCommand,
-    ProcessingThread, plan_engine_features,
+    ProcessingThread, ThreadEvent, plan_engine_features,
 };
 use super::apply::apply_plugin_update;
 use super::config_error::ensure_output_channel_capacity;
@@ -9,6 +9,7 @@ use super::config_update_metrics::ConfigUpdateMetrics;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use super::consts::EXTERNAL_PLUGIN_MAINTENANCE_INTERVAL_MS;
 use super::consts::MAX_CONFIG_QUEUE_SIZE;
+use super::consts::MAX_THREAD_EVENTS_PER_TICK;
 use super::consts::PLUGIN_INIT_TIMEOUT_MS;
 use super::consts::SPIN_MS_CHECK_MANAGER;
 use super::consts::SPIN_MS_SLEEP_MANAGER;
@@ -26,6 +27,21 @@ use sotf_types::{DsdOutputStatus, OutputAccessStatus};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
+
+fn drain_thread_events(
+    event_rx: &Receiver<ThreadEvent>,
+    state: &Arc<ArcSwap<AudioEngineState>>,
+) -> usize {
+    let mut handled = 0;
+    while handled < MAX_THREAD_EVENTS_PER_TICK {
+        let Ok(event) = event_rx.try_recv() else {
+            break;
+        };
+        handle_thread_event(event, state);
+        handled += 1;
+    }
+    handled
+}
 
 /// Config update queue manager
 pub(in crate::engine::manager_thread) struct ConfigUpdateQueue {
@@ -444,10 +460,10 @@ pub(super) fn run_manager_thread(
             }
         }
 
-        // Check for thread events (non-blocking)
-        if let Ok(event) = event_rx.try_recv() {
-            handle_thread_event(event, &state);
-        }
+        // Drain bounded bursts. Audio threads publish position/stats faster
+        // than the manager's 50 ms command wait, so handling only one event
+        // per loop can indefinitely delay lifecycle events such as SeekComplete.
+        drain_thread_events(&event_rx, &state);
 
         // Check for config watcher events (non-blocking)
         if let Some(ref watcher) = config_watcher
@@ -547,4 +563,34 @@ pub(super) fn run_manager_thread(
 
     log::debug!("[Manager Thread] Stopped");
     Ok(())
+}
+
+#[cfg(test)]
+mod event_drain_tests {
+    use super::*;
+
+    #[test]
+    fn event_bursts_are_drained_in_bounded_batches() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            seeking: true,
+            ..AudioEngineState::default()
+        }));
+        let (event_tx, event_rx) = channel();
+
+        for position in 0..(MAX_THREAD_EVENTS_PER_TICK + 10) {
+            event_tx
+                .send(ThreadEvent::PositionUpdate(position as f64))
+                .unwrap();
+        }
+        event_tx.send(ThreadEvent::SeekComplete).unwrap();
+
+        assert_eq!(
+            drain_thread_events(&event_rx, &state),
+            MAX_THREAD_EVENTS_PER_TICK
+        );
+        assert!(state.load().seeking);
+        assert_eq!(drain_thread_events(&event_rx, &state), 11);
+        assert!(!state.load().seeking);
+        assert_eq!(drain_thread_events(&event_rx, &state), 0);
+    }
 }

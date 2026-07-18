@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
 
+use crate::param_specs::UpdateMode;
+
 /// Unique identifier for a parameter
 #[derive(Debug, Clone, Hash, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ParameterId(pub Arc<str>);
@@ -152,6 +154,10 @@ pub struct Parameter {
     pub unit: String,
     /// Whether this parameter uses logarithmic scaling
     pub logarithmic: bool,
+    /// Whether the host may update this parameter on the live plugin or must
+    /// rebuild the plugin from serialized configuration.
+    #[serde(default)]
+    pub update_mode: UpdateMode,
 }
 
 impl Parameter {
@@ -168,6 +174,7 @@ impl Parameter {
             max_value: Some(ParameterValue::Float(max)),
             unit: String::new(),
             logarithmic: false,
+            update_mode: UpdateMode::Realtime,
         }
     }
 
@@ -184,6 +191,7 @@ impl Parameter {
             max_value: Some(ParameterValue::Int(max)),
             unit: String::new(),
             logarithmic: false,
+            update_mode: UpdateMode::Realtime,
         }
     }
 
@@ -200,6 +208,7 @@ impl Parameter {
             max_value: None,
             unit: String::new(),
             logarithmic: false,
+            update_mode: UpdateMode::Realtime,
         }
     }
 
@@ -216,7 +225,14 @@ impl Parameter {
             max_value: None,
             unit: String::new(),
             logarithmic: false,
+            update_mode: UpdateMode::Realtime,
         }
+    }
+
+    /// Override the default realtime update policy.
+    pub fn with_update_mode(mut self, update_mode: UpdateMode) -> Self {
+        self.update_mode = update_mode;
+        self
     }
 
     /// Set unit string

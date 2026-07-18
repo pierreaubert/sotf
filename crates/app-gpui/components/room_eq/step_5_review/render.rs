@@ -6,6 +6,7 @@ use super::super::render::{
 };
 use super::room::room_eq_smoothing_options;
 use super::room::room_eq_smoothing_value;
+use crate::app::i18n::RoomEqReportTranslations;
 use crate::app::types::room_eq::{RoomEqReviewGraphId, RoomEqReviewGraphSettings};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -21,6 +22,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let d = Ds::from_cx(cx);
         let translations = state.app.ui_state.translations.clone();
+        let text = RoomEqReportTranslations::for_language(state.app.ui_state.language);
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
 
@@ -58,7 +60,7 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .when_some(report.as_ref(), |vstack, report| {
-                vstack.child(render_room_eq_report_summary(d, report, &theme))
+                vstack.child(render_room_eq_report_summary(d, report, text, &theme))
             })
             .when_some(report.as_ref(), |vstack, report| {
                 let original_id = RoomEqReviewGraphId::OverviewOriginal;
@@ -67,6 +69,7 @@ impl PlayerView {
                 vstack.child(render_room_eq_report_overview(
                     d,
                     report,
+                    text,
                     &theme,
                     *graph_settings.get(original_id),
                     *graph_settings.get(eq_id),
@@ -76,6 +79,7 @@ impl PlayerView {
                         *graph_settings.get(original_id),
                         true,
                         view.clone(),
+                        text,
                         &theme,
                     )),
                     Some(render_review_graph_controls(
@@ -83,6 +87,7 @@ impl PlayerView {
                         *graph_settings.get(eq_id),
                         false,
                         view.clone(),
+                        text,
                         &theme,
                     )),
                     Some(render_review_graph_controls(
@@ -90,6 +95,7 @@ impl PlayerView {
                         *graph_settings.get(corrected_id),
                         true,
                         view.clone(),
+                        text,
                         &theme,
                     )),
                     window_width,
@@ -99,20 +105,24 @@ impl PlayerView {
                 report
                     .as_ref()
                     .and_then(|report| report.bass_management.as_ref()),
-                |vstack, bass| vstack.child(render_room_eq_bass_management_report(d, bass, &theme)),
+                |vstack, bass| {
+                    vstack.child(render_room_eq_bass_management_report(d, bass, text, &theme))
+                },
             )
             .when_some(room_eq.dsp_output.as_ref(), |vstack, dsp_output| {
-                vstack.child(render_fir_temporal_masking_summary(dsp_output, &theme))
+                vstack.child(render_fir_temporal_masking_summary(
+                    dsp_output, text, &theme,
+                ))
             })
             // Selected channel result
             .child(self.render_selected_channel_result(cx))
             // EPA + EQ filter cards: lifted out of the per-channel
             // panel so each channel is visible without tab switching.
             .when_some(report.as_ref(), |vstack, report| {
-                vstack.child(render_room_eq_epa_card(d, report, &theme))
+                vstack.child(render_room_eq_epa_card(d, report, text, &theme))
             })
             .when_some(report.as_ref(), |vstack, report| {
-                vstack.child(render_room_eq_filters_card(d, report, &theme))
+                vstack.child(render_room_eq_filters_card(d, report, text, &theme))
             })
     }
 
@@ -150,6 +160,9 @@ impl PlayerView {
 
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
+        let text = RoomEqReportTranslations::for_language(state.app.ui_state.language);
+        let workflow_text =
+            crate::app::i18n::RoomEqWorkflowTranslations::for_language(state.app.ui_state.language);
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
         let channel_results = &room_eq.channel_results;
@@ -203,6 +216,7 @@ impl PlayerView {
                     render_room_eq_report_channel(
                         d,
                         channel,
+                        text,
                         &theme,
                         *graph_settings.get(full_id),
                         *graph_settings.get(zoom_id),
@@ -212,6 +226,7 @@ impl PlayerView {
                             *graph_settings.get(full_id),
                             true,
                             cx.entity().clone(),
+                            text,
                             &theme,
                         )),
                         Some(render_review_graph_controls(
@@ -219,6 +234,7 @@ impl PlayerView {
                             *graph_settings.get(zoom_id),
                             true,
                             cx.entity().clone(),
+                            text,
                             &theme,
                         )),
                         Some(render_review_graph_controls(
@@ -226,6 +242,7 @@ impl PlayerView {
                             *graph_settings.get(eq_id),
                             false,
                             cx.entity().clone(),
+                            text,
                             &theme,
                         )),
                         chart_state,
@@ -250,9 +267,7 @@ impl PlayerView {
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
-                        .content(Text::caption(
-                            "No optimization results yet. Run optimization first.",
-                        )),
+                        .content(Text::caption(workflow_text.no_optimization_results)),
                 )
                 .into_any_element();
         }
@@ -313,6 +328,7 @@ impl PlayerView {
             render_channel_result_card(
                 d,
                 display_result,
+                text,
                 &theme,
                 smoothing_octaves,
                 y_axis_auto,
@@ -390,6 +406,7 @@ fn render_review_graph_controls(
     settings: RoomEqReviewGraphSettings,
     allow_trend_controls: bool,
     view: Entity<PlayerView>,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
     HStack::new()
@@ -400,7 +417,7 @@ fn render_review_graph_controls(
             )))
             .options(room_eq_smoothing_options())
             .selected(room_eq_smoothing_value(settings.smoothing_octaves))
-            .placeholder("Smoothing")
+            .placeholder(text.smoothing)
             .size(SelectSize::Sm)
             .is_open(settings.smoothing_open)
             .theme(theme.to_select_theme())
@@ -446,7 +463,7 @@ fn render_review_graph_controls(
             HStack::new()
                 .spacing(StackSpacing::Xs)
                 .child(
-                    Text::new("Auto")
+                    Text::new(text.auto)
                         .size(TextSize::Xs)
                         .color(theme.text_secondary),
                 )
@@ -481,7 +498,7 @@ fn render_review_graph_controls(
                     HStack::new()
                         .spacing(StackSpacing::Xs)
                         .child(
-                            Text::new("Trend")
+                            Text::new(text.trend)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
@@ -514,7 +531,7 @@ fn render_review_graph_controls(
                     HStack::new()
                         .spacing(StackSpacing::Xs)
                         .child(
-                            Text::new("Normalize")
+                            Text::new(text.normalize)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
@@ -556,6 +573,7 @@ fn render_review_graph_controls(
 /// stub that simply collapses to nothing — callers chain it unconditionally.
 fn render_fir_temporal_masking_summary(
     dsp_output: &sotf_audio_player::room_eq_types::DspChainOutput,
+    text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     let mut rows: Vec<(String, autoeq::loss::epa::score::TemporalIrMaskingMetrics)> = Vec::new();
@@ -579,13 +597,13 @@ fn render_fir_temporal_masking_summary(
     // Compact, content-sized table that doesn't stretch full-width.
     let header_row = HStack::new()
         .spacing(StackSpacing::Sm)
-        .child(Text::label("Channel"))
-        .child(Text::label("Main (ms)"))
-        .child(Text::label("Pre peak (dB)"))
-        .child(Text::label("Post peak (dB)"))
-        .child(Text::label("Pre audible (dB)"))
-        .child(Text::label("Post audible (dB)"))
-        .child(Text::label("Penalty"));
+        .child(Text::label(text.channel))
+        .child(Text::label(text.main_ms))
+        .child(Text::label(text.pre_peak_db))
+        .child(Text::label(text.post_peak_db))
+        .child(Text::label(text.pre_audible_db))
+        .child(Text::label(text.post_audible_db))
+        .child(Text::label(text.penalty));
 
     let mut content = VStack::new().spacing(StackSpacing::Xs).child(header_row);
 
@@ -608,7 +626,7 @@ fn render_fir_temporal_masking_summary(
         .header_background(theme.background_secondary)
         .border(theme.border)
         .header(
-            Text::new("FIR Temporal Masking")
+            Text::new(text.fir_temporal_masking)
                 .color(theme.text_primary)
                 .weight(TextWeight::Semibold),
         )

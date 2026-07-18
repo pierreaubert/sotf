@@ -3,6 +3,9 @@
 //! Tests exercise the public `Plugin` trait: instantiation, parameter get/set,
 //! audio processing, output verification, bypass/enable state changes and error paths.
 
+// These tests intentionally vary small groups of fields from the default baseline.
+#![allow(clippy::field_reassign_with_default)]
+
 use sotf_host::{ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugin_xtc::{XtcPlugin, XtcPluginParams};
 
@@ -238,10 +241,9 @@ fn xtc_reset_clears_state() {
 }
 
 #[test]
-fn xtc_latency_matches_fft_size_minus_hop() {
+fn xtc_latency_matches_full_fft_frame() {
     let params = XtcPluginParams::default();
     let fft_size = params.fft_size;
     let plugin = XtcPlugin::new(params, 44100).unwrap();
-    let expected = fft_size - fft_size / 4;
-    assert_eq!(plugin.latency_samples(), expected);
+    assert_eq!(plugin.latency_samples(), fft_size);
 }

@@ -1,6 +1,7 @@
 use super::super::*;
 
 pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use crate::app::SpinoramaStep;
     use sotf_audio_player::room_eq_types::OptimizationStatus;
 
@@ -55,7 +56,10 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .fg(app.theme.fg_secondary)
                 .bg(app.theme.bg_secondary)
         };
-        spans.push(Span::styled(format!(" {} ", step.label()), style));
+        spans.push(Span::styled(
+            format!(" {} ", i18n.dynamic(step.label().to_string())),
+            style,
+        ));
         spans.push(Span::raw(" "));
     }
     let header = Paragraph::new(Line::from(spans)).block(
@@ -63,7 +67,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             .borders(Borders::ALL)
             .border_type(step_tab_border)
             .border_style(Style::default().fg(step_tab_border_color))
-            .title("Spinorama EQ"),
+            .title(i18n.ui("Spinorama EQ")),
     );
     f.render_widget(header, chunks[0]);
 
@@ -95,11 +99,11 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Search box
             let search_title = if s.model.loading_speakers {
-                "Search Speaker (loading...)"
+                i18n.dynamic("Search Speaker (loading...)".to_string())
             } else if let Some(ref e) = s.speakers_error {
-                &format!("Error: {}", e)
+                i18n.dynamic(format!("Error: {}", e))
             } else {
-                "Search Speaker (type to filter, Enter to select)"
+                i18n.dynamic("Search Speaker (type to filter, Enter to select)".to_string())
             };
             let search = Paragraph::new(s.model.speaker_search.as_str())
                 .style(Style::default().fg(app.theme.fg_primary))
@@ -135,26 +139,27 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 })
                 .collect();
 
-            let list_title = if s.model.speaker_suggestions.is_empty() && !s.model.loading_speakers
-            {
-                "Speakers (press 'r' to load from spinorama.org)".to_string()
-            } else {
-                format!(
-                    "Speakers ({}/{})",
-                    s.model.speaker_suggestions.len(),
-                    s.model.available_speakers.len()
-                )
-            };
+            let list_title = i18n.dynamic(
+                if s.model.speaker_suggestions.is_empty() && !s.model.loading_speakers {
+                    "Speakers (press 'r' to load from spinorama.org)".to_string()
+                } else {
+                    format!(
+                        "Speakers ({}/{})",
+                        s.model.speaker_suggestions.len(),
+                        s.model.available_speakers.len()
+                    )
+                },
+            );
             let list =
                 List::new(items).block(Block::default().borders(Borders::ALL).title(list_title));
             f.render_widget(list, inner[1]);
 
             // Hint bar
-            let hint = if let Some(ref sel) = s.model.selected_speaker {
+            let hint = i18n.dynamic(if let Some(ref sel) = s.model.selected_speaker {
                 format!(" Selected: {}  |  ←/→=step  Enter=confirm", sel)
             } else {
                 " ←/→=step  ↑/↓=navigate  Enter=select  r=load speakers".to_string()
-            };
+            });
             let hint_widget = Paragraph::new(hint)
                 .style(Style::default().fg(app.theme.fg_secondary))
                 .block(Block::default().borders(Borders::ALL));
@@ -172,7 +177,8 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .model
                 .selected_speaker
                 .as_deref()
-                .unwrap_or("(no speaker selected)");
+                .map(str::to_owned)
+                .unwrap_or_else(|| i18n.dynamic("(no speaker selected)".to_string()));
 
             let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
 
@@ -228,7 +234,10 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             let mut lines = vec![
                 Line::from(vec![
-                    Span::styled("Speaker: ", Style::default().fg(app.theme.fg_secondary)),
+                    Span::styled(
+                        i18n.ui("Speaker: "),
+                        Style::default().fg(app.theme.fg_secondary),
+                    ),
                     Span::styled(
                         speaker_name,
                         Style::default()
@@ -247,7 +256,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 match idx {
                     None => {
                         lines.push(Line::from(Span::styled(
-                            format!("  {}", label),
+                            format!("  {}", i18n.dynamic((*label).to_string())),
                             section_style,
                         )));
                     }
@@ -287,7 +296,10 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         };
                         lines.push(Line::from(vec![
                             Span::raw(prefix),
-                            Span::styled(format!("{:<20}", label), label_style),
+                            Span::styled(
+                                format!("{:<20}", i18n.dynamic((*label).to_string())),
+                                label_style,
+                            ),
                             Span::styled(format!(" {}", display_value), value_style),
                         ]));
                     }
@@ -298,16 +310,19 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title("Configuration"),
+                        .title(i18n.ui("Configuration")),
                 )
                 .scroll((s.selected_field.saturating_sub(10) as u16, 0));
             f.render_widget(para, cfg_layout[0]);
 
-            let hint = if s.editing_value {
-                " Type value, Enter=confirm  Esc=cancel"
-            } else {
-                " ↑/↓=select field  Left/Right=adjust  Enter=edit value  Tab=next field"
-            };
+            let hint = i18n.dynamic(
+                if s.editing_value {
+                    " Type value, Enter=confirm  Esc=cancel"
+                } else {
+                    " ↑/↓=select field  Left/Right=adjust  Enter=edit value  Tab=next field"
+                }
+                .to_string(),
+            );
             let hint_widget = Paragraph::new(hint)
                 .style(Style::default().fg(app.theme.fg_secondary))
                 .block(Block::default().borders(Borders::ALL));
@@ -325,6 +340,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .split(content_area);
 
             // Status
+            let unknown_error = i18n.dynamic("unknown error".to_string());
             let (status_text, status_style) = match &s.model.optimization_status {
                 OptimizationStatus::Idle => (
                     "Press Enter to start optimization".to_string(),
@@ -348,7 +364,10 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 OptimizationStatus::Failed => (
                     format!(
                         "Failed: {}",
-                        s.model.error_message.as_deref().unwrap_or("unknown error")
+                        s.model
+                            .error_message
+                            .as_deref()
+                            .unwrap_or(unknown_error.as_str())
                     ),
                     Style::default().fg(app.theme.accent_error),
                 ),
@@ -360,9 +379,13 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             let status_para = Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled(status_text, status_style)),
+                Line::from(Span::styled(i18n.dynamic(status_text), status_style)),
             ])
-            .block(Block::default().borders(Borders::ALL).title("Status"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(i18n.ui("Status")),
+            );
             f.render_widget(status_para, inner[0]);
 
             // Progress bar
@@ -377,7 +400,11 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             );
             let progress_para = Paragraph::new(bar)
                 .style(Style::default().fg(app.theme.accent_primary))
-                .block(Block::default().borders(Borders::ALL).title("Progress"));
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Progress")),
+                );
             f.render_widget(progress_para, inner[1]);
 
             // Loss history chart (if data available), else hint
@@ -392,20 +419,29 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         " Enter=retry  Tab=back to configure"
                     }
                 };
-                let hint_para = Paragraph::new(hint)
+                let hint_para = Paragraph::new(i18n.dynamic(hint.to_string()))
                     .style(Style::default().fg(app.theme.fg_secondary))
-                    .block(Block::default().borders(Borders::ALL).title("Loss History"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Loss History")),
+                    );
                 f.render_widget(hint_para, inner[2]);
             }
         }
 
         SpinoramaStep::Results => {
             if s.model.filters.is_empty() {
-                let msg =
-                    Paragraph::new("No results yet. Go to Optimize step and run optimization.")
-                        .style(Style::default().fg(app.theme.fg_secondary))
-                        .alignment(Alignment::Center)
-                        .block(Block::default().borders(Borders::ALL).title("Results"));
+                let msg = Paragraph::new(
+                    i18n.ui("No results yet. Go to Optimize step and run optimization."),
+                )
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .alignment(Alignment::Center)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Results")),
+                );
                 f.render_widget(msg, content_area);
             } else {
                 // Vertical split: summary + chart on top, filter table on bottom
@@ -431,12 +467,12 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     .rev()
                     .find_map(|(_, _, score)| *score);
                 let score_part = match (initial_score, final_score) {
-                    (Some(init), Some(fin)) => format!(
+                    (Some(init), Some(fin)) => i18n.dynamic(format!(
                         "  |  Score: {:.2} → {:.2} (Δ {:+.2})",
                         init,
                         fin,
                         fin - init,
-                    ),
+                    )),
                     _ => String::new(),
                 };
                 let summary = format!(
@@ -447,9 +483,13 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     s.model.pre_loss - s.model.post_loss,
                     score_part,
                 );
-                let summary_para = Paragraph::new(summary)
+                let summary_para = Paragraph::new(i18n.dynamic(summary))
                     .style(Style::default().fg(app.theme.accent_success))
-                    .block(Block::default().borders(Borders::ALL).title("Summary"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Summary")),
+                    );
                 f.render_widget(summary_para, rows_layout[0]);
 
                 draw_freq_response_chart(
@@ -464,7 +504,12 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
                 // Bottom: filter table
                 let header_cells = ["#", "Type", "Freq", "Q", "dB"].iter().map(|h| {
-                    Cell::from(*h).style(
+                    Cell::from(if *h == "#" {
+                        (*h).to_string()
+                    } else {
+                        i18n.dynamic((*h).to_string())
+                    })
+                    .style(
                         Style::default()
                             .fg(app.theme.accent_primary)
                             .add_modifier(Modifier::BOLD),
@@ -500,7 +545,11 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     ],
                 )
                 .header(header_row)
-                .block(Block::default().borders(Borders::ALL).title("PEQ Filters"));
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("PEQ Filters")),
+                );
                 f.render_widget(table, rows_layout[2]);
             }
         }
@@ -508,12 +557,20 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         SpinoramaStep::UpdatePlugin => {
             use crate::app::SpinUpdateSubStep;
             let has_results = !s.model.filters.is_empty();
-            let speaker = s.model.selected_speaker.as_deref().unwrap_or("(none)");
+            let speaker = s
+                .model
+                .selected_speaker
+                .as_deref()
+                .map(str::to_owned)
+                .unwrap_or_else(|| i18n.dynamic("(none)".to_string()));
 
             let mut lines = vec![
                 Line::from(""),
                 Line::from(vec![
-                    Span::styled("Speaker: ", Style::default().fg(app.theme.fg_secondary)),
+                    Span::styled(
+                        i18n.ui("Speaker: "),
+                        Style::default().fg(app.theme.fg_secondary),
+                    ),
                     Span::styled(
                         speaker,
                         Style::default()
@@ -528,40 +585,57 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 SpinUpdateSubStep::Ready => {
                     if has_results {
                         lines.push(Line::from(vec![Span::styled(
-                            format!("  {} PEQ filters ready to apply", s.model.filters.len()),
+                            i18n.dynamic(format!(
+                                "  {} PEQ filters ready to apply",
+                                s.model.filters.len()
+                            )),
                             Style::default().fg(app.theme.accent_success),
                         )]));
                         lines.push(Line::from(""));
                         lines.push(Line::from(vec![Span::styled(
-                            "  Press Enter to apply filters to the EQ plugin in the rack.",
+                            i18n.dynamic(
+                                "  Press Enter to apply filters to the EQ plugin in the rack."
+                                    .to_string(),
+                            ),
                             Style::default().fg(app.theme.fg_primary),
                         )]));
                         lines.push(Line::from(vec![Span::styled(
-                            "  If no EQ plugin exists it will be added automatically.",
+                            i18n.dynamic(
+                                "  If no EQ plugin exists it will be added automatically."
+                                    .to_string(),
+                            ),
                             Style::default().fg(app.theme.fg_secondary),
                         )]));
                     } else {
                         lines.push(Line::from(vec![Span::styled(
-                            "  No optimization results yet. Run optimization first.",
+                            i18n.dynamic(
+                                "  No optimization results yet. Run optimization first."
+                                    .to_string(),
+                            ),
                             Style::default().fg(app.theme.accent_error),
                         )]));
                     }
 
                     lines.push(Line::from(""));
                     lines.push(Line::from(vec![Span::styled(
-                        " Enter=apply to rack  →=Select  ←/BackTab=Results",
+                        i18n.dynamic(
+                            " Enter=apply to rack  →=Select  ←/BackTab=Results".to_string(),
+                        ),
                         Style::default().fg(app.theme.fg_secondary),
                     )]));
                 }
                 SpinUpdateSubStep::ConfirmOverwrite => {
                     if let Some((slot, count)) = s.update_existing_eq_info {
                         lines.push(Line::from(vec![Span::styled(
-                            format!("  Existing EQ in slot {} has {} filter(s).", slot, count),
+                            i18n.dynamic(format!(
+                                "  Existing EQ in slot {} has {} filter(s).",
+                                slot, count
+                            )),
                             Style::default().fg(app.theme.accent_warning),
                         )]));
                         lines.push(Line::from(""));
                         lines.push(Line::from(vec![Span::styled(
-                            "  Save current preset before overwriting?",
+                            i18n.dynamic("  Save current preset before overwriting?".to_string()),
                             Style::default()
                                 .fg(app.theme.fg_primary)
                                 .add_modifier(Modifier::BOLD),
@@ -575,7 +649,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(
-                                " = save preset then apply   ",
+                                i18n.dynamic(" = save preset then apply   ".to_string()),
                                 Style::default().fg(app.theme.fg_secondary),
                             ),
                             Span::styled(
@@ -585,7 +659,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(
-                                " = apply without saving   ",
+                                i18n.dynamic(" = apply without saving   ".to_string()),
                                 Style::default().fg(app.theme.fg_secondary),
                             ),
                             Span::styled(
@@ -594,7 +668,10 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                                     .fg(app.theme.fg_secondary)
                                     .add_modifier(Modifier::BOLD),
                             ),
-                            Span::styled(" = cancel", Style::default().fg(app.theme.fg_secondary)),
+                            Span::styled(
+                                i18n.ui(" = cancel"),
+                                Style::default().fg(app.theme.fg_secondary),
+                            ),
                         ]));
                     }
                 }
@@ -603,7 +680,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             let para = Paragraph::new(lines).block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Update Plugin"),
+                    .title(i18n.ui("Update Plugin")),
             );
             f.render_widget(para, content_area);
         }

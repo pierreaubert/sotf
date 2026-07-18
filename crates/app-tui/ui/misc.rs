@@ -37,8 +37,11 @@ pub(crate) fn centered_modal_rect(
     }
 }
 
-pub(super) fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str)> {
-    match screen {
+pub(super) fn get_detailed_keybindings_for_screen(
+    screen: Screen,
+    language: crate::i18n::Language,
+) -> Vec<(&'static str, &'static str)> {
+    let bindings = match screen {
         Screen::Loading => vec![],
         Screen::Library => vec![
             ("↑/↓ or k/j", "Navigate albums/artists"),
@@ -57,6 +60,9 @@ pub(super) fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &
             ("3", "Room EQ sub-screen"),
             ("4", "Headphone EQ sub-screen"),
             ("5", "Spinorama EQ sub-screen"),
+            ("6", "Federation Sources sub-screen"),
+            ("7", "Servers sub-screen"),
+            ("8", "Metadata Services sub-screen"),
             ("", ""),
             ("DIRECTORIES:", "(when on Directories sub-screen)"),
             ("↑/↓ or k/j", "Navigate directories"),
@@ -116,14 +122,38 @@ pub(super) fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &
         Screen::Devices => vec![
             ("↑/↓ or k/j", "Navigate output devices"),
             ("Enter/Space", "Select output device"),
+            ("r/R", "Rescan audio and cast devices"),
         ],
-    }
+    };
+    let text = crate::i18n::TuiTranslations::for_language(language);
+    bindings
+        .into_iter()
+        .map(|(key, action)| (key, text.action_description(action)))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::centered_modal_rect;
+    use super::{centered_modal_rect, get_detailed_keybindings_for_screen};
+    use crate::app::Screen;
     use ratatui::layout::Rect;
+
+    #[test]
+    fn detailed_help_resolves_for_every_required_locale() {
+        for language in crate::i18n::Language::ALL {
+            for screen in [
+                Screen::Loading,
+                Screen::Library,
+                Screen::Queue,
+                Screen::Playlists,
+                Screen::Plugins,
+                Screen::Devices,
+                Screen::Configure,
+            ] {
+                let _ = get_detailed_keybindings_for_screen(screen, language);
+            }
+        }
+    }
 
     #[test]
     fn centered_modal_rect_clamps_to_tiny_terminal() {

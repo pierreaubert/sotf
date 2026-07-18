@@ -97,6 +97,7 @@ pub fn render_plugin_content(
 ) -> AnyElement {
     let d = Ds::from_cx(cx);
     let state = entity.read(cx);
+    let text = PluginCommonTranslations::for_language(state.app.ui_state.language);
     let auto_tab = state
         .app
         .plugin_ui
@@ -221,6 +222,9 @@ pub fn render_plugin_content(
     if let Some(plugin) = plugin_graph.get_plugin(plugin_idx) {
         gpui::div()
             .size_full()
+            .flex()
+            .flex_col()
+            .items_stretch()
             .bg(chassis_theme.background)
             .child(render_app_plugin_shell(
                 &d,
@@ -228,6 +232,7 @@ pub fn render_plugin_content(
                 plugin_idx,
                 &plugin.plugin_type(),
                 plugin.enabled,
+                text,
                 &chassis_theme,
                 content,
             ))
@@ -247,6 +252,7 @@ pub(crate) fn render_app_plugin_shell(
     plugin_idx: usize,
     plugin_type: &sotf_audio_player::PluginType,
     enabled: bool,
+    text: PluginCommonTranslations,
     theme: &Theme,
     content: impl IntoElement,
 ) -> AnyElement {
@@ -256,6 +262,7 @@ pub(crate) fn render_app_plugin_shell(
         plugin_idx,
         plugin_type,
         enabled,
+        text,
         theme,
         content,
         Some(Box::new(move |target_enabled, _window, cx| {
@@ -269,3 +276,4 @@ pub(crate) fn render_app_plugin_shell(
     )
     .into_any_element()
 }
+use crate::app::i18n::PluginCommonTranslations;

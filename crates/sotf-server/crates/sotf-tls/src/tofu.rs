@@ -284,7 +284,7 @@ mod tests {
             store.accept("host:1", "AA", "Old").expect("accept");
             store.accept("host:1", "BB", "New").expect("update");
             assert_eq!(store.check("host:1", "BB"), TofuResult::Trusted);
-        }
+        };
 
         let store = TofuStore::load(tmp.path()).expect("reload");
         assert_eq!(store.check("host:1", "BB"), TofuResult::Trusted);
@@ -318,18 +318,16 @@ mod tests {
         std::fs::write(&path, "[[invalid toml").unwrap();
 
         let err = TofuStore::load(tmp.path()).expect_err("expected parse error");
-        let err_text = err.to_string();
+        let err_text = err.clone();
         assert!(
             err_text.contains("parse known_hosts"),
-            "error should describe the parse failure, got: {}",
-            err_text
+            "error should describe the parse failure, got: {err_text}"
         );
         // The error is surfaced to callers; it must not contain the absolute
         // filesystem path to the trust store.
         assert!(
             !err_text.contains(tmp.path().to_str().unwrap()),
-            "error must not leak trust-store path: {}",
-            err_text
+            "error must not leak trust-store path: {err_text}"
         );
     }
 }

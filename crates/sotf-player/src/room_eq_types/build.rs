@@ -353,6 +353,7 @@ fn build_factored_routed_room_eq_graph(
             plugin_type: plugin_type.to_string(),
             parameters,
             input_channels: channel_count,
+            bypassed: false,
         });
         id
     };
@@ -519,6 +520,7 @@ fn build_linear_room_eq_graph(
                 plugin_type,
                 parameters,
                 input_channels,
+                bypassed: false,
             });
             id
         };
@@ -689,6 +691,7 @@ fn build_linear_room_eq_graph_legacy(
                 plugin_type,
                 parameters,
                 input_channels,
+                bypassed: false,
             });
             id
         };

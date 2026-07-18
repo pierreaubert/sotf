@@ -3,17 +3,64 @@ use super::consts::SAMPLE_RATE;
 use super::consts::generate_test_buffer;
 use super::misc::assert_no_allocs;
 use serial_test::serial;
+use sotf_plugin_ambisonics::{AmbisonicsDecoderConfig, AmbisonicsDecoderPlugin};
 use sotf_plugins::{
-    ABComparePlugin, AutoGain, AutoGainParams, BandMergePlugin, BandSplitPlugin,
-    BinauralDecoderPlugin, ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin,
-    CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, CrossoverPlugin, DeclickPlugin,
-    DenoiserPlugin, DownmixPlugin, DownmixPluginParams, EqPlugin, ExpanderPlugin, GainPlugin,
-    GatePlugin, LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin, MatrixPlugin,
-    MonoToStereoPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
-    ParametricInPlacePlugin, ParametricPluginAdapter, Plugin, PndPlugin, ProcessContext,
-    ResamplerPlugin, RoomModel, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, XtcPlugin,
+    ABComparePlugin, AaePlugin, AaePluginParams, AecPlugin, AecPluginParams, AutoGain,
+    AutoGainParams, BandMergePlugin, BandSplitPlugin, BeamformerPlugin, BinauralDecoderPlugin,
+    ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedMode, CrossfeedPlugin,
+    CrossfeedPluginParams, CrossoverPlugin, DeEsserPlugin, DeclickPlugin, DelayPlugin,
+    DenoiserPlugin, DownmixPlugin, DownmixPluginParams, DynamicEqPlugin, EqPlugin, ExpanderPlugin,
+    FirDesignerPlugin, GainPlugin, GatePlugin, HissReducerPlugin, IsolatedExternalPlugin,
+    IsolatedExternalPluginConfig, LimiterPlugin, LinearPhaseEqPlugin, LoudnessCompensationPlugin,
+    LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
+    MultibandExpanderPlugin, ParametricInPlacePlugin, ParametricPluginAdapter, Plugin,
+    PluginDescriptor, PluginFormat, PluginScanStatus, PndPlugin, ProcessContext, ResamplerPlugin,
+    RoomModel, SPEECH_DENOISER_FRAME_SIZE, SaturationPlugin, SpectralCompressorPlugin,
+    SpectralCompressorPluginParams, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
+    StereoImagerPlugin, StereoImagerPluginParams, TransientShaperPlugin, UpmixerPlugin, XtcPlugin,
     XtcPluginParams,
 };
+use std::time::Duration;
+
+fn assert_parametric_in_place_process_zero_alloc<P>(
+    name: &str,
+    mut plugin: P,
+    channels: usize,
+    frames: usize,
+) where
+    P: ParametricInPlacePlugin,
+{
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    let mut buffer = generate_test_buffer(frames, channels);
+    let ctx = ProcessContext::new(SAMPLE_RATE, frames);
+
+    for _ in 0..20 {
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    }
+
+    assert_no_allocs(name, || {
+        for _ in 0..1000 {
+            plugin.process_in_place(&mut buffer, &ctx).unwrap();
+        }
+    });
+}
+
+fn assert_plugin_process_zero_alloc(name: &str, plugin: &mut dyn Plugin, frames: usize) {
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    let input = generate_test_buffer(frames, plugin.input_channels());
+    let mut output = vec![0.0f32; frames * plugin.output_channels()];
+    let ctx = ProcessContext::new(SAMPLE_RATE, frames);
+
+    for _ in 0..20 {
+        plugin.process(&input, &mut output, &ctx).unwrap();
+    }
+
+    assert_no_allocs(name, || {
+        for _ in 0..1000 {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        }
+    });
+}
 
 #[test]
 #[serial]
@@ -784,4 +831,223 @@ fn test_auto_gain_zero_alloc() {
             plugin.measure_output(&output).unwrap();
         }
     });
+}
+
+#[test]
+#[serial]
+fn test_delay_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "DelayPlugin::process_in_place",
+        DelayPlugin::new(2, 100.0, 0.3, 0.5),
+        2,
+        BUFFER_SIZE,
+    );
+}
+
+#[test]
+#[serial]
+fn test_aae_zero_alloc() {
+    let mut plugin = AaePlugin::from_params(AaePluginParams::default());
+    assert_plugin_process_zero_alloc("AaePlugin::process", &mut plugin, BUFFER_SIZE);
+}
+
+#[test]
+#[serial]
+fn test_de_esser_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "DeEsserPlugin::process_in_place",
+        DeEsserPlugin::new(2),
+        2,
+        BUFFER_SIZE,
+    );
+}
+
+#[test]
+#[serial]
+fn test_dynamic_eq_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "DynamicEqPlugin::process_in_place",
+        DynamicEqPlugin::new(2),
+        2,
+        BUFFER_SIZE,
+    );
+}
+
+#[test]
+#[serial]
+fn test_fir_designer_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "FirDesignerPlugin::process_in_place",
+        FirDesignerPlugin::new(2, SAMPLE_RATE),
+        2,
+        1024,
+    );
+}
+
+#[test]
+#[serial]
+fn test_linear_phase_eq_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "LinearPhaseEqPlugin::process_in_place",
+        LinearPhaseEqPlugin::new(2, SAMPLE_RATE),
+        2,
+        1024,
+    );
+}
+
+#[test]
+#[serial]
+fn test_spectral_compressor_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "SpectralCompressorPlugin::process_in_place",
+        SpectralCompressorPlugin::from_params(2, SpectralCompressorPluginParams::default()),
+        2,
+        4096,
+    );
+}
+
+#[test]
+#[serial]
+fn test_stereo_imager_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "StereoImagerPlugin::process_in_place",
+        StereoImagerPlugin::new(2, StereoImagerPluginParams::default()),
+        2,
+        BUFFER_SIZE,
+    );
+}
+
+#[test]
+#[serial]
+fn test_transient_shaper_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "TransientShaperPlugin::process_in_place",
+        TransientShaperPlugin::new(2),
+        2,
+        BUFFER_SIZE,
+    );
+}
+
+#[test]
+#[serial]
+fn test_saturation_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "SaturationPlugin::process_in_place",
+        SaturationPlugin::new(2),
+        2,
+        BUFFER_SIZE,
+    );
+}
+
+#[test]
+#[serial]
+fn test_speech_denoiser_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "SpeechDenoiserPlugin::process_in_place",
+        SpeechDenoiserPlugin::new(2),
+        2,
+        SPEECH_DENOISER_FRAME_SIZE,
+    );
+}
+
+#[test]
+#[serial]
+fn test_hiss_reducer_zero_alloc() {
+    assert_parametric_in_place_process_zero_alloc(
+        "HissReducerPlugin::process_in_place",
+        HissReducerPlugin::new(2),
+        2,
+        BUFFER_SIZE,
+    );
+}
+
+#[test]
+#[serial]
+fn test_aec_zero_alloc() {
+    let mut plugin = AecPlugin::from_params(SAMPLE_RATE, AecPluginParams::default());
+    assert_plugin_process_zero_alloc("AecPlugin::process", &mut plugin, BUFFER_SIZE);
+}
+
+#[test]
+#[serial]
+fn test_beamformer_zero_alloc() {
+    for mode in [0, 2] {
+        let mut plugin = BeamformerPlugin::new(2, SAMPLE_RATE);
+        plugin
+            .set_parameter(
+                sotf_plugins::ParameterId::from("beamformer_type"),
+                sotf_plugins::ParameterValue::Int(mode),
+            )
+            .unwrap();
+        let name = if mode == 0 {
+            "BeamformerPlugin::MVDR::process"
+        } else {
+            "BeamformerPlugin::GSC::process"
+        };
+        assert_plugin_process_zero_alloc(name, &mut plugin, BUFFER_SIZE);
+    }
+}
+
+#[test]
+#[serial]
+fn test_ambisonics_decoder_zero_alloc() {
+    for dual_band in [false, true] {
+        let config = AmbisonicsDecoderConfig {
+            order: 1,
+            target_layout: "5.1".to_owned(),
+            max_re_weighting: true,
+            dual_band,
+        };
+        let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        let name = if dual_band {
+            "AmbisonicsDecoderPlugin::dual_band::process"
+        } else {
+            "AmbisonicsDecoderPlugin::single_band::process"
+        };
+        assert_plugin_process_zero_alloc(name, &mut plugin, 1024);
+    }
+}
+
+#[test]
+#[serial]
+fn test_isolated_external_host_timeout_and_quarantine_zero_alloc() {
+    let descriptor = PluginDescriptor {
+        id: "test.external".into(),
+        name: "External Test".into(),
+        vendor: "SOTF".into(),
+        version: "0.1".into(),
+        format: PluginFormat::Clap,
+        path: "/tmp/fake.clap".into(),
+        audio_inputs: 2,
+        audio_outputs: 2,
+        is_instrument: false,
+        categories: Vec::new(),
+        scan_status: PluginScanStatus::Discovered,
+    };
+    let mut plugin = IsolatedExternalPlugin::new(
+        descriptor,
+        SAMPLE_RATE,
+        IsolatedExternalPluginConfig {
+            deadline: Duration::ZERO,
+            start_worker: false,
+            max_consecutive_block_failures: 2,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let input = generate_test_buffer(BUFFER_SIZE, 2);
+    let mut output = vec![0.0f32; input.len()];
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+
+    // First miss increments the failure count. The measured second miss crosses
+    // the quarantine threshold, and subsequent blocks exercise steady fallback.
+    plugin.process(&input, &mut output, &ctx).unwrap();
+    assert_no_allocs(
+        "IsolatedExternalPlugin::timeout/quarantine/fallback",
+        || {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        },
+    );
+    assert_eq!(output, input);
 }

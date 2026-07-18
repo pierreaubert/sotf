@@ -175,8 +175,7 @@ use sotf_host::param_specs::ParamType;
 #[test]
 fn test_param_value_set_param_value_roundtrip() {
     let mut p = Params::default();
-    for i in 0..PARAMS.len() {
-        let spec = &PARAMS[i];
+    for (i, spec) in PARAMS.iter().enumerate() {
         if matches!(spec.param_type, ParamType::FilePath) {
             assert!(
                 p.param_value(i).is_none(),

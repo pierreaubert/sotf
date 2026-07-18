@@ -19,7 +19,8 @@ expression: params
       "Float": 20.0
     },
     "unit": "",
-    "logarithmic": false
+    "logarithmic": false,
+    "update_mode": "Realtime"
   },
   {
     "id": "smoothing_ms",
@@ -37,7 +38,8 @@ expression: params
       "Float": 100.0
     },
     "unit": "",
-    "logarithmic": false
+    "logarithmic": false,
+    "update_mode": "Realtime"
   },
   {
     "id": "gain_db_0",
@@ -55,7 +57,8 @@ expression: params
       "Float": 20.0
     },
     "unit": "",
-    "logarithmic": false
+    "logarithmic": false,
+    "update_mode": "Realtime"
   },
   {
     "id": "gain_db_1",
@@ -73,6 +76,7 @@ expression: params
       "Float": 20.0
     },
     "unit": "",
-    "logarithmic": false
+    "logarithmic": false,
+    "update_mode": "Realtime"
   }
 ]

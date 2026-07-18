@@ -19,6 +19,7 @@ pub struct UiState {
     pub status_message: Option<String>,
     pub error_message: Option<String>,
     pub needs_redraw: bool,
+    pub language: crate::i18n::Language,
 }
 
 pub struct ModalState {
@@ -258,6 +259,7 @@ impl App {
                 status_message: None,
                 error_message: None,
                 needs_redraw: true,
+                language: crate::i18n::Language::from_environment(),
             },
             modal: ModalState {
                 metadata_editor: None,

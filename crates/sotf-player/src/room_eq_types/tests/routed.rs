@@ -150,6 +150,8 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
         multi_seat_coverage: None,
         multi_seat_correction: None,
         supporting_source: None,
+        correction_acceptance: None,
+        stage_outcomes: vec![],
         bass_management: Some(BassManagementReport {
             enabled: true,
             crossover_type: "LR24".to_string(),
@@ -276,6 +278,138 @@ fn test_requires_room_eq_graph_with_routed_bass_management() {
     let output = routed_bass_output();
     assert!(output.requires_room_eq_graph());
     assert!(!output.is_rack_compatible());
+}
+
+fn routed_stereo_21_output() -> DspChainOutput {
+    let mut output = routed_physical_sub_output();
+    output
+        .channels
+        .insert("R".to_string(), bare_chain("R", None));
+
+    let routing = output
+        .metadata
+        .as_mut()
+        .and_then(|metadata| metadata.bass_management.as_mut())
+        .and_then(|report| report.routing_graph.as_mut())
+        .expect("routed fixture");
+    let left_routes = routing
+        .routes
+        .iter()
+        .filter(|route| route.source_channel == "L")
+        .cloned()
+        .collect::<Vec<_>>();
+
+    routing.input_channels = ["L", "R", "LFE", "SubA"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    routing.output_channels = routing.input_channels.clone();
+    for route in &mut routing.routes {
+        if route.source_channel == "LFE" {
+            route.source_index = 2;
+        } else if route.source_channel == "SubA" {
+            route.source_index = 3;
+        }
+        if route.destination == "SubA" {
+            route.destination_index = 3;
+        }
+    }
+    for template in left_routes {
+        let mut route = template;
+        route.source_channel = "R".to_string();
+        route.source_index = 1;
+        route.pre_chain_channel = Some("R".to_string());
+        if route.destination == "L" {
+            route.destination = "R".to_string();
+            route.destination_index = 1;
+            route.post_chain_channel = Some("R".to_string());
+        } else if route.destination == "SubA" {
+            route.destination_index = 3;
+        }
+        routing.routes.push(route);
+    }
+
+    output
+}
+
+fn routed_surround_51_output() -> DspChainOutput {
+    let mut output = routed_physical_sub_output();
+    for channel in ["R", "C", "SL", "SR"] {
+        output
+            .channels
+            .insert(channel.to_string(), bare_chain(channel, None));
+    }
+
+    let routing = output
+        .metadata
+        .as_mut()
+        .and_then(|metadata| metadata.bass_management.as_mut())
+        .and_then(|report| report.routing_graph.as_mut())
+        .expect("routed fixture");
+    let left_routes = routing
+        .routes
+        .iter()
+        .filter(|route| route.source_channel == "L")
+        .cloned()
+        .collect::<Vec<_>>();
+
+    routing.input_channels = ["L", "R", "C", "LFE", "SL", "SR", "SubA"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    routing.output_channels = routing.input_channels.clone();
+
+    for route in &mut routing.routes {
+        if route.source_channel == "LFE" {
+            route.source_index = 3;
+        } else if route.source_channel == "SubA" {
+            route.source_index = 6;
+        }
+        if route.destination == "SubA" {
+            route.destination_index = 6;
+        }
+    }
+
+    for (source_index, channel) in [(1, "R"), (2, "C"), (4, "SL"), (5, "SR")] {
+        for template in &left_routes {
+            let mut route = template.clone();
+            route.source_channel = channel.to_string();
+            route.source_index = source_index;
+            route.pre_chain_channel = Some(channel.to_string());
+            if route.destination == "L" {
+                route.destination = channel.to_string();
+                route.destination_index = source_index;
+                route.post_chain_channel = Some(channel.to_string());
+            } else if route.destination == "SubA" {
+                route.destination_index = 6;
+            }
+            routing.routes.push(route);
+        }
+    }
+
+    output
+}
+
+#[test]
+fn easy_bass_managed_outputs_apply_as_editable_persistable_graphs() {
+    use crate::autoeq::{RoomEqApplyOutcome, apply_room_eq_to_chain};
+    use crate::plugin_graph::PluginGraph;
+
+    for output in [routed_stereo_21_output(), routed_surround_51_output()] {
+        let mut graph = PluginGraph::with_default_rack();
+        let outcome = apply_room_eq_to_chain(&mut graph, &output, 48_000.0, &[]).unwrap();
+        assert!(matches!(outcome, RoomEqApplyOutcome::Graph(_)));
+        assert!(!graph.is_linear());
+
+        let encoded = serde_json::to_string(&graph).unwrap();
+        let mut restored: PluginGraph = serde_json::from_str(&encoded).unwrap();
+        let previous_count = restored.plugin_count();
+        restored.add_plugin_node(
+            &crate::PluginType::Gain,
+            crate::plugin_graph::NodePosition::new(12.0, 8.0),
+        );
+        assert_eq!(restored.plugin_count(), previous_count + 1);
+    }
 }
 
 #[test]

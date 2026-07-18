@@ -322,10 +322,12 @@ mod tests {
 
     #[test]
     fn signal_path_reports_engine_health_issues() {
-        let mut engine_state = AudioEngineState::default();
-        engine_state.underruns = 3;
-        engine_state.playback_stream_error_count = 1;
-        engine_state.playback_frames_dropped = 10;
+        let engine_state = AudioEngineState {
+            underruns: 3,
+            playback_stream_error_count: 1,
+            playback_frames_dropped: 10,
+            ..Default::default()
+        };
 
         let path = SignalPath::from_player_state(None, None, &engine_state);
 

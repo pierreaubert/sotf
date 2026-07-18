@@ -456,6 +456,7 @@ pub(crate) fn render_eq_property_strip(
     indexing: EqBandIndexing,
     state: &EqRenderState,
     is_lp_mode: bool,
+    text: EqViewTranslations,
     theme: &Theme,
 ) -> AnyElement {
     let Some(filter) = filter else {
@@ -467,7 +468,7 @@ pub(crate) fn render_eq_property_strip(
             .py(d.pad_y)
             .text_size(d.text_sm)
             .text_color(theme.text_muted)
-            .child("No bands")
+            .child(text.no_bands)
             .into_any_element();
     };
 
@@ -573,6 +574,7 @@ pub(crate) fn render_eq_property_strip(
                         plugin_idx,
                         band_idx,
                         filter.topology,
+                        text,
                         theme,
                     )
                     .into_any_element()
@@ -651,6 +653,7 @@ pub(crate) fn render_eq_property_strip(
                         base_param_idx + active_local_idx,
                         state.selected_param,
                         state.is_editing,
+                        text,
                         theme,
                     )
                 })),
@@ -903,7 +906,7 @@ pub(crate) fn render_eq_visualization_sized(
             .justify_center()
             .bg(theme.plugin_palette.eq_curve_colors.background)
             .text_color(theme.text_secondary)
-            .child("Unable to render chart")
+            .child("!")
             .into_any_element(),
     };
 
@@ -1295,6 +1298,7 @@ pub fn render_eq_plugin(
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
+    let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let ds = Ds::from_cx(cx);
 
     // Read selected channel from AppState
@@ -1455,7 +1459,7 @@ pub fn render_eq_plugin(
                                                 });
                                             }
                                         })
-                                        .child("All Channels")
+                                        .child(text.all_channels)
                                 })
                                 // Per Channel button
                                 .child({
@@ -1488,7 +1492,7 @@ pub fn render_eq_plugin(
                                                 });
                                             }
                                         })
-                                        .child("Per Channel")
+                                        .child(text.per_channel)
                                 }),
                         )
                         // Channel selector (only shown in per-channel mode)
@@ -1787,7 +1791,7 @@ pub fn render_eq_plugin(
                                             div()
                                                 .text_size(ds.text_xs)
                                                 .text_color(theme.text_muted)
-                                                .child("Type"),
+                                                .child(text.type_label),
                                         )
                                         .when(!is_lp_mode, |row| {
                                             row.child(render_standard_eq_algorithm_pill(
@@ -1868,6 +1872,7 @@ pub fn render_eq_plugin(
                                         base_param_idx + active_local_idx,
                                         state.selected_param,
                                         state.is_editing,
+                                        text,
                                         theme,
                                     )
                                 })),
@@ -1887,6 +1892,7 @@ pub fn render_eq_plugin(
             indexing,
             &state,
             is_lp_mode,
+            text,
             theme,
         )
     } else {
@@ -2228,6 +2234,7 @@ fn render_eq_band_topology_selector(
     plugin_idx: usize,
     band_idx: usize,
     topology: EqFilterTopology,
+    text: EqViewTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     div()
@@ -2242,7 +2249,7 @@ fn render_eq_band_topology_selector(
                 .text_color(theme.text_muted)
                 .rounded(d.r_sm)
                 .bg(theme.background_secondary)
-                .child("Alg"),
+                .child(text.algorithm),
         )
         .children(
             [
@@ -2308,6 +2315,7 @@ pub(crate) fn render_eq_active_toggle(
     param_idx: usize,
     selected_param: usize,
     is_editing: bool,
+    text: EqViewTranslations,
     theme: &Theme,
 ) -> AnyElement {
     let active = !filter.muted;
@@ -2324,7 +2332,7 @@ pub(crate) fn render_eq_active_toggle(
             div()
                 .text_size(d.text_xs)
                 .text_color(theme.text_muted)
-                .child("Active"),
+                .child(text.active),
         )
         .child(
             div()
@@ -2593,3 +2601,4 @@ pub(crate) fn render_filter_type_selector(
                 .child(abbrev)
         }))
 }
+use crate::app::i18n::EqViewTranslations;

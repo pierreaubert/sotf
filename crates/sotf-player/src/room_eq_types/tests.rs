@@ -11,7 +11,10 @@ use super::misc::single_channel_matrix_parameters;
 use super::misc::sorted_channel_names;
 use super::multi_measurement_ui_config::MultiMeasurementUiConfig;
 use super::room_eq_measurements_file::RoomEqMeasurementsFile;
-use super::room_eq_optimization_mode::apply_simple_preset;
+use super::room_eq_optimization_mode::{
+    RoomEqEasyLayout, SimpleCrossoverChoice, apply_room_eq_easy_layout, apply_simple_preset,
+    validate_room_eq_easy_layout,
+};
 use super::room_eq_optimizer_config::RoomEqOptimizerConfig;
 use super::target_response_ui_config::TargetResponseUiConfig;
 use super::types::append_channel_dsp_graph_branch;
@@ -57,6 +60,7 @@ fn build_routed_room_eq_graph(
             plugin_type,
             parameters,
             input_channels: channel_count,
+            bypassed: false,
         });
         id
     };
@@ -620,6 +624,98 @@ fn simple_preset_canonicalizes_multi_position_strategy_label() {
 }
 
 #[test]
+fn easy_layouts_validate_canonical_and_common_aliases() {
+    assert!(validate_room_eq_easy_layout(RoomEqEasyLayout::Stereo20, ["L", "R"]).is_ok());
+    assert!(validate_room_eq_easy_layout(RoomEqEasyLayout::Stereo21, ["FL", "FR", "Sub"]).is_ok());
+    assert!(
+        validate_room_eq_easy_layout(
+            RoomEqEasyLayout::Surround51,
+            [
+                "Front Left",
+                "Front Right",
+                "Center",
+                "LFE",
+                "Rear Left",
+                "Rear Right"
+            ],
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn easy_layout_validation_reports_missing_extra_and_duplicate_roles() {
+    let error = validate_room_eq_easy_layout(RoomEqEasyLayout::Stereo21, ["L", "Left", "Height"])
+        .unwrap_err();
+
+    assert_eq!(error.missing_roles, vec!["FR", "LFE"]);
+    assert_eq!(error.unexpected_channels, vec!["Height"]);
+    assert_eq!(error.duplicate_roles, vec!["FL"]);
+    assert!(error.to_string().contains("2.1 layout requires channels"));
+}
+
+#[test]
+fn easy_layout_apply_configures_bass_management_and_clears_stale_stereo_state() {
+    let mut preset = SimplePresetConfig::default();
+    let mut config = RoomEqOptimizerConfig::default();
+
+    RoomEqEasyLayout::Stereo21.configure_preset_defaults(&mut preset);
+    apply_room_eq_easy_layout(
+        RoomEqEasyLayout::Stereo21,
+        ["L", "R", "LFE"],
+        &mut preset,
+        &mut config,
+    )
+    .unwrap();
+    assert_eq!(preset.crossover, SimpleCrossoverChoice::Lr24);
+    assert_eq!(preset.bass_management, "Standard");
+    assert!(config.schroeder_split.enabled);
+
+    apply_room_eq_easy_layout(
+        RoomEqEasyLayout::Stereo20,
+        ["L", "R"],
+        &mut preset,
+        &mut config,
+    )
+    .unwrap();
+    assert_eq!(preset.crossover, SimpleCrossoverChoice::Lr24);
+    assert!(preset.bass_management.is_empty());
+    assert!(!config.schroeder_split.enabled);
+}
+
+#[test]
+fn easy_layout_apply_is_atomic_when_measurements_do_not_match() {
+    let mut preset = SimplePresetConfig {
+        crossover: SimpleCrossoverChoice::Lr48,
+        bass_management: "Cardioid".to_string(),
+        ..Default::default()
+    };
+    let original_preset = preset.clone();
+    let mut config = RoomEqOptimizerConfig {
+        num_filters: 13,
+        ..Default::default()
+    };
+    let original_config = config.clone();
+
+    assert!(
+        apply_room_eq_easy_layout(
+            RoomEqEasyLayout::Surround51,
+            ["L", "R", "LFE"],
+            &mut preset,
+            &mut config,
+        )
+        .is_err()
+    );
+    assert_eq!(preset.crossover, original_preset.crossover);
+    assert_eq!(preset.bass_management, original_preset.bass_management);
+    assert_eq!(config.num_filters, original_config.num_filters);
+    assert_eq!(
+        config.schroeder_split.enabled,
+        original_config.schroeder_split.enabled
+    );
+}
+
+#[test]
 fn probe_arrival_map_returns_none_when_idle() {
     let dd = DelayDetectionState::default();
     assert_eq!(dd.status, DelayDetectionStatus::Idle);
@@ -1138,8 +1234,8 @@ fn room_eq_optimizer_config_ignores_unknown_legacy_fields() {
 
     let config: RoomEqOptimizerConfig = serde_json::from_str(json).unwrap();
     assert_eq!(config.target_response.shape, "harman");
-    assert_eq!(config.target_response.enabled, true);
-    assert_eq!(config.target_response.broadband_precorrection, false);
+    assert!(config.target_response.enabled);
+    assert!(!config.target_response.broadband_precorrection);
 }
 
 #[test]

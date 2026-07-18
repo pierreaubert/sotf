@@ -8,7 +8,7 @@
             .max(ParamLimits::MIXED_CROSSOVER_FREQ.max)
             .step(ParamLimits::MIXED_CROSSOVER_FREQ.step)
             .decimals(0)
-            .label("Crossover Freq (Hz)")
+        .label(translations.autoeq_form.parameters.crossover_frequency_hz)
             .size(NumberInputSize::Sm)
             .width(140.0)
             .disabled(disabled)
@@ -26,7 +26,7 @@
 
     let mut mixed_type_select =
         Select::new((base_id.clone(), "mixed-crossover-type"))
-            .label("Crossover Type")
+        .label(translations.autoeq_form.parameters.crossover_type)
             .options(mixed_type_options)
             .selected(&config.v2.mixed_crossover_type)
             .is_open(ui_state.mixed_crossover_type_open)
@@ -52,7 +52,7 @@
         .collect();
 
     let mut mixed_band_select = Select::new((base_id.clone(), "mixed-fir-band"))
-        .label("FIR Band")
+        .label(translations.autoeq_form.parameters.fir_band)
         .options(mixed_band_options)
         .selected(&config.v2.mixed_fir_band)
         .is_open(ui_state.mixed_fir_band_open)

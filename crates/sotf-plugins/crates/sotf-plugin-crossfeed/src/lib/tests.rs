@@ -714,9 +714,11 @@ fn test_oversized_block_returns_error() {
 
 #[test]
 fn test_process_in_place_enabled_off_mode_passthrough() {
-    let mut params = CrossfeedPluginParams::default();
-    params.enabled = true;
-    params.mode = CrossfeedMode::Off;
+    let params = CrossfeedPluginParams {
+        enabled: true,
+        mode: CrossfeedMode::Off,
+        ..Default::default()
+    };
     let mut p = CrossfeedPlugin::new(params).unwrap();
     p.initialize(48000).unwrap();
 

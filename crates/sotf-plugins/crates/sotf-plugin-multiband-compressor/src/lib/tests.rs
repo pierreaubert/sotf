@@ -2166,9 +2166,9 @@ fn test_per_band_settings_affect_output() {
     .unwrap();
 
     let mut buf = vec![0.0f32; 2048];
-    for i in 0..2048 {
+    for (i, sample) in buf.iter_mut().enumerate() {
         let t = i as f32 / 48000.0;
-        buf[i] = ((2.0 * std::f32::consts::PI * 100.0 * t).sin()
+        *sample = ((2.0 * std::f32::consts::PI * 100.0 * t).sin()
             + (2.0 * std::f32::consts::PI * 5000.0 * t).sin())
             * 0.3;
     }

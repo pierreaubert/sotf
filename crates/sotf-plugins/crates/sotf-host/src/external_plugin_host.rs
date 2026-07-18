@@ -66,6 +66,10 @@ impl ExternalPluginHostProxy {
         self.shared.worker_sandbox_status()
     }
 
+    pub fn worker_latency_samples(&self) -> Option<usize> {
+        self.shared.worker_latency_samples()
+    }
+
     pub fn process_block(
         &mut self,
         input: &[f32],

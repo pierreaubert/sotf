@@ -95,6 +95,109 @@ struct PluginCategory: Identifiable {
     var id: String { name }
 }
 
+enum PluginPipelineTopology: String {
+    case rack
+    case graph
+}
+
+struct PluginGraphNodeModel: Identifiable {
+    let id: Int
+    var pluginType: String
+    var parameters: [String: Any]
+    var inputChannels: Int
+    var bypassed: Bool
+
+    var pluginName: String {
+        pluginDisplayName(pluginType)
+    }
+
+    var artifact: [String: Any] {
+        [
+            "id": id,
+            "plugin_type": pluginType,
+            "parameters": parameters,
+            "input_channels": inputChannels,
+            "bypassed": bypassed,
+        ]
+    }
+}
+
+struct PluginGraphEdgeModel: Identifiable, Hashable {
+    let fromNode: Int
+    let toNode: Int
+
+    var id: String { "\(fromNode)->\(toNode)" }
+
+    var artifact: [String: Any] {
+        ["from_node": fromNode, "to_node": toNode]
+    }
+
+    static func == (lhs: PluginGraphEdgeModel, rhs: PluginGraphEdgeModel) -> Bool {
+        lhs.fromNode == rhs.fromNode && lhs.toNode == rhs.toNode
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(fromNode)
+        hasher.combine(toNode)
+    }
+}
+
+struct PluginGraphModel {
+    var nodes: [PluginGraphNodeModel]
+    var edges: [PluginGraphEdgeModel]
+
+    var artifact: [String: Any] {
+        [
+            "nodes": nodes.map(\.artifact),
+            "edges": edges.map(\.artifact),
+        ]
+    }
+
+    var linearNodeIDs: [Int]? {
+        guard !nodes.isEmpty else { return [] }
+        let nodeIDs = Set(nodes.map(\.id))
+        guard edges.count == nodes.count - 1,
+              edges.allSatisfy({ nodeIDs.contains($0.fromNode) && nodeIDs.contains($0.toNode) })
+        else {
+            return nil
+        }
+
+        var incoming: [Int: Int] = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, 0) })
+        var outgoing: [Int: [Int]] = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, []) })
+        for edge in edges {
+            incoming[edge.toNode, default: 0] += 1
+            outgoing[edge.fromNode, default: []].append(edge.toNode)
+        }
+        guard incoming.values.allSatisfy({ $0 <= 1 }),
+              outgoing.values.allSatisfy({ $0.count <= 1 }),
+              let root = incoming.first(where: { $0.value == 0 })?.key,
+              incoming.values.filter({ $0 == 0 }).count == 1
+        else {
+            return nil
+        }
+
+        var ordered: [Int] = []
+        var current: Int? = root
+        var visited = Set<Int>()
+        while let id = current, visited.insert(id).inserted {
+            ordered.append(id)
+            current = outgoing[id]?.first
+        }
+        return ordered.count == nodes.count ? ordered : nil
+    }
+
+    var isLinear: Bool {
+        linearNodeIDs != nil
+    }
+}
+
+struct PluginPipelineModel {
+    var topology: PluginPipelineTopology
+    var plugins: [[String: Any]]
+    var graph: PluginGraphModel?
+    var generation: Int?
+}
+
 /// Group available plugins by category
 func groupPluginsByCategory(_ plugins: [AvailablePlugin]) -> [PluginCategory] {
     var categoryMap: [String: [AvailablePlugin]] = [:]

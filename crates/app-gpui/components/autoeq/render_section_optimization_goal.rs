@@ -7,9 +7,9 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(Text::section_header("Optimisation Goal").color(theme.header_color))
+            .child(Text::section_header(translations.autoeq_form.optimization_goal).color(theme.header_color))
             .child(
-                Text::new("How the optimizer evaluates correction quality")
+                Text::new(translations.autoeq_how_optimizer_evaluates)
                     .size(TextSize::Xs)
                     .color(theme.description_color),
             ),

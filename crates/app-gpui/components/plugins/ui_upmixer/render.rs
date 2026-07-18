@@ -58,6 +58,7 @@ pub fn render_upmixer_plugin(
     plugin_idx: usize,
     state: UpmixerRenderState,
     available_width: f32,
+    text: PluginCommonTranslations,
     theme: &Theme,
     plugin_theme: &PluginTheme,
 ) -> impl IntoElement {
@@ -73,7 +74,7 @@ pub fn render_upmixer_plugin(
 
     let main_area = match layout {
         UpmixerLayout::Wide => {
-            render_main_area(d, entity.clone(), plugin_idx, &state, theme).into_any_element()
+            render_main_area(d, entity.clone(), plugin_idx, &state, text, theme).into_any_element()
         }
         UpmixerLayout::Medium => render_medium_area(
             d,
@@ -81,6 +82,7 @@ pub fn render_upmixer_plugin(
             plugin_idx,
             selected_config,
             &state,
+            text,
             theme,
         )
         .into_any_element(),
@@ -90,6 +92,7 @@ pub fn render_upmixer_plugin(
             plugin_idx,
             selected_config,
             &state,
+            text,
             theme,
         )
         .into_any_element(),
@@ -104,6 +107,7 @@ pub fn render_upmixer_plugin(
         plugin_idx,
         selected_config,
         &state,
+        text,
         theme,
     );
 
@@ -158,6 +162,7 @@ fn render_tab_button(
 ) -> Stateful<Div> {
     div()
         .id(id)
+        .flex_none()
         .cursor_pointer()
         .px(d.card)
         // intentional: asymmetric underline-tab padding — 4/6 pair is visually tuned
@@ -165,6 +170,7 @@ fn render_tab_button(
         .pt(px(4.0))
         .text_size(d.text_xs)
         .text_center()
+        .whitespace_nowrap()
         .font_weight(if is_active {
             FontWeight::BOLD
         } else {
@@ -241,6 +247,7 @@ fn render_main_area(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     div()
@@ -254,6 +261,7 @@ fn render_main_area(
             entity.clone(),
             plugin_idx,
             state,
+            text,
             theme,
         ))
         .child(
@@ -280,6 +288,7 @@ fn render_medium_area(
     plugin_idx: usize,
     selected_config: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let focused_config = focused_config_index(selected_config);
@@ -295,6 +304,7 @@ fn render_medium_area(
             entity.clone(),
             plugin_idx,
             state,
+            text,
             theme,
         ))
         .child(
@@ -323,7 +333,7 @@ fn render_medium_area(
                         .p(d.pad_y)
                         .bg(theme.surface)
                         .rounded(d.r_lg)
-                        .child(render_section_header(d, "Primary", theme))
+                        .child(render_section_header(d, text.label("Primary"), theme))
                         .child(render_tab_bar(
                             d,
                             entity.clone(),
@@ -338,6 +348,7 @@ fn render_medium_area(
                             plugin_idx,
                             focused_config,
                             state,
+                            text,
                             theme,
                         )),
                 ),
@@ -352,6 +363,7 @@ fn render_narrow_area(
     plugin_idx: usize,
     selected_config: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let focused_config = focused_config_index(selected_config);
@@ -367,6 +379,7 @@ fn render_narrow_area(
             entity.clone(),
             plugin_idx,
             state,
+            text,
             theme,
         ))
         .child(render_spider_controls(
@@ -406,6 +419,7 @@ fn render_narrow_area(
                     plugin_idx,
                     focused_config,
                     state,
+                    text,
                     theme,
                 )),
         )
@@ -426,6 +440,7 @@ fn render_compact_config_content(
     plugin_idx: usize,
     selected_config: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> AnyElement {
     match selected_config {
@@ -947,7 +962,7 @@ fn render_compact_config_content(
             .flex()
             .flex_col()
             .gap(d.gap)
-            .child(render_section_header(d, "Spatial", theme))
+            .child(render_section_header(d, text.label("Spatial"), theme))
             .child(render_spider_controls(d, entity, plugin_idx, state, theme))
             .into_any_element(),
         _ => div().into_any_element(),
@@ -1051,6 +1066,7 @@ fn render_upmixer_header(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     div()
@@ -1066,6 +1082,7 @@ fn render_upmixer_header(
             entity.clone(),
             plugin_idx,
             state,
+            text,
             theme,
         ))
         .child(render_spider_controls(d, entity, plugin_idx, state, theme))
@@ -1537,6 +1554,7 @@ fn render_speaker_config_selector(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let labels = pk(UP, "speaker_config").choice_labels();
@@ -1547,7 +1565,7 @@ fn render_speaker_config_selector(
         .p(d.pad_y)
         .bg(theme.surface)
         .rounded(d.r_lg)
-        .child(render_section_header(d, "Output", theme))
+        .child(render_section_header(d, text.label("Output"), theme))
         .child(
             div()
                 .flex()
@@ -1588,9 +1606,10 @@ fn render_config_row(
     plugin_idx: usize,
     selected_config: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
-    let content = render_config_content(d, entity, plugin_idx, selected_config, state, theme);
+    let content = render_config_content(d, entity, plugin_idx, selected_config, state, text, theme);
 
     div()
         .w_full()
@@ -1608,17 +1627,19 @@ fn render_config_content(
     plugin_idx: usize,
     selected_config: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> AnyElement {
     match selected_config {
-        1 => render_config_lfe(d, entity, plugin_idx, state, theme).into_any_element(),
-        2 => render_config_dialogue(d, entity, plugin_idx, state, theme).into_any_element(),
-        3 => render_config_ambient(d, entity, plugin_idx, state, theme).into_any_element(),
-        4 => render_config_height(d, entity, plugin_idx, state, theme).into_any_element(),
-        5 => render_config_hr_direct(d, entity, plugin_idx, state, theme).into_any_element(),
-        6 => render_config_decorrelation(d, entity, plugin_idx, state, theme).into_any_element(),
-        7 => render_config_analysis(d, entity, plugin_idx, state, theme).into_any_element(),
-        8 => render_config_diagnostic(d, entity, plugin_idx, state, theme).into_any_element(),
+        1 => render_config_lfe(d, entity, plugin_idx, state, text, theme).into_any_element(),
+        2 => render_config_dialogue(d, entity, plugin_idx, state, text, theme).into_any_element(),
+        3 => render_config_ambient(d, entity, plugin_idx, state, text, theme).into_any_element(),
+        4 => render_config_height(d, entity, plugin_idx, state, text, theme).into_any_element(),
+        5 => render_config_hr_direct(d, entity, plugin_idx, state, text, theme).into_any_element(),
+        6 => render_config_decorrelation(d, entity, plugin_idx, state, text, theme)
+            .into_any_element(),
+        7 => render_config_analysis(d, entity, plugin_idx, state, text, theme).into_any_element(),
+        8 => render_config_diagnostic(d, entity, plugin_idx, state, text, theme).into_any_element(),
         9 => render_config_spatial(d, entity, plugin_idx, state, theme).into_any_element(),
         _ => div().into_any_element(),
     }
@@ -1640,6 +1661,7 @@ fn render_config_lfe(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let subharm_enabled = state.enable_subharmonic_synth;
@@ -1652,10 +1674,10 @@ fn render_config_lfe(
                 .flex()
                 .items_center()
                 .gap(d.gap_md)
-                .child(render_section_header(d, "LFE & Bass", theme))
+                .child(render_section_header(d, text.label("LFE & Bass"), theme))
                 // intentional: pixel-exact 1px vertical divider — do not scale
                 .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
-                .child(render_section_header(d, "SubHarmonic", theme))
+                .child(render_section_header(d, text.label("SubHarmonic"), theme))
                 .child(
                     Toggle::new(("subharm-toggle", plugin_idx))
                         .checked(subharm_enabled)
@@ -1683,7 +1705,7 @@ fn render_config_lfe(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "LFE Cut",
+                    text.label("LFE Cut"),
                     state.lfe_cutoff_hz,
                     pk(UP, "lfe_cutoff_hz").min_f64(),
                     pk(UP, "lfe_cutoff_hz").max_f64(),
@@ -1697,7 +1719,7 @@ fn render_config_lfe(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "LFE Gain",
+                    text.label("LFE Gain"),
                     state.lfe_gain,
                     pk(UP, "lfe_gain").min_f64(),
                     pk(UP, "lfe_gain").max_f64(),
@@ -1711,7 +1733,7 @@ fn render_config_lfe(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Bandpass",
+                    text.label("Bandpass"),
                     state.bandpass_hz,
                     pk(UP, "bandpass_hz").min_f64(),
                     pk(UP, "bandpass_hz").max_f64(),
@@ -1734,7 +1756,7 @@ fn render_config_lfe(
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
-                            "Gain",
+                            text.label("Gain"),
                             state.subharmonic_gain,
                             pk(UP, "subharmonic_gain").min_f64(),
                             pk(UP, "subharmonic_gain").max_f64(),
@@ -1748,7 +1770,7 @@ fn render_config_lfe(
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
-                            "Freq",
+                            text.label("Freq"),
                             state.subharmonic_freq_hz,
                             pk(UP, "subharmonic_freq_hz").min_f64(),
                             pk(UP, "subharmonic_freq_hz").max_f64(),
@@ -1762,7 +1784,7 @@ fn render_config_lfe(
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
-                            "Attack",
+                            text.label("Attack"),
                             state.subharmonic_attack_ms,
                             pk(UP, "subharmonic_attack_ms").min_f64(),
                             pk(UP, "subharmonic_attack_ms").max_f64(),
@@ -1776,7 +1798,7 @@ fn render_config_lfe(
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
-                            "Release",
+                            text.label("Release"),
                             state.subharmonic_release_ms,
                             pk(UP, "subharmonic_release_ms").min_f64(),
                             pk(UP, "subharmonic_release_ms").max_f64(),
@@ -1799,18 +1821,19 @@ fn render_config_dialogue(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(render_section_header(d, "Dialogue", theme))
+        .child(render_section_header(d, text.label("Dialogue"), theme))
         .child(
             HStack::new()
                 .spacing(StackSpacing::Md)
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Weight",
+                    text.label("Weight"),
                     state.dialogue_weight,
                     pk(UP, "dialogue_weight").min_f64(),
                     pk(UP, "dialogue_weight").max_f64(),
@@ -1824,7 +1847,7 @@ fn render_config_dialogue(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Voice Lo",
+                    text.label("Voice Lo"),
                     state.voice_freq_min_hz,
                     pk(UP, "voice_freq_min_hz").min_f64(),
                     pk(UP, "voice_freq_min_hz").max_f64(),
@@ -1838,7 +1861,7 @@ fn render_config_dialogue(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Voice Hi",
+                    text.label("Voice Hi"),
                     state.voice_freq_max_hz,
                     pk(UP, "voice_freq_max_hz").min_f64(),
                     pk(UP, "voice_freq_max_hz").max_f64(),
@@ -1855,7 +1878,7 @@ fn render_config_dialogue(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Centroid",
+                    text.label("Centroid"),
                     state.dialogue_centroid_weight,
                     pk(UP, "dialogue_centroid_weight").min_f64(),
                     pk(UP, "dialogue_centroid_weight").max_f64(),
@@ -1869,7 +1892,7 @@ fn render_config_dialogue(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Variance",
+                    text.label("Variance"),
                     state.dialogue_variance_weight,
                     pk(UP, "dialogue_variance_weight").min_f64(),
                     pk(UP, "dialogue_variance_weight").max_f64(),
@@ -1883,7 +1906,7 @@ fn render_config_dialogue(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Coherence",
+                    text.label("Coherence"),
                     state.dialogue_coherence_weight,
                     pk(UP, "dialogue_coherence_weight").min_f64(),
                     pk(UP, "dialogue_coherence_weight").max_f64(),
@@ -1905,18 +1928,19 @@ fn render_config_ambient(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(render_section_header(d, "Ambient", theme))
+        .child(render_section_header(d, text.label("Ambient"), theme))
         .child(
             HStack::new()
                 .spacing(StackSpacing::Md)
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Boost",
+                    text.label("Boost"),
                     state.ambient_boost,
                     pk(UP, "ambient_boost").min_f64(),
                     pk(UP, "ambient_boost").max_f64(),
@@ -1930,7 +1954,7 @@ fn render_config_ambient(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Rear Boost",
+                    text.label("Rear Boost"),
                     state.rear_ambient_boost,
                     pk(UP, "rear_ambient_boost").min_f64(),
                     pk(UP, "rear_ambient_boost").max_f64(),
@@ -1944,7 +1968,7 @@ fn render_config_ambient(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Safety",
+                    text.label("Safety"),
                     state.safety_cap_db,
                     pk(UP, "safety_cap_db").min_f64(),
                     pk(UP, "safety_cap_db").max_f64(),
@@ -1966,18 +1990,19 @@ fn render_config_height(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(render_section_header(d, "Height", theme))
+        .child(render_section_header(d, text.label("Height"), theme))
         .child(
             HStack::new()
                 .spacing(StackSpacing::Md)
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "HF Cap",
+                    text.label("HF Cap"),
                     state.height_hf_cap_hz,
                     pk(UP, "height_hf_cap_hz").min_f64(),
                     pk(UP, "height_hf_cap_hz").max_f64(),
@@ -1991,7 +2016,7 @@ fn render_config_height(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Trans Red",
+                    text.label("Trans Red"),
                     state.height_transient_reduction,
                     pk(UP, "height_transient_reduction").min_f64(),
                     pk(UP, "height_transient_reduction").max_f64(),
@@ -2005,7 +2030,7 @@ fn render_config_height(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Dir Leak",
+                    text.label("Dir Leak"),
                     state.height_direct_leak,
                     pk(UP, "height_direct_leak").min_f64(),
                     pk(UP, "height_direct_leak").max_f64(),
@@ -2027,6 +2052,7 @@ fn render_config_hr_direct(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     VStack::new()
@@ -2036,7 +2062,7 @@ fn render_config_hr_direct(
                 .flex()
                 .items_center()
                 .gap(d.gap_md)
-                .child(render_section_header(d, "HR Direct", theme))
+                .child(render_section_header(d, text.label("HR Direct"), theme))
                 .child(
                     Toggle::new(("hr-direct-toggle", plugin_idx))
                         .checked(state.enable_hr_direct)
@@ -2065,7 +2091,7 @@ fn render_config_hr_direct(
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
-                            "Sharpen",
+                            text.label("Sharpen"),
                             state.hr_sharpen,
                             pk(UP, "hr_sharpen").min_f64(),
                             pk(UP, "hr_sharpen").max_f64(),
@@ -2080,7 +2106,7 @@ fn render_config_hr_direct(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    "Amb Boost",
+                    text.label("Amb Boost"),
                     state.ambient_boost,
                     pk(UP, "ambient_boost").min_f64(),
                     pk(UP, "ambient_boost").max_f64(),
@@ -2102,6 +2128,7 @@ fn render_config_decorrelation(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let decorrelation_mode = state.decorrelation_mode;
@@ -2114,7 +2141,7 @@ fn render_config_decorrelation(
                 .flex()
                 .items_center()
                 .gap(d.gap_md)
-                .child(render_section_header(d, "Decorrelation", theme))
+                .child(render_section_header(d, text.label("Decorrelation"), theme))
                 .child(HStack::new().spacing(StackSpacing::Xs).children(
                     decorrelation_modes.into_iter().map(|(mode, label)| {
                         let is_active = decorrelation_mode == mode;
@@ -2149,7 +2176,7 @@ fn render_config_decorrelation(
                     el.child(render_knob(
                         entity.clone(),
                         plugin_idx,
-                        "LFO Rate",
+                        text.label("LFO Rate"),
                         state.decorrelation_lfo_rate_hz,
                         pk(UP, "decorrelation_lfo_rate_hz").min_f64(),
                         pk(UP, "decorrelation_lfo_rate_hz").max_f64(),
@@ -2165,7 +2192,7 @@ fn render_config_decorrelation(
                     el.child(render_knob(
                         entity.clone(),
                         plugin_idx,
-                        "Duration",
+                        text.label("Duration"),
                         state.velvet_noise_duration_ms,
                         pk(UP, "velvet_noise_duration_ms").min_f64(),
                         pk(UP, "velvet_noise_duration_ms").max_f64(),
@@ -2179,7 +2206,7 @@ fn render_config_decorrelation(
                     .child(render_knob(
                         entity.clone(),
                         plugin_idx,
-                        "Density",
+                        text.label("Density"),
                         state.velvet_noise_density,
                         pk(UP, "velvet_noise_density").min_f64(),
                         pk(UP, "velvet_noise_density").max_f64(),
@@ -2202,6 +2229,7 @@ fn render_config_analysis(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     VStack::new()
@@ -2211,10 +2239,14 @@ fn render_config_analysis(
                 .flex()
                 .items_center()
                 .gap(d.gap_md)
-                .child(render_section_header(d, "Analysis", theme))
+                .child(render_section_header(d, text.label("Analysis"), theme))
                 // intentional: pixel-exact 1px vertical divider — do not scale
                 .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
-                .child(render_section_header(d, "Source Extraction", theme))
+                .child(render_section_header(
+                    d,
+                    text.label("Source Extraction"),
+                    theme,
+                ))
                 .child(
                     Toggle::new(("multi-source-toggle", plugin_idx))
                         .checked(state.multi_source_extraction)
@@ -2268,7 +2300,7 @@ fn render_config_analysis(
                             div()
                                 .text_size(d.text_xs)
                                 .text_color(theme.text_secondary)
-                                .child("Resolution".to_string()),
+                                .child(text.resolution),
                         )
                         .children(labels.iter().enumerate().map(|(i, label)| {
                             let is_active = freq_res == i;
@@ -2305,7 +2337,7 @@ fn render_config_analysis(
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
-                            "Threshold",
+                            text.label("Threshold"),
                             state.multi_source_threshold,
                             pk(UP, "multi_source_threshold").min_f64(),
                             pk(UP, "multi_source_threshold").max_f64(),
@@ -2334,7 +2366,7 @@ fn render_config_analysis(
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
-                            "AG Max",
+                            text.label("AG Max"),
                             state.auto_gain_max_db,
                             pk(UP, "auto_gain_max_db").min_f64(),
                             pk(UP, "auto_gain_max_db").max_f64(),
@@ -2352,7 +2384,7 @@ fn render_config_analysis(
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
-                            "AG Smooth",
+                            text.label("AG Smooth"),
                             state.auto_gain_smoothing_ms,
                             pk(UP, "auto_gain_smoothing_ms").min_f64(),
                             pk(UP, "auto_gain_smoothing_ms").max_f64(),
@@ -2380,6 +2412,7 @@ fn render_config_diagnostic(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let mut row = HStack::new().spacing(StackSpacing::Md);
@@ -2401,7 +2434,7 @@ fn render_config_diagnostic(
 
     VStack::new()
         .spacing(StackSpacing::Xs)
-        .child(render_section_header(d, "Diagnostic", theme))
+        .child(render_section_header(d, text.label("Diagnostic"), theme))
         .child(row.build())
         .build()
 }
@@ -2485,3 +2518,4 @@ fn render_spider_graph_row(d: &Ds, state: &UpmixerRenderState, theme: &Theme) ->
         .pt(d.pad_y)
         .child(render_spatial_spider_graph(d, &snapshot, cfg_opt, theme))
 }
+use crate::app::i18n::PluginCommonTranslations;

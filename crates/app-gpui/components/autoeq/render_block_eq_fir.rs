@@ -7,7 +7,7 @@
         .max(ParamLimits::FIR_TAPS.max)
         .step(ParamLimits::FIR_TAPS.step)
         .decimals(0)
-        .label("FIR Taps")
+        .label(translations.autoeq_form.blocks.fir_taps)
         .size(NumberInputSize::Sm)
         .width(100.0)
         .disabled(disabled)
@@ -25,7 +25,7 @@
         .collect();
 
     let mut fir_phase_select = Select::new((base_id.clone(), "fir-phase"))
-        .label("Phase")
+        .label(translations.autoeq_form.blocks.phase)
         .options(fir_phase_options)
         .selected(&config.eq_design.fir_phase)
         .is_open(ui_state.fir_phase_open)

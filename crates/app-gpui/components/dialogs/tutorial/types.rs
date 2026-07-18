@@ -3,12 +3,6 @@ use crate::components::design::Ds;
 use gpui::prelude::*;
 use gpui::*;
 
-pub(super) struct TutorialScreen {
-    pub(super) title: &'static str,
-    pub(super) image: &'static str,
-    pub(super) content: &'static [&'static str],
-}
-
 /// Contextual hint state — shown as a dismissible banner at the top of the relevant screen.
 #[derive(Debug, Clone)]
 pub struct ContextualHint {

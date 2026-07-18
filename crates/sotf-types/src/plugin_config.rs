@@ -170,6 +170,9 @@ pub struct PluginGraphNodeConfig {
     pub parameters: serde_json::Value,
     /// Number of input channels this node expects
     pub input_channels: usize,
+    /// Whether this node is bypassed while preserving graph topology.
+    #[serde(default)]
+    pub bypassed: bool,
 }
 
 impl PluginGraphNodeConfig {
@@ -185,6 +188,7 @@ impl PluginGraphNodeConfig {
             plugin_type: plugin_type.into(),
             parameters,
             input_channels,
+            bypassed: false,
         };
         config.validate()?;
         Ok(config)
@@ -234,6 +238,7 @@ mod tests {
             plugin_type: "gain".to_string(),
             parameters: json!({}),
             input_channels: 2,
+            bypassed: false,
         }
     }
 
@@ -300,6 +305,28 @@ mod tests {
 
         let error = PluginGraphConfig::try_new(vec![invalid], vec![]).unwrap_err();
         assert!(error.contains("input_channels"));
+    }
+
+    #[test]
+    fn plugin_graph_node_bypass_is_version_tolerant() {
+        let legacy: PluginGraphNodeConfig = serde_json::from_value(json!({
+            "id": 1,
+            "plugin_type": "gain",
+            "parameters": {},
+            "input_channels": 2
+        }))
+        .unwrap();
+        assert!(!legacy.bypassed);
+
+        let bypassed: PluginGraphNodeConfig = serde_json::from_value(json!({
+            "id": 1,
+            "plugin_type": "gain",
+            "parameters": {},
+            "input_channels": 2,
+            "bypassed": true
+        }))
+        .unwrap();
+        assert!(bypassed.bypassed);
     }
 
     #[test]

@@ -1,7 +1,31 @@
 # 0.1.37 (unreleased)
 
+## Transactional systemwide DSP graphs
+
+- `load_plugin_artifact` now accepts validated engine DAG artifacts while
+  retaining rack compatibility and rejecting unconverted per-channel schemas.
+- Desired/applied state records rack versus graph topology; channel, device,
+  and HAL reconfiguration preserve the active artifact kind.
+- Configbar selects the existing rack for linear chains or a graph editor for
+  nonlinear topology, with stable IDs, connections, settings, transactional
+  edits, save/load round trips, and true per-node bypass.
+
 ## Diagnostics and recovery UX (QA-SYS-003)
 
+- Added the executable `just systemwide-lab` macOS gate. It combines daemon
+  state tests, real Unix-socket lab-driver scenarios, HAL protocol/streaming
+  regressions, and Configbar model tests without installing the HAL bundle.
+- Process-level lab coverage now verifies coherent snapshots, transactional
+  artifact rejection, 2 → 10 → 2 channel changes, transport configuration
+  rejection/commit behavior, encryption enablement and key rotation, diagnostic
+  dumps, shutdown, and clean restart.
+- Encryption enable/rotation requests now return an explicit capability error
+  when the daemon has no session cipher instead of reporting success while
+  silently leaving encryption disabled.
+- `SOTF_SYSTEMWIDE_RUNTIME_DIR` now isolates the daemon-private key and the
+  Rust/Swift HAL-readable key copy alongside the lab socket and shared memory;
+  focused path tests and the real subprocess scenario reject writes outside the
+  temporary lab directory.
 - Enriched the daemon `Status` response with explicit systemwide diagnostics:
   - `driver`: `installed`, `ready`, `capture_active`, `frame_size`, `sample_rate`,
     and `channel_count`.

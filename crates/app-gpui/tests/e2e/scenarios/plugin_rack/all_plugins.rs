@@ -1,16 +1,30 @@
 use crate::driver::AppDriver;
 use crate::pages::plugin_rack::PluginRackPage;
 use crate::runner::{E2ERunner, TestScenario};
-use gpui::{TestAppContext, VisualTestContext, WindowHandle};
+use gpui::{Pixels, Size, TestAppContext, VisualTestContext, WindowHandle, px, size};
 use sotf_audio::plugins::PluginType;
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
-pub struct AllPluginsScenario;
+pub struct AllPluginsScenario {
+    window_size: Size<Pixels>,
+}
+
+impl AllPluginsScenario {
+    fn new(width: f32, height: f32) -> Self {
+        Self {
+            window_size: size(px(width), px(height)),
+        }
+    }
+}
 
 impl TestScenario for AllPluginsScenario {
     fn name(&self) -> &'static str {
         "All Plugins Lifecycle & Channels"
+    }
+
+    fn window_size(&self) -> Option<Size<Pixels>> {
+        Some(self.window_size)
     }
 
     fn execute(
@@ -84,6 +98,7 @@ impl TestScenario for AllPluginsScenario {
             // But we can check that `PluginSettings` structure matches expected type.
             // And maybe that we can select it (view it).
             page.select_plugin(plugin_index);
+            page.run_until_parked();
 
             // Remove
             page.remove_plugin(plugin_index);
@@ -140,6 +155,8 @@ impl TestScenario for AllPluginsScenario {
 
 #[gpui::test]
 async fn test_all_plugins(cx: &mut TestAppContext) {
-    let runner = E2ERunner::new(AllPluginsScenario);
-    runner.run(cx).await.unwrap();
+    for (width, height) in [(700.0, 900.0), (1600.0, 1000.0)] {
+        let runner = E2ERunner::new(AllPluginsScenario::new(width, height));
+        runner.run(cx).await.unwrap();
+    }
 }

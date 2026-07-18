@@ -6,9 +6,9 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(Text::section_header("Delay Correction").color(theme.header_color))
+            .child(Text::section_header(translations.autoeq_form.delay_correction).color(theme.header_color))
             .child(
-                Text::new("Requires a computer or HW interface that supports delay")
+                Text::new(translations.autoeq_requires_delay_support)
                     .size(TextSize::Xs)
                     .color(theme.description_color),
             ),
@@ -31,8 +31,16 @@
             .child(
                 VStack::new()
                     .spacing(StackSpacing::None)
-                    .child(Text::new("Enable Delay Correction").size(TextSize::Xs).color(theme.label_color))
-                    .child(Text::new("Enable inter-speaker time alignment").size(TextSize::Xs).color(theme.description_color)),
+                .child(
+                    Text::new(translations.autoeq_enable_delay)
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
+                .child(
+                    Text::new(translations.autoeq_enable_time_alignment)
+                        .size(TextSize::Xs)
+                        .color(theme.description_color),
+                ),
             )
             .child(delay_toggle),
     );

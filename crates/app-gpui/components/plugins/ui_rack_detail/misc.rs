@@ -4,6 +4,7 @@ use super::super::render_plugin_content;
 use super::super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_icon};
 use super::super::ui_rack::{plugin_description, short_name, speaker_config_to_channels};
 use crate::app::constants::spacing;
+use crate::app::i18n::{PluginCommonTranslations, PluginRackTranslations};
 use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
 use crate::components::design::Ds;
@@ -231,6 +232,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let release_channel = state.app.ui_state.release_channel;
+        let common_text = PluginCommonTranslations::for_language(state.app.ui_state.language);
         let d = Ds::from_cx(cx);
 
         // Get list of plugins already in chain
@@ -281,7 +283,7 @@ impl PlayerView {
                 let color = plugin_color(&pt, &theme);
                 let name = short_name(&pt, false, false);
                 let icon = plugin_icon(&pt, false, false);
-                let description = plugin_description(&pt);
+                let description = plugin_description(&pt, common_text);
                 let theme_c = theme.clone();
                 let text_on_accent = theme_c.text_on_accent;
                 let btn_id = global_idx;
@@ -369,6 +371,9 @@ impl PlayerView {
 
     /// Render the plugin detail/settings panel
     pub(crate) fn render_plugin_detail_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
+        let common_text =
+            PluginCommonTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (plugin_data, selected_idx, editing_idx, param_selection, theme) = {
             let state = self.state.read(cx);
             let plugin = state
@@ -427,14 +432,20 @@ impl PlayerView {
 
                                 // Build options: Native UI, each controller, Simple
                                 let mut view_options: Vec<gpui_ui_kit::SelectOption> = vec![
-                                    gpui_ui_kit::SelectOption::new("ui".to_string(), "Native UI".to_string()),
+                                    gpui_ui_kit::SelectOption::new(
+                                        "ui".to_string(),
+                                        text.native_ui.to_string(),
+                                    ),
                                 ];
                                 for (id, label) in available_controllers() {
                                     view_options.push(gpui_ui_kit::SelectOption::new(
                                         format!("ctrl:{id}"), label.to_string(),
                                     ));
                                 }
-                                view_options.push(gpui_ui_kit::SelectOption::new("simple".to_string(), "Simple".to_string()));
+                                view_options.push(gpui_ui_kit::SelectOption::new(
+                                    "simple".to_string(),
+                                    text.simple.to_string(),
+                                ));
 
                                 let selected_value = match &plugin_ui_view {
                                     PluginUiView::UI => "ui".to_string(),
@@ -445,7 +456,7 @@ impl PlayerView {
                                 div().flex().items_center().gap(d.gap)
                                     .child(
                                         div().text_size(d.text_xs).font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(theme.text_secondary).child("View"),
+                            .text_color(theme.text_secondary).child(text.view),
                                     )
                                     .child(
                                         div().w(px(130.0)).child(
@@ -506,7 +517,7 @@ impl PlayerView {
                             div().flex().items_center().gap(d.gap)
                                 .child(
                                     div().text_size(d.text_xs).font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(theme2.text_secondary).child("Output"),
+                            .text_color(theme2.text_secondary).child(text.output),
                                 )
                                 .child(
                                     div().w(px(80.0)).child(
@@ -766,9 +777,10 @@ impl PlayerView {
                                                 &d,
                                                 self.state.clone(),
                                                 selected_idx,
-                                                plugin.plugin_type(),
-                                                plugin.enabled,
-                                                &chassis,
+                                            plugin.plugin_type(),
+                                            plugin.enabled,
+                                            common_text,
+                                            &chassis,
                                                 super::super::ui_simple::render_simple_plugin_view(
                                                     &d,
                                                     self.state.clone(),
@@ -786,9 +798,10 @@ impl PlayerView {
                                                 &d,
                                                 self.state.clone(),
                                                 selected_idx,
-                                                plugin.plugin_type(),
-                                                plugin.enabled,
-                                                &chassis,
+                                            plugin.plugin_type(),
+                                            plugin.enabled,
+                                            common_text,
+                                            &chassis,
                                                 super::super::render_controller_view(
                                                     &d,
                                                     controller_id,
@@ -871,8 +884,8 @@ impl PlayerView {
                         .flex_col()
                         .gap(d.gap)
                         .text_color(theme.text_muted)
-                        .child("No plugin selected")
-                        .child(div().text_size(d.text_sm).child("Add a plugin to get started")),
+                        .child(text.no_plugin_selected)
+                        .child(div().text_size(d.text_sm).child(text.add_plugin_to_start)),
                 )
             })
     }

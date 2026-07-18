@@ -4,8 +4,11 @@ use super::common::{
     validate_eq_filter,
 };
 use gpui_design::DesignSystem;
+use sotf_audio_player::ui_params::TuiEditablePlugin;
+use sotf_audio_player::{PluginSettings, PluginType};
 use sotf_audio_player_gpui::IconName;
 use sotf_audio_player_gpui::components::design::typography_rems_from_rules;
+use sotf_audio_player_gpui::components::dialogs::get_keybindings_for_screen;
 use sotf_audio_player_gpui::components::home::album_card::{
     AlbumCardMode, album_card_height, format_channel_info, format_dr, format_sample_info,
     get_format_from_path,
@@ -13,15 +16,24 @@ use sotf_audio_player_gpui::components::home::album_card::{
 use sotf_audio_player_gpui::components::plugins::common::{
     compute_transfer, format_shortcut_label,
 };
+use sotf_audio_player_gpui::components::plugins::custom_view_registry::{
+    GpuiViewRegistry, plugin_type_key,
+};
 use sotf_audio_player_gpui::components::wizard_continue_label;
 use sotf_audio_player_gpui::components::{settings_tab_icon_name, settings_tab_label};
-use sotf_audio_player_gpui::i18n::{Language, Translations};
+use sotf_audio_player_gpui::i18n::{
+    AutoEqFormTranslations, HeadphoneEasyTranslations, HeadphoneEqTranslations, Language,
+    PluginGraphTranslations, RoomEqEasyTranslations, StreamsTranslations, Translations,
+};
 use sotf_audio_player_gpui::plugin_file_picker::{FilePickerOpenTarget, file_picker_open_target};
 use sotf_audio_player_gpui::theme::{Theme, ThemeId};
 use sotf_audio_player_gpui::{InputMode, Screen, SettingsTab};
+use sotf_audio_player_midi::auto_map;
+use sotf_audio_player_midi::layouts::{lcxl_layout, xone_k2_layout};
+use sotf_plugins::layout_solver::solve_layout;
 use sotf_plugins::param_specs::{self, ParamType};
-use sotf_plugins::plugin_layout::ControlType;
-use std::collections::BTreeMap;
+use sotf_plugins::plugin_layout::{ColumnRole, ControlType};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 fn app_source(relative: &str) -> String {
@@ -341,6 +353,202 @@ fn test_settings_tabs_use_product_labels() {
         settings_tab_label(SettingsTab::ReleaseChannel, &translations),
         "Features"
     );
+}
+
+#[test]
+fn listening_test_workflow_is_localized_in_every_supported_language() {
+    let localized_titles: Vec<_> = Language::all()
+        .iter()
+        .map(|language| {
+            let translations = Translations::for_language(*language);
+            let listening = &translations.listening_test;
+            for value in [
+                listening.setup.title,
+                listening.setup.subtitle,
+                listening.setup.measure_prepare,
+                listening.setup.graph_hint,
+                listening.trial.start_blind_ab,
+                listening.trial.start_abx,
+                listening.trial.notes_placeholder,
+                listening.status.select_paths,
+                listening.status.graph_updated,
+                listening.status.session_saved,
+            ] {
+                assert!(
+                    !value.trim().is_empty(),
+                    "missing listening-test translation for {}",
+                    language.code()
+                );
+            }
+            listening.setup.title
+        })
+        .collect();
+
+    assert_eq!(
+        localized_titles
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        Language::all().len(),
+        "each current language needs its own listening-test title"
+    );
+}
+
+#[test]
+fn listening_test_keyboard_workflow_is_registry_backed() {
+    let actions = app_source("app/actions.rs");
+    let bindings = app_source("app/keybindings/listening_test.rs");
+    let registry = app_source("app/keybindings/mod.rs");
+    let render = app_source("ui/render.rs");
+    let screen = app_source("components/listening_test.rs");
+
+    for action in [
+        "ListeningCapturePathA",
+        "ListeningCapturePathB",
+        "ListeningPrepare",
+        "ListeningStartBlindAb",
+        "ListeningStartAbx",
+        "ListeningPlayCue1",
+        "ListeningPlayCue2",
+        "ListeningPlayCue3",
+        "ListeningCommitAnswer1",
+        "ListeningCommitAnswer2",
+    ] {
+        assert!(actions.contains(action), "missing action {action}");
+        assert!(bindings.contains(action), "missing binding for {action}");
+    }
+
+    assert!(bindings.contains("Some(\"ListeningTest\")"));
+    assert!(registry.contains("bindings.extend(listening_test_bindings())"));
+    assert!(registry.contains("KeybindingCategory::ListeningTests"));
+    assert!(render.contains("\"PlayerView ListeningTest\""));
+    assert!(render.contains("Self::listening_capture_path_a"));
+    assert!(render.contains("Self::listening_commit_answer_2"));
+    assert!(screen.contains("fn listening_cue_for_position"));
+    assert!(screen.contains("fn listening_answer_for_position"));
+}
+
+#[test]
+fn autoeq_forms_use_the_workflow_detail_level() {
+    for (path, state_name) in [
+        (
+            "components/headphone_eq/step_2_optimisation/misc.rs",
+            "headphone_eq",
+        ),
+        ("components/room_eq/step_3_configure/misc.rs", "room_eq"),
+        (
+            "components/spinorama_eq/step_2_configure/misc.rs",
+            "spinorama",
+        ),
+    ] {
+        let source = app_source(path);
+        assert!(
+            source.contains(&format!("detail_level: {state_name}.detail_level")),
+            "{path} must pass its persisted detail level to AutoEqForm"
+        );
+        assert!(
+            !source.contains("detail_level: DetailLevel::Expert"),
+            "{path} must not force the expert form"
+        );
+    }
+}
+
+#[test]
+fn headphone_easy_mode_is_localized_in_every_supported_language() {
+    let bundles: Vec<_> = Language::all()
+        .iter()
+        .copied()
+        .map(HeadphoneEasyTranslations::for_language)
+        .collect();
+
+    for bundle in &bundles {
+        for value in [
+            bundle.title,
+            bundle.description,
+            bundle.safety,
+            bundle.apply,
+            bundle.undo,
+            bundle.edit_in_studio,
+            bundle.no_result,
+            bundle.no_undo,
+            bundle.restored,
+        ] {
+            assert!(!value.trim().is_empty());
+        }
+        assert!(!bundle.summary(8, -6.0).trim().is_empty());
+        assert!(!bundle.applied(8, -6.0).trim().is_empty());
+    }
+
+    assert_eq!(
+        bundles
+            .iter()
+            .map(|bundle| bundle.title)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        Language::all().len()
+    );
+}
+
+#[test]
+fn headphone_easy_mode_has_apply_undo_and_advanced_handoff() {
+    let state = app_source("app/types/headphone_eq.rs");
+    let actions = app_source("components/headphone_eq/actions/misc.rs");
+    let export = app_source("components/headphone_eq/step_4_export.rs");
+
+    assert!(state.contains("easy_mode_undo_graph: Option<PluginGraph>"));
+    assert!(state.contains("easy_mode_last_apply: Option<HeadphoneEasyApplyOutcome>"));
+    assert!(actions.contains("apply_headphone_easy_chain("));
+    assert!(actions.contains("easy_mode_undo_graph = Some(previous_graph)"));
+    assert!(actions.contains("state.app.plugin_state.graph = previous"));
+    assert!(actions.contains("current_screen = crate::app::Screen::Studio"));
+    assert!(export.contains("detail_level == DetailLevel::Simple"));
+    assert!(export.contains("apply-headphone-easy-chain"));
+    assert!(export.contains("undo-headphone-easy-chain"));
+    assert!(export.contains("edit-headphone-easy-chain"));
+}
+
+#[test]
+fn room_eq_easy_layouts_are_localized_in_every_supported_language() {
+    use sotf_audio_player::room_eq_types::RoomEqEasyLayout;
+
+    let bundles = Language::all()
+        .iter()
+        .copied()
+        .map(RoomEqEasyTranslations::for_language)
+        .collect::<Vec<_>>();
+
+    for bundle in &bundles {
+        assert!(!bundle.layout.trim().is_empty());
+        assert!(!bundle.measured_roles.trim().is_empty());
+        assert!(!bundle.channels_loaded.trim().is_empty());
+        for layout in RoomEqEasyLayout::ALL {
+            assert!(!bundle.description(layout).trim().is_empty());
+            assert!(!bundle.configuration_title(layout, 6).trim().is_empty());
+        }
+    }
+
+    assert_eq!(
+        bundles
+            .iter()
+            .map(|bundle| bundle.layout)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        Language::all().len()
+    );
+}
+
+#[test]
+fn room_eq_easy_layout_selection_is_validated_before_optimization() {
+    let state = app_source("app/types/room_eq/room_eq_state.rs");
+    let configure = app_source("components/room_eq/step_3_configure/misc.rs");
+    let optimise = app_source("components/room_eq/step_4_optimise/room.rs");
+
+    assert!(state.contains("easy_layout: RoomEqEasyLayout"));
+    assert!(configure.contains("room_eq.easy_layout.next()"));
+    assert!(configure.contains("configure_preset_defaults"));
+    assert!(optimise.contains("apply_room_eq_easy_layout("));
+    assert!(optimise.contains("invalid_layout(&error)"));
 }
 
 #[test]
@@ -1185,6 +1393,2140 @@ fn plugin_choices_and_identity_are_explicit() {
         layout_renderer.contains("ParamType::Choice { labels, .. } => render_param_as_button_set")
     );
     assert!(plugin_root.contains("ui_plugin_shell::render_plugin_shell"));
-    assert!(plugin_shell.contains("plugin_description(plugin_type)"));
+    assert!(plugin_shell.contains("plugin_description(plugin_type, text)"));
     assert!(plugin_shell.contains("(\"shell-bypass\", plugin_idx)"));
+}
+
+#[test]
+fn every_screen_has_contextual_keyboard_help() {
+    for screen in Screen::all() {
+        for language in Language::all() {
+            let bindings = get_keybindings_for_screen(*screen, *language);
+            assert!(
+                !bindings.is_empty(),
+                "{screen:?} has no contextual keyboard help for {}",
+                language.code()
+            );
+
+            assert!(
+                bindings.iter().all(|(keys, description)| {
+                    !keys.contains("Click")
+                        && !keys.contains("Drag")
+                        && !description.trim().is_empty()
+                }),
+                "{screen:?} has invalid contextual keyboard help for {}",
+                language.code()
+            );
+        }
+    }
+}
+
+#[test]
+fn documented_keybindings_are_localized_from_the_registry() {
+    use sotf_audio_player_gpui::app::keybindings::{
+        KeybindingCategory, KeymapPreset, get_documented_keybindings,
+    };
+    use sotf_audio_player_gpui::i18n::KeybindingTranslations;
+
+    for language in Language::all() {
+        let text = KeybindingTranslations::for_language(*language);
+        for category in KeybindingCategory::all() {
+            assert!(!text.category_name(*category).trim().is_empty());
+        }
+        for preset in KeymapPreset::all() {
+            assert!(!text.preset_name(*preset).trim().is_empty());
+            assert!(!text.preset_description(*preset).trim().is_empty());
+            for binding in get_documented_keybindings(*preset) {
+                assert!(
+                    !text
+                        .action_description(binding.description)
+                        .trim()
+                        .is_empty(),
+                    "missing {:?} action copy for {}",
+                    preset,
+                    language.code()
+                );
+            }
+        }
+    }
+
+    let common = app_source("app/keybindings/common.rs");
+    for binding in [
+        r#"KeyBinding::new("shift-l", actions::SwitchToLibrary"#,
+        r#"KeyBinding::new("shift-q", actions::SwitchToQueue"#,
+        r#"KeyBinding::new("shift-p", actions::SwitchToStudio"#,
+        r#"KeyBinding::new("shift-o", actions::SwitchToDevices"#,
+    ] {
+        assert!(
+            common.contains(binding),
+            "documented screen jump is not registered: {binding}"
+        );
+    }
+    assert!(common.contains(r#""shift-d""#));
+    assert!(common.contains("actions::SwitchToDirectories"));
+    assert!(
+        app_source("app/keybindings/mod.rs")
+            .contains(r#"KeyBinding::new("f1", actions::ToggleScreenGuide"#)
+    );
+}
+
+#[test]
+fn every_screen_has_an_owned_empty_loading_error_checklist() {
+    #[derive(Clone, Copy)]
+    enum Coverage {
+        Owned(&'static str),
+        NotApplicable(&'static str),
+    }
+
+    struct Checklist {
+        screen: Screen,
+        empty: Coverage,
+        loading: Coverage,
+        error: Coverage,
+    }
+
+    use Coverage::{NotApplicable as Na, Owned};
+    let checklists = [
+        Checklist {
+            screen: Screen::Home,
+            empty: Owned("components/home/home_screen/misc.rs"),
+            loading: Owned("components/home/library/types.rs"),
+            error: Owned("ui/render.rs"),
+        },
+        Checklist {
+            screen: Screen::HomeShelf,
+            empty: Owned("components/home/home_screen/misc.rs"),
+            loading: Owned("components/home/library/types.rs"),
+            error: Owned("ui/render.rs"),
+        },
+        Checklist {
+            screen: Screen::NowPlaying,
+            empty: Owned("components/home/queue/misc.rs"),
+            loading: Na("Playback is push-driven and has no screen-owned loading phase."),
+            error: Owned("ui/render.rs"),
+        },
+        Checklist {
+            screen: Screen::Library,
+            empty: Owned("components/home/library/types.rs"),
+            loading: Owned("components/home/library/types.rs"),
+            error: Owned("components/settings/library/misc.rs"),
+        },
+        Checklist {
+            screen: Screen::Streams,
+            empty: Owned("components/streams.rs"),
+            loading: Na("Saved streams are local and synchronously available."),
+            error: Owned("components/streams.rs"),
+        },
+        Checklist {
+            screen: Screen::Queue,
+            empty: Owned("components/home/queue/misc.rs"),
+            loading: Na("The queue is local and has no loading phase."),
+            error: Owned("ui/render.rs"),
+        },
+        Checklist {
+            screen: Screen::Playlists,
+            empty: Owned("ui/phone.rs"),
+            loading: Na("Playlist navigation is local and has no loading phase."),
+            error: Owned("ui/render.rs"),
+        },
+        Checklist {
+            screen: Screen::Spectrum,
+            empty: Owned("components/plugins/ui_spectrum.rs"),
+            loading: Na("Spectrum frames stream continuously without a loading phase."),
+            error: Na("No recoverable screen-local error state exists for absent analyzer data."),
+        },
+        Checklist {
+            screen: Screen::Settings,
+            empty: Na("Settings always expose at least one configuration section."),
+            loading: Owned("components/settings/servers/misc.rs"),
+            error: Owned("components/settings/servers/misc.rs"),
+        },
+        Checklist {
+            screen: Screen::SettingsDetail,
+            empty: Na("Settings detail always owns a selected configuration section."),
+            loading: Owned("components/settings/servers/misc.rs"),
+            error: Owned("components/settings/servers/misc.rs"),
+        },
+        Checklist {
+            screen: Screen::StudioHub,
+            empty: Owned("components/plugins/mod.rs"),
+            loading: Na("The local plugin graph has no loading phase."),
+            error: Owned("ui/render.rs"),
+        },
+        Checklist {
+            screen: Screen::EqCurve,
+            empty: Owned("components/plugins/mod.rs"),
+            loading: Na("The local EQ editor has no loading phase."),
+            error: Owned("ui/render.rs"),
+        },
+        Checklist {
+            screen: Screen::Studio,
+            empty: Owned("components/plugins/mod.rs"),
+            loading: Na("The local plugin rack has no loading phase."),
+            error: Owned("ui/render.rs"),
+        },
+        Checklist {
+            screen: Screen::Recording,
+            empty: Owned("components/recording/config/misc.rs"),
+            loading: Owned("components/recording/capture/misc.rs"),
+            error: Owned("components/recording/mod.rs"),
+        },
+        Checklist {
+            screen: Screen::RoomEq,
+            empty: Owned("components/room_eq/step_1_load.rs"),
+            loading: Owned("components/room_eq/step_4_optimise/room.rs"),
+            error: Owned("components/room_eq/step_1_load.rs"),
+        },
+        Checklist {
+            screen: Screen::HeadphoneEq,
+            empty: Owned("components/headphone_eq/step_1_measurements.rs"),
+            loading: Owned("components/headphone_eq/step_1_measurements.rs"),
+            error: Owned("components/headphone_eq/step_1_measurements.rs"),
+        },
+        Checklist {
+            screen: Screen::Spinorama,
+            empty: Owned("components/spinorama_eq/step_1_select/misc.rs"),
+            loading: Owned("components/spinorama_eq/step_1_select/misc.rs"),
+            error: Owned("components/spinorama_eq/step_1_select/misc.rs"),
+        },
+        Checklist {
+            screen: Screen::PluginGraph,
+            empty: Owned("components/plugins/ui_graph/player_view.rs"),
+            loading: Na("The local workflow graph has no loading phase."),
+            error: Owned("components/plugins/ui_graph/keyboard.rs"),
+        },
+        Checklist {
+            screen: Screen::ListeningTest,
+            empty: Owned("components/listening_test.rs"),
+            loading: Na("Offline preparation reports progress as an operation, not page loading."),
+            error: Owned("components/listening_test.rs"),
+        },
+    ];
+
+    let covered = checklists
+        .iter()
+        .map(|checklist| format!("{:?}", checklist.screen))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        covered,
+        Screen::all()
+            .iter()
+            .map(|screen| format!("{screen:?}"))
+            .collect(),
+        "screen owner checklist drifted from Screen::all()"
+    );
+    for checklist in checklists {
+        for (state_name, coverage) in [
+            ("empty", checklist.empty),
+            ("loading", checklist.loading),
+            ("error", checklist.error),
+        ] {
+            match coverage {
+                Owned(path) => assert!(
+                    !app_source(path).trim().is_empty(),
+                    "{:?} {state_name} owner is empty: {path}",
+                    checklist.screen
+                ),
+                Na(reason) => assert!(
+                    reason.split_whitespace().count() >= 6,
+                    "{:?} {state_name} N/A needs a concrete reason",
+                    checklist.screen
+                ),
+            }
+        }
+    }
+}
+
+#[test]
+fn autoeq_form_translations_are_complete_and_used_by_all_consumers() {
+    let mut localized_presets = BTreeSet::new();
+
+    for language in Language::all() {
+        let text = AutoEqFormTranslations::for_language(*language);
+        localized_presets.insert(text.preset);
+
+        let outer = [
+            text.preset,
+            text.filter_design,
+            text.optimization_quality,
+            text.home_cinema,
+            text.delay_correction,
+            text.target,
+            text.optimization_goal,
+            text.capability,
+            text.strategy,
+            text.per_measurement_weights,
+            text.reference_channel,
+            text.min_frequency_hz,
+            text.max_frequency_hz,
+            text.max_delay_ms,
+            text.primary_seat,
+            text.max_deviation_db,
+            text.slope_db_oct,
+            text.reference_frequency_hz,
+            text.bass_boost_db,
+            text.shelf_frequency_hz,
+            text.system_type,
+            text.optimization_mode,
+            text.target_curve,
+            text.room_configuration,
+            text.optimizer_configuration,
+        ];
+        let params = [
+            text.parameters.loss_function,
+            text.parameters.number_filters,
+            text.parameters.filter_type,
+            text.parameters.variance_lambda,
+            text.parameters.iir_parameters,
+            text.parameters.sample_rate_hz,
+            text.parameters.min_q,
+            text.parameters.max_q,
+            text.parameters.min_db,
+            text.parameters.max_db,
+            text.parameters.spacing_weight,
+            text.parameters.min_spacing_oct,
+            text.parameters.fir_parameters,
+            text.parameters.regularization,
+            text.parameters.crossover_configuration,
+            text.parameters.crossover_frequency_hz,
+            text.parameters.crossover_type,
+            text.parameters.fir_band,
+            text.parameters.bass_management,
+            text.parameters.manual_f3_hz,
+            text.parameters.order,
+            text.parameters.safety_margin_oct,
+            text.parameters.split_frequency_hz,
+            text.parameters.lf_max_q,
+            text.parameters.hf_max_q,
+            text.parameters.smoothing,
+            text.parameters.weights,
+            text.parameters.smoothing_resolution,
+            text.parameters.smooth_window_oct,
+            text.parameters.seed,
+        ];
+        let blocks = [
+            text.blocks.fir_taps,
+            text.blocks.phase,
+            text.blocks.peq_model,
+            text.blocks.algorithm,
+            text.blocks.population,
+            text.blocks.max_evaluations,
+            text.blocks.tolerance,
+            text.blocks.absolute_tolerance,
+            text.blocks.bo_initial,
+            text.blocks.bo_batch,
+            text.blocks.bo_std_stop,
+            text.blocks.bo_acquisition,
+            text.blocks.de_strategy,
+            text.blocks.mutation,
+            text.blocks.recombination,
+            text.blocks.adaptive_weight_f,
+            text.blocks.adaptive_weight_cr,
+            text.blocks.local_refinement,
+            text.blocks.local_algorithm,
+        ];
+        let sections = [
+            text.sections.recommended,
+            text.sections.processing,
+            text.sections.edit_custom_target_curve,
+            text.sections.flat_loss_description,
+            text.sections.epa_loss_description,
+        ];
+        assert!(
+            outer
+                .into_iter()
+                .chain(params)
+                .chain(blocks)
+                .chain(sections)
+                .all(|value| !value.trim().is_empty()),
+            "AutoEQ form translation is incomplete for {}",
+            language.code()
+        );
+    }
+    assert_eq!(localized_presets.len(), Language::all().len());
+
+    for path in [
+        "components/autoeq/render_body_simple.rs",
+        "components/autoeq/render_body_room_eq.rs",
+        "components/autoeq/render_section_algorithm.rs",
+        "components/autoeq/render_section_capability.rs",
+        "components/autoeq/render_section_delay.rs",
+        "components/autoeq/render_section_filter_design.rs",
+        "components/autoeq/render_section_goals.rs",
+        "components/autoeq/render_section_home_cinema.rs",
+        "components/autoeq/render_section_multi_measurement.rs",
+        "components/autoeq/render_section_optimization_goal.rs",
+        "components/autoeq/render_section_target.rs",
+        "components/autoeq/render_block_eq_design.rs",
+        "components/autoeq/render_block_eq_iir_filters.rs",
+        "components/autoeq/render_block_eq_mixed.rs",
+        "components/autoeq/render_block_eq_fir.rs",
+        "components/autoeq/render_block_optimizer.rs",
+    ] {
+        let source = app_source(path).replace("Text::new(\"qEHVI\")", "");
+        for literal_surface in [
+            "Text::new(\"",
+            "Text::label(\"",
+            "Text::section_header(\"",
+            ".label(\"",
+        ] {
+            assert!(
+                !source.contains(literal_surface),
+                "{path} contains untranslated visible text via {literal_surface}"
+            );
+        }
+    }
+
+    for path in [
+        "components/headphone_eq/step_2_optimisation/misc.rs",
+        "components/room_eq/step_3_configure/misc.rs",
+        "components/spinorama_eq/step_2_configure/misc.rs",
+    ] {
+        assert!(
+            app_source(path).contains(".language(state.app.ui_state.language)"),
+            "{path} does not pass the selected language into AutoEqForm"
+        );
+    }
+}
+
+#[test]
+fn headphone_eq_translations_are_complete_and_visible_copy_is_extracted() {
+    let mut localized_titles = BTreeSet::new();
+    for language in Language::all() {
+        let text = HeadphoneEqTranslations::for_language(*language);
+        localized_titles.insert(text.title);
+        assert!(
+            [
+                text.title,
+                text.measurement_step,
+                text.optimization_step,
+                text.listen_step,
+                text.close,
+                text.back,
+                text.select_measurement,
+                text.select_measurement_description,
+                text.measurement_file,
+                text.measurement_file_description,
+                text.headphone_search,
+                text.search_placeholder,
+                text.available_headphones,
+                text.frequency_response,
+                text.configure_optimization,
+                text.configure_optimization_description,
+                text.custom_target_curve,
+                text.generate_headphone_eq,
+                text.listen_preview,
+                text.listen_preview_description,
+                text.optimization_results,
+                text.response_visualization,
+                text.eq_filters,
+                text.no_results,
+                text.no_results_description,
+                text.apply_export,
+                text.apply_export_description,
+                text.export,
+                text.export_description,
+                text.no_target_curve,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "Headphone EQ copy is incomplete for {}",
+            language.code()
+        );
+    }
+    assert_eq!(localized_titles.len(), Language::all().len());
+
+    for path in [
+        "components/headphone_eq/mod.rs",
+        "components/headphone_eq/step_1_measurements.rs",
+        "components/headphone_eq/step_2_optimisation/misc.rs",
+        "components/headphone_eq/step_3_listen.rs",
+        "components/headphone_eq/step_4_export.rs",
+    ] {
+        let source = app_source(path);
+        for literal_surface in [
+            "Text::new(\"",
+            "Text::label(\"",
+            "Text::section_header(\"",
+            ".label(\"",
+            ".placeholder(\"",
+            ".title(\"",
+        ] {
+            assert!(
+                !source.contains(literal_surface),
+                "{path} contains untranslated visible text via {literal_surface}"
+            );
+        }
+    }
+}
+
+#[test]
+fn stream_translations_are_complete_and_visible_copy_is_extracted() {
+    let mut localized_empty_states = BTreeSet::new();
+    for language in Language::all() {
+        let text = StreamsTranslations::for_language(*language);
+        localized_empty_states.insert(text.no_saved_streams);
+        assert!(
+            [
+                text.title,
+                text.subtitle,
+                text.no_saved_streams,
+                text.name,
+                text.seekable,
+                text.url_placeholder,
+                text.save,
+                text.play,
+                text.queue,
+                text.remove,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "stream copy is incomplete for {}",
+            language.code()
+        );
+    }
+    assert_eq!(localized_empty_states.len(), Language::all().len());
+
+    let source = app_source("components/streams.rs");
+    assert!(
+        !source.contains("Text::new(\"")
+            && !source.contains(".child(\"")
+            && !source.contains(".label(\"")
+            && !source
+                .replace(".placeholder(\"mp3\")", "")
+                .contains(".placeholder(\"")
+            && !source.contains(", \"Save\")")
+            && !source.contains(", \"Play\")")
+            && !source.contains(", \"Queue\")"),
+        "Streams contains first-party visible literals outside its technical format placeholder"
+    );
+}
+
+#[test]
+fn plugin_graph_keyboard_copy_is_complete_and_handler_is_wired() {
+    let mut localized_titles = BTreeSet::new();
+    for language in Language::all() {
+        let text = PluginGraphTranslations::for_language(*language);
+        localized_titles.insert(text.keyboard_editor);
+        assert!(
+            [
+                text.keyboard_editor,
+                text.selected,
+                text.none_selected,
+                text.add_plugin,
+                text.connect_source,
+                text.no_connect_source,
+                text.keyboard_hint,
+                text.special_node_read_only,
+                text.select_node_first,
+                text.connection_created,
+                text.connection_failed,
+                text.disconnected,
+                text.plugin_added,
+                text.node_removed,
+                text.input_sources,
+                text.player_audio_files,
+                text.output_devices,
+                text.no_output_devices,
+                text.dynamics,
+                text.spatial,
+                text.monitor,
+                text.denoising,
+                text.utility,
+                text.edit_parameters,
+                text.bypass_activate,
+                text.solo,
+                text.remove,
+                text.nodes.signal,
+                text.nodes.source,
+                text.nodes.reset_view,
+                text.nodes.input,
+                text.nodes.plugins,
+                text.nodes.load,
+                text.nodes.save,
+                text.nodes.close,
+                text.nodes.parametric_eq,
+                text.nodes.no_plugin_data,
+                text.nodes.gain,
+                text.nodes.audio_player,
+                text.nodes.audio_player_description,
+                text.nodes.output_device,
+                text.nodes.output_device_description,
+                text.nodes.input_device,
+                text.nodes.input_device_description,
+                text.nodes.unknown_node_type,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "Plugin Graph keyboard copy is incomplete for {}",
+            language.code()
+        );
+    }
+    assert_eq!(localized_titles.len(), Language::all().len());
+
+    let keyboard = app_source("components/plugins/ui_graph/keyboard.rs");
+    for key in [
+        "\"tab\"",
+        "\"[\" | \"]\"",
+        "\"a\"",
+        "\"enter\" | \"e\"",
+        "\"b\"",
+        "\"c\"",
+        "\"x\"",
+        "\"delete\" | \"backspace\"",
+        "\"left\" | \"right\" | \"up\" | \"down\"",
+    ] {
+        assert!(keyboard.contains(key), "Plugin Graph does not handle {key}");
+    }
+    assert!(keyboard.contains("add_plugin_node"));
+    assert!(keyboard.contains("add_connection"));
+    assert!(keyboard.contains("connections"));
+    assert!(keyboard.contains("remove_node"));
+    assert!(keyboard.contains("toggle_plugin"));
+    assert!(keyboard.contains("editing_graph_node_uuid"));
+
+    let render = app_source("ui/render.rs");
+    assert!(render.contains("view.handle_plugin_graph_keyboard(event, cx)"));
+    let graph =
+        app_source("components/plugins/ui_graph/player_view.rs").replace(".child(\"!\")", "");
+    assert!(graph.contains("self.render_graph_keyboard_bar(cx)"));
+    for literal_surface in [
+        "Text::new(\"",
+        "Text::label(\"",
+        "Text::section_header(\"",
+        ".label(\"",
+        ".placeholder(\"",
+        ".title(\"",
+        ".child(\"",
+    ] {
+        assert!(
+            !graph.contains(literal_surface),
+            "Plugin Graph contains untranslated visible text via {literal_surface}"
+        );
+    }
+}
+
+#[test]
+fn plugin_rack_copy_is_complete_and_visible_literals_are_extracted() {
+    use sotf_audio_player_gpui::i18n::{PluginCommonTranslations, PluginRackTranslations};
+
+    let mut localized_titles = BTreeSet::new();
+    for language in Language::all() {
+        let text = PluginRackTranslations::for_language(*language);
+        localized_titles.insert(text.signal_chain);
+        assert!(
+            [
+                text.signal_chain,
+                text.graph_routing_title,
+                text.graph_routing_description,
+                text.open_graph_view,
+                text.preset_name_placeholder,
+                text.ok,
+                text.save_new,
+                text.empty_rack,
+                text.load,
+                text.save,
+                text.applying,
+                text.no_plugin_selected,
+                text.add_plugin_to_start,
+                text.configuration,
+                text.view,
+                text.skin,
+                text.output,
+                text.binaural_preview,
+                text.plugin_presets,
+                text.plugin_configuration,
+                text.native_ui,
+                text.simple,
+                text.add_plugin_for_comparison,
+                text.move_plugin_up,
+                text.move_plugin_down,
+                text.remove_plugin,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "Plugin Rack copy is incomplete for {}",
+            language.code()
+        );
+        let common = PluginCommonTranslations::for_language(*language);
+        assert!(
+            PluginType::all()
+                .iter()
+                .all(|plugin_type| !common.description(plugin_type).trim().is_empty()),
+            "plugin descriptions are incomplete for {}",
+            language.code()
+        );
+        assert!(
+            [
+                "SETUP",
+                "CHANNELS",
+                "GLOBAL",
+                "DYNAMICS",
+                "TIMING",
+                "OUTPUT",
+                "Primary",
+                "Spatial",
+                "Output",
+                "LFE & Bass",
+                "SubHarmonic",
+                "Dialogue",
+                "Ambient",
+                "Height",
+                "HR Direct",
+                "Decorrelation",
+                "Analysis",
+                "Diagnostic",
+                "Source Extraction",
+                "Bands",
+                "Thresh",
+                "Ratio",
+                "Attack",
+                "Release",
+                "Mix",
+                "Freq",
+                "Gain",
+                "Active",
+                "Solo",
+                "Q",
+                "Mono",
+                "Left",
+                "Right",
+                "Ch",
+                "Enabled",
+                "Dim Gain",
+                "Fade Time",
+                "Knee",
+                "Link",
+                "Bins",
+                "Min Hz",
+                "Max Hz",
+                "Smooth",
+                "AutoGain",
+                "Bypass",
+                "Link Amt",
+                "Link Ch",
+                "Lookahead",
+                "M/S Mode",
+                "Preset",
+                "SC Tilt",
+                "XOver 1",
+                "XOver 2",
+                "XOver 3",
+                "XOver 4",
+                "AG Max",
+                "AG Smooth",
+                "Amb Boost",
+                "Bandpass",
+                "Boost",
+                "Centroid",
+                "Coherence",
+                "Density",
+                "Dir Leak",
+                "Duration",
+                "HF Cap",
+                "LFE Cut",
+                "LFE Gain",
+                "LFO Rate",
+                "Rear Boost",
+                "Safety",
+                "Sharpen",
+                "Threshold",
+                "Trans Red",
+                "Variance",
+                "Voice Hi",
+                "Voice Lo",
+                "Weight",
+            ]
+            .iter()
+            .all(|label| !common.label(label).trim().is_empty()),
+            "plugin labels are incomplete for {}",
+            language.code()
+        );
+    }
+    assert_eq!(localized_titles.len(), Language::all().len());
+
+    let source = app_source("components/plugins/ui_rack/plugin.rs")
+        .replace(".child(\"S\")", "")
+        .replace(".child(\"P\")", "")
+        .replace(".child(\"🔒\")", "")
+        .replace(".child(\":::\")", "")
+        .replace(".child(\"+\")", "")
+        .replace(".child(\"|\")", "")
+        .replace(".child(\"X\")", "")
+        .replace(".label(\"OUT\")", "");
+    for literal_surface in [
+        "Text::new(\"",
+        "Text::label(\"",
+        "Text::section_header(\"",
+        ".label(\"",
+        ".placeholder(\"",
+        ".title(\"",
+        ".child(\"",
+    ] {
+        assert!(
+            !source.contains(literal_surface),
+            "Plugin Rack contains untranslated visible text via {literal_surface}"
+        );
+    }
+}
+
+#[test]
+fn dialog_server_and_phone_copy_is_complete_and_direct_literals_are_extracted() {
+    use sotf_audio_player_gpui::i18n::{
+        AppearanceTranslations, AudioDeviceTranslations, ContextMenuTranslations,
+        DialogTranslations, EqDiscoveryTranslations, FederationTranslations,
+        FileDialogTranslations, FooterTranslations, MetadataEditorTranslations, PhoneTranslations,
+        PlaybackApplyTranslations, RecordingWorkflowTranslations, RoomEqWorkflowTranslations,
+        ServerSettingsTranslations, SettingsSurfaceTranslations, SpectrumTranslations,
+        TutorialTranslations, WorkflowTranslations,
+    };
+
+    for language in Language::all() {
+        let dialog = DialogTranslations::for_language(*language);
+        assert!(
+            [
+                dialog.global_keybindings,
+                dialog.jump_to_screens,
+                dialog.increase_volume,
+                dialog.decrease_volume,
+                dialog.show_keyboard_shortcuts,
+                dialog.show_help_support,
+                dialog.about.about_title,
+                dialog.about.app_name,
+                dialog.about.github_repository,
+                dialog.about.source_code_and_docs,
+                dialog.about.report_issues,
+                dialog.about.bug_tracker,
+                dialog.about.feature_requests,
+                dialog.about.github_discussions,
+                dialog.about.community_forum,
+                dialog.about.audio_science_review,
+                dialog.about.license_gpl,
+                dialog.about.open_source_license,
+                dialog.about.press_escape_to_close,
+                dialog.about.close,
+                dialog.about.help_support_title,
+                dialog.about.request_new_features,
+                dialog.about.share_feature_ideas,
+                dialog.about.report_bugs,
+                dialog.help_fix_issues,
+                dialog.view_source_and_docs,
+                dialog.press_escape_or_help_to_close,
+                dialog.press_escape_or_question_to_close,
+                dialog.empty_library_welcome,
+                dialog.empty_library_title,
+                dialog.empty_library_description,
+                dialog.not_now,
+                dialog.add_music_folders,
+                dialog.add_remote_source,
+                dialog.edit_metadata,
+                dialog.preview,
+                dialog.search_musicbrainz,
+                dialog.load_apo,
+                dialog.load_sofa,
+                dialog.save_plugin_preset,
+                dialog.load_plugin_preset,
+                dialog.keyboard_shortcuts,
+                dialog.channel_conflict,
+                dialog.dont_show_again,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "dialog copy is incomplete for {}",
+            language.code()
+        );
+        assert!(
+            Screen::all()
+                .iter()
+                .all(|screen| !dialog.screen_name(*screen).trim().is_empty())
+        );
+
+        let metadata = MetadataEditorTranslations::for_language(*language);
+        assert!(
+            [
+                metadata.fields.title,
+                metadata.fields.artist,
+                metadata.fields.album_artist,
+                metadata.fields.year,
+                metadata.fields.year_placeholder,
+                metadata.fields.genre,
+                metadata.fields.composer,
+                metadata.fields.disc,
+                metadata.fields.track,
+                metadata.fields.conductor,
+                metadata.fields.performer,
+                metadata.fields.isrc,
+                metadata.fields.ensemble,
+                metadata.fields.edition,
+                metadata.target,
+                metadata.preview,
+                metadata.search_musicbrainz,
+                metadata.searching_musicbrainz,
+                metadata.untitled,
+                metadata.unknown,
+                metadata.tag_writing_unsupported,
+                metadata.preview_before_applying,
+                metadata.unsupported_before_apply,
+                metadata.backups_created,
+                metadata.cancel,
+                metadata.apply_changes,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "metadata-editor copy is incomplete for {}",
+            language.code()
+        );
+        assert!(metadata.target_label("Album").contains("Album"));
+        assert!(metadata.preview_summary(3, 1, true).contains('3'));
+
+        let file_dialog = FileDialogTranslations::for_language(*language);
+        assert!(
+            [
+                file_dialog.press_escape_to_skip,
+                file_dialog.enter_apo_path,
+                file_dialog.enter_sofa_path,
+                file_dialog.load_or_cancel,
+                file_dialog.existing_presets,
+                file_dialog.save_name_or_overwrite,
+                file_dialog.save_hint,
+                file_dialog.preset_name_or_select,
+                file_dialog.available_presets,
+                file_dialog.no_presets_found,
+                file_dialog.load_hint,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty())
+        );
+
+        let workflow = WorkflowTranslations::for_language(*language);
+        assert!(
+            [
+                workflow.success,
+                workflow.failed,
+                workflow.loading,
+                workflow.loading_versions,
+                workflow.no_versions_available,
+                workflow.phase_data,
+                workflow.downloading_measurement,
+                workflow.signal_recording,
+                workflow.audio_device_configuration,
+                workflow.evaluate_recordings,
+                workflow.empty_pass_through,
+                workflow.optimizing,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty())
+        );
+        assert!(workflow.progress(42.0).contains("42"));
+        assert!(workflow.iteration_loss(3, 0.25).contains('3'));
+
+        let room_eq = RoomEqWorkflowTranslations::for_language(*language);
+        assert!(
+            [
+                room_eq.load_measurement_description,
+                room_eq.no_channels_configured,
+                room_eq.delay_optimizer_help,
+                room_eq.negligible_delay_warning,
+                room_eq.delay_probe_help,
+                room_eq.no_optimization_results,
+                room_eq.choose_configuration,
+                room_eq.simple_mode_description,
+                room_eq.full_mode_description,
+                room_eq.single,
+                room_eq.multi_driver,
+                room_eq.dismiss,
+                room_eq.load_from_recording,
+                room_eq.go_to_recording,
+                room_eq.import_from_file,
+                room_eq.reset_to_defaults,
+                room_eq.select,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty())
+        );
+
+        let discovery = EqDiscoveryTranslations::for_language(*language);
+        assert!(
+            [
+                discovery.speaker_search_description,
+                discovery.loading_speakers,
+                discovery.spinorama_after_select,
+                discovery.headphone_search_description,
+                discovery.loading_headphones,
+                discovery.custom_target_help,
+                discovery.spinorama_iir_only,
+                discovery.search_speakers,
+                discovery.search_headphones,
+                discovery.save_eq_file,
+                discovery.cancel,
+                discovery.generate_speaker_eq,
+                discovery.generate_headphone_eq,
+                discovery.browse,
+                discovery.refresh,
+                discovery.load_from_file,
+                discovery.download_from_spinorama,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty())
+        );
+
+        let recording = RecordingWorkflowTranslations::for_language(*language);
+        assert!(
+            [
+                recording.sweep_frequency_range_only,
+                recording.no_channels_configured,
+                recording.spl_calibration_instructions,
+                recording.timestamped_subdirectory,
+                recording.bass_precision_description,
+                recording.bass_anchor_description,
+                recording.probe_description,
+                recording.no_probe_captured,
+                recording.cancel,
+                recording.add_speaker,
+                recording.remove_speaker,
+                recording.add,
+                recording.playback_device,
+                recording.recording_device,
+                recording.microphone_calibration,
+                recording.output_directory,
+                recording.advanced_measurement_quality,
+                recording.single,
+                recording.multi,
+                recording.no_recordings_available,
+                recording.go_back_to_capture,
+                recording.all_channels,
+                recording.run_bass_anchor,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty())
+        );
+        assert!(recording.seconds(10).contains("10"));
+
+        let context = ContextMenuTranslations::for_language(*language);
+        assert!(
+            [
+                context.suspend_incompatible_and_play,
+                context.remove_incompatible_and_play,
+                context.cancel_playback,
+                context.play_now,
+                context.add_to_queue,
+                context.edit_metadata,
+                context.play_from_here,
+                context.remove_from_queue,
+                context.toggle_enabled,
+                context.move_up,
+                context.move_down,
+                context.remove_plugin,
+                context.remove_directory,
+                context.rescan_library,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty())
+        );
+
+        let appearance = AppearanceTranslations::for_language(*language);
+        assert!(!appearance.navigation_mode_description.trim().is_empty());
+        let federation = FederationTranslations::for_language(*language);
+        assert!(
+            [
+                federation.no_remote_sources,
+                federation.cancel_scan,
+                federation.test,
+                federation.scan,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty())
+        );
+
+        let settings = SettingsSurfaceTranslations::for_language(*language);
+        assert!(
+            [
+                settings.activate_external_plugins,
+                settings.scan_external_plugins,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty())
+        );
+
+        let footer = FooterTranslations::for_language(*language);
+        assert!(
+            [
+                footer.hide,
+                footer.previous_track,
+                footer.seek_back_30s,
+                footer.play,
+                footer.pause,
+                footer.seek_forward_30s,
+                footer.next_track,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty())
+        );
+        let audio_device = AudioDeviceTranslations::for_language(*language);
+        assert!(
+            [audio_device.file_player, audio_device.hal_device]
+                .iter()
+                .all(|value| !value.trim().is_empty())
+        );
+        let playback = PlaybackApplyTranslations::for_language(*language);
+        assert!(!playback.clear_eq.trim().is_empty());
+        let spectrum = SpectrumTranslations::for_language(*language);
+        assert!(
+            [
+                spectrum.none,
+                spectrum.standard,
+                spectrum.min_frequency_short
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty())
+        );
+
+        let tutorial = TutorialTranslations::for_language(*language);
+        assert_eq!(tutorial.screens.len(), 7);
+        assert!(
+            tutorial.screens.iter().all(|screen| {
+                !screen.title.trim().is_empty()
+                    && screen.content.len() == 3
+                    && screen
+                        .content
+                        .iter()
+                        .all(|paragraph| !paragraph.trim().is_empty())
+            }),
+            "tutorial copy is incomplete for {}",
+            language.code()
+        );
+        assert!(
+            [tutorial.previous, tutorial.next, tutorial.get_started]
+                .iter()
+                .all(|value| !value.trim().is_empty()),
+            "tutorial navigation copy is incomplete for {}",
+            language.code()
+        );
+
+        let server = ServerSettingsTranslations::for_language(*language);
+        assert!(
+            [
+                server.serves_media,
+                server.sotf_api,
+                server.url,
+                server.token,
+                server.scan_to_add,
+                server.mpd_server,
+                server.tls,
+                server.authentication,
+                server.client_certificate_help,
+                server.dlna_server,
+                server.protocol,
+                server.http_compatibility,
+                server.remote_players,
+                server.api_address_help,
+                server.api_token_help,
+                server.no_remote_players,
+                server.selected,
+                server.certificate,
+                server.password,
+                server.add_server,
+                server.scan_qr,
+                server.test,
+                server.select,
+                server.remove,
+                server.enable,
+                server.disable,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "server-settings copy is incomplete for {}",
+            language.code()
+        );
+
+        let phone = PhoneTranslations::for_language(*language);
+        assert!(
+            [
+                phone.home_empty,
+                phone.home,
+                phone.screen_guide,
+                phone.show_tutorial,
+                phone.see_all,
+                phone.search_library,
+                phone.queue_empty,
+                phone.up_next,
+                phone.plugin_chain,
+                phone.add,
+                phone.no_plugin_selected,
+                phone.add_filter,
+                phone.reset,
+                phone.delete_filter,
+                phone.no_touch_parameters,
+                phone.edit,
+                phone.filters,
+                phone.open_rack_editor,
+                phone.remove,
+                phone.no_saved_streams,
+                phone.play,
+                phone.back,
+                phone.next,
+                phone.search_shortcuts,
+                phone.magic_radio,
+                phone.back_to_genres,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "phone copy is incomplete for {}",
+            language.code()
+        );
+    }
+
+    let sources = [
+        app_source("components/dialogs/player_view.rs"),
+        app_source("components/settings/servers/misc.rs").replace(".child(\"\")", ""),
+        app_source("ui/phone.rs").replace(".child(\"SOTF\")", ""),
+        app_source("components/dialogs/tutorial/consts.rs").replace("Text::new(\"\\u{2022}\")", ""),
+        app_source("components/dialogs/tutorial/types.rs").replace(".child(\"\\u{1f4a1}\")", ""),
+    ];
+    for source in sources {
+        for literal_surface in [
+            "Text::new(\"",
+            "Text::label(\"",
+            "Text::section_header(\"",
+            ".label(\"",
+            ".placeholder(\"",
+            ".title(\"",
+            ".child(\"",
+        ] {
+            assert!(
+                !source.contains(literal_surface),
+                "localized surface contains untranslated visible text via {literal_surface}"
+            );
+        }
+    }
+}
+
+#[test]
+fn room_eq_report_copy_is_complete_and_direct_literals_are_extracted() {
+    use sotf_audio_player_gpui::i18n::RoomEqReportTranslations;
+
+    for language in Language::all() {
+        let text = RoomEqReportTranslations::for_language(*language);
+        assert!(
+            [
+                text.optimization_summary,
+                text.bass_management,
+                text.bass_routing_graph,
+                text.rms_programme_gain,
+                text.all_channels_overview,
+                text.epa_scores,
+                text.metric,
+                text.before_eq,
+                text.after_eq,
+                text.delta,
+                text.preference,
+                text.evaluation,
+                text.potency,
+                text.activity,
+                text.sharpness_acum,
+                text.roughness,
+                text.total_loudness_sone,
+                text.loudness_balance,
+                text.epa_interpretation,
+                text.eq_filters,
+                text.impulse_response,
+                text.type_label,
+                text.crossover_label,
+                text.room_eq_filters,
+                text.broadband_precorrection_filters,
+                text.crossover_frequencies,
+                text.original_vs_corrected,
+                text.sum,
+                text.original,
+                text.tonal_balance,
+                text.phase_response,
+                text.ir,
+                text.group_delay,
+                text.smoothing,
+                text.auto,
+                text.trend,
+                text.normalize,
+                text.channel,
+                text.main_ms,
+                text.pre_peak_db,
+                text.post_peak_db,
+                text.pre_audible_db,
+                text.post_audible_db,
+                text.penalty,
+                text.fir_temporal_masking,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "RoomEQ report copy is incomplete for {}",
+            language.code()
+        );
+    }
+
+    for path in [
+        "components/room_eq/render.rs",
+        "components/room_eq/step_5_review/render.rs",
+    ] {
+        let source = app_source(path);
+        for literal_surface in [
+            "Text::new(\"",
+            "Text::label(\"",
+            "Text::section_header(\"",
+            ".label(\"",
+            ".placeholder(\"",
+            ".title(\"",
+            ".child(\"",
+        ] {
+            assert!(
+                !source.contains(literal_surface),
+                "{path} contains untranslated visible text via {literal_surface}"
+            );
+        }
+    }
+}
+
+#[test]
+fn level_meter_copy_is_complete_and_only_technical_literals_remain() {
+    use sotf_audio_player_gpui::i18n::LevelMeterTranslations;
+
+    for language in Language::all() {
+        let text = LevelMeterTranslations::for_language(*language);
+        assert!(
+            [
+                text.gain_reduction,
+                text.peak,
+                text.true_peak,
+                text.lufs,
+                text.peak_spread,
+                text.even,
+                text.stereo_width,
+                text.mono,
+                text.wide,
+                text.level_meters,
+            ]
+            .iter()
+            .all(|value| !value.trim().is_empty()),
+            "level-meter copy is incomplete for {}",
+            language.code()
+        );
+    }
+
+    let source = app_source("components/plugins/level_meters/render.rs");
+    let source = [
+        ".child(\"GR\")",
+        ".child(\"dBFS\")",
+        ".child(\"-60\")",
+        ".child(\"-30\")",
+        ".child(\"-10\")",
+        ".child(\"0\")",
+        ".child(\"6 dB\")",
+        ".child(\"12 dB\")",
+        ".child(\"24+\")",
+        ".child(\"50%\")",
+        ".child(\"X\")",
+        ".child(\"M\")",
+        ".child(\"S\")",
+        ".child(\"D\")",
+    ]
+    .into_iter()
+    .fold(source, |source, literal| source.replace(literal, ""));
+    for literal_surface in [
+        "Text::new(\"",
+        "Text::label(\"",
+        "Text::section_header(\"",
+        ".label(\"",
+        ".placeholder(\"",
+        ".title(\"",
+        ".child(\"",
+    ] {
+        assert!(
+            !source.contains(literal_surface),
+            "level meters contain untranslated visible text via {literal_surface}"
+        );
+    }
+}
+
+#[test]
+fn application_visible_literal_sinks_require_explicit_technical_allowlist() {
+    fn visit_rs_files(path: &Path, files: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
+        {
+            let entry = entry.unwrap_or_else(|err| panic!("failed to read directory entry: {err}"));
+            let path = entry.path();
+            if path.is_dir() {
+                visit_rs_files(&path, files);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                files.push(path);
+            }
+        }
+    }
+
+    fn first_literal_argument_after<'a>(source: &'a str, prefix: &str) -> Vec<&'a str> {
+        let mut literals = Vec::new();
+        let mut remainder = source;
+        while let Some(offset) = remainder.find(prefix) {
+            let after_prefix = &remainder[offset + prefix.len()..];
+            let literal = after_prefix.trim_start();
+            if !literal.starts_with('"') {
+                remainder = after_prefix;
+                continue;
+            }
+            let literal = &literal[1..];
+            let bytes = literal.as_bytes();
+            let mut escaped = false;
+            let mut end = None;
+            for (index, byte) in bytes.iter().enumerate() {
+                if escaped {
+                    escaped = false;
+                } else if *byte == b'\\' {
+                    escaped = true;
+                } else if *byte == b'"' {
+                    end = Some(index);
+                    break;
+                }
+            }
+            let end = end.unwrap_or_else(|| panic!("unterminated visible literal after {prefix}"));
+            literals.push(&literal[..end]);
+            remainder = &literal[end + 1..];
+        }
+        literals
+    }
+
+    fn nth_literal_argument_after<'a>(
+        source: &'a str,
+        prefix: &str,
+        target_argument: usize,
+    ) -> Vec<&'a str> {
+        fn literal_from_argument(argument: &str) -> Option<&str> {
+            let argument = argument.trim();
+            let literal = argument.strip_prefix('"')?;
+            let mut escaped = false;
+            for (index, byte) in literal.as_bytes().iter().enumerate() {
+                if escaped {
+                    escaped = false;
+                } else if *byte == b'\\' {
+                    escaped = true;
+                } else if *byte == b'"' {
+                    return Some(&literal[..index]);
+                }
+            }
+            None
+        }
+
+        let mut literals = Vec::new();
+        let mut remainder = source;
+        while let Some(offset) = remainder.find(prefix) {
+            let arguments = &remainder[offset + prefix.len()..];
+            let bytes = arguments.as_bytes();
+            let mut argument_start = 0usize;
+            let mut argument_index = 0usize;
+            let mut parentheses = 0usize;
+            let mut brackets = 0usize;
+            let mut braces = 0usize;
+            let mut in_string = false;
+            let mut escaped = false;
+            let mut consumed = 0usize;
+
+            for (index, byte) in bytes.iter().enumerate() {
+                if in_string {
+                    if escaped {
+                        escaped = false;
+                    } else if *byte == b'\\' {
+                        escaped = true;
+                    } else if *byte == b'"' {
+                        in_string = false;
+                    }
+                    continue;
+                }
+
+                match *byte {
+                    b'"' => in_string = true,
+                    b'(' => parentheses += 1,
+                    b')' if parentheses > 0 => parentheses -= 1,
+                    b'[' => brackets += 1,
+                    b']' if brackets > 0 => brackets -= 1,
+                    b'{' => braces += 1,
+                    b'}' if braces > 0 => braces -= 1,
+                    b',' if parentheses == 0 && brackets == 0 && braces == 0 => {
+                        if argument_index == target_argument
+                            && let Some(literal) =
+                                literal_from_argument(&arguments[argument_start..index])
+                        {
+                            literals.push(literal);
+                        }
+                        argument_index += 1;
+                        argument_start = index + 1;
+                    }
+                    b')' if brackets == 0 && braces == 0 => {
+                        if argument_index == target_argument
+                            && let Some(literal) =
+                                literal_from_argument(&arguments[argument_start..index])
+                        {
+                            literals.push(literal);
+                        }
+                        consumed = index + 1;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            remainder = if consumed == 0 {
+                arguments
+            } else {
+                &arguments[consumed..]
+            };
+        }
+        literals
+    }
+
+    // Stable product/format identifiers are deliberately not translated. This
+    // list is restricted to symbols, units, channel layouts, brands, and the
+    // canonical plugin names shared with presets and the engine registry.
+    let allowed = [
+        "",
+        "!",
+        "#",
+        "+",
+        "-",
+        "/",
+        "0",
+        "-10",
+        "-30",
+        "-60",
+        "-60 dB",
+        "0.00",
+        "0 dB",
+        "2D",
+        "3D",
+        "1 kHz",
+        "2 kHz",
+        "1/3 Oct",
+        "1/2 Oct",
+        "1/6 Oct",
+        "1 Oct",
+        "1/12 Oct",
+        "1/24 Oct",
+        "1/48 Oct",
+        "+3dB/oct",
+        "+6dB/oct",
+        "2 ch (Stereo)",
+        "4 ch (Quad)",
+        "6 ch (5.1)",
+        "8 ch (7.1)",
+        "6 dB",
+        "12 dB",
+        "24+",
+        "50%",
+        "D",
+        "dBFS",
+        "Emacs",
+        "GR",
+        "IR",
+        "M",
+        "M S D",
+        "ON",
+        "OUT",
+        "OUT\\\\IN",
+        "OUTPUT",
+        "P",
+        "PIR",
+        "R:",
+        "S",
+        "SOTF",
+        "SPL",
+        "SRC",
+        "Vim",
+        "VSCode",
+        "X",
+        "AAE Reverb",
+        "A/B Compare",
+        "AEC",
+        "AirPlay",
+        "Binaural Decoder",
+        "Channel Mute/Solo",
+        "Compressor",
+        "Convolution",
+        "Crossfeed",
+        "Crosstalk Cancellation",
+        "Declick",
+        "De-Esser",
+        "Delay",
+        "Denoiser",
+        "Downmix",
+        "Dynamic EQ",
+        "EQ",
+        "Expander",
+        "FIR Designer",
+        "Fletcher-Munson",
+        "Gain",
+        "Gate",
+        "Hiss Reducer",
+        "JSON",
+        "Limiter",
+        "Linear-Phase EQ",
+        "Loudness Compensation",
+        "Loudness Monitor",
+        "Matrix Mixer",
+        "Mono to Stereo",
+        "Parametric EQ",
+        "Pink (+3dB/oct)",
+        "PND Varispeed",
+        "Saturation",
+        "Spectral Compressor",
+        "Spectrum Analyzer",
+        "Speech Denoiser",
+        "Stereo Imager",
+        "Transient Shaper",
+        "Upmixer",
+        "© 2026 Spinorama",
+        "[/]",
+        "\\u{1f4a1}",
+        "\\u{2022}",
+        "(chain out)",
+        "mp3",
+        "qEHVI",
+        // Room-EQ smoothing mode identifier paired with octave fractions.
+        "Raw",
+        "|",
+        "::",
+        ":::",
+        "<",
+        ">",
+        "?",
+        "←/→",
+        "↑/↓",
+        "↑",
+        "↓",
+        "−",
+        "\\u{25B2}",
+        "\\u{25BC}",
+        "\\u{2715}",
+        "↵",
+        "→",
+        "⟳",
+        "⤓",
+        "⚙",
+        "⚠",
+        "♪",
+        "ρ",
+        "…",
+        "◎",
+        "🔒",
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for directory in ["app", "components", "ui"] {
+        visit_rs_files(&root.join(directory), &mut files);
+    }
+    let mut violations = Vec::new();
+    for path in files.into_iter().filter(|path| {
+        path.file_name()
+            .is_none_or(|name| name != "translations.rs")
+            && path.file_name().is_none_or(|name| name != "tests.rs")
+            && !path
+                .components()
+                .any(|component| component.as_os_str() == "tests")
+    }) {
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
+            // Typed translation lookups are not direct visible literals.
+            .replace("text.label(\"", "text.localized_label(\"");
+        for prefix in [
+            "Text::new(",
+            "Text::caption(",
+            "Text::body(",
+            "Text::eyebrow(",
+            "Text::label(",
+            "Text::selectable(",
+            "Text::section_header(",
+            "Heading::new(",
+            "Heading::h1(",
+            "Heading::h4(",
+            "Badge::new(",
+            ".label(",
+            ".placeholder(",
+            ".title(",
+            ".child(",
+            ".aria_label(",
+            ".tooltip(",
+            ".description(",
+        ] {
+            for literal in first_literal_argument_after(&source, prefix) {
+                if !allowed.contains(literal) {
+                    violations.push(format!(
+                        "{} contains non-allowlisted visible literal {literal:?} via {prefix}",
+                        path.display()
+                    ));
+                }
+            }
+        }
+        for (prefix, argument) in [
+            ("Button::new(", 1),
+            ("MenuItem::new(", 1),
+            ("AccordionItem::new(", 1),
+            ("SelectOption::new(", 1),
+            ("TabItem::new(", 1),
+            ("ButtonSetOption::new(", 1),
+            ("EmptyState::new(", 0),
+        ] {
+            for literal in nth_literal_argument_after(&source, prefix, argument) {
+                if !allowed.contains(literal) {
+                    violations.push(format!(
+                        "{} contains non-allowlisted visible literal {literal:?} via argument {} of {prefix}",
+                        path.display(),
+                        argument + 1,
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "first-party visible literal allowlist violations:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn first_party_toast_templates_are_in_the_runtime_translation_catalog() {
+    use sotf_audio_player_gpui::i18n::RuntimeMessageTranslations;
+
+    fn visit_rs_files(path: &Path, files: &mut Vec<std::path::PathBuf>) {
+        if path.is_dir() {
+            for entry in std::fs::read_dir(path).expect("read source directory") {
+                visit_rs_files(&entry.expect("read source entry").path(), files);
+            }
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            files.push(path.to_path_buf());
+        }
+    }
+
+    fn first_argument(source: &str, start: usize) -> Option<&str> {
+        let bytes = source.as_bytes();
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut escaped = false;
+        for index in start..bytes.len() {
+            let byte = bytes[index];
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if byte == b'\\' {
+                    escaped = true;
+                } else if byte == b'"' {
+                    in_string = false;
+                }
+                continue;
+            }
+            match byte {
+                b'"' => in_string = true,
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' if depth == 0 => return Some(&source[start..index]),
+                b')' | b']' | b'}' => depth -= 1,
+                b',' if depth == 0 => return Some(&source[start..index]),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn first_string_literal(argument: &str) -> Option<String> {
+        let bytes = argument.as_bytes();
+        let start = bytes.iter().position(|byte| *byte == b'"')? + 1;
+        let mut escaped = false;
+        for (offset, &byte) in bytes[start..].iter().enumerate() {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                return Some(
+                    argument[start..start + offset]
+                        .replace("\\\"", "\"")
+                        .replace("\\\\", "\\"),
+                );
+            }
+        }
+        None
+    }
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for directory in ["app", "components", "ui"] {
+        visit_rs_files(&root.join(directory), &mut files);
+    }
+
+    let mut templates = BTreeSet::new();
+    let markers = [
+        "ToastMessage::success(",
+        "ToastMessage::error(",
+        "ToastMessage::info(",
+        "ToastMessage::warning(",
+        "ToastMessage::persistent(",
+    ];
+    for path in files.into_iter().filter(|path| {
+        !path
+            .components()
+            .any(|component| component.as_os_str() == "tests")
+            && !path.ends_with("runtime_messages.rs")
+    }) {
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        for marker in markers {
+            let mut cursor = 0;
+            while let Some(relative) = source[cursor..].find(marker) {
+                let argument_start = cursor + relative + marker.len();
+                if let Some(argument) = first_argument(&source, argument_start)
+                    && let Some(template) = first_string_literal(argument)
+                {
+                    templates.insert(template);
+                }
+                cursor = argument_start;
+            }
+        }
+
+        let mut cursor = 0;
+        let status_marker = "status_message =";
+        while let Some(relative) = source[cursor..].find(status_marker) {
+            let value_start = cursor + relative + status_marker.len();
+            let value = source[value_start..].trim_start();
+            if (value.starts_with('"') || value.starts_with("format!"))
+                && let Some(template) = first_string_literal(value)
+            {
+                templates.insert(template);
+            }
+            cursor = value_start;
+        }
+
+        let mut cursor = 0;
+        let error_marker = "error_message = Some";
+        while let Some(relative) = source[cursor..].find(error_marker) {
+            let some_start = cursor + relative + error_marker.len();
+            let remainder = &source[some_start..];
+            if let Some(open_relative) = remainder.find('(') {
+                let argument_start = some_start + open_relative + 1;
+                if let Some(argument) = first_argument(&source, argument_start)
+                    && let Some(template) = first_string_literal(argument)
+                {
+                    templates.insert(template);
+                }
+            }
+            cursor = some_start;
+        }
+    }
+
+    let missing = templates
+        .into_iter()
+        .filter(|template| !RuntimeMessageTranslations::is_catalogued(template))
+        .collect::<Vec<_>>();
+    assert!(
+        missing.is_empty(),
+        "first-party toast/status templates missing from runtime translations:\n{}",
+        missing.join("\n")
+    );
+}
+
+#[test]
+fn runtime_message_translations_preserve_dynamic_values_and_external_fallbacks() {
+    use sotf_audio_player_gpui::i18n::RuntimeMessageTranslations;
+
+    let french = RuntimeMessageTranslations::for_language(Language::French);
+    assert_eq!(
+        french.translate("Scan complete: 12 albums, 345 tracks merged."),
+        "Analyse terminée : 12 albums et 345 pistes fusionnés."
+    );
+    assert_eq!(
+        french.translate("Playback error: device vanished"),
+        "Erreur de lecture : device vanished"
+    );
+
+    let german = RuntimeMessageTranslations::for_language(Language::German);
+    assert_eq!(
+        german.translate("External plugin vendor error"),
+        "External plugin vendor error"
+    );
+}
+
+#[test]
+fn application_translation_keys_have_placeholder_parity_and_orphan_debt_does_not_grow() {
+    fn initializer_body<'a>(source: &'a str, language: &str, next: Option<&str>) -> &'a str {
+        let marker = format!("    pub fn {language}() -> Self {{");
+        let start = source
+            .find(&marker)
+            .unwrap_or_else(|| panic!("missing {language} translation initializer"));
+        let body = &source[start + marker.len()..];
+        next.and_then(|next_language| {
+            body.find(&format!("    pub fn {next_language}() -> Self {{"))
+        })
+        .map_or(body, |end| &body[..end])
+    }
+
+    fn placeholder_signature(body: &str) -> Vec<(String, Vec<String>)> {
+        body.lines()
+            .filter_map(|line| {
+                let (field, value) = line.trim().split_once(':')?;
+                if field.is_empty()
+                    || !field
+                        .chars()
+                        .all(|character| character == '_' || character.is_ascii_alphanumeric())
+                {
+                    return None;
+                }
+
+                let value = value.trim_start();
+                if !value.starts_with('"') {
+                    return None;
+                }
+
+                let mut placeholders = Vec::new();
+                let mut chars = value.chars().peekable();
+                while let Some(character) = chars.next() {
+                    if character != '{' {
+                        continue;
+                    }
+                    if chars.peek() == Some(&'{') {
+                        chars.next();
+                        continue;
+                    }
+
+                    let mut placeholder = String::new();
+                    let mut closed = false;
+                    for character in chars.by_ref() {
+                        if character == '}' {
+                            closed = true;
+                            break;
+                        }
+                        placeholder.push(character);
+                    }
+                    assert!(closed, "{field} contains an unmatched format placeholder");
+                    placeholders.push(placeholder);
+                }
+
+                Some((field.to_string(), placeholders))
+            })
+            .collect()
+    }
+
+    fn visit_rs_files(path: &Path, files: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
+        {
+            let entry = entry.unwrap_or_else(|err| panic!("failed to read directory entry: {err}"));
+            let path = entry.path();
+            if path.is_dir() {
+                visit_rs_files(&path, files);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                files.push(path);
+            }
+        }
+    }
+
+    fn contains_identifier(source: &str, identifier: &str) -> bool {
+        source
+            .split(|character: char| character != '_' && !character.is_ascii_alphanumeric())
+            .any(|token| token == identifier)
+    }
+
+    let source = app_source("app/i18n/translations.rs");
+    let languages = [
+        ("english", Some("french")),
+        ("french", Some("german")),
+        ("german", Some("spanish")),
+        ("spanish", None),
+    ];
+    let signatures = languages
+        .map(|(language, next)| placeholder_signature(initializer_body(&source, language, next)));
+    for (language, signature) in languages
+        .iter()
+        .skip(1)
+        .map(|(language, _)| *language)
+        .zip(signatures.iter().skip(1))
+    {
+        assert_eq!(
+            signature, &signatures[0],
+            "{language} translation keys or format placeholders drift from English"
+        );
+    }
+
+    let struct_start = source
+        .find("pub struct Translations {")
+        .expect("Translations struct should exist");
+    let struct_body = &source[struct_start
+        ..source[struct_start..]
+            .find("\n}\n\nimpl Translations")
+            .map(|offset| struct_start + offset)
+            .expect("Translations impl should follow its struct")];
+    let fields = struct_body
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("pub ")
+                .and_then(|line| line.split_once(':'))
+                .map(|(field, _)| field.to_string())
+        })
+        .collect::<Vec<_>>();
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    visit_rs_files(root, &mut files);
+    let production_sources = files
+        .into_iter()
+        .filter(|path| {
+            !path.ends_with("app/i18n/translations.rs")
+                && path.file_name().is_none_or(|name| name != "tests.rs")
+                && !path
+                    .components()
+                    .any(|component| component.as_os_str() == "tests")
+        })
+        .map(|path| {
+            std::fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
+        })
+        .collect::<Vec<_>>();
+    let orphans = fields
+        .iter()
+        .filter(|field| {
+            !production_sources
+                .iter()
+                .any(|source| contains_identifier(source, field))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        orphans.is_empty(),
+        "application translation fields must be used by production code: {orphans:?}"
+    );
+}
+
+#[test]
+fn every_app_plugin_has_gpui_and_simple_parameter_surfaces() {
+    let registry = GpuiViewRegistry::new();
+
+    for plugin_type in PluginType::all() {
+        let settings = PluginSettings::default_for(&plugin_type);
+        let ui_key = plugin_type_key(&settings);
+        assert!(
+            registry.get(ui_key).is_some() || settings.layout().is_some(),
+            "{} has neither a custom GPUI view nor a declarative PluginLayout",
+            plugin_type.name()
+        );
+
+        let descriptors = settings.get_descriptors();
+        let values = settings.get_params();
+        assert_eq!(
+            descriptors.len(),
+            values.len(),
+            "{} simple-view descriptor/value drift",
+            plugin_type.name()
+        );
+        assert!(
+            descriptors
+                .iter()
+                .all(|descriptor| !descriptor.name.trim().is_empty()),
+            "{} exposes an unnamed simple-view parameter",
+            plugin_type.name()
+        );
+        assert!(
+            values.iter().all(|value| !value.name.trim().is_empty()),
+            "{} exposes an unnamed simple-view value",
+            plugin_type.name()
+        );
+        if !settings.param_specs().is_empty() {
+            assert!(
+                !descriptors.is_empty(),
+                "{} has host parameters but no simple-view metadata",
+                plugin_type.name()
+            );
+        }
+    }
+}
+
+#[test]
+fn both_midi_controller_layouts_expose_the_same_plugin_parameters() {
+    let controllers = [xone_k2_layout(), lcxl_layout()];
+
+    for plugin_type in PluginType::all() {
+        let settings = PluginSettings::default_for(&plugin_type);
+        let params = settings.param_specs();
+        let expected: BTreeSet<_> = params
+            .iter()
+            .enumerate()
+            .filter_map(|(index, spec)| {
+                (!matches!(spec.param_type, ParamType::FilePath)).then_some(index)
+            })
+            .collect();
+
+        let mapped: Vec<BTreeSet<_>> = controllers
+            .iter()
+            .map(|layout| {
+                auto_map::auto_map(layout, params, 0, plugin_type.name())
+                    .bindings
+                    .into_iter()
+                    .map(|binding| binding.param_index)
+                    .collect()
+            })
+            .collect();
+
+        assert_eq!(
+            mapped[0],
+            expected,
+            "{} Xone K2 mapping omits or invents parameters",
+            plugin_type.name()
+        );
+        assert_eq!(
+            mapped[1],
+            expected,
+            "{} Launch Control XL mapping omits or invents parameters",
+            plugin_type.name()
+        );
+        assert_eq!(
+            mapped[0],
+            mapped[1],
+            "{} controller layouts do not map the same concepts",
+            plugin_type.name()
+        );
+    }
+}
+
+#[test]
+fn every_declarative_plugin_layout_solves_at_narrow_and_wide_widths() {
+    for plugin_type in PluginType::all() {
+        let settings = PluginSettings::default_for(&plugin_type);
+        let Some(layout) = settings.layout() else {
+            continue;
+        };
+
+        for width in [320.0_f32, 700.0, 1400.0] {
+            let solved = solve_layout(layout.column_constraints, width);
+            let allocated_width: f32 = solved.columns.iter().map(|column| column.width).sum();
+            assert!(
+                allocated_width <= width + f32::EPSILON,
+                "{} allocates {allocated_width}px into a {width}px viewport",
+                plugin_type.name()
+            );
+            assert!(
+                solved.is_visible(ColumnRole::Main),
+                "{} collapses its primary controls at {width}px",
+                plugin_type.name()
+            );
+            assert!(
+                solved.columns.iter().all(|column| column.width > 0.0),
+                "{} produces a non-positive column width at {width}px",
+                plugin_type.name()
+            );
+
+            for constraint in layout.column_constraints {
+                assert_ne!(
+                    solved.is_visible(constraint.role),
+                    solved.is_collapsed(constraint.role),
+                    "{} does not resolve {:?} exactly once at {width}px",
+                    plugin_type.name(),
+                    constraint.role
+                );
+            }
+        }
+    }
 }

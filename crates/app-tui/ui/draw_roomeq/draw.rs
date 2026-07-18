@@ -1,6 +1,7 @@
 use super::super::*;
 
 pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use ratatui::widgets::{Gauge, Tabs};
     use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep};
 
@@ -46,7 +47,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 Style::default().fg(app.theme.fg_secondary)
             };
-            Line::from(Span::styled(st.label(), style))
+            Line::from(Span::styled(i18n.dynamic(st.label().to_string()), style))
         })
         .collect();
     let tabs = Tabs::new(tab_titles)
@@ -55,7 +56,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_type(step_tab_border)
                 .border_style(Style::default().fg(step_tab_border_color))
-                .title("Room EQ"),
+                .title(i18n.ui("Room EQ")),
         )
         .select(s.model.step.index())
         .highlight_style(Style::default().fg(app.theme.accent_primary));
@@ -86,14 +87,17 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(content);
 
-            let path_label = if s.editing_file_path {
-                "Measurements JSON (editing)"
-            } else {
-                "Measurements JSON"
-            };
+            let path_label = i18n.dynamic(
+                if s.editing_file_path {
+                    "Measurements JSON (editing)"
+                } else {
+                    "Measurements JSON"
+                }
+                .to_string(),
+            );
             let path_style = Style::default().fg(app.theme.accent_primary);
             let path = Paragraph::new(if s.file_path.is_empty() {
-                "<type path to recordings.json>".to_string()
+                i18n.dynamic("<type path to recordings.json>".to_string())
             } else {
                 s.file_path.clone()
             })
@@ -103,22 +107,34 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Status/error
             if let Some(ref err) = s.load_error {
-                let err_para = Paragraph::new(err.as_str())
+                let err_para = Paragraph::new(i18n.dynamic_or_verbatim(err))
                     .style(Style::default().fg(app.theme.accent_error))
-                    .block(Block::default().borders(Borders::ALL).title("Error"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Error")),
+                    );
                 f.render_widget(err_para, inner[1]);
             } else if !s.model.channel_measurements.is_empty() {
-                let status = Paragraph::new(format!(
+                let status = Paragraph::new(i18n.dynamic(format!(
                     " {} channels loaded",
                     s.model.channel_measurements.len()
-                ))
+                )))
                 .style(Style::default().fg(app.theme.accent_success))
-                .block(Block::default().borders(Borders::ALL).title("Status"));
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Status")),
+                );
                 f.render_widget(status, inner[1]);
             } else {
-                let status = Paragraph::new(" No data loaded")
+                let status = Paragraph::new(i18n.ui(" No data loaded"))
                     .style(Style::default().fg(app.theme.fg_secondary))
-                    .block(Block::default().borders(Borders::ALL).title("Status"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Status")),
+                    );
                 f.render_widget(status, inner[1]);
             }
 
@@ -131,16 +147,22 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     .map(|m| {
                         Row::new(vec![
                             Cell::from(m.channel_name.clone()),
-                            Cell::from(format!("{} pts", m.measurement.frequencies.len())),
-                            Cell::from(if m.is_group { "Group" } else { "Single" }),
+                            Cell::from(
+                                i18n.dynamic(format!("{} pts", m.measurement.frequencies.len())),
+                            ),
+                            Cell::from(
+                                i18n.dynamic(
+                                    if m.is_group { "Group" } else { "Single" }.to_string(),
+                                ),
+                            ),
                         ])
                     })
                     .collect();
 
                 let header = Row::new(vec![
-                    Cell::from("Channel"),
-                    Cell::from("Points"),
-                    Cell::from("Type"),
+                    Cell::from(i18n.ui("Channel")),
+                    Cell::from(i18n.ui("Points")),
+                    Cell::from(i18n.ui("Type")),
                 ])
                 .style(
                     Style::default()
@@ -157,15 +179,22 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     ],
                 )
                 .header(header)
-                .block(Block::default().borders(Borders::ALL).title("Channels"));
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Channels")),
+                );
                 f.render_widget(table, inner[2]);
             }
 
-            let help_text = if s.editing_file_path {
-                " Enter=confirm  F2=browse  Tab=autocomplete  Esc=cancel"
-            } else {
-                " Enter=browse for JSON  Tab=next step"
-            };
+            let help_text = i18n.dynamic(
+                if s.editing_file_path {
+                    " Enter=confirm  F2=browse  Tab=autocomplete  Esc=cancel"
+                } else {
+                    " Enter=browse for JSON  Tab=next step"
+                }
+                .to_string(),
+            );
             let help = Paragraph::new(help_text).style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(help, inner[3]);
 
@@ -202,13 +231,17 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(content);
 
-            let title = Paragraph::new(" Choose your optimization workflow")
+            let title = Paragraph::new(i18n.ui(" Choose your optimization workflow"))
                 .style(
                     Style::default()
                         .fg(app.theme.accent_primary)
                         .add_modifier(Modifier::BOLD),
                 )
-                .block(Block::default().borders(Borders::ALL).title("Process"));
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Process")),
+                );
             f.render_widget(title, inner[0]);
 
             let simple_style = if mode == RoomEqWizardMode::Simple {
@@ -227,24 +260,26 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             };
             let marker = |selected: bool| if selected { "▸ " } else { "  " };
 
-            let simple = Paragraph::new(format!(
-                "{}Simple Wizard\n  Guided presets for common setups.\n  Pick target, loss, and processing mode.",
-                marker(mode == RoomEqWizardMode::Simple)
-            ))
+            let simple = Paragraph::new(i18n.dynamic(format!(
+                "{}Simple Wizard — {}\n  Guided preset for {}.\n  3=2.0  4=2.1  5=5.1",
+                marker(mode == RoomEqWizardMode::Simple),
+                app.room_eq.easy_layout.label(),
+                app.room_eq.easy_layout.expected_roles().join(", ")
+            )))
             .style(simple_style)
             .block(Block::default().borders(Borders::ALL));
             f.render_widget(simple, inner[1]);
 
-            let full = Paragraph::new(format!(
+            let full = Paragraph::new(i18n.dynamic(format!(
                 "{}Full Wizard\n  All parameters in Acoustic + Optimizer blocks.\n  Full control over every setting.",
                 marker(mode == RoomEqWizardMode::Full)
-            ))
+            )))
             .style(full_style)
             .block(Block::default().borders(Borders::ALL));
             f.render_widget(full, inner[2]);
 
             f.render_widget(
-                Paragraph::new(" 1=Simple  2=Full  Tab=next step")
+                Paragraph::new(i18n.ui(" 1=Simple  2=Full  3/4/5=layout  Tab=next step"))
                     .style(Style::default().fg(app.theme.fg_secondary)),
                 inner[3],
             );
@@ -338,7 +373,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             ];
 
             let channels_info = if s.model.channel_measurements.is_empty() {
-                "No data".to_string()
+                i18n.dynamic("No data".to_string())
             } else {
                 let names: Vec<&str> = s
                     .model
@@ -351,7 +386,10 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             let mut lines = vec![
                 Line::from(vec![
-                    Span::styled("Channels: ", Style::default().fg(app.theme.fg_secondary)),
+                    Span::styled(
+                        i18n.ui("Channels: "),
+                        Style::default().fg(app.theme.fg_secondary),
+                    ),
                     Span::styled(channels_info, Style::default().fg(app.theme.accent_primary)),
                 ]),
                 Line::from(""),
@@ -389,7 +427,12 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     "  "
                 };
                 lines.push(Line::from(Span::styled(
-                    format!("{}{:<22} {}", arrow, label, display_value),
+                    format!(
+                        "{}{:<22} {}",
+                        arrow,
+                        i18n.dynamic((*label).to_string()),
+                        display_value
+                    ),
                     style,
                 )));
             }
@@ -397,10 +440,10 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             // Add slope recommendation line
             if let Some((slope, rec_min, rec_max)) = s.model.compute_lr_slope() {
                 lines.push(Line::from(Span::styled(
-                    format!(
+                    i18n.dynamic(format!(
                         "  Slope: {:.2} dB/oct  |  Rec: [{:.2}, {:.2}] dB/oct",
                         slope, rec_min, rec_max
-                    ),
+                    )),
                     Style::default().fg(app.theme.fg_secondary),
                 )));
             }
@@ -412,12 +455,16 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 " Up/Down=navigate  Left/Right=adjust  Enter=edit value  Tab=next field"
             };
             lines.push(Line::from(Span::styled(
-                hint,
+                i18n.dynamic(hint.to_string()),
                 Style::default().fg(app.theme.fg_secondary),
             )));
 
             let para = Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title("Configure"))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Configure")),
+                )
                 .wrap(Wrap { trim: false });
             f.render_widget(para, content);
         }
@@ -434,6 +481,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(content);
 
+            let unknown_error = i18n.dynamic("unknown error".to_string());
             let (status_text, status_style) = match &s.model.optimization_status {
                 OptimizationStatus::Idle => (
                     "Ready to optimize. Press Enter to start.".to_string(),
@@ -456,7 +504,10 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                             .is_some_and(|n| !n.is_empty())
                         {
                             (
-                                format!("{}...", s.model.current_channel.as_deref().unwrap_or("")),
+                                format!(
+                                    "Processing {}...",
+                                    s.model.current_channel.as_deref().unwrap_or("")
+                                ),
                                 Style::default().fg(app.theme.accent_primary),
                             )
                         } else {
@@ -508,7 +559,10 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 OptimizationStatus::Failed => (
                     format!(
                         "Failed: {}",
-                        s.model.error_message.as_deref().unwrap_or("unknown error")
+                        s.model
+                            .error_message
+                            .as_deref()
+                            .unwrap_or(unknown_error.as_str())
                     ),
                     Style::default().fg(app.theme.accent_error),
                 ),
@@ -518,15 +572,25 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ),
             };
 
-            let status_para =
-                Paragraph::new(vec![Line::from(Span::styled(status_text, status_style))])
-                    .block(Block::default().borders(Borders::ALL).title("Optimization"));
+            let status_para = Paragraph::new(vec![Line::from(Span::styled(
+                i18n.dynamic_or_verbatim(&status_text),
+                status_style,
+            ))])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(i18n.ui("Optimization")),
+            );
             f.render_widget(status_para, inner[0]);
 
             // Progress bar
             let pct = (s.model.overall_progress * 100.0) as u16;
             let gauge = Gauge::default()
-                .block(Block::default().borders(Borders::ALL).title("Progress"))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Progress")),
+                )
                 .gauge_style(Style::default().fg(app.theme.accent_primary))
                 .percent(pct.min(100));
             f.render_widget(gauge, inner[1]);
@@ -541,15 +605,19 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     OptimizationStatus::Running => "Waiting for loss data...",
                     _ => "No loss data recorded",
                 };
-                let hint_para = Paragraph::new(chart_hint)
+                let hint_para = Paragraph::new(i18n.dynamic(chart_hint.to_string()))
                     .style(Style::default().fg(app.theme.fg_secondary))
-                    .block(Block::default().borders(Borders::ALL).title("Loss History"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Loss History")),
+                    );
                 f.render_widget(hint_para, inner[2]);
             }
 
             // Logs box
             let log_count = s.opt_log_lines.len();
-            let log_title = format!("Logs ({} lines)", log_count);
+            let log_title = i18n.dynamic(format!("Logs ({} lines)", log_count));
             if log_count > 0 {
                 // inner[3] height minus 2 for borders
                 let visible_height = inner[3].height.saturating_sub(2) as usize;
@@ -575,7 +643,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     .block(Block::default().borders(Borders::ALL).title(log_title));
                 f.render_widget(log_para, inner[3]);
             } else {
-                let log_para = Paragraph::new("No log messages yet")
+                let log_para = Paragraph::new(i18n.ui("No log messages yet"))
                     .style(Style::default().fg(app.theme.fg_secondary))
                     .block(Block::default().borders(Borders::ALL).title(log_title));
                 f.render_widget(log_para, inner[3]);
@@ -596,17 +664,23 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 " j/k=scroll logs  Enter=start/re-run  BackTab=configure"
             };
-            let hint_para = Paragraph::new(hint).style(Style::default().fg(app.theme.fg_secondary));
+            let hint_para = Paragraph::new(i18n.dynamic(hint.to_string()))
+                .style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(hint_para, inner[4]);
         }
 
         RoomEqStep::Review => {
             if s.model.channel_results.is_empty() {
-                let placeholder =
-                    Paragraph::new("No optimization results yet. Go to Optimize step first.")
-                        .style(Style::default().fg(app.theme.fg_secondary))
-                        .alignment(Alignment::Center)
-                        .block(Block::default().borders(Borders::ALL).title("Review"));
+                let placeholder = Paragraph::new(
+                    i18n.ui("No optimization results yet. Go to Optimize step first."),
+                )
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .alignment(Alignment::Center)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Review")),
+                );
                 f.render_widget(placeholder, content);
                 return;
             }
@@ -621,10 +695,10 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Channel summary
             let header = Row::new(vec![
-                Cell::from("Channel"),
-                Cell::from("Pre Score"),
-                Cell::from("Post Score"),
-                Cell::from("Filters"),
+                Cell::from(i18n.ui("Channel")),
+                Cell::from(i18n.ui("Pre Score")),
+                Cell::from(i18n.ui("Post Score")),
+                Cell::from(i18n.ui("Filters")),
             ])
             .style(
                 Style::default()
@@ -668,7 +742,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Channels (Up/Down to select)"),
+                    .title(i18n.ui("Channels (Up/Down to select)")),
             );
             f.render_widget(ch_table, inner[0]);
 
@@ -676,10 +750,10 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             if let Some(ch) = s.model.channel_results.get(s.selected_channel) {
                 let filt_header = Row::new(vec![
                     Cell::from("#"),
-                    Cell::from("Type"),
-                    Cell::from("Freq (Hz)"),
-                    Cell::from("Q"),
-                    Cell::from("Gain (dB)"),
+                    Cell::from(i18n.ui("Type")),
+                    Cell::from(i18n.ui("Freq (Hz)")),
+                    Cell::from(i18n.ui("Q")),
+                    Cell::from(i18n.ui("Gain (dB)")),
                 ])
                 .style(
                     Style::default()
@@ -716,7 +790,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(format!("Filters: {}", ch.channel_name)),
+                        .title(i18n.dynamic(format!("Filters: {}", ch.channel_name))),
                 );
                 f.render_widget(filt_table, inner[1]);
             }
@@ -727,17 +801,20 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             // the linear rack or needs graph routing — same heuristic the
             // GPUI app uses to swap the "Apply to Rack" / "Apply as Graph"
             // buttons.
-            let apply_hint = match s.model.dsp_output.as_ref() {
-                Some(out) => {
-                    use sotf_audio_player::room_eq_types::DspChainOutputExt;
-                    if out.is_rack_compatible() {
-                        " a=Apply to Rack (linear EQ)"
-                    } else {
-                        " a=Apply as Graph (multi-driver / routed)"
+            let apply_hint = i18n.dynamic(
+                match s.model.dsp_output.as_ref() {
+                    Some(out) => {
+                        use sotf_audio_player::room_eq_types::DspChainOutputExt;
+                        if out.is_rack_compatible() {
+                            " a=Apply to Rack (linear EQ)"
+                        } else {
+                            " a=Apply as Graph (multi-driver / routed)"
+                        }
                     }
+                    None => " a=Apply (run optimizer first)",
                 }
-                None => " a=Apply (run optimizer first)",
-            };
+                .to_string(),
+            );
 
             let inner = Layout::default()
                 .direction(Direction::Vertical)
@@ -749,14 +826,17 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(content);
 
-            let path_label = if s.editing_export_path {
-                "Export Path (editing)"
-            } else {
-                "Export Path"
-            };
+            let path_label = i18n.dynamic(
+                if s.editing_export_path {
+                    "Export Path (editing)"
+                } else {
+                    "Export Path"
+                }
+                .to_string(),
+            );
             let path_style = Style::default().fg(app.theme.accent_primary);
             let path = Paragraph::new(if s.export_path.is_empty() {
-                "<type path for JSON export>".to_string()
+                i18n.dynamic("<type path for JSON export>".to_string())
             } else {
                 s.export_path.clone()
             })
@@ -766,42 +846,70 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Status
             if let Some(ref err) = s.export_error {
-                let err_para = Paragraph::new(err.as_str())
+                let err_para = Paragraph::new(i18n.dynamic_or_verbatim(err))
                     .style(Style::default().fg(app.theme.accent_error))
-                    .block(Block::default().borders(Borders::ALL).title("Error"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Error")),
+                    );
                 f.render_widget(err_para, inner[1]);
             } else if s.export_success {
-                let ok = Paragraph::new(" Export successful!")
+                let ok = Paragraph::new(i18n.ui(" Export successful!"))
                     .style(Style::default().fg(app.theme.accent_success))
-                    .block(Block::default().borders(Borders::ALL).title("Status"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Status")),
+                    );
                 f.render_widget(ok, inner[1]);
             } else {
-                let hint = Paragraph::new(" Enter=edit path, type path and Enter to export")
-                    .style(Style::default().fg(app.theme.fg_secondary))
-                    .block(Block::default().borders(Borders::ALL).title("Status"));
+                let hint =
+                    Paragraph::new(i18n.ui(" Enter=edit path, type path and Enter to export"))
+                        .style(Style::default().fg(app.theme.fg_secondary))
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .title(i18n.ui("Status")),
+                        );
                 f.render_widget(hint, inner[1]);
             }
 
             // Apply-to-chain status row
             if let Some(ref err) = s.apply_error {
-                let err_para = Paragraph::new(err.as_str())
+                let err_para = Paragraph::new(i18n.dynamic_or_verbatim(err))
                     .style(Style::default().fg(app.theme.accent_error))
-                    .block(Block::default().borders(Borders::ALL).title("Apply Error"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Apply Error")),
+                    );
                 f.render_widget(err_para, inner[2]);
             } else if let Some(ref msg) = s.apply_status {
-                let ok = Paragraph::new(format!(" {}", msg))
+                let ok = Paragraph::new(format!(" {}", i18n.dynamic(msg.clone())))
                     .style(Style::default().fg(app.theme.accent_success))
-                    .block(Block::default().borders(Borders::ALL).title("Apply Status"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Apply Status")),
+                    );
                 f.render_widget(ok, inner[2]);
             } else {
                 let hint = Paragraph::new(apply_hint)
                     .style(Style::default().fg(app.theme.fg_secondary))
-                    .block(Block::default().borders(Borders::ALL).title("Apply"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Apply")),
+                    );
                 f.render_widget(hint, inner[2]);
             }
 
             let help = Paragraph::new(
-                " Enter=edit/export  a=Apply to chain  Tab=back to load  BackTab=review",
+                i18n.dynamic(
+                    " Enter=edit/export  a=Apply to chain  Tab=back to load  BackTab=review"
+                        .to_string(),
+                ),
             )
             .style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(help, inner[3]);
@@ -828,6 +936,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 /// of per-channel alignment delays. The probe-running form has moved to
 /// the Recording wizard's Probe step.
 fn draw_delay_detection_step(f: &mut Frame, content: Rect, app: &App) {
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use sotf_audio_player::room_eq_types::DelayDetectionStatus;
 
     let s = &app.room_eq;
@@ -844,13 +953,17 @@ fn draw_delay_detection_step(f: &mut Frame, content: Rect, app: &App) {
         .split(content);
 
     // --- Title ---
-    let title = Paragraph::new(" Per-Channel Alignment Delays")
+    let title = Paragraph::new(i18n.ui(" Per-Channel Alignment Delays"))
         .style(
             Style::default()
                 .fg(app.theme.accent_primary)
                 .add_modifier(Modifier::BOLD),
         )
-        .block(Block::default().borders(Borders::ALL).title("Delay"));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(i18n.ui("Delay")),
+        );
     f.render_widget(title, inner[0]);
 
     // --- Results table or "no data" message ---
@@ -901,11 +1014,11 @@ fn draw_delay_detection_step(f: &mut Frame, content: Rect, app: &App) {
             .collect();
 
         let header = Row::new(vec![
-            Cell::from("Channel"),
-            Cell::from("Arrival ms"),
-            Cell::from("Gain dB"),
-            Cell::from("SNR dB"),
-            Cell::from("Delay ms"),
+            Cell::from(i18n.ui("Channel")),
+            Cell::from(i18n.ui("Arrival ms")),
+            Cell::from(i18n.ui("Gain dB")),
+            Cell::from(i18n.ui("SNR dB")),
+            Cell::from(i18n.ui("Delay ms")),
         ])
         .style(
             Style::default()
@@ -927,35 +1040,42 @@ fn draw_delay_detection_step(f: &mut Frame, content: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Alignment Delays"),
+                .title(i18n.ui("Alignment Delays")),
         );
         f.render_widget(table, inner[1]);
 
         // Hint for low delays
-        let help = if has_low_delay {
-            " ⚠ Delays < 0.3 ms — consider using 0. Delays auto-feed into optimizer."
-        } else {
-            " Delays auto-feed into optimizer. j/k=row  e=edit  Tab=next step"
-        };
+        let help = i18n.dynamic(
+            if has_low_delay {
+                " ⚠ Delays < 0.3 ms — consider using 0. Delays auto-feed into optimizer."
+            } else {
+                " Delays auto-feed into optimizer. j/k=row  e=edit  Tab=next step"
+            }
+            .to_string(),
+        );
         f.render_widget(
             Paragraph::new(help).style(Style::default().fg(app.theme.fg_secondary)),
             inner[2],
         );
     } else {
         let msg = Paragraph::new(
-            " No delay data. Run the Probe step in the Recording wizard,\n \
-             or load a file with probe results.",
+            i18n.dynamic(
+                " No delay data. Run the Probe step in the Recording wizard,\n \
+             or load a file with probe results."
+                    .to_string(),
+            ),
         )
         .style(Style::default().fg(app.theme.fg_secondary))
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Alignment Delays"),
+                .title(i18n.ui("Alignment Delays")),
         );
         f.render_widget(msg, inner[1]);
 
         f.render_widget(
-            Paragraph::new(" Tab=next step").style(Style::default().fg(app.theme.fg_secondary)),
+            Paragraph::new(i18n.ui(" Tab=next step"))
+                .style(Style::default().fg(app.theme.fg_secondary)),
             inner[2],
         );
     }

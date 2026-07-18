@@ -7,11 +7,11 @@
         VStack::new()
             .spacing(StackSpacing::None)
             .child(
-                Text::section_header("Optimisation Algorithm Configuration")
+                Text::section_header(translations.autoeq_form.optimizer_configuration)
                     .color(theme.header_color),
             )
             .child(
-                Text::new("Fine-tune the optimization engine")
+                Text::new(translations.autoeq_fine_tune_optimizer)
                     .size(TextSize::Xs)
                     .color(theme.description_color),
             ),
@@ -24,7 +24,10 @@
 
     // --- Smoothing ---
     if !hide_smoothing {
-        section = section.child(Text::label("Smoothing").color(theme.header_color));
+        section = section.child(
+            Text::label(translations.autoeq_form.parameters.smoothing)
+                .color(theme.header_color),
+        );
 
         // Psychoacoustic toggle (disabled when curve smoothing is on)
         let mut psycho_toggle = Toggle::new((base_id.clone(), "alg-psychoacoustic"))
@@ -45,8 +48,16 @@
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::None)
-                        .child(Text::new("Psychoacoustic Smoothing").size(TextSize::Xs).color(theme.label_color))
-                        .child(Text::new("1/48 oct bass, 1/6 oct treble").size(TextSize::Xs).color(theme.description_color)),
+                .child(
+                    Text::new(translations.autoeq_psychoacoustic_smoothing)
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
+                    .child(
+                        Text::new(translations.autoeq_form.parameters.smoothing_resolution)
+                            .size(TextSize::Xs)
+                            .color(theme.description_color),
+                    ),
                 )
                 .child(psycho_toggle),
         );
@@ -70,8 +81,16 @@
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::None)
-                        .child(Text::new("Curve Smoothing").size(TextSize::Xs).color(theme.label_color))
-                        .child(Text::new("Fixed-width octave smoothing").size(TextSize::Xs).color(theme.description_color)),
+                .child(
+                    Text::new(translations.autoeq_curve_smoothing)
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
+                .child(
+                    Text::new(translations.autoeq_fixed_octave_smoothing)
+                        .size(TextSize::Xs)
+                        .color(theme.description_color),
+                ),
                 )
                 .child(smooth_toggle),
         );
@@ -83,7 +102,7 @@
                 .max(ParamLimits::SMOOTH_N.max)
                 .step(ParamLimits::SMOOTH_N.step)
                 .decimals(0)
-                .label("Smooth Window (1/N oct)")
+            .label(translations.autoeq_form.parameters.smooth_window_oct)
                 .size(NumberInputSize::Sm)
                 .width(120.0)
                 .disabled(disabled)
@@ -117,8 +136,16 @@
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::None)
-                        .child(Text::new("Asymmetric Loss").size(TextSize::Xs).color(theme.label_color))
-                        .child(Text::new("Penalize peaks more than dips").size(TextSize::Xs).color(theme.description_color)),
+                .child(
+                    Text::new(translations.autoeq_asymmetric_loss)
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
+                .child(
+                    Text::new(translations.autoeq_penalize_peaks)
+                        .size(TextSize::Xs)
+                        .color(theme.description_color),
+                ),
                 )
                 .child(asymmetric_toggle),
         );
@@ -139,7 +166,11 @@
         section = section.child(
             HStack::new()
                 .justify(StackJustify::SpaceBetween)
-                .child(Text::new("Reproducible Seed").size(TextSize::Xs).color(theme.label_color))
+                .child(
+                    Text::new(translations.autoeq_reproducible_seed)
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
                 .child(seed_toggle),
         );
 
@@ -150,7 +181,7 @@
                 .max(ParamLimits::SEED.max)
                 .step(ParamLimits::SEED.step)
                 .decimals(0)
-                .label("Seed")
+            .label(translations.autoeq_form.parameters.seed)
                 .size(NumberInputSize::Sm)
                 .width(120.0)
                 .disabled(disabled)
@@ -184,8 +215,16 @@
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::None)
-                        .child(Text::new("Broadband Target Matching").size(TextSize::Xs).color(theme.label_color))
-                        .child(Text::new("Shelf filters for broad tonal balance").size(TextSize::Xs).color(theme.description_color)),
+                .child(
+                    Text::new(translations.autoeq_broadband_target)
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
+                .child(
+                    Text::new(translations.autoeq_shelf_filters)
+                        .size(TextSize::Xs)
+                        .color(theme.description_color),
+                ),
                 )
                 .child(broadband_toggle),
         );

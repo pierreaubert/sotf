@@ -696,7 +696,10 @@ impl DawHost {
             else {
                 return false;
             };
-            if edge.edge_type != EdgeType::Audio || edge.channel_map.is_some() {
+            if edge.edge_type != EdgeType::Audio
+                || edge.channel_map.is_some()
+                || edge.destination_offset != 0
+            {
                 return false;
             }
         }
@@ -2445,7 +2448,10 @@ impl DawHost {
             else {
                 return false;
             };
-            if edge.edge_type != EdgeType::Audio || edge.channel_map.is_some() {
+            if edge.edge_type != EdgeType::Audio
+                || edge.channel_map.is_some()
+                || edge.destination_offset != 0
+            {
                 return false;
             }
         }
@@ -2756,7 +2762,10 @@ impl DawHost {
                     return None;
                 }
                 let edge = &preds[0];
-                if edge.edge_type != EdgeType::Audio || edge.channel_map.is_some() {
+                if edge.edge_type != EdgeType::Audio
+                    || edge.channel_map.is_some()
+                    || edge.destination_offset != 0
+                {
                     return None;
                 }
             }
@@ -2934,7 +2943,7 @@ impl DawHost {
             let sb = nbs[e.from_node].as_ref().unwrap();
             let sd = sb.read();
             let dest_offset = match e.edge_type {
-                EdgeType::Audio => 0,
+                EdgeType::Audio => e.destination_offset,
                 EdgeType::Sidechain => {
                     if sidechain_offset >= n.input_channels() {
                         continue;
@@ -2949,7 +2958,7 @@ impl DawHost {
                 }
             };
             let available_dest_channels = match e.edge_type {
-                EdgeType::Audio => primary_channels,
+                EdgeType::Audio => primary_channels.saturating_sub(dest_offset),
                 EdgeType::Sidechain => n.input_channels().saturating_sub(dest_offset),
             };
             if available_dest_channels == 0 {
@@ -3300,7 +3309,7 @@ impl DawHost {
         sidechain_offset: &mut usize,
     ) -> usize {
         let available_dest_channels = match edge.edge_type {
-            EdgeType::Audio => primary_channels,
+            EdgeType::Audio => primary_channels.saturating_sub(edge.destination_offset),
             EdgeType::Sidechain => {
                 if *sidechain_offset >= dest_node.input_channels() {
                     return 0;

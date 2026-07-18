@@ -32,6 +32,8 @@ impl PluginIpcHeader {
             .store(PluginIpcState::Idle as u32, Ordering::Release);
         self.reserved[0].store(PluginSandboxStatusCode::Unknown as u32, Ordering::Release);
         self.reserved[1].store(PluginSandboxBackendCode::Unknown as u32, Ordering::Release);
+        self.reserved[2].store(0, Ordering::Release);
+        self.reserved[3].store(0, Ordering::Release);
         self.version.store(PLUGIN_IPC_VERSION, Ordering::Release);
         self.magic.store(PLUGIN_IPC_MAGIC, Ordering::Release);
     }

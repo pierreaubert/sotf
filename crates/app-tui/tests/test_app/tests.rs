@@ -1003,7 +1003,7 @@ mod draw_tests {
 mod scanner_tests {
     use crate::app::App;
     use crate::theme::Theme;
-    use sotf_audio_player::DirectoryInfo;
+    use sotf_audio_player::{DirectoryInfo, MusicDatabase, MusicLibrary};
     use std::path::PathBuf;
 
     fn empty_directory() -> DirectoryInfo {
@@ -1020,8 +1020,16 @@ mod scanner_tests {
 
     #[test]
     fn test_scan_library_uses_atomic_progress_counters() {
-        let temp_dir = tempfile::tempdir().unwrap();
+        let default_db = MusicDatabase::default_path().expect("config database path");
+        let config_dir = default_db.parent().expect("config directory");
+        std::fs::create_dir_all(config_dir).unwrap();
+        let temp_dir = tempfile::Builder::new()
+            .prefix("sotf-tui-scan-test-")
+            .tempdir_in(config_dir)
+            .unwrap();
         let mut app = App::new(Theme::default(), false);
+        app.library =
+            MusicLibrary::with_custom_database(temp_dir.path().join("library.sqlite")).unwrap();
         app.library.directories.clear();
         app.library.directories.push(DirectoryInfo {
             path: temp_dir.path().to_path_buf(),
@@ -1030,7 +1038,7 @@ mod scanner_tests {
 
         let result = app.scan_library();
 
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "scan failed: {result:?}");
         assert!(!app.scan.in_progress);
     }
 }

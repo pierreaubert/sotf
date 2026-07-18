@@ -87,7 +87,7 @@
             form = form.child(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(Text::section_header("Preset").color(theme.header_color))
+                .child(Text::section_header(translations.autoeq_form.preset).color(theme.header_color))
                     .child(
                         Text::new(preset.description)
                             .size(TextSize::Xs)
@@ -97,7 +97,7 @@
         }
 
         let mut preset_select = Select::new((base_id.clone(), "preset"))
-            .label("Preset")
+            .label(translations.autoeq_form.preset)
             .options(preset_opts)
             .selected(selected.clone())
             .is_open(ui_state.preset_open)
@@ -149,7 +149,7 @@
         };
 
         let mut target_select = Select::new((base_id.clone(), "target-curve"))
-            .label("Target Curve")
+            .label(translations.autoeq_form.target_curve)
             .options(target_curve_options)
             .selected(&config.goals.target_curve)
             .is_open(ui_state.target_curve_open)
@@ -177,9 +177,12 @@
         form = form.child(
             VStack::new()
                 .spacing(StackSpacing::None)
-                .child(Text::section_header("Optimization Goal").color(theme.header_color))
                 .child(
-                    Text::new("What should the EQ optimize for?")
+                    Text::section_header(translations.autoeq_optimization_goals)
+                        .color(theme.header_color),
+                )
+                .child(
+                    Text::new(translations.autoeq_what_optimize)
                         .size(TextSize::Xs)
                         .color(theme.description_color),
                 ),
@@ -196,7 +199,7 @@
             .collect();
 
         let mut loss_select = Select::new((base_id.clone(), "loss-type"))
-            .label("Loss Function")
+            .label(translations.autoeq_form.parameters.loss_function)
             .options(loss_type_options)
             .selected(&config.goals.loss_type)
             .is_open(ui_state.loss_type_open)
@@ -233,9 +236,9 @@
         form = form.child(
             VStack::new()
                 .spacing(StackSpacing::None)
-                .child(Text::section_header("Filter Design").color(theme.header_color))
+                .child(Text::section_header(translations.autoeq_form.filter_design).color(theme.header_color))
                 .child(
-                    Text::new("How many filters and what kind?")
+                    Text::new(translations.autoeq_how_many_filters)
                         .size(TextSize::Xs)
                         .color(theme.description_color),
                 ),
@@ -243,7 +246,7 @@
 
         // Num filters
         let mut num_filters_input = NumberInput::new((base_id.clone(), "num-filters"))
-            .label("Number of Filters")
+            .label(translations.autoeq_form.parameters.number_filters)
             .value(config.eq_design.num_filters as f64)
             .min(ParamLimits::NUM_FILTERS.min)
             .max(ParamLimits::NUM_FILTERS.max)
@@ -287,7 +290,7 @@
             .collect();
 
         let mut peq_select = Select::new((base_id.clone(), "peq-model"))
-            .label("Filter Type")
+            .label(translations.autoeq_form.parameters.filter_type)
             .options(peq_model_options)
             .selected(&config.eq_design.peq_model)
             .is_open(ui_state.peq_model_open)
@@ -324,7 +327,7 @@
         let mut freq_row = HStack::new().spacing(StackSpacing::Sm);
 
         let mut min_freq_input = NumberInput::new((base_id.clone(), "min-freq"))
-            .label("Min Freq (Hz)")
+            .label(translations.autoeq_form.min_frequency_hz)
             .value(config.eq_design.min_freq)
             .min(ParamLimits::FREQUENCY.min)
             .max(ParamLimits::FREQUENCY.max)
@@ -339,7 +342,7 @@
         }
 
         let mut max_freq_input = NumberInput::new((base_id.clone(), "max-freq"))
-            .label("Max Freq (Hz)")
+            .label(translations.autoeq_form.max_frequency_hz)
             .value(config.eq_design.max_freq)
             .min(ParamLimits::FREQUENCY.min)
             .max(ParamLimits::FREQUENCY.max)
@@ -369,9 +372,9 @@
         form = form.child(
             VStack::new()
                 .spacing(StackSpacing::None)
-                .child(Text::section_header("Optimization Quality").color(theme.header_color))
+                .child(Text::section_header(translations.autoeq_form.optimization_quality).color(theme.header_color))
                 .child(
-                    Text::new("Higher quality takes longer but finds better corrections")
+                    Text::new(translations.autoeq_higher_quality)
                         .size(TextSize::Xs)
                         .color(theme.description_color),
                 ),

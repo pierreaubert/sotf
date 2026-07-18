@@ -14,6 +14,7 @@ use math_audio_iir_fir::{
 };
 use num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
+use sotf_host::param_bridge::apply_spec_update_modes;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
@@ -437,6 +438,7 @@ impl FirDesignerPlugin {
             );
         }
 
+        apply_spec_update_modes(&mut params, PARAMS);
         self.cached_parameters = params;
     }
 

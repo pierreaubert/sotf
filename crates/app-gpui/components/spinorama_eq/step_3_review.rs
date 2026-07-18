@@ -1,3 +1,4 @@
+use crate::app::i18n::SpeakerGraphTranslations;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -14,6 +15,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let graph_text = SpeakerGraphTranslations::for_language(state.app.ui_state.language);
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
         let result = spinorama.result.as_ref();
         let full_result = spinorama.full_result.as_ref();
@@ -156,6 +158,7 @@ impl PlayerView {
                             .content(self.render_speaker_optimization_result_graphs(
                                 &d,
                                 &full_res,
+                                graph_text,
                                 &theme_for_graphs,
                                 1200.0,
                             )),

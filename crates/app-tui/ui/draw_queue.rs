@@ -55,10 +55,13 @@ pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
         let mut content = format!("{} {}", expand_indicator, truncated_display);
 
         if is_current {
-            let track_info = format!(
-                " [Track {}/{}]",
-                entry.item.current_track_index + 1,
-                entry.item.album.tracks.len()
+            let track_info = crate::tui_text!(
+                app,
+                format!(
+                    " [Track {}/{}]",
+                    entry.item.current_track_index + 1,
+                    entry.item.album.tracks.len()
+                )
             );
             content.push_str(&track_info);
         }
@@ -133,9 +136,9 @@ pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let title = if app.queue.is_empty() {
-        "Queue (empty)".to_string()
+        crate::tui_text!(app, "Queue (empty)")
     } else {
-        format!("Queue ({})", app.queue.len())
+        crate::tui_text!(app, format!("Queue ({})", app.queue.len()))
     };
 
     let border_type = if is_focused {
@@ -173,15 +176,18 @@ pub(crate) fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
 
     // Create a border block
     let title = if app.library_view.album_images.is_empty() {
-        "Album Art (none)".to_string()
+        crate::tui_text!(app, "Album Art (none)")
     } else if app.library_view.album_images.len() > 1 {
-        format!(
-            "Album Art ({}/{}) - [] to cycle",
-            app.library_view.selected_image_index + 1,
-            app.library_view.album_images.len()
+        crate::tui_text!(
+            app,
+            format!(
+                "Album Art ({}/{}) - [] to cycle",
+                app.library_view.selected_image_index + 1,
+                app.library_view.album_images.len()
+            )
         )
     } else {
-        "Album Art".to_string()
+        crate::tui_text!(app, "Album Art")
     };
 
     let block = Block::default()
@@ -225,13 +231,13 @@ pub(crate) fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
             let image = StatefulImage::new();
             f.render_stateful_widget(image, image_area, protocol);
         } else {
-            let error_text = Paragraph::new("Failed to load image")
+            let error_text = Paragraph::new(crate::tui_text!(app, "Failed to load image"))
                 .style(Style::default().fg(ratatui::style::Color::Red));
             f.render_widget(error_text, image_area);
         }
     } else {
-        let no_image_text =
-            Paragraph::new("No album art found").style(Style::default().fg(app.theme.fg_muted));
+        let no_image_text = Paragraph::new(crate::tui_text!(app, "No album art found"))
+            .style(Style::default().fg(app.theme.fg_muted));
         f.render_widget(no_image_text, image_area);
     }
 
@@ -268,15 +274,18 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
                 .extension()
                 .and_then(|e| e.to_str())
                 .map(|e| e.to_uppercase())
-                .unwrap_or_else(|| "Unknown".to_string());
+                .unwrap_or_else(|| crate::tui_text!(app, "Unknown"));
             let sr_khz = sample_rate as f64 / 1000.0;
             let ch_str = format_channel_count(channels);
             format!("{} {}-bit/{:.1}kHz {}", ext, bit_depth, sr_khz, ch_str)
         } else {
-            "Unknown".to_string()
+            crate::tui_text!(app, "Unknown")
         };
         lines.push(Line::from(vec![
-            Span::styled("Format: ", Style::default().fg(app.theme.title_color)),
+            Span::styled(
+                crate::tui_text!(app, "Format: "),
+                Style::default().fg(app.theme.title_color),
+            ),
             Span::raw(format_str),
         ]));
 
@@ -288,7 +297,10 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
                 String::new()
             };
             lines.push(Line::from(vec![
-                Span::styled("Track RG: ", Style::default().fg(app.theme.title_color)),
+                Span::styled(
+                    crate::tui_text!(app, "Track RG: "),
+                    Style::default().fg(app.theme.title_color),
+                ),
                 Span::styled(
                     format!("{:+.2} dB{}", gain, peak_str),
                     Style::default().fg(app.theme.accent_success),
@@ -296,8 +308,14 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
             ]));
         } else {
             lines.push(Line::from(vec![
-                Span::styled("Track RG: ", Style::default().fg(app.theme.title_color)),
-                Span::styled("not available", Style::default().fg(app.theme.fg_muted)),
+                Span::styled(
+                    crate::tui_text!(app, "Track RG: "),
+                    Style::default().fg(app.theme.title_color),
+                ),
+                Span::styled(
+                    crate::tui_text!(app, "not available"),
+                    Style::default().fg(app.theme.fg_muted),
+                ),
             ]));
         }
 
@@ -309,7 +327,10 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
                 String::new()
             };
             lines.push(Line::from(vec![
-                Span::styled("Album RG: ", Style::default().fg(app.theme.title_color)),
+                Span::styled(
+                    crate::tui_text!(app, "Album RG: "),
+                    Style::default().fg(app.theme.title_color),
+                ),
                 Span::styled(
                     format!("{:+.2} dB{}", gain, peak_str),
                     Style::default().fg(app.theme.accent_success),
@@ -317,12 +338,18 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
             ]));
         } else {
             lines.push(Line::from(vec![
-                Span::styled("Album RG: ", Style::default().fg(app.theme.title_color)),
-                Span::styled("not available", Style::default().fg(app.theme.fg_muted)),
+                Span::styled(
+                    crate::tui_text!(app, "Album RG: "),
+                    Style::default().fg(app.theme.title_color),
+                ),
+                Span::styled(
+                    crate::tui_text!(app, "not available"),
+                    Style::default().fg(app.theme.fg_muted),
+                ),
             ]));
         }
     } else {
-        lines.push(Line::from("No track playing"));
+        lines.push(Line::from(crate::tui_text!(app, "No track playing")));
     }
 
     let paragraph = Paragraph::new(lines)

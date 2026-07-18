@@ -1,5 +1,10 @@
 use super::misc::get_keybindings_for_screen;
 use crate::app::Screen;
+use crate::app::i18n::{
+    ContextMenuTranslations, DialogTranslations, FileDialogTranslations, KeybindingTranslations,
+    MetadataEditorTranslations, RuntimeMessageTranslations,
+};
+use crate::app::keybindings::{KeybindingCategory, get_documented_keybindings};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::editing::PluginEditingManager;
@@ -18,51 +23,36 @@ impl PlayerView {
     pub(crate) fn render_help_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let screen_name = match state.app.ui_state.current_screen {
-            Screen::Home => "Home",
-            Screen::HomeShelf => "Home",
-            Screen::NowPlaying => "Now Playing",
-            Screen::Library => "Library",
-            Screen::Streams => "Streams",
-            Screen::Queue => "Queue",
-            Screen::Spectrum => "Spectrum",
-            Screen::Settings => "Settings",
-            Screen::SettingsDetail => "Settings",
-            Screen::StudioHub => "Studio",
-            Screen::EqCurve => "EQ Curve",
-            Screen::Studio => "Studio",
-            Screen::Recording => "Recording",
-            Screen::RoomEq => "Room EQ",
-            Screen::HeadphoneEq => "Headphone EQ",
-            Screen::Spinorama => "Spinorama",
-            Screen::PluginGraph => "Plugin Graph",
-            Screen::Playlists => "Playlists",
-        };
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
+        let screen_name = text.screen_name(state.app.ui_state.current_screen);
 
         // Get keybindings for current screen
-        let keybindings = get_keybindings_for_screen(state.app.ui_state.current_screen);
+        let keybindings = get_keybindings_for_screen(
+            state.app.ui_state.current_screen,
+            state.app.ui_state.language,
+        );
 
         Dialog::new("help-modal")
-            .title(format!("Keyboard Shortcuts - {} Screen", screen_name))
+            .title(text.keyboard_shortcuts_for(screen_name))
             .size(DialogSize::Full)
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     // Global keybindings section
-                    .child(Text::section_header("GLOBAL KEYBINDINGS").color(theme.accent))
+                    .child(Text::section_header(text.global_keybindings).color(theme.accent))
                     .child(self.render_keybinding_row(
                         "Shift-L/Q/P/O/D",
-                        "Jump to Library/Queue/Plugins/Devices/Directories",
+                        text.jump_to_screens,
                         &theme,
                     ))
-                    .child(self.render_keybinding_row("+/=", "Increase volume", &theme))
-                    .child(self.render_keybinding_row("-/_", "Decrease volume", &theme))
-                    .child(self.render_keybinding_row("?", "Show keyboard shortcuts", &theme))
-                    .child(self.render_keybinding_row("Shift-?", "Show help & support", &theme))
+                    .child(self.render_keybinding_row("+/=", text.increase_volume, &theme))
+                    .child(self.render_keybinding_row("-/_", text.decrease_volume, &theme))
+                    .child(self.render_keybinding_row("?", text.show_keyboard_shortcuts, &theme))
+                    .child(self.render_keybinding_row("Shift-?", text.show_help_support, &theme))
                     .child(div().h_4()) // Spacer
                     // Screen-specific keybindings section
                     .child(
-                        Text::section_header(format!("{} KEYBINDINGS", screen_name.to_uppercase()))
+                        Text::section_header(text.screen_keybindings(screen_name))
                             .color(theme.accent),
                     )
                     .children(keybindings.iter().map(|(key, desc)| {
@@ -70,16 +60,17 @@ impl PlayerView {
                             .into_any_element()
                     })),
             )
-            .footer(Text::caption("Press ESC or ? to close"))
+            .footer(Text::caption(text.press_escape_or_question_to_close))
     }
 
     pub(crate) fn render_about_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
 
         Dialog::new("about-dialog")
-            .title("About SotF Player")
+            .title(text.about.about_title)
             .size(DialogSize::Sm)
             .on_close({
                 let state = self.state.clone();
@@ -115,13 +106,13 @@ impl PlayerView {
                             .spacing(StackSpacing::Xs)
                             .align(StackAlign::Center)
                             .child(
-                                Text::new("SotF Player")
+                            Text::new(text.about.app_name)
                                     .size(TextSize::Lg)
                                     .weight(TextWeight::Bold)
                                     .color(theme.text_primary),
                             )
                             .child(
-                                Text::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
+                            Text::new(text.version(env!("CARGO_PKG_VERSION")))
                                     .size(TextSize::Xs)
                                     .color(theme.text_secondary),
                             )
@@ -133,41 +124,41 @@ impl PlayerView {
                             .spacing(StackSpacing::Xs)
                             .width(StackSize::Full)
                             .child(self.render_external_link(
-                                "📦",
-                                "GitHub Repository",
-                                "Source code and documentation",
+                            "📦",
+                            text.about.github_repository,
+                            text.about.source_code_and_docs,
                                 "https://github.com/pierreaubert/sotf",
                                 &theme,
                                 d,
                             ))
                             .child(self.render_external_link(
-                                "🐛",
-                                "Report Issues",
-                                "Bug tracker",
+                            "🐛",
+                            text.about.report_issues,
+                            text.about.bug_tracker,
                                 "https://github.com/pierreaubert/sotf/discussions/116",
                                 &theme,
                                 d,
                             ))
                             .child(self.render_external_link(
-                                "💬",
-                                "Feature Requests",
-                                "GitHub Discussions",
+                            "💬",
+                            text.about.feature_requests,
+                            text.about.github_discussions,
                                 "https://github.com/pierreaubert/sotf/discussions/117",
                                 &theme,
                                 d,
                             ))
                             .child(self.render_external_link(
-                                "🔊",
-                                "Community Forum",
-                                "Audio Science Review",
+                            "🔊",
+                            text.about.community_forum,
+                            text.about.audio_science_review,
                                 "https://www.audiosciencereview.com/forum/index.php?threads/autoeq-for-speaker-and-headphone.66460/",
                                 &theme,
                                 d,
                             ))
                             .child(self.render_external_link(
-                                "⚖️",
-                                "License (GPL v3)",
-                                "Open Source License",
+                            "⚖️",
+                            text.about.license_gpl,
+                            text.about.open_source_license,
                                 "https://github.com/pierreaubert/sotf/blob/main/LICENCE.md",
                                 &theme,
                                 d,
@@ -178,9 +169,9 @@ impl PlayerView {
                 HStack::new()
                     .width(StackSize::Full)
                     .justify(StackJustify::SpaceBetween)
-                    .child(Text::caption("Press ESC to close"))
+                    .child(Text::caption(text.about.press_escape_to_close))
                     .child(
-                        gpui_ui_kit::Button::new("about-close", "Close")
+                        gpui_ui_kit::Button::new("about-close", text.about.close)
                             .variant(gpui_ui_kit::ButtonVariant::Primary)
                             .size(gpui_ui_kit::ButtonSize::Xs)
                             .theme(theme.to_button_theme())
@@ -243,9 +234,10 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
 
         Dialog::new("help-support-dialog")
-            .title("Help & Support")
+            .title(text.about.help_support_title)
             .size(DialogSize::Sm)
             .content(
                 VStack::new()
@@ -258,31 +250,31 @@ impl PlayerView {
                             .align(StackAlign::Start)
                             .child(self.render_external_link(
                                 "🚀",
-                                "Request New Features",
-                                "Share your ideas for new features",
+                                text.about.request_new_features,
+                                text.about.share_feature_ideas,
                                 "https://github.com/pierreaubert/sotf/discussions/117",
                                 &theme,
                                 d,
                             ))
                             .child(self.render_external_link(
                                 "🐛",
-                                "Report Bugs",
-                                "Help us fix issues you encounter",
+                                text.about.report_bugs,
+                                text.help_fix_issues,
                                 "https://github.com/pierreaubert/sotf/discussions/116",
                                 &theme,
                                 d,
                             ))
                             .child(self.render_external_link(
                                 "📦",
-                                "GitHub Repository",
-                                "View source code and documentation",
+                                text.about.github_repository,
+                                text.view_source_and_docs,
                                 "https://github.com/pierreaubert/sotf",
                                 &theme,
                                 d,
                             )),
                     ),
             )
-            .footer(Text::caption("Press ESC or Shift-? to close"))
+            .footer(Text::caption(text.press_escape_or_help_to_close))
     }
 
     /// Render modal for empty library prompt shown on startup
@@ -290,9 +282,11 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
+        let file_text = FileDialogTranslations::for_language(state.app.ui_state.language);
 
         Dialog::new("empty-library-prompt")
-            .title("Welcome to SotF Player")
+            .title(text.empty_library_welcome)
             .size(DialogSize::Md)
             .content(
                 VStack::new()
@@ -315,9 +309,9 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .align(StackAlign::Center)
-                            .child(Text::section_header("Your music library is empty"))
+                            .child(Text::section_header(text.empty_library_title))
                             .child(
-                                Text::new("Would you like to add music folders or remote sources?")
+                                Text::new(text.empty_library_description)
                                     .size(TextSize::Sm)
                                     .color(theme.text_secondary),
                             ),
@@ -336,7 +330,7 @@ impl PlayerView {
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.border))
                                     .child(
-                                        Text::new("Not Now")
+                                        Text::new(text.not_now)
                                             .size(TextSize::Sm)
                                             .color(theme.text_secondary),
                                     )
@@ -361,7 +355,7 @@ impl PlayerView {
                                     .hover(|s| s.bg(theme.accent_muted))
                                     // intentional: button caption inside accent-bg div, not a header
                                     .child(
-                                        Text::new("Add Music Folders")
+                                        Text::new(text.add_music_folders)
                                             .size(TextSize::Sm)
                                             .weight(TextWeight::Semibold)
                                             .color(theme.text_on_accent),
@@ -391,7 +385,7 @@ impl PlayerView {
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.border))
                                     .child(
-                                        Text::new("Add Remote Source")
+                                        Text::new(text.add_remote_source)
                                             .size(TextSize::Sm)
                                             .color(theme.text_secondary),
                                     )
@@ -412,7 +406,7 @@ impl PlayerView {
                             ),
                     ),
             )
-            .footer(Text::caption("Press ESC to skip"))
+            .footer(Text::caption(file_text.press_escape_to_skip))
     }
 
     pub(super) fn render_keybinding_row(
@@ -467,6 +461,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let runtime_text = RuntimeMessageTranslations::for_language(state.app.ui_state.language);
 
         let toast_data = state.app.ui_state.toast_message.as_ref().map(|t| {
             let variant = match t.toast_type {
@@ -476,7 +471,7 @@ impl PlayerView {
                 crate::app::ToastType::Warning => ToastVariant::Warning,
             };
             (
-                t.message.clone(),
+                runtime_text.translate(&t.message).into_owned(),
                 variant,
                 t.action.as_ref().map(|a| a.label.clone()),
             )
@@ -598,6 +593,7 @@ impl PlayerView {
     pub(crate) fn render_context_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = ContextMenuTranslations::for_language(state.app.ui_state.language);
 
         if let Some(menu) = &state.app.ui_state.context_menu {
             let menu_type = menu.menu_type.clone();
@@ -605,27 +601,27 @@ impl PlayerView {
 
             let items = match menu.menu_type {
                 crate::app::ContextMenuType::Album => vec![
-                    gpui_ui_kit::MenuItem::new("play-now", "Play Now"),
-                    gpui_ui_kit::MenuItem::new("add-to-queue", "Add to Queue"),
+                    gpui_ui_kit::MenuItem::new("play-now", text.play_now),
+                    gpui_ui_kit::MenuItem::new("add-to-queue", text.add_to_queue),
                     gpui_ui_kit::MenuItem::separator(),
-                    gpui_ui_kit::MenuItem::new("edit-metadata", "Edit Metadata"),
+                    gpui_ui_kit::MenuItem::new("edit-metadata", text.edit_metadata),
                 ],
                 crate::app::ContextMenuType::QueueItem => vec![
-                    gpui_ui_kit::MenuItem::new("play-from-here", "Play from Here"),
-                    gpui_ui_kit::MenuItem::new("remove-from-queue", "Remove from Queue"),
+                    gpui_ui_kit::MenuItem::new("play-from-here", text.play_from_here),
+                    gpui_ui_kit::MenuItem::new("remove-from-queue", text.remove_from_queue),
                     gpui_ui_kit::MenuItem::separator(),
-                    gpui_ui_kit::MenuItem::new("edit-metadata", "Edit Metadata"),
+                    gpui_ui_kit::MenuItem::new("edit-metadata", text.edit_metadata),
                 ],
                 crate::app::ContextMenuType::Plugin => vec![
-                    gpui_ui_kit::MenuItem::new("toggle-enabled", "Toggle Enabled"),
-                    gpui_ui_kit::MenuItem::new("move-up", "Move Up"),
-                    gpui_ui_kit::MenuItem::new("move-down", "Move Down"),
+                    gpui_ui_kit::MenuItem::new("toggle-enabled", text.toggle_enabled),
+                    gpui_ui_kit::MenuItem::new("move-up", text.move_up),
+                    gpui_ui_kit::MenuItem::new("move-down", text.move_down),
                     gpui_ui_kit::MenuItem::separator(),
-                    gpui_ui_kit::MenuItem::new("remove-plugin", "Remove Plugin").danger(),
+                    gpui_ui_kit::MenuItem::new("remove-plugin", text.remove_plugin).danger(),
                 ],
                 crate::app::ContextMenuType::Directory => vec![
-                    gpui_ui_kit::MenuItem::new("remove-directory", "Remove Directory").danger(),
-                    gpui_ui_kit::MenuItem::new("rescan-library", "Rescan Library"),
+                    gpui_ui_kit::MenuItem::new("remove-directory", text.remove_directory).danger(),
+                    gpui_ui_kit::MenuItem::new("rescan-library", text.rescan_library),
                 ],
             };
 
@@ -764,6 +760,9 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
+        let metadata_text = MetadataEditorTranslations::for_language(state.app.ui_state.language);
+        let runtime_text = RuntimeMessageTranslations::for_language(state.app.ui_state.language);
         let Some(editor) = state.app.modal.metadata_editor.clone() else {
             return div().into_any_element();
         };
@@ -777,7 +776,7 @@ impl PlayerView {
         let button_theme = theme.to_button_theme();
 
         Dialog::new("metadata-editor-dialog")
-            .title("Edit Metadata")
+            .title(text.edit_metadata)
             .size(DialogSize::Xl)
             .close_on_backdrop(false)
             .on_close({
@@ -793,7 +792,7 @@ impl PlayerView {
                 VStack::new()
                     .spacing(StackSpacing::Sm)
                     .child(
-                        Text::caption(format!("Target: {}", editor.target_label))
+                        Text::caption(metadata_text.target_label(&editor.target_label))
                             .color(theme.text_secondary),
                     )
                     .child(
@@ -802,94 +801,94 @@ impl PlayerView {
                             .grid_cols(2)
                             .gap(d.gap)
                             .child(self.render_metadata_input(
-                                "Title",
+                                metadata_text.fields.title,
                                 "title",
                                 editor.fields.title.clone(),
-                                "Title",
+                                metadata_text.fields.title,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Artist",
+                                metadata_text.fields.artist,
                                 "artist",
                                 editor.fields.artist.clone(),
-                                "Artist",
+                                metadata_text.fields.artist,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Album Artist",
+                                metadata_text.fields.album_artist,
                                 "album_artist",
                                 editor.fields.album_artist.clone(),
-                                "Album artist",
+                                metadata_text.fields.album_artist,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Year",
+                                metadata_text.fields.year,
                                 "year",
                                 editor.fields.year.clone(),
-                                "YYYY",
+                                metadata_text.fields.year_placeholder,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Genre",
+                                metadata_text.fields.genre,
                                 "genre",
                                 editor.fields.genre.clone(),
-                                "Genre",
+                                metadata_text.fields.genre,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Composer",
+                                metadata_text.fields.composer,
                                 "composer",
                                 editor.fields.composer.clone(),
-                                "Composer",
+                                metadata_text.fields.composer,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Disc",
+                                metadata_text.fields.disc,
                                 "disc_number",
                                 editor.fields.disc_number.clone(),
-                                "Disc",
+                                metadata_text.fields.disc,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Track",
+                                metadata_text.fields.track,
                                 "track_number",
                                 editor.fields.track_number.clone(),
-                                "Track",
+                                metadata_text.fields.track,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Conductor",
+                                metadata_text.fields.conductor,
                                 "conductor",
                                 editor.fields.conductor.clone(),
-                                "Conductor",
+                                metadata_text.fields.conductor,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Performer",
+                                metadata_text.fields.performer,
                                 "performer",
                                 editor.fields.performer.clone(),
-                                "Performer",
+                                metadata_text.fields.performer,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "ISRC",
+                                metadata_text.fields.isrc,
                                 "isrc",
                                 editor.fields.isrc.clone(),
-                                "ISRC",
+                                metadata_text.fields.isrc,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Ensemble",
+                                metadata_text.fields.ensemble,
                                 "ensemble",
                                 editor.fields.ensemble.clone(),
-                                "Ensemble",
+                                metadata_text.fields.ensemble,
                                 cx,
                             ))
                             .child(self.render_metadata_input(
-                                "Edition",
+                                metadata_text.fields.edition,
                                 "edition",
                                 editor.fields.edition.clone(),
-                                "Edition",
+                                metadata_text.fields.edition,
                                 cx,
                             )),
                     )
@@ -903,26 +902,28 @@ impl PlayerView {
                             .bg(theme.background_secondary)
                             .border_1()
                             .border_color(theme.border)
-                            .child(Text::section_header("Preview"))
+                            .child(Text::section_header(metadata_text.preview))
                             .when_some(preview.clone(), |el, preview| {
-                                el.child(Text::caption(format!(
-                                    "{} file(s), {} unsupported, sidecar {}",
+                                el.child(Text::caption(metadata_text.preview_summary(
                                     preview.affected_files.len(),
                                     preview.unsupported_writes.len(),
-                                    if preview.sidecar_path.is_some() {
-                                        "yes"
-                                    } else {
-                                        "no"
-                                    }
+                                    preview.sidecar_path.is_some(),
                                 )))
                                 .children(
                                     preview.unsupported_writes.iter().take(3).map(|file| {
+                                        let reason = file
+                                            .reason
+                                            .as_deref()
+                                            .map(|reason| {
+                                                runtime_text.translate(reason).into_owned()
+                                            })
+                                            .unwrap_or_else(|| {
+                                                metadata_text.tag_writing_unsupported.to_string()
+                                            });
                                         Text::caption(format!(
                                             "{}: {}",
                                             file.path.display(),
-                                            file.reason
-                                                .as_deref()
-                                                .unwrap_or("tag writing unsupported")
+                                            reason
                                         ))
                                         .color(theme.warning)
                                         .into_any_element()
@@ -930,10 +931,13 @@ impl PlayerView {
                                 )
                             })
                             .when(preview.is_none(), |el| {
-                                el.child(Text::caption("Preview before applying changes"))
+                                el.child(Text::caption(metadata_text.preview_before_applying))
                             })
                             .when_some(editor.error.clone(), |el, error| {
-                                el.child(Text::caption(error).color(theme.error))
+                                el.child(
+                                    Text::caption(runtime_text.translate(&error).into_owned())
+                                        .color(theme.error),
+                                )
                             }),
                     )
                     .child(
@@ -952,7 +956,7 @@ impl PlayerView {
                                     .child(
                                         Input::new("musicbrainz-query")
                                             .value(SharedString::from(editor.search_query.clone()))
-                                            .placeholder("Search MusicBrainz")
+                                            .placeholder(text.search_musicbrainz)
                                             .size(InputSize::Sm)
                                             .bg_color(theme.surface)
                                             .text_color(theme.text_primary)
@@ -974,7 +978,7 @@ impl PlayerView {
                                     .child(
                                         Button::new(
                                             "metadata-search-musicbrainz",
-                                            "Search MusicBrainz",
+                                            metadata_text.search_musicbrainz,
                                         )
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Sm)
@@ -988,10 +992,13 @@ impl PlayerView {
                                     ),
                             )
                             .when(editor.search_in_progress, |el| {
-                                el.child(Text::caption("Searching MusicBrainz..."))
+                                el.child(Text::caption(metadata_text.searching_musicbrainz))
                             })
                             .when_some(editor.search_error.clone(), |el, error| {
-                                el.child(Text::caption(error).color(theme.error))
+                                el.child(
+                                    Text::caption(runtime_text.translate(&error).into_owned())
+                                        .color(theme.error),
+                                )
                             })
                             .children(editor.search_results.iter().enumerate().map(
                                 |(idx, candidate)| {
@@ -1003,16 +1010,16 @@ impl PlayerView {
                                             .album_title
                                             .as_deref()
                                             .or(candidate.title.as_deref())
-                                            .unwrap_or("Untitled"),
+                                            .unwrap_or(metadata_text.untitled),
                                         candidate
                                             .album_artist
                                             .as_deref()
                                             .or(candidate.artist.as_deref())
-                                            .unwrap_or("Unknown"),
+                                            .unwrap_or(metadata_text.unknown),
                                         candidate
                                             .year
                                             .map(|year| year.to_string())
-                                            .unwrap_or_else(|| "unknown".to_string())
+                                            .unwrap_or_else(|| metadata_text.unknown.to_string())
                                     );
                                     Button::new(
                                         SharedString::from(format!("metadata-candidate-{idx}")),
@@ -1041,9 +1048,9 @@ impl PlayerView {
                     .justify(StackJustify::SpaceBetween)
                     .child(
                         Text::caption(if unsupported_count > 0 {
-                            "Unsupported files must be fixed before applying"
+                            metadata_text.unsupported_before_apply
                         } else {
-                            "Backups are created beside edited files"
+                            metadata_text.backups_created
                         })
                         .color(if unsupported_count > 0 {
                             theme.warning
@@ -1055,7 +1062,7 @@ impl PlayerView {
                         HStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(
-                                Button::new("metadata-preview", "Preview")
+                                Button::new("metadata-preview", metadata_text.preview)
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Sm)
                                     .theme(button_theme.clone())
@@ -1066,7 +1073,7 @@ impl PlayerView {
                                     )),
                             )
                             .child(
-                                Button::new("metadata-cancel", "Cancel")
+                                Button::new("metadata-cancel", metadata_text.cancel)
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Sm)
                                     .theme(button_theme.clone())
@@ -1077,7 +1084,7 @@ impl PlayerView {
                                     )),
                             )
                             .child(
-                                Button::new("metadata-apply", "Apply Changes")
+                                Button::new("metadata-apply", metadata_text.apply_changes)
                                     .variant(ButtonVariant::Primary)
                                     .size(ButtonSize::Sm)
                                     .disabled(!can_apply)
@@ -1310,14 +1317,16 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
+        let file_text = FileDialogTranslations::for_language(state.app.ui_state.language);
 
         Dialog::new("apo-file-dialog")
-            .title("Load APO File for EQ Plugin")
+            .title(text.load_apo)
             .size(DialogSize::Md)
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(Text::caption("Enter path to APO file:"))
+                    .child(Text::caption(file_text.enter_apo_path))
                     .child(
                         div()
                             .p(d.pad_y)
@@ -1331,21 +1340,23 @@ impl PlayerView {
                             ),
                     ),
             )
-            .footer(Text::caption("Enter: Load file | ESC: Cancel"))
+            .footer(Text::caption(file_text.load_or_cancel))
     }
 
     pub(crate) fn render_sofa_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
+        let file_text = FileDialogTranslations::for_language(state.app.ui_state.language);
 
         Dialog::new("sofa-file-dialog")
-            .title("Load SOFA File for Binaural Decoder")
+            .title(text.load_sofa)
             .size(DialogSize::Md)
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(Text::caption("Enter path to SOFA file:"))
+                    .child(Text::caption(file_text.enter_sofa_path))
                     .child(
                         div()
                             .p(d.pad_y)
@@ -1359,26 +1370,26 @@ impl PlayerView {
                             ),
                     ),
             )
-            .footer(Text::caption("Enter: Load file | ESC: Cancel"))
+            .footer(Text::caption(file_text.load_or_cancel))
     }
 
     pub(crate) fn render_save_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
+        let file_text = FileDialogTranslations::for_language(state.app.ui_state.language);
         let presets = state.app.plugin_state.available_presets.clone();
         let selected_preset = state.app.plugin_state.selected_preset_index;
         let input = state.app.input_state.plugin_file_input.clone();
 
         Dialog::new("save-plugins-dialog")
-            .title("Save Plugin Preset")
+            .title(text.save_plugin_preset)
             .size(DialogSize::Lg)
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(Text::caption(
-                        "Enter preset name (or select existing to overwrite):",
-                    ))
+                    .child(Text::caption(file_text.save_name_or_overwrite))
                     .child(
                         div()
                             .p(d.pad_y)
@@ -1390,66 +1401,63 @@ impl PlayerView {
                     )
                     // Show existing presets if available
                     .when(!presets.is_empty(), |el| {
-                        el.child(Text::caption("Existing presets (↑/↓ to select):"))
-                            .child(
-                                div()
-                                    .id("save-plugins-presets-list")
-                                    .max_h(Rems(12.0))
-                                    .overflow_y_scroll()
-                                    .bg(theme.surface)
-                                    .rounded(d.r_md)
-                                    .p(d.pad_y)
-                                    .children(presets.iter().enumerate().map(|(idx, preset)| {
-                                        let is_selected = idx == selected_preset;
-                                        let theme = theme.clone();
-                                        let state_click = self.state.clone();
-                                        let hover_bg = theme.surface_hover;
-                                        div()
-                                            .id(("save-preset-item", idx))
-                                            .p(d.grid)
-                                            .rounded(d.r_md)
-                                            .text_size(d.text_sm)
-                                            .cursor_pointer()
-                                            .when(is_selected, |el| {
-                                                el.bg(theme.accent_muted)
-                                                    .text_color(theme.text_primary)
-                                            })
-                                            .when(!is_selected, |el| {
-                                                el.text_color(theme.text_secondary)
-                                                    .hover(move |s| s.bg(hover_bg))
-                                            })
-                                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                                state_click.update(cx, |state, _cx| {
-                                                    state.app.plugin_state.selected_preset_index =
-                                                        idx;
-                                                    state.app.input_state.plugin_file_input.clear();
-                                                });
-                                            })
-                                            .child(preset.clone())
-                                    })),
-                            )
+                        el.child(Text::caption(file_text.existing_presets)).child(
+                            div()
+                                .id("save-plugins-presets-list")
+                                .max_h(Rems(12.0))
+                                .overflow_y_scroll()
+                                .bg(theme.surface)
+                                .rounded(d.r_md)
+                                .p(d.pad_y)
+                                .children(presets.iter().enumerate().map(|(idx, preset)| {
+                                    let is_selected = idx == selected_preset;
+                                    let theme = theme.clone();
+                                    let state_click = self.state.clone();
+                                    let hover_bg = theme.surface_hover;
+                                    div()
+                                        .id(("save-preset-item", idx))
+                                        .p(d.grid)
+                                        .rounded(d.r_md)
+                                        .text_size(d.text_sm)
+                                        .cursor_pointer()
+                                        .when(is_selected, |el| {
+                                            el.bg(theme.accent_muted).text_color(theme.text_primary)
+                                        })
+                                        .when(!is_selected, |el| {
+                                            el.text_color(theme.text_secondary)
+                                                .hover(move |s| s.bg(hover_bg))
+                                        })
+                                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                            state_click.update(cx, |state, _cx| {
+                                                state.app.plugin_state.selected_preset_index = idx;
+                                                state.app.input_state.plugin_file_input.clear();
+                                            });
+                                        })
+                                        .child(preset.clone())
+                                })),
+                        )
                     }),
             )
-            .footer(Text::caption(
-                "Enter: Save | Click/↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel",
-            ))
+            .footer(Text::caption(file_text.save_hint))
     }
 
     pub(crate) fn render_load_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
+        let file_text = FileDialogTranslations::for_language(state.app.ui_state.language);
         let presets = state.app.plugin_state.available_presets.clone();
         let selected_preset = state.app.plugin_state.selected_preset_index;
         let input = state.app.input_state.plugin_file_input.clone();
 
         Dialog::new("load-plugins-dialog")
-            .title("Load Plugin Preset")
+            .title(text.load_plugin_preset)
             .size(DialogSize::Lg)
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(Text::caption("Enter preset name or select from list:"))
+                    .child(Text::caption(file_text.preset_name_or_select))
                     .child(
                         div()
                             .p(d.pad_y)
@@ -1461,58 +1469,56 @@ impl PlayerView {
                     )
                     // Show existing presets
                     .when(!presets.is_empty(), |el| {
-                        el.child(Text::caption("Available presets (↑/↓ to select):"))
-                            .child(
-                                div()
-                                    .id("load-plugins-presets-list")
-                                    .max_h(Rems(12.0))
-                                    .overflow_y_scroll()
-                                    .bg(theme.surface)
-                                    .rounded(d.r_md)
-                                    .p(d.pad_y)
-                                    .children(presets.iter().enumerate().map(|(idx, preset)| {
-                                        let is_selected = idx == selected_preset;
-                                        let theme = theme.clone();
-                                        let state_click = self.state.clone();
-                                        let hover_bg = theme.surface_hover;
-                                        div()
-                                            .id(("load-preset-item", idx))
-                                            .p(d.grid)
-                                            .rounded(d.r_md)
-                                            .text_size(d.text_sm)
-                                            .cursor_pointer()
-                                            .when(is_selected, |el| {
-                                                el.bg(theme.accent_muted)
-                                                    .text_color(theme.text_primary)
-                                            })
-                                            .when(!is_selected, |el| {
-                                                el.text_color(theme.text_secondary)
-                                                    .hover(move |s| s.bg(hover_bg))
-                                            })
-                                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                                state_click.update(cx, |state, _cx| {
-                                                    state.app.plugin_state.selected_preset_index =
-                                                        idx;
-                                                    state.app.input_state.plugin_file_input.clear();
-                                                    state.app.load_selected_preset();
-                                                    state.app.ui_state.input_mode =
-                                                        crate::app::InputMode::Normal;
-                                                    state.app.clear_autocomplete();
-                                                });
-                                            })
-                                            .child(preset.clone())
-                                    })),
-                            )
+                        el.child(Text::caption(file_text.available_presets)).child(
+                            div()
+                                .id("load-plugins-presets-list")
+                                .max_h(Rems(12.0))
+                                .overflow_y_scroll()
+                                .bg(theme.surface)
+                                .rounded(d.r_md)
+                                .p(d.pad_y)
+                                .children(presets.iter().enumerate().map(|(idx, preset)| {
+                                    let is_selected = idx == selected_preset;
+                                    let theme = theme.clone();
+                                    let state_click = self.state.clone();
+                                    let hover_bg = theme.surface_hover;
+                                    div()
+                                        .id(("load-preset-item", idx))
+                                        .p(d.grid)
+                                        .rounded(d.r_md)
+                                        .text_size(d.text_sm)
+                                        .cursor_pointer()
+                                        .when(is_selected, |el| {
+                                            el.bg(theme.accent_muted).text_color(theme.text_primary)
+                                        })
+                                        .when(!is_selected, |el| {
+                                            el.text_color(theme.text_secondary)
+                                                .hover(move |s| s.bg(hover_bg))
+                                        })
+                                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                            state_click.update(cx, |state, _cx| {
+                                                state.app.plugin_state.selected_preset_index = idx;
+                                                state.app.input_state.plugin_file_input.clear();
+                                                state.app.load_selected_preset();
+                                                state.app.ui_state.input_mode =
+                                                    crate::app::InputMode::Normal;
+                                                state.app.clear_autocomplete();
+                                            });
+                                        })
+                                        .child(preset.clone())
+                                })),
+                        )
                     })
                     .when(presets.is_empty(), |el| {
-                        el.child(div().p(d.card).text_center().child(Text::caption(
-                            "No presets found. Save a preset first with 's'.",
-                        )))
+                        el.child(
+                            div()
+                                .p(d.card)
+                                .text_center()
+                                .child(Text::caption(file_text.no_presets_found)),
+                        )
                     }),
             )
-            .footer(Text::caption(
-                "Enter: Load | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel",
-            ))
+            .footer(Text::caption(file_text.load_hint))
     }
 }
 
@@ -1543,52 +1549,31 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
-
-        let global_shortcuts = vec![
-            ("Space", "Play / Pause"),
-            ("N", "Next track"),
-            ("P", "Previous track"),
-            ("+/-", "Volume up/down"),
-            ("M", "Toggle mute"),
-            ("1-5", "Switch screens"),
-            ("?", "Toggle help"),
-            ("Esc", "Close / Cancel"),
-            ("T", "Cycle theme"),
-            ("Alt-L", "Cycle language"),
-            ("Cmd-Q", "Quit"),
-        ];
-
-        let library_shortcuts = vec![
-            ("↑/↓ K/J", "Navigate albums"),
-            ("Enter", "Add & play"),
-            ("Q", "Add to queue"),
-            ("/", "Search"),
-            ("V", "Toggle view"),
-            ("S", "Cycle sort"),
-            ("C", "Channel filter"),
-        ];
-
-        let queue_shortcuts = vec![
-            ("↑/↓ K/J", "Navigate queue"),
-            ("X", "Remove item"),
-            ("Shift-X", "Clear queue"),
-            ("Tab", "Select meter"),
-            ("Shift-M", "Mute group"),
-            ("Shift-S", "Solo group"),
-        ];
-
-        let plugin_shortcuts = vec![
-            ("E/U/G/L/O/B", "Add plugins"),
-            ("Enter/e", "Edit plugin"),
-            ("D/Delete", "Delete plugin"),
-            ("Space", "Toggle on/off"),
-            ("Shift-U/N", "Move up/down"),
-            ("Shift-S/l", "Save/Load preset"),
-        ];
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
+        let keybinding_text = KeybindingTranslations::for_language(state.app.ui_state.language);
+        let documented = get_documented_keybindings(state.app.ui_state.keymap_preset);
+        let sections = KeybindingCategory::all()
+            .iter()
+            .filter_map(|category| {
+                let shortcuts = documented
+                    .iter()
+                    .filter(|binding| binding.category == *category)
+                    .map(|binding| {
+                        (
+                            binding.key,
+                            keybinding_text.action_description(binding.description),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                (!shortcuts.is_empty())
+                    .then_some((keybinding_text.category_name(*category), shortcuts))
+            })
+            .collect::<Vec<_>>();
 
         Dialog::new("shortcuts-dialog")
-            .title("Keyboard Shortcuts")
+            .title(text.keyboard_shortcuts)
             .size(DialogSize::Full)
             .show_close_button(true)
             .on_close({
@@ -1604,18 +1589,17 @@ impl PlayerView {
                     .flex()
                     .flex_wrap()
                     .gap(d.section_lg)
-                    .child(self.render_shortcut_section("Global", &global_shortcuts, &theme))
-                    .child(self.render_shortcut_section("Library", &library_shortcuts, &theme))
-                    .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
-                    .child(self.render_shortcut_section("Plugins", &plugin_shortcuts, &theme)),
+                    .children(sections.iter().map(|(category, shortcuts)| {
+                        self.render_shortcut_section(category, shortcuts, &theme)
+                    })),
             )
             .footer(
                 HStack::new()
                     .width(StackSize::Full)
                     .justify(StackJustify::SpaceBetween)
-                    .child(Text::caption("Press ESC or ? to close"))
+                    .child(Text::caption(text.press_escape_or_question_to_close))
                     .child(
-                        gpui_ui_kit::Button::new("shortcuts-close", "Close")
+                        gpui_ui_kit::Button::new("shortcuts-close", text.about.close)
                             .variant(gpui_ui_kit::ButtonVariant::Primary)
                             .size(gpui_ui_kit::ButtonSize::Xs)
                             .theme(theme.to_button_theme())
@@ -1666,6 +1650,8 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
+        let action_text = ContextMenuTranslations::for_language(state.app.ui_state.language);
         let track_channels = state.app.modal.channel_conflict_track_channels;
         let conflict_names: Vec<String> = state
             .app
@@ -1683,7 +1669,7 @@ impl PlayerView {
             .collect();
 
         Dialog::new("channel-conflict-dialog")
-            .title("Channel Conflict")
+            .title(text.channel_conflict)
             .size(DialogSize::Sm)
             .on_close({
                 let state_entity = self.state.clone();
@@ -1724,7 +1710,7 @@ impl PlayerView {
                             .child(
                                 gpui_ui_kit::Button::new(
                                     "conflict-suspend",
-                                    "Suspend incompatible and play",
+                                    action_text.suspend_incompatible_and_play,
                                 )
                                 .variant(gpui_ui_kit::ButtonVariant::Primary)
                                 .size(gpui_ui_kit::ButtonSize::Sm)
@@ -1769,7 +1755,7 @@ impl PlayerView {
                             .child(
                                 gpui_ui_kit::Button::new(
                                     "conflict-remove",
-                                    "Remove incompatible and play",
+                                    action_text.remove_incompatible_and_play,
                                 )
                                 .variant(gpui_ui_kit::ButtonVariant::Destructive)
                                 .size(gpui_ui_kit::ButtonSize::Sm)
@@ -1809,7 +1795,10 @@ impl PlayerView {
                                 }),
                             )
                             .child(
-                                gpui_ui_kit::Button::new("conflict-cancel", "Cancel playback")
+                                gpui_ui_kit::Button::new(
+                                    "conflict-cancel",
+                                    action_text.cancel_playback,
+                                )
                                     .variant(gpui_ui_kit::ButtonVariant::Ghost)
                                     .size(gpui_ui_kit::ButtonSize::Sm)
                                     .full_width(true)

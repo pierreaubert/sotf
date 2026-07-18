@@ -15,6 +15,8 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let discovery_text =
+            crate::app::i18n::EqDiscoveryTranslations::for_language(state.app.ui_state.language);
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id, cx));
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
@@ -104,13 +106,18 @@ impl PlayerView {
                                         )
                                     })
                                     .child(
-                                        Button::new("save-spinorama-eq", "Save EQ File")
-                                            .variant(ButtonVariant::Primary)
-                                            .size(ButtonSize::Sm)
-                                            .theme(button_theme.clone())
-                                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                        Button::new(
+                                            "save-spinorama-eq",
+                                            discovery_text.save_eq_file,
+                                        )
+                                        .variant(ButtonVariant::Primary)
+                                        .size(ButtonSize::Sm)
+                                        .theme(button_theme.clone())
+                                        .on_click_event(
+                                            cx.listener(|view, _, _, cx| {
                                                 view.save_spinorama_eq_result(cx);
-                                            })),
+                                            }),
+                                        ),
                                     ),
                             ),
                     )

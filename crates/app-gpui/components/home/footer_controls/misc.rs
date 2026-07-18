@@ -1,3 +1,4 @@
+use crate::app::i18n::{CastTranslations, PhoneTranslations};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::themed_tooltip as footer_tooltip;
@@ -54,6 +55,7 @@ impl PlayerView {
             crate::app::Screen::RoomEq => translations.screen_room_eq,
             crate::app::Screen::HeadphoneEq => translations.screen_headphone_eq,
             crate::app::Screen::Spinorama => translations.screen_spinorama,
+            crate::app::Screen::ListeningTest => translations.screen_listening_test,
             _ => translations.screen_tools,
         };
 
@@ -168,6 +170,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
+        let text = CastTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (devices, selected_index, theme) = {
             let state = self.state.read(cx);
             (
@@ -237,7 +240,7 @@ impl PlayerView {
                                             cx.notify();
                                         }),
                                     )
-                                    .child("Cast"),
+                            .child(text.cast),
                             )
                             .child(
                                 div()
@@ -308,7 +311,8 @@ impl PlayerView {
                                 state.app.ui_state.show_device_popup = false;
 
                                 // Apply the device selection to the player
-                                if let Err(e) = state.player.set_output_device(device_name.clone()) {
+                                if let Err(e) = state.player.set_output_device(device_name.clone())
+                                {
                                     log::error!("Failed to set output device: {}", e);
                                 } else if was_playing && let Some(path) = current_path {
                                     Self::play_track_at(state, path, Some(current_pos));
@@ -323,7 +327,11 @@ impl PlayerView {
                             .items_center()
                             .gap(d.gap)
                             .when(is_selected, |el| {
-                                el.child(Icon::new(IconName::Check).size(IconSize::Xs).color(theme.accent))
+                                el.child(
+                                    Icon::new(IconName::Check)
+                                        .size(IconSize::Xs)
+                                        .color(theme.accent),
+                                )
                             })
                             .child(display_name),
                     )
@@ -364,7 +372,7 @@ impl PlayerView {
                             .py(d.pad_y_half)
                             .text_size(d.text_xs)
                             .text_color(theme_cast.text_muted)
-                            .child("No Cast devices found"),
+                            .child(text.no_devices),
                     );
                 }
 
@@ -418,7 +426,11 @@ impl PlayerView {
                                     .items_center()
                                     .gap(d.gap)
                                     .when(is_selected, |el| {
-                                        el.child(Icon::new(IconName::Check).size(IconSize::Xs).color(theme.accent))
+                                        el.child(
+                                            Icon::new(IconName::Check)
+                                                .size(IconSize::Xs)
+                                                .color(theme.accent),
+                                        )
                                     })
                                     .child(name)
                                     .child(
@@ -478,6 +490,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let app = &self.state.read(cx).app;
         let theme = app.ui_state.theme.clone();
+        let text = PhoneTranslations::for_language(app.ui_state.language);
         let channel = app.ui_state.release_channel;
         let state = self.state.clone();
 
@@ -497,8 +510,9 @@ impl PlayerView {
                     .disabled(!channel.allows(crate::app::Screen::RoomEq.maturity())),
                 MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘5"),
                 MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘6"),
+                MenuItem::new("listening-test", translations.screen_listening_test),
                 MenuItem::separator(),
-                MenuItem::new("tutorial", "Show Tutorial"),
+                MenuItem::new("tutorial", text.show_tutorial),
                 MenuItem::separator(),
                 MenuItem::new("settings", translations.screen_settings),
             ],
@@ -522,6 +536,9 @@ impl PlayerView {
                     }
                     "spinorama" => {
                         state.app.ui_state.current_screen = crate::app::Screen::Spinorama
+                    }
+                    "listening-test" => {
+                        state.app.ui_state.current_screen = crate::app::Screen::ListeningTest
                     }
                     "tutorial" => {
                         state.app.ui_state.input_mode = crate::app::InputMode::Tutorial;

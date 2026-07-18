@@ -4,6 +4,7 @@ use super::isolated_external_plugin_config::build_worker_launch_command;
 use crate::external_plugin::{
     ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor, plan_external_plugin_hosting,
 };
+use crate::external_plugin_ipc::SecurePluginSharedMemory;
 use crate::external_plugin_process::{ExternalPluginProcessEvent, ExternalPluginWorkerCommand};
 use crate::external_plugin_sandbox::{PluginSandboxLaunchBackend, PluginSandboxPolicy};
 use crate::plugin::{Plugin, ProcessContext};
@@ -91,6 +92,27 @@ fn isolated_external_plugin_exposes_worker_poll_state() {
 }
 
 #[test]
+fn isolated_external_plugin_reads_worker_reported_latency() {
+    let plugin = IsolatedExternalPlugin::new(
+        descriptor(),
+        48_000,
+        IsolatedExternalPluginConfig {
+            start_worker: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(plugin.worker_reported_latency_samples(), None);
+    assert_eq!(plugin.latency_samples(), 0);
+    let worker_shared =
+        SecurePluginSharedMemory::open_existing(plugin.proxy.shared_path()).unwrap();
+    worker_shared.publish_worker_latency_samples(320);
+    assert_eq!(plugin.worker_reported_latency_samples(), Some(320));
+    assert_eq!(plugin.latency_samples(), 320);
+}
+
+#[test]
 fn isolated_external_plugin_exposes_block_failure_counters() {
     let mut plugin = IsolatedExternalPlugin::new(
         descriptor(),
@@ -137,7 +159,12 @@ fn isolated_external_plugin_quarantines_after_repeated_block_failures() {
         .process(&input, &mut output, &ProcessContext::new(48_000, 2))
         .unwrap();
 
-    assert!(plugin.launch_error().is_some());
+    assert_eq!(
+        plugin.launch_error(),
+        Some(
+            "isolated external plugin 'External Test' worker quarantined after 2 consecutive block failures"
+        )
+    );
     assert!(plugin.ensure_worker_running_event().is_err());
     output.fill(0.0);
     plugin

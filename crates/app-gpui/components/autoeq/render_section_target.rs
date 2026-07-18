@@ -8,9 +8,9 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(Text::section_header("Target").color(theme.header_color))
+            .child(Text::section_header(translations.autoeq_form.target).color(theme.header_color))
             .child(
-                Text::new("Listening distance and target slope")
+                Text::new(translations.autoeq_listening_distance)
                     .size(TextSize::Xs)
                     .color(theme.description_color),
             ),
@@ -105,7 +105,7 @@
         .max(ParamLimits::TILT_SLOPE.max)
         .step(ParamLimits::TILT_SLOPE.step)
         .decimals(1)
-        .label("Slope (dB/oct)")
+            .label(translations.autoeq_form.slope_db_oct)
         .size(NumberInputSize::Sm)
         .disabled(disabled)
         .theme(theme.number_input_theme.clone());
@@ -124,7 +124,7 @@
         .max(20000.0)
         .step(10.0)
         .decimals(0)
-        .label("Reference Freq (Hz)")
+            .label(translations.autoeq_form.reference_frequency_hz)
         .size(NumberInputSize::Sm)
         .disabled(disabled)
         .theme(theme.number_input_theme.clone());
@@ -140,7 +140,7 @@
         .max(ParamLimits::BASS_SHELF.max)
         .step(ParamLimits::BASS_SHELF.step)
         .decimals(1)
-        .label("Bass Boost (dB)")
+            .label(translations.autoeq_form.bass_boost_db)
         .size(NumberInputSize::Sm)
         .disabled(disabled)
         .theme(theme.number_input_theme.clone());
@@ -156,7 +156,7 @@
         .max(1000.0)
         .step(10.0)
         .decimals(0)
-        .label("Shelf Freq (Hz)")
+            .label(translations.autoeq_form.shelf_frequency_hz)
         .size(NumberInputSize::Sm)
         .disabled(disabled)
         .theme(theme.number_input_theme.clone());

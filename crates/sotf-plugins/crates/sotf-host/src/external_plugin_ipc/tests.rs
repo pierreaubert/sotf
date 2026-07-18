@@ -61,6 +61,9 @@ fn test_secure_plugin_shared_memory_roundtrip() {
     shared.publish_worker_sequence(6);
     assert_eq!(shared.host_sequence(), 7);
     assert_eq!(shared.worker_sequence(), 6);
+    assert_eq!(shared.worker_latency_samples(), None);
+    shared.publish_worker_latency_samples(384);
+    assert_eq!(shared.worker_latency_samples(), Some(384));
 
     let (input, output) = shared.audio_slices_mut();
     assert_eq!(input.len(), 256);

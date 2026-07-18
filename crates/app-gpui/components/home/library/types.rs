@@ -1,5 +1,6 @@
 use super::misc::BREAKPOINT_NARROW_LAYOUT_REMS;
 use crate::app::constants::spacing;
+use crate::app::i18n::PhoneTranslations;
 use crate::components::design::Ds;
 use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
 use crate::components::icons::{Icon, IconName, IconSize};
@@ -31,6 +32,7 @@ impl PlayerView {
 
         // Now read all values including cached stats
         let state = self.state.read(cx);
+        let text = PhoneTranslations::for_language(state.app.ui_state.language);
         let stats = &state.app.library_view.stats;
 
         let remote_library_active = state.app.remote.server_store.selected_server_id.is_some();
@@ -386,7 +388,7 @@ impl PlayerView {
                         )
                         .when(has_active_filters, |el| {
                             el.child(
-                                Button::new("clear-filters", "Reset")
+                                Button::new("clear-filters", text.reset)
                                     .variant(ButtonVariant::Ghost)
                                     .size(ButtonSize::Sm)
                                     .on_click(move |_, cx| {
@@ -483,7 +485,7 @@ impl PlayerView {
                                 .child(
                                     SearchBar::new("search-input")
                                         .value(search_query.clone())
-                                        .placeholder("Type to search albums, artists, tracks...")
+                        .placeholder(text.search_library)
                                         .size(SearchBarSize::Sm)
                                         .on_change({
                                             let app_state = self.state.clone();
@@ -571,6 +573,7 @@ impl PlayerView {
 
     pub(super) fn render_remote_library_content(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = PhoneTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (page, selected_album_index, theme, is_loading, query, server_name) = {
             let state = self.state.read(cx);
             let selected = state.app.remote.server_store.selected_server();
@@ -715,7 +718,7 @@ impl PlayerView {
                                 .gap(d.grid)
                                 .mt(d.grid)
                                 .child(
-                                    Button::new(("remote-album-add", idx), "Add")
+                                    Button::new(("remote-album-add", idx), text.add)
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Xs)
                                         .theme(theme.to_button_theme())
@@ -733,7 +736,7 @@ impl PlayerView {
                                         )),
                                 )
                                 .child(
-                                    Button::new(("remote-album-play", idx), "Play")
+                                    Button::new(("remote-album-play", idx), text.play)
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Xs)
                                         .theme(theme.to_button_theme())
@@ -1587,6 +1590,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
+        let text = PhoneTranslations::for_language(self.state.read(cx).app.ui_state.language);
         // Check if we need to show selection UI
         let needs_selection = selected_genre.is_none();
 
@@ -1608,7 +1612,7 @@ impl PlayerView {
                         .border_b_1()
                         .border_color(theme.border)
                         .child(
-                            Button::new("back-to-selection", "← Back to Genres")
+                            Button::new("back-to-selection", text.back_to_genres)
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Xs)
                                 .theme(theme.to_button_theme())

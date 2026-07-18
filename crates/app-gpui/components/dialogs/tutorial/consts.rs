@@ -1,6 +1,5 @@
 use super::screen_guide::ScreenGuide;
-use super::types::GuideSection;
-use super::types::TutorialScreen;
+use crate::app::i18n::{DialogTranslations, TutorialTranslations};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -12,70 +11,14 @@ use gpui_ui_kit::{
 
 const TUTORIAL_SCREEN_COUNT: usize = 7;
 
-const TUTORIAL_SCREENS: [TutorialScreen; TUTORIAL_SCREEN_COUNT] = [
-    TutorialScreen {
-        title: "Welcome to SotF Player",
-        image: "tutorial/player.webp",
-        content: &[
-            "SotF is a high-fidelity audio player with built-in DSP processing.",
-            "Browse your music library, build a queue, and enjoy playback with real-time audio plugins.",
-            "Use the top navigation bar to switch between Library, Queue, Studio (plugins), and more.",
-        ],
-    },
-    TutorialScreen {
-        title: "Plugin Rack",
-        image: "tutorial/rack.webp",
-        content: &[
-            "The Studio screen hosts your plugin rack \u{2014} a chain of audio processors applied in real time.",
-            "Add plugins like Crossfeed and Fletcher-Munson compensation for headphone listening.",
-            "Plugins include EQ, compressor, gate, limiter, upmixer, and more. Drag to reorder, toggle to bypass.",
-        ],
-    },
-    TutorialScreen {
-        title: "Recording",
-        image: "tutorial/recording.webp",
-        content: &[
-            "Measure your speakers or room using sweep signals or pink noise.",
-            "Connect a calibrated microphone, select input/output channels, and capture frequency response data.",
-            "Recordings are saved as CSV files for use in Room EQ optimization.",
-        ],
-    },
-    TutorialScreen {
-        title: "Spinorama EQ",
-        image: "tutorial/spinorama.webp",
-        content: &[
-            "Optimize speaker EQ using measurement data from spinorama.org.",
-            "Search for your speaker model, choose a target curve, and let the optimizer find the best parametric EQ filters.",
-            "Results can be exported and loaded directly into the plugin rack.",
-        ],
-    },
-    TutorialScreen {
-        title: "Headphone EQ",
-        image: "tutorial/headphone.webp",
-        content: &[
-            "Target the Harman curve or other headphone targets for accurate reproduction.",
-            "Load your headphone's frequency response and optimize PEQ filters to match the target.",
-            "Supports multiple optimization algorithms for best results.",
-        ],
-    },
-    TutorialScreen {
-        title: "Room EQ",
-        image: "tutorial/roomeq.webp",
-        content: &[
-            "Correct room acoustics with multi-channel support.",
-            "Use your own measurements or recordings to generate per-channel EQ corrections.",
-            "Supports crossover configuration, target curves, and multiple optimization modes.",
-        ],
-    },
-    TutorialScreen {
-        title: "Preferences",
-        image: "tutorial/settings.webp",
-        content: &[
-            "Customize the app in Settings: theme, language, keybindings, audio device, and font scale.",
-            "Manage your music library directories and configure scanner threads for background analysis.",
-            "Plugin presets can be saved and loaded from the Settings screen.",
-        ],
-    },
+const TUTORIAL_IMAGES: [&str; TUTORIAL_SCREEN_COUNT] = [
+    "tutorial/player.webp",
+    "tutorial/rack.webp",
+    "tutorial/recording.webp",
+    "tutorial/spinorama.webp",
+    "tutorial/headphone.webp",
+    "tutorial/roomeq.webp",
+    "tutorial/settings.webp",
 ];
 
 impl PlayerView {
@@ -83,13 +26,16 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let dialog_text = DialogTranslations::for_language(state.app.ui_state.language);
+        let tutorial_text = TutorialTranslations::for_language(state.app.ui_state.language);
         let screen_idx = state
             .app
             .ui_state
             .tutorial_screen
             .min(TUTORIAL_SCREEN_COUNT - 1);
         let dont_show = state.app.ui_state.tutorial_dont_show;
-        let screen = &TUTORIAL_SCREENS[screen_idx];
+        let screen = &tutorial_text.screens[screen_idx];
+        let screen_image = TUTORIAL_IMAGES[screen_idx];
         let is_first = screen_idx == 0;
         let is_last = screen_idx == TUTORIAL_SCREEN_COUNT - 1;
 
@@ -119,7 +65,7 @@ impl PlayerView {
                             .overflow_hidden()
                             .border_1()
                             .border_color(theme.border)
-                            .child(img(screen.image).w_full().object_fit(ObjectFit::ScaleDown)),
+                            .child(img(screen_image).w_full().object_fit(ObjectFit::ScaleDown)),
                     )
                     // Text content
                     .children(screen.content.iter().map(|&line| {
@@ -162,7 +108,7 @@ impl PlayerView {
                             .child(
                                 Checkbox::new("tutorial-dont-show")
                                     .checked(dont_show)
-                                    .label("Don't show again")
+                                    .label(dialog_text.dont_show_again)
                                     .size(CheckboxSize::Sm)
                                     .on_change({
                                         let state = self.state.clone();
@@ -181,7 +127,7 @@ impl PlayerView {
                                     .spacing(StackSpacing::Xs)
                                     .when(!is_first, |row| {
                                         row.child(
-                                            Button::new("tutorial-prev", "Previous")
+                                            Button::new("tutorial-prev", tutorial_text.previous)
                                                 .variant(ButtonVariant::Ghost)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
@@ -202,7 +148,7 @@ impl PlayerView {
                                     })
                                     .when(!is_last, |row| {
                                         row.child(
-                                            Button::new("tutorial-next", "Next")
+                                            Button::new("tutorial-next", tutorial_text.next)
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
@@ -225,7 +171,7 @@ impl PlayerView {
                                     })
                                     .when(is_last, |row| {
                                         row.child(
-                                            Button::new("tutorial-done", "Get Started")
+                                            Button::new("tutorial-done", tutorial_text.get_started)
                                                 .variant(ButtonVariant::Primary)
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
@@ -323,8 +269,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let screen = state.app.ui_state.current_screen;
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
 
-        let guide = ScreenGuide::for_screen(screen);
+        let guide = ScreenGuide::for_screen(screen, state.app.ui_state.language);
 
         Dialog::new("screen-guide-dialog")
             .title(guide.title)
@@ -370,364 +317,6 @@ impl PlayerView {
                             .into_any_element()
                     })),
             )
-            .footer(Text::caption("Press ESC or F1 to close"))
+            .footer(Text::caption(text.about.press_escape_to_close))
     }
 }
-
-pub(super) static GUIDE_LIBRARY: ScreenGuide = ScreenGuide {
-    title: "Library Guide",
-    overview: "The Library displays your music collection organized by album. Add directories containing audio files and SotF will scan and index them automatically.",
-    sections: &[
-        GuideSection {
-            heading: "Adding Music",
-            bullets: &[
-                "Go to Settings > Library to add music directories.",
-                "SotF scans for FLAC, MP3, AAC, ALAC, OGG, WAV, and more.",
-                "Library rescans automatically when directories change.",
-            ],
-        },
-        GuideSection {
-            heading: "Browsing",
-            bullets: &[
-                "Use arrow keys or scroll to browse albums.",
-                "Press '/' to search by album, artist, or title.",
-                "Press 'T' to toggle between flat view and artist tree view.",
-                "In tree view, use left/right arrows to collapse/expand artists.",
-            ],
-        },
-        GuideSection {
-            heading: "Sorting & Filtering",
-            bullets: &[
-                "Press 'S' or keys 1\u{2013}4 to sort by Artist, Album, Title, or Year.",
-                "Press 'C' or keys 5\u{2013}9 to filter by channel count (Mono, Stereo, Surround, etc.).",
-            ],
-        },
-        GuideSection {
-            heading: "Playback",
-            bullets: &[
-                "Press Enter or 'A' to add an album to the queue and start playing.",
-                "Right-click an album for more options (Add to Queue, Play Now).",
-            ],
-        },
-    ],
-};
-
-pub(super) static GUIDE_QUEUE: ScreenGuide = ScreenGuide {
-    title: "Queue Guide",
-    overview: "The Queue shows your current playback list. Albums are played in order and tracks within each album play sequentially.",
-    sections: &[
-        GuideSection {
-            heading: "Navigation",
-            bullets: &[
-                "Use arrow keys to browse queue items.",
-                "Press left/right to expand or collapse album tracks.",
-                "Press Enter to play the selected album from its first track.",
-            ],
-        },
-        GuideSection {
-            heading: "Managing the Queue",
-            bullets: &[
-                "Press 'D' or Delete to remove the selected album from the queue.",
-                "Press 'C' to clear the entire queue.",
-                "Right-click for context menu options.",
-            ],
-        },
-        GuideSection {
-            heading: "Transport Controls",
-            bullets: &[
-                "Space: Play / Pause.",
-                "N or '>': Next track.",
-                "B or '<': Previous track.",
-                "+/\u{2013}: Adjust volume. M: Toggle mute.",
-            ],
-        },
-        GuideSection {
-            heading: "Level Meters",
-            bullets: &[
-                "The meters panel shows real-time loudness per channel group.",
-                "Use Tab to focus the meters panel, then arrow keys to select groups.",
-                "Shift-M: Mute group. Shift-S: Solo group.",
-            ],
-        },
-    ],
-};
-
-pub(super) static GUIDE_STUDIO: ScreenGuide = ScreenGuide {
-    title: "Studio / Plugin Rack Guide",
-    overview: "The Studio hosts your plugin rack \u{2014} a chain of audio processors applied to the playback signal in real time. Plugins are processed in order from top to bottom.",
-    sections: &[
-        GuideSection {
-            heading: "Adding Plugins",
-            bullets: &[
-                "Click the '+' button or use shortcut keys to add plugins:",
-                "  E = Parametric EQ, U = Upmixer, G = Gain, L = Limiter",
-                "  O = Compressor, B = Gate, and more.",
-                "Each plugin type can be added multiple times.",
-            ],
-        },
-        GuideSection {
-            heading: "Editing Parameters",
-            bullets: &[
-                "Click a plugin card or press Enter to open its parameter editor.",
-                "Use +/\u{2013} keys or drag knobs to adjust parameter values.",
-                "Press Escape to close the editor.",
-            ],
-        },
-        GuideSection {
-            heading: "Managing the Chain",
-            bullets: &[
-                "Space: Toggle a plugin on/off (bypass).",
-                "Shift-U / Shift-N: Move a plugin up/down in the chain.",
-                "D or Delete: Remove a plugin from the chain.",
-                "Drag plugin cards to reorder them.",
-            ],
-        },
-        GuideSection {
-            heading: "Presets",
-            bullets: &[
-                "Shift-S: Save the current plugin chain as a named preset.",
-                "L: Load a previously saved preset.",
-                "Presets store the full chain including all parameter values.",
-            ],
-        },
-        GuideSection {
-            heading: "Key Plugins",
-            bullets: &[
-                "EQ: Parametric equalizer with peak, shelf, and pass filters.",
-                "Upmixer: Converts stereo to 5.0 surround via FFT spatial processing.",
-                "Crossfeed: Blends stereo channels for headphone listening.",
-                "Fletcher-Munson: Loudness compensation for low-volume listening.",
-                "Compressor / Gate / Limiter: Dynamics processing.",
-            ],
-        },
-    ],
-};
-
-pub(super) static GUIDE_PLUGIN_GRAPH: ScreenGuide = ScreenGuide {
-    title: "Plugin Graph Guide",
-    overview: "The Plugin Graph provides a 2D visual representation of your audio processing chain. Nodes represent plugins and connections show the signal flow.",
-    sections: &[
-        GuideSection {
-            heading: "Interaction",
-            bullets: &[
-                "Click and drag nodes to rearrange the graph layout.",
-                "Drag from an output port to an input port to create connections.",
-                "Click a node to select it, then press Delete to remove it.",
-                "Space: Toggle the selected plugin on/off.",
-            ],
-        },
-        GuideSection {
-            heading: "Tips",
-            bullets: &[
-                "The graph view and rack view show the same chain \u{2014} changes sync automatically.",
-                "Use the graph view for complex chains to visualize signal routing.",
-            ],
-        },
-    ],
-};
-
-pub(super) static GUIDE_SPECTRUM: ScreenGuide = ScreenGuide {
-    title: "Spectrum Analyzer Guide",
-    overview: "The Spectrum screen shows a real-time FFT frequency spectrum of the audio being played. It helps you visualize the frequency content and verify EQ corrections.",
-    sections: &[
-        GuideSection {
-            heading: "Reading the Display",
-            bullets: &[
-                "X-axis: Frequency (20 Hz \u{2013} 20 kHz, logarithmic scale).",
-                "Y-axis: Amplitude in dB.",
-                "The curve updates in real time as audio plays.",
-            ],
-        },
-        GuideSection {
-            heading: "Usage Tips",
-            bullets: &[
-                "Compare before/after EQ by toggling plugins on and off.",
-                "Look for resonant peaks that may need correction.",
-                "Bass roll-off below 40 Hz is normal for most speakers.",
-            ],
-        },
-    ],
-};
-
-pub(super) static GUIDE_SETTINGS: ScreenGuide = ScreenGuide {
-    title: "Settings Guide",
-    overview: "Configure the application, manage your music library directories, and customize appearance.",
-    sections: &[
-        GuideSection {
-            heading: "Appearance",
-            bullets: &[
-                "Theme: Choose between light and dark themes (T to cycle).",
-                "Language: Select your preferred UI language (Alt-L to cycle).",
-                "Font Scale: Adjust the overall UI size for readability.",
-            ],
-        },
-        GuideSection {
-            heading: "Library",
-            bullets: &[
-                "Add or remove music directories to scan.",
-                "Configure the number of scanner threads for background analysis.",
-                "ReplayGain, Waveform, and Bliss scanners run in the background.",
-            ],
-        },
-        GuideSection {
-            heading: "Audio",
-            bullets: &[
-                "Select the output audio device.",
-                "Configure sample rate and buffer size.",
-                "Adjust ReplayGain mode (Track, Album, Off).",
-            ],
-        },
-        GuideSection {
-            heading: "Plugins",
-            bullets: &[
-                "Save and load plugin chain presets from this section.",
-                "Shift-S to save, L to load.",
-            ],
-        },
-    ],
-};
-
-pub(super) static GUIDE_RECORDING: ScreenGuide = ScreenGuide {
-    title: "Recording Guide",
-    overview: "Record acoustic measurements of your speakers or room using a calibrated microphone. Recordings are saved as data files for use in Room EQ optimization.",
-    sections: &[
-        GuideSection {
-            heading: "Step 1: Configure",
-            bullets: &[
-                "Select the playback device (speakers) and recording device (microphone).",
-                "Choose the signal type: sweep (recommended) or pink noise.",
-                "Select which channels to measure.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 2: Capture",
-            bullets: &[
-                "Position the microphone at your listening position.",
-                "Click 'Record' for each channel to capture the measurement.",
-                "Keep the room quiet during recording.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 3: Evaluate",
-            bullets: &[
-                "Review the captured frequency response for each channel.",
-                "Re-record individual channels if needed.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 4: Save",
-            bullets: &[
-                "Export the measurement data for use in Room EQ optimization.",
-                "Data is saved as CSV files in the project directory.",
-            ],
-        },
-    ],
-};
-
-pub(super) static GUIDE_ROOM_EQ: ScreenGuide = ScreenGuide {
-    title: "Room EQ Guide",
-    overview: "Optimize parametric EQ filters to correct room acoustics. Load your own measurements and let the optimizer find the best correction filters for each channel.",
-    sections: &[
-        GuideSection {
-            heading: "Step 1: Load Data",
-            bullets: &[
-                "Load a JSON measurement file (from the Recording screen or external tools).",
-                "The file should contain frequency response data per channel.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 2: Configure",
-            bullets: &[
-                "Set the number of EQ filters (more filters = finer correction).",
-                "Choose frequency range, Q limits, and gain bounds.",
-                "Optionally set a target curve and crossover frequency.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 3: Optimize",
-            bullets: &[
-                "Click 'Optimize' to run the multi-channel optimizer.",
-                "The optimizer uses differential evolution to find optimal filter placement.",
-                "Progress is shown in real time.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 4: Review & Export",
-            bullets: &[
-                "Review per-channel results and frequency response plots.",
-                "Export the correction filters to apply them in the plugin rack.",
-            ],
-        },
-    ],
-};
-
-pub(super) static GUIDE_HEADPHONE_EQ: ScreenGuide = ScreenGuide {
-    title: "Headphone EQ Guide",
-    overview: "Optimize EQ filters to match a target curve (e.g. Harman) for your headphones. Load your headphone's frequency response measurement and run the optimizer.",
-    sections: &[
-        GuideSection {
-            heading: "Step 1: Select File",
-            bullets: &[
-                "Load a CSV file with your headphone's frequency response.",
-                "Measurements can come from sites like AutoEQ, RTings, or your own recordings.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 2: Configure",
-            bullets: &[
-                "Choose a target curve (Harman Over-Ear 2018, Harman In-Ear, or custom).",
-                "Set the number of PEQ filters and optimization parameters.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 3: Optimize",
-            bullets: &[
-                "Run the optimizer to find the best parametric EQ filters.",
-                "Multiple algorithms are available (COBYLA, Differential Evolution, etc.).",
-            ],
-        },
-        GuideSection {
-            heading: "Step 4: Apply",
-            bullets: &[
-                "Review the corrected response curve.",
-                "Apply the filters directly to the plugin rack's EQ.",
-            ],
-        },
-    ],
-};
-
-pub(super) static GUIDE_SPINORAMA: ScreenGuide = ScreenGuide {
-    title: "Spinorama EQ Guide",
-    overview: "Optimize speaker EQ using measurement data from spinorama.org. Search for your speaker model, choose a loss function, and let the optimizer find the best PEQ filters.",
-    sections: &[
-        GuideSection {
-            heading: "Step 1: Select Speaker",
-            bullets: &[
-                "Search the spinorama.org database for your speaker model.",
-                "Data includes on-axis, listening window, and predicted in-room response.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 2: Configure",
-            bullets: &[
-                "Choose a loss function: 'speaker-flat' (minimize deviation) or 'speaker-score' (optimize Harman score).",
-                "Set filter count, frequency range, and Q/gain limits.",
-                "Select the optimization algorithm.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 3: Optimize",
-            bullets: &[
-                "Run the optimizer. Progress and current best score are shown live.",
-                "Higher filter counts give finer correction but may require longer optimization.",
-            ],
-        },
-        GuideSection {
-            heading: "Step 4: Apply",
-            bullets: &[
-                "Review the optimized frequency response curves.",
-                "Load the resulting filters into the plugin rack's EQ.",
-            ],
-        },
-    ],
-};

@@ -16,7 +16,7 @@
 use nalgebra::Complex;
 
 /// Maximum number of microphones supported.
-const MAX_MICS: usize = 8;
+pub const MAX_MICS: usize = 8;
 
 /// MVDR beamformer core.
 #[derive(Debug)]

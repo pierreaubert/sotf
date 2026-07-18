@@ -1,3 +1,4 @@
+use crate::app::i18n::SpeakerGraphTranslations;
 use crate::components::design::Ds;
 use crate::components::graphs::speaker_graphs::{
     render_spinorama_cea2034_graph, render_spinorama_horizontal_graph, render_spinorama_pir_graph,
@@ -23,6 +24,11 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
+        let graph_text = SpeakerGraphTranslations::for_language(state.app.ui_state.language);
+        let discovery_text =
+            crate::app::i18n::EqDiscoveryTranslations::for_language(state.app.ui_state.language);
+        let workflow_text =
+            crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id, cx));
@@ -33,16 +39,24 @@ impl PlayerView {
         let selected_speaker = spinorama.selected_speaker.clone();
         let suggestions = spinorama.speaker_suggestions.clone();
         let is_loading = spinorama.loading_speakers;
+        let runtime_text =
+            crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language);
         // Speaker / version / measurement fetch errors. These are also
         // dispatched as toast notifications from the fetch handlers
         // (see spinorama_eq/mod.rs), but keeping an inline banner means
         // the user can see the failure even after the toast auto-dismisses.
-        let fetch_error_message = spinorama.error_message.clone();
+        let fetch_error_message = spinorama
+            .error_message
+            .as_deref()
+            .map(|message| runtime_text.translate(message).into_owned());
 
         // Spinorama CEA2034 curves data
         let spinorama_curves = spinorama.spinorama_curves.clone();
         let spinorama_curves_loading = spinorama.loading_spinorama_curves;
-        let spinorama_curves_error = spinorama.spinorama_curves_error.clone();
+        let spinorama_curves_error = spinorama
+            .spinorama_curves_error
+            .as_deref()
+            .map(|message| runtime_text.translate(message).into_owned());
         let has_spinorama_curves = spinorama_curves.is_valid();
         let is_cea2034 = spinorama.selected_measurement == "CEA2034"
             || spinorama.selected_measurement == "CEA2034 Normalized";
@@ -98,9 +112,7 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(
-                                Text::new(
-                                    "Type your speaker brand and model to search the database.",
-                                )
+                                Text::new(discovery_text.speaker_search_description)
                                 .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                             )
@@ -110,8 +122,8 @@ impl PlayerView {
                                 let state_for_text = self.state.clone();
                                 let state_for_end = self.state.clone();
                                 Input::new("speaker-search")
-                                    .aria_label("Search speakers")
-                                    .placeholder("Type to search speakers...")
+                                    .aria_label(discovery_text.search_speakers)
+                                .placeholder(graph_text.search_speakers)
                                     .value(SharedString::from(search_query.clone()))
                                     .size(InputSize::Sm)
                                     .icon_left("🔍")
@@ -149,7 +161,10 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
                                     .child(
-                                        Button::new("refresh-speakers", "⟳ Refresh")
+                                        Button::new(
+                                            "refresh-speakers",
+                                            format!("⟳ {}", discovery_text.refresh),
+                                        )
                                             .variant(ButtonVariant::Secondary)
                                             .size(ButtonSize::Xs)
                                             .disabled(is_loading)
@@ -161,7 +176,7 @@ impl PlayerView {
                                     .when(is_loading, |hstack| {
                                         hstack
                                             .child(Spinner::new().size(SpinnerSize::Sm))
-                                            .child(Text::caption("Loading..."))
+                                            .child(Text::caption(workflow_text.loading))
                                     })
                                     .when(
                                         !is_loading && !spinorama.available_speakers.is_empty(),
@@ -212,9 +227,7 @@ impl PlayerView {
                                         .gap(d.gap)
                                         .py(d.section)
                                         .child(Spinner::new().size(SpinnerSize::Md))
-                                        .child(Text::caption(
-                                            "Loading speakers from spinorama.org...",
-                                        )),
+                                        .child(Text::caption(discovery_text.loading_speakers)),
                                 )
                             })
                             .when(suggestions.is_empty() && !is_loading, |el| {
@@ -300,15 +313,17 @@ impl PlayerView {
                                     VStack::new()
                                         .spacing(StackSpacing::Xs)
                                         .child(
-                                            Text::label("Origin / Version").color(theme.text_primary),
+                                    Text::label(graph_text.origin_version).color(theme.text_primary),
                                         )
                                         .when(loading_versions, |vs| {
-                                            vs.child(Text::caption("Loading versions..."))
+                                            vs.child(Text::caption(workflow_text.loading_versions))
                                         })
                                         .when(
                                             !loading_versions && available_versions.is_empty(),
                                             |vs| {
-                                                vs.child(Text::caption("No versions available"))
+                                                vs.child(Text::caption(
+                                                    workflow_text.no_versions_available,
+                                                ))
                                             },
                                         )
                                         .when(
@@ -388,7 +403,7 @@ impl PlayerView {
                                 .child(
                                     HStack::new()
                                         .spacing(StackSpacing::Xs)
-                                        .child(Text::caption("Phase Data:"))
+                                        .child(Text::caption(workflow_text.phase_data))
                                         .child(
                                             Text::new(if has_phase_data {
                                                 "Available"
@@ -513,6 +528,7 @@ impl PlayerView {
                                                 )
                                                 .content(render_spinorama_pir_graph(
                                                     &spinorama_curves,
+                                                    graph_text,
                                                     &theme,
                                                     plot_width,
                                                     plot_height,
@@ -542,6 +558,7 @@ impl PlayerView {
                                                 )
                                                 .content(render_spinorama_horizontal_graph(
                                                     &spinorama_curves,
+                                                    graph_text,
                                                     &theme,
                                                     plot_width,
                                                     plot_height,
@@ -563,6 +580,7 @@ impl PlayerView {
                                                 )
                                                 .content(render_spinorama_vertical_graph(
                                                     &spinorama_curves,
+                                                    graph_text,
                                                     &theme,
                                                     plot_width,
                                                     plot_height,
@@ -581,9 +599,7 @@ impl PlayerView {
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
-                            .content(Text::caption(
-                                "Spinorama data will appear after selecting a speaker with CEA2034 measurement",
-                            ))
+                            .content(Text::caption(discovery_text.spinorama_after_select))
                             .into_any_element()
                     },
                 )

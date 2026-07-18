@@ -1,4 +1,5 @@
 use super::misc::result_to_spinorama_curves;
+use crate::app::i18n::SpeakerGraphTranslations;
 use crate::app::types::SpinoramaCurves;
 use crate::components::design::Ds;
 use crate::components::graphs::common::{
@@ -18,6 +19,7 @@ impl PlayerView {
         &self,
         d: &Ds,
         result: &SpeakerOptimizationResult,
+        text: SpeakerGraphTranslations,
         theme: &Theme,
         available_width: f32,
     ) -> impl IntoElement {
@@ -61,12 +63,14 @@ impl PlayerView {
                     .gap(d.section)
                     .child(render_spinorama_main_response_plot(
                         result,
+                        text,
                         theme,
                         graph_width,
                         graph_height,
                     ))
                     .child(render_speaker_filter_response_plot(
                         result,
+                        text,
                         theme,
                         graph_width,
                         graph_height,
@@ -124,6 +128,7 @@ impl PlayerView {
 /// Render Main Response Plot (Input, Target, Corrected) using gpui-px
 fn render_spinorama_main_response_plot(
     result: &SpeakerOptimizationResult,
+    text: SpeakerGraphTranslations,
     theme: &Theme,
     width: f32,
     height: f32,
@@ -149,7 +154,7 @@ fn render_spinorama_main_response_plot(
         .x_scale(ScaleType::Log)
         .y_label("SPL (dB)")
         .y_range(-15.0, 5.0)
-        .label("Original")
+        .label(text.original)
         .color(rgba_to_u32(colors::input(theme)))
         .stroke_width(1.5)
         .theme(chart_theme)
@@ -181,6 +186,7 @@ fn render_spinorama_main_response_plot(
 /// Render Filter Response Plot using gpui-px with individual filter curves
 fn render_speaker_filter_response_plot(
     result: &SpeakerOptimizationResult,
+    text: SpeakerGraphTranslations,
     theme: &Theme,
     width: f32,
     height: f32,
@@ -191,7 +197,7 @@ fn render_speaker_filter_response_plot(
     let mut chart_builder = line(&result.frequencies, &result.filter_response)
         .x_scale(ScaleType::Log)
         .y_label("dB")
-        .label("Total")
+        .label(text.total)
         .legend_position(LegendPosition::Bottom)
         .color(rgba_to_u32(colors::filter(theme)))
         .stroke_width(2.5)
@@ -235,6 +241,7 @@ pub fn render_speaker_preview_graph(
     frequencies: &[f64],
     on_axis_curve: &[f64],
     target_curve: Option<&[f64]>,
+    text: SpeakerGraphTranslations,
     theme: &Theme,
     width: f32,
     height: f32,
@@ -243,7 +250,7 @@ pub fn render_speaker_preview_graph(
 
     let mut chart_builder = line(frequencies, on_axis_curve)
         .x_scale(ScaleType::Log)
-        .label("On Axis")
+        .label(text.on_axis)
         .color(rgba_to_u32(colors::input(theme)))
         .stroke_width(2.0)
         .theme(chart_theme)
@@ -348,12 +355,13 @@ pub fn render_spinorama_cea2034_graph(
 /// Render PIR (Estimated In-Room Response) graph
 pub fn render_spinorama_pir_graph(
     curves: &SpinoramaCurves,
+    text: SpeakerGraphTranslations,
     theme: &Theme,
     width: f32,
     height: f32,
 ) -> Div {
     if !curves.has_pir() || curves.frequencies.is_empty() {
-        return div().child("PIR data not available");
+        return div().child(text.pir_unavailable);
     }
 
     let chart_theme = theme_to_chart_theme(theme);
@@ -383,12 +391,13 @@ pub fn render_spinorama_pir_graph(
 /// Render horizontal directivity (SPL Horizontal) graph showing multiple angle curves
 pub fn render_spinorama_horizontal_graph(
     curves: &SpinoramaCurves,
+    text: SpeakerGraphTranslations,
     theme: &Theme,
     width: f32,
     height: f32,
 ) -> Div {
     if !curves.has_horizontal() {
-        return div().child("Horizontal directivity data not available");
+        return div().child(text.horizontal_unavailable);
     }
 
     let chart_theme = theme_to_chart_theme(theme);
@@ -429,7 +438,7 @@ pub fn render_spinorama_horizontal_graph(
         .or(sorted_curves.first());
 
     let Some(base) = base_curve else {
-        return div().child("No horizontal curves found");
+        return div().child(text.no_horizontal_curves);
     };
 
     let mut chart_builder = line(&base.frequencies, &base.spl)
@@ -469,12 +478,13 @@ pub fn render_spinorama_horizontal_graph(
 /// Render vertical directivity (SPL Vertical) graph showing multiple angle curves
 pub fn render_spinorama_vertical_graph(
     curves: &SpinoramaCurves,
+    text: SpeakerGraphTranslations,
     theme: &Theme,
     width: f32,
     height: f32,
 ) -> Div {
     if !curves.has_vertical() {
-        return div().child("Vertical directivity data not available");
+        return div().child(text.vertical_unavailable);
     }
 
     let chart_theme = theme_to_chart_theme(theme);
@@ -515,7 +525,7 @@ pub fn render_spinorama_vertical_graph(
         .or(sorted_curves.first());
 
     let Some(base) = base_curve else {
-        return div().child("No vertical curves found");
+        return div().child(text.no_vertical_curves);
     };
 
     let mut chart_builder = line(&base.frequencies, &base.spl)

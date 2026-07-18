@@ -24,6 +24,8 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let workflow_text =
+            crate::app::i18n::RoomEqWorkflowTranslations::for_language(state.app.ui_state.language);
         let dd = &state.app.measurement_state.room_eq_state.delay_detection;
         let has_results =
             dd.results.is_some() && matches!(dd.status, DelayDetectionStatus::Complete);
@@ -36,12 +38,9 @@ impl PlayerView {
                     .size(TextSize::Md),
             )
             .child(
-                Text::new(
-                    "Delays are auto-fed into the optimizer. Edit any delay value \
-                     to override, or leave as-is.",
-                )
-                .size(TextSize::Xs)
-                .color(theme.text_secondary),
+                Text::new(workflow_text.delay_optimizer_help)
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
             );
 
         if let Some(results) = dd.results.as_ref().filter(|_| has_results) {
@@ -235,12 +234,9 @@ impl PlayerView {
 
             if has_low_delay {
                 content = content.child(
-                    Text::new(
-                        "⚠ Delays < 0.3 ms have negligible audible impact — \
-                         consider setting to 0.",
-                    )
-                    .size(TextSize::Xs)
-                    .color(theme.warning),
+                    Text::new(workflow_text.negligible_delay_warning)
+                        .size(TextSize::Xs)
+                        .color(theme.warning),
                 );
             }
         } else {
@@ -257,11 +253,7 @@ impl PlayerView {
                                     .size(TextSize::Sm)
                                     .color(theme.text_secondary),
                             )
-                            .child(Text::caption(
-                                "Run the Probe step in the Recording wizard to \
-                                 capture per-channel delays, or enter values manually \
-                                 after loading a file that contains probe results.",
-                            )),
+                            .child(Text::caption(workflow_text.delay_probe_help)),
                     ),
             );
         }

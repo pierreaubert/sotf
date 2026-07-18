@@ -9,7 +9,7 @@ use crate::app::types::PluginUpdateType;
 use crate::components::plugins::theme::RackThemeState;
 use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
-use sotf_audio_player::{ConnectionDrag, GraphSelection, NodeDrag, PluginController};
+use sotf_audio_player::{ConnectionDrag, GraphNodeId, GraphSelection, NodeDrag, PluginController};
 use sotf_audio_player_midi::MidiMappingEngine;
 use std::collections::HashMap;
 
@@ -29,6 +29,9 @@ pub struct PluginState {
 
     /// GPUI-specific: A/B Compare plugin transient state.
     pub ab_compare_state: AbCompareState,
+
+    /// Embedded, reproducible chain-level listening-test workflow.
+    pub listening_test_state: ListeningTestState,
 
     /// GPUI-specific: plugin UI view mode and overlay/picker open flags.
     pub plugin_ui_state: PluginUiState,
@@ -67,6 +70,9 @@ pub struct PluginGraphState {
     pub graph_selection: GraphSelection,
     pub graph_connection_drag: Option<ConnectionDrag>,
     pub graph_node_drag: Option<NodeDrag>,
+    pub keyboard_palette_index: usize,
+    pub keyboard_connect_source: Option<(GraphNodeId, usize)>,
+    pub keyboard_target_port: usize,
     pub workflow_canvas: Option<Entity<WorkflowCanvas>>,
     pub workflow_node_mapping: Option<WorkflowNodeMapping>,
     pub editing_plugin_node: Option<gpui_ui_kit::workflow::NodeId>,
@@ -92,6 +98,47 @@ pub struct AbCompareState {
     pub ab_path_b_selected: Option<usize>,
     /// Which path's "add plugin" menu is currently open
     pub ab_add_menu_target: Option<ABPathTarget>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListeningTestState {
+    pub path_a: Option<sotf_audio_player::controllers::ab_compare_path::PathConfig>,
+    pub path_b: Option<sotf_audio_player::controllers::ab_compare_path::PathConfig>,
+    pub path_a_label: String,
+    pub path_b_label: String,
+    pub session: Option<sotf_audio_player::controllers::ab_test_session::AbTestSession>,
+    pub trial_mode: sotf_audio_player::controllers::ab_test_session::TrialMode,
+    pub confidence: u8,
+    pub notes: String,
+    pub status: String,
+    pub path_a_canvas: Option<Entity<WorkflowCanvas>>,
+    pub path_b_canvas: Option<Entity<WorkflowCanvas>>,
+    pub editing_path_target: Option<ABPathTarget>,
+    pub editing_path_node_id: Option<String>,
+    pub editing_path_parameters: String,
+    pub graph_add_menu_target: Option<ABPathTarget>,
+}
+
+impl Default for ListeningTestState {
+    fn default() -> Self {
+        Self {
+            path_a: None,
+            path_b: None,
+            path_a_label: "Path A".into(),
+            path_b_label: "Path B".into(),
+            session: None,
+            trial_mode: sotf_audio_player::controllers::ab_test_session::TrialMode::Abx,
+            confidence: 50,
+            notes: String::new(),
+            status: String::new(),
+            path_a_canvas: None,
+            path_b_canvas: None,
+            editing_path_target: None,
+            editing_path_node_id: None,
+            editing_path_parameters: String::new(),
+            graph_add_menu_target: None,
+        }
+    }
 }
 
 /// GPUI-specific state for the plugin UI view mode and open pickers/overlays.
@@ -231,6 +278,7 @@ impl Default for PluginState {
             matrix_selected_cell: None,
             graph_state: PluginGraphState::default(),
             ab_compare_state: AbCompareState::default(),
+            listening_test_state: ListeningTestState::default(),
             plugin_ui_state: PluginUiState::default(),
             preset_state: PluginPresetState::default(),
             chain_state: PluginChainState::default(),

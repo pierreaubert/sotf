@@ -474,6 +474,12 @@ impl PlayerView {
 
                 Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| state.app.select_next_queue_item()),
 
+                Screen::Studio => self.state.update(cx, |state, _cx| {
+
+                    state.app.select_next_plugin();
+
+                }),
+
                 Screen::Settings => {
 
                     self.state.update(cx, |state, _cx| state.app.select_next_directory())
@@ -503,6 +509,12 @@ impl PlayerView {
                     self.state.update(cx, |state, _cx| state.app.select_previous_queue_item())
 
                 }
+
+                Screen::Studio => self.state.update(cx, |state, _cx| {
+
+                    state.app.select_previous_plugin();
+
+                }),
 
                 Screen::Settings => {
 
@@ -624,13 +636,21 @@ impl PlayerView {
 
             };
 
-            if screen == Screen::Library {
+            match screen {
 
-                self.state.update(cx, |state, _cx| {
+                Screen::Library => self.state.update(cx, |state, _cx| {
 
                     state.app.library_state.select_grid_left(cols);
 
-                });
+                }),
+
+                Screen::Studio => self.state.update(cx, |state, _cx| {
+
+                    state.app.select_previous_param();
+
+                }),
+
+                _ => {}
 
             }
 
@@ -647,20 +667,26 @@ impl PlayerView {
                 (app.ui_state.current_screen, app.library_state.library_columns)
             };
 
-            if screen == Screen::Library {
-                let mut should_load_more = false;
-                self.state.update(cx, |state, _cx| {
-                    let total = state.app.filtered_albums().len();
-                    if total > 0 && state.app.library_state.selected_index < total - 1 {
-                        state.app.library_state.select_grid_right(cols);
-                    } else {
-                        should_load_more = true;
-                    }
-                });
+            match screen {
+                Screen::Library => {
+                    let mut should_load_more = false;
+                    self.state.update(cx, |state, _cx| {
+                        let total = state.app.filtered_albums().len();
+                        if total > 0 && state.app.library_state.selected_index < total - 1 {
+                            state.app.library_state.select_grid_right(cols);
+                        } else {
+                            should_load_more = true;
+                        }
+                    });
 
-                if should_load_more {
-                    self.load_more_albums(cx);
+                    if should_load_more {
+                        self.load_more_albums(cx);
+                    }
                 }
+                Screen::Studio => self.state.update(cx, |state, _cx| {
+                    state.app.select_next_param();
+                }),
+                _ => {}
             }
             cx.notify();
         }
@@ -668,29 +694,26 @@ impl PlayerView {
     
 
         pub(crate) fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
-
             let (screen, cols) = {
-
                 let state = self.state.read(cx);
-
                 let app = &state.app;
-
                 (app.ui_state.current_screen, app.library_state.library_columns)
-
             };
 
-            if screen == Screen::Library {
-
-                self.state.update(cx, |state, _cx| {
-
+            match screen {
+                Screen::Library => self.state.update(cx, |state, _cx| {
                     state.app.library_state.select_grid_up(cols);
-
-                });
-
+                }),
+                Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| {
+                    state.app.select_previous_queue_item();
+                }),
+                Screen::Settings => self.state.update(cx, |state, _cx| {
+                    state.app.select_previous_directory();
+                }),
+                _ => {}
             }
 
             cx.notify();
-
         }
 
     
@@ -726,6 +749,20 @@ impl PlayerView {
                             state.app.library_state.selected_index = total.saturating_sub(1);
                         }
                     });
+                }
+            } else {
+                match screen {
+                    Screen::NowPlaying | Screen::Queue => {
+                        self.state.update(cx, |state, _cx| {
+                            state.app.select_next_queue_item();
+                        });
+                    }
+                    Screen::Settings => {
+                        self.state.update(cx, |state, _cx| {
+                            state.app.select_next_directory();
+                        });
+                    }
+                    _ => {}
                 }
             }
             cx.notify();

@@ -1,6 +1,7 @@
 use super::consts::MAX_IPC_COMMAND_BYTES;
 use super::pipeline_spec::PipelineSpec;
 use sotf_audio::PluginConfig;
+use sotf_audio::engine::PluginGraphConfig;
 use std::io::BufRead;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -73,6 +74,7 @@ pub(super) struct AppliedPipeline {
 pub(super) struct PipelinePlan {
     pub(super) spec: PipelineSpec,
     pub(super) runtime_plugins: Vec<PluginConfig>,
+    pub(super) runtime_graph: Option<PluginGraphConfig>,
     pub(super) input_loudness_index: usize,
     pub(super) output_loudness_index: usize,
 }

@@ -608,10 +608,10 @@ impl PlayerAdapter for ConfigurableAdapter {
         }
     }
     fn current_song(&self) -> Option<MpdSongInfo> {
-        std::mem::replace(&mut *self.current_song_val.lock().unwrap(), None)
+        self.current_song_val.lock().unwrap().take()
     }
     fn playlist_info(&self, _range: Option<(u32, Option<u32>)>) -> Vec<MpdSongInfo> {
-        std::mem::replace(&mut *self.playlist_songs_val.lock().unwrap(), vec![])
+        std::mem::take(&mut *self.playlist_songs_val.lock().unwrap())
     }
     fn playlist_song_by_id(&self, id: u32) -> Option<MpdSongInfo> {
         self.playlist_song_by_id_val.lock().unwrap().remove(&id)
@@ -633,13 +633,13 @@ impl PlayerAdapter for ConfigurableAdapter {
         self.clear_result.clone()
     }
     fn search(&self, _filters: &[FilterExpr], _exact: bool) -> Vec<MpdSongInfo> {
-        std::mem::replace(&mut *self.search_results_val.lock().unwrap(), vec![])
+        std::mem::take(&mut *self.search_results_val.lock().unwrap())
     }
     fn list_tag(&self, _tag: &str, _filters: &[FilterExpr]) -> Vec<String> {
         self.list_tag_results_val.clone()
     }
     fn lsinfo(&self, _path: Option<&str>) -> Vec<MpdDirEntry> {
-        std::mem::replace(&mut *self.lsinfo_results_val.lock().unwrap(), vec![])
+        std::mem::take(&mut *self.lsinfo_results_val.lock().unwrap())
     }
 }
 

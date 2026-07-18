@@ -489,14 +489,14 @@ mod tests {
             title: Some("Title"),
             artist: Some("Artist"),
             album: Some("Album"),
-            duration: Some(Duration::from_secs(180)),
+            duration: Some(Duration::from_mins(3)),
             cover_url: Some("file:///cover.jpg"),
         };
         let owned = OwnedMetadata::from_borrowed(&borrowed);
         assert_eq!(owned.title, Some("Title".to_string()));
         assert_eq!(owned.artist, Some("Artist".to_string()));
         assert_eq!(owned.album, Some("Album".to_string()));
-        assert_eq!(owned.duration, Some(Duration::from_secs(180)));
+        assert_eq!(owned.duration, Some(Duration::from_mins(3)));
         // Cover artwork is intentionally omitted on macOS.
     }
 

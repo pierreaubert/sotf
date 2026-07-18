@@ -30,6 +30,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let rec = &state.app.measurement_state.recording_state;
         let bac = rec.bass_anchor_capture.clone();
         let has_speakers = !rec.playback_config.channel_mappings.is_empty();
@@ -61,7 +64,7 @@ impl PlayerView {
                     view.cancel_bass_anchor_capture(cx);
                 }))
         } else {
-            Button::new("bass_anchor_run", "Run Bass Anchor")
+            Button::new("bass_anchor_run", recording_text.run_bass_anchor)
                 .variant(ButtonVariant::Primary)
                 .size(ButtonSize::Sm)
                 .theme(theme.to_button_theme())
@@ -80,14 +83,7 @@ impl PlayerView {
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
-            .child(
-                Text::new(
-                    "Plays a low-frequency tone burst per channel so GD-Opt v2 can anchor the \
-                     first bass bin of the sweep-derived phase. Optional — skip with Next if \
-                     your system doesn't support playback at the selected bass frequency.",
-                )
-                .size(TextSize::Sm),
-            )
+            .child(Text::new(recording_text.bass_anchor_description).size(TextSize::Sm))
             .child(bass_anchor_number_row(
                 cx,
                 &theme,

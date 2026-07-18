@@ -30,6 +30,10 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let text = RecordingTranslations::for_language(state.app.ui_state.language);
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let rec = &state.app.measurement_state.recording_state;
         let cal = rec.spl_calibration_capture.clone();
         let signal_level_db = rec.signal_level_db;
@@ -58,7 +62,7 @@ impl PlayerView {
 
         let view = cx.entity().clone();
         let start_button: AnyElement = if running {
-            Button::new("spl-cal-cancel", "Cancel")
+            Button::new("spl-cal-cancel", recording_text.cancel)
                 .variant(ButtonVariant::Secondary)
                 .size(ButtonSize::Md)
                 .on_click({
@@ -95,15 +99,7 @@ impl PlayerView {
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
-            .child(
-                Text::new(
-                    "Play a 1 kHz reference tone, read the dBSPL your handheld meter shows at \
-                     the listening position, and type the number below. GD-Opt v2 uses the \
-                     offset to target sweep levels deterministically so the subwoofer doesn't \
-                     get pushed into harmonic distortion that would contaminate bass phase.",
-                )
-                .size(TextSize::Sm),
-            )
+            .child(Text::new(recording_text.spl_calibration_instructions).size(TextSize::Sm))
             .child(Text::new(status_line).size(TextSize::Sm))
             .child({
                 let view = cx.entity().clone();
@@ -151,7 +147,7 @@ impl PlayerView {
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
-                        .child(Text::new("Reported dBSPL").size(TextSize::Sm))
+                        .child(Text::new(text.reported_dbspl).size(TextSize::Sm))
                         .child(
                             NumberInput::new("spl_calibration_reported_db_spl")
                                 .value(initial_db_spl)
@@ -320,3 +316,4 @@ impl PlayerView {
         });
     }
 }
+use crate::app::i18n::RecordingTranslations;

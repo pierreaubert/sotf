@@ -1,12 +1,12 @@
 {
   "": {
-    "swift-dependencies": "/Volumes/home_ext1/src_pierre/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/primary.swiftdeps"
+    "swift-dependencies": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/primary.swiftdeps"
   },
-  "/Volumes/home_ext1/src_pierre/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.derived/runner.swift": {
-    "dependencies": "/Volumes/home_ext1/src_pierre/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.d",
-    "object": "/Volumes/home_ext1/src_pierre/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.swift.o",
-    "swiftmodule": "/Volumes/home_ext1/src_pierre/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner~partial.swiftmodule",
-    "swift-dependencies": "/Volumes/home_ext1/src_pierre/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.swiftdeps",
-    "diagnostics": "/Volumes/home_ext1/src_pierre/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.dia"
+  "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.derived/runner.swift": {
+    "dependencies": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.d",
+    "object": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.swift.o",
+    "swiftmodule": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner~partial.swiftmodule",
+    "swift-dependencies": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.swiftdeps",
+    "diagnostics": "/Volumes/home_ext1/src_pierre/all_of_sotf/sotf/crates/systemwide/crates/daemon/configbar/.build/arm64-apple-macosx/debug/ConfigBarPackageTests.build/runner.dia"
   }
 }

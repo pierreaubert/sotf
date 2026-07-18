@@ -9,6 +9,7 @@ use super::types::F64Callback;
 use super::types::StringCallback;
 use super::types::ToggleCallback;
 use super::types::UsizeCallback;
+use crate::i18n::Language;
 use gpui::*;
 
 /// A reusable form for AutoEQ optimization parameters.
@@ -32,6 +33,7 @@ pub(crate) struct FormMeta {
     pub(crate) theme: Option<AutoEqFormTheme>,
     pub(crate) allowed_opt_modes: Option<Vec<String>>,
     pub(crate) available_width: f32,
+    pub(crate) language: Language,
 }
 
 #[derive(Default)]
@@ -217,6 +219,7 @@ impl AutoEqForm {
                 theme: None,
                 allowed_opt_modes: None,
                 available_width: 0.0,
+                language: Language::English,
             },
             visibility: FormVisibility {
                 show_goals: true,
@@ -476,6 +479,12 @@ impl AutoEqForm {
     /// Set available width for responsive layout
     pub fn available_width(mut self, width: f32) -> Self {
         self.meta.available_width = width;
+        self
+    }
+
+    /// Set the first-party UI language used by all form sections.
+    pub fn language(mut self, language: Language) -> Self {
+        self.meta.language = language;
         self
     }
 

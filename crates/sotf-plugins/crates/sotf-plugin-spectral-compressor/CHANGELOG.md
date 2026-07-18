@@ -2,6 +2,9 @@
 
 ## Fixes
 
+- Corrected host latency reporting to one full FFT frame. Streamed impulse
+  measurements showed that `fft_size - hop_size` under-reported latency by
+  several host blocks when the host block was smaller than the STFT hop.
 - Removed the redundant post-shift zero-fill of STFT input-buffer tail samples. Those slots are
   overwritten before becoming active input, so the fill only added unnecessary writes per hop.
 

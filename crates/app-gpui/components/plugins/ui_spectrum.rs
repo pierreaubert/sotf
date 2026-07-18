@@ -15,6 +15,7 @@ use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
 use super::common::render_knob;
 use crate::app::AppState;
+use crate::app::i18n::SpectrumTranslations;
 use crate::components::design::Ds;
 use crate::components::graphs::common::render_empty_state;
 use crate::components::icons::IconName;
@@ -89,6 +90,7 @@ pub fn render_spectrum_analyzer_plugin(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: SpectrumRenderState,
+    text: SpectrumTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     // === TOP: Spectrum display (full width) ===
@@ -133,7 +135,7 @@ pub fn render_spectrum_analyzer_plugin(
                                 .justify_center()
                                 .size_full()
                                 .text_color(theme.text_muted)
-                                .child("No signal")
+                                .child(text.no_signal)
                                 .into_any_element()
                         }),
                 ),
@@ -157,7 +159,7 @@ pub fn render_spectrum_analyzer_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Bins",
+            text.bins,
             state.num_bins as f64,
             pk(SP, "num_bins").min_f64(),
             pk(SP, "num_bins").max_f64(),
@@ -171,7 +173,7 @@ pub fn render_spectrum_analyzer_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Min Hz",
+            text.minimum_frequency,
             state.min_freq as f64,
             pk(SP, "min_freq").min_f64(),
             pk(SP, "min_freq").max_f64(),
@@ -185,7 +187,7 @@ pub fn render_spectrum_analyzer_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Max Hz",
+            text.maximum_frequency,
             state.max_freq as f64,
             pk(SP, "max_freq").min_f64(),
             pk(SP, "max_freq").max_f64(),
@@ -199,7 +201,7 @@ pub fn render_spectrum_analyzer_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Smooth",
+            text.smoothing,
             state.smoothing as f64,
             0.0,
             1.0,
@@ -221,13 +223,13 @@ pub fn render_spectrum_analyzer_plugin(
                         .text_size(d.text_xs)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_secondary)
-                        .child("Tilt"),
+                        .child(text.tilt),
                 )
                 .child(
                     div().w(px(100.0)).child(
                         Select::new("tilt-correction-select")
                             .options(vec![
-                                SelectOption::new("none".to_string(), "None"),
+                                SelectOption::new("none".to_string(), text.none),
                                 SelectOption::new("3db".to_string(), "+3dB/oct"),
                                 SelectOption::new("6db".to_string(), "+6dB/oct"),
                                 SelectOption::new("pink".to_string(), "Pink (+3dB/oct)"),
@@ -243,8 +245,11 @@ pub fn render_spectrum_analyzer_plugin(
                             .size(SelectSize::Xs)
                             .theme(theme.to_select_theme())
                             .on_toggle({
-                                let entity = entity.clone();
+                                let entity = entity.downgrade();
                                 move |is_open, _window, cx| {
+                                    let Some(entity) = entity.upgrade() else {
+                                        return;
+                                    };
                                     entity.update(cx, |state, cx| {
                                         state.app.plugin_ui.spectrum_tilt_select_open = is_open;
                                         cx.notify();
@@ -279,16 +284,16 @@ pub fn render_spectrum_analyzer_plugin(
                         .text_size(d.text_xs)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_secondary)
-                        .child("Reference"),
+                        .child(text.reference),
                 )
                 .child(
                     div().w(px(100.0)).child(
                         Select::new("tilt-reference-select")
                             .options(vec![
-                                SelectOption::new("standard".to_string(), "Standard"),
+                                SelectOption::new("standard".to_string(), text.standard),
                                 SelectOption::new("1khz".to_string(), "1 kHz"),
                                 SelectOption::new("2khz".to_string(), "2 kHz"),
-                                SelectOption::new("minfreq".to_string(), "Min Freq"),
+                                SelectOption::new("minfreq".to_string(), text.min_frequency_short),
                             ])
                             .selected(match state.tilt_reference {
                                 TiltReferenceFreq::Standard => "standard".to_string(),
@@ -300,8 +305,11 @@ pub fn render_spectrum_analyzer_plugin(
                             .size(SelectSize::Xs)
                             .theme(theme.to_select_theme())
                             .on_toggle({
-                                let entity = entity.clone();
+                                let entity = entity.downgrade();
                                 move |is_open, _window, cx| {
+                                    let Some(entity) = entity.upgrade() else {
+                                        return;
+                                    };
                                     entity.update(cx, |state, cx| {
                                         state.app.plugin_ui.spectrum_reference_select_open =
                                             is_open;
@@ -347,6 +355,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = SpectrumTranslations::for_language(state.app.ui_state.language);
         let phone_hold = state.app.ui_state.phone_spectrum_hold;
         let phone_hold_magnitudes = state.app.ui_state.phone_spectrum_hold_magnitudes.clone();
         let phone_smoothing = if state.app.ui_state.phone_spectrum_smoothed {
@@ -422,7 +431,7 @@ impl PlayerView {
                     .text_size(d.text_lg)
                     .font_weight(FontWeight::SEMIBOLD)
                     .mb(d.section)
-                    .child("Spectrum Analyzer"),
+                    .child(text.analyzer),
             )
             .child(content)
     }

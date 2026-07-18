@@ -132,8 +132,10 @@ fn process_silence() {
 
 #[test]
 fn mix_zero_passthrough() {
-    let mut params = SpectralCompressorPluginParams::default();
-    params.mix = 0.0;
+    let params = SpectralCompressorPluginParams {
+        mix: 0.0,
+        ..Default::default()
+    };
     let mut plugin = SpectralCompressorPlugin::from_params(2, params);
     plugin
         .set_parameter(
@@ -234,17 +236,17 @@ fn fft_size_change_updates_latency() {
     let mut plugin =
         SpectralCompressorPlugin::from_params(2, SpectralCompressorPluginParams::default());
     let default_latency = plugin.latency_samples();
-    assert_eq!(default_latency, 2048 - 512);
+    assert_eq!(default_latency, 2048);
 
     plugin
         .set_parameter(ParameterId::from("fft_size"), ParameterValue::Int(0))
         .unwrap();
-    assert_eq!(plugin.latency_samples(), 1024 - 256);
+    assert_eq!(plugin.latency_samples(), 1024);
 
     plugin
         .set_parameter(ParameterId::from("fft_size"), ParameterValue::Int(2))
         .unwrap();
-    assert_eq!(plugin.latency_samples(), 4096 - 1024);
+    assert_eq!(plugin.latency_samples(), 4096);
 }
 
 #[test]

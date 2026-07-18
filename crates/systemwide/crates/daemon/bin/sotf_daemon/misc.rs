@@ -258,6 +258,102 @@ pub(super) fn build_driver_plugin_chain(
     (final_plugins, input_monitor_index, output_monitor_index)
 }
 
+pub(super) fn build_driver_plugin_graph(
+    mut graph: sotf_audio::engine::PluginGraphConfig,
+    input_channels: usize,
+    output_channels: usize,
+) -> Result<(sotf_audio::engine::PluginGraphConfig, usize, usize), String> {
+    use sotf_audio::engine::{PluginGraphEdgeConfig, PluginGraphNodeConfig};
+    use std::collections::HashSet;
+
+    graph
+        .validate()
+        .map_err(|error| format!("Invalid plugin graph: {error}"))?;
+    if graph.nodes.is_empty() {
+        return Err("Plugin graph must contain at least one user node".to_string());
+    }
+    if let Some(node) = graph.nodes.iter().find(|node| {
+        matches!(
+            node.plugin_type.as_str(),
+            "hal_input" | "hal_output" | "loudness_monitor" | "spectrum_analyzer"
+        )
+    }) {
+        return Err(format!(
+            "Plugin graph node {} uses daemon-owned system plugin type '{}'",
+            node.id, node.plugin_type
+        ));
+    }
+
+    let incoming = graph
+        .edges
+        .iter()
+        .map(|edge| edge.to_node)
+        .collect::<HashSet<_>>();
+    let outgoing = graph
+        .edges
+        .iter()
+        .map(|edge| edge.from_node)
+        .collect::<HashSet<_>>();
+    let roots = graph
+        .nodes
+        .iter()
+        .filter_map(|node| (!incoming.contains(&node.id)).then_some(node.id))
+        .collect::<Vec<_>>();
+    let leaves = graph
+        .nodes
+        .iter()
+        .filter_map(|node| (!outgoing.contains(&node.id)).then_some(node.id))
+        .collect::<Vec<_>>();
+    if roots.is_empty() || leaves.is_empty() {
+        return Err("Plugin graph must have at least one input and output path".to_string());
+    }
+
+    let input_monitor_id = graph
+        .nodes
+        .iter()
+        .map(|node| node.id)
+        .max()
+        .unwrap_or(0)
+        .checked_add(1)
+        .ok_or_else(|| "Plugin graph node id space exhausted".to_string())?;
+    let output_monitor_id = input_monitor_id
+        .checked_add(1)
+        .ok_or_else(|| "Plugin graph node id space exhausted".to_string())?;
+    let input_monitor = PluginGraphNodeConfig::try_new(
+        input_monitor_id,
+        "loudness_monitor",
+        serde_json::json!({}),
+        input_channels,
+    )
+    .map_err(|error| error.to_string())?;
+    let output_monitor = PluginGraphNodeConfig::try_new(
+        output_monitor_id,
+        "loudness_monitor",
+        serde_json::json!({}),
+        output_channels,
+    )
+    .map_err(|error| error.to_string())?;
+
+    graph.nodes.insert(0, input_monitor);
+    graph.nodes.push(output_monitor);
+    graph.edges.extend(
+        roots
+            .into_iter()
+            .map(|root| PluginGraphEdgeConfig::new(input_monitor_id, root)),
+    );
+    graph.edges.extend(
+        leaves
+            .into_iter()
+            .map(|leaf| PluginGraphEdgeConfig::new(leaf, output_monitor_id)),
+    );
+    graph
+        .validate()
+        .map_err(|error| format!("Invalid monitored plugin graph: {error}"))?;
+
+    let output_monitor_index = graph.nodes.len() - 1;
+    Ok((graph, 0, output_monitor_index))
+}
+
 /// Bind a `UnixListener` at `socket_path` defending against TOCTOU on
 /// stale-socket cleanup.
 ///

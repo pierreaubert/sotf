@@ -42,9 +42,10 @@ pub(crate) fn draw_loudness_and_volume_column(f: &mut Frame, area: Rect, app: &m
 }
 
 pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Loudness")
+        .title(i18n.ui("Loudness"))
         .style(Style::default().fg(app.theme.fg_primary));
     f.render_widget(block, area);
 
@@ -80,9 +81,14 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
             // reused stack buffer to avoid a per-frame `format!`.
             label_buf.len = 0;
             if max_true_peak.is_finite() {
-                let _ = write!(&mut label_buf, "True Peak      [{:>4.1}]", max_true_peak);
+                let _ = write!(
+                    &mut label_buf,
+                    "{}      [{:>4.1}]",
+                    i18n.ui("True Peak"),
+                    max_true_peak
+                );
             } else {
-                let _ = write!(&mut label_buf, "True Peak        [-∞]");
+                let _ = write!(&mut label_buf, "{}        [-∞]", i18n.ui("True Peak"));
             }
             f.render_widget(
                 Paragraph::new(label_buf.as_str())
@@ -340,7 +346,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
         if let Some(correlation) = loudness.correlation_lr {
             if y_offset < inner.height {
                 f.render_widget(
-                    Paragraph::new("Stereo width")
+                    Paragraph::new(i18n.ui("Stereo width"))
                         .style(Style::default().fg(app.theme.title_color)),
                     Rect {
                         x: inner.x,
@@ -422,7 +428,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
     } else {
         // No loudness data
         f.render_widget(
-            Paragraph::new("No audio playing")
+            Paragraph::new(i18n.ui("No audio playing"))
                 .style(Style::default().fg(app.theme.fg_muted))
                 .alignment(Alignment::Center),
             Rect {
@@ -436,12 +442,17 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
 }
 
 pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     // Check for loudness info first
     let has_loudness = app.playback.loudness_info.is_some();
     if !has_loudness {
-        let paragraph = Paragraph::new("No audio")
+        let paragraph = Paragraph::new(i18n.ui("No audio"))
             .style(Style::default().fg(app.theme.fg_muted))
-            .block(Block::default().borders(Borders::ALL).title("Levels"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(i18n.ui("Levels")),
+            )
             .alignment(Alignment::Center);
         f.render_widget(paragraph, area);
         return;
@@ -454,9 +465,13 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         .map(|l| l.channel_peaks.len())
         .unwrap_or(0);
     if num_channels == 0 {
-        let paragraph = Paragraph::new("No channels")
+        let paragraph = Paragraph::new(i18n.ui("No channels"))
             .style(Style::default().fg(app.theme.fg_muted))
-            .block(Block::default().borders(Borders::ALL).title("Levels"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(i18n.ui("Levels")),
+            );
         f.render_widget(paragraph, area);
         return;
     }
@@ -469,7 +484,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     let loudness = app.playback.loudness_info.as_ref().unwrap();
 
     // Draw border with simple title
-    let title_lines = [Line::from("Levels (help: ?)")];
+    let title_lines = [Line::from(i18n.ui("Levels (help: ?)"))];
     let title_height = 1;
 
     // Highlight border when focused

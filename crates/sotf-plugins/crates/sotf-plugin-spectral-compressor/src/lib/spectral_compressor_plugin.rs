@@ -618,10 +618,12 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        // Causal STFT latency: the OLA output is first valid after fft_size - hop_size
-        // samples have been accumulated. Reporting the full fft_size over-compensates
-        // by hop_size (~10 ms for N=2048 at 48 kHz).
-        self.fft_size - self.stft.hop_size
+        // Output becomes observable in the host block that completes the first
+        // FFT frame. Its exact position is therefore quantized by the host block
+        // size (`fft_size - host_block` for aligned streams). Reporting the full
+        // FFT size is block-size independent and bounds compensation error to at
+        // most one host block.
+        self.fft_size
     }
 
     fn process_in_place(

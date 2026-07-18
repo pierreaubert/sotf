@@ -353,6 +353,25 @@ fn test_link_channels_uses_shared_gr() {
 }
 
 #[test]
+fn test_link_channels_can_be_disabled_before_processing_stereo() {
+    let sr = 48_000u32;
+    let num_frames = 480;
+    let mut plugin = DynamicEqPlugin::new(2);
+    plugin.initialize(sr).unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("link_channels"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+
+    let mut buf = vec![0.25f32; num_frames * 2];
+    let ctx = ProcessContext::new(sr, num_frames);
+    assert_eq!(plugin.process_in_place(&mut buf, &ctx).unwrap(), num_frames);
+    assert!(buf.iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
 fn test_inactive_band_passthrough() {
     let sr = 48000u32;
     let num_frames = 4800;
@@ -565,7 +584,7 @@ fn test_get_data_returns_cache() {
     plugin.initialize(48000).unwrap();
     let data = plugin.get_data();
     assert!(data.is_some());
-    assert!((&*data.unwrap()).is::<DynamicEqData>());
+    assert!((*data.unwrap()).is::<DynamicEqData>());
 }
 
 #[test]

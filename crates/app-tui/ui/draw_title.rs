@@ -36,7 +36,7 @@ pub(crate) fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     let device_text = if let Some(device) = app.get_selected_output_device() {
         device.name.to_string()
     } else {
-        "Default".to_string()
+        crate::tui_text!(app, "Default")
     };
 
     let device_widget = Paragraph::new(device_text)
@@ -45,7 +45,7 @@ pub(crate) fn draw_title(f: &mut Frame, area: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Output Device")
+                .title(crate::tui_text!(app, "Output Device"))
                 .style(Style::default().fg(app.theme.fg_primary)),
         );
 

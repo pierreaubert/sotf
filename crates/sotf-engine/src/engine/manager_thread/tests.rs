@@ -254,6 +254,7 @@ fn graph_update_timeout_uses_node_complexity() {
                 plugin_type: "convolution".to_string(),
                 parameters: serde_json::json!({}),
                 input_channels: 2,
+                bypassed: false,
             })
             .collect(),
         edges: vec![],

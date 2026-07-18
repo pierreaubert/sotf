@@ -1,6 +1,8 @@
 use crate::components::plugins::editing::PluginEditingManager;
+use crate::i18n::HeadphoneEasyTranslations;
 use crate::ui::PlayerView;
 use gpui::*;
+use sotf_audio_player::autoeq::apply_headphone_easy_chain;
 use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
 
 impl PlayerView {
@@ -402,6 +404,112 @@ impl PlayerView {
                 ));
                 cx.notify();
             }
+        });
+    }
+
+    pub(crate) fn apply_headphone_easy_result(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, cx| {
+            let translations = HeadphoneEasyTranslations::for_language(state.app.ui_state.language);
+            let Some(result) = state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .result
+                .as_ref()
+            else {
+                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::warning(
+                    translations.no_result,
+                ));
+                cx.notify();
+                return;
+            };
+            let filters: Vec<(String, f64, f64, f64)> = result
+                .biquads
+                .iter()
+                .map(|filter| {
+                    (
+                        filter.filter_type.clone(),
+                        filter.freq,
+                        filter.q,
+                        filter.db_gain,
+                    )
+                })
+                .collect();
+            let previous_graph = state.app.plugin_state.graph.clone();
+            let sample_rate = f64::from(
+                state
+                    .app
+                    .audio_device_state
+                    .hal_config
+                    .sample_rate
+                    .max(8_000),
+            );
+
+            match apply_headphone_easy_chain(
+                &mut state.app.plugin_state.graph,
+                &filters,
+                sample_rate,
+                70.0,
+                83.0,
+            ) {
+                Ok(outcome) => {
+                    let headphone_eq = &mut state.app.measurement_state.headphone_eq_state;
+                    headphone_eq.easy_mode_undo_graph = Some(previous_graph);
+                    headphone_eq.easy_mode_last_apply = Some(outcome);
+                    state.app.plugin_state.update_state.pending_plugin_update =
+                        Some(crate::app::types::PluginUpdateType::Structural);
+                    state.app.sync_spectrum_visible();
+                    state.app.ui_state.toast_message =
+                        Some(crate::app::types::ToastMessage::success(
+                            translations.applied(outcome.active_filters, outcome.preamp_db),
+                        ));
+                }
+                Err(error) => {
+                    state.app.ui_state.toast_message =
+                        Some(crate::app::types::ToastMessage::error(error));
+                }
+            }
+            cx.notify();
+        });
+    }
+
+    pub(crate) fn undo_headphone_easy_chain(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, cx| {
+            let translations = HeadphoneEasyTranslations::for_language(state.app.ui_state.language);
+            let previous = state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .easy_mode_undo_graph
+                .take();
+            let Some(previous) = previous else {
+                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::warning(
+                    translations.no_undo,
+                ));
+                cx.notify();
+                return;
+            };
+            state.app.plugin_state.graph = previous;
+            state
+                .app
+                .measurement_state
+                .headphone_eq_state
+                .easy_mode_last_apply = None;
+            state.app.plugin_state.update_state.pending_plugin_update =
+                Some(crate::app::types::PluginUpdateType::Structural);
+            state.app.sync_spectrum_visible();
+            state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::success(
+                translations.restored,
+            ));
+            cx.notify();
+        });
+    }
+
+    pub(crate) fn edit_headphone_easy_chain(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, cx| {
+            state.app.ui_state.last_screen = crate::app::Screen::HeadphoneEq;
+            state.app.ui_state.current_screen = crate::app::Screen::Studio;
+            cx.notify();
         });
     }
 

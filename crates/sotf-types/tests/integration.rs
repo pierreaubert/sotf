@@ -203,24 +203,26 @@ fn engine_config_default_validates_and_roundtrips() {
 
 #[test]
 fn engine_config_custom_values_roundtrip_and_validate() {
-    let mut config = EngineConfig::default();
-    config.frame_size = 512;
-    config.buffer_ms = 100;
-    config.output_sample_rate = 96000;
-    config.input_channels = 2;
-    config.output_channels = 6;
-    config.volume = 0.75;
-    config.plugins = vec![
-        PluginConfig::try_new("eq", json!({"freq": 1000.0})).unwrap(),
-        PluginConfig::try_new("compressor", json!({"threshold": -12.0})).unwrap(),
-    ];
-    config.oversampling_policy = EngineOversamplingPolicy::Force2x;
-    config.output_access = OutputAccessMode::ExclusivePreferred;
-    config.dsd_output = DsdOutputMode::PcmDecode;
-    config.network_endpoint = NetworkEndpointConfig {
-        mode: NetworkEndpointMode::HttpEndpoint,
-        bind_addr: "127.0.0.1".into(),
-        port: 12345,
+    let config = EngineConfig {
+        frame_size: 512,
+        buffer_ms: 100,
+        output_sample_rate: 96000,
+        input_channels: 2,
+        output_channels: 6,
+        volume: 0.75,
+        plugins: vec![
+            PluginConfig::try_new("eq", json!({"freq": 1000.0})).unwrap(),
+            PluginConfig::try_new("compressor", json!({"threshold": -12.0})).unwrap(),
+        ],
+        oversampling_policy: EngineOversamplingPolicy::Force2x,
+        output_access: OutputAccessMode::ExclusivePreferred,
+        dsd_output: DsdOutputMode::PcmDecode,
+        network_endpoint: NetworkEndpointConfig {
+            mode: NetworkEndpointMode::HttpEndpoint,
+            bind_addr: "127.0.0.1".into(),
+            port: 12345,
+        },
+        ..Default::default()
     };
 
     config.validate().expect("custom config should be valid");
@@ -282,9 +284,11 @@ fn engine_config_validation_errors() {
 
 #[test]
 fn engine_config_sanitize_resets_invalid_defaults() {
-    let mut config = EngineConfig::default();
-    config.frame_size = 0;
-    config.output_sample_rate = 0;
+    let mut config = EngineConfig {
+        frame_size: 0,
+        output_sample_rate: 0,
+        ..Default::default()
+    };
     config.sanitize();
     assert_eq!(config.frame_size, 1024);
     assert_eq!(config.output_sample_rate, 48000);
@@ -299,9 +303,11 @@ fn engine_config_file_save_and_load_roundtrip() {
         std::process::id()
     ));
 
-    let mut config = EngineConfig::default();
-    config.volume = 0.5;
-    config.plugins = vec![PluginConfig::try_new("eq", json!({"freq": 250.0})).unwrap()];
+    let config = EngineConfig {
+        volume: 0.5,
+        plugins: vec![PluginConfig::try_new("eq", json!({"freq": 250.0})).unwrap()],
+        ..Default::default()
+    };
 
     config.save_to_file(&path).expect("save should succeed");
     let loaded = EngineConfig::load_from_file(&path).expect("load should succeed");
@@ -317,10 +323,12 @@ fn engine_config_file_save_and_load_roundtrip() {
 
 #[test]
 fn engine_config_buffer_frame_calculations() {
-    let mut config = EngineConfig::default();
-    config.output_sample_rate = 48000;
-    config.buffer_ms = 1000;
-    config.frame_size = 1024;
+    let config = EngineConfig {
+        output_sample_rate: 48000,
+        buffer_ms: 1000,
+        frame_size: 1024,
+        ..Default::default()
+    };
     assert_eq!(config.total_buffer_frames(), 48000);
     assert_eq!(config.queue_capacity_frames(), 47);
 }
@@ -535,20 +543,22 @@ fn audio_engine_state_defaults_and_roundtrip() {
 
 #[test]
 fn audio_engine_state_with_source_roundtrip() {
-    let mut state = AudioEngineState::default();
-    state.playback_state = PlaybackState::Playing;
-    state.current_source = Some(AudioSource::File(PathBuf::from("/music/song.flac")));
-    state.current_file = Some(PathBuf::from("/music/song.flac"));
-    state.position = 12.5;
-    state.duration = Some(180.0);
-    state.volume = 0.8;
-    state.muted = true;
-    state.stream_metadata = Some(StreamMetadata {
-        stream_title: Some("Live".into()),
-        stream_url: None,
-        content_type: Some("audio/flac".into()),
-        bitrate_kbps: Some(1411),
-    });
+    let state = AudioEngineState {
+        playback_state: PlaybackState::Playing,
+        current_source: Some(AudioSource::File(PathBuf::from("/music/song.flac"))),
+        current_file: Some(PathBuf::from("/music/song.flac")),
+        position: 12.5,
+        duration: Some(180.0),
+        volume: 0.8,
+        muted: true,
+        stream_metadata: Some(StreamMetadata {
+            stream_title: Some("Live".into()),
+            stream_url: None,
+            content_type: Some("audio/flac".into()),
+            bitrate_kbps: Some(1411),
+        }),
+        ..Default::default()
+    };
 
     let restored: AudioEngineState = roundtrip(state.clone());
     assert_eq!(restored.playback_state, PlaybackState::Playing);

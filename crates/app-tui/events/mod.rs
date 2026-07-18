@@ -142,6 +142,17 @@ mod p1_event_policy_tests {
 /// or `None` when the key is not a shared key.
 fn handle_shared_keys(app: &mut App, key: KeyEvent) -> Option<Option<PlayerCommand>> {
     match key.code {
+        KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::ALT) => {
+            let language = app.ui.language.next();
+            app.ui.language = language;
+            app.ui.status_message = Some(
+                crate::i18n::TuiTranslations::for_language(language)
+                    .language_changed
+                    .to_string(),
+            );
+            app.ui.needs_redraw = true;
+            Some(None)
+        }
         // Quit
         KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.should_quit = true;

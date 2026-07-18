@@ -47,6 +47,29 @@ cargo run -p sotf-tui --features hal
 - `events/` — Event handling (keyboard input, playback events)
 - `tests/` — Unit and integration tests (parameter sync, etc.)
 
+## Keyboard model
+
+The TUI owns its top-level navigation keys; shared player controllers own the
+resulting playback, queue, plugin, and RoomEQ behavior.
+
+- `Tab` cycles top-level screens in normal mode. In Configure it advances the
+  selected tab or field; `BackTab` moves backward.
+- `L`, `Q`, `Y`, `P`, `O`, and `C` jump to Library, Queue, Playlists, Plugins,
+  Devices, and Configure. Uppercase is intentional so lowercase screen-local
+  commands remain available.
+- `Enter` activates or opens the focused item. `Escape` cancels the innermost
+  edit/modal first, then returns to the parent screen. Only `Escape` from a
+  normal top-level screen requests quit.
+- `?` opens contextual help. `Ctrl+Q`/`Cmd+Q` always requests quit.
+- `+`/`-` adjust global volume and `u` toggles mute, except inside Configure
+  sub-screens where those keys edit focused values.
+- Configure tabs use `1`–`8`. RoomEQ Process additionally uses `3`, `4`, and
+  `5` for beginner 2.0, 2.1, and 5.1 layouts after that tab is open.
+
+The compact help strip and detailed `?` modal are generated from separate
+compact/detailed tables by design; both are covered by navigation tests and
+must describe keys actually dispatched in that context.
+
 ## Dependencies
 
 - `sotf-player` — Shared audio player library (business logic, database, plugins)

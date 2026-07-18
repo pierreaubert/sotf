@@ -1,6 +1,7 @@
-use super::misc::{centered_modal_rect, get_keybindings_for_screen};
+use super::misc::{centered_modal_rect, get_detailed_keybindings_for_screen};
 pub(crate) use super::utilities::wrap_text;
 pub(crate) use crate::app::{App, MetadataEditorState, Screen};
+use crate::i18n::TuiTranslations;
 pub(crate) use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -11,7 +12,7 @@ pub(crate) use ratatui::{
 
 /// Draw a standardized help box with keybindings for the given screen.
 pub(crate) fn draw_help_box(f: &mut Frame, area: Rect, app: &App, screen: Screen) {
-    let bindings = super::utilities::get_keybindings_for_screen(screen);
+    let bindings = super::utilities::get_keybindings_for_screen(screen, app.ui.language);
     let help_text = bindings
         .iter()
         .map(|(key, desc)| format!("{}={}", key, desc))
@@ -23,6 +24,7 @@ pub(crate) fn draw_help_box(f: &mut Frame, area: Rect, app: &App, screen: Screen
 
 /// Draw a help box with custom text, inside a bordered block.
 pub(crate) fn draw_help_box_with_text(f: &mut Frame, area: Rect, app: &App, text: &str) {
+    let translations = TuiTranslations::for_language(app.ui.language);
     let help = Paragraph::new(text.to_string())
         .style(Style::default().fg(app.theme.title_color))
         .alignment(Alignment::Left)
@@ -31,12 +33,13 @@ pub(crate) fn draw_help_box_with_text(f: &mut Frame, area: Rect, app: &App, text
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(app.theme.border_color))
-                .title(" Help "),
+                .title(format!(" {} ", translations.help)),
         );
     f.render_widget(help, area);
 }
 
 pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
+    let translations = TuiTranslations::for_language(app.ui.language);
     let area = f.area();
     let modal_area = centered_modal_rect(area, 80, 90, 20, 6);
 
@@ -49,18 +52,7 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title(format!(
-            "Help - {} Screen (Press ESC or ? to close)",
-            match app.current_screen {
-                Screen::Loading => "Loading",
-                Screen::Library => "Library",
-                Screen::Queue => "Queue",
-                Screen::Playlists => "Playlists",
-                Screen::Plugins => "Plugins",
-                Screen::Devices => "Devices",
-                Screen::Configure => "Configure",
-            }
-        ));
+        .title(translations.help_title(app.current_screen));
 
     f.render_widget(Clear, modal_area);
     f.render_widget(block, modal_area);
@@ -74,14 +66,14 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
     };
 
     // Get keybindings for current screen
-    let keybindings = get_keybindings_for_screen(app.current_screen);
+    let keybindings = get_detailed_keybindings_for_screen(app.current_screen, app.ui.language);
 
     // Build help text
     let mut lines = vec![];
 
     // Global keybindings
     lines.push(Line::from(vec![Span::styled(
-        "GLOBAL KEYBINDINGS",
+        translations.global_keybindings,
         Style::default()
             .fg(app.theme.title_color)
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
@@ -89,34 +81,44 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("  TAB", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Cycle through screens and level meters pane"),
+        Span::raw(crate::tui_text!(
+            app,
+            "  Cycle through screens and level meters pane"
+        )),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  L/Q/P/O/C", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Jump to Library/Queue/Plugins/Devices/Configure"),
+        Span::raw(crate::tui_text!(
+            app,
+            "  Jump to Library/Queue/Plugins/Devices/Configure"
+        )),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  Shift+M", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Focus level meters pane"),
+        Span::raw(crate::tui_text!(app, "  Focus level meters pane")),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  Alt+L", Style::default().fg(app.theme.accent_primary)),
+        Span::raw(format!("  {}", translations.cycle_language)),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  +/=", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Increase volume"),
+        Span::raw(crate::tui_text!(app, "  Increase volume")),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  -/_", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Decrease volume"),
+        Span::raw(crate::tui_text!(app, "  Decrease volume")),
     ]));
     lines.push(Line::from(vec![
         Span::styled(
             "  Ctrl+Left/Right",
             Style::default().fg(app.theme.accent_primary),
         ),
-        Span::raw("  Select output device"),
+        Span::raw(crate::tui_text!(app, "  Select output device")),
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(vec![Span::styled(
-        "LEVEL METERS (when Meters pane is focused)",
+        translations.level_meters_focused,
         Style::default()
             .fg(app.theme.border_color)
             .add_modifier(Modifier::BOLD),
@@ -126,27 +128,30 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
             "  Left/Right",
             Style::default().fg(app.theme.accent_primary),
         ),
-        Span::raw("  Navigate between channel groups"),
+        Span::raw(crate::tui_text!(app, "  Navigate between channel groups")),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  Up/Down", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Select mute/solo control"),
+        Span::raw(crate::tui_text!(app, "  Select mute/solo control")),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  m/s", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Toggle mute/solo on selected group"),
+        Span::raw(crate::tui_text!(
+            app,
+            "  Toggle mute/solo on selected group"
+        )),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  c", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Clear all mutes and solos"),
+        Span::raw(crate::tui_text!(app, "  Clear all mutes and solos")),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  ESC", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Return to main pane"),
+        Span::raw(crate::tui_text!(app, "  Return to main pane")),
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(vec![Span::styled(
-        "LEVEL METERS (global shortcuts)",
+        translations.level_meters_global,
         Style::default()
             .fg(app.theme.border_color)
             .add_modifier(Modifier::BOLD),
@@ -156,50 +161,45 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
             "  Shift+Left/Right",
             Style::default().fg(app.theme.accent_primary),
         ),
-        Span::raw("  Navigate level meter groups"),
+        Span::raw(crate::tui_text!(app, "  Navigate level meter groups")),
     ]));
     lines.push(Line::from(vec![
         Span::styled(
             "  Shift+Up/Down",
             Style::default().fg(app.theme.accent_primary),
         ),
-        Span::raw("  Select mute/solo control"),
+        Span::raw(crate::tui_text!(app, "  Select mute/solo control")),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  Shift+S", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Toggle solo on selected group"),
+        Span::raw(crate::tui_text!(app, "  Toggle solo on selected group")),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  Shift+C", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Clear all mutes and solos"),
+        Span::raw(crate::tui_text!(app, "  Clear all mutes and solos")),
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("  ?", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Show this help"),
+        Span::raw(crate::tui_text!(app, "  Show this help")),
     ]));
     lines.push(Line::from(vec![
         Span::styled(
             "  Ctrl+Q/Cmd+Q",
             Style::default().fg(app.theme.accent_primary),
         ),
-        Span::raw("  Quit (ESC quits from main pane)"),
+        Span::raw(crate::tui_text!(app, "  Quit (ESC quits from main pane)")),
     ]));
     lines.push(Line::from(""));
 
     // Screen-specific keybindings
     lines.push(Line::from(vec![Span::styled(
-        format!(
-            "{} KEYBINDINGS",
-            match app.current_screen {
-                Screen::Loading => "LOADING",
-                Screen::Library => "LIBRARY",
-                Screen::Queue => "QUEUE",
-                Screen::Playlists => "PLAYLISTS",
-                Screen::Plugins => "PLUGINS",
-                Screen::Devices => "DEVICES",
-                Screen::Configure => "CONFIGURE",
-            }
+        crate::tui_text!(
+            app,
+            format!(
+                "{} keybindings",
+                translations.screen_name(app.current_screen)
+            )
         ),
         Style::default()
             .fg(app.theme.border_color)
@@ -242,7 +242,7 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title(" Edit Metadata ");
+        .title(crate::tui_text!(app, " Edit Metadata "));
     f.render_widget(block, modal_area);
 
     let inner = Rect {
@@ -265,7 +265,10 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
     f.render_widget(
         Paragraph::new(vec![
             Line::from(vec![
-                Span::styled("Target: ", Style::default().fg(app.theme.accent_primary)),
+                Span::styled(
+                    crate::tui_text!(app, "Target: "),
+                    Style::default().fg(app.theme.accent_primary),
+                ),
                 Span::raw(editor.target_label.clone()),
             ]),
             Line::from(""),
@@ -293,7 +296,10 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
             Span::styled(marker, style),
             Span::raw(" "),
             Span::styled(
-                format!("{:<13}", MetadataEditorState::field_label(index)),
+                format!(
+                    "{:<13}",
+                    crate::tui_text!(app, MetadataEditorState::field_label(index))
+                ),
                 Style::default().fg(app.theme.title_color),
             ),
             Span::styled(value.to_string(), style),
@@ -306,36 +312,51 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
 
     let preview_lines = if let Some(preview) = &editor.preview {
         let mut lines = vec![Line::from(vec![
-            Span::styled("Preview: ", Style::default().fg(app.theme.accent_primary)),
-            Span::raw(format!(
-                "{} file(s), {} unsupported, sidecar {}",
-                preview.affected_files.len(),
-                preview.unsupported_writes.len(),
-                if preview.sidecar_path.is_some() {
-                    "yes"
-                } else {
-                    "no"
-                }
+            Span::styled(
+                crate::tui_text!(app, "Preview: "),
+                Style::default().fg(app.theme.accent_primary),
+            ),
+            Span::raw(crate::tui_text!(
+                app,
+                format!(
+                    "{} file(s), {} unsupported, sidecar {}",
+                    preview.affected_files.len(),
+                    preview.unsupported_writes.len(),
+                    if preview.sidecar_path.is_some() {
+                        crate::tui_text!(app, "yes")
+                    } else {
+                        crate::tui_text!(app, "no")
+                    }
+                )
             )),
         ])];
         for file in preview.unsupported_writes.iter().take(2) {
+            let reason = file
+                .reason
+                .as_deref()
+                .map_or_else(|| crate::tui_text!(app, "unsupported"), str::to_string);
             lines.push(Line::from(vec![
-                Span::styled("Warning: ", Style::default().fg(Color::Yellow)),
-                Span::raw(format!(
-                    "{}: {}",
-                    file.path.display(),
-                    file.reason.as_deref().unwrap_or("unsupported")
-                )),
+                Span::styled(
+                    crate::tui_text!(app, "Warning: "),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::raw(format!("{}: {}", file.path.display(), reason)),
             ]));
         }
         lines
     } else {
-        vec![Line::from("Preview: press p before saving")]
+        vec![Line::from(crate::tui_text!(
+            app,
+            "Preview: press p before saving"
+        ))]
     };
     let mut preview_lines = preview_lines;
     if let Some(error) = &editor.error {
         preview_lines.push(Line::from(vec![
-            Span::styled("Error: ", Style::default().fg(Color::Red)),
+            Span::styled(
+                crate::tui_text!(app, "Error: "),
+                Style::default().fg(Color::Red),
+            ),
             Span::raw(error.clone()),
         ]));
     }
@@ -346,19 +367,32 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
 
     let mut mb_lines = vec![Line::from(vec![
         Span::styled(
-            "MusicBrainz: ",
+            crate::tui_text!(app, "MusicBrainz: "),
             Style::default().fg(app.theme.accent_primary),
         ),
         Span::raw(editor.search_query.clone()),
     ])];
     if let Some(error) = &editor.search_error {
         mb_lines.push(Line::from(vec![
-            Span::styled("Search error: ", Style::default().fg(Color::Red)),
+            Span::styled(
+                crate::tui_text!(app, "Search error: "),
+                Style::default().fg(Color::Red),
+            ),
             Span::raw(error.clone()),
         ]));
     }
     for (idx, candidate) in editor.search_results.iter().take(3).enumerate() {
         let selected = idx == editor.selected_result;
+        let title = candidate
+            .album_title
+            .as_deref()
+            .or(candidate.title.as_deref())
+            .map_or_else(|| crate::tui_text!(app, "Untitled"), str::to_string);
+        let artist = candidate
+            .album_artist
+            .as_deref()
+            .or(candidate.artist.as_deref())
+            .map_or_else(|| crate::tui_text!(app, "Unknown"), str::to_string);
         mb_lines.push(Line::from(vec![
             Span::styled(
                 if selected { "> " } else { "  " },
@@ -367,20 +401,12 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
             Span::raw(format!(
                 "{}  {} - {} ({})",
                 candidate.score,
-                candidate
-                    .album_title
-                    .as_deref()
-                    .or(candidate.title.as_deref())
-                    .unwrap_or("Untitled"),
-                candidate
-                    .album_artist
-                    .as_deref()
-                    .or(candidate.artist.as_deref())
-                    .unwrap_or("Unknown"),
+                title,
+                artist,
                 candidate
                     .year
                     .map(|year| year.to_string())
-                    .unwrap_or_else(|| "unknown".to_string())
+                    .unwrap_or_else(|| crate::tui_text!(app, "unknown"))
             )),
         ]));
     }
@@ -390,9 +416,12 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
     );
 
     let help = if editor.editing {
-        " Type value | Enter=confirm | Esc=cancel"
+        crate::tui_text!(app, " Type value | Enter=confirm | Esc=cancel")
     } else {
-        " ↑↓ field | Enter edit | p preview | s save | b MusicBrainz | i import | ←→ candidate | Esc close"
+        crate::tui_text!(
+            app,
+            " ↑↓ field | Enter edit | p preview | s save | b MusicBrainz | i import | ←→ candidate | Esc close"
+        )
     };
     f.render_widget(
         Paragraph::new(help)
@@ -424,7 +453,7 @@ pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {
                     .bg(app.theme.bg_primary)
                     .fg(app.theme.fg_primary),
             )
-            .title(" Error ");
+            .title(crate::tui_text!(app, " Error "));
 
         f.render_widget(Clear, modal_area);
         f.render_widget(block, modal_area);
@@ -447,7 +476,7 @@ pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "Audio Playback Error",
+                crate::tui_text!(app, "Audio Playback Error"),
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
         ]));
@@ -464,7 +493,7 @@ pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {
 
         // Add instructions
         lines.push(Line::from(vec![
-            Span::styled("Press ", text_style),
+            Span::styled(crate::tui_text!(app, "Press "), text_style),
             Span::styled(
                 "ESC",
                 Style::default()
@@ -478,14 +507,14 @@ pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {
                     .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(", or ", text_style),
+            Span::styled(crate::tui_text!(app, ", or "), text_style),
             Span::styled(
                 "Space",
                 Style::default()
                     .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" to close", text_style),
+            Span::styled(crate::tui_text!(app, " to close"), text_style),
         ]));
 
         let paragraph = Paragraph::new(lines)
@@ -525,7 +554,7 @@ pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title(" Channel Conflict ");
+        .title(crate::tui_text!(app, " Channel Conflict "));
 
     f.render_widget(Clear, modal_area);
     f.render_widget(block, modal_area);
@@ -546,22 +575,31 @@ pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
     let mut lines = vec![];
 
     lines.push(Line::from(Span::styled(
-        format!(
-            "This track has {} channels but these plugins",
-            app.modal.channel_conflict_track_channels
+        crate::tui_text!(
+            app,
+            format!(
+                "This track has {} channels but these plugins",
+                app.modal.channel_conflict_track_channels
+            )
         ),
         text_style,
     )));
-    lines.push(Line::from(Span::styled("are incompatible:", text_style)));
+    lines.push(Line::from(Span::styled(
+        crate::tui_text!(app, "are incompatible:"),
+        text_style,
+    )));
     lines.push(Line::from(""));
 
     for conflict in &app.modal.channel_conflicts {
         lines.push(Line::from(Span::styled(
-            format!(
-                "  {} (requires {}ch, got {}ch)",
-                conflict.plugin_type.name(),
-                conflict.required_channels,
-                conflict.actual_channels
+            crate::tui_text!(
+                app,
+                format!(
+                    "  {} (requires {}ch, got {}ch)",
+                    conflict.plugin_type.name(),
+                    conflict.required_channels,
+                    conflict.actual_channels
+                )
             ),
             warn_style,
         )));
@@ -570,9 +608,9 @@ pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
     lines.push(Line::from(""));
 
     let options = [
-        "Suspend incompatible and play",
-        "Remove incompatible and play",
-        "Cancel playback",
+        crate::tui_text!(app, "Suspend incompatible and play"),
+        crate::tui_text!(app, "Remove incompatible and play"),
+        crate::tui_text!(app, "Cancel playback"),
     ];
 
     for (i, option) in options.iter().enumerate() {
@@ -588,13 +626,13 @@ pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("Use ", text_style),
+        Span::styled(crate::tui_text!(app, "Use "), text_style),
         Span::styled("↑↓", highlight_style),
-        Span::styled(" to select, ", text_style),
+        Span::styled(crate::tui_text!(app, " to select, "), text_style),
         Span::styled("Enter", highlight_style),
-        Span::styled(" to confirm, ", text_style),
+        Span::styled(crate::tui_text!(app, " to confirm, "), text_style),
         Span::styled("Esc", highlight_style),
-        Span::styled(" to cancel", text_style),
+        Span::styled(crate::tui_text!(app, " to cancel"), text_style),
     ]));
 
     let paragraph = Paragraph::new(lines)

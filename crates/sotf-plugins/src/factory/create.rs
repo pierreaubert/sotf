@@ -165,6 +165,11 @@ pub fn create_plugin(
         }
 
         "mono_to_stereo" => {
+            if channels != 1 {
+                return Err(format!(
+                    "Mono-to-stereo requires 1 input channel, got {channels}"
+                ));
+            }
             let params: MonoToStereoPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse mono_to_stereo params: {e}"))?;
             let plugin = MonoToStereoPlugin::from_params(channels, params);
@@ -326,6 +331,12 @@ pub fn create_plugin(
         "binaural_decoder" => {
             let params: BinauralDecoderParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse binaural decoder params: {e}"))?;
+            if params.input_channels != channels {
+                return Err(format!(
+                    "Binaural decoder is configured for {} input channels, got {channels}",
+                    params.input_channels
+                ));
+            }
             let plugin = BinauralDecoderPlugin::from_params(params);
             Ok(Box::new(plugin))
         }
@@ -337,7 +348,8 @@ pub fn create_plugin(
             Ok(Box::new(plugin))
         }
 
-        "matrix" => create_matrix_plugin(parameters, channels),
+        "matrix" => create_matrix_plugin(parameters, channels)
+            .and_then(|plugin| require_graph_input_channels("Matrix", channels, plugin)),
 
         "channel_mute_solo" => {
             let params: ChannelMuteSoloParams = serde_json::from_value(parameters.clone())
@@ -401,6 +413,12 @@ pub fn create_plugin(
             if params.bands == 0 {
                 return Err("BandMerge requires at least 1 band".to_string());
             }
+            if !channels.is_multiple_of(params.bands) {
+                return Err(format!(
+                    "BandMerge input width {channels} is not divisible by {} bands",
+                    params.bands
+                ));
+            }
             let output_channels = channels / params.bands;
             let plugin = BandMergePlugin::from_params(output_channels, &params)?;
             Ok(Box::new(plugin))
@@ -417,6 +435,11 @@ pub fn create_plugin(
         }
 
         "aec" => {
+            if channels != 2 {
+                return Err(format!(
+                    "AEC requires 2 input channels (microphone + reference), got {channels}"
+                ));
+            }
             let params: AecPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse AEC params: {e}"))?;
             let plugin = AecPlugin::from_params(sample_rate, params);
@@ -426,6 +449,19 @@ pub fn create_plugin(
         "beamformer" => {
             let params: BeamformerPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse beamformer params: {e}"))?;
+            if !(2..=crate::plugin_beamformer::mvdr::MAX_MICS).contains(&params.num_mics) {
+                return Err(format!(
+                    "Beamformer requires 2..={} microphones, got {}",
+                    crate::plugin_beamformer::mvdr::MAX_MICS,
+                    params.num_mics
+                ));
+            }
+            if params.num_mics != channels {
+                return Err(format!(
+                    "Beamformer is configured for {} microphones, got {channels} input channels",
+                    params.num_mics
+                ));
+            }
             let plugin = BeamformerPlugin::from_params(sample_rate, params);
             Ok(Box::new(plugin))
         }
@@ -435,6 +471,13 @@ pub fn create_plugin(
                 serde_json::from_value(parameters.clone())
                     .map_err(|e| format!("Failed to parse ambisonics decoder params: {e}"))?;
             let mut plugin = sotf_plugin_ambisonics::AmbisonicsDecoderPlugin::new(&config)?;
+            if plugin.input_channels() != channels {
+                return Err(format!(
+                    "Order-{} ambisonics requires {} input channels, got {channels}",
+                    config.order,
+                    plugin.input_channels()
+                ));
+            }
             plugin.initialize(sample_rate)?;
             Ok(Box::new(plugin))
         }
@@ -489,6 +532,20 @@ pub fn create_plugin(
 
         other => Err(format!("Unknown plugin type: {other}")),
     }
+}
+
+fn require_graph_input_channels(
+    plugin_name: &str,
+    graph_channels: usize,
+    plugin: Box<dyn Plugin>,
+) -> Result<Box<dyn Plugin>, String> {
+    let plugin_channels = plugin.input_channels();
+    if plugin_channels != graph_channels {
+        return Err(format!(
+            "{plugin_name} is configured for {plugin_channels} input channels, got {graph_channels}"
+        ));
+    }
+    Ok(plugin)
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]

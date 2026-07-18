@@ -13,7 +13,11 @@ pub(crate) fn draw_volume_box(f: &mut Frame, area: Rect, app: &App) {
     ]);
 
     let paragraph = Paragraph::new(text)
-        .block(Block::default().borders(Borders::ALL).title("Volume"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(crate::tui_text!(app, "Volume")),
+        )
         .alignment(Alignment::Center);
 
     f.render_widget(paragraph, area);

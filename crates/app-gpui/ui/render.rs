@@ -1,3 +1,4 @@
+use crate::app::i18n::CastTranslations;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 
@@ -32,7 +33,7 @@ impl Render for PlayerView {
         let window_width: f32 = window_bounds.size.width.into();
 
         // Check if dimensions actually changed to avoid unnecessary updates
-        let needs_dimension_update = {
+        let needs_dimension_update = !self.suppress_geometry_sync && {
             let state = self.state.read(cx);
             (state.app.ui_state.window_height - window_height).abs() > 0.5
                 || (state.app.ui_state.window_width - window_width).abs() > 0.5
@@ -230,6 +231,10 @@ impl Render for PlayerView {
         // Use "TextInput" context when typing to disable single-letter keybindings
         let key_context = if Self::is_text_input_mode(input_mode) {
             "TextInput"
+        } else if current_screen == Screen::ListeningTest {
+            "PlayerView ListeningTest"
+        } else if current_screen == Screen::Studio {
+            "PlayerView PluginRack"
         } else {
             "PlayerView"
         };
@@ -256,7 +261,19 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_plugins))
             .on_action(cx.listener(Self::switch_to_studio))
             .on_action(cx.listener(Self::switch_to_plugin_graph))
+            .on_action(cx.listener(Self::switch_to_listening_test))
+            .on_action(cx.listener(Self::listening_capture_path_a))
+            .on_action(cx.listener(Self::listening_capture_path_b))
+            .on_action(cx.listener(Self::listening_prepare))
+            .on_action(cx.listener(Self::listening_start_blind_ab))
+            .on_action(cx.listener(Self::listening_start_abx))
+            .on_action(cx.listener(Self::listening_play_cue_1))
+            .on_action(cx.listener(Self::listening_play_cue_2))
+            .on_action(cx.listener(Self::listening_play_cue_3))
+            .on_action(cx.listener(Self::listening_commit_answer_1))
+            .on_action(cx.listener(Self::listening_commit_answer_2))
             .on_action(cx.listener(Self::switch_to_devices))
+            .on_action(cx.listener(Self::switch_to_directories))
             .on_action(cx.listener(Self::switch_to_settings))
             .on_action(cx.listener(Self::switch_to_recording))
             .on_action(cx.listener(Self::switch_to_room_eq))
@@ -304,6 +321,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::select_right))
             .on_action(cx.listener(Self::select_up))
             .on_action(cx.listener(Self::select_down))
+            .on_action(cx.listener(Self::previous_workflow_step))
+            .on_action(cx.listener(Self::next_workflow_step))
             .on_action(cx.listener(Self::toggle_expand))
             .on_action(cx.listener(Self::handle_enter))
             .on_action(cx.listener(Self::cancel))
@@ -541,6 +560,13 @@ impl Render for PlayerView {
                         }
                     }
                     crate::app::InputMode::Normal
+                        if current_screen == crate::app::Screen::PluginGraph =>
+                    {
+                        if view.handle_plugin_graph_keyboard(event, cx) {
+                            cx.stop_propagation();
+                        }
+                    }
+                    crate::app::InputMode::Normal
                         if current_screen == crate::app::Screen::Settings
                             && view
                                 .state
@@ -720,6 +746,7 @@ impl PlayerView {
             Screen::HeadphoneEq => self.render_headphone_eq_screen(cx).into_any_element(),
             Screen::Spinorama => self.render_spinorama_eq_screen(cx).into_any_element(),
             Screen::PluginGraph => self.render_plugin_graph_screen(cx).into_any_element(),
+            Screen::ListeningTest => self.render_listening_test_screen(cx).into_any_element(),
             Screen::Playlists => div().into_any_element(),
             // Library/Queue use 3-panel layout in Expanded mode, individual screens in Compact
             Screen::NowPlaying | Screen::Library | Screen::Queue => {
@@ -747,6 +774,7 @@ impl PlayerView {
 
     fn render_app_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let cast_text = CastTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (
             theme,
             current_screen,
@@ -955,7 +983,7 @@ impl PlayerView {
                                         .text_size(d.text_xs)
                                         .font_weight(FontWeight::SEMIBOLD)
                                         .text_color(theme.text_muted)
-                                        .child("Preferences"),
+                                        .child(cast_text.preferences),
                                 ),
                         )
                         .child(
@@ -981,50 +1009,55 @@ impl PlayerView {
             })
             .child(self.render_sidebar_devices_item(collapsed, &theme, &d))
             .when(!collapsed, |el| {
-                el.child(self.render_sidebar_device_actions(cast_discovery_running, &theme, &d))
-                    .children(
-                        output_devices
-                            .iter()
-                            .take(4)
-                            .enumerate()
-                            .map(|(idx, device)| {
-                                self.render_sidebar_output_device_item(
-                                    idx,
-                                    &device.name,
-                                    idx == selected_output_device_index
-                                        && selected_cast_device.is_none(),
-                                    &theme,
-                                    &d,
-                                )
-                            }),
+                el.child(self.render_sidebar_device_actions(
+                    cast_discovery_running,
+                    cast_text,
+                    &theme,
+                    &d,
+                ))
+                .children(
+                    output_devices
+                        .iter()
+                        .take(4)
+                        .enumerate()
+                        .map(|(idx, device)| {
+                            self.render_sidebar_output_device_item(
+                                idx,
+                                &device.name,
+                                idx == selected_output_device_index
+                                    && selected_cast_device.is_none(),
+                                &theme,
+                                &d,
+                            )
+                        }),
+                )
+                .child(self.render_sidebar_cast_group_label(cast_discovery_running, &theme, &d))
+                .when(cast_devices.is_empty() && !cast_discovery_running, |el| {
+                    el.child(
+                        div()
+                            .px(d.pad_y)
+                            .py(d.grid)
+                            .text_size(d.text_xs)
+                            .text_color(theme.text_muted)
+                            .child(cast_text.no_devices),
                     )
-                    .child(self.render_sidebar_cast_group_label(cast_discovery_running, &theme, &d))
-                    .when(cast_devices.is_empty() && !cast_discovery_running, |el| {
-                        el.child(
-                            div()
-                                .px(d.pad_y)
-                                .py(d.grid)
-                                .text_size(d.text_xs)
-                                .text_color(theme.text_muted)
-                                .child("No Cast devices"),
-                        )
-                    })
-                    .children(
-                        cast_devices
-                            .iter()
-                            .take(4)
-                            .enumerate()
-                            .map(|(idx, device)| {
-                                self.render_sidebar_cast_device_item(
-                                    idx,
-                                    &device.name,
-                                    &device.device_type,
-                                    selected_cast_device == Some(idx),
-                                    &theme,
-                                    &d,
-                                )
-                            }),
-                    )
+                })
+                .children(
+                    cast_devices
+                        .iter()
+                        .take(4)
+                        .enumerate()
+                        .map(|(idx, device)| {
+                            self.render_sidebar_cast_device_item(
+                                idx,
+                                &device.name,
+                                &device.device_type,
+                                selected_cast_device == Some(idx),
+                                &theme,
+                                &d,
+                            )
+                        }),
+                )
             })
             .into_any_element()
     }
@@ -1154,6 +1187,7 @@ impl PlayerView {
     fn render_sidebar_device_actions(
         &self,
         cast_discovery_running: bool,
+        text: CastTranslations,
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> AnyElement {
@@ -1186,7 +1220,7 @@ impl PlayerView {
                         let theme = theme.clone();
                         move |style| style.bg(theme.surface_hover).text_color(theme.text_primary)
                     })
-                    .child("Refresh")
+                    .child(text.refresh)
                     .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                         state_for_refresh.update(cx, |state, _cx| {
                             state.app.load_audio_devices();

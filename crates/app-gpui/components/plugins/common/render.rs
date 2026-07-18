@@ -358,10 +358,10 @@ pub fn render_edit_hints(d: &Ds, theme: &Theme) -> impl IntoElement {
         .gap(d.section)
         .text_size(d.text_xs)
         .text_color(theme.text_muted)
-        .child("↑/↓: Select")
-        .child("←/→: Adjust")
-        .child("[/]: Large step")
-        .child("Enter: Done")
+        .child("↑/↓")
+        .child("←/→")
+        .child("[/]")
+        .child("↵")
 }
 
 /// Render a toggle button using gpui-ui-kit Toggle component
@@ -1013,10 +1013,15 @@ pub fn render_knob_sized(
         PotentiometerScale::Linear
     };
 
-    let mut knob = Potentiometer::new(("knob", plugin_idx * 1000 + idx))
-        .value(value)
-        .min(min)
-        .max(max)
+    let knob = Potentiometer::new(("knob", plugin_idx * 1000 + idx)).value(value);
+    // Potentiometer reformats after every range setter and starts at 0..100.
+    // Set the bound that keeps the intermediate range valid first.
+    let knob = if min > 100.0 {
+        knob.max(max).min(min)
+    } else {
+        knob.min(min).max(max)
+    };
+    let mut knob = knob
         .unit(unit.to_string())
         .label(label.to_string())
         .size(size)

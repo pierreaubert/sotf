@@ -277,6 +277,7 @@ fn main() {
                 MenuItem::action(translations.screen_library, SwitchToLibrary),
                 MenuItem::action(translations.screen_studio, SwitchToStudio),
                 MenuItem::action(translations.screen_studio_full, SwitchToPluginGraph),
+                MenuItem::action(translations.screen_listening_test, SwitchToListeningTest),
                 MenuItem::action(translations.screen_recording, SwitchToRecording),
             ];
             if release_channel.allows(Screen::RoomEq.maturity()) {
@@ -383,7 +384,13 @@ fn main() {
                     is_resizable: true,
                     tabbing_identifier: None,
                     window_decorations: None,
-                    window_min_size: None,
+                    // The desktop shell keeps a persistent navigation sidebar.
+                    // Below this size the main workflow controls become clipped;
+                    // iOS uses the dedicated phone shell instead.
+                    window_min_size: Some(Size {
+                        width: px(700.0),
+                        height: px(600.0),
+                    }),
                     icon: None,
                 },
                 |_, cx| {

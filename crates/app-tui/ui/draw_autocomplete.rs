@@ -52,9 +52,12 @@ pub(crate) fn render_autocomplete_dropdown(f: &mut Frame, area: Rect, app: &App)
         .collect();
 
     let title = if total == 1 {
-        "1 match".to_string()
+        crate::tui_text!(app, "1 match")
     } else {
-        format!("{}/{} matches", app.autocomplete.index + 1, total,)
+        crate::tui_text!(
+            app,
+            format!("{}/{} matches", app.autocomplete.index + 1, total,)
+        )
     };
 
     let list = List::new(items).block(

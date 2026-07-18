@@ -54,15 +54,15 @@ pub fn apply_eq_filter_tuples_to_chain(
     let eq_filters: Vec<EQFilter> = filters
         .iter()
         .map(|(ft_str, freq, q, db_gain)| {
-            let ft = match ft_str.as_str() {
-                "Peak" => BiquadFilterType::Peak,
-                "Lowshelf" => BiquadFilterType::Lowshelf,
-                "Highshelf" => BiquadFilterType::Highshelf,
-                "Lowpass" => BiquadFilterType::Lowpass,
-                "Highpass" => BiquadFilterType::Highpass,
-                "Bandpass" => BiquadFilterType::Bandpass,
-                "Notch" => BiquadFilterType::Notch,
-                "AllPass" => BiquadFilterType::AllPass,
+            let ft = match ft_str.to_ascii_lowercase().as_str() {
+                "peak" => BiquadFilterType::Peak,
+                "lowshelf" => BiquadFilterType::Lowshelf,
+                "highshelf" => BiquadFilterType::Highshelf,
+                "lowpass" => BiquadFilterType::Lowpass,
+                "highpass" => BiquadFilterType::Highpass,
+                "bandpass" => BiquadFilterType::Bandpass,
+                "notch" => BiquadFilterType::Notch,
+                "allpass" => BiquadFilterType::AllPass,
                 _ => BiquadFilterType::Peak,
             };
             EQFilter::new(ft, *freq, *q, *db_gain)
@@ -110,6 +110,127 @@ pub fn apply_eq_filter_tuples_to_chain(
         "Applied {} EQ filters for '{}' to plugin slot {}",
         n, label, target_idx
     ))
+}
+
+/// Build the beginner Headphone EQ chain as ordinary editable graph nodes.
+///
+/// Validation and insertion happen on a clone so failure never partially
+/// changes the active graph.
+pub fn apply_headphone_easy_chain(
+    graph: &mut PluginGraph,
+    filters: &[(String, f64, f64, f64)],
+    sample_rate: f64,
+    playback_level_db: f64,
+    reference_level_db: f64,
+) -> Result<HeadphoneEasyApplyOutcome, String> {
+    if !sample_rate.is_finite() || sample_rate < 8_000.0 {
+        return Err("Sample rate must be finite and at least 8000 Hz".to_string());
+    }
+    if !(40.0..=90.0).contains(&playback_level_db) {
+        return Err("Playback level must be between 40 and 90 dB SPL".to_string());
+    }
+    if !(60.0..=100.0).contains(&reference_level_db) {
+        return Err("Reference level must be between 60 and 100 dB SPL".to_string());
+    }
+    if playback_level_db > reference_level_db {
+        return Err("Playback level cannot exceed the reference level".to_string());
+    }
+
+    let nyquist = sample_rate * 0.5;
+    let active: Vec<(String, f64, f64, f64)> = filters
+        .iter()
+        .filter(|(_, _, _, gain)| gain.abs() >= 0.1)
+        .cloned()
+        .collect();
+    if active.is_empty() {
+        return Err("No active headphone EQ filters to apply".to_string());
+    }
+    for (filter_type, frequency, q, gain_db) in &active {
+        if !matches!(
+            filter_type.to_ascii_lowercase().as_str(),
+            "peak"
+                | "lowshelf"
+                | "highshelf"
+                | "lowpass"
+                | "highpass"
+                | "bandpass"
+                | "notch"
+                | "allpass"
+        ) {
+            return Err(format!(
+                "Unsupported headphone EQ filter type: {filter_type}"
+            ));
+        }
+        if !frequency.is_finite() || *frequency <= 0.0 || *frequency >= nyquist {
+            return Err(format!(
+                "Headphone EQ frequency {frequency} Hz is outside (0, {nyquist})"
+            ));
+        }
+        if !q.is_finite() || *q <= 0.0 {
+            return Err(format!("Headphone EQ Q must be positive, got {q}"));
+        }
+        if !gain_db.is_finite() {
+            return Err("Headphone EQ gain must be finite".to_string());
+        }
+    }
+
+    let max_boost_db = active
+        .iter()
+        .map(|(_, _, _, gain)| *gain)
+        .fold(0.0_f64, f64::max);
+    let preamp_db = -max_boost_db;
+    let mut candidate = graph.clone();
+
+    let gain_idx = candidate.user_plugin_insert_index();
+    candidate.insert_plugin(gain_idx, &PluginType::Gain)?;
+    if let Some(plugin) = candidate.get_plugin_mut(gain_idx) {
+        plugin.name = Some("Headphone Safety Preamp".to_string());
+        plugin.settings = PluginSettings::Gain {
+            channels: 2,
+            gain_db: preamp_db,
+            smoothing_ms: 20.0,
+        };
+        plugin.enabled = true;
+    }
+
+    let eq_idx = candidate.user_plugin_insert_index();
+    candidate.insert_plugin(eq_idx, &PluginType::EQ)?;
+    apply_eq_filter_tuples_to_chain(&mut candidate, &active, "Headphone EQ")?;
+    if let Some(plugin) = candidate.get_plugin_mut(eq_idx) {
+        plugin.name = Some("Headphone EQ".to_string());
+    }
+
+    let loudness_idx = candidate.user_plugin_insert_index();
+    candidate.insert_plugin(loudness_idx, &PluginType::LoudnessCompensation)?;
+    if let Some(plugin) = candidate.get_plugin_mut(loudness_idx) {
+        plugin.name = Some("Headphone Loudness Compensation".to_string());
+        let mut settings = PluginSettings::default_for(&PluginType::LoudnessCompensation);
+        if let PluginSettings::LoudnessCompensation {
+            mode,
+            playback_level_db: playback,
+            reference_level_db: reference,
+            auto_gain_enabled,
+            ..
+        } = &mut settings
+        {
+            *mode = 1;
+            *playback = playback_level_db;
+            *reference = reference_level_db;
+            *auto_gain_enabled = true;
+        }
+        plugin.settings = settings;
+        plugin.enabled = true;
+    }
+
+    candidate.update_channel_dependent_plugins();
+    *graph = candidate;
+
+    Ok(HeadphoneEasyApplyOutcome {
+        active_filters: active.len(),
+        preamp_db,
+        playback_level_db,
+        reference_level_db,
+    })
 }
 
 #[cfg(test)]
@@ -733,6 +854,7 @@ mod tests {
                 id: 0,
                 plugin_type: "eq".to_string(),
                 input_channels: 2,
+                bypassed: false,
                 parameters: serde_json::json!({
                     "channel_filters": [
                         [{"filter_type": "peak", "freq": 100.0, "q": 1.5, "db_gain": -3.0}],
@@ -778,6 +900,7 @@ mod tests {
                 id: 0,
                 plugin_type: "delay".to_string(),
                 input_channels: 2,
+                bypassed: false,
                 parameters: serde_json::json!({
                     "channel_delays_ms": [12.5, 25.0],
                     "delay_ms": 0.0,
@@ -810,6 +933,7 @@ mod tests {
                 id: 0,
                 plugin_type: "gain".to_string(),
                 input_channels: 2,
+                bypassed: false,
                 parameters: serde_json::json!({
                     "channel_gains": [-6.0, -9.0],
                     "gain_db": 0.0,
@@ -831,5 +955,84 @@ mod tests {
             }
             _ => panic!("expected Gain settings"),
         }
+    }
+}
+
+#[cfg(test)]
+mod headphone_easy_apply_tests {
+    use super::*;
+
+    fn filters() -> Vec<(String, f64, f64, f64)> {
+        vec![
+            ("Peak".to_string(), 120.0, 1.2, 4.0),
+            ("highshelf".to_string(), 8_000.0, 0.7, -2.0),
+        ]
+    }
+
+    #[test]
+    fn inserts_safe_editable_headphone_chain() {
+        let mut graph = PluginGraph::with_default_rack();
+        let outcome =
+            apply_headphone_easy_chain(&mut graph, &filters(), 48_000.0, 70.0, 83.0).unwrap();
+
+        assert_eq!(outcome.active_filters, 2);
+        assert_eq!(outcome.preamp_db, -4.0);
+
+        let plugins = graph.plugins();
+        let names: Vec<_> = plugins
+            .iter()
+            .map(|plugin| plugin.name.as_deref().unwrap_or_default())
+            .collect();
+        let preamp = names
+            .iter()
+            .position(|name| *name == "Headphone Safety Preamp")
+            .unwrap();
+        let eq = names
+            .iter()
+            .position(|name| *name == "Headphone EQ")
+            .unwrap();
+        let loudness = names
+            .iter()
+            .position(|name| *name == "Headphone Loudness Compensation")
+            .unwrap();
+        assert!(preamp < eq && eq < loudness);
+        let restored: PluginGraph =
+            serde_json::from_value(serde_json::to_value(&graph).unwrap()).unwrap();
+        assert_eq!(restored.len(), graph.len());
+
+        assert!(matches!(
+            plugins[preamp].settings,
+            PluginSettings::Gain { gain_db, .. } if (gain_db + 4.0).abs() < 1e-9
+        ));
+        let PluginSettings::EQ { filters, .. } = &plugins[eq].settings else {
+            panic!("expected Headphone EQ settings");
+        };
+        assert_eq!(
+            filters[1].filter_type,
+            math_audio_iir_fir::BiquadFilterType::Highshelf
+        );
+        assert!(matches!(
+            plugins[loudness].settings,
+            PluginSettings::LoudnessCompensation {
+                mode: 1,
+                playback_level_db: 70.0,
+                reference_level_db: 83.0,
+                auto_gain_enabled: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_easy_chain_is_atomic() {
+        let mut graph = PluginGraph::with_default_rack();
+        let before = serde_json::to_value(&graph).unwrap();
+        let invalid = vec![("Peak".to_string(), 30_000.0, 1.0, 3.0)];
+
+        let error =
+            apply_headphone_easy_chain(&mut graph, &invalid, 48_000.0, 70.0, 83.0).unwrap_err();
+
+        assert!(error.contains("outside"));
+        assert_eq!(serde_json::to_value(&graph).unwrap(), before);
     }
 }

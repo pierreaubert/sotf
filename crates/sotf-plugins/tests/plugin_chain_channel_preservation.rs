@@ -142,6 +142,82 @@ fn upmix_then_downmix_returns_to_stereo() {
     );
 }
 
+/// Decode first-order ACN/SN3D B-format to a 5.1 speaker bed, then render that
+/// bed binaurally. This is the valid spatial counterpart to chaining an
+/// upmixer into a binaural renderer: an ambisonics decoder consumes B-format,
+/// not the speaker feeds produced by an upmixer.
+#[test]
+fn first_order_ambisonics_to_binaural_chain_is_finite_and_audible() {
+    let mut host = PluginHost::new(4, SAMPLE_RATE);
+
+    let ambisonics = create_plugin(
+        "ambisonics_decoder",
+        &serde_json::json!({
+            "order": 1,
+            "target_layout": "5.1",
+            "max_re_weighting": true,
+            "dual_band": false,
+        }),
+        4,
+        SAMPLE_RATE,
+    )
+    .expect("first-order ambisonics decoder should instantiate");
+    let ambisonics_latency = ambisonics.latency_samples();
+    host.add_plugin(ambisonics).unwrap();
+    assert_eq!(host.output_channels(), 6, "5.1 decode must produce 6ch");
+
+    let binaural = create_plugin(
+        "binaural_decoder",
+        &serde_json::json!({"input_channels": 6}),
+        6,
+        SAMPLE_RATE,
+    )
+    .expect("5.1 binaural renderer should instantiate");
+    let binaural_latency = binaural.latency_samples();
+    host.add_plugin(binaural).unwrap();
+
+    assert_eq!(host.input_channels(), 4);
+    assert_eq!(host.output_channels(), 2);
+    host.build()
+        .expect("spatial chain should build before latency is queried");
+    assert_eq!(
+        host.total_latency_samples(),
+        ambisonics_latency + binaural_latency,
+        "linear spatial-chain latency must be the sum of both stages"
+    );
+    assert!(
+        host.total_latency_samples() > 0,
+        "the binaural convolution stage must report nonzero latency"
+    );
+
+    // ACN/SN3D first-order channel order is W, Y, Z, X. Use distinct
+    // horizontal components so an accidental speaker-layout interpretation or
+    // stale-channel reuse cannot look like four identical input channels.
+    let frames = 16_384;
+    let mut input = vec![0.0_f32; frames * 4];
+    for frame in 0..frames {
+        let t = frame as f32 / SAMPLE_RATE as f32;
+        let fundamental = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.2;
+        input[frame * 4] = fundamental * std::f32::consts::FRAC_1_SQRT_2; // W
+        input[frame * 4 + 1] = fundamental * 0.25; // Y
+        input[frame * 4 + 2] = 0.0; // Z (horizontal target)
+        input[frame * 4 + 3] = fundamental * 0.5; // X
+    }
+
+    let mut warmup = vec![0.0_f32; frames * 2];
+    host.process(&input, &mut warmup)
+        .expect("spatial chain warm-up should process");
+    let mut output = vec![0.0_f32; frames * 2];
+    let processed = host
+        .process(&input, &mut output)
+        .expect("spatial chain should process");
+
+    assert_eq!(processed, frames);
+    assert_all_finite(&output, "ambisonics->5.1->binaural chain");
+    let energy: f32 = output.iter().map(|sample| sample * sample).sum();
+    assert!(energy > 1e-6, "spatial chain output was silent: {energy}");
+}
+
 /// Place a channel-mismatched plugin at the end of a chain and verify the host
 /// rejects it gracefully, leaving the original chain functional.
 #[test]

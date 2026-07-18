@@ -15,6 +15,10 @@ impl PlayerView {
                 crate::ui::layout_tree::solve_app_layout(w, h, layout),
             )
         };
+        let state = self.state.read(cx);
+        let library_label = state.app.ui_state.translations.screen_library;
+        let rack_label =
+            PluginRackTranslations::for_language(state.app.ui_state.language).signal_chain;
         let library_node = solved.find("library");
         let rack_node = solved.find("rack");
         let library_visible = library_node.is_some_and(|node| node.visible);
@@ -195,7 +199,7 @@ impl PlayerView {
             // Library-Queue divider
             .child({
                 PaneDivider::vertical("lib-queue-h-divider", CollapseDirection::Left)
-                    .label("Library")
+                    .label(library_label)
                     .collapsed(!library_visible)
                     .theme(divider_theme.clone())
                     .on_toggle({
@@ -247,7 +251,7 @@ impl PlayerView {
             .when(rack_visible, |d| {
                 d.child({
                     PaneDivider::vertical("queue-rack-h-divider", CollapseDirection::Right)
-                        .label("Rack")
+                    .label(rack_label)
                         .collapsed(!rack_visible)
                         .theme(divider_theme)
                         .on_toggle({
@@ -298,6 +302,10 @@ impl PlayerView {
                 crate::ui::layout_tree::solve_app_layout(w, h, layout),
             )
         };
+        let state = self.state.read(cx);
+        let library_label = state.app.ui_state.translations.screen_library;
+        let rack_label =
+            PluginRackTranslations::for_language(state.app.ui_state.language).signal_chain;
         let library_node = solved.find("library");
         let rack_node = solved.find("rack");
         let library_visible = library_node.is_some_and(|node| node.visible);
@@ -464,7 +472,7 @@ impl PlayerView {
             // Library-Queue divider (horizontal)
             .child({
                 PaneDivider::horizontal("lib-queue-v-divider", CollapseDirection::Up)
-                    .label("Library")
+                    .label(library_label)
                     .collapsed(!library_visible)
                     .theme(divider_theme.clone())
                     .on_toggle({
@@ -505,7 +513,7 @@ impl PlayerView {
             .when(rack_visible, |d| {
                 d.child({
                     PaneDivider::horizontal("queue-rack-v-divider", CollapseDirection::Down)
-                        .label("Rack")
+                    .label(rack_label)
                         .collapsed(!rack_visible)
                         .theme(divider_theme)
                         .on_toggle({
@@ -598,3 +606,4 @@ impl PlayerView {
         self.render_queue_screen(cx)
     }
 }
+use crate::app::i18n::PluginRackTranslations;

@@ -8,6 +8,7 @@ pub mod graphs;
 pub mod headphone_eq;
 pub mod home;
 pub mod icons;
+pub mod listening_test;
 pub mod migration;
 pub mod plugins;
 pub mod recording;
@@ -21,6 +22,7 @@ pub use plugins::{
 };
 
 use crate::app::SettingsTab;
+use crate::app::i18n::PlaybackApplyTranslations;
 use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
@@ -327,6 +329,8 @@ impl PlayerView {
         apply_fn: fn(&mut Self, &mut Context<Self>),
         clear_fn: fn(&mut Self, &mut Context<Self>),
     ) -> Card {
+        let text =
+            PlaybackApplyTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let apply_id = SharedString::from(format!("apply-{}-eq", id_prefix));
         let clear_id = SharedString::from(format!("clear-{}-eq", id_prefix));
 
@@ -335,7 +339,7 @@ impl PlayerView {
             .header_background(theme.background_secondary)
             .border(theme.border)
             .header(
-                Text::new("Apply to Playback")
+                Text::new(text.title)
                     .color(theme.text_primary)
                     .weight(TextWeight::Semibold),
             )
@@ -343,7 +347,7 @@ impl PlayerView {
                 VStack::new()
                     .spacing(StackSpacing::Sm)
                     .child(
-                        Text::new("Apply the EQ to your current playback to hear the difference.")
+                        Text::new(text.description)
                             .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
@@ -351,7 +355,7 @@ impl PlayerView {
                         HStack::new()
                             .spacing(StackSpacing::Xs)
                             .child(
-                                Button::new(apply_id, "Apply to Playback")
+                                Button::new(apply_id, text.title)
                                     .variant(ButtonVariant::Primary)
                                     .size(ButtonSize::Sm)
                                     .theme(button_theme.clone())
@@ -360,7 +364,7 @@ impl PlayerView {
                                     })),
                             )
                             .child(
-                                Button::new(clear_id, "Clear EQ")
+                                Button::new(clear_id, text.clear_eq)
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Sm)
                                     .theme(button_theme.clone())

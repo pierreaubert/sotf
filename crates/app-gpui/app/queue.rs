@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use rand::Rng;
+use rand::RngExt;
 use sotf_audio_player::{Album, QueuePlaybackEffect};
 
 use super::state::App;

@@ -24,4 +24,5 @@ mod tests;
 mod types;
 
 pub use abcompare_plugin::*;
+pub use factory::build_path_from_config_with_factory;
 pub use types::*;

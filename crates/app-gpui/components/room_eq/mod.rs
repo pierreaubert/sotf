@@ -111,9 +111,10 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let title = state.app.ui_state.translations.screen_room_eq;
         let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.measurement_state.room_eq_state.step;
-        let can_go_next = self.room_eq_can_advance(cx);
+        let can_go_next = state.app.can_advance_workflow_step();
         let is_busy = state.app.measurement_state.room_eq_state.is_optimizing();
 
         let step_index = current_step.index();
@@ -158,7 +159,7 @@ impl PlayerView {
         let button_theme = ButtonTheme::from(&ui_kit_theme);
 
         let wizard_header = WizardHeader::new()
-            .title("Room EQ")
+            .title(title)
             .steps(steps)
             .step_statuses(step_statuses)
             .current_step(step_index)
@@ -181,19 +182,7 @@ impl PlayerView {
                     .theme(button_theme.clone())
                     .on_click_event(cx.listener(|view, _, _, cx| {
                         view.state.update(cx, |state, _| {
-                            match state.app.measurement_state.room_eq_state.step {
-                                RoomEqStep::LoadData => {
-                                    state.app.ui_state.current_screen =
-                                        state.app.ui_state.last_screen;
-                                }
-                                _ => {
-                                    if let Some(prev) =
-                                        state.app.measurement_state.room_eq_state.step.previous()
-                                    {
-                                        state.app.measurement_state.room_eq_state.step = prev;
-                                    }
-                                }
-                            }
+                            state.app.move_workflow_step(false);
                         });
                         cx.notify();
                     })),
@@ -206,19 +195,7 @@ impl PlayerView {
                     .theme(button_theme.clone())
                     .on_click_event(cx.listener(|view, _, _, cx| {
                         view.state.update(cx, |state, _| {
-                            match state.app.measurement_state.room_eq_state.step {
-                                RoomEqStep::Export => {
-                                    state.app.ui_state.current_screen =
-                                        state.app.ui_state.last_screen;
-                                }
-                                _ => {
-                                    if let Some(next) =
-                                        state.app.measurement_state.room_eq_state.step.next()
-                                    {
-                                        state.app.measurement_state.room_eq_state.step = next;
-                                    }
-                                }
-                            }
+                            state.app.move_workflow_step(true);
                         });
                         cx.notify();
                     })),
@@ -270,25 +247,5 @@ impl PlayerView {
             )
             // Navigation buttons on the right
             .child(navigation)
-    }
-
-    /// Check if we can advance from current step
-    fn room_eq_can_advance(&self, cx: &Context<Self>) -> bool {
-        let state = self.state.read(cx);
-        let room_eq = &state.app.measurement_state.room_eq_state;
-
-        match room_eq.step {
-            RoomEqStep::LoadData => room_eq.has_measurements(),
-            // Delay detection is optional — it auto-feeds probe arrivals
-            // into the optimizer when run, but skipping it falls back to
-            // WAV-onset detection, so advancement is always allowed.
-            RoomEqStep::Delay => true,
-            // Process is the wizard-mode selector — always advanceable.
-            RoomEqStep::Process => true,
-            RoomEqStep::Configure => !room_eq.speaker_configs.is_empty(),
-            RoomEqStep::Optimize => room_eq.is_optimization_complete(),
-            RoomEqStep::Review => true,
-            RoomEqStep::Export => true,
-        }
     }
 }

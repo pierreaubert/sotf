@@ -1,4 +1,5 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
+use crate::app::i18n::RecordingTranslations;
 use crate::app::types::{ChannelRecordingState, RecordingResult, RecordingSignalType};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
@@ -14,14 +15,17 @@ use gpui_ui_kit::{
 impl PlayerView {
     /// Render the capture step UI
     pub(crate) fn render_recording_capture_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let translations = self.state.read(cx).app.ui_state.translations.clone();
+        let state = self.state.read(cx);
+        let translations = state.app.ui_state.translations.clone();
+        let workflow_text =
+            crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
                 // Header
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(Heading::h4("Signal Recording"))
+                    .child(Heading::h4(workflow_text.signal_recording))
                     .child(Text::new(translations.recording_capture_desc).size(TextSize::Xs)),
             )
             .child(self.render_signal_config_section(cx))
@@ -120,14 +124,17 @@ impl PlayerView {
     pub(super) fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         let options = vec![
-            SelectOption::new("5", "5 seconds"),
-            SelectOption::new("10", "10 seconds"),
-            SelectOption::new("15", "15 seconds"),
-            SelectOption::new("20", "20 seconds"),
+            SelectOption::new("5", recording_text.seconds(5)),
+            SelectOption::new("10", recording_text.seconds(10)),
+            SelectOption::new("15", recording_text.seconds(15)),
+            SelectOption::new("20", recording_text.seconds(20)),
         ];
 
         let current_duration = recording_state.signal_duration_secs as i32;
@@ -181,14 +188,15 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let recording_state = &state.app.measurement_state.recording_state;
         let is_sweep = recording_state.signal_type == RecordingSignalType::Sweep;
 
         if !is_sweep || recording_state.channel_recordings.is_empty() {
             return Card::new()
-                .content(Text::caption(
-                    "Frequency range configuration is only available for sweep signals",
-                ))
+                .content(Text::caption(recording_text.sweep_frequency_range_only))
                 .into_any_element();
         }
 
@@ -504,12 +512,10 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
         let is_recording = state.app.measurement_state.recording_state.is_recording();
-        let status_message = state
-            .app
-            .measurement_state
-            .recording_state
-            .status_message
-            .clone();
+        let status_message =
+            crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language)
+                .translate(&state.app.measurement_state.recording_state.status_message)
+                .into_owned();
         let recording_progress = state
             .app
             .measurement_state
@@ -626,6 +632,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
         let is_recording = recording_state.is_recording();
@@ -643,9 +652,7 @@ impl PlayerView {
                         .p(d.card)
                         .rounded(d.r_md)
                         .bg(theme.surface)
-                        .child(Text::caption(
-                            "No channels configured. Please go back and configure your devices.",
-                        )),
+                        .child(Text::caption(recording_text.no_channels_configured)),
                 )
                 .into_any_element();
         }
@@ -2690,6 +2697,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = RecordingTranslations::for_language(state.app.ui_state.language);
         let rec_state = &state.app.measurement_state.recording_state;
 
         // `pending_next_position` is the index of the position the user
@@ -2778,7 +2786,7 @@ impl PlayerView {
                                     .text_color(theme.text_secondary)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.border))
-                                    .child("Cancel session")
+                            .child(text.cancel_session)
                                     .on_click(move |_event, _window, cx| {
                                         view_cancel.update(cx, |this, cx| {
                                             this.cancel_position_modal(cx);
@@ -2795,7 +2803,7 @@ impl PlayerView {
                                     .text_color(theme.text_on_accent)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
-                                    .child("Continue")
+                            .child(text.continue_action)
                                     .on_click(move |_event, _window, cx| {
                                         view.update(cx, |this, cx| {
                                             this.continue_position_modal(cx);

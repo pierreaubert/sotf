@@ -161,11 +161,13 @@ fn bypass_copies_stereo_input() {
 
 #[test]
 fn process_with_signal_produces_output() {
-    let mut params = AaePluginParams::default();
-    params.dry_level = 1.0;
-    params.er_level = 0.0;
-    params.late_level = 0.0;
-    params.lfe_level = 0.0;
+    let params = AaePluginParams {
+        dry_level: 1.0,
+        er_level: 0.0,
+        late_level: 0.0,
+        lfe_level: 0.0,
+        ..Default::default()
+    };
 
     let mut plugin = AaePlugin::from_params(params);
     plugin.initialize(48_000).unwrap();

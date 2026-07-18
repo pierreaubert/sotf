@@ -2,3 +2,5 @@
 *.app
 *~
 /docs
+/.build
+

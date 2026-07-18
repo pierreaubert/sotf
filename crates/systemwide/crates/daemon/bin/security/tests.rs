@@ -5,7 +5,9 @@ use super::get::get_hal_key_path;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use super::get::get_key_path;
 use super::get::get_secure_socket_path;
-use super::misc::secure_socket_path_from_env;
+use super::misc::{
+    daemon_session_key_path_from_env, hal_session_key_path_from_env, secure_socket_path_from_env,
+};
 use super::peer_class::classify_peer;
 use super::peer_class::peer_allows_command;
 use super::types::PeerClass;
@@ -19,6 +21,40 @@ use std::path::PathBuf;
 fn test_socket_path_is_user_specific() {
     let path = get_secure_socket_path();
     assert!(path.to_string_lossy().contains("sotf"));
+}
+
+#[test]
+fn test_session_key_paths_support_lab_runtime_overrides() {
+    let runtime = OsString::from("/tmp/sotf-key-path-test");
+    assert_eq!(
+        daemon_session_key_path_from_env(
+            None,
+            Some(runtime.clone()),
+            Some(OsString::from("/Users/example")),
+        ),
+        PathBuf::from("/tmp/sotf-key-path-test/daemon-session.key")
+    );
+    assert_eq!(
+        hal_session_key_path_from_env(None, Some(runtime), 501),
+        PathBuf::from("/tmp/sotf-key-path-test/session.key")
+    );
+
+    assert_eq!(
+        daemon_session_key_path_from_env(
+            Some(OsString::from("/tmp/private.key")),
+            Some(OsString::from("/tmp/ignored")),
+            None,
+        ),
+        PathBuf::from("/tmp/private.key")
+    );
+    assert_eq!(
+        hal_session_key_path_from_env(
+            Some(OsString::from("/tmp/hal.key")),
+            Some(OsString::from("/tmp/ignored")),
+            501,
+        ),
+        PathBuf::from("/tmp/hal.key")
+    );
 }
 
 #[test]
@@ -292,8 +328,10 @@ fn test_key_manager_stub_does_not_pretend_to_rotate() {
     let before = manager.fingerprint_hex();
     assert!(!manager.is_enabled());
 
-    // Rotation on the stub is a no-op and must not report an error.
-    assert!(manager.force_rotate().is_ok());
+    // Rotation must report the missing capability instead of pretending that a
+    // new key was published.
+    let error = manager.force_rotate().expect_err("stub rotation must fail");
+    assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
     assert!(!manager.is_enabled());
     assert_eq!(manager.fingerprint_hex(), before);
 }

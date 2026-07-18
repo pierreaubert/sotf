@@ -1,0 +1,59 @@
+name: TUI portability
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: tui-portability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tui-tests:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-14
+          - name: Linux
+            os: ubuntu-24.04
+          - name: Windows
+            os: windows-2025
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install Linux audio build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            cmake \
+            libasound2-dev \
+            libssl-dev \
+            pkg-config
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: tui-${{ runner.os }}
+
+      - name: Run TUI library, navigation, and workflow tests
+        run: cargo test -p sotf-tui --lib --tests
+
+      - name: Check TUI library warnings
+        run: cargo clippy -p sotf-tui --lib -- -D warnings

@@ -45,6 +45,44 @@ pub(super) fn bare_output(channels: Vec<(String, ChannelDspChain)>) -> DspChainO
 }
 
 #[test]
+fn easy_stereo_output_applies_as_editable_persistable_rack() {
+    use crate::autoeq::{RoomEqApplyOutcome, apply_room_eq_to_chain};
+    use crate::plugin_graph::PluginGraph;
+
+    let channel = |name: &str| {
+        let mut chain = bare_chain(name, None);
+        chain.plugins.push(PluginConfigWrapper {
+            plugin_type: "eq".to_string(),
+            parameters: serde_json::json!({
+                "filters": [{
+                    "filter_type": "peak",
+                    "frequency": 100.0,
+                    "q": 1.0,
+                    "gain_db": -2.0
+                }]
+            }),
+        });
+        chain
+    };
+    let output = bare_output(vec![
+        ("L".to_string(), channel("L")),
+        ("R".to_string(), channel("R")),
+    ]);
+    let mut graph = PluginGraph::with_default_rack();
+    let channel_names = vec!["L".to_string(), "R".to_string()];
+
+    let outcome = apply_room_eq_to_chain(&mut graph, &output, 48_000.0, &channel_names).unwrap();
+    assert!(matches!(outcome, RoomEqApplyOutcome::Rack(_)));
+    assert!(graph.is_linear());
+
+    let encoded = serde_json::to_string(&graph).unwrap();
+    let mut restored: PluginGraph = serde_json::from_str(&encoded).unwrap();
+    let previous_count = restored.plugin_count();
+    restored.add_plugin(&crate::PluginType::Gain);
+    assert_eq!(restored.plugin_count(), previous_count + 1);
+}
+
+#[test]
 fn test_is_rack_compatible_no_drivers() {
     let output = bare_output(vec![
         ("L".to_string(), bare_chain("L", None)),
@@ -233,6 +271,8 @@ fn test_build_room_eq_graph_ctc_uses_stereo_input_and_speaker_branches() {
         bass_management: None,
         timing_diagnostics: None,
         supporting_source: None,
+        correction_acceptance: None,
+        stage_outcomes: vec![],
         ctc: Some(autoeq::roomeq::ctc::CtcReport {
             enabled: true,
             source: "measured".to_string(),
@@ -378,6 +418,8 @@ fn test_build_room_eq_graph_tracks_global_variable_channel_widths() {
         bass_management: None,
         timing_diagnostics: None,
         supporting_source: None,
+        correction_acceptance: None,
+        stage_outcomes: vec![],
         ctc: Some(autoeq::roomeq::ctc::CtcReport {
             enabled: true,
             source: "measured".to_string(),
@@ -502,6 +544,8 @@ fn test_factored_graph_lfe_chain_route_owned_gain_overrides_route_gain() {
         multi_seat_coverage: None,
         multi_seat_correction: None,
         supporting_source: None,
+        correction_acceptance: None,
+        stage_outcomes: vec![],
         bass_management: Some(BassManagementReport {
             enabled: true,
             crossover_type: "LR24".to_string(),
@@ -654,6 +698,8 @@ fn test_factored_graph_all_destinations_no_sources_builds_cleanly() {
         multi_seat_coverage: None,
         multi_seat_correction: None,
         supporting_source: None,
+        correction_acceptance: None,
+        stage_outcomes: vec![],
         bass_management: Some(BassManagementReport {
             enabled: true,
             crossover_type: "LR24".to_string(),

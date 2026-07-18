@@ -1,6 +1,7 @@
 use super::consts::MAX_HAL_CHANNELS;
 use super::consts::SUPPORTED_SAMPLE_RATES;
 use super::driver_manager::DriverManager;
+use super::misc::build_driver_plugin_chain;
 use super::systemwide_state::SystemwideState;
 use super::types::PipelineReconfigureOutcome;
 use driver_common::DriverConfig;
@@ -161,12 +162,21 @@ pub(super) fn reconfigure_audio_pipeline(
 ) -> Result<PipelineReconfigureOutcome, String> {
     let plan = {
         let state = system_state.lock();
-        state.prepare_plan(
-            state.user_plugins(),
-            input_channels,
-            state.output_channels(),
-            input_channels,
-        )?
+        if let Some(graph) = state.user_graph() {
+            state.prepare_graph_plan(
+                graph,
+                input_channels,
+                state.output_channels(),
+                input_channels,
+            )?
+        } else {
+            state.prepare_plan(
+                state.user_plugins(),
+                input_channels,
+                state.output_channels(),
+                input_channels,
+            )?
+        }
     };
 
     let mut manager = audio_manager.lock();
@@ -191,16 +201,34 @@ pub(super) fn reconfigure_audio_pipeline(
         plan.spec.output_device
     );
 
-    manager.set_loudness_plugin_index(plan.output_loudness_index);
+    let bootstrap_plugins = if plan.runtime_graph.is_some() {
+        build_driver_plugin_chain(Vec::new()).0
+    } else {
+        plan.runtime_plugins.clone()
+    };
+    let mut result = manager
+        .start_hal_playback_with_driver_config(
+            plan.spec.output_device.clone(),
+            bootstrap_plugins,
+            plan.spec.output_channels,
+            hal_sample_rate,
+            hal_buffer_frames,
+            plan.spec.input_channels,
+        )
+        .map_err(|error| error.to_string());
+    if result.is_ok()
+        && let Some(graph) = plan.runtime_graph.clone()
+    {
+        result = manager.update_plugin_graph(graph);
+        if result.is_err() {
+            let _ = manager.stop();
+        }
+    }
+    if result.is_ok() {
+        manager.set_loudness_plugin_index(plan.output_loudness_index);
+    }
 
-    match manager.start_hal_playback_with_driver_config(
-        plan.spec.output_device.clone(),
-        plan.runtime_plugins.clone(),
-        plan.spec.output_channels,
-        hal_sample_rate,
-        hal_buffer_frames,
-        plan.spec.input_channels,
-    ) {
+    match result {
         Ok(_) => {
             system_state.lock().commit_applied(&plan);
             log::info!("Driver playback restarted successfully");

@@ -43,16 +43,17 @@ pub(super) fn test_eq_zero_alloc() {
 }
 
 pub(super) fn test_gain_zero_alloc() {
-    let mut plugin = GainPlugin::new(2, -3.0);
+    let mut plugin = ParametricPluginAdapter::new(GainPlugin::new(2, -3.0));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
-    let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
+    let input = generate_test_buffer(BUFFER_SIZE, 2);
+    let mut output = vec![0.0; input.len()];
     let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
 
-    plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    plugin.process(&input, &mut output, &ctx).unwrap();
 
     assert_no_allocs("GainPlugin", || {
-        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+        plugin.process(&input, &mut output, &ctx).unwrap();
     });
 }
 

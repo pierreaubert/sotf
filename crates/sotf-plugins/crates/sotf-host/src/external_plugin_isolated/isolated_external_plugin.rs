@@ -22,6 +22,7 @@ pub struct IsolatedExternalPlugin {
     pub(super) consecutive_block_failures: u32,
     pub(super) max_consecutive_block_failures: u32,
     pub(super) quarantined: bool,
+    pub(super) quarantine_reason: Option<String>,
 }
 
 impl IsolatedExternalPlugin {
@@ -58,6 +59,10 @@ impl IsolatedExternalPlugin {
         } else {
             None
         };
+        let quarantine_reason = format!(
+            "isolated external plugin '{}' worker quarantined after {} consecutive block failures",
+            descriptor.name, config.max_consecutive_block_failures
+        );
 
         Ok(Self {
             descriptor,
@@ -69,6 +74,7 @@ impl IsolatedExternalPlugin {
             consecutive_block_failures: 0,
             max_consecutive_block_failures: config.max_consecutive_block_failures,
             quarantined: false,
+            quarantine_reason: Some(quarantine_reason),
         })
     }
 
@@ -169,6 +175,10 @@ impl IsolatedExternalPlugin {
         self.proxy.worker_sandbox_status()
     }
 
+    pub fn worker_reported_latency_samples(&self) -> Option<usize> {
+        self.proxy.worker_latency_samples()
+    }
+
     pub(super) fn validate_process_buffers(
         &self,
         input: &[f32],
@@ -235,11 +245,9 @@ impl IsolatedExternalPlugin {
         self.consecutive_block_failures = self.consecutive_block_failures.saturating_add(1);
         if self.max_consecutive_block_failures > 0
             && self.consecutive_block_failures >= self.max_consecutive_block_failures
+            && let Some(reason) = self.quarantine_reason.take()
         {
-            self.quarantine_worker(format!(
-                "isolated external plugin '{}' worker quarantined after {} consecutive block failures",
-                self.descriptor.name, self.consecutive_block_failures
-            ));
+            self.quarantine_worker(reason);
         }
     }
 
@@ -250,9 +258,11 @@ impl IsolatedExternalPlugin {
         if let Some(supervisor) = self.supervisor.as_mut() {
             let _ = supervisor.terminate();
         }
-        self.launch_error = Some(reason.clone());
+        self.launch_error = Some(reason);
         self.quarantined = true;
-        crate::rate_limited_log!(warn, 1, "{reason}");
+        if let Some(reason) = self.launch_error.as_deref() {
+            crate::rate_limited_log!(warn, 1, "{reason}");
+        }
     }
 }
 
@@ -287,6 +297,10 @@ impl Plugin for IsolatedExternalPlugin {
 
     fn output_channels(&self) -> usize {
         self.output_channels
+    }
+
+    fn latency_samples(&self) -> usize {
+        self.worker_reported_latency_samples().unwrap_or(0)
     }
 
     fn parameters(&self) -> Vec<Parameter> {

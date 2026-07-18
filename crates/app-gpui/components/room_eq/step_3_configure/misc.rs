@@ -1,8 +1,9 @@
 use super::super::render::render_channel_config_row;
+use crate::app::i18n::RoomEqReportTranslations;
 use crate::app::types::RoomEqOptimizationMode;
 use crate::components::autoeq::{
-    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode, DetailLevel,
-    EqDesignConfig, GoalsConfig, RoomCorrectionConfig, SystemOptimizationConfig, V2Config,
+    AlgorithmConfig, AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode, EqDesignConfig,
+    GoalsConfig, RoomCorrectionConfig, SystemOptimizationConfig, V2Config,
 };
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -163,7 +164,7 @@ impl PlayerView {
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
-            detail_level: DetailLevel::Expert,
+            detail_level: room_eq.detail_level,
             selected_preset: Some(room_eq.selected_preset.clone()),
             opt_mode_open: room_eq.dropdowns.opt_mode_open,
             fir_phase_open: room_eq.dropdowns.fir_phase_open,
@@ -200,6 +201,7 @@ impl PlayerView {
 
         // Build the AutoEQ form — Full Wizard shows everything.
         let autoeq_form = AutoEqForm::new("room-eq-optimizer-form")
+            .language(state.app.ui_state.language)
             .layout_mode(AutoEqLayoutMode::Default)
             .available_width(window_width)
             .config(autoeq_config)
@@ -1895,6 +1897,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let d = Ds::from_cx(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = RoomEqReportTranslations::for_language(state.app.ui_state.language);
+        let workflow_text =
+            crate::app::i18n::RoomEqWorkflowTranslations::for_language(state.app.ui_state.language);
         let cfg = state
             .app
             .measurement_state
@@ -1935,7 +1940,7 @@ impl PlayerView {
         let header = HStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("EPA Temporal Masking")
+                Text::new(text.epa_temporal_masking)
                     .color(theme.text_primary)
                     .weight(TextWeight::Semibold),
             )
@@ -1954,7 +1959,7 @@ impl PlayerView {
         let row_modal = HStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Modal")
+                Text::new(text.modal)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -2028,7 +2033,7 @@ impl PlayerView {
         let row_ir = HStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("FIR IR")
+                Text::new(text.fir_ir)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -2083,11 +2088,14 @@ impl PlayerView {
                     });
                 })
                 .child(
-                    Button::new(SharedString::from("epa-tm-reset-btn"), "Reset to defaults")
-                        .variant(ButtonVariant::Secondary)
-                        .size(ButtonSize::Xs)
-                        .theme(theme.to_button_theme())
-                        .build(),
+                    Button::new(
+                        SharedString::from("epa-tm-reset-btn"),
+                        workflow_text.reset_to_defaults,
+                    )
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Xs)
+                    .theme(theme.to_button_theme())
+                    .build(),
                 )
                 .into_any_element()
         };
@@ -2206,6 +2214,9 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = RoomEqReportTranslations::for_language(state.app.ui_state.language);
+        let workflow_text =
+            crate::app::i18n::RoomEqWorkflowTranslations::for_language(state.app.ui_state.language);
         let speaker_configs = state
             .app
             .measurement_state
@@ -2226,9 +2237,7 @@ impl PlayerView {
         if speaker_configs.is_empty() {
             return VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::caption(
-                    "No channels configured. Load measurement data first.",
-                ))
+                .child(Text::caption(workflow_text.no_channels_configured))
                 .into_any_element();
         }
 
@@ -2239,7 +2248,16 @@ impl PlayerView {
             .iter()
             .enumerate()
             .map(|(idx, config)| {
-                render_channel_config_row(idx, config, &theme, &view, d, sample_rate_hz)
+                render_channel_config_row(
+                    idx,
+                    config,
+                    text,
+                    workflow_text,
+                    &theme,
+                    &view,
+                    d,
+                    sample_rate_hz,
+                )
             })
             .collect();
 
@@ -2260,37 +2278,62 @@ impl PlayerView {
     /// below each dropdown, matching the agreed ASCII diagram layout.
     pub(super) fn render_simple_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         use sotf_audio_player::room_eq_types::{
-            SimpleCrossoverChoice, SimpleLossChoice, SimpleProcessingChoice, SpeakerTier,
+            RoomEqEasyLayout, SimpleCrossoverChoice, SimpleLossChoice, SimpleProcessingChoice,
+            SpeakerTier,
         };
 
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
+        let easy_translations =
+            crate::i18n::RoomEqEasyTranslations::for_language(state.app.ui_state.language);
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
         let preset = room_eq.simple_preset.clone();
+        let easy_layout = room_eq.easy_layout;
         let channel_count = room_eq.channel_measurements.len();
         let has_multi_position = room_eq.has_multi_position_data;
 
         // Detect speaker tier: >4 channels = surround, has sub naming hints
-        let has_sub = room_eq.channel_measurements.iter().any(|m| {
-            let n = m.channel_name.to_lowercase();
-            n.contains("sub") || n.contains("lfe") || n == "sw"
-        });
-        let is_surround = channel_count > 4;
+        let has_sub = easy_layout.uses_bass_management();
+        let is_surround = easy_layout == RoomEqEasyLayout::Surround51;
 
         // Build the dropdown rows. Each row is a label + current value +
         // cycle-on-click. We use a simple Button that cycles through the
         // options — no separate Dropdown widget needed for 2-4 options.
-        let config_label = if is_surround {
-            format!("SIMPLE CONFIGURATION ({} channels)", channel_count)
-        } else if has_sub {
-            format!("SIMPLE CONFIGURATION ({} ch + sub)", channel_count)
-        } else {
-            format!("SIMPLE CONFIGURATION ({}.0 Stereo)", channel_count.min(2))
-        };
+        let config_label = easy_translations.configuration_title(easy_layout, channel_count);
 
         let view = cx.entity().clone();
-        let mut form = VStack::new().spacing(StackSpacing::Lg);
+        let mut form = VStack::new().spacing(StackSpacing::Lg).child(
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(simple_dropdown_row(
+                    cx,
+                    &theme,
+                    easy_translations.layout,
+                    easy_layout.label(),
+                    {
+                        let view = view.clone();
+                        move |cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    let room_eq = &mut state.app.measurement_state.room_eq_state;
+                                    let next = room_eq.easy_layout.next();
+                                    room_eq.easy_layout = next;
+                                    next.configure_preset_defaults(&mut room_eq.simple_preset);
+                                    room_eq.error_message = None;
+                                });
+                                cx.notify();
+                            });
+                        }
+                    },
+                ))
+                .child(Text::caption(easy_translations.description(easy_layout)))
+                .child(Text::caption(format!(
+                    "{}: {}",
+                    easy_translations.measured_roles,
+                    easy_layout.expected_roles().join(", ")
+                ))),
+        );
 
         // --- Target distance + descriptions + customize ---
         form = form.child(
@@ -2357,7 +2400,7 @@ impl PlayerView {
                 .child(simple_dropdown_row(
                     cx,
                     &theme,
-                    "Loss function",
+                    translations.autoeq_form.parameters.loss_function,
                     preset.loss.label(),
                     {
                         let view = view.clone();
@@ -2382,9 +2425,11 @@ impl PlayerView {
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
-                        .child(Text::caption("Flat: minimize frequency response deviation"))
                         .child(Text::caption(
-                            "EPA: optimize perceived quality (psychoacoustic)",
+                            translations.autoeq_form.sections.flat_loss_description,
+                        ))
+                        .child(Text::caption(
+                            translations.autoeq_form.sections.epa_loss_description,
                         )),
                 ),
         );
@@ -2396,7 +2441,7 @@ impl PlayerView {
                 .child(simple_dropdown_row(
                     cx,
                     &theme,
-                    "Processing",
+                    translations.autoeq_form.sections.processing,
                     preset.processing.label(),
                     {
                         let view = view.clone();

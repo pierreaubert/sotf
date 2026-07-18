@@ -1,5 +1,6 @@
 //! Cross-cutting integration test: instantiate every built-in plugin type through
-//! the factory at 1 (mono), 2 (stereo), 6 (5.1) and 8 (7.1) input channels.
+//! the factory at mono, stereo, first-order ambisonic, 5.1, 7.1, and 7.1.4
+//! input widths.
 //!
 //! For each combination the test asserts that the plugin either:
 //!   - accepts the configuration, initializes, processes a short sine burst, and
@@ -13,7 +14,7 @@ use sotf_plugins::factory::{SUPPORTED_PLUGIN_TYPES, create_plugin};
 
 const SAMPLE_RATE: u32 = 48_000;
 const FRAMES: usize = 480;
-const CHANNEL_COUNTS: &[usize] = &[1, 2, 6, 8];
+const CHANNEL_COUNTS: &[usize] = &[1, 2, 4, 6, 8, 12];
 
 /// Plugins that are intentionally skipped from this test (external plugins and
 /// macOS HAL plugins require artifacts or platform features unavailable here).
@@ -95,7 +96,7 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
         }),
         "ambisonics_decoder" => serde_json::json!({
             "order": 1,
-            "output_channels": 4,
+            "target_layout": "5.1",
         }),
         _ => serde_json::json!({}),
     }
@@ -112,11 +113,26 @@ fn required_input_channels(plugin_type: &str) -> Option<usize> {
         | "crosstalk_cancellation"
         | "aae"
         | "active_acoustic_enhancement"
-        | "ab_compare"
-        | "ab"
-        | "aec"
-        | "binaural_decoder" => Some(2),
+        | "aec" => Some(2),
+        "ambisonics_decoder" => Some(4),
         _ => None,
+    }
+}
+
+fn expects_channel_count(plugin_type: &str, channels: usize) -> bool {
+    match plugin_type {
+        "mono_to_stereo" => channels == 1,
+        "upmixer"
+        | "crossfeed"
+        | "xtc"
+        | "crosstalk_cancellation"
+        | "aae"
+        | "active_acoustic_enhancement"
+        | "aec" => channels == 2,
+        "ambisonics_decoder" => channels == 4,
+        "beamformer" => (2..=8).contains(&channels),
+        "band_merge" => channels >= 2 && channels.is_multiple_of(2),
+        _ => true,
     }
 }
 
@@ -191,13 +207,18 @@ fn all_plugins_channel_count_support() {
             match outcome {
                 Ok(result) => {
                     results.push((plugin_type, channels, result.clone()));
-                    if let Err(ref err) = result {
-                        // Errors are allowed, but they must be informative.
-                        if err.trim().is_empty() {
-                            unexpected_failures.push(format!(
-                                "{plugin_type}@{channels}ch returned an empty error"
-                            ));
-                        }
+                    let expected = expects_channel_count(plugin_type, channels);
+                    if expected != result.is_ok() {
+                        unexpected_failures.push(format!(
+                            "{plugin_type}@{channels}ch expected {} but got {result:?}",
+                            if expected { "success" } else { "rejection" }
+                        ));
+                    } else if let Err(ref err) = result
+                        && err.trim().is_empty()
+                    {
+                        unexpected_failures.push(format!(
+                            "{plugin_type}@{channels}ch returned an empty error"
+                        ));
                     }
                 }
                 Err(payload) => {
@@ -274,6 +295,8 @@ fn channel_preserving_plugins_maintain_count() {
         "loudness_monitor",
         "spectrum_analyzer",
         "resampler",
+        "ab_compare",
+        "ab",
         // band_split/band_merge deliberately multiply/divide channel counts and
         // are tested separately in channel_changing_plugins_behave_as_documented.
         "convolution",
@@ -353,19 +376,28 @@ fn channel_changing_plugins_behave_as_documented() {
     let out = try_instantiate_and_process("aae", 2).expect("aae must accept 2 input channels");
     assert_eq!(out, 6, "aae default output should be 5.1 (6 channels)");
 
-    // ab_compare / ab: stereo in, stereo out
-    let out = try_instantiate_and_process("ab_compare", 2)
-        .expect("ab_compare must accept 2 input channels");
-    assert_eq!(out, 2, "ab_compare output should be stereo");
-
     // aec: stereo reference + signal in, single-channel echo-cancelled output
     let out = try_instantiate_and_process("aec", 2).expect("aec must accept 2 input channels");
     assert_eq!(out, 1, "aec output should be mono (1 channel)");
 
-    // binaural_decoder: stereo in, stereo out
-    let out = try_instantiate_and_process("binaural_decoder", 2)
-        .expect("binaural_decoder must accept 2 input channels");
-    assert_eq!(out, 2, "binaural_decoder output should be stereo");
+    // binaural_decoder: configured speaker input -> stereo
+    for &channels in CHANNEL_COUNTS {
+        let out = try_instantiate_and_process("binaural_decoder", channels)
+            .expect("binaural_decoder should accept its configured input width");
+        assert_eq!(out, 2, "binaural_decoder output should be stereo");
+    }
+
+    // beamformer: configured microphone array -> mono
+    for &channels in &[2usize, 4, 6, 8] {
+        let out = try_instantiate_and_process("beamformer", channels)
+            .expect("beamformer should accept its configured microphone count");
+        assert_eq!(out, 1, "beamformer output should be mono");
+    }
+
+    // First-order ambisonics (4 channels) -> default 5.1 target.
+    let out = try_instantiate_and_process("ambisonics_decoder", 4)
+        .expect("first-order ambisonics should accept four input channels");
+    assert_eq!(out, 6, "ambisonics default target should be 5.1");
 
     // band_split: input * num_bands (num_bands=2)
     for &channels in CHANNEL_COUNTS {

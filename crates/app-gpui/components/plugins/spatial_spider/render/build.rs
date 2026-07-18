@@ -33,15 +33,19 @@ pub(super) fn build_header(
     let e_corr = entity.clone();
 
     let header = div()
+        .w_full()
+        .min_w_0()
         .flex()
+        .flex_wrap()
         .items_center()
         .gap(d.gap_md)
         .child(
             div()
+                .flex_none()
                 .text_size(d.text_xs)
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme.text_muted)
-                .child("Spatial Field".to_string()),
+                .child("◎".to_string()),
         )
         .child(
             // TODO: this widget today reflects the *chain output* (the last
@@ -49,8 +53,10 @@ pub(super) fn build_header(
             // When per-plugin analyzer hooks land, replace this label with
             // the host plugin's name so the source is unambiguous.
             div()
+                .flex_none()
                 .text_size(d.text_xs)
                 .text_color(theme.text_muted)
+                .whitespace_nowrap()
                 .child("(chain out)".to_string()),
         )
         .child(
@@ -69,6 +75,7 @@ pub(super) fn build_header(
         )
         .child(
             div()
+                .flex_none()
                 .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
                 .child("2D".to_string()),
@@ -92,13 +99,20 @@ pub(super) fn build_header(
         )
         .child(
             div()
+                .flex_none()
                 .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
                 .child("3D".to_string()),
         );
 
     header
-        .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
+        .child(
+            div()
+                .flex_none()
+                .w(px(1.0))
+                .h(px(14.0))
+                .bg(theme.border),
+        )
         .child(
             Toggle::new(("spider-mode-spl", plugin_idx))
                 .checked(matches!(spider_mode, SpiderMode::Spl))
@@ -115,6 +129,7 @@ pub(super) fn build_header(
         )
         .child(
             div()
+                .flex_none()
                 .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
                 .child("SPL".to_string()),
@@ -141,9 +156,10 @@ pub(super) fn build_header(
         )
         .child(
             div()
+                .flex_none()
                 .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
-                .child("Correlation".to_string()),
+                .child("ρ".to_string()),
         )
         .child(build_ref_channel_select(
             d,
@@ -202,7 +218,7 @@ pub(super) fn build_ref_channel_select(
             div()
                 .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
-                .child("Ref:".to_string()),
+                .child("R:".to_string()),
         )
         .child(
             Select::new(("spider-ref-channel", plugin_idx))
@@ -212,8 +228,11 @@ pub(super) fn build_ref_channel_select(
                 .size(SelectSize::Xs)
                 .theme(theme.to_select_theme())
                 .on_toggle({
-                    let entity = entity.clone();
+                    let entity = entity.downgrade();
                     move |open, _window, cx| {
+                        let Some(entity) = entity.upgrade() else {
+                            return;
+                        };
                         entity.update(cx, |st, cx| {
                             st.app.plugin_ui.spatial_spider.ref_channel_select_open = open;
                             cx.notify();
@@ -271,7 +290,7 @@ pub(super) fn build_body(
                     div()
                         .text_size(d.text_xs)
                         .text_color(theme.text_muted)
-                        .child("Waiting for audio…".to_string()),
+                        .child("…".to_string()),
                 )
                 .into_any_element();
         }

@@ -168,7 +168,8 @@ pub(super) fn optimize_from_curve(
         &input_normalized,
         &target_curve,
         &biquads,
-    );
+    )
+    .map_err(|e| e.to_string())?;
 
     let history_vec = history
         .lock()

@@ -2,6 +2,8 @@ use super::misc::GAIN_SMOOTH_MS;
 use super::misc::MAX_BANDS;
 use super::misc::db_to_linear;
 use super::types::BandMergePluginParams;
+use crate::params::PARAMS;
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
@@ -81,13 +83,10 @@ impl BandMergePlugin {
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
-        let mut params = vec![Parameter::new_int(
-            "bands",
-            "Bands",
-            self.num_bands as i32,
-            2,
-            MAX_BANDS as i32,
-        )];
+        let mut params = vec![
+            Parameter::new_int("bands", "Bands", self.num_bands as i32, 2, MAX_BANDS as i32)
+                .with_update_mode(pk(PARAMS, "bands").update_mode),
+        ];
         for i in 0..self.num_bands {
             let gain_id = format!("band_{}_gain_db", i);
             let gain_label = format!("Band {} Gain (dB)", i);

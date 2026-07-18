@@ -24,9 +24,10 @@ pub enum ParamType {
     FilePath,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum UpdateMode {
     /// Parameter can be updated without rebuilding the plugin (zero-dropout).
+    #[default]
     Realtime,
     /// Parameter change requires rebuilding the plugin (e.g., channel count change).
     Structural,

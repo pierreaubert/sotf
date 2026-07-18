@@ -730,8 +730,8 @@ Recommended rule:
 - The rack is an editor for simple ordered plugin chains.
 - Complex DSP exports should remain graph artifacts with explicit topology,
   channel roles, buses, routes, and render hints.
-- The daemon should eventually accept a `load_graph` or `load_pipeline_artifact`
-  command beside `load_plugins`.
+- The daemon accepts rack and engine-graph artifacts through
+  `load_plugin_artifact` beside the compatibility `load_plugins` command.
 - The toolbar can render an imported graph as a read-only graph summary or
   dedicated graph view instead of forcing it into a rack.
 - Editing a graph should happen through graph-aware operations; editing it as a
@@ -743,7 +743,22 @@ Current implementation:
   array, `{ "plugins": [...] }`, or `{ "global_plugins": [...] }`.
 - Artifacts with graph topology keys, routes, buses, nodes, edges, or
   per-channel `channels` are rejected as graph artifacts instead of flattened
-  into the rack. This preserves topology until a graph-aware loader exists.
+  into the rack. This legacy statement applies only to higher-level
+  per-channel RoomEQ artifacts that have not yet been converted to engine
+  nodes/edges.
+- Engine `PluginGraphConfig` artifacts now load with stable node IDs, explicit
+  edges, per-node channel counts, parameters, and bypass state.
+- Graph preparation validates IDs, endpoints, non-zero channels, acyclicity,
+  and daemon-owned plugin boundaries before touching the engine.
+- `PipelineSpec.user_graph` is mutually exclusive with `user_plugins`.
+  Loudness monitors are injected only into the derived runtime graph.
+- Active replacement uses the engine's prepare-then-swap update. Desired and
+  applied state commit only after success, so invalid candidates preserve the
+  previous graph and generation.
+- Channel, output-device, and HAL reconfiguration preserve graph topology.
+  Rack mutation commands reject graph mode rather than converting it.
+- Configbar selects the existing rack or a graph editor with stable IDs,
+  add/remove/reorder, connect/disconnect, settings, and host-level bypass.
 
 ### 5. Make Shared Memory A Transport, Not A State Store
 
@@ -879,6 +894,16 @@ Current branch coverage starts the lower middle of that pyramid:
   than replaying plugins, and whole-file plugin loading delegates artifact
   planning to the daemon.
 
+`just systemwide-lab` is now an executable macOS gate. Its real daemon
+subprocess scenarios use isolated Unix sockets and the lab driver to verify
+coherent snapshots, 2 → 10 → 2 channel reconfiguration, transactional artifact
+rejection with desired/applied state preservation, sample-rate and buffer-size
+configuration with invalid-request rollback, HAL encryption enablement and key
+rotation, diagnostic dumps, shutdown, and clean restart. The daemon returns an
+explicit capability error when a non-HAL build cannot provide a session cipher.
+The same gate runs daemon state, HAL protocol/streaming, and Configbar model
+tests.
+
 ### Scenario Matrix
 
 The E2E lab should be scenario-driven. Each scenario should start from a clean
@@ -923,9 +948,11 @@ specific runtime directory or driver mode.
 
 | Variable | Effect |
 | --- | --- |
-| `SOTF_SYSTEMWIDE_RUNTIME_DIR` | Makes daemon, toolbar, and HAL code use one isolated directory. The daemon socket becomes `daemon.sock`; shared memory becomes `audio.shm`. |
+| `SOTF_SYSTEMWIDE_RUNTIME_DIR` | Makes daemon, toolbar, and HAL code use one isolated directory. The daemon socket becomes `daemon.sock`, shared memory becomes `audio.shm`, the daemon-private key becomes `daemon-session.key`, and the HAL-readable copy becomes `session.key`. |
 | `SOTF_DAEMON_SOCKET_PATH` | Overrides only the daemon control socket path. This wins over the runtime-dir socket path. |
 | `SOTF_HAL_SHARED_MEMORY_PATH` | Overrides only the HAL shared-memory file path. This wins over the runtime-dir shared-memory path. |
+| `SOTF_DAEMON_SESSION_KEY_PATH` | Overrides only the daemon-private encryption key path. This wins over the runtime-dir key path. |
+| `SOTF_HAL_SESSION_KEY_PATH` | Overrides the HAL-readable session-key copy for both Rust and Swift HAL consumers. This wins over the runtime-dir key path. |
 | `SOTF_SYSTEMWIDE_DRIVER=lab` or `fake` | Forces the daemon to use a deterministic in-process fake capture driver. It reports a ready 48 kHz stereo transport and emits a low-level sine signal once the engine marks the driver ready. |
 | `SOTF_SYSTEMWIDE_DRIVER=null` | Forces the daemon to use `NullDriver`, useful for status/control tests that should not touch HAL or fake audio. |
 

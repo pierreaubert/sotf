@@ -4,7 +4,10 @@ pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
     let area = f.area();
     let modal_area = centered_modal_rect(area, 80, 80, 20, 6);
 
-    let title = format!(" {} ", app.file_explorer.picker_title);
+    let title = format!(
+        " {} ",
+        crate::tui_text!(app, app.file_explorer.picker_title.as_str())
+    );
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
@@ -33,7 +36,7 @@ pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
         .split(inner);
 
     // Current directory
-    let dir_text = format!("Dir: {}", app.file_explorer.dir.display());
+    let dir_text = crate::tui_text!(app, format!("Dir: {}", app.file_explorer.dir.display()));
     f.render_widget(
         Paragraph::new(dir_text).style(Style::default().fg(app.theme.accent_primary)),
         chunks[0],
@@ -78,8 +81,10 @@ pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
     StatefulWidget::render(list, chunks[1], f.buffer_mut(), &mut state);
 
     // Help text
-    let help_text =
-        "Enter:Select | j/k:Navigate | l/Enter:Open dir | h:Parent | H:Hidden | Esc:Cancel";
+    let help_text = crate::tui_text!(
+        app,
+        "Enter:Select | j/k:Navigate | l/Enter:Open dir | h:Parent | H:Hidden | Esc:Cancel"
+    );
     f.render_widget(
         Paragraph::new(help_text)
             .style(Style::default().fg(app.theme.fg_secondary))

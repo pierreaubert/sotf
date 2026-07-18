@@ -49,6 +49,7 @@ pub fn render_mb_compressor_plugin(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: MbCompressorRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     let get_param_idx = |base_idx: usize| -> usize {
@@ -66,7 +67,7 @@ pub fn render_mb_compressor_plugin(
         .flex_col()
         .flex_shrink_0()
         .gap(d.gap_md)
-        .child(render_section_title(d, "GLOBAL", theme))
+        .child(render_section_title(d, text.label("GLOBAL"), theme))
         .child(
             div()
                 .flex()
@@ -77,7 +78,7 @@ pub fn render_mb_compressor_plugin(
                         .text_size(d.text_xs)
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text_secondary)
-                        .child("Bands"),
+                        .child(text.bands),
                 )
                 .child(
                     NumberInput::new("mb-bands")
@@ -100,7 +101,7 @@ pub fn render_mb_compressor_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "XOver 1",
+            text.label("XOver 1"),
             state.crossover_freq_1,
             pk(MC, "crossover_freq_1").min_f64(),
             pk(MC, "crossover_freq_1").max_f64(),
@@ -116,7 +117,7 @@ pub fn render_mb_compressor_plugin(
         global_col = global_col.child(render_knob(
             entity.clone(),
             plugin_idx,
-            "XOver 2",
+            text.label("XOver 2"),
             state.crossover_freq_2,
             pk(MC, "crossover_freq_2").min_f64(),
             pk(MC, "crossover_freq_2").max_f64(),
@@ -132,7 +133,7 @@ pub fn render_mb_compressor_plugin(
         global_col = global_col.child(render_knob(
             entity.clone(),
             plugin_idx,
-            "XOver 3",
+            text.label("XOver 3"),
             state.crossover_freq_3,
             pk(MC, "crossover_freq_3").min_f64(),
             pk(MC, "crossover_freq_3").max_f64(),
@@ -148,7 +149,7 @@ pub fn render_mb_compressor_plugin(
         global_col = global_col.child(render_knob(
             entity.clone(),
             plugin_idx,
-            "XOver 4",
+            text.label("XOver 4"),
             state.crossover_freq_4,
             pk(MC, "crossover_freq_4").min_f64(),
             pk(MC, "crossover_freq_4").max_f64(),
@@ -166,7 +167,7 @@ pub fn render_mb_compressor_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Preset",
+            text.label("Preset"),
             state.crossover_preset as f64,
             pk(MC, "crossover_preset").min_f64(),
             pk(MC, "crossover_preset").max_f64(),
@@ -180,7 +181,7 @@ pub fn render_mb_compressor_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Lookahead",
+            text.label("Lookahead"),
             state.per_band_lookahead_ms,
             pk(MC, "per_band_lookahead_ms").min_f64(),
             pk(MC, "per_band_lookahead_ms").max_f64(),
@@ -194,7 +195,7 @@ pub fn render_mb_compressor_plugin(
         .child(render_toggle(
             entity.clone(),
             plugin_idx,
-            "M/S Mode",
+            text.label("M/S Mode"),
             state.ms_mode,
             14,
             state.selected_param,
@@ -204,7 +205,7 @@ pub fn render_mb_compressor_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "SC Tilt",
+            text.label("SC Tilt"),
             state.sidechain_tilt_db,
             pk(MC, "sidechain_tilt_db").min_f64(),
             pk(MC, "sidechain_tilt_db").max_f64(),
@@ -218,7 +219,7 @@ pub fn render_mb_compressor_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Link Amt",
+            text.label("Link Amt"),
             state.link_amount * 100.0,
             pk(MC, "link_amount").min_f64() * 100.0,
             pk(MC, "link_amount").max_f64() * 100.0,
@@ -309,7 +310,7 @@ pub fn render_mb_compressor_plugin(
                 .flex()
                 .flex_col()
                 .gap(d.grid)
-                .child(render_section_title(d, "DYNAMICS", theme))
+                .child(render_section_title(d, text.label("DYNAMICS"), theme))
                 .child(
                     div()
                         .flex()
@@ -366,7 +367,7 @@ pub fn render_mb_compressor_plugin(
                 .flex()
                 .flex_col()
                 .gap(d.grid)
-                .child(render_section_title(d, "TIMING", theme))
+                .child(render_section_title(d, text.label("TIMING"), theme))
                 .child(
                     div()
                         .flex()
@@ -447,7 +448,7 @@ pub fn render_mb_compressor_plugin(
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
-                    "Active",
+                    text.label("Active"),
                     state.active,
                     get_param_idx(17),
                     state.selected_param,
@@ -457,7 +458,7 @@ pub fn render_mb_compressor_plugin(
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
-                    "Solo",
+                    text.label("Solo"),
                     state.solo,
                     get_param_idx(15),
                     state.selected_param,
@@ -467,7 +468,7 @@ pub fn render_mb_compressor_plugin(
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
-                    "Bypass",
+                    text.label("Bypass"),
                     state.bypass,
                     get_param_idx(14),
                     state.selected_param,
@@ -477,7 +478,7 @@ pub fn render_mb_compressor_plugin(
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
-                    "AutoGain",
+                    text.label("AutoGain"),
                     state.auto_makeup,
                     get_param_idx(16),
                     state.selected_param,
@@ -493,11 +494,11 @@ pub fn render_mb_compressor_plugin(
         .flex_col()
         .flex_shrink_0()
         .gap(d.gap_md)
-        .child(render_section_title(d, "OUTPUT", theme))
+        .child(render_section_title(d, text.label("OUTPUT"), theme))
         .child(render_toggle(
             entity.clone(),
             plugin_idx,
-            "Link Ch",
+            text.label("Link Ch"),
             state.link_channels,
             12,
             state.selected_param,
@@ -507,7 +508,7 @@ pub fn render_mb_compressor_plugin(
         .child(render_knob(
             entity.clone(),
             plugin_idx,
-            "Mix",
+            text.label("Mix"),
             state.mix * 100.0,
             pk(MC, "mix").min_f64() * 100.0,
             pk(MC, "mix").max_f64() * 100.0,
@@ -529,3 +530,4 @@ pub fn render_mb_compressor_plugin(
             .child(right_col),
     )
 }
+use crate::app::i18n::PluginCommonTranslations;

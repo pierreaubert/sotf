@@ -6,6 +6,7 @@
 mod build;
 mod consts;
 mod create;
+mod keyboard;
 mod misc;
 mod palette_drag_data;
 mod player_view;

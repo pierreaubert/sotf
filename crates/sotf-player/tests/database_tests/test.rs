@@ -38,6 +38,7 @@ fn test_track(path: PathBuf, title: &str, artist: &str) -> Track {
 }
 
 /// Helper function to create a test track with extended metadata
+#[allow(clippy::too_many_arguments)]
 fn test_track_with_metadata(
     path: PathBuf,
     title: &str,

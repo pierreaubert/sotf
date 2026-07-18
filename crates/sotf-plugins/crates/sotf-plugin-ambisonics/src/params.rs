@@ -36,8 +36,10 @@ pub const PARAMS: &[ParamSpec] = &[
     .structural()
     .doc("Target speaker layout for decode"),
     ParamSpec::bool_param("Max-rE", "max_re_weighting", true, "Ambisonics")
+        .structural()
         .doc("Apply max-rE energy optimization"),
     ParamSpec::bool_param("Dual-Band", "dual_band", false, "Ambisonics")
+        .structural()
         .doc("Separate LF/HF decode weights"),
 ];
 

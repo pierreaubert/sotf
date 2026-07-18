@@ -2,6 +2,7 @@
 
 use super::common::ParamSectionStyle;
 use super::level_meters::render_lufs_with_true_peak;
+use crate::app::i18n::LevelMeterTranslations;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -13,13 +14,19 @@ pub fn render_loudness_monitor_plugin(
     loudness: Option<std::sync::Arc<sotf_audio_player::LoudnessData>>,
     _plugin_idx: usize,
     _is_editing: bool,
+    text: LevelMeterTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
         .gap(d.section)
-        .child(render_lufs_with_true_peak(d, loudness.as_deref(), theme))
+        .child(render_lufs_with_true_peak(
+            d,
+            loudness.as_deref(),
+            text,
+            theme,
+        ))
         .child(
             div()
                 .flex()

@@ -2128,6 +2128,7 @@ impl PluginGraph {
                 plugin_type: config.plugin_type,
                 parameters: config.parameters,
                 input_channels: node.input_channels,
+                bypassed: !node.plugin.enabled,
             });
         }
 

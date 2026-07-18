@@ -1,12 +1,35 @@
 use super::app::app_on_library;
 use super::app::app_on_room_eq;
 use super::app::app_on_spinorama_select;
+use super::misc::send_alt_char;
 use super::misc::send_keys;
 use crate::app::{ConfigureSubScreen, InputMode, Screen, SpinoramaStep};
 use crossterm::event::KeyCode;
 use sotf_audio_player::room_eq_types::RoomEqStep;
 use sotf_audio_player::{Album, MetadataImportCandidate, Track};
 use std::path::PathBuf;
+
+#[test]
+fn alt_l_cycles_the_required_languages() {
+    let mut app = app_on_library();
+    app.ui.language = crate::i18n::Language::English;
+
+    for expected in [
+        crate::i18n::Language::French,
+        crate::i18n::Language::German,
+        crate::i18n::Language::Spanish,
+        crate::i18n::Language::English,
+    ] {
+        send_alt_char(&mut app, 'l');
+        assert_eq!(app.ui.language, expected);
+        assert!(
+            app.ui
+                .status_message
+                .as_deref()
+                .is_some_and(|s| !s.is_empty())
+        );
+    }
+}
 
 #[path = "tests/app_mod.rs"]
 mod app_mod;

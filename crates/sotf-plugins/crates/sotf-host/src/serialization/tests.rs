@@ -3,6 +3,7 @@ use super::plugin_preset::PluginPreset;
 use super::preset_bank::PresetBank;
 use super::types::PresetSearchField;
 use crate::external_plugin::ExternalPluginState;
+use crate::parameters::ParameterValue;
 
 fn preset(name: &str, plugin_id: &str, tags: &[&str]) -> PluginPreset {
     let mut preset = PluginPreset::new(name.into(), plugin_id.into(), "1.2.3".into());
@@ -181,4 +182,99 @@ fn preset_round_trips_external_plugin_state_data() {
         crate::external_plugin::ExternalPluginSandboxMode::Isolated
     );
     assert_eq!(restored.opaque_state, vec![1, 3, 5, 8]);
+}
+
+#[test]
+fn preset_document_round_trips_parameter_boundaries_and_metadata() {
+    let mut document = preset("Boundary", "sotf-test", &["qa"]);
+    document
+        .parameters
+        .insert("minimum".into(), ParameterValue::Float(-24.0));
+    document
+        .parameters
+        .insert("maximum".into(), ParameterValue::Int(512));
+    document
+        .parameters
+        .insert("enabled".into(), ParameterValue::Bool(true));
+    document.parameters.insert(
+        "configuration".into(),
+        ParameterValue::String("{\"mode\":\"linear\"}".into()),
+    );
+    document.set_author("SOTF QA");
+
+    let json = serde_json::to_string(&document).unwrap();
+    let restored: PluginPreset = serde_json::from_str(&json).unwrap();
+    assert_eq!(restored, document);
+}
+
+#[test]
+fn preset_document_tolerates_unknown_fields_and_defaults_missing_metadata() {
+    let json = serde_json::json!({
+        "name": "Legacy",
+        "plugin_id": "sotf-eq",
+        "version": "1.0.0",
+        "parameters": {},
+        "data": {},
+        "future_field": { "preserved_by_future_hosts": true }
+    });
+
+    let restored: PluginPreset = serde_json::from_value(json).unwrap();
+    assert_eq!(restored.name, "Legacy");
+    assert_eq!(restored.metadata, Default::default());
+}
+
+#[test]
+fn preset_document_rejects_missing_required_fields_and_invalid_parameter_values() {
+    let missing_parameters = serde_json::json!({
+        "name": "Broken",
+        "plugin_id": "sotf-eq",
+        "version": "1.0.0",
+        "data": {}
+    });
+    assert!(serde_json::from_value::<PluginPreset>(missing_parameters).is_err());
+
+    let invalid_parameter = serde_json::json!({
+        "name": "Broken",
+        "plugin_id": "sotf-eq",
+        "version": "1.0.0",
+        "parameters": { "gain": { "Float": "not-a-number" } },
+        "data": {}
+    });
+    assert!(serde_json::from_value::<PluginPreset>(invalid_parameter).is_err());
+}
+
+#[test]
+fn preset_document_version_contract_accepts_same_major_only() {
+    let document = PluginPreset::new("Versioned".into(), "sotf-eq".into(), "2.0.0".into());
+
+    assert!(document.is_loadable_for("sotf-eq", "2.99.4"));
+    assert!(!document.is_loadable_for("sotf-eq", "3.0.0"));
+    assert!(!document.is_loadable_for("sotf-compressor", "2.0.0"));
+}
+
+#[test]
+fn preset_rejects_inconsistent_external_plugin_descriptor_state() {
+    let descriptor = crate::external_plugin::PluginDescriptor {
+        id: "com.example.delay".into(),
+        name: "Example Delay".into(),
+        vendor: "Example".into(),
+        version: "1.0".into(),
+        format: crate::external_plugin::PluginFormat::Clap,
+        path: "/Library/Audio/Plug-Ins/CLAP/ExampleDelay.clap".into(),
+        audio_inputs: 2,
+        audio_outputs: 2,
+        is_instrument: false,
+        categories: vec![],
+        scan_status: crate::external_plugin::PluginScanStatus::UnsupportedByBuild,
+    };
+    let mut state = ExternalPluginState::new(
+        descriptor,
+        crate::external_plugin::ExternalPluginSandboxMode::Isolated,
+        vec![1, 2, 3],
+    );
+    state.plugin_id = "com.example.different".into();
+    let mut document =
+        PluginPreset::new("External".into(), "external-plugin".into(), "1.0.0".into());
+
+    assert!(document.set_external_plugin_state(&state).is_err());
 }

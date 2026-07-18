@@ -15,6 +15,7 @@ mod step_4_export;
 use crate::app::types::{HeadphoneEqStep, Screen};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
+use crate::i18n::HeadphoneEqTranslations;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -70,9 +71,10 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = HeadphoneEqTranslations::for_language(state.app.ui_state.language);
         let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.measurement_state.headphone_eq_state.step;
-        let can_go_next = state.app.measurement_state.headphone_eq_state.can_advance();
+        let can_go_next = state.app.can_advance_workflow_step();
         let is_busy = state
             .app
             .measurement_state
@@ -89,10 +91,10 @@ impl PlayerView {
 
         // Define steps
         let steps = vec![
-            WizardStep::new("measure", "Measurement"),
-            WizardStep::new("optimize", "Optimization"),
-            WizardStep::new("listen", "Listen"),
-            WizardStep::new("export", "Export"),
+            WizardStep::new("measure", translations.measurement_step),
+            WizardStep::new("optimize", translations.optimization_step),
+            WizardStep::new("listen", translations.listen_step),
+            WizardStep::new("export", translations.export),
         ];
 
         // Calculate statuses
@@ -113,15 +115,15 @@ impl PlayerView {
         let button_theme = ButtonTheme::from(&ui_kit_theme);
 
         let header = WizardHeader::new()
-            .title("Headphone EQ")
+            .title(translations.title)
             .steps(steps)
             .step_statuses(step_statuses)
             .current_step(step_index)
             .theme(wizard_theme.clone());
 
         let back_label = match current_step {
-            HeadphoneEqStep::MeasurementTarget => "Close",
-            _ => "Back",
+            HeadphoneEqStep::MeasurementTarget => translations.close,
+            _ => translations.back,
         };
         let next_label =
             crate::components::wizard_continue_label(current_step.next().map(|next| next.label()));
@@ -136,24 +138,7 @@ impl PlayerView {
                     .theme(button_theme.clone())
                     .on_click_event(cx.listener(|view, _, _, cx| {
                         view.state.update(cx, |state, _| {
-                            match state.app.measurement_state.headphone_eq_state.step {
-                                HeadphoneEqStep::MeasurementTarget => {
-                                    state.app.ui_state.current_screen =
-                                        state.app.ui_state.last_screen;
-                                }
-                                _ => {
-                                    if let Some(prev) = state
-                                        .app
-                                        .measurement_state
-                                        .headphone_eq_state
-                                        .step
-                                        .previous()
-                                    {
-                                        state.app.measurement_state.headphone_eq_state.model.step =
-                                            prev;
-                                    }
-                                }
-                            }
+                            state.app.move_workflow_step(false);
                         });
                         cx.notify();
                     })),
@@ -166,20 +151,7 @@ impl PlayerView {
                     .theme(button_theme.clone())
                     .on_click_event(cx.listener(|view, _, _, cx| {
                         view.state.update(cx, |state, _| {
-                            match state.app.measurement_state.headphone_eq_state.step {
-                                HeadphoneEqStep::Export => {
-                                    state.app.ui_state.current_screen =
-                                        state.app.ui_state.last_screen;
-                                }
-                                _ => {
-                                    if let Some(next) =
-                                        state.app.measurement_state.headphone_eq_state.step.next()
-                                    {
-                                        state.app.measurement_state.headphone_eq_state.model.step =
-                                            next;
-                                    }
-                                }
-                            }
+                            state.app.move_workflow_step(true);
                         });
                         cx.notify();
                     })),

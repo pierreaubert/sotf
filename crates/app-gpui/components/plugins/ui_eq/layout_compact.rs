@@ -5,6 +5,7 @@
 //! - `render_eq_inspector`: narrow drawer with graph, selected-band editor, and bottom band chips.
 
 use crate::app::AppState;
+use crate::app::i18n::EqViewTranslations;
 use crate::components::PluginEditingManager;
 use crate::components::design::Ds;
 use crate::theme::Theme;
@@ -34,6 +35,7 @@ pub(crate) fn render_eq_bottom_strip(
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let d = Ds::from_cx(cx);
+    let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let config_open = entity
         .read(cx)
         .app
@@ -125,6 +127,7 @@ pub(crate) fn render_eq_bottom_strip(
         indexing,
         state,
         is_lp_mode,
+        text,
         theme,
     ));
 
@@ -144,6 +147,7 @@ pub(crate) fn render_eq_inspector(
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let d = Ds::from_cx(cx);
+    let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let config_open = entity
         .read(cx)
         .app
@@ -216,6 +220,7 @@ pub(crate) fn render_eq_inspector(
             indexing,
             state,
             is_lp_mode,
+            text,
             theme,
         ))
         .child(render_narrow_band_strip(
@@ -872,7 +877,7 @@ fn config_toggle_button(
                 cx.notify();
             });
         })
-        .child("Config ⚙")
+        .child("⚙")
 }
 
 /// Helper: readable label for a channel index.

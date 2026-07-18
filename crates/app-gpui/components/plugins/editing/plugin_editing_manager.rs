@@ -113,10 +113,20 @@ impl PluginEditingManager for App {
 
     fn select_next_plugin(&mut self) {
         self.plugin_state.select_next_plugin();
+        self.plugin_state.editing_plugin_index = self
+            .plugin_state
+            .graph
+            .get_plugin(self.plugin_state.selected_plugin_index)
+            .map(|_| self.plugin_state.selected_plugin_index);
     }
 
     fn select_previous_plugin(&mut self) {
         self.plugin_state.select_previous_plugin();
+        self.plugin_state.editing_plugin_index = self
+            .plugin_state
+            .graph
+            .get_plugin(self.plugin_state.selected_plugin_index)
+            .map(|_| self.plugin_state.selected_plugin_index);
     }
 
     fn remove_plugin(&mut self, index: usize) {
@@ -140,10 +150,20 @@ impl PluginEditingManager for App {
     }
 
     fn select_next_param(&mut self) {
+        self.plugin_state.editing_plugin_index = self
+            .plugin_state
+            .graph
+            .get_plugin(self.plugin_state.selected_plugin_index)
+            .map(|_| self.plugin_state.selected_plugin_index);
         self.plugin_state.select_next_param();
     }
 
     fn select_previous_param(&mut self) {
+        self.plugin_state.editing_plugin_index = self
+            .plugin_state
+            .graph
+            .get_plugin(self.plugin_state.selected_plugin_index)
+            .map(|_| self.plugin_state.selected_plugin_index);
         self.plugin_state.select_previous_param();
     }
 

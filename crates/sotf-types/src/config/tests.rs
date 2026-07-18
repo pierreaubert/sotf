@@ -472,7 +472,7 @@ fn audio_engine_state_missing_optional_fields_use_defaults() {
     assert_eq!(state.playback_output_device, None);
     assert_eq!(state.playback_callback_count, 0);
     assert_eq!(state.playback_buffer_fill_percent, 0);
-    assert_eq!(state.latency_compensation_enabled, true);
+    assert!(state.latency_compensation_enabled);
     assert_eq!(state.output_access_mode, OutputAccessMode::Shared);
     assert!(state.isolated_external_plugin_worker_statuses.is_empty());
 }

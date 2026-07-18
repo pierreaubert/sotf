@@ -5,6 +5,7 @@ use super::pipeline_supervisor::PipelineSupervisor;
 use super::types::PipelinePlan;
 use parking_lot::Mutex;
 use sotf_audio::PluginConfig;
+use sotf_audio::engine::PluginGraphConfig;
 use sotf_audio::manager::AudioEngineManager;
 use std::sync::Arc;
 
@@ -20,6 +21,10 @@ impl SystemwideState {
 
     pub(super) fn user_plugins(&self) -> Vec<PluginConfig> {
         self.pipeline.user_plugins()
+    }
+
+    pub(super) fn user_graph(&self) -> Option<PluginGraphConfig> {
+        self.pipeline.user_graph()
     }
 
     pub(super) fn input_channels(&self) -> usize {
@@ -63,6 +68,21 @@ impl SystemwideState {
     ) -> Result<PipelinePlan, String> {
         self.pipeline.prepare_plan(
             user_plugins,
+            input_channels,
+            output_channels,
+            driver_input_fallback_channels,
+        )
+    }
+
+    pub(super) fn prepare_graph_plan(
+        &self,
+        user_graph: PluginGraphConfig,
+        input_channels: usize,
+        output_channels: usize,
+        driver_input_fallback_channels: usize,
+    ) -> Result<PipelinePlan, String> {
+        self.pipeline.prepare_graph_plan(
+            user_graph,
             input_channels,
             output_channels,
             driver_input_fallback_channels,

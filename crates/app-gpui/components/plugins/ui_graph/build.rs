@@ -1,5 +1,6 @@
 use super::consts::convert_plugin_graph;
 use super::create::create_default_graph;
+use crate::i18n::PluginGraphTranslations;
 use gpui_ui_kit::MenuItem;
 use gpui_ui_kit::workflow::WorkflowGraph;
 use sotf_audio::devices::AudioDevice;
@@ -24,12 +25,13 @@ pub(super) fn build_workflow_graph(
 pub(super) fn build_menu_items(
     input_devices: &[AudioDevice],
     output_devices: &[AudioDevice],
+    text: PluginGraphTranslations,
 ) -> Vec<MenuItem> {
     let mut items = Vec::new();
 
     // Input sources section
-    items.push(MenuItem::new("input-header", "Input Sources").disabled(true));
-    items.push(MenuItem::new("input-player", "Player (Audio Files)"));
+    items.push(MenuItem::new("input-header", text.input_sources).disabled(true));
+    items.push(MenuItem::new("input-player", text.player_audio_files));
 
     // Add hardware input devices
     for (idx, device) in input_devices.iter().enumerate() {
@@ -45,7 +47,7 @@ pub(super) fn build_menu_items(
     items.push(MenuItem::separator());
 
     // Output devices section
-    items.push(MenuItem::new("output-header", "Output Devices").disabled(true));
+    items.push(MenuItem::new("output-header", text.output_devices).disabled(true));
     for (idx, device) in output_devices.iter().enumerate() {
         let channels = device
             .default_config
@@ -56,7 +58,7 @@ pub(super) fn build_menu_items(
         items.push(MenuItem::new(format!("output-{}", idx), name));
     }
     if output_devices.is_empty() {
-        items.push(MenuItem::new("no-outputs", "(no output devices)").disabled(true));
+        items.push(MenuItem::new("no-outputs", text.no_output_devices).disabled(true));
     }
 
     items.push(MenuItem::separator());
@@ -71,7 +73,7 @@ pub(super) fn build_menu_items(
     items.push(MenuItem::separator());
 
     // Dynamics section
-    items.push(MenuItem::new("dynamics-header", "Dynamics").disabled(true));
+    items.push(MenuItem::new("dynamics-header", text.dynamics).disabled(true));
     items.push(MenuItem::new("plugin-gain", "Gain"));
     items.push(MenuItem::new("plugin-compressor", "Compressor"));
     items.push(MenuItem::new("plugin-limiter", "Limiter"));
@@ -85,7 +87,7 @@ pub(super) fn build_menu_items(
     items.push(MenuItem::separator());
 
     // Spatial section
-    items.push(MenuItem::new("spatial-header", "Spatial").disabled(true));
+    items.push(MenuItem::new("spatial-header", text.spatial).disabled(true));
     items.push(MenuItem::new("plugin-upmixer", "Upmixer"));
     items.push(MenuItem::new("plugin-aae", "AAE Reverb"));
     items.push(MenuItem::new("plugin-downmix", "Downmix"));
@@ -100,7 +102,7 @@ pub(super) fn build_menu_items(
     items.push(MenuItem::separator());
 
     // Monitor section
-    items.push(MenuItem::new("monitor-header", "Monitor").disabled(true));
+    items.push(MenuItem::new("monitor-header", text.monitor).disabled(true));
     items.push(MenuItem::new(
         "plugin-loudness-comp",
         "Loudness Compensation",
@@ -113,7 +115,7 @@ pub(super) fn build_menu_items(
     items.push(MenuItem::separator());
 
     // Denoising section
-    items.push(MenuItem::new("denoising-header", "Denoising").disabled(true));
+    items.push(MenuItem::new("denoising-header", text.denoising).disabled(true));
     items.push(MenuItem::new("plugin-denoiser", "Denoiser"));
     items.push(MenuItem::new("plugin-declick", "Declick"));
     items.push(MenuItem::new("plugin-hiss-reducer", "Hiss Reducer"));
@@ -124,7 +126,7 @@ pub(super) fn build_menu_items(
     items.push(MenuItem::separator());
 
     // Utility section
-    items.push(MenuItem::new("utility-header", "Utility").disabled(true));
+    items.push(MenuItem::new("utility-header", text.utility).disabled(true));
     items.push(MenuItem::new("plugin-matrix", "Matrix Mixer"));
     items.push(MenuItem::new("plugin-ab-compare", "A/B Compare"));
 

@@ -15,9 +15,19 @@ pub(crate) fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
 
     // Draw help box with contextual text
     if app.input_mode == InputMode::AddPlugin {
-        draw_help_box_with_text(f, vchunks[0], app, "↑/↓=navigate  Enter=add  Esc=cancel");
+        draw_help_box_with_text(
+            f,
+            vchunks[0],
+            app,
+            &crate::tui_text!(app, "↑/↓=navigate  Enter=add  Esc=cancel"),
+        );
     } else if app.plugin_rack.graph.is_empty() {
-        draw_help_box_with_text(f, vchunks[0], app, "'a'=add plugins  's'=save  'l'=load");
+        draw_help_box_with_text(
+            f,
+            vchunks[0],
+            app,
+            &crate::tui_text!(app, "'a'=add plugins  's'=save  'l'=load"),
+        );
     } else {
         draw_help_box(f, vchunks[0], app, Screen::Plugins);
     }
@@ -45,9 +55,12 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
     if !app.plugin_rack.graph.is_linear() {
         let node_count = app.plugin_rack.graph.nodes.len();
         let conn_count = app.plugin_rack.graph.connections.len();
-        let msg = format!(
-            "Graph mode: {} plugins, {} connections.\nNon-linear topology (parallel branches).\nUse the desktop app (sotf-desktop) to edit nodes and connections visually.",
-            node_count, conn_count
+        let msg = crate::tui_text!(
+            app,
+            format!(
+                "Graph mode: {} plugins, {} connections.\nNon-linear topology (parallel branches).\nUse the desktop app (sotf-desktop) to edit nodes and connections visually.",
+                node_count, conn_count
+            )
         );
         let para = Paragraph::new(msg)
             .style(Style::default().fg(app.theme.fg_secondary))
@@ -55,7 +68,7 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Plugin chain (graph)"),
+                    .title(crate::tui_text!(app, "Plugin chain (graph)")),
             );
         f.render_widget(para, area);
         return;
@@ -79,9 +92,16 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 plugin.plugin_type().name()
             };
-            let display_name: String = custom_name
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| fallback.to_string());
+            let display_name: String = custom_name.filter(|n| !n.is_empty()).unwrap_or_else(|| {
+                if matches!(
+                    fallback,
+                    "Loudness Monitor Input" | "Loudness Monitor Output" | "Replay Gain"
+                ) {
+                    crate::tui_text!(app, fallback)
+                } else {
+                    fallback.to_string()
+                }
+            });
             let content = format!("{} {} - {}", enabled_marker, i + 1, display_name);
 
             let style = if plugin.enabled {
@@ -95,12 +115,15 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let title = if app.plugin_rack.graph.is_empty() {
-        "0 plugins".to_string()
+        crate::tui_text!(app, "0 plugins")
     } else {
-        format!(
-            "{} plugins ({} ch)",
-            app.plugin_rack.graph.len(),
-            app.plugin_rack.graph.output_channels()
+        crate::tui_text!(
+            app,
+            format!(
+                "{} plugins ({} ch)",
+                app.plugin_rack.graph.len(),
+                app.plugin_rack.graph.output_channels()
+            )
         )
     };
 
@@ -148,9 +171,9 @@ pub(crate) fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
     }
 
     let title = if is_selecting {
-        "▶ Select Plugin (↑/↓, Enter=add, Esc=cancel)"
+        crate::tui_text!(app, "▶ Select Plugin (↑/↓, Enter=add, Esc=cancel)")
     } else {
-        "Available Plugins"
+        crate::tui_text!(app, "Available Plugins")
     };
 
     let border_style = if is_selecting {
@@ -216,9 +239,9 @@ pub(crate) fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
                     .bg(app.theme.bg_primary)
                     .fg(app.theme.fg_primary),
             )
-            .title(format!(
-                "Edit {} Plugin (ESC to close)",
-                plugin.plugin_type().name()
+            .title(crate::tui_text!(
+                app,
+                format!("Edit {} Plugin (ESC to close)", plugin.plugin_type().name())
             ));
 
         f.render_widget(block, modal_area);
@@ -238,11 +261,11 @@ pub(crate) fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
         // Build parameter list
         let mut lines = Vec::new();
         lines.push(Line::from(vec![
-            Span::styled("Use ", base_style),
+            Span::styled(crate::tui_text!(app, "Use "), base_style),
             Span::styled("↑/↓", base_style.fg(app.theme.accent_primary)),
-            Span::styled(" to select parameter, ", base_style),
+            Span::styled(crate::tui_text!(app, " to select parameter, "), base_style),
             Span::styled("←/→", base_style.fg(app.theme.accent_primary)),
-            Span::styled(" to adjust value", base_style),
+            Span::styled(crate::tui_text!(app, " to adjust value"), base_style),
         ]));
         lines.push(Line::from(Span::styled("", base_style)));
 
@@ -365,7 +388,10 @@ pub(crate) fn draw_matrix_editor_modal(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title(format!(" Matrix Mixer - {} (ESC to close) ", preset_name));
+        .title(crate::tui_text!(
+            app,
+            format!(" Matrix Mixer - {} (ESC to close) ", preset_name)
+        ));
     f.render_widget(block, modal_area);
 
     // Inner area
@@ -400,12 +426,15 @@ pub(crate) fn draw_matrix_editor_modal(f: &mut Frame, app: &App) {
     draw_matrix_grid(f, app, chunks[1], *input_channels, *output_channels, matrix);
 
     // === Help Line ===
-    let help_text = match app.matrix.edit_mode {
-        MatrixEditMode::Header => "↑↓: Select | ←→: Adjust | Tab: Grid Mode | Esc: Exit",
-        MatrixEditMode::Grid => {
-            "↑↓←→: Navigate | -/+: Adjust ±0.5dB | 0: Zero | 1: Unity | Tab: Header Mode | Esc: Exit"
+    let help_text = crate::tui_text!(
+        app,
+        match app.matrix.edit_mode {
+            MatrixEditMode::Header => "↑↓: Select | ←→: Adjust | Tab: Grid Mode | Esc: Exit",
+            MatrixEditMode::Grid => {
+                "↑↓←→: Navigate | -/+: Adjust ±0.5dB | 0: Zero | 1: Unity | Tab: Header Mode | Esc: Exit"
+            }
         }
-    };
+    );
     let help = Paragraph::new(help_text)
         .style(Style::default().fg(app.theme.fg_secondary))
         .alignment(Alignment::Center);
@@ -437,7 +466,7 @@ pub(crate) fn draw_matrix_header(
         base_style
     };
     lines.push(Line::from(vec![
-        Span::styled("  Input Channels:  ", base_style),
+        Span::styled(crate::tui_text!(app, "  Input Channels:  "), base_style),
         Span::styled(
             format!("[{}]", input_channels),
             input_style.fg(app.theme.accent_primary),
@@ -458,7 +487,7 @@ pub(crate) fn draw_matrix_header(
         base_style
     };
     lines.push(Line::from(vec![
-        Span::styled("  Output Channels: ", base_style),
+        Span::styled(crate::tui_text!(app, "  Output Channels: "), base_style),
         Span::styled(
             format!("[{}]", output_channels),
             output_style.fg(app.theme.accent_primary),
@@ -479,7 +508,7 @@ pub(crate) fn draw_matrix_header(
         base_style
     };
     lines.push(Line::from(vec![
-        Span::styled("  Preset:          ", base_style),
+        Span::styled(crate::tui_text!(app, "  Preset:          "), base_style),
         Span::styled(
             format!("[{}]", preset_name),
             preset_style.fg(app.theme.title_color),
@@ -576,7 +605,7 @@ pub(crate) fn draw_matrix_grid(
     let table = Table::new(rows, widths).header(header).block(
         Block::default()
             .borders(Borders::TOP)
-            .title(" Matrix Grid "),
+            .title(crate::tui_text!(app, " Matrix Grid ")),
     );
 
     f.render_widget(table, area);
@@ -606,7 +635,7 @@ pub(crate) fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title("Save Plugin Preset");
+        .title(crate::tui_text!(app, "Save Plugin Preset"));
 
     f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
@@ -623,9 +652,15 @@ pub(crate) fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
     if !app.plugin_rack.file_input.is_empty() {
         // Manual filename entry mode
         let lines = vec![
-            Line::from("Enter preset name (without .json extension):"),
+            Line::from(crate::tui_text!(
+                app,
+                "Enter preset name (without .json extension):"
+            )),
             Line::from(vec![
-                Span::styled("  Saved to: ", Style::default().fg(app.theme.fg_muted)),
+                Span::styled(
+                    crate::tui_text!(app, "  Saved to: "),
+                    Style::default().fg(app.theme.fg_muted),
+                ),
                 Span::styled(
                     "plugin_presets/",
                     Style::default()
@@ -641,10 +676,16 @@ pub(crate) fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("Note: ", Style::default().fg(app.theme.title_color)),
-                Span::raw(".json extension will be added automatically"),
+                Span::styled(
+                    crate::tui_text!(app, "Note: "),
+                    Style::default().fg(app.theme.title_color),
+                ),
+                Span::raw(crate::tui_text!(
+                    app,
+                    ".json extension will be added automatically"
+                )),
             ]),
-            Line::from("Press Enter to save, ESC to cancel"),
+            Line::from(crate::tui_text!(app, "Press Enter to save, ESC to cancel")),
         ];
 
         let paragraph = Paragraph::new(lines)
@@ -656,16 +697,25 @@ pub(crate) fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
     } else if app.plugin_rack.available_presets.is_empty() {
         // No presets available - show instructions
         let lines = vec![
-            Line::from("No existing presets found in plugin_presets directory"),
+            Line::from(crate::tui_text!(
+                app,
+                "No existing presets found in plugin_presets directory"
+            )),
             Line::from(""),
-            Line::from("Type a preset name to save"),
+            Line::from(crate::tui_text!(app, "Type a preset name to save")),
             Line::from(""),
             Line::from(vec![
-                Span::styled("Note: ", Style::default().fg(app.theme.title_color)),
-                Span::raw(".json extension will be added automatically"),
+                Span::styled(
+                    crate::tui_text!(app, "Note: "),
+                    Style::default().fg(app.theme.title_color),
+                ),
+                Span::raw(crate::tui_text!(
+                    app,
+                    ".json extension will be added automatically"
+                )),
             ]),
             Line::from(""),
-            Line::from("Press ESC to cancel"),
+            Line::from(crate::tui_text!(app, "Press ESC to cancel")),
         ];
 
         let paragraph = Paragraph::new(lines)
@@ -678,9 +728,9 @@ pub(crate) fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
         // Show preset list - user can select one to overwrite or type a new name
         let mut lines = vec![
             Line::from(vec![
-                Span::styled("Existing Presets ", Style::default()),
+                Span::styled(crate::tui_text!(app, "Existing Presets "), Style::default()),
                 Span::styled(
-                    "(↑/↓ to select, Enter to overwrite, or type new name)",
+                    crate::tui_text!(app, "(↑/↓ to select, Enter to overwrite, or type new name)"),
                     Style::default().fg(app.theme.fg_muted),
                 ),
             ]),
@@ -707,8 +757,14 @@ pub(crate) fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
 
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
-            Span::styled("Hint: ", Style::default().fg(app.theme.title_color)),
-            Span::raw("Select and press Enter to overwrite, or type to create new preset"),
+            Span::styled(
+                crate::tui_text!(app, "Hint: "),
+                Style::default().fg(app.theme.title_color),
+            ),
+            Span::raw(crate::tui_text!(
+                app,
+                "Select and press Enter to overwrite, or type to create new preset"
+            )),
         ]));
 
         let paragraph = Paragraph::new(lines)
@@ -755,7 +811,7 @@ pub(crate) fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title("Load Plugin Preset");
+        .title(crate::tui_text!(app, "Load Plugin Preset"));
 
     f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
@@ -772,7 +828,10 @@ pub(crate) fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
     if !app.plugin_rack.file_input.is_empty() {
         // Manual filename entry mode
         let lines = vec![
-            Line::from("Enter filename (without .json extension):"),
+            Line::from(crate::tui_text!(
+                app,
+                "Enter filename (without .json extension):"
+            )),
             Line::from(""),
             Line::from(vec![
                 Span::styled("> ", Style::default().fg(app.theme.accent_primary)),
@@ -780,7 +839,7 @@ pub(crate) fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
                 Span::styled("_", Style::default().fg(app.theme.accent_success)),
             ]),
             Line::from(""),
-            Line::from("Press Enter to load, ESC to cancel"),
+            Line::from(crate::tui_text!(app, "Press Enter to load, ESC to cancel")),
         ];
 
         let paragraph = Paragraph::new(lines)
@@ -792,12 +851,21 @@ pub(crate) fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
     } else if app.plugin_rack.available_presets.is_empty() {
         // No presets available
         let lines = vec![
-            Line::from("No presets found in plugin_presets directory"),
+            Line::from(crate::tui_text!(
+                app,
+                "No presets found in plugin_presets directory"
+            )),
             Line::from(""),
-            Line::from("You can:"),
-            Line::from("  • Type a filename to load a preset"),
-            Line::from("  • Press ESC to cancel"),
-            Line::from("  • Save your first preset with 's' from the Plugins screen"),
+            Line::from(crate::tui_text!(app, "You can:")),
+            Line::from(crate::tui_text!(
+                app,
+                "  • Type a filename to load a preset"
+            )),
+            Line::from(crate::tui_text!(app, "  • Press ESC to cancel")),
+            Line::from(crate::tui_text!(
+                app,
+                "  • Save your first preset with 's' from the Plugins screen"
+            )),
         ];
 
         let paragraph = Paragraph::new(lines)
@@ -810,9 +878,12 @@ pub(crate) fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         // Show preset list
         let mut lines = vec![
             Line::from(vec![
-                Span::styled("Available Presets ", Style::default()),
                 Span::styled(
-                    "(↑/↓ to select, Enter to load)",
+                    crate::tui_text!(app, "Available Presets "),
+                    Style::default(),
+                ),
+                Span::styled(
+                    crate::tui_text!(app, "(↑/↓ to select, Enter to load)"),
                     Style::default().fg(app.theme.fg_muted),
                 ),
             ]),
@@ -839,9 +910,10 @@ pub(crate) fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         }
 
         lines.push(Line::from(""));
-        lines.push(Line::from(
-            "Or type a filename to load manually, ESC to cancel",
-        ));
+        lines.push(Line::from(crate::tui_text!(
+            app,
+            "Or type a filename to load manually, ESC to cancel"
+        )));
 
         let paragraph = Paragraph::new(lines)
             .style(Style::default().fg(app.theme.fg_primary))
@@ -887,7 +959,7 @@ pub(crate) fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title("Load APO EQ File");
+        .title(crate::tui_text!(app, "Load APO EQ File"));
 
     f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
@@ -901,7 +973,7 @@ pub(crate) fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
     };
 
     let lines = vec![
-        Line::from("Enter path to APO file:"),
+        Line::from(crate::tui_text!(app, "Enter path to APO file:")),
         Line::from(""),
         Line::from(vec![
             Span::styled("> ", Style::default().fg(app.theme.accent_primary)),
@@ -910,13 +982,13 @@ pub(crate) fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
-            "Supported format:",
+            crate::tui_text!(app, "Supported format:"),
             Style::default().fg(app.theme.title_color),
         )]),
         Line::from("  Filter 1: ON PK Fc 100 Hz Gain -2.0 dB Q 1.41"),
         Line::from("  Filter 2: ON LSC Fc 105 Hz Gain 4.1 dB Q 0.71"),
         Line::from(""),
-        Line::from("Press Enter to load, ESC to cancel"),
+        Line::from(crate::tui_text!(app, "Press Enter to load, ESC to cancel")),
     ];
 
     let paragraph = Paragraph::new(lines)
@@ -962,7 +1034,7 @@ pub(crate) fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
                 .bg(app.theme.bg_primary)
                 .fg(app.theme.fg_primary),
         )
-        .title("Load SOFA HRTF File");
+        .title(crate::tui_text!(app, "Load SOFA HRTF File"));
 
     f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
@@ -976,7 +1048,10 @@ pub(crate) fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
     };
 
     let lines = vec![
-        Line::from("Enter path to SOFA file containing HRTFs:"),
+        Line::from(crate::tui_text!(
+            app,
+            "Enter path to SOFA file containing HRTFs:"
+        )),
         Line::from(""),
         Line::from(vec![
             Span::styled("> ", Style::default().fg(app.theme.accent_primary)),
@@ -984,8 +1059,14 @@ pub(crate) fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
             Span::styled("_", Style::default().fg(app.theme.accent_success)),
         ]),
         Line::from(""),
-        Line::from("SOFA format contains Head-Related Transfer Functions"),
-        Line::from("Press Enter to set path, ESC to cancel"),
+        Line::from(crate::tui_text!(
+            app,
+            "SOFA format contains Head-Related Transfer Functions"
+        )),
+        Line::from(crate::tui_text!(
+            app,
+            "Press Enter to set path, ESC to cancel"
+        )),
     ];
 
     let paragraph = Paragraph::new(lines)

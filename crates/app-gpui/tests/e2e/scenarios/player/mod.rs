@@ -1,13 +1,16 @@
 pub mod dialogs;
 pub mod footer;
 pub mod header;
+pub mod keyboard_workflow;
 pub mod library;
 pub mod playback;
 pub mod queue;
+pub mod screen_matrix;
 pub mod search;
 pub mod settings;
 pub mod spectrum;
 pub mod startup;
+pub mod state_mutation_matrix;
 pub mod studio;
 pub mod view_switching;
 pub mod volume;

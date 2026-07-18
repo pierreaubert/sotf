@@ -1,6 +1,7 @@
 use super::super::*;
 
 pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use crate::app::HeadphoneEqStep;
     use ratatui::widgets::{Gauge, Tabs};
     use sotf_audio_player::room_eq_types::OptimizationStatus;
@@ -53,7 +54,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 Style::default().fg(app.theme.fg_secondary)
             };
-            Line::from(Span::styled(st.label(), style))
+            Line::from(Span::styled(i18n.dynamic(st.label().to_string()), style))
         })
         .collect();
     let tabs = Tabs::new(tab_titles)
@@ -62,7 +63,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_type(step_tab_border)
                 .border_style(Style::default().fg(step_tab_border_color))
-                .title("Headphone EQ"),
+                .title(i18n.ui("Headphone EQ")),
         )
         .select(s.step as usize)
         .highlight_style(Style::default().fg(app.theme.accent_primary));
@@ -104,13 +105,14 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 Style::default().fg(app.theme.fg_primary)
             };
-            let source = Paragraph::new(s.model.measurement_source.label())
-                .style(source_style)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title("Source (Left/Right to toggle)"),
-                );
+            let source =
+                Paragraph::new(i18n.dynamic(s.model.measurement_source.label().to_string()))
+                    .style(source_style)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Source (Left/Right to toggle)")),
+                    );
             f.render_widget(source, inner[0]);
 
             // Row 1: Measurement path or Spinorama search
@@ -127,22 +129,25 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     .constraints([Constraint::Length(3), Constraint::Min(1)])
                     .split(inner[1]);
 
-                let search_label = if s.editing_search {
-                    if s.model.loading_headphones {
-                        "Search (loading...)"
+                let search_label = i18n.dynamic(
+                    if s.editing_search {
+                        if s.model.loading_headphones {
+                            "Search (loading...)"
+                        } else {
+                            "Search (editing)"
+                        }
+                    } else if s.model.loading_download {
+                        "Search (downloading...)"
                     } else {
-                        "Search (editing)"
+                        "Search headphones (Enter to edit)"
                     }
-                } else if s.model.loading_download {
-                    "Search (downloading...)"
-                } else {
-                    "Search headphones (Enter to edit)"
-                };
+                    .to_string(),
+                );
                 let search_text = if s.model.headphone_search.is_empty() && !s.editing_search {
                     if let Some(ref name) = s.model.selected_headphone {
-                        format!("Selected: {}", name)
+                        i18n.dynamic(format!("Selected: {}", name))
                     } else {
-                        "<type to search>".to_string()
+                        i18n.dynamic("<type to search>".to_string())
                     }
                 } else {
                     s.model.headphone_search.clone()
@@ -172,28 +177,36 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         })
                         .collect();
                     let list = ratatui::widgets::List::new(items).block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .title(format!("{} matches", s.model.headphone_suggestions.len())),
+                        Block::default().borders(Borders::ALL).title(
+                            i18n.dynamic(format!(
+                                "{} matches",
+                                s.model.headphone_suggestions.len()
+                            )),
+                        ),
                     );
                     f.render_widget(list, search_area[1]);
                 }
 
                 // Show measurement path if downloaded
                 if !s.model.measurement_path.is_empty() && !s.editing_search {
-                    let path = Paragraph::new(format!("Downloaded: {}", s.model.measurement_path))
-                        .style(Style::default().fg(app.theme.fg_secondary));
+                    let path = Paragraph::new(
+                        i18n.dynamic(format!("Downloaded: {}", s.model.measurement_path)),
+                    )
+                    .style(Style::default().fg(app.theme.fg_secondary));
                     f.render_widget(path, search_area[1]);
                 }
             } else {
                 // File mode: measurement path input
-                let meas_label = if s.editing_measurement {
-                    "Measurement CSV (editing)"
-                } else {
-                    "Measurement CSV"
-                };
+                let meas_label = i18n.dynamic(
+                    if s.editing_measurement {
+                        "Measurement CSV (editing)"
+                    } else {
+                        "Measurement CSV"
+                    }
+                    .to_string(),
+                );
                 let meas = Paragraph::new(if s.model.measurement_path.is_empty() {
-                    "<type path or paste>".to_string()
+                    i18n.dynamic("<type path or paste>".to_string())
                 } else {
                     s.model.measurement_path.clone()
                 })
@@ -213,7 +226,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title("Target Preset (Left/Right to cycle)"),
+                        .title(i18n.ui("Target Preset (Left/Right to cycle)")),
                 );
             f.render_widget(target, inner[2]);
 
@@ -224,13 +237,16 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 } else {
                     Style::default().fg(app.theme.fg_primary)
                 };
-                let custom_label = if s.editing_custom_target {
-                    "Custom Target (editing)"
-                } else {
-                    "Custom Target CSV"
-                };
+                let custom_label = i18n.dynamic(
+                    if s.editing_custom_target {
+                        "Custom Target (editing)"
+                    } else {
+                        "Custom Target CSV"
+                    }
+                    .to_string(),
+                );
                 let custom = Paragraph::new(if s.model.custom_target_path.is_empty() {
-                    "<type path>".to_string()
+                    i18n.dynamic("<type path>".to_string())
                 } else {
                     s.model.custom_target_path.clone()
                 })
@@ -240,7 +256,10 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             }
 
             let help = Paragraph::new(
-                " Up/Down=select field  Enter=edit  Left/Right=toggle/cycle  Tab=next step",
+                i18n.dynamic(
+                    " Up/Down=select field  Enter=edit  Left/Right=toggle/cycle  Tab=next step"
+                        .to_string(),
+                ),
             )
             .style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(help, inner[4]);
@@ -285,18 +304,16 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     (None, "── Preset ──", String::new()),
                     (Some(100), "Preset", {
                         autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
-                            .map(|p| p.name)
-                            .unwrap_or(&s.selected_preset)
-                            .to_string()
+                            .map(|p| i18n.dynamic(p.name.to_string()))
+                            .unwrap_or_else(|| s.selected_preset.clone())
                     }),
                 ],
                 DetailLevel::Intermediate => vec![
                     (None, "── Preset ──", String::new()),
                     (Some(100), "Preset", {
                         autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
-                            .map(|p| p.name)
-                            .unwrap_or(&s.selected_preset)
-                            .to_string()
+                            .map(|p| i18n.dynamic(p.name.to_string()))
+                            .unwrap_or_else(|| s.selected_preset.clone())
                     }),
                     (None, "── Filter Design ──", String::new()),
                     (Some(0), "Filters (n)", format!("{}", c.num_filters)),
@@ -318,9 +335,8 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     (None, "── Preset ──", String::new()),
                     (Some(100), "Preset", {
                         autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
-                            .map(|p| p.name)
-                            .unwrap_or(&s.selected_preset)
-                            .to_string()
+                            .map(|p| i18n.dynamic(p.name.to_string()))
+                            .unwrap_or_else(|| s.selected_preset.clone())
                     }),
                     (None, "── Filters ──", String::new()),
                     (Some(0), "Filters (n)", format!("{}", c.num_filters)),
@@ -357,21 +373,27 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             };
 
             // Detail mode label
-            let mode_label = match detail {
-                DetailLevel::Simple => "Simple",
-                DetailLevel::Intermediate => "Customize",
-                DetailLevel::Expert => "All Parameters",
-            };
+            let mode_label = i18n.dynamic(
+                match detail {
+                    DetailLevel::Simple => "Simple",
+                    DetailLevel::Intermediate => "Customize",
+                    DetailLevel::Expert => "All Parameters",
+                }
+                .to_string(),
+            );
 
             let mut lines = vec![
                 Line::from(vec![
-                    Span::styled("Speaker: ", Style::default().fg(app.theme.fg_secondary)),
+                    Span::styled(
+                        i18n.ui("Speaker: "),
+                        Style::default().fg(app.theme.fg_secondary),
+                    ),
                     Span::styled(
                         &s.model.measurement_path,
                         Style::default().fg(app.theme.accent_primary),
                     ),
                     Span::styled(
-                        format!("  [{}]  Tab=cycle mode", mode_label),
+                        i18n.dynamic(format!("  [{}]  Tab=cycle mode", mode_label)),
                         Style::default().fg(app.theme.fg_secondary),
                     ),
                 ]),
@@ -383,7 +405,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 && let Some(preset) = autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
             {
                 lines.push(Line::from(Span::styled(
-                    format!("  {}", preset.description),
+                    format!("  {}", i18n.dynamic(preset.description.to_string())),
                     Style::default().fg(app.theme.fg_secondary),
                 )));
                 lines.push(Line::from(""));
@@ -421,7 +443,12 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     "  "
                 };
                 lines.push(Line::from(Span::styled(
-                    format!("{}{:<22} {}", arrow, label, display_value),
+                    format!(
+                        "{}{:<22} {}",
+                        arrow,
+                        i18n.dynamic((*label).to_string()),
+                        display_value
+                    ),
                     style,
                 )));
             }
@@ -441,12 +468,16 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 }
             };
             lines.push(Line::from(Span::styled(
-                hint,
+                i18n.dynamic(hint.to_string()),
                 Style::default().fg(app.theme.fg_secondary),
             )));
 
             let para = Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title("Configure"))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Configure")),
+                )
                 .wrap(Wrap { trim: false });
             f.render_widget(para, content);
         }
@@ -461,6 +492,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ])
                 .split(content);
 
+            let unknown_error = i18n.dynamic("unknown error".to_string());
             let (status_text, status_style) = match &s.model.optimization_status {
                 OptimizationStatus::Idle => (
                     "Ready to optimize. Press Enter to start.".to_string(),
@@ -484,7 +516,10 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 OptimizationStatus::Failed => (
                     format!(
                         "Failed: {}",
-                        s.model.error_message.as_deref().unwrap_or("unknown error")
+                        s.model
+                            .error_message
+                            .as_deref()
+                            .unwrap_or(unknown_error.as_str())
                     ),
                     Style::default().fg(app.theme.accent_error),
                 ),
@@ -494,15 +529,25 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ),
             };
 
-            let status_para =
-                Paragraph::new(vec![Line::from(Span::styled(status_text, status_style))])
-                    .block(Block::default().borders(Borders::ALL).title("Optimization"));
+            let status_para = Paragraph::new(vec![Line::from(Span::styled(
+                i18n.dynamic(status_text),
+                status_style,
+            ))])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(i18n.ui("Optimization")),
+            );
             f.render_widget(status_para, inner[0]);
 
             // Progress bar
             let pct = (s.model.progress * 100.0) as u16;
             let gauge = Gauge::default()
-                .block(Block::default().borders(Borders::ALL).title("Progress"))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Progress")),
+                )
                 .gauge_style(Style::default().fg(app.theme.accent_primary))
                 .percent(pct.min(100));
             f.render_widget(gauge, inner[1]);
@@ -525,20 +570,29 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         " Enter=retry  BackTab=back to configure"
                     }
                 };
-                let hint_para = Paragraph::new(hint)
+                let hint_para = Paragraph::new(i18n.dynamic(hint.to_string()))
                     .style(Style::default().fg(app.theme.fg_secondary))
-                    .block(Block::default().borders(Borders::ALL).title("Loss"));
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(i18n.ui("Loss")),
+                    );
                 f.render_widget(hint_para, inner[2]);
             }
         }
 
         HeadphoneEqStep::Results => {
             if s.model.filters.is_empty() {
-                let placeholder =
-                    Paragraph::new("No optimization results yet. Go to Optimize step first.")
-                        .style(Style::default().fg(app.theme.fg_secondary))
-                        .alignment(Alignment::Center)
-                        .block(Block::default().borders(Borders::ALL).title("Results"));
+                let placeholder = Paragraph::new(
+                    i18n.ui("No optimization results yet. Go to Optimize step first."),
+                )
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .alignment(Alignment::Center)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(i18n.ui("Results")),
+                );
                 f.render_widget(placeholder, content);
                 return;
             }
@@ -555,21 +609,25 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             let summary = Paragraph::new(vec![Line::from(vec![
                 Span::styled(
-                    format!(" {} filters", s.model.filters.len()),
+                    i18n.dynamic(format!(" {} filters", s.model.filters.len())),
                     Style::default().fg(app.theme.accent_primary),
                 ),
                 Span::raw("  |  "),
                 Span::styled(
-                    format!(
+                    i18n.dynamic(format!(
                         "Loss: {:.4} → {:.4} (Δ {:.4})",
                         s.model.pre_loss,
                         s.model.post_loss,
                         s.model.pre_loss - s.model.post_loss
-                    ),
+                    )),
                     Style::default().fg(app.theme.accent_success),
                 ),
             ])])
-            .block(Block::default().borders(Borders::ALL).title("Summary"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(i18n.ui("Summary")),
+            );
             f.render_widget(summary, inner[0]);
 
             draw_freq_response_chart(
@@ -585,10 +643,10 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             // Filter table
             let header = Row::new(vec![
                 Cell::from("#"),
-                Cell::from("Type"),
-                Cell::from("Freq (Hz)"),
-                Cell::from("Q"),
-                Cell::from("Gain (dB)"),
+                Cell::from(i18n.ui("Type")),
+                Cell::from(i18n.ui("Freq (Hz)")),
+                Cell::from(i18n.ui("Q")),
+                Cell::from(i18n.ui("Gain (dB)")),
             ])
             .style(
                 Style::default()
@@ -623,7 +681,11 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ],
             )
             .header(header)
-            .block(Block::default().borders(Borders::ALL).title("Filters"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(i18n.ui("Filters")),
+            );
             f.render_widget(table, inner[2]);
         }
 
@@ -631,15 +693,18 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             use crate::app::SpinUpdateSubStep;
             let has_results = !s.model.filters.is_empty();
             let measurement = if s.model.measurement_path.is_empty() {
-                "(none)"
+                i18n.dynamic("(none)".to_string())
             } else {
-                &s.model.measurement_path
+                s.model.measurement_path.clone()
             };
 
             let mut lines = vec![
                 Line::from(""),
                 Line::from(vec![
-                    Span::styled("Measurement: ", Style::default().fg(app.theme.fg_secondary)),
+                    Span::styled(
+                        i18n.ui("Measurement: "),
+                        Style::default().fg(app.theme.fg_secondary),
+                    ),
                     Span::styled(
                         measurement,
                         Style::default()
@@ -654,40 +719,55 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 SpinUpdateSubStep::Ready => {
                     if has_results {
                         lines.push(Line::from(vec![Span::styled(
-                            format!("  {} PEQ filters ready to apply", s.model.filters.len()),
+                            i18n.dynamic(format!(
+                                "  {} PEQ filters ready to apply",
+                                s.model.filters.len()
+                            )),
                             Style::default().fg(app.theme.accent_success),
                         )]));
                         lines.push(Line::from(""));
                         lines.push(Line::from(vec![Span::styled(
-                            "  Press Enter to apply filters to the EQ plugin in the rack.",
+                            i18n.dynamic(
+                                "  Press Enter to apply filters to the EQ plugin in the rack."
+                                    .to_string(),
+                            ),
                             Style::default().fg(app.theme.fg_primary),
                         )]));
                         lines.push(Line::from(vec![Span::styled(
-                            "  If no EQ plugin exists it will be added automatically.",
+                            i18n.dynamic(
+                                "  If no EQ plugin exists it will be added automatically."
+                                    .to_string(),
+                            ),
                             Style::default().fg(app.theme.fg_secondary),
                         )]));
                     } else {
                         lines.push(Line::from(vec![Span::styled(
-                            "  No optimization results yet. Run optimization first.",
+                            i18n.dynamic(
+                                "  No optimization results yet. Run optimization first."
+                                    .to_string(),
+                            ),
                             Style::default().fg(app.theme.accent_error),
                         )]));
                     }
 
                     lines.push(Line::from(""));
                     lines.push(Line::from(vec![Span::styled(
-                        " Enter=apply to rack  ←/BackTab=Results",
+                        i18n.dynamic(" Enter=apply to rack  ←/BackTab=Results".to_string()),
                         Style::default().fg(app.theme.fg_secondary),
                     )]));
                 }
                 SpinUpdateSubStep::ConfirmOverwrite => {
                     if let Some((slot, count)) = s.update_existing_eq_info {
                         lines.push(Line::from(vec![Span::styled(
-                            format!("  Existing EQ in slot {} has {} filter(s).", slot, count),
+                            i18n.dynamic(format!(
+                                "  Existing EQ in slot {} has {} filter(s).",
+                                slot, count
+                            )),
                             Style::default().fg(app.theme.accent_warning),
                         )]));
                         lines.push(Line::from(""));
                         lines.push(Line::from(vec![Span::styled(
-                            "  Save current preset before overwriting?",
+                            i18n.dynamic("  Save current preset before overwriting?".to_string()),
                             Style::default()
                                 .fg(app.theme.fg_primary)
                                 .add_modifier(Modifier::BOLD),
@@ -701,7 +781,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(
-                                " = save preset then apply   ",
+                                i18n.dynamic(" = save preset then apply   ".to_string()),
                                 Style::default().fg(app.theme.fg_secondary),
                             ),
                             Span::styled(
@@ -711,7 +791,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(
-                                " = apply without saving   ",
+                                i18n.dynamic(" = apply without saving   ".to_string()),
                                 Style::default().fg(app.theme.fg_secondary),
                             ),
                             Span::styled(
@@ -720,7 +800,10 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                                     .fg(app.theme.fg_secondary)
                                     .add_modifier(Modifier::BOLD),
                             ),
-                            Span::styled(" = cancel", Style::default().fg(app.theme.fg_secondary)),
+                            Span::styled(
+                                i18n.ui(" = cancel"),
+                                Style::default().fg(app.theme.fg_secondary),
+                            ),
                         ]));
                     }
                 }
@@ -729,7 +812,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             let para = Paragraph::new(lines).block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Update Plugin"),
+                    .title(i18n.ui("Update Plugin")),
             );
             f.render_widget(para, content);
         }

@@ -1,6 +1,7 @@
 //! Header component rendering with dropdown menus
 
 use crate::app::actions::QuitApp;
+use crate::app::i18n::PhoneTranslations;
 use crate::app::{ActiveMenu, Screen};
 use crate::components::design::Ds;
 use crate::theme::Theme;
@@ -195,6 +196,7 @@ impl PlayerView {
     fn render_show_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let app_state = self.state.read(cx);
         let translations = app_state.app.ui_state.translations.clone();
+        let text = PhoneTranslations::for_language(app_state.app.ui_state.language);
         let channel = app_state.app.ui_state.release_channel;
         let _ = app_state;
 
@@ -203,7 +205,7 @@ impl PlayerView {
         Menu::new(
             "view-menu",
             vec![
-                MenuItem::new("home", "Home"),
+                MenuItem::new("home", text.home),
                 MenuItem::new("now-playing", translations.queue_now_playing)
                     .with_shortcut(format!("{MOD_PREFIX}0")),
                 MenuItem::new("library", translations.screen_library),
@@ -222,6 +224,7 @@ impl PlayerView {
                     .with_shortcut(format!("{MOD_PREFIX}4")),
                 MenuItem::new("spinorama", translations.screen_spinorama)
                     .with_shortcut(format!("{MOD_PREFIX}5")),
+                MenuItem::new("listening-test", translations.screen_listening_test),
                 MenuItem::separator(),
                 MenuItem::new("settings", translations.screen_settings),
             ],
@@ -244,15 +247,17 @@ impl PlayerView {
     /// Render Help menu dropdown
     fn render_help_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.clone();
-        let translations = self.state.read(cx).app.ui_state.translations.clone();
+        let app_state = self.state.read(cx);
+        let translations = app_state.app.ui_state.translations.clone();
+        let text = PhoneTranslations::for_language(app_state.app.ui_state.language);
 
         Menu::new(
             "help-menu",
             vec![
-                MenuItem::new("screen-guide", "Screen Guide").with_shortcut("F1"),
+                MenuItem::new("screen-guide", text.screen_guide).with_shortcut("F1"),
                 MenuItem::new("shortcuts", translations.menu_keyboard_shortcuts).with_shortcut("?"),
                 MenuItem::separator(),
-                MenuItem::new("tutorial", "Show Tutorial"),
+                MenuItem::new("tutorial", text.show_tutorial),
                 MenuItem::separator(),
                 MenuItem::new("about", translations.menu_about),
             ],

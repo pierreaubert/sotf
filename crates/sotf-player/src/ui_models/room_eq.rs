@@ -1050,8 +1050,10 @@ mod tests {
 
     #[test]
     fn next_and_previous_step_navigate() {
-        let mut model = RoomEqScreenModel::default();
-        model.step = RoomEqStep::LoadData;
+        let mut model = RoomEqScreenModel {
+            step: RoomEqStep::LoadData,
+            ..Default::default()
+        };
         let effects = model.apply(RoomEqViewEvent::NextStep);
         assert_eq!(model.step, RoomEqStep::Delay);
         assert_eq!(effects.len(), 1);
@@ -1144,9 +1146,10 @@ mod tests {
     #[test]
     fn load_from_recording_groups_by_speaker() {
         let mut model = RoomEqScreenModel::default();
-        let mut recording_state = RecordingState::default();
-        recording_state.channel_recordings =
-            vec![make_done_recording(0, "L"), make_done_recording(1, "R")];
+        let recording_state = RecordingState {
+            channel_recordings: vec![make_done_recording(0, "L"), make_done_recording(1, "R")],
+            ..Default::default()
+        };
         let effects = model.apply(RoomEqViewEvent::LoadFromRecording(Box::new(
             recording_state,
         )));

@@ -6,9 +6,9 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(Text::section_header("Home Cinema Specific").color(theme.header_color))
+            .child(Text::section_header(translations.autoeq_form.home_cinema).color(theme.header_color))
             .child(
-                Text::new("Multi-speaker alignment, timbre matching, and seat optimization")
+                Text::new(translations.autoeq_multi_seat_desc)
                     .size(TextSize::Xs)
                     .color(theme.description_color),
             ),
@@ -32,8 +32,16 @@
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::None)
-                        .child(Text::new("Voice of God Correction").size(TextSize::Xs).color(theme.label_color))
-                        .child(Text::new("Timbre matching across channels").size(TextSize::Xs).color(theme.description_color)),
+                .child(
+                    Text::new(translations.autoeq_voice_of_god_correction)
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
+                .child(
+                    Text::new(translations.autoeq_timbre_matching)
+                        .size(TextSize::Xs)
+                        .color(theme.description_color),
+                ),
                 )
                 .child(vog_toggle),
         );
@@ -45,7 +53,7 @@
                 .collect();
 
             let mut ref_select = Select::new((base_id.clone(), "hc-vog-ref-channel"))
-                .label("Reference Channel")
+                .label(translations.autoeq_form.reference_channel)
                 .options(ref_channel_options)
                 .selected(&config.v2.vog_reference_channel)
                 .is_open(ui_state.vog_reference_channel_open)
@@ -81,7 +89,11 @@
         section = section.child(
             HStack::new()
                 .justify(StackJustify::SpaceBetween)
-                .child(Text::new("Phase Alignment").size(TextSize::Xs).color(theme.label_color))
+                .child(
+                    Text::new(translations.autoeq_phase_alignment)
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
                 .child(phase_toggle),
         );
 
@@ -89,7 +101,7 @@
             let mut min_freq_input = NumberInput::new((base_id.clone(), "hc-phase-min-freq"))
                 .value(config.system_optimization.phase_min_freq)
                 .min(20.0).max(1000.0).step(1.0).decimals(0)
-                .label("Min Freq (Hz)")
+                .label(translations.autoeq_form.min_frequency_hz)
                 .size(NumberInputSize::Sm)
                 .disabled(disabled)
                 .theme(theme.number_input_theme.clone());
@@ -102,7 +114,7 @@
             let mut max_freq_input = NumberInput::new((base_id.clone(), "hc-phase-max-freq"))
                 .value(config.system_optimization.phase_max_freq)
                 .min(20.0).max(1000.0).step(1.0).decimals(0)
-                .label("Max Freq (Hz)")
+                .label(translations.autoeq_form.max_frequency_hz)
                 .size(NumberInputSize::Sm)
                 .disabled(disabled)
                 .theme(theme.number_input_theme.clone());
@@ -129,7 +141,11 @@
             section = section.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
-                    .child(Text::new("Optimize Polarity").size(TextSize::Xs).color(theme.label_color))
+                    .child(
+                        Text::new(translations.autoeq_optimize_polarity)
+                            .size(TextSize::Xs)
+                            .color(theme.label_color),
+                    )
                     .child(polarity_toggle),
             );
 
@@ -137,7 +153,7 @@
                 .value(config.system_optimization.phase_max_delay_ms)
                 .min(ParamLimits::DELAY_MS.min).max(ParamLimits::DELAY_MS.max).step(ParamLimits::DELAY_MS.step)
                 .decimals(1)
-                .label("Max Delay (ms)")
+                .label(translations.autoeq_form.max_delay_ms)
                 .size(NumberInputSize::Sm)
                 .disabled(disabled)
                 .theme(theme.number_input_theme.clone());
@@ -165,7 +181,11 @@
         section = section.child(
             HStack::new()
                 .justify(StackJustify::SpaceBetween)
-                .child(Text::new("Multi-Seat Optimization").size(TextSize::Xs).color(theme.label_color))
+                .child(
+                    Text::new(translations.autoeq_multi_seat)
+                        .size(TextSize::Xs)
+                        .color(theme.label_color),
+                )
                 .child(multi_seat_toggle),
         );
 
@@ -176,7 +196,7 @@
                 .collect();
 
             let mut strategy_select = Select::new((base_id.clone(), "hc-multi-seat-strategy"))
-                .label("Strategy")
+            .label(translations.autoeq_form.strategy)
                 .options(strategy_options)
                 .selected(&config.system_optimization.multi_seat_strategy)
                 .is_open(ui_state.multi_seat_strategy_open)
@@ -198,7 +218,7 @@
                 let mut primary_seat_input = NumberInput::new((base_id.clone(), "hc-multi-seat-primary"))
                     .value(config.system_optimization.multi_seat_primary_seat as f64)
                     .min(0.0).max(16.0).step(1.0).decimals(0)
-                    .label("Primary Seat")
+                .label(translations.autoeq_form.primary_seat)
                     .size(NumberInputSize::Sm)
                     .disabled(disabled)
                     .theme(theme.number_input_theme.clone());
@@ -213,7 +233,7 @@
             let mut dev_input = NumberInput::new((base_id.clone(), "hc-multi-seat-max-dev"))
                 .value(config.system_optimization.multi_seat_max_deviation_db)
                 .min(1.0).max(12.0).step(0.5).decimals(1)
-                .label("Max Deviation (dB)")
+                .label(translations.autoeq_form.max_deviation_db)
                 .size(NumberInputSize::Sm)
                 .disabled(disabled)
                 .theme(theme.number_input_theme.clone());

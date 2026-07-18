@@ -545,6 +545,85 @@ fn test_latency_compensation_handles_channel_mapped_edge() {
 }
 
 #[test]
+fn test_channel_routes_preserve_destination_ports() {
+    let mut g = DawHost::new(2, 48_000);
+
+    let source = g
+        .add_node("source".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+        .unwrap();
+    let destination = g
+        .add_node("destination".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+        .unwrap();
+
+    g.add_edge(GraphEdge::with_channel_route(
+        source,
+        destination,
+        vec![0],
+        1,
+    ))
+    .unwrap();
+    g.add_edge(GraphEdge::with_channel_route(
+        source,
+        destination,
+        vec![1],
+        0,
+    ))
+    .unwrap();
+    g.build().unwrap();
+
+    let input = vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0];
+    let mut output = vec![0.0; input.len()];
+    g.process(&input, &mut output).unwrap();
+
+    assert_eq!(output, vec![10.0, 1.0, 20.0, 2.0, 30.0, 3.0]);
+}
+
+#[test]
+fn test_latency_compensation_handles_destination_routing() {
+    let mut g = DawHost::new(2, 48_000);
+
+    let input_node = g
+        .add_node("input".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+        .unwrap();
+    let long_path = g
+        .add_node(
+            "long".into(),
+            Box::new(ScalerPlugin::with_latency(2, 1.0, 2)),
+        )
+        .unwrap();
+    let short_path = g
+        .add_node("short".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+        .unwrap();
+    let output_node = g
+        .add_node("output".into(), Box::new(ScalerPlugin::new(2, 1.0)))
+        .unwrap();
+
+    g.add_edge(GraphEdge::new(input_node, long_path)).unwrap();
+    g.add_edge(GraphEdge::new(input_node, short_path)).unwrap();
+    g.add_edge(GraphEdge::with_channel_route(
+        long_path,
+        output_node,
+        vec![0],
+        0,
+    ))
+    .unwrap();
+    g.add_edge(GraphEdge::with_channel_route(
+        short_path,
+        output_node,
+        vec![1],
+        1,
+    ))
+    .unwrap();
+    g.build().unwrap();
+
+    let input = vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0, 4.0, 40.0];
+    let mut output = vec![0.0; input.len()];
+    g.process(&input, &mut output).unwrap();
+
+    assert_eq!(output, vec![1.0, 0.0, 2.0, 0.0, 3.0, 10.0, 4.0, 20.0]);
+}
+
+#[test]
 fn test_latency_compensation_asymmetric_three_paths() {
     // Graph: input -> [A (lat=20), B (lat=10), C (lat=0)] -> output
     // Compensation: B delayed by 10, C delayed by 20

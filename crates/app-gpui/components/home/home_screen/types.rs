@@ -8,6 +8,7 @@ use super::misc::expanded_album_limit_for_dimensions;
 use super::misc::prioritize_cover_refs;
 use super::misc::slug;
 use super::misc::sort_album_refs_by_listening;
+use crate::app::i18n::PhoneTranslations;
 use crate::components::design::Ds;
 use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
 use crate::components::icons::{Icon, IconName, IconSize};
@@ -105,6 +106,7 @@ impl PlayerView {
         }
 
         let d = Ds::from_cx(cx);
+        let text = PhoneTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (theme, shelves, expanded_sections) = {
             let state = self.state.read(cx);
             let ui = &state.app.ui_state;
@@ -146,7 +148,7 @@ impl PlayerView {
                         .size_full()
                         .text_size(d.text_sm)
                         .text_color(theme.text_muted)
-                        .child("Add albums to your library to build Home shelves."),
+                        .child(text.home_empty),
                 )
             })
             .children(
@@ -508,6 +510,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = PhoneTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let album_id = album.id.clone();
         let title = album.title.clone();
@@ -585,7 +588,7 @@ impl PlayerView {
                             .child(
                                 Button::new(
                                     SharedString::from(format!("remote-home-add-{album_id}-{idx}")),
-                                    "Add",
+                                    text.add,
                                 )
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Xs)
@@ -608,7 +611,7 @@ impl PlayerView {
                                     SharedString::from(format!(
                                         "remote-home-play-{album_id}-{idx}"
                                     )),
-                                    "Play",
+                                    text.play,
                                 )
                                 .variant(ButtonVariant::Primary)
                                 .size(ButtonSize::Xs)

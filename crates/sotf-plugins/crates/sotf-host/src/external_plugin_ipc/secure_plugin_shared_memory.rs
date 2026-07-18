@@ -402,6 +402,21 @@ impl SecurePluginSharedMemory {
         }
     }
 
+    /// Publish immutable worker metadata after the hosted plugin is loaded.
+    pub fn publish_worker_latency_samples(&self, latency_samples: usize) {
+        let header = self.header();
+        let latency = u32::try_from(latency_samples).unwrap_or(u32::MAX);
+        header.reserved[2].store(latency, Ordering::Relaxed);
+        header.reserved[3].store(1, Ordering::Release);
+    }
+
+    /// Return the hosted plugin's reported latency once worker metadata is ready.
+    pub fn worker_latency_samples(&self) -> Option<usize> {
+        let header = self.header();
+        (header.reserved[3].load(Ordering::Acquire) != 0)
+            .then(|| header.reserved[2].load(Ordering::Relaxed) as usize)
+    }
+
     pub fn audio_slices_mut(&mut self) -> (&mut [f32], &mut [f32]) {
         let input_len = self.layout.input_samples();
         let output_len = self.layout.output_samples();

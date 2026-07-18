@@ -3,6 +3,7 @@
 //! Creates plugin instances from a type string and JSON parameters.
 //! Used by the audio engine and by the A/B Compare plugin's sub-rack builder.
 
+mod catalog;
 mod consts;
 mod create;
 mod external;
@@ -15,6 +16,7 @@ mod tests;
 mod types;
 mod validate;
 
+pub use catalog::*;
 pub use consts::*;
 pub use create::*;
 pub use is::*;

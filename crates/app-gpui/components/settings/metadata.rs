@@ -11,6 +11,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = SettingsSurfaceTranslations::for_language(state.app.ui_state.language);
         let config = sotf_audio_player::config::load_metadata_services_config()
             .unwrap_or_else(|_| sotf_audio_player::MetadataServicesConfig::default());
         let provider = config.providers.first().cloned().unwrap_or_default();
@@ -34,13 +35,13 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                    .child("Metadata Services"),
+                    .child(text.metadata_services),
             )
             .child(
                 div()
                     .text_size(d.text_xs)
                     .text_color(theme.text_secondary)
-                    .child("MusicBrainz search works without an account. Optional credentials are reserved for user-data features."),
+                    .child(text.musicbrainz_description),
             )
             .child(
                 div()
@@ -55,7 +56,7 @@ impl PlayerView {
                         div()
                             .text_size(d.text_sm)
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child("MusicBrainz"),
+                            .child(text.musicbrainz),
                     )
                     .child(
                         div()
@@ -84,3 +85,4 @@ impl PlayerView {
             )
     }
 }
+use crate::app::i18n::SettingsSurfaceTranslations;

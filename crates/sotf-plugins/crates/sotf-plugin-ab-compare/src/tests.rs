@@ -904,12 +904,12 @@ fn test_delay_line_set_delay_process_reset() {
     let mut data = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
     dl.process(&mut data);
     // First 5 outputs should be 0 (initial buffer is zero)
-    for i in 0..5 {
-        assert_eq!(data[i], 0.0, "delayed sample {} should be 0", i);
+    for (i, &sample) in data.iter().take(5).enumerate() {
+        assert_eq!(sample, 0.0, "delayed sample {} should be 0", i);
     }
     // Next 5 outputs should be the original first 5 inputs
-    for i in 5..10 {
-        assert_eq!(data[i], (i - 4) as f32, "sample {} should be {}", i, i - 4);
+    for (i, &sample) in data.iter().enumerate().skip(5).take(5) {
+        assert_eq!(sample, (i - 4) as f32, "sample {} should be {}", i, i - 4);
     }
 
     // Reset should clear the buffer but keep the length
@@ -960,7 +960,7 @@ fn test_factory_create_plugin_builtin_each_type() {
 
 #[test]
 fn test_factory_build_graph() {
-    use super::config::GraphNodeConfig;
+    use super::config::{GraphEdgeConfig, GraphNodeConfig};
     use super::factory::build_path_from_config;
 
     let config = PathConfig::Graph {
@@ -974,6 +974,45 @@ fn test_factory_build_graph() {
 
     let host = build_path_from_config(&config, 2, 48000);
     assert!(host.is_ok(), "Graph build failed: {:?}", host.err());
+
+    let legacy: GraphEdgeConfig =
+        serde_json::from_str(r#"{"from":"a","to":"b","channel_map":[0]}"#).unwrap();
+    assert_eq!(legacy.destination_offset, 0);
+}
+
+#[test]
+fn test_factory_graph_preserves_destination_port_routes() {
+    use super::config::{GraphEdgeConfig, GraphNodeConfig};
+    use super::factory::build_path_from_config;
+
+    let gain_node = |id: &str| GraphNodeConfig {
+        id: id.to_owned(),
+        plugin_type: "gain".to_owned(),
+        parameters: serde_json::json!({"gain_db": 0.0}),
+    };
+    let config = PathConfig::Graph {
+        nodes: vec![gain_node("source"), gain_node("destination")],
+        edges: vec![
+            GraphEdgeConfig {
+                from: "source".into(),
+                to: "destination".into(),
+                channel_map: Some(vec![0]),
+                destination_offset: 1,
+            },
+            GraphEdgeConfig {
+                from: "source".into(),
+                to: "destination".into(),
+                channel_map: Some(vec![1]),
+                destination_offset: 0,
+            },
+        ],
+    };
+    let mut host = build_path_from_config(&config, 2, 48_000).unwrap();
+    let input = vec![1.0, 10.0, 2.0, 20.0];
+    let mut output = vec![0.0; input.len()];
+    host.process(&input, &mut output).unwrap();
+
+    assert_eq!(output, vec![10.0, 1.0, 20.0, 2.0]);
 }
 
 #[test]

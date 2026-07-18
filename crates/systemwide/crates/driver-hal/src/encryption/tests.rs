@@ -5,8 +5,36 @@ use super::encrypted::encrypted_to_samples_into;
 use super::misc::AUTH_TAG_SIZE;
 use super::misc::compute_fingerprint;
 use super::misc::generate_key;
+use super::misc::session_key_path_from_env;
 use super::samples::samples_to_encrypted;
 use super::samples::samples_to_encrypted_into;
+
+#[test]
+fn test_session_key_path_prefers_explicit_and_lab_overrides() {
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    assert_eq!(
+        session_key_path_from_env(
+            Some(OsString::from("/tmp/explicit-session.key")),
+            Some(OsString::from("/tmp/ignored-runtime")),
+            Some(OsString::from("/Users/ignored")),
+            501,
+            true,
+        ),
+        PathBuf::from("/tmp/explicit-session.key")
+    );
+    assert_eq!(
+        session_key_path_from_env(
+            None,
+            Some(OsString::from("/tmp/systemwide-lab")),
+            Some(OsString::from("/Users/ignored")),
+            501,
+            true,
+        ),
+        PathBuf::from("/tmp/systemwide-lab/session.key")
+    );
+}
 
 #[test]
 fn test_encrypt_decrypt_roundtrip() {

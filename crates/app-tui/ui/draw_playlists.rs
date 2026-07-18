@@ -14,18 +14,21 @@ pub(crate) fn draw_playlists_screen(f: &mut Frame, area: Rect, app: &App) {
         ])
         .split(area);
 
-    let help_text = match app.playlists.mode {
-        PlaylistMode::List => {
-            "↑↓=Navigate  Enter=Open  n=New  r=Rename  d=Delete  p=Play  i=Import  e=Export  Esc=Back"
+    let help_text = crate::tui_text!(
+        app,
+        match app.playlists.mode {
+            PlaylistMode::List => {
+                "↑↓=Navigate  Enter=Open  n=New  r=Rename  d=Delete  p=Play  i=Import  e=Export  Esc=Back"
+            }
+            PlaylistMode::Tracks => {
+                "↑↓=Navigate  Enter=Play track  p=Play all  x=Remove  K/J=Move up/down  Esc=Back to list"
+            }
+            PlaylistMode::Create => "Type playlist name  Enter=Create  Esc=Cancel",
+            PlaylistMode::Rename => "Type new name  Enter=Save  Esc=Cancel",
+            PlaylistMode::ConfirmDelete => "y=Confirm delete  n/Esc=Cancel",
         }
-        PlaylistMode::Tracks => {
-            "↑↓=Navigate  Enter=Play track  p=Play all  x=Remove  K/J=Move up/down  Esc=Back to list"
-        }
-        PlaylistMode::Create => "Type playlist name  Enter=Create  Esc=Cancel",
-        PlaylistMode::Rename => "Type new name  Enter=Save  Esc=Cancel",
-        PlaylistMode::ConfirmDelete => "y=Confirm delete  n/Esc=Cancel",
-    };
-    draw_help_box_with_text(f, outer[0], app, help_text);
+    );
+    draw_help_box_with_text(f, outer[0], app, &help_text);
 
     // Split body into two columns: playlist list (left) and tracks (right)
     let chunks = Layout::default()
@@ -38,12 +41,18 @@ pub(crate) fn draw_playlists_screen(f: &mut Frame, area: Rect, app: &App) {
 
     // Overlay for text input modes
     match app.playlists.mode {
-        PlaylistMode::Create => {
-            draw_input_popup(f, area, "New Playlist", &app.playlists.name_input)
-        }
-        PlaylistMode::Rename => {
-            draw_input_popup(f, area, "Rename Playlist", &app.playlists.name_input)
-        }
+        PlaylistMode::Create => draw_input_popup(
+            f,
+            area,
+            &crate::tui_text!(app, "New Playlist"),
+            &app.playlists.name_input,
+        ),
+        PlaylistMode::Rename => draw_input_popup(
+            f,
+            area,
+            &crate::tui_text!(app, "Rename Playlist"),
+            &app.playlists.name_input,
+        ),
         PlaylistMode::ConfirmDelete => {
             let name = app
                 .playlists
@@ -52,7 +61,12 @@ pub(crate) fn draw_playlists_screen(f: &mut Frame, area: Rect, app: &App) {
                 .get(app.playlists.controller.selected_playlist_index)
                 .map(|p| p.name.as_str())
                 .unwrap_or("?");
-            draw_confirm_popup(f, area, &format!("Delete '{}'? (y/n)", name));
+            draw_confirm_popup(
+                f,
+                area,
+                &crate::tui_text!(app, "Confirm"),
+                &crate::tui_text!(app, format!("Delete '{}'? (y/n)", name)),
+            );
         }
         _ => {}
     }
@@ -92,16 +106,22 @@ fn draw_playlist_list(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let help = if is_list_focused {
-        "n:new r:rename d:del Enter:open p:play i:import e:export"
+        crate::tui_text!(
+            app,
+            "n:new r:rename d:del Enter:open p:play i:import e:export"
+        )
     } else {
-        ""
+        String::new()
     };
 
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(border_type)
-            .title(format!("Playlists ({})", playlists.len()))
+            .title(crate::tui_text!(
+                app,
+                format!("Playlists ({})", playlists.len())
+            ))
             .title_bottom(help),
     );
 
@@ -152,11 +172,17 @@ fn draw_playlist_tracks(f: &mut Frame, area: Rect, app: &App) {
             .collect();
 
         (
-            format!("{} ({} tracks)", playlist.name, playlist.entries.len()),
+            crate::tui_text!(
+                app,
+                format!("{} ({} tracks)", playlist.name, playlist.entries.len())
+            ),
             items,
         )
     } else {
-        ("Tracks (select a playlist)".to_string(), Vec::new())
+        (
+            crate::tui_text!(app, "Tracks (select a playlist)"),
+            Vec::new(),
+        )
     };
 
     let border_type = if is_tracks_focused {
@@ -166,9 +192,9 @@ fn draw_playlist_tracks(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let help = if is_tracks_focused {
-        "x:remove K/J:move Esc:back p:play"
+        crate::tui_text!(app, "x:remove K/J:move Esc:back p:play")
     } else {
-        ""
+        String::new()
     };
 
     let list = List::new(items).block(
@@ -193,12 +219,12 @@ fn draw_input_popup(f: &mut Frame, area: Rect, title: &str, input: &str) {
     f.render_widget(text, popup_area);
 }
 
-fn draw_confirm_popup(f: &mut Frame, area: Rect, message: &str) {
+fn draw_confirm_popup(f: &mut Frame, area: Rect, title: &str, message: &str) {
     let popup_area = centered_rect(50, 3, area);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .title("Confirm");
+        .title(title);
     let text = Paragraph::new(message).block(block);
     f.render_widget(Clear, popup_area);
     f.render_widget(text, popup_area);

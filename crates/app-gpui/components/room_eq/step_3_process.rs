@@ -18,6 +18,8 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let workflow_text =
+            crate::app::i18n::RoomEqWorkflowTranslations::for_language(state.app.ui_state.language);
         let current_mode = state.app.measurement_state.room_eq_state.wizard_mode;
 
         let simple_selected = current_mode == RoomEqWizardMode::Simple;
@@ -31,12 +33,9 @@ impl PlayerView {
                     .size(TextSize::Md),
             )
             .child(
-                Text::new(
-                    "Pick how you want to configure the optimization. \
-                     You can switch back here at any time.",
-                )
-                .size(TextSize::Xs)
-                .color(theme.text_secondary),
+                Text::new(workflow_text.choose_configuration)
+                    .size(TextSize::Xs)
+                    .color(theme.text_secondary),
             )
             .child(
                 HStack::new()
@@ -68,16 +67,12 @@ impl PlayerView {
                                             }),
                                     )
                                     .child(
-                                        Text::new(
-                                            "Guided presets for common setups. \
-                                             Pick target distance, loss function, \
-                                             and processing mode — we handle the rest.",
-                                        )
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_secondary),
+                                        Text::new(workflow_text.simple_mode_description)
+                                            .size(TextSize::Xs)
+                                            .color(theme.text_secondary),
                                     )
                                     .child(
-                                        Button::new("select-simple", "Select")
+                                        Button::new("select-simple", workflow_text.select)
                                             .variant(if simple_selected {
                                                 ButtonVariant::Primary
                                             } else {
@@ -137,16 +132,12 @@ impl PlayerView {
                                             }),
                                     )
                                     .child(
-                                        Text::new(
-                                            "All parameters exposed in two organized blocks: \
-                                             Acoustic (what to fix) and Optimizer (how to fix). \
-                                             Full control over every parameter.",
-                                        )
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_secondary),
+                                        Text::new(workflow_text.full_mode_description)
+                                            .size(TextSize::Xs)
+                                            .color(theme.text_secondary),
                                     )
                                     .child(
-                                        Button::new("select-full", "Select")
+                                        Button::new("select-full", workflow_text.select)
                                             .variant(if full_selected {
                                                 ButtonVariant::Primary
                                             } else {

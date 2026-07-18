@@ -12,6 +12,8 @@ struct PluginRackView: View {
     let refreshTrigger: Int
 
     @State private var plugins: [PluginInstance] = []
+    @State private var graph: PluginGraphModel? = nil
+    @State private var graphGeneration: Int? = nil
     @State private var availablePlugins: [AvailablePlugin] = []
     @State private var showingAddSheet = false
     @State private var editingIndex: Int? = nil
@@ -25,7 +27,10 @@ struct PluginRackView: View {
             HStack {
                 Text("Signal Chain")
                     .font(.headline)
-                Text("(\(plugins.count) plugins)")
+                Text(
+                    graph.map { "(\($0.nodes.count) graph nodes)" }
+                        ?? "(\(plugins.count) plugins)"
+                )
                     .font(.caption)
                     .foregroundColor(.secondary)
 
@@ -37,13 +42,15 @@ struct PluginRackView: View {
                 .buttonStyle(.borderless)
                 .help("Refresh plugin list")
 
-                Button(action: {
-                    loadAvailablePlugins()
-                    showingAddSheet = true
-                }) {
-                    Label("Add Plugin", systemImage: "plus.circle")
+                if graph == nil {
+                    Button(action: {
+                        loadAvailablePlugins()
+                        showingAddSheet = true
+                    }) {
+                        Label("Add Plugin", systemImage: "plus.circle")
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
             }
 
             if let error = errorMessage {
@@ -67,7 +74,23 @@ struct PluginRackView: View {
             }
 
             // Plugin list
-            if plugins.isEmpty {
+            if let graph {
+                if graph.isLinear {
+                    LinearGraphRackEditorView(
+                        graph: graph,
+                        availablePlugins: availablePlugins,
+                        onApply: applyGraphMutation
+                    )
+                    .id(graphGeneration)
+                } else {
+                    PluginGraphEditorView(
+                        graph: graph,
+                        availablePlugins: availablePlugins,
+                        onApply: applyGraphMutation
+                    )
+                    .id(graphGeneration)
+                }
+            } else if plugins.isEmpty {
                 HStack {
                     Spacer()
                     VStack(spacing: 4) {
@@ -251,12 +274,14 @@ struct PluginRackView: View {
         errorMessage = nil
 
         DispatchQueue.global(qos: .utility).async {
-            let result = AudioEngineClient().getPlugins()
+            let result = AudioEngineClient().getPluginPipeline()
 
             DispatchQueue.main.async {
                 refreshingPlugins = false
                 if let result = result {
-                    plugins = result.enumerated().map { index, dict in
+                    graph = result.graph
+                    graphGeneration = result.generation
+                    plugins = result.plugins.enumerated().map { index, dict in
                         let type_ = dict["plugin_type"] as? String ?? "unknown"
                         let params = dict["parameters"] as? [String: Any] ?? [:]
                         return PluginInstance(
@@ -271,6 +296,17 @@ struct PluginRackView: View {
                 }
             }
         }
+    }
+
+    private func applyGraphMutation(_ candidate: PluginGraphModel) -> Bool {
+        errorMessage = nil
+        guard client.loadPluginGraph(candidate, baseGeneration: graphGeneration) else {
+            errorMessage = "Graph validation, generation, or engine apply failed; refresh before retrying. The previous graph remains active."
+            return false
+        }
+        graph = candidate
+        graphGeneration = client.getPluginPipeline()?.generation
+        return true
     }
 
     private func loadAvailablePlugins() {
@@ -340,6 +376,435 @@ struct PluginRackView: View {
         } else {
             errorMessage = "Failed to reorder plugins"
         }
+    }
+}
+
+// MARK: - Plugin Graph Editor
+
+struct LinearGraphRackEditorView: View {
+    let graph: PluginGraphModel
+    let availablePlugins: [AvailablePlugin]
+    let onApply: (PluginGraphModel) -> Bool
+
+    @State private var draft: PluginGraphModel
+    @State private var editingNodeID: Int? = nil
+    @State private var graphError: String? = nil
+
+    init(
+        graph: PluginGraphModel,
+        availablePlugins: [AvailablePlugin],
+        onApply: @escaping (PluginGraphModel) -> Bool
+    ) {
+        self.graph = graph
+        self.availablePlugins = availablePlugins
+        self.onApply = onApply
+        _draft = State(initialValue: graph)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Linear graph").font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Menu {
+                    ForEach(availablePlugins) { plugin in
+                        Button(plugin.name) { appendNode(plugin) }
+                    }
+                } label: {
+                    Label("Add Plugin", systemImage: "plus.circle")
+                }
+            }
+            if let graphError {
+                Text(graphError).font(.caption).foregroundColor(.orange)
+            }
+            List {
+                ForEach(orderedNodes) { node in
+                    HStack {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(node.pluginName).font(.body.weight(.medium))
+                            Text("Node \(node.id) · \(node.inputChannels) ch")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            editingNodeID = node.id
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                        }
+                        .buttonStyle(.borderless)
+                        Button {
+                            toggleBypass(node.id)
+                        } label: {
+                            Image(systemName: node.bypassed ? "power.circle.fill" : "power.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundColor(node.bypassed ? .orange : .primary)
+                        Button(role: .destructive) {
+                            removeNode(node.id)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                .onMove(perform: moveNodes)
+            }
+            .listStyle(.bordered)
+            .frame(minHeight: 120, maxHeight: 400)
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { editingNodeID != nil },
+                set: { if !$0 { editingNodeID = nil } }
+            )
+        ) {
+            if let nodeID = editingNodeID,
+               let node = draft.nodes.first(where: { $0.id == nodeID }) {
+                let instance = PluginInstance(
+                    index: node.id,
+                    pluginType: node.pluginType,
+                    pluginName: node.pluginName,
+                    parameters: node.parameters
+                )
+                PluginEditSheet(
+                    plugin: instance,
+                    descriptors: descriptors(for: node.pluginType),
+                    onApply: { updateNode(nodeID, parameters: $0) },
+                    onCancel: { editingNodeID = nil },
+                    onClose: { editingNodeID = nil }
+                )
+                .frame(width: 720, height: 520)
+            }
+        }
+    }
+
+    private var orderedNodes: [PluginGraphNodeModel] {
+        let byID = Dictionary(uniqueKeysWithValues: draft.nodes.map { ($0.id, $0) })
+        return (draft.linearNodeIDs ?? draft.nodes.map(\.id)).compactMap { byID[$0] }
+    }
+
+    private func descriptors(for pluginType: String) -> [PluginParameterDescriptor] {
+        availablePlugins.first { $0.type_ == pluginType }?.parameters ?? []
+    }
+
+    private func commit(_ mutation: (inout PluginGraphModel) -> Void) -> Bool {
+        var candidate = draft
+        mutation(&candidate)
+        guard onApply(candidate) else {
+            graphError = "Graph rejected; the active linear graph was not replaced."
+            return false
+        }
+        draft = candidate
+        graphError = nil
+        return true
+    }
+
+    private func rebuildEdges(_ candidate: inout PluginGraphModel, order: [Int]) {
+        candidate.edges = zip(order, order.dropFirst()).map {
+            PluginGraphEdgeModel(fromNode: $0.0, toNode: $0.1)
+        }
+    }
+
+    private func appendNode(_ plugin: AvailablePlugin) {
+        let previousOrder = draft.linearNodeIDs ?? []
+        let nextID = (draft.nodes.map(\.id).max() ?? -1) + 1
+        _ = commit { candidate in
+            candidate.nodes.append(
+                PluginGraphNodeModel(
+                    id: nextID,
+                    pluginType: plugin.type_,
+                    parameters: plugin.defaultParameters,
+                    inputChannels: 2,
+                    bypassed: false
+                )
+            )
+            rebuildEdges(&candidate, order: previousOrder + [nextID])
+        }
+    }
+
+    private func removeNode(_ id: Int) {
+        let order = (draft.linearNodeIDs ?? []).filter { $0 != id }
+        _ = commit { candidate in
+            candidate.nodes.removeAll { $0.id == id }
+            rebuildEdges(&candidate, order: order)
+        }
+    }
+
+    private func moveNodes(from source: IndexSet, to destination: Int) {
+        var order = draft.linearNodeIDs ?? []
+        order.move(fromOffsets: source, toOffset: destination)
+        _ = commit { candidate in
+            rebuildEdges(&candidate, order: order)
+        }
+    }
+
+    private func updateNode(_ id: Int, parameters: [String: Any]) -> Bool {
+        commit { candidate in
+            guard let index = candidate.nodes.firstIndex(where: { $0.id == id }) else { return }
+            candidate.nodes[index].parameters = parameters
+        }
+    }
+
+    private func toggleBypass(_ id: Int) {
+        _ = commit { candidate in
+            guard let index = candidate.nodes.firstIndex(where: { $0.id == id }) else { return }
+            candidate.nodes[index].bypassed.toggle()
+        }
+    }
+}
+
+struct PluginGraphEditorView: View {
+    let graph: PluginGraphModel
+    let availablePlugins: [AvailablePlugin]
+    let onApply: (PluginGraphModel) -> Bool
+
+    @State private var draft: PluginGraphModel
+    @State private var editingNodeID: Int? = nil
+    @State private var fromNodeID: Int = 0
+    @State private var toNodeID: Int = 0
+    @State private var graphError: String? = nil
+
+    init(
+        graph: PluginGraphModel,
+        availablePlugins: [AvailablePlugin],
+        onApply: @escaping (PluginGraphModel) -> Bool
+    ) {
+        self.graph = graph
+        self.availablePlugins = availablePlugins
+        self.onApply = onApply
+        _draft = State(initialValue: graph)
+        _fromNodeID = State(initialValue: graph.nodes.first?.id ?? 0)
+        _toNodeID = State(initialValue: graph.nodes.dropFirst().first?.id ?? graph.nodes.first?.id ?? 0)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("DSP Graph", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.headline)
+                Text("\(draft.nodes.count) nodes · \(draft.edges.count) connections")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Menu {
+                    ForEach(availablePlugins) { plugin in
+                        Button(plugin.name) {
+                            addNode(plugin)
+                        }
+                    }
+                } label: {
+                    Label("Add Node", systemImage: "plus.circle")
+                }
+            }
+
+            if let graphError {
+                Label(graphError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                List {
+                    ForEach(draft.nodes) { node in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(node.pluginName).font(.body.weight(.medium))
+                                Text("Node \(node.id)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                if node.bypassed {
+                                    Text("Bypassed")
+                                        .font(.caption2)
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                            Spacer()
+                            Stepper(
+                                "\(node.inputChannels) ch",
+                                value: Binding(
+                                    get: { node.inputChannels },
+                                    set: { updateNodeChannels(node.id, channels: $0) }
+                                ),
+                                in: 1...32
+                            )
+                            .frame(width: 90)
+                            .help("Node input channel count")
+                            Button {
+                                editingNodeID = node.id
+                            } label: {
+                                Image(systemName: "slider.horizontal.3")
+                            }
+                            .buttonStyle(.borderless)
+                            Button {
+                                toggleBypass(node.id)
+                            } label: {
+                                Image(systemName: node.bypassed ? "power.circle.fill" : "power.circle")
+                            }
+                            .buttonStyle(.borderless)
+                            .help(node.bypassed ? "Enable node" : "Bypass node")
+                            Button(role: .destructive) {
+                                removeNode(node.id)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                    .onMove(perform: moveNodes)
+                }
+                .listStyle(.bordered)
+                .frame(minWidth: 300, minHeight: 180, maxHeight: 380)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Connections").font(.headline)
+                    List {
+                        ForEach(draft.edges) { edge in
+                            HStack {
+                                Text("\(edge.fromNode) → \(edge.toNode)")
+                                    .font(.system(.body, design: .monospaced))
+                                Spacer()
+                                Button(role: .destructive) {
+                                    disconnect(edge)
+                                } label: {
+                                    Image(systemName: "xmark.circle")
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                    .listStyle(.bordered)
+                    .frame(minWidth: 220, minHeight: 120, maxHeight: 280)
+
+                    HStack {
+                        Picker("From", selection: $fromNodeID) {
+                            ForEach(draft.nodes) { node in
+                                Text("\(node.id)").tag(node.id)
+                            }
+                        }
+                        Picker("To", selection: $toNodeID) {
+                            ForEach(draft.nodes) { node in
+                                Text("\(node.id)").tag(node.id)
+                            }
+                        }
+                        Button("Connect") {
+                            connect()
+                        }
+                        .disabled(fromNodeID == toNodeID || draft.nodes.count < 2)
+                    }
+                }
+            }
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { editingNodeID != nil },
+                set: { if !$0 { editingNodeID = nil } }
+            )
+        ) {
+            if let nodeID = editingNodeID,
+               let node = draft.nodes.first(where: { $0.id == nodeID }) {
+                let instance = PluginInstance(
+                    index: node.id,
+                    pluginType: node.pluginType,
+                    pluginName: node.pluginName,
+                    parameters: node.parameters
+                )
+                PluginEditSheet(
+                    plugin: instance,
+                    descriptors: descriptors(for: node.pluginType),
+                    onApply: { parameters in
+                        updateNode(nodeID, parameters: parameters)
+                    },
+                    onCancel: { editingNodeID = nil },
+                    onClose: { editingNodeID = nil }
+                )
+                .frame(width: 720, height: 520)
+            }
+        }
+    }
+
+    private func descriptors(for pluginType: String) -> [PluginParameterDescriptor] {
+        availablePlugins.first { $0.type_ == pluginType }?.parameters ?? []
+    }
+
+    private func commit(_ mutation: (inout PluginGraphModel) -> Void) -> Bool {
+        var candidate = draft
+        mutation(&candidate)
+        guard onApply(candidate) else {
+            graphError = "Graph rejected. Check cycles, paths, and channel compatibility; the active graph was not replaced."
+            return false
+        }
+        graphError = nil
+        draft = candidate
+        return true
+    }
+
+    private func addNode(_ plugin: AvailablePlugin) {
+        let nextID = (draft.nodes.map(\.id).max() ?? -1) + 1
+        _ = commit { candidate in
+            candidate.nodes.append(
+                PluginGraphNodeModel(
+                    id: nextID,
+                    pluginType: plugin.type_,
+                    parameters: plugin.defaultParameters,
+                    inputChannels: 2,
+                    bypassed: false
+                )
+            )
+        }
+        fromNodeID = draft.nodes.first?.id ?? 0
+        toNodeID = draft.nodes.last?.id ?? 0
+    }
+
+    private func removeNode(_ id: Int) {
+        _ = commit { candidate in
+            candidate.nodes.removeAll { $0.id == id }
+            candidate.edges.removeAll { $0.fromNode == id || $0.toNode == id }
+        }
+    }
+
+    private func updateNode(_ id: Int, parameters: [String: Any]) -> Bool {
+        commit { candidate in
+            guard let index = candidate.nodes.firstIndex(where: { $0.id == id }) else {
+                return
+            }
+            candidate.nodes[index].parameters = parameters
+        }
+    }
+
+    private func toggleBypass(_ id: Int) {
+        _ = commit { candidate in
+            guard let index = candidate.nodes.firstIndex(where: { $0.id == id }) else {
+                return
+            }
+            candidate.nodes[index].bypassed.toggle()
+        }
+    }
+
+    private func updateNodeChannels(_ id: Int, channels: Int) {
+        _ = commit { candidate in
+            guard let index = candidate.nodes.firstIndex(where: { $0.id == id }) else {
+                return
+            }
+            candidate.nodes[index].inputChannels = channels
+        }
+    }
+
+    private func connect() {
+        let edge = PluginGraphEdgeModel(fromNode: fromNodeID, toNode: toNodeID)
+        guard !draft.edges.contains(edge) else { return }
+        _ = commit { $0.edges.append(edge) }
+    }
+
+    private func disconnect(_ edge: PluginGraphEdgeModel) {
+        _ = commit { $0.edges.removeAll { $0 == edge } }
+    }
+
+    private func moveNodes(from source: IndexSet, to destination: Int) {
+        _ = commit { $0.nodes.move(fromOffsets: source, toOffset: destination) }
     }
 }
 

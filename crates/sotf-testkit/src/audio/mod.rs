@@ -197,8 +197,14 @@ mod tests {
 
     #[test]
     fn silence_has_neg_inf_db() {
-        assert_eq!(peak_dbfs(&silence(64)), f32::NEG_INFINITY);
-        assert_eq!(rms_dbfs(&silence(64)), f32::NEG_INFINITY);
+        assert_eq!(
+            peak_dbfs(&silence(64)).to_bits(),
+            f32::NEG_INFINITY.to_bits()
+        );
+        assert_eq!(
+            rms_dbfs(&silence(64)).to_bits(),
+            f32::NEG_INFINITY.to_bits()
+        );
     }
 
     #[test]
@@ -220,6 +226,6 @@ mod tests {
             .zip(original.iter())
             .map(|(a, b)| (a - b).abs())
             .fold(0.0f32, f32::max);
-        assert!(max_err < 1e-5, "max_err={}", max_err);
+        assert!(max_err < 1e-5, "max_err={max_err}");
     }
 }

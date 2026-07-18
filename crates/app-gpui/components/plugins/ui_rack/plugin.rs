@@ -8,6 +8,7 @@ use super::plugin_drag_info::PluginDragInfo;
 use super::short::short_name;
 use super::short::short_name_with_permanent;
 use crate::app::constants::spacing;
+use crate::app::i18n::{PluginCommonTranslations, PluginRackTranslations};
 use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
 use crate::app::types::{PluginUpdateType, Screen};
@@ -31,54 +32,11 @@ use sotf_audio_player::{PluginType, UpmixerOutputSettings};
 use sotf_plugins::param_specs::{find_by_key as pk, index_of, upmixer::PARAMS as UP};
 
 /// Brief description for each plugin type (shown in add-plugin menu tooltips).
-pub(crate) fn plugin_description(plugin_type: &PluginType) -> &'static str {
-    match plugin_type {
-        PluginType::EQ => "Parametric equalizer with biquad filters",
-        PluginType::Gain => "Simple volume control",
-        PluginType::AAE => "Active acoustic enhancement (LARES-inspired reverb)",
-        PluginType::Upmixer => "Stereo to surround upmixing (FFT-based)",
-        PluginType::Compressor => "Dynamic range compression",
-        PluginType::Limiter => "Peak limiter to prevent clipping",
-        PluginType::Gate => "Noise gate — silences below threshold",
-        PluginType::Expander => "Dynamic range expansion",
-        PluginType::MultibandCompressor => "Multiband dynamic range compression",
-        PluginType::MultibandExpander => "Multiband dynamic range expansion",
-        PluginType::LoudnessCompensation => "Equal-loudness contour compensation",
-        PluginType::FletcherMunson => "Fletcher-Munson equal-loudness correction",
-        PluginType::BinauralDecoder => "HRTF-based binaural rendering",
-        PluginType::Convolution => "FFT convolution with impulse response files",
-        PluginType::LoudnessMonitor => "EBU R128 loudness measurement",
-        PluginType::SpectrumAnalyzer => "FFT-based spectrum analysis",
-        PluginType::ChannelMuteSolo => "Per-channel mute, solo, and dim",
-        PluginType::Matrix => "Channel matrix mixing with gain control",
-        PluginType::XTC => "Crosstalk cancellation for speakers",
-        PluginType::Denoiser => "Audio denoising (spectral subtraction)",
-        PluginType::Declick => "Time-domain click and transient repair",
-        PluginType::HissReducer => "Stationary high-frequency hiss reducer",
-        PluginType::SpeechDenoiser => "RNNoise voice denoiser",
-        PluginType::Pnd => "Perceptual noise diffusion",
-        PluginType::ABCompare => "A/B comparison between two signal paths",
-        PluginType::Crossover => "Linkwitz-Riley / linear-phase crossover",
-        PluginType::BandSplit => "Split signal into frequency bands",
-        PluginType::BandMerge => "Merge frequency bands back together",
-        PluginType::Downmix => "Downmix multichannel to stereo",
-        PluginType::MonoToStereo => "Convert mono to stereo",
-        PluginType::Crossfeed => "Headphone crossfeed for natural imaging",
-        PluginType::Delay => "Audio delay with feedback control",
-        PluginType::Aec => "Acoustic echo cancellation",
-        PluginType::Beamformer => "Microphone array beamforming",
-        PluginType::AmbisonicsDecoder => "Ambisonics to speaker layout decoder",
-        PluginType::StereoImager => "Multi-band M/S stereo width control",
-        PluginType::DeEsser => "Sibilance reduction (de-esser)",
-        PluginType::TransientShaper => "Attack/sustain shaping (SPL Transient Designer)",
-        PluginType::Saturation => "Harmonic saturation / exciter with multiple modes",
-        PluginType::DynamicEq => "Frequency-selective dynamics (hybrid EQ + compressor)",
-        PluginType::FirDesigner => "FIR magnitude and phase designer",
-        PluginType::LinearPhaseEq => "Parametric EQ with linear-phase FIR convolution",
-        PluginType::SpectralCompressor => {
-            "Per-bin FFT dynamics processor for surgical spectral compression"
-        }
-    }
+pub(crate) fn plugin_description(
+    plugin_type: &PluginType,
+    text: PluginCommonTranslations,
+) -> &'static str {
+    text.description(plugin_type)
 }
 
 fn plugin_theme_select_value(theme: PluginThemeId) -> &'static str {
@@ -100,6 +58,7 @@ fn plugin_theme_from_select_value(value: &str) -> PluginThemeId {
 impl PlayerView {
     pub(crate) fn render_plugins_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
+        let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let current_hint = self.state.read(cx).app.tutorial.current_hint.clone();
 
@@ -281,7 +240,7 @@ impl PlayerView {
                             let state_for_toggle = self.state.clone();
                             let state_for_drag = self.state.clone();
                             PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
-                                .label("Signal Chain")
+                                .label(text.signal_chain)
                                 .theme(divider_theme)
                                 .thickness(px(4.0))
                                 .collapsed(is_collapsed)
@@ -326,6 +285,7 @@ impl PlayerView {
             Button, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack,
         };
         let d = Ds::from_cx(cx);
+        let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
 
         div()
@@ -340,7 +300,7 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Signal chain uses graph routing")
+                        Text::new(text.graph_routing_title)
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
@@ -348,16 +308,12 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Md)
                             .child(
-                                Text::new(
-                                    "The current plugin chain has parallel paths or routed \
-                                     bass management and can't be shown in the linear rack. \
-                                     Open the graph view to inspect, edit, and remove plugins.",
-                                )
-                                .size(TextSize::Sm)
-                                .color(theme.text_secondary),
+                                Text::new(text.graph_routing_description)
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_secondary),
                             )
                             .child(
-                                Button::new("open_graph_view", "Open Graph View")
+                                Button::new("open_graph_view", text.open_graph_view)
                                     .variant(ButtonVariant::Primary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
@@ -373,6 +329,7 @@ impl PlayerView {
 
     /// Render the horizontal plugin rack strip
     pub(super) fn render_plugin_rack(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (
             plugins_data,
             selected_idx,
@@ -740,7 +697,7 @@ impl PlayerView {
                                             })
                                             .size(IconButtonSize::Sm)
                                             .theme(preset_theme.to_icon_button_theme())
-                                            .aria_label("Plugin presets")
+                                            .aria_label(text.plugin_presets)
                                             .on_click_event(move |_event, _window, cx| {
                                                 state_for_presets.update(cx, |state, _| {
                                                                 let ps = &mut state.app.plugin_state;
@@ -939,7 +896,7 @@ impl PlayerView {
                                                                 .child(
                                                                     gpui_ui_kit::Input::new("preset-name-input")
                                                                         .value(gpui::SharedString::from(preset_name))
-                                                                        .placeholder("Preset name...")
+                                        .placeholder(text.preset_name_placeholder)
                                                                         .size(gpui_ui_kit::InputSize::Xs)
                                                                         .bg_color(theme_s.background_secondary)
                                                                         .on_text_change(move |text, _window, cx| {
@@ -987,7 +944,7 @@ impl PlayerView {
                                                                         cx.notify();
                                                                     }),
                                                                 )
-                                                                .child("OK"),
+                                                .child(text.ok),
                                                         )
                                                         .into_any_element()
                                                 } else {
@@ -1020,7 +977,7 @@ impl PlayerView {
                                                                 cx.notify();
                                                             }),
                                                         )
-                                                        .child("+ Save")
+                                    .child(text.save_new)
                                                         .into_any_element()
                                                 }
                                             })
@@ -1348,7 +1305,7 @@ impl PlayerView {
                                 .items_center()
                                 .justify_center()
                                 .text_color(theme.text_muted)
-                                .child("Click + to add plugins"),
+                                .child(text.empty_rack),
                         )
                     })
                     // Add plugin menu (shown when "+" is clicked). Deferred
@@ -1413,7 +1370,7 @@ impl PlayerView {
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(text_muted)
                                             .hover(move |s| s.bg(surface_hover))
-                                            .child("Load")
+                            .child(text.load)
                                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                                 state_for_load.update(cx, |state, _cx| {
                                                     state.app.refresh_plugin_presets();
@@ -1435,7 +1392,7 @@ impl PlayerView {
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(text_muted)
                                             .hover(move |s| s.bg(save_surface_hover))
-                                            .child("Save")
+                            .child(text.save)
                                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                                 state_for_save.update(cx, |state, _cx| {
                                                     state.app.refresh_plugin_presets();
@@ -1486,7 +1443,7 @@ impl PlayerView {
                                         .text_size(d.text_xs)
                                         .text_color(theme.accent)
                                         .font_weight(FontWeight::MEDIUM)
-                                        .child("Applying..."),
+                                .child(text.applying),
                                 )
                             })
                     }),
@@ -1705,6 +1662,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let release_channel = state.app.ui_state.release_channel;
+        let common_text = PluginCommonTranslations::for_language(state.app.ui_state.language);
         let d = Ds::from_cx(cx);
 
         // Get list of plugins already in chain
@@ -1755,7 +1713,7 @@ impl PlayerView {
                 // Abbreviated names remain appropriate on compact rack cards.
                 let name = pt.name();
                 let icon = plugin_icon(&pt, false, false);
-                let description = plugin_description(&pt);
+                let description = plugin_description(&pt, common_text);
                 let theme_c = theme.clone();
                 let text_on_accent = theme_c.text_on_accent;
                 let btn_id = global_idx;
@@ -1855,6 +1813,9 @@ impl PlayerView {
 
     /// Render the plugin detail/settings panel
     pub(super) fn render_plugin_detail_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
+        let common_text =
+            PluginCommonTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (plugin_data, selected_idx, editing_idx, param_selection, theme) = {
             let state = self.state.read(cx);
             let plugin = state
@@ -2094,9 +2055,10 @@ impl PlayerView {
                                                         &d,
                                                         self.state.clone(),
                                                         selected_idx,
-                                                        &plugin.plugin_type(),
-                                                        plugin.enabled,
-                                                        &chassis,
+                                                    &plugin.plugin_type(),
+                                                    plugin.enabled,
+                                                    common_text,
+                                                    &chassis,
                                                         super::super::ui_simple::render_simple_plugin_view(
                                                             &d,
                                                             self.state.clone(),
@@ -2114,9 +2076,10 @@ impl PlayerView {
                                                         &d,
                                                         self.state.clone(),
                                                         selected_idx,
-                                                        &plugin.plugin_type(),
-                                                        plugin.enabled,
-                                                        &chassis,
+                                                    &plugin.plugin_type(),
+                                                    plugin.enabled,
+                                                    common_text,
+                                                    &chassis,
                                                         super::super::render_controller_view(
                                                             &d,
                                                             controller_id,
@@ -2167,7 +2130,7 @@ impl PlayerView {
                                             .variant(IconButtonVariant::Filled)
                                             .size(IconButtonSize::Sm)
                                             .theme(gear_theme.to_icon_button_theme())
-                                            .aria_label("Plugin configuration")
+                                            .aria_label(text.plugin_configuration)
                                             .on_click_event(move |_event, _window, cx| {
                                                 state_for_config.update(cx, |state, _cx| {
                                                     let open = &mut state
@@ -2231,8 +2194,8 @@ impl PlayerView {
                         .flex_col()
                         .gap(d.gap)
                         .text_color(theme.text_muted)
-                        .child("No plugin selected")
-                        .child(div().text_size(d.text_sm).child("Add a plugin to get started")),
+                        .child(text.no_plugin_selected)
+                        .child(div().text_size(d.text_sm).child(text.add_plugin_to_start)),
                 )
             })
     }
@@ -2242,6 +2205,7 @@ impl PlayerView {
     /// controls on demand.
     pub(super) fn render_rack_config_overlay(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
+        let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (
             plugin_data,
             selected_idx,
@@ -2303,14 +2267,16 @@ impl PlayerView {
         let plugin_type = plugin.plugin_type().clone();
         let state_for_view = self.state.clone();
         let state_for_skin = self.state.clone();
-        let mut view_options: Vec<SelectOption> =
-            vec![SelectOption::new("ui".to_string(), "Native UI".to_string())];
+        let mut view_options: Vec<SelectOption> = vec![SelectOption::new(
+            "ui".to_string(),
+            text.native_ui.to_string(),
+        )];
         for (id, label) in available_controllers() {
             view_options.push(SelectOption::new(format!("ctrl:{id}"), label.to_string()));
         }
         view_options.push(SelectOption::new(
             "simple".to_string(),
-            "Simple".to_string(),
+            text.simple.to_string(),
         ));
 
         let selected_value = match &plugin_ui_view {
@@ -2370,7 +2336,7 @@ impl PlayerView {
                             .text_size(d.text_sm)
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
-                            .child("Configuration"),
+                            .child(text.configuration),
                     )
                     .child(
                         div()
@@ -2389,7 +2355,7 @@ impl PlayerView {
                             .text_size(d.text_xs)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_secondary)
-                            .child("View"),
+                            .child(text.view),
                     )
                     .child(
                         Select::new("rack-config-view-mode")
@@ -2444,7 +2410,7 @@ impl PlayerView {
                             .text_size(d.text_xs)
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_secondary)
-                            .child("Skin"),
+                            .child(text.skin),
                     )
                     .child(
                         Select::new("rack-config-skin")
@@ -2526,7 +2492,7 @@ impl PlayerView {
                                     .text_size(d.text_xs)
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(theme.text_secondary)
-                                    .child("Output"),
+                                    .child(text.output),
                             )
                             .child(
                                 Select::new("rack-config-upmixer-output")
@@ -2560,7 +2526,7 @@ impl PlayerView {
                                 Toggle::new("rack-config-binaural-preview")
                                     .size(ToggleSize::Sm)
                                     .checked(binaural_preview)
-                                    .label("Binaural Preview")
+                                    .label(text.binaural_preview)
                                     .style(ToggleStyle::Segmented)
                                     .theme(theme.to_toggle_theme())
                                     .on_change(move |enabled, _window, cx| {

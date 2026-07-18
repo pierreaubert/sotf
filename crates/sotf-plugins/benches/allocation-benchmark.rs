@@ -1,17 +1,4 @@
-use criterion::{Criterion, criterion_group, criterion_main};
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use sotf_plugins::{
-    ABComparePlugin, AaePlugin, AaePluginParams, AecPlugin, AecPluginParams, AutoGain,
-    AutoGainParams, BandMergePlugin, BandSplitPlugin, BeamformerPlugin, ChannelMuteSoloPlugin,
-    CompressorPlugin, CrossoverPlugin, DeclickPlugin, DelayPlugin, DenoiserPlugin, EqPlugin,
-    ExpanderPlugin, GainPlugin, GatePlugin, HissReducerPlugin, LimiterPlugin,
-    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
-    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, ParametricPluginAdapter,
-    Plugin, ProcessContext, SPEECH_DENOISER_FRAME_SIZE, SpectrumAnalyzerPlugin, SpectrumConfig,
-    SpeechDenoiserPlugin, UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
-};
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use criterion::{criterion_group, criterion_main};
 
 criterion_group!(benches, benchmark_zero_allocation);
 criterion_main!(benches);

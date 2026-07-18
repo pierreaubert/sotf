@@ -1495,9 +1495,9 @@ impl Plugin for XtcPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        // With 75% overlap (hop_size = fft_size/4) and immediate draining of the first
-        // hop after filling the first STFT frame, the first output sample appears after
-        // fft_size - hop_size input samples (= 3/4 of fft_size for 75% overlap).
-        self.fft.fft_size - self.fft.hop_size
+        // Output becomes observable in the host block that completes the first
+        // FFT frame. Reporting one full frame keeps latency independent of host
+        // block size and bounds compensation error to one block.
+        self.fft.fft_size
     }
 }

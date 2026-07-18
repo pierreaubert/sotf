@@ -4,8 +4,10 @@ use super::consts::MAX_AMBI_CHANNELS;
 use super::consts::MAX_BLOCK_FRAMES;
 use super::decode_matrix::DecodeMatrix;
 use super::spherical_harmonics::channel_count;
+use crate::params::PARAMS;
 use plugins_spatial::validate_interleaved_io;
 use sotf_host::lr4_crossover::Lr4Crossover;
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
@@ -112,11 +114,13 @@ impl AmbisonicsDecoderPlugin {
     pub(super) fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = vec![
             Parameter::new_int("order", "Ambisonics Order", self.order as i32, 1, 3)
+                .with_update_mode(pk(PARAMS, "order").update_mode)
                 .with_group("Ambisonics")
                 .with_importance(ParameterImportance::Critical)
                 .with_description("1=FOA(4ch), 2=SOA(9ch), 3=TOA(16ch)")
                 .build(),
             Parameter::new_string("target_layout", "Target Layout", self.target_layout.clone())
+                .with_update_mode(pk(PARAMS, "target_layout").update_mode)
                 .with_group("Ambisonics")
                 .with_importance(ParameterImportance::Critical)
                 .with_description("Target speaker layout (e.g. 5.1, 7.1.4)")
@@ -126,11 +130,13 @@ impl AmbisonicsDecoderPlugin {
                 "Max-rE Weighting",
                 self.max_re_weighting,
             )
+            .with_update_mode(pk(PARAMS, "max_re_weighting").update_mode)
             .with_group("Ambisonics")
             .with_importance(ParameterImportance::Useful)
             .with_description("Improve energy preservation at high frequencies")
             .build(),
             Parameter::new_bool("dual_band", "Dual-Band Decoding", self.dual_band)
+                .with_update_mode(pk(PARAMS, "dual_band").update_mode)
                 .with_group("Ambisonics")
                 .with_importance(ParameterImportance::Useful)
                 .with_description(

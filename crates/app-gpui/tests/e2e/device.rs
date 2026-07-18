@@ -49,13 +49,11 @@ pub fn find_virtual_output_device() -> Option<String> {
 
         if let Ok(requested) = std::env::var("AEQ_E2E_DEVICE")
             && !requested.is_empty()
-        {
-            if let Some(name) = devices
+            && let Some(name) = devices
                 .iter()
                 .find(|name| *name == &requested || name.contains(&requested))
-            {
-                return Some(name.clone());
-            }
+        {
+            return Some(name.clone());
         }
 
         VIRTUAL_OUTPUT_CANDIDATES.iter().find_map(|candidate| {

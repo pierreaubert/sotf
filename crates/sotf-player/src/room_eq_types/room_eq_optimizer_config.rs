@@ -316,9 +316,12 @@ impl RoomEqOptimizerConfig {
 
         self.allow_delay = backend.allow_delay.unwrap_or(false);
 
-        self.vog.enabled = backend.vog.as_ref().is_some_and(|v| v.enabled);
-        if let Some(ref vog) = backend.vog {
-            self.vog.reference_channel = vog.reference_channel.clone();
+        self.vog.enabled = backend
+            .inter_channel_timbre_matching
+            .as_ref()
+            .is_some_and(|config| config.enabled);
+        if let Some(ref config) = backend.inter_channel_timbre_matching {
+            self.vog.reference_channel = config.reference_channel.clone();
         }
 
         self.phase_alignment.enabled = backend.phase_alignment.as_ref().is_some_and(|p| p.enabled);
@@ -402,16 +405,15 @@ impl RoomEqOptimizerConfig {
         use autoeq::roomeq::{
             ChannelMatchingConfig as BackendChannelMatchingConfig, DecomposedCorrectionSerdeConfig,
             ExcursionProtectionConfig as BackendExcursionProtectionConfig,
-            FirConfig as BackendFirConfig, HighFreqFilterConfig, HighpassType, LowFreqFilterConfig,
-            MixedModeConfig, MixedPhaseSerdeConfig as BackendMixedPhaseConfig,
-            MultiMeasurementConfig, MultiMeasurementStrategy,
-            MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
+            FirConfig as BackendFirConfig, HighFreqFilterConfig, HighpassType,
+            InterChannelTimbreMatchingConfig, LowFreqFilterConfig, MixedModeConfig,
+            MixedPhaseSerdeConfig as BackendMixedPhaseConfig, MultiMeasurementConfig,
+            MultiMeasurementStrategy, MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
             OptimizerConfig as BackendOptimizerConfig,
             PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
             PreRingingSerdeConfig as BackendPreRingingConfig, ProcessingMode,
             SchroederSplitConfig as BackendSchroederSplitConfig, SubOptimizerConfig,
             TargetResponseConfig as BackendTargetResponseConfig, TargetShape, UserPreference,
-            VoiceOfGodConfig,
         };
 
         let processing_mode = match self.mode {
@@ -585,10 +587,11 @@ impl RoomEqOptimizerConfig {
             None
         };
 
-        let vog = if self.vog.enabled {
-            Some(VoiceOfGodConfig {
+        let inter_channel_timbre_matching = if self.vog.enabled {
+            Some(InterChannelTimbreMatchingConfig {
                 enabled: true,
                 reference_channel: self.vog.reference_channel.clone(),
+                ..Default::default()
             })
         } else {
             None
@@ -628,6 +631,7 @@ impl RoomEqOptimizerConfig {
                     .bootstrap_uncertainty
                     .as_ref()
                     .map(bootstrap_uncertainty_to_backend),
+                rir_prototype: None,
             })
         } else {
             None
@@ -698,7 +702,7 @@ impl RoomEqOptimizerConfig {
             schroeder_split,
             phase_alignment,
             multi_seat,
-            vog,
+            inter_channel_timbre_matching,
             multi_measurement,
             sub_config,
             channel_matching,

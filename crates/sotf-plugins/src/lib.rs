@@ -11,7 +11,9 @@ pub use sotf_host::serde_param_default;
 // Shared plugin factory
 pub mod factory;
 pub use factory::{
-    SUPPORTED_PLUGIN_TYPES, create_plugin, is_supported_plugin_type,
+    PLUGIN_CATALOG, PluginCatalogEntry, PluginCategory, PluginStabilityEvidence,
+    PluginStabilitySummary, SUPPORTED_PLUGIN_TYPES, StabilityEvidenceState, catalog_entry,
+    create_plugin, is_supported_plugin_type, plugin_stability_summary,
     validate_plugin_security_config,
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]

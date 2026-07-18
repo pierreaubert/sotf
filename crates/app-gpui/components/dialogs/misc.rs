@@ -1,7 +1,11 @@
 use crate::app::Screen;
+use crate::app::i18n::{KeybindingTranslations, Language};
 
-pub(super) fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str)> {
-    match screen {
+pub fn get_keybindings_for_screen(
+    screen: Screen,
+    language: Language,
+) -> Vec<(&'static str, &'static str)> {
+    let bindings = match screen {
         Screen::Home | Screen::HomeShelf => vec![
             ("/", "Search albums"),
             ("Enter", "Open album"),
@@ -56,31 +60,48 @@ pub(super) fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &
             ("Shift-S/l", "Save/Load preset"),
         ],
         Screen::Recording => vec![
-            ("Back/Close", "Navigate between steps"),
-            ("Next/Finish", "Proceed to next step or finish"),
+            ("Alt+←", "Navigate between steps"),
+            ("Alt+→", "Proceed to next step or finish"),
         ],
         Screen::RoomEq => vec![
-            ("Back/Close", "Navigate between steps"),
-            ("Next/Finish", "Proceed to next step or finish"),
+            ("Alt+←", "Navigate between steps"),
+            ("Alt+→", "Proceed to next step or finish"),
         ],
         Screen::HeadphoneEq => vec![
-            ("Back/Close", "Navigate between steps"),
-            ("Next/Finish", "Proceed to next step or finish"),
+            ("Alt+←", "Navigate between steps"),
+            ("Alt+→", "Proceed to next step or finish"),
         ],
         Screen::Spinorama => vec![
-            ("Back/Close", "Navigate between steps"),
-            ("Next/Finish", "Proceed to next step or finish"),
+            ("Alt+←", "Navigate between steps"),
+            ("Alt+→", "Proceed to next step or finish"),
         ],
         Screen::PluginGraph => vec![
-            ("Click+Drag", "Move nodes"),
-            ("Drag port", "Create connection"),
-            ("Delete", "Remove selected"),
-            ("Space", "Toggle selected plugin"),
+            ("Tab / Shift+Tab", "Select next / previous node"),
+            ("[ / ]", "Choose the plugin added by A"),
+            ("A", "Add selected plugin"),
+            ("Enter / E", "Edit selected plugin"),
+            ("B", "Toggle selected plugin bypass"),
+            ("C", "Arm source / connect to selected node"),
+            ("- / =", "Select connection port"),
+            ("X", "Disconnect selected node"),
+            ("Arrow keys", "Move selected node"),
+            ("Delete", "Remove selected plugin"),
         ],
+        Screen::ListeningTest => {
+            let mut bindings =
+                crate::app::keybindings::listening_test::DOCUMENTED_BINDINGS.to_vec();
+            bindings.push(("Space", "Play/Pause synchronized transport"));
+            bindings
+        }
         Screen::Playlists => vec![
             ("↑/↓ or K/J", "Navigate playlists"),
             ("Enter", "Open playlist"),
             ("D/Delete", "Remove playlist"),
         ],
-    }
+    };
+    let text = KeybindingTranslations::for_language(language);
+    bindings
+        .into_iter()
+        .map(|(key, action)| (key, text.action_description(action)))
+        .collect()
 }

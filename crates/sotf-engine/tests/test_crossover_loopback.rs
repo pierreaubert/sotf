@@ -123,8 +123,14 @@ fn test_crossover_lowpass_loopback_verification() {
     // Analysis
     let buffer = captured_samples.lock().unwrap();
     if buffer.is_empty() {
-        println!("SKIPPING test: No audio captured from loopback device.");
-        return;
+        let callback_count = engine.get_state().playback_callback_count;
+        if callback_count == 0 {
+            eprintln!(
+                "Skipping crossover low-pass loopback assertion: virtual output produced no callbacks"
+            );
+            return;
+        }
+        panic!("No audio captured despite {callback_count} output callbacks");
     }
     let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 
@@ -290,7 +296,14 @@ fn test_crossover_highpass_loopback_verification() {
     // Analysis
     let buffer = captured_samples.lock().unwrap();
     if buffer.is_empty() {
-        panic!("No audio captured");
+        let callback_count = engine.get_state().playback_callback_count;
+        if callback_count == 0 {
+            eprintln!(
+                "Skipping crossover high-pass loopback assertion: virtual output produced no callbacks"
+            );
+            return;
+        }
+        panic!("No audio captured despite {callback_count} output callbacks");
     }
     let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 

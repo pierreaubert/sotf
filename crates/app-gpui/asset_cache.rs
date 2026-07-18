@@ -49,29 +49,29 @@ mod tests {
     fn caches_filtered_entries_per_prefix() {
         // Use unique prefixes so the global cache does not collide with other
         // tests that exercise the same helper.
-        let entries = vec![
+        let entries = [
             "fonts-per-prefix/a.ttf",
             "fonts-per-prefix/b.ttf",
             "icons-per-prefix/x.svg",
         ];
-        let fonts_a = cached_asset_list("fonts-per-prefix/", entries.iter().map(|s| *s));
-        let fonts_b = cached_asset_list("fonts-per-prefix/", entries.iter().map(|s| *s));
+        let fonts_a = cached_asset_list("fonts-per-prefix/", entries.iter().copied());
+        let fonts_b = cached_asset_list("fonts-per-prefix/", entries.iter().copied());
         assert_eq!(fonts_a.len(), 2);
         assert_eq!(fonts_a, fonts_b);
     }
 
     #[test]
     fn returns_empty_for_unknown_prefix() {
-        let entries = vec!["fonts-per-test/a.ttf"];
-        let list = cached_asset_list("missing-per-test/", entries.iter().map(|s| *s));
+        let entries = ["fonts-per-test/a.ttf"];
+        let list = cached_asset_list("missing-per-test/", entries.iter().copied());
         assert!(list.is_empty());
     }
 
     #[test]
     fn caches_different_prefixes_independently() {
-        let entries = vec!["fonts-independent/a.ttf", "icons-independent/x.svg"];
-        let fonts = cached_asset_list("fonts-independent/", entries.iter().map(|s| *s));
-        let icons = cached_asset_list("icons-independent/", entries.iter().map(|s| *s));
+        let entries = ["fonts-independent/a.ttf", "icons-independent/x.svg"];
+        let fonts = cached_asset_list("fonts-independent/", entries.iter().copied());
+        let icons = cached_asset_list("icons-independent/", entries.iter().copied());
         assert_eq!(fonts.len(), 1);
         assert_eq!(icons.len(), 1);
         assert_ne!(fonts, icons);

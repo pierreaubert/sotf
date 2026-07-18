@@ -17,7 +17,8 @@ expression: graph
           }
         ]
       },
-      "input_channels": 2
+      "input_channels": 2,
+      "bypassed": false
     },
     {
       "id": 1,
@@ -29,7 +30,8 @@ expression: graph
         "release_ms": 100.0,
         "makeup_db": 0.0
       },
-      "input_channels": 2
+      "input_channels": 2,
+      "bypassed": false
     },
     {
       "id": 2,
@@ -37,7 +39,8 @@ expression: graph
       "parameters": {
         "gain_db": -6.0
       },
-      "input_channels": 2
+      "input_channels": 2,
+      "bypassed": false
     }
   ],
   "edges": [

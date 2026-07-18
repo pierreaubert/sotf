@@ -20,6 +20,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let text = SettingsSurfaceTranslations::for_language(state.app.ui_state.language);
         let max_cores = state.app.ui_state.max_cpu_cores;
         let plugin_sandbox_status_section: Option<AnyElement> = {
             #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -30,7 +31,7 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Xs)
                             .child(
-                                Text::new("External Plugins")
+                                Text::new(text.external_plugins)
                                     .size(TextSize::Sm)
                                     .weight(gpui_ui_kit::TextWeight::Bold)
                                     .color(theme.text_primary),
@@ -63,7 +64,7 @@ impl PlayerView {
                                     .child(
                                         Button::new(
                                             "activate-external-plugins",
-                                            "Activate External Plugins",
+                                            text.activate_external_plugins,
                                         )
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Xs)
@@ -82,7 +83,7 @@ impl PlayerView {
                                     .child(
                                         Button::new(
                                             "scan-external-plugins",
-                                            "Scan External Plugins",
+                                            text.scan_external_plugins,
                                         )
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Xs)
@@ -141,7 +142,7 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                    .child("Miscellaneous"),
+                                    .child(text.miscellaneous),
             )
             .child(
                 div()
@@ -164,7 +165,7 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(StackSpacing::Xs)
                                     .child(
-                                        Text::new("Max CPU Cores")
+                            Text::new(text.max_cpu_cores)
                                             .size(TextSize::Sm)
                                             .weight(gpui_ui_kit::TextWeight::Bold)
                                             .color(theme.text_primary),
@@ -205,3 +206,4 @@ impl PlayerView {
             )
     }
 }
+use crate::app::i18n::SettingsSurfaceTranslations;

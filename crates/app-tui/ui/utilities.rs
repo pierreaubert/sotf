@@ -70,50 +70,98 @@ pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
 }
 
 /// Get keybindings for a given screen
-pub fn get_keybindings_for_screen(screen: crate::app::Screen) -> Vec<(&'static str, &'static str)> {
+pub fn get_keybindings_for_screen(
+    screen: crate::app::Screen,
+    language: crate::i18n::Language,
+) -> Vec<(&'static str, &'static str)> {
     use crate::app::Screen;
 
-    match screen {
+    let bindings = match screen {
         Screen::Library => vec![
             ("/", "Search"),
-            ("↑↓", "Browse"),
-            ("a", "Add dir"),
+            ("↑↓ or k/j", "Browse"),
+            ("a/Enter", "Queue album"),
             ("q", "Queue"),
-            ("p", "Play"),
             ("s", "Sort"),
             ("c", "Filter"),
+            ("t", "Tree/flat view"),
         ],
         Screen::Queue => vec![
-            ("↑↓", "Browse"),
+            ("↑↓ or k/j", "Browse"),
+            ("Enter", "Play selection"),
             ("d", "Remove track"),
             ("c", "Clear"),
-            ("p", "Play"),
-            ("A", "Add to playlist"),
+            ("p/Space", "Play/pause"),
+            ("A", "Add active playlist"),
         ],
         Screen::Plugins => vec![
-            ("↑↓", "Browse"),
+            ("↑↓ or k/j", "Browse"),
             ("a", "Add plugin"),
             ("d", "Remove plugin"),
-            ("e", "Edit"),
+            ("e/Enter", "Edit"),
+            ("t", "Enable/disable"),
             ("s", "Save"),
             ("l", "Load"),
         ],
-        Screen::Devices => vec![("↑↓", "Browse"), ("Enter", "Select")],
+        Screen::Devices => vec![
+            ("↑↓ or k/j", "Browse"),
+            ("Enter/Space", "Select"),
+            ("r", "Rescan"),
+        ],
         Screen::Configure => vec![
             ("←→", "Navigate tabs"),
-            ("↑↓", "Navigate fields"),
-            ("Tab", "Enter/Exit"),
-            ("1-5", "Jump to tab"),
+            ("Enter", "Open tab"),
+            ("Esc", "Back"),
+            ("1-8", "Jump to tab"),
             ("?", "Help"),
         ],
-        _ => vec![],
-    }
+        Screen::Playlists => vec![
+            ("↑↓ or k/j", "Browse"),
+            ("Enter/l", "Open"),
+            ("Esc/h", "Back"),
+            ("n/r/d", "Create/rename/delete"),
+            ("p", "Play all"),
+        ],
+        Screen::Loading => vec![],
+    };
+    let text = crate::i18n::TuiTranslations::for_language(language);
+    bindings
+        .into_iter()
+        .map(|(key, action)| (key, text.action_description(action)))
+        .collect()
 }
 
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_help_covers_every_interactive_screen_without_stale_library_actions() {
+        for language in crate::i18n::Language::ALL {
+            for screen in [
+                crate::app::Screen::Library,
+                crate::app::Screen::Queue,
+                crate::app::Screen::Playlists,
+                crate::app::Screen::Plugins,
+                crate::app::Screen::Devices,
+                crate::app::Screen::Configure,
+            ] {
+                assert!(
+                    !get_keybindings_for_screen(screen, language).is_empty(),
+                    "{screen:?} must have contextual keyboard help for {}",
+                    language.code()
+                );
+            }
+        }
+
+        let library =
+            get_keybindings_for_screen(crate::app::Screen::Library, crate::i18n::Language::English);
+        assert!(library.contains(&("a/Enter", "Queue album")));
+        assert!(library.contains(&("q", "Queue")));
+        assert!(!library.iter().any(|binding| binding.1 == "Add dir"));
+        assert!(!library.iter().any(|binding| binding.0 == "p"));
+    }
 
     #[test]
     fn test_clean_text() {

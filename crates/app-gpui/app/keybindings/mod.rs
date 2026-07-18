@@ -8,6 +8,7 @@
 
 mod common;
 mod emacs;
+pub(crate) mod listening_test;
 mod plugins;
 mod vim;
 mod volume;
@@ -16,8 +17,9 @@ mod vscode;
 use crate::app::actions;
 use gpui::*;
 
-use common::common_bindings;
+use common::{common_bindings, plugin_rack_bindings};
 use emacs::{emacs_bindings, emacs_documented_keybindings};
+use listening_test::listening_test_bindings;
 use plugins::plugin_control_bindings;
 use vim::{vim_bindings, vim_documented_keybindings};
 use volume::volume_control_bindings;
@@ -38,6 +40,7 @@ pub enum KeybindingCategory {
     Library,
     Queue,
     Plugins,
+    ListeningTests,
     LevelMeters,
     System,
 }
@@ -51,6 +54,7 @@ impl KeybindingCategory {
             KeybindingCategory::Library => "Library",
             KeybindingCategory::Queue => "Queue",
             KeybindingCategory::Plugins => "Plugins",
+            KeybindingCategory::ListeningTests => "Listening Tests",
             KeybindingCategory::LevelMeters => "Level Meters",
             KeybindingCategory::System => "System",
         }
@@ -64,6 +68,7 @@ impl KeybindingCategory {
             KeybindingCategory::Library,
             KeybindingCategory::Queue,
             KeybindingCategory::Plugins,
+            KeybindingCategory::ListeningTests,
             KeybindingCategory::LevelMeters,
             KeybindingCategory::System,
         ]
@@ -93,11 +98,16 @@ pub fn get_keybindings(preset: KeymapPreset) -> Vec<KeyBinding> {
         KeymapPreset::VSCode => bindings.extend(vscode_bindings()),
     }
 
+    // These overlap general navigation and volume keys. Register them after
+    // preset bindings so the more specific PluginRack context wins in Studio.
+    bindings.extend(plugin_rack_bindings());
+
     // Volume control context bindings (always active when volume control is focused)
     bindings.extend(volume_control_bindings());
 
     // Plugin control context bindings (active when a plugin parameter control is focused)
     bindings.extend(plugin_control_bindings());
+    bindings.extend(listening_test_bindings());
 
     bindings
 }
@@ -126,6 +136,7 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("t", actions::ToggleLibraryView, Some("PlayerView")),
         KeyBinding::new("?", actions::ToggleHelp, Some("PlayerView")),
         KeyBinding::new("shift-?", actions::ToggleHelpSupport, Some("PlayerView")),
+        KeyBinding::new("f1", actions::ToggleScreenGuide, None),
         // Sort and filter cycling
         KeyBinding::new("s", actions::CycleSortOrder, Some("PlayerView")),
         KeyBinding::new("c", actions::CycleChannelFilter, Some("PlayerView")),
@@ -176,12 +187,37 @@ fn default_bindings() -> Vec<KeyBinding> {
 
 /// Get documented keybindings for help display (preset-aware)
 pub fn get_documented_keybindings(preset: KeymapPreset) -> Vec<DocumentedKeybinding> {
-    match preset {
+    let mut bindings = match preset {
         KeymapPreset::Default => default_documented_keybindings(),
         KeymapPreset::Vim => vim_documented_keybindings(),
         KeymapPreset::Emacs => emacs_documented_keybindings(),
         KeymapPreset::VSCode => vscode_documented_keybindings(),
-    }
+    };
+    bindings.extend([
+        DocumentedKeybinding {
+            key: "Alt+←",
+            description: "Navigate between steps",
+            category: KeybindingCategory::Navigation,
+        },
+        DocumentedKeybinding {
+            key: "Alt+→",
+            description: "Proceed to next step or finish",
+            category: KeybindingCategory::Navigation,
+        },
+    ]);
+    bindings.extend(listening_test_documented_keybindings());
+    bindings
+}
+
+fn listening_test_documented_keybindings() -> Vec<DocumentedKeybinding> {
+    listening_test::DOCUMENTED_BINDINGS
+        .iter()
+        .map(|(key, description)| DocumentedKeybinding {
+            key,
+            description,
+            category: KeybindingCategory::ListeningTests,
+        })
+        .collect()
 }
 
 fn default_documented_keybindings() -> Vec<DocumentedKeybinding> {

@@ -19,8 +19,11 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
         .split(area);
 
     // Help box with scan keybindings
-    let help_text = "a=add | s/S=scan | r/R=replay gain | b/B=bliss | w/W=waveform | d=delete | m=maintenance (uppercase=force)";
-    draw_help_box_with_text(f, chunks[0], app, help_text);
+    let help_text = crate::tui_text!(
+        app,
+        "a=add | s/S=scan | r/R=replay gain | b/B=bliss | w/W=waveform | d=delete | m=maintenance (uppercase=force)"
+    );
+    draw_help_box_with_text(f, chunks[0], app, &help_text);
 
     // Input box for adding directories
     let input_style = if app.library_view.editing_directory {
@@ -30,18 +33,21 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let input_text = if app.library_view.editing_directory {
-        format!(
-            "Path: {}█ (Tab to autocomplete)",
-            app.library_view.directory_input
+        crate::tui_text!(
+            app,
+            format!(
+                "Path: {}█ (Tab to autocomplete)",
+                app.library_view.directory_input
+            )
         )
     } else {
-        "Path: (Press 'a' to add directory)".to_string()
+        crate::tui_text!(app, "Path: (Press 'a' to add directory)")
     };
 
     let input_box = Paragraph::new(input_text).style(input_style).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Add Directory"),
+            .title(crate::tui_text!(app, "Add Directory")),
     );
 
     f.render_widget(input_box, chunks[1]);
@@ -122,28 +128,34 @@ pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
                     if let Ok(elapsed) = time.elapsed() {
                         let secs = elapsed.as_secs();
                         if secs < 60 {
-                            "just now".to_string()
+                            crate::tui_text!(app, "just now")
                         } else if secs < 3600 {
-                            format!("{} min ago", secs / 60)
+                            crate::tui_text!(app, format!("{} min ago", secs / 60))
                         } else if secs < 86400 {
-                            format!("{} hrs ago", secs / 3600)
+                            crate::tui_text!(app, format!("{} hrs ago", secs / 3600))
                         } else {
-                            format!("{} days ago", secs / 86400)
+                            crate::tui_text!(app, format!("{} days ago", secs / 86400))
                         }
                     } else {
-                        "never".to_string()
+                        crate::tui_text!(app, "never")
                     }
                 } else {
-                    "never".to_string()
+                    crate::tui_text!(app, "never")
                 };
 
                 if *level == 0 {
-                    format!(
-                        " [{} tracks, {} albums, {}]",
-                        track_count, album_count, last_scan
+                    crate::tui_text!(
+                        app,
+                        format!(
+                            " [{} tracks, {} albums, {}]",
+                            track_count, album_count, last_scan
+                        )
                     )
                 } else {
-                    format!(" [{} tracks, {} albums]", track_count, album_count)
+                    crate::tui_text!(
+                        app,
+                        format!(" [{} tracks, {} albums]", track_count, album_count)
+                    )
                 }
             } else {
                 String::new()
@@ -168,7 +180,7 @@ pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let title = "Directories";
+    let title = crate::tui_text!(app, "Directories");
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))
@@ -193,7 +205,11 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
         .pause_flag
         .load(std::sync::atomic::Ordering::Relaxed);
 
-    let pause_tag = if paused { " [paused]" } else { "" };
+    let pause_tag = if paused {
+        crate::tui_text!(app, " [paused]")
+    } else {
+        String::new()
+    };
 
     let label_style = Style::default().fg(app.theme.accent_primary);
     let idle_style = Style::default().fg(app.theme.fg_secondary);
@@ -221,11 +237,17 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     // Header
     //               "Scanner     Status              OK   Fail  Total"
     let mut lines: Vec<Line> = vec![Line::from(vec![
-        Span::styled("Scanner     ", label_style),
-        Span::styled("Status              ", idle_style),
-        Span::styled("  OK", ok_style),
-        Span::styled("  Fail", err_style),
-        Span::styled("  Total", idle_style),
+        Span::styled(
+            format!("{:<12}", crate::tui_text!(app, "Scanner")),
+            label_style,
+        ),
+        Span::styled(
+            format!("{:<20}", crate::tui_text!(app, "Status")),
+            idle_style,
+        ),
+        Span::styled(format!("{:>4}", crate::tui_text!(app, "OK")), ok_style),
+        Span::styled(format!("{:>6}", crate::tui_text!(app, "Fail")), err_style),
+        Span::styled(format!("{:>7}", crate::tui_text!(app, "Total")), idle_style),
     ])];
 
     // Helper to format a scanner row with counts
@@ -257,9 +279,12 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     let rg = &app.scan.replay_gain_manager;
     if rg.in_progress {
         let rg_status = if rg.album_gain_phase == sotf_audio_player::AlbumGainPhase::Scanning {
-            format!(
-                "album {}/{}{}",
-                rg.album_gain_done, rg.album_gain_total, pause_tag
+            crate::tui_text!(
+                app,
+                format!(
+                    "album {}/{}{}",
+                    rg.album_gain_done, rg.album_gain_total, pause_tag
+                )
             )
         } else {
             let pct = if rg.total > 0 {
@@ -282,7 +307,7 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
         lines.push(scanner_line(
             "ReplayGain",
             false,
-            "idle".to_string(),
+            crate::tui_text!(app, "idle"),
             tracks_with_rg,
             missing,
             total_tracks,
@@ -299,7 +324,7 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
         };
         let wf_status = format!("{}/{} ({:.0}%){}", wf.processed, wf.total, pct, pause_tag);
         lines.push(scanner_line(
-            "Waveform",
+            &crate::tui_text!(app, "Waveform"),
             true,
             wf_status,
             wf.succeeded,
@@ -309,9 +334,9 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     } else {
         let missing = total_tracks.saturating_sub(tracks_with_waveform);
         lines.push(scanner_line(
-            "Waveform",
+            &crate::tui_text!(app, "Waveform"),
             false,
-            "idle".to_string(),
+            crate::tui_text!(app, "idle"),
             tracks_with_waveform,
             missing,
             total_tracks,
@@ -339,7 +364,7 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
         lines.push(scanner_line(
             "Bliss",
             false,
-            "idle".to_string(),
+            crate::tui_text!(app, "idle"),
             bl.succeeded,
             bl.failed,
             bl.total,
@@ -350,13 +375,19 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     let album_count = app.library.albums.len();
     if app.scan.in_progress {
         lines.push(Line::from(vec![
-            Span::styled(format!("{:<12}", "Library"), label_style),
+            Span::styled(
+                format!("{:<12}", crate::tui_text!(app, "Library")),
+                label_style,
+            ),
             Span::styled(
                 format!(
                     "{:<20}",
-                    format!(
-                        "{} tracks / {} albums{}",
-                        app.scan.progress_tracks, app.scan.progress_albums, pause_tag
+                    crate::tui_text!(
+                        app,
+                        format!(
+                            "{} tracks / {} albums{}",
+                            app.scan.progress_tracks, app.scan.progress_albums, pause_tag
+                        )
                     )
                 ),
                 progress_style,
@@ -364,19 +395,28 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
         ]));
     } else {
         lines.push(Line::from(vec![
-            Span::styled(format!("{:<12}", "Library"), label_style),
+            Span::styled(
+                format!("{:<12}", crate::tui_text!(app, "Library")),
+                label_style,
+            ),
             Span::styled(
                 format!(
                     "{:<20}",
-                    format!("{} tracks / {} albums", total_tracks, album_count)
+                    crate::tui_text!(
+                        app,
+                        format!("{} tracks / {} albums", total_tracks, album_count)
+                    )
                 ),
                 idle_style,
             ),
         ]));
     }
 
-    let status =
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title("Status"));
+    let status = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(crate::tui_text!(app, "Status")),
+    );
 
     f.render_widget(status, area);
 }

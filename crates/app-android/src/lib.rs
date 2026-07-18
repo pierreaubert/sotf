@@ -5,7 +5,10 @@
 
 #[cfg(target_os = "android")]
 mod imp {
-    use gpui::{App, AppContext, Application, Context, IntoElement, ParentElement, Render, Styled, Window, WindowOptions, div};
+    use gpui::{
+        App, AppContext, Application, Context, IntoElement, ParentElement, Render, Styled, Window,
+        WindowOptions, div,
+    };
     use gpui_android::android::jni::{init_platform, shared_platform};
     use gpui_ui_kit::i18n::I18nState;
     use gpui_ui_kit::theme::{ThemeState, ThemeVariant};
@@ -46,7 +49,9 @@ mod imp {
             cx.set_global(I18nState::new());
 
             log::info!("android_main: opening window");
-            match cx.open_window(WindowOptions::default(), |_, cx| cx.new(|_| PlaceholderView)) {
+            match cx.open_window(WindowOptions::default(), |_, cx| {
+                cx.new(|_| PlaceholderView)
+            }) {
                 Ok(_) => cx.activate(true),
                 Err(error) => log::error!("failed to open Android window: {error}"),
             }

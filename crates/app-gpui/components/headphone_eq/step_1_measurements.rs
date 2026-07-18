@@ -1,5 +1,6 @@
 use crate::app::types::headphone_eq::HeadphoneMeasurementSource;
 use crate::components::design::Ds;
+use crate::i18n::HeadphoneEqTranslations;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -20,6 +21,11 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let translations = HeadphoneEqTranslations::for_language(state.app.ui_state.language);
+        let workflow_text =
+            crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
+        let discovery_text =
+            crate::app::i18n::EqDiscoveryTranslations::for_language(state.app.ui_state.language);
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id, cx));
         let headphone_eq = &state.app.measurement_state.headphone_eq_state;
@@ -36,18 +42,23 @@ impl PlayerView {
         let is_loading = headphone_eq.loading_headphones;
         let is_downloading = headphone_eq.loading_download;
         let available_headphones_count = headphone_eq.available_headphones.len();
-        let error_message = headphone_eq.error_message.clone();
+        let runtime_text =
+            crate::app::i18n::RuntimeMessageTranslations::for_language(state.app.ui_state.language);
+        let error_message = headphone_eq
+            .error_message
+            .as_deref()
+            .map(|message| runtime_text.translate(message).into_owned());
 
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Select Measurement")
+                Text::new(translations.select_measurement)
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Choose your headphone measurement source.")
+                Text::new(translations.select_measurement_description)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -56,7 +67,7 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(
-                        Button::new("source-file", "Load from File")
+                        Button::new("source-file", discovery_text.load_from_file)
                             .variant(if measurement_source == HeadphoneMeasurementSource::File {
                                 ButtonVariant::Primary
                             } else {
@@ -76,7 +87,10 @@ impl PlayerView {
                                 })),
                     )
                     .child(
-                        Button::new("source-spinorama", "Download from spinorama.org")
+                        Button::new(
+                            "source-spinorama",
+                            discovery_text.download_from_spinorama,
+                        )
                             .variant(
                                 if measurement_source == HeadphoneMeasurementSource::Spinorama {
                                     ButtonVariant::Primary
@@ -119,7 +133,7 @@ impl PlayerView {
                             .header_background(theme.background_secondary)
                             .border(theme.border)
                             .header(
-                                Text::new("Measurement File")
+                            Text::new(translations.measurement_file)
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
@@ -127,7 +141,7 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .child(
-                                        Text::new("Select a CSV file with your headphone's frequency response measurement.")
+                            Text::new(translations.measurement_file_description)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
@@ -154,7 +168,10 @@ impl PlayerView {
                                                     }),
                                             )
                                             .child(
-                                                Button::new("browse-measurement", "Browse...")
+                                                Button::new(
+                                                    "browse-measurement",
+                                                    discovery_text.browse,
+                                                )
                                                     .variant(ButtonVariant::Secondary)
                                                     .size(ButtonSize::Sm)
                                                     .theme(button_theme.clone())
@@ -179,7 +196,7 @@ impl PlayerView {
                                 .header_background(theme.background_secondary)
                                 .border(theme.border)
                                 .header(
-                                    Text::new("Headphone Search")
+                            Text::new(translations.headphone_search)
                                         .color(theme.text_primary)
                                         .weight(TextWeight::Semibold),
                                 )
@@ -187,9 +204,7 @@ impl PlayerView {
                                     VStack::new()
                                         .spacing(StackSpacing::Sm)
                                         .child(
-                                            Text::new(
-                                                "Type your headphone brand and model to search the database.",
-                                            )
+                                            Text::new(discovery_text.headphone_search_description)
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                         )
@@ -198,8 +213,8 @@ impl PlayerView {
                                             let state_for_text = self.state.clone();
                                             let state_for_end = self.state.clone();
                                             Input::new("headphone-search")
-                                                .aria_label("Search headphones")
-                                                .placeholder("Type to search headphones...")
+                                                .aria_label(discovery_text.search_headphones)
+                                    .placeholder(translations.search_placeholder)
                                                 .value(SharedString::from(search_query.clone()))
                                                 .size(InputSize::Sm)
                                                 .bg_color(theme.surface)
@@ -234,7 +249,10 @@ impl PlayerView {
                                             HStack::new()
                                                 .spacing(StackSpacing::Xs)
                                                 .child(
-                                                    Button::new("refresh-headphones", "Refresh")
+                                                    Button::new(
+                                                        "refresh-headphones",
+                                                        discovery_text.refresh,
+                                                    )
                                                         .variant(ButtonVariant::Secondary)
                                                         .size(ButtonSize::Xs)
                                                         .disabled(is_loading)
@@ -244,7 +262,7 @@ impl PlayerView {
                                                             })),
                                                 )
                                                 .when(is_loading, |hstack| {
-                                                    hstack.child(Text::caption("Loading..."))
+                                                    hstack.child(Text::caption(workflow_text.loading))
                                                 })
                                                 .when(
                                                     !is_loading
@@ -269,7 +287,7 @@ impl PlayerView {
                                     HStack::new()
                                         .spacing(StackSpacing::Xs)
                                         .child(
-                                            Text::new("Available Headphones")
+                            Text::new(translations.available_headphones)
                                                 .color(theme.text_primary)
                                                 .weight(TextWeight::Semibold),
                                         )
@@ -288,7 +306,7 @@ impl PlayerView {
                                         .overflow_y_scroll()
                                         .when(suggestions.is_empty() && is_loading, |el| {
                                             el.child(Text::caption(
-                                                "Loading headphones from spinorama.org...",
+                                                discovery_text.loading_headphones,
                                             ))
                                         })
                                         .when(suggestions.is_empty() && !is_loading, |el| {
@@ -356,7 +374,9 @@ impl PlayerView {
                             vstack.child(
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
-                                    .child(Text::caption("Downloading measurement...")),
+                                    .child(Text::caption(
+                                        workflow_text.downloading_measurement,
+                                    )),
                             )
                         })
                         // Frequency response preview after download. Navigation
@@ -381,11 +401,13 @@ impl PlayerView {
         curve_data: &[(f64, f64)],
         theme: &crate::theme::Theme,
         app_width: f32,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
         use crate::components::graphs::common::{colors, rgba_to_u32, theme_to_chart_theme};
         use gpui_px::{ScaleType, line};
 
+        let translations =
+            HeadphoneEqTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let chart_theme = theme_to_chart_theme(theme);
         let color = rgba_to_u32(colors::input(theme));
 
@@ -399,7 +421,7 @@ impl PlayerView {
             .x_scale(ScaleType::Log)
             .x_range(20.0, 20000.0)
             .y_label("SPL (dB)")
-            .label("Frequency Response")
+            .label(translations.frequency_response)
             .color(color)
             .stroke_width(2.0)
             .theme(chart_theme)

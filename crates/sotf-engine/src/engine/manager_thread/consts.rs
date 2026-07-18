@@ -2,6 +2,11 @@ pub(super) const SPIN_MS_SLEEP_MANAGER: u64 = 10;
 
 pub(super) const SPIN_MS_CHECK_MANAGER: u64 = 50;
 
+/// Bound per-loop event work while still draining faster than audio threads can
+/// publish position/stats updates. Processing only one event before the 50 ms
+/// command wait lets the unbounded event queue grow during normal playback.
+pub(super) const MAX_THREAD_EVENTS_PER_TICK: usize = 256;
+
 pub(super) const PLUGIN_INIT_TIMEOUT_MS: u64 = 10000; // 10 seconds for plugin initialization (SOFA loading can be slow)
 
 pub(super) const MAX_CONFIG_QUEUE_SIZE: usize = 5; // Maximum pending config updates

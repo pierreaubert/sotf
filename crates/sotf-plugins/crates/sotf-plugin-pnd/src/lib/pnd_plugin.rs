@@ -10,6 +10,7 @@ use crate::params::PARAMS as PD;
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 use sotf_host::analyzer::RealTimeCache;
+use sotf_host::param_bridge::apply_spec_update_modes;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{
@@ -184,6 +185,7 @@ impl PndPlugin {
                 .with_group("Correction")
                 .with_importance(ParameterImportance::Useful),
         ];
+        apply_spec_update_modes(&mut self.cached_parameters, PD);
     }
 
     pub fn from_params(channels: usize, params: PndPluginParams) -> Self {

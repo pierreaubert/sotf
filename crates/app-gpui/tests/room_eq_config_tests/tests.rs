@@ -4,7 +4,7 @@ use super::types::ChannelFilters;
 use sotf_audio_player::{
     PluginGraph, PluginSettings, PluginType,
     recording_types::{CtcMatrixExportStrategy, DelayProbeChannelResult, DelayProbeResults},
-    room_eq_types::{DelayDetectionStatus, DspChainOutputExt},
+    room_eq_types::{DelayDetectionStatus, DspChainOutputExt, RoomEqEasyLayout},
 };
 use sotf_audio_player_gpui::{
     ChannelMeasurement, ChannelRecording, ChannelRecordingState, RecordingResult, RecordingState,
@@ -17,6 +17,7 @@ fn test_room_eq_state_defaults() {
     assert_eq!(state.step, RoomEqStep::LoadData);
     assert_eq!(state.optimizer_config.num_filters, 7);
     assert!(state.channel_measurements.is_empty());
+    assert_eq!(state.easy_layout, RoomEqEasyLayout::Stereo20);
 }
 
 #[test]

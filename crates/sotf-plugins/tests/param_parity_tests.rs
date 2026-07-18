@@ -4,14 +4,18 @@
 //
 // Enforces that every key in a plugin's PARAMS spec is:
 //   1. Present in `parameters()` (cached_parameters)
-//   2. Accepted by `set_parameter()` without error
+//   2. Accepted by `set_parameter()` without error when realtime-updatable
 //   3. Returned by `get_parameter()` as Some(...)
+//
+// Structural parameters are rebuilt through serialized plugin configuration;
+// their realtime setter is required to reject mutation and is covered by the
+// owning plugin's integration tests.
 //
 // This test catches the class of bug where a parameter is added to PARAMS
 // but forgotten in the DSP plugin's cached_parameters / set_parameter /
 // get_parameter.
 
-use sotf_plugins::param_specs::{self, ParamSpec, ParamType};
+use sotf_plugins::param_specs::{self, ParamSpec, ParamType, UpdateMode};
 use sotf_plugins::{
     ABComparePlugin, BandMergePlugin, BandSplitPlugin, BinauralDecoderPlugin,
     ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin, DelayPlugin,
@@ -236,7 +240,29 @@ fn all_params_spec_keys_are_registered_in_dsp_plugin() {
                 ));
             }
 
-            // 2. Check set_parameter() accepts this key
+            if let Some(parameter) = cached.iter().find(|parameter| parameter.id.as_str() == key)
+                && parameter.update_mode != spec.update_mode
+            {
+                all_errors.push(format!(
+                    "[{}] parameter '{}' reports {:?} update mode but PARAMS declares {:?}",
+                    pw.name, key, parameter.update_mode, spec.update_mode,
+                ));
+            }
+
+            // 2. Check get_parameter() returns Some for this key
+            let get_result = pw.plugin.get_parameter(&ParameterId::from(key));
+            if get_result.is_none() {
+                all_errors.push(format!(
+                    "[{}] get_parameter('{}') returned None",
+                    pw.name, key,
+                ));
+            }
+
+            if spec.update_mode == UpdateMode::Structural {
+                continue;
+            }
+
+            // 3. Check realtime set_parameter() accepts this key.
             let test_val = default_test_value(spec);
             let set_result = pw
                 .plugin
@@ -245,15 +271,6 @@ fn all_params_spec_keys_are_registered_in_dsp_plugin() {
                 all_errors.push(format!(
                     "[{}] set_parameter('{}', {:?}) failed: {}",
                     pw.name, key, test_val, e,
-                ));
-            }
-
-            // 3. Check get_parameter() returns Some for this key
-            let get_result = pw.plugin.get_parameter(&ParameterId::from(key));
-            if get_result.is_none() {
-                all_errors.push(format!(
-                    "[{}] get_parameter('{}') returned None",
-                    pw.name, key,
                 ));
             }
         }

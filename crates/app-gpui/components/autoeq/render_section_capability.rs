@@ -8,9 +8,9 @@
     section = section.child(
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(Text::section_header("Capability").color(theme.header_color))
+            .child(Text::section_header(translations.autoeq_form.capability).color(theme.header_color))
             .child(
-                Text::new("Select the filter engine for your correction")
+                Text::new(translations.autoeq_select_filter_engine)
                     .size(TextSize::Xs)
                     .color(theme.description_color),
             ),

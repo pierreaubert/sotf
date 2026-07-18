@@ -28,7 +28,7 @@ pub(crate) fn draw_loading_screen(f: &mut Frame, app: &App) {
     f.render_widget(title, chunks[1]);
 
     // "Loading..." text centered
-    let loading_text = Paragraph::new("Loading...")
+    let loading_text = Paragraph::new(crate::tui_text!(app, "Loading..."))
         .alignment(Alignment::Center)
         .style(Style::default().fg(app.theme.fg_secondary));
     f.render_widget(loading_text, chunks[3]);

@@ -20,6 +20,7 @@ impl Screen {
             | Screen::Recording
             | Screen::HeadphoneEq
             | Screen::Spinorama
+            | Screen::ListeningTest
             | Screen::Studio
             | Screen::RoomEq => ReleaseChannel::Prod,
             Screen::PluginGraph => ReleaseChannel::Alpha,

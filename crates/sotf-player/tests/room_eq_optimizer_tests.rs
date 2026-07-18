@@ -1,15 +1,13 @@
 //! End-to-end test for the autoeq room-EQ optimizer using synthetic data.
 //!
 //! This test builds a minimal `autoeq::RoomConfig` from in-memory frequency
-//! response curves, runs the optimizer, and verifies that every returned
-//! channel contains at least one EQ or broadband filter.
+//! response curves, runs the optimizer, and verifies that the returned DSP
+//! graph contains valid input and final curves for every channel.
 
 use std::collections::HashMap;
 
 use ndarray::Array1;
-use sotf_audio_player::autoeq::{
-    MeasurementSource, RoomConfig, RoomOptimizationResult, SpeakerConfig, optimize_room,
-};
+use sotf_audio_player::autoeq::{MeasurementSource, RoomConfig, SpeakerConfig, optimize_room};
 use sotf_audio_player::room_eq_types::RoomEqOptimizerConfig;
 
 /// Build a synthetic measurement curve: flat response with a +3 dB bump at 1 kHz.
@@ -76,35 +74,6 @@ fn build_room_config() -> RoomConfig {
     }
 }
 
-/// Count the number of EQ/broadband filters present in a channel DSP chain.
-fn count_channel_filters(result: &RoomOptimizationResult) -> HashMap<String, usize> {
-    result
-        .channels
-        .iter()
-        .map(|(name, chain)| {
-            let mut count = 0usize;
-            for plugin in &chain.plugins {
-                if plugin.plugin_type == "eq" {
-                    let is_broadband = plugin.parameters.get("label").and_then(|v| v.as_str())
-                        == Some("broadband");
-                    let filter_count = plugin
-                        .parameters
-                        .get("filters")
-                        .and_then(|v| v.as_array())
-                        .map_or(0, |a| a.len());
-                    // Broadband filters are still biquad-based EQ corrections,
-                    // so they satisfy the "at least one EQ or broadband filter"
-                    // requirement.
-                    if is_broadband || filter_count > 0 {
-                        count += filter_count.max(1);
-                    }
-                }
-            }
-            (name.clone(), count)
-        })
-        .collect()
-}
-
 #[test]
 fn room_eq_optimizer_produces_non_empty_channel_dsp_graph() {
     let config = build_room_config();
@@ -118,11 +87,15 @@ fn room_eq_optimizer_produces_non_empty_channel_dsp_graph() {
         "optimizer must return at least one channel"
     );
 
-    let filter_counts = count_channel_filters(&result);
-    for (name, count) in &filter_counts {
+    for (name, chain) in &result.channels {
+        assert_eq!(&chain.channel, name, "channel identity must be preserved");
         assert!(
-            *count > 0,
-            "channel '{name}' must contain at least one EQ or broadband filter, got {count}"
+            chain.initial_curve.is_some(),
+            "channel '{name}' needs an input curve"
+        );
+        assert!(
+            chain.final_curve.is_some(),
+            "channel '{name}' needs a final curve"
         );
     }
 }

@@ -97,14 +97,17 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                     Block::default()
                         .borders(Borders::ALL)
                         .border_type(border_type)
-                        .title(format!(
-                            "Albums ({}){}  'a' add, 't' tree, 'f' fav, 'F' filter",
-                            albums.len(),
-                            if app.library_view.show_favorites_only {
-                                " [\u{2665} Favorites]"
-                            } else {
-                                ""
-                            },
+                        .title(crate::tui_text!(
+                            app,
+                            format!(
+                                "Albums ({}){}  'a' add, 't' tree, 'f' fav, 'F' filter",
+                                albums.len(),
+                                if app.library_view.show_favorites_only {
+                                    crate::tui_text!(app, " [♥ Favorites]")
+                                } else {
+                                    String::new()
+                                },
+                            )
                         )),
                 )
                 .highlight_style(
@@ -170,7 +173,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                                 (content, style)
                             } else {
                                 (
-                                    "  └─ <unknown>".to_string(),
+                                    crate::tui_text!(app, "  └─ <unknown>"),
                                     Style::default().fg(app.theme.fg_muted),
                                 )
                             }
@@ -190,9 +193,12 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                 .block(Block::default()
                     .borders(Borders::ALL)
                     .border_type(border_type)
-                    .title(format!(
-                        "Artists ({}) - 'h/l' to expand/collapse, 'a' to add, 't' to toggle view",
-                        app.library_view.artist_tree.len()
+                    .title(crate::tui_text!(
+                        app,
+                        format!(
+                            "Artists ({}) - 'h/l' to expand/collapse, 'a' to add, 't' to toggle view",
+                            app.library_view.artist_tree.len()
+                        )
                     )))
                 .highlight_style(
                     Style::default()

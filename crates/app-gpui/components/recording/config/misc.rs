@@ -1,4 +1,5 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
+use crate::app::i18n::RecordingTranslations;
 use crate::app::types::{
     CalibrationData, ChannelMapping, CtcMatrixExportStrategy, RecordingState, SpeakerConfiguration,
 };
@@ -41,6 +42,11 @@ impl PlayerView {
     pub(crate) fn render_recording_config_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
+        let workflow_text =
+            crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let expanded_sections = state
             .app
             .measurement_state
@@ -64,7 +70,7 @@ impl PlayerView {
                 // Header
                 VStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(Heading::h4("Audio Device Configuration"))
+                    .child(Heading::h4(workflow_text.audio_device_configuration))
                     .child(Text::new(translations.recording_config_desc).size(TextSize::Xs)),
             )
             .child(
@@ -73,23 +79,27 @@ impl PlayerView {
                     .mode(AccordionMode::Multiple)
                     .expanded(expanded_sections)
                     .item(
-                        AccordionItem::new("playback", "Playback Device").content(playback_content),
+                        AccordionItem::new("playback", recording_text.playback_device)
+                            .content(playback_content),
                     )
                     .item(
-                        AccordionItem::new("recording", "Recording Device")
+                        AccordionItem::new("recording", recording_text.recording_device)
                             .content(recording_content),
                     )
                     .item(
-                        AccordionItem::new("calibration", "Microphone Calibration")
+                        AccordionItem::new("calibration", recording_text.microphone_calibration)
                             .content(calibration_content),
                     )
                     .item(
-                        AccordionItem::new("output_dir", "Output Directory")
+                        AccordionItem::new("output_dir", recording_text.output_directory)
                             .content(output_dir_content),
                     )
                     .item(
-                        AccordionItem::new("advanced_sweep", "Advanced: Measurement Quality")
-                            .content(advanced_sweep_content),
+                        AccordionItem::new(
+                            "advanced_sweep",
+                            recording_text.advanced_measurement_quality,
+                        )
+                        .content(advanced_sweep_content),
                     )
                     .on_change({
                         let view = view.clone();
@@ -154,6 +164,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
+        let text = RecordingTranslations::for_language(state.app.ui_state.language);
         let (
             theme,
             num_channels,
@@ -242,7 +253,7 @@ impl PlayerView {
             .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
-                Text::new("CTC Matrix")
+                Text::new(text.ctc_matrix)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -277,7 +288,7 @@ impl PlayerView {
             .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
-                Text::new("Loopback Input")
+                Text::new(text.loopback_input)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -312,7 +323,7 @@ impl PlayerView {
             .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
-                Text::new("Positions")
+                Text::new(text.positions)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
@@ -369,6 +380,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let text = RecordingTranslations::for_language(state.app.ui_state.language);
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
         let num_channels = recording_state.recording_config.num_channels;
@@ -495,6 +507,7 @@ impl PlayerView {
         if !cal_entries.is_empty() {
             container = container.child(Self::render_calibration_graph_multi(
                 &cal_entries,
+                text,
                 &theme,
                 &d,
             ));
@@ -511,6 +524,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.weak_entity();
 
@@ -586,9 +602,7 @@ impl PlayerView {
                         )
                     }),
             )
-            .child(Text::caption(
-                "A timestamped subdirectory will be created for each recording session.",
-            ))
+            .child(Text::caption(recording_text.timestamped_subdirectory))
             .when(!has_directory, |stack| {
                 stack.child(
                     HStack::new()
@@ -619,6 +633,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let rec_state = &state.app.measurement_state.recording_state;
         let bass_dur = rec_state.bass_octave_duration_s;
         let pre_s = rec_state.pre_silence_s;
@@ -761,10 +778,7 @@ impl PlayerView {
 
         VStack::new()
             .spacing(StackSpacing::Sm)
-            .child(Text::caption(
-                "Increase bass precision to improve group delay accuracy below 100 Hz. \
-                 Higher settings require longer recordings.",
-            ))
+            .child(Text::caption(recording_text.bass_precision_description))
             .child(bass_row)
             .child(pre_row)
             .child(post_row)
@@ -1225,6 +1239,9 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let translations = self.state.read(cx).app.ui_state.translations.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            self.state.read(cx).app.ui_state.language,
+        );
         // Extract all needed data upfront, then release the borrow
         let (theme, speaker_data, is_custom) = {
             let state = self.state.read(cx);
@@ -1398,7 +1415,7 @@ impl PlayerView {
                         .align(StackAlign::Center)
                         .child(div().w(px(LABEL_WIDTH))) // intentional: indent spacer matches header
                         .child(
-                            Button::new("custom_add_speaker", "+ Add Speaker")
+                            Button::new("custom_add_speaker", recording_text.add_speaker)
                                 .variant(ButtonVariant::Ghost)
                                 .size(ButtonSize::Xs)
                                 .theme(theme_clone.to_button_theme())
@@ -1423,7 +1440,7 @@ impl PlayerView {
                                 }),
                         )
                         .child(
-                            Button::new("custom_remove_speaker", "- Remove Speaker")
+                            Button::new("custom_remove_speaker", recording_text.remove_speaker)
                                 .variant(ButtonVariant::Ghost)
                                 .size(ButtonSize::Xs)
                                 .theme(theme.clone().to_button_theme())
@@ -1461,6 +1478,9 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            state.app.ui_state.language,
+        );
         let is_open = state
             .app
             .measurement_state
@@ -1470,8 +1490,8 @@ impl PlayerView {
         let view = cx.weak_entity();
 
         let options = vec![
-            SelectOption::new("single", "Single"),
-            SelectOption::new("multi", "Multi"),
+            SelectOption::new("single", recording_text.single),
+            SelectOption::new("multi", recording_text.multi),
         ];
 
         let selected = if is_multi { "multi" } else { "single" };
@@ -1557,6 +1577,9 @@ impl PlayerView {
     ) -> impl IntoElement {
         let view = cx.weak_entity();
         let theme = theme.clone();
+        let recording_text = crate::app::i18n::RecordingWorkflowTranslations::for_language(
+            self.state.read(cx).app.ui_state.language,
+        );
 
         // Fixed widths matching the speaker row layout
         const LABEL_WIDTH: f32 = 80.0;
@@ -1625,7 +1648,7 @@ impl PlayerView {
                                         "remove_ch_{}_{}",
                                         speaker_idx, ch_idx
                                     )),
-                                    "x",
+                                    "\u{2715}",
                                 )
                                 .variant(ButtonVariant::Ghost)
                                 .size(ButtonSize::Xs)
@@ -1677,7 +1700,7 @@ impl PlayerView {
                     .child(
                         Button::new(
                             SharedString::from(format!("add_ch_{}", speaker_idx)),
-                            "+ Add",
+                            recording_text.add,
                         )
                         .variant(ButtonVariant::Ghost)
                         .size(ButtonSize::Xs)
@@ -2133,6 +2156,7 @@ impl PlayerView {
     /// Render calibration data as a frequency response graph with multiple channel curves
     pub(super) fn render_calibration_graph_multi(
         entries: &[(usize, CalibrationData)],
+        text: RecordingTranslations,
         theme: &crate::theme::Theme,
         d: &Ds,
     ) -> impl IntoElement {
@@ -2217,12 +2241,7 @@ impl PlayerView {
                     .items_center()
                     .justify_center()
                     .child(
-                        // intentional: render_calibration_graph_multi is a pure
-                        // function that doesn't take a `translations` handle —
-                        // restore the English literal to keep the static
-                        // signature compatible. Future i18n pass should thread
-                        // a `Translations` parameter through if needed.
-                        Text::new("Unable to render calibration graph").color(theme.text_secondary),
+                        Text::new(text.calibration_graph_unavailable).color(theme.text_secondary),
                     )
                     .into_any_element(),
             })

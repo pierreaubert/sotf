@@ -1,14 +1,6 @@
-use super::consts::GUIDE_HEADPHONE_EQ;
-use super::consts::GUIDE_LIBRARY;
-use super::consts::GUIDE_PLUGIN_GRAPH;
-use super::consts::GUIDE_QUEUE;
-use super::consts::GUIDE_RECORDING;
-use super::consts::GUIDE_ROOM_EQ;
-use super::consts::GUIDE_SETTINGS;
-use super::consts::GUIDE_SPECTRUM;
-use super::consts::GUIDE_SPINORAMA;
-use super::consts::GUIDE_STUDIO;
 use super::types::GuideSection;
+use crate::app::i18n::DialogTranslations;
+use crate::i18n::Language;
 
 pub(super) struct ScreenGuide {
     pub(super) title: &'static str,
@@ -17,26 +9,12 @@ pub(super) struct ScreenGuide {
 }
 
 impl ScreenGuide {
-    pub(super) fn for_screen(screen: crate::app::Screen) -> &'static ScreenGuide {
-        match screen {
-            crate::app::Screen::Home => &GUIDE_LIBRARY,
-            crate::app::Screen::HomeShelf => &GUIDE_LIBRARY,
-            crate::app::Screen::NowPlaying => &GUIDE_QUEUE,
-            crate::app::Screen::Library => &GUIDE_LIBRARY,
-            crate::app::Screen::Streams => &GUIDE_LIBRARY,
-            crate::app::Screen::Queue => &GUIDE_QUEUE,
-            crate::app::Screen::StudioHub => &GUIDE_STUDIO,
-            crate::app::Screen::Studio => &GUIDE_STUDIO,
-            crate::app::Screen::PluginGraph => &GUIDE_PLUGIN_GRAPH,
-            crate::app::Screen::Spectrum => &GUIDE_SPECTRUM,
-            crate::app::Screen::Settings => &GUIDE_SETTINGS,
-            crate::app::Screen::SettingsDetail => &GUIDE_SETTINGS,
-            crate::app::Screen::Recording => &GUIDE_RECORDING,
-            crate::app::Screen::RoomEq => &GUIDE_ROOM_EQ,
-            crate::app::Screen::HeadphoneEq => &GUIDE_HEADPHONE_EQ,
-            crate::app::Screen::Spinorama => &GUIDE_SPINORAMA,
-            crate::app::Screen::Playlists => &GUIDE_LIBRARY,
-            crate::app::Screen::EqCurve => &GUIDE_STUDIO,
+    pub(super) fn for_screen(screen: crate::app::Screen, language: Language) -> Self {
+        let text = DialogTranslations::for_language(language);
+        Self {
+            title: text.screen_name(screen),
+            overview: text.screen_overview(screen),
+            sections: &[],
         }
     }
 }
