@@ -10,6 +10,23 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.state.update(cx, |state, _cx| {
+            let leaving_ear_training = state.app.ui_state.current_screen == Screen::ListeningTest
+                && screen != Screen::ListeningTest;
+            if leaving_ear_training {
+                use crate::components::plugins::editing::PluginEditingManager;
+                let owned_node = state
+                    .app
+                    .plugin_state
+                    .listening_test_state
+                    .eq_audition_node_id
+                    .take();
+                if let Some(index) = owned_node
+                    .and_then(|node_id| state.app.plugin_state.graph.linear_index_of_node(node_id))
+                {
+                    state.app.remove_plugin(index);
+                }
+                state.app.plugin_state.listening_test_state.eq_filtered = false;
+            }
             state.app.set_screen(screen, trigger);
         });
         cx.notify();

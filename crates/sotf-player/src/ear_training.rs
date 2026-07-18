@@ -6,6 +6,7 @@
 
 use math_audio_iir_fir::BiquadFilterType;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 use crate::EQFilter;
 
@@ -13,6 +14,99 @@ const MIN_BANDS: usize = 2;
 const MAX_BANDS: usize = 25;
 const MIN_FREQUENCY_HZ: f64 = 20.0;
 const MAX_FREQUENCY_HZ: f64 = 20_000.0;
+const GAIN_CHOICES_DB: [f64; 4] = [3.0, 6.0, 9.0, 12.0];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EqTrainingExercise {
+    #[default]
+    BandIdentification,
+    BoostCutIdentification,
+    GainIdentification,
+}
+
+impl EqTrainingExercise {
+    pub const ALL: [Self; 3] = [
+        Self::BandIdentification,
+        Self::BoostCutIdentification,
+        Self::GainIdentification,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::BandIdentification => "Frequency band",
+            Self::BoostCutIdentification => "Boost or cut",
+            Self::GainIdentification => "Gain amount",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EarTrainingCourse {
+    #[default]
+    Foundations,
+    FrequencyRegions,
+    Cuts,
+    FineBands,
+    Mastery,
+}
+
+impl EarTrainingCourse {
+    pub const ALL: [Self; 5] = [
+        Self::Foundations,
+        Self::FrequencyRegions,
+        Self::Cuts,
+        Self::FineBands,
+        Self::Mastery,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Foundations => "Foundations",
+            Self::FrequencyRegions => "Frequency regions",
+            Self::Cuts => "Hearing cuts",
+            Self::FineBands => "Fine bands",
+            Self::Mastery => "Mastery",
+        }
+    }
+
+    pub fn config(self) -> EqTrainingConfig {
+        match self {
+            Self::Foundations => EqTrainingConfig {
+                band_count: 3,
+                gain_db: 12.0,
+                trial_count: 10,
+                ..Default::default()
+            },
+            Self::FrequencyRegions => EqTrainingConfig {
+                band_count: 5,
+                gain_db: 9.0,
+                trial_count: 15,
+                ..Default::default()
+            },
+            Self::Cuts => EqTrainingConfig {
+                band_count: 5,
+                gain_db: 9.0,
+                change_mode: EqChangeMode::Cut,
+                trial_count: 15,
+                ..Default::default()
+            },
+            Self::FineBands => EqTrainingConfig {
+                band_count: 10,
+                gain_db: 6.0,
+                trial_count: 20,
+                ..Default::default()
+            },
+            Self::Mastery => EqTrainingConfig {
+                band_count: 15,
+                gain_db: 3.0,
+                trial_count: 25,
+                ..Default::default()
+            },
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -42,6 +136,8 @@ pub enum EqChange {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EqTrainingConfig {
+    #[serde(default)]
+    pub exercise: EqTrainingExercise,
     pub band_count: usize,
     pub min_frequency_hz: f64,
     pub max_frequency_hz: f64,
@@ -55,6 +151,7 @@ pub struct EqTrainingConfig {
 impl Default for EqTrainingConfig {
     fn default() -> Self {
         Self {
+            exercise: EqTrainingExercise::BandIdentification,
             band_count: 10,
             min_frequency_hz: 31.5,
             max_frequency_hz: 16_000.0,
@@ -133,6 +230,31 @@ impl EqTrainingQuestion {
         serde_json::json!({ "filters": [self.filter()] })
     }
 
+    pub fn correct_answer(&self, exercise: EqTrainingExercise) -> usize {
+        match exercise {
+            EqTrainingExercise::BandIdentification => self.band_index,
+            EqTrainingExercise::BoostCutIdentification => usize::from(self.change == EqChange::Cut),
+            EqTrainingExercise::GainIdentification => GAIN_CHOICES_DB
+                .iter()
+                .position(|gain| (*gain - self.gain_db).abs() < f64::EPSILON)
+                .unwrap_or(0),
+        }
+    }
+
+    pub fn answer_labels(&self, exercise: EqTrainingExercise, bands: &[f64]) -> Vec<String> {
+        match exercise {
+            EqTrainingExercise::BandIdentification => bands
+                .iter()
+                .map(|frequency| format!("{frequency:.0} Hz"))
+                .collect(),
+            EqTrainingExercise::BoostCutIdentification => vec!["Boost".into(), "Cut".into()],
+            EqTrainingExercise::GainIdentification => GAIN_CHOICES_DB
+                .iter()
+                .map(|gain| format!("{gain:.0} dB"))
+                .collect(),
+        }
+    }
+
     /// Lightweight log-frequency preview used before an answer is revealed.
     /// Audio always uses the actual biquad returned by [`Self::filter`].
     pub fn preview_curve(&self, points: usize) -> Vec<(f64, f64)> {
@@ -202,7 +324,12 @@ impl EqTrainingSession {
         &mut self,
         selected_band_index: usize,
     ) -> Result<&EqTrainingResult, EqTrainingError> {
-        if selected_band_index >= self.band_frequencies.len() {
+        let answer_count = match self.config.exercise {
+            EqTrainingExercise::BandIdentification => self.band_frequencies.len(),
+            EqTrainingExercise::BoostCutIdentification => 2,
+            EqTrainingExercise::GainIdentification => GAIN_CHOICES_DB.len(),
+        };
+        if selected_band_index >= answer_count {
             return Err(EqTrainingError::InvalidAnswer);
         }
         let question = self
@@ -213,7 +340,7 @@ impl EqTrainingSession {
             return Err(EqTrainingError::QuestionAlreadyAnswered);
         }
         self.trials.push(EqTrainingResult {
-            correct: selected_band_index == question.band_index,
+            correct: selected_band_index == question.correct_answer(self.config.exercise),
             question,
             selected_band_index,
         });
@@ -297,14 +424,166 @@ impl EqTrainingSession {
                 }
             }
         };
+        let gain_db = if self.config.exercise == EqTrainingExercise::GainIdentification {
+            GAIN_CHOICES_DB[(splitmix64(self.config.seed ^ (number as u64).wrapping_mul(0x517c))
+                as usize)
+                % GAIN_CHOICES_DB.len()]
+        } else {
+            self.config.gain_db
+        };
         EqTrainingQuestion {
             number,
             band_index,
             center_frequency_hz: self.band_frequencies[band_index],
             change,
-            gain_db: self.config.gain_db,
+            gain_db,
             q: self.config.q,
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EarTrainingSessionSummary {
+    pub completed_at_unix_secs: u64,
+    pub course: Option<EarTrainingCourse>,
+    pub exercise: EqTrainingExercise,
+    pub accuracy: f64,
+    pub correct: usize,
+    pub attempts: usize,
+    pub band_frequencies: Vec<f64>,
+    pub band_stats: Vec<(usize, usize)>,
+}
+
+impl EarTrainingSessionSummary {
+    pub fn from_session(session: &EqTrainingSession, course: Option<EarTrainingCourse>) -> Self {
+        let completed_at_unix_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Self {
+            completed_at_unix_secs,
+            course,
+            exercise: session.config.exercise,
+            accuracy: session.accuracy(),
+            correct: session.correct_count(),
+            attempts: session.trials.len(),
+            band_frequencies: session.band_frequencies.clone(),
+            band_stats: session
+                .band_stats()
+                .into_iter()
+                .map(|stats| (stats.attempts, stats.correct))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct EarTrainingProgress {
+    #[serde(default)]
+    pub sessions: Vec<EarTrainingSessionSummary>,
+}
+
+impl EarTrainingProgress {
+    pub fn record(&mut self, session: &EqTrainingSession, course: Option<EarTrainingCourse>) {
+        self.sessions
+            .push(EarTrainingSessionSummary::from_session(session, course));
+    }
+
+    pub fn total_attempts(&self) -> usize {
+        self.sessions.iter().map(|session| session.attempts).sum()
+    }
+
+    pub fn accuracy(&self) -> f64 {
+        let attempts = self.total_attempts();
+        if attempts == 0 {
+            0.0
+        } else {
+            self.sessions
+                .iter()
+                .map(|session| session.correct)
+                .sum::<usize>() as f64
+                / attempts as f64
+        }
+    }
+
+    pub fn streak(&self) -> usize {
+        self.sessions
+            .iter()
+            .rev()
+            .take_while(|session| session.accuracy >= 0.7)
+            .count()
+    }
+
+    pub fn weakest_frequency_hz(&self) -> Option<f64> {
+        let mut aggregate: Vec<(f64, usize, usize)> = Vec::new();
+        for session in &self.sessions {
+            for (index, &(attempts, correct)) in session.band_stats.iter().enumerate() {
+                let Some(&frequency) = session.band_frequencies.get(index) else {
+                    continue;
+                };
+                if let Some(entry) = aggregate
+                    .iter_mut()
+                    .find(|entry| (entry.0 - frequency).abs() < 0.5)
+                {
+                    entry.1 += attempts;
+                    entry.2 += correct;
+                } else {
+                    aggregate.push((frequency, attempts, correct));
+                }
+            }
+        }
+        aggregate
+            .into_iter()
+            .filter(|(_, attempts, _)| *attempts > 0)
+            .min_by(|left, right| {
+                (left.2 as f64 / left.1 as f64).total_cmp(&(right.2 as f64 / right.1 as f64))
+            })
+            .map(|entry| entry.0)
+    }
+
+    pub fn recommendation(&self) -> String {
+        if self.sessions.is_empty() {
+            return "Start with Foundations at 12 dB.".into();
+        }
+        self.weakest_frequency_hz().map_or_else(
+            || "Try a boost/cut identification session.".into(),
+            |frequency| format!("Focus around {frequency:.0} Hz, then reduce gain by 3 dB."),
+        )
+    }
+
+    pub fn adaptive_config(&self) -> EqTrainingConfig {
+        let mut config = EqTrainingConfig::default();
+        if self.accuracy() >= 0.85 {
+            config.band_count = 15;
+            config.gain_db = 3.0;
+        } else if self.accuracy() >= 0.7 {
+            config.band_count = 10;
+            config.gain_db = 6.0;
+        } else {
+            config.band_count = 5;
+            config.gain_db = 9.0;
+        }
+        config
+    }
+
+    pub fn load(path: &Path) -> std::io::Result<Self> {
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let bytes = std::fs::read(path)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+    }
+
+    pub fn save_atomic(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let temporary = path.with_extension("json.tmp");
+        let bytes = serde_json::to_vec_pretty(self)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+        std::fs::write(&temporary, bytes)?;
+        std::fs::rename(temporary, path)
     }
 }
 
@@ -458,5 +737,56 @@ mod tests {
                 .all(|(left, right)| (left - right).abs() < 1.0e-9)
         );
         assert!(restored.current_is_answered());
+    }
+
+    #[test]
+    fn all_exercises_have_stable_answer_contracts() {
+        for exercise in EqTrainingExercise::ALL {
+            let mut session = EqTrainingSession::new(EqTrainingConfig {
+                exercise,
+                trial_count: 1,
+                ..Default::default()
+            })
+            .unwrap();
+            let question = session.start().unwrap().clone();
+            let labels = question.answer_labels(exercise, &session.band_frequencies);
+            let answer = question.correct_answer(exercise);
+            assert!(answer < labels.len());
+            assert!(session.submit_answer(answer).unwrap().correct);
+        }
+    }
+
+    #[test]
+    fn courses_progress_and_adaptation_form_a_learning_path() {
+        assert_eq!(EarTrainingCourse::Foundations.config().band_count, 3);
+        assert_eq!(EarTrainingCourse::Mastery.config().gain_db, 3.0);
+        let mut session = EqTrainingSession::new(EqTrainingConfig {
+            trial_count: 1,
+            ..Default::default()
+        })
+        .unwrap();
+        let answer = session.start().unwrap().band_index;
+        session.submit_answer(answer).unwrap();
+        session.advance().unwrap();
+        let mut progress = EarTrainingProgress::default();
+        progress.record(&session, Some(EarTrainingCourse::Foundations));
+        assert_eq!(progress.total_attempts(), 1);
+        assert_eq!(progress.streak(), 1);
+        assert_eq!(progress.adaptive_config().gain_db, 3.0);
+        assert!(progress.recommendation().contains("Hz"));
+    }
+
+    #[test]
+    fn progress_persistence_is_atomic_and_missing_file_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("progress.json");
+        assert_eq!(
+            EarTrainingProgress::load(&path).unwrap(),
+            EarTrainingProgress::default()
+        );
+        let progress = EarTrainingProgress::default();
+        progress.save_atomic(&path).unwrap();
+        assert_eq!(EarTrainingProgress::load(&path).unwrap(), progress);
+        assert!(!path.with_extension("json.tmp").exists());
     }
 }

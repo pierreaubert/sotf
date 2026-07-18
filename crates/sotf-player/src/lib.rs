@@ -148,7 +148,8 @@ pub use diagnostics::{
     diagnose_no_audio, redact_string, redact_value,
 };
 pub use ear_training::{
-    EqBandStats, EqChange, EqChangeMode, EqTrainingConfig, EqTrainingError, EqTrainingQuestion,
+    EarTrainingCourse, EarTrainingProgress, EarTrainingSessionSummary, EqBandStats, EqChange,
+    EqChangeMode, EqTrainingConfig, EqTrainingError, EqTrainingExercise, EqTrainingQuestion,
     EqTrainingResult, EqTrainingSession,
 };
 

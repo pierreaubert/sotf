@@ -142,6 +142,11 @@ pub fn get_gpui_state_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("app_state_gpui.json"))
 }
 
+/// Get the durable EQ ear-training progress path shared by frontends.
+pub fn get_ear_training_progress_path() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| dir.join("ear-training-progress.json"))
+}
+
 /// Get the path to the TUI log file
 pub fn get_tui_log_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("sotf_tui_player.log"))

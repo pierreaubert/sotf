@@ -188,6 +188,16 @@ impl PlayerView {
                         let (playback_state, was_playing) =
                             Self::sync_playback_data(state, frame_count, compressor_cache);
 
+                        let ear_loop = &state.app.plugin_state.listening_test_state;
+                        if state.app.ui_state.current_screen == Screen::ListeningTest
+                            && ear_loop.eq_loop_enabled
+                            && let Some((start, end)) = ear_loop.eq_loop_range
+                            && state.app.playback.position_secs >= end
+                            && let Err(error) = state.player.seek(start)
+                        {
+                            log::warn!("Failed to seek ear-training loop: {error}");
+                        }
+
                         if let Some(update_type) = state
                             .app
                             .plugin_state

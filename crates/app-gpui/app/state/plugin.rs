@@ -10,8 +10,8 @@ use crate::components::plugins::theme::RackThemeState;
 use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
 use sotf_audio_player::{
-    ConnectionDrag, EqTrainingConfig, EqTrainingSession, GraphNodeId, GraphSelection, NodeDrag,
-    PluginController, PluginSettings,
+    ConnectionDrag, EarTrainingCourse, EarTrainingProgress, EqTrainingConfig, EqTrainingSession,
+    GraphNodeId, GraphSelection, NodeDrag, PluginController, PluginSettings,
 };
 use sotf_audio_player_midi::MidiMappingEngine;
 use std::collections::HashMap;
@@ -246,6 +246,14 @@ pub struct ListeningTestState {
     pub eq_session: Option<EqTrainingSession>,
     pub eq_selected_band: usize,
     pub eq_filtered: bool,
+    pub eq_progress: EarTrainingProgress,
+    pub eq_active_course: Option<EarTrainingCourse>,
+    pub eq_adaptive: bool,
+    pub eq_audition_node_id: Option<GraphNodeId>,
+    pub eq_sources: Vec<std::path::PathBuf>,
+    pub eq_source_index: usize,
+    pub eq_loop_enabled: bool,
+    pub eq_loop_range: Option<(f64, f64)>,
     pub path_a: Option<sotf_audio_player::controllers::ab_compare_path::PathConfig>,
     pub path_b: Option<sotf_audio_player::controllers::ab_compare_path::PathConfig>,
     pub path_a_label: String,
@@ -267,12 +275,23 @@ pub struct ListeningTestState {
 
 impl Default for ListeningTestState {
     fn default() -> Self {
+        let eq_progress = sotf_audio_player::config::get_ear_training_progress_path()
+            .and_then(|path| EarTrainingProgress::load(&path).ok())
+            .unwrap_or_default();
         Self {
             surface: EarTrainingSurface::EqBands,
             eq_config: EqTrainingConfig::default(),
             eq_session: None,
             eq_selected_band: 0,
             eq_filtered: false,
+            eq_progress,
+            eq_active_course: None,
+            eq_adaptive: false,
+            eq_audition_node_id: None,
+            eq_sources: Vec::new(),
+            eq_source_index: 0,
+            eq_loop_enabled: false,
+            eq_loop_range: None,
             path_a: None,
             path_b: None,
             path_a_label: "Path A".into(),
@@ -299,6 +318,8 @@ impl Default for ListeningTestState {
 pub enum EarTrainingSurface {
     #[default]
     EqBands,
+    Courses,
+    Progress,
     BlindComparison,
 }
 
