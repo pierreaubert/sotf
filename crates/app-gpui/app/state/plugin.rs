@@ -10,7 +10,8 @@ use crate::components::plugins::theme::RackThemeState;
 use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
 use sotf_audio_player::{
-    ConnectionDrag, GraphNodeId, GraphSelection, NodeDrag, PluginController, PluginSettings,
+    ConnectionDrag, EqTrainingConfig, EqTrainingSession, GraphNodeId, GraphSelection, NodeDrag,
+    PluginController, PluginSettings,
 };
 use sotf_audio_player_midi::MidiMappingEngine;
 use std::collections::HashMap;
@@ -240,6 +241,11 @@ pub struct AbCompareState {
 
 #[derive(Debug, Clone)]
 pub struct ListeningTestState {
+    pub surface: EarTrainingSurface,
+    pub eq_config: EqTrainingConfig,
+    pub eq_session: Option<EqTrainingSession>,
+    pub eq_selected_band: usize,
+    pub eq_filtered: bool,
     pub path_a: Option<sotf_audio_player::controllers::ab_compare_path::PathConfig>,
     pub path_b: Option<sotf_audio_player::controllers::ab_compare_path::PathConfig>,
     pub path_a_label: String,
@@ -262,6 +268,11 @@ pub struct ListeningTestState {
 impl Default for ListeningTestState {
     fn default() -> Self {
         Self {
+            surface: EarTrainingSurface::EqBands,
+            eq_config: EqTrainingConfig::default(),
+            eq_session: None,
+            eq_selected_band: 0,
+            eq_filtered: false,
             path_a: None,
             path_b: None,
             path_a_label: "Path A".into(),
@@ -282,6 +293,13 @@ impl Default for ListeningTestState {
             graph_add_menu_target: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EarTrainingSurface {
+    #[default]
+    EqBands,
+    BlindComparison,
 }
 
 /// GPUI-specific state for the plugin UI view mode and open pickers/overlays.

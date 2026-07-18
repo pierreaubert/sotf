@@ -373,6 +373,17 @@ fn listening_test_workflow_is_localized_in_every_supported_language() {
             let translations = Translations::for_language(*language);
             let listening = &translations.listening_test;
             for value in [
+                listening.eq.mode_eq,
+                listening.eq.mode_blind,
+                listening.eq.title,
+                listening.eq.subtitle,
+                listening.eq.session_setup,
+                listening.eq.question,
+                listening.eq.original,
+                listening.eq.filtered,
+                listening.eq.submit,
+                listening.eq.shortcuts,
+                listening.eq.add_ab_plugin,
                 listening.setup.title,
                 listening.setup.subtitle,
                 listening.setup.measure_prepare,
@@ -455,6 +466,15 @@ fn listening_test_keyboard_workflow_is_registry_backed() {
     let screen = app_source("components/listening_test.rs");
 
     for action in [
+        "EarTrainingShowEqBands",
+        "EarTrainingShowBlindComparison",
+        "EarTrainingStart",
+        "EarTrainingPlayOriginal",
+        "EarTrainingPlayFiltered",
+        "EarTrainingSelectPreviousBand",
+        "EarTrainingSelectNextBand",
+        "EarTrainingSubmit",
+        "EarTrainingNextQuestion",
         "ListeningCapturePathA",
         "ListeningCapturePathB",
         "ListeningPrepare",
@@ -476,6 +496,10 @@ fn listening_test_keyboard_workflow_is_registry_backed() {
     assert!(render.contains("\"PlayerView ListeningTest\""));
     assert!(render.contains("Self::listening_capture_path_a"));
     assert!(render.contains("Self::listening_commit_answer_2"));
+    assert!(render.contains("Self::ear_training_play_original"));
+    assert!(render.contains("Self::ear_training_next_question"));
+    assert!(screen.contains("render_eq_training_workbench"));
+    assert!(screen.contains("activate_eq_training_path"));
     assert!(screen.contains("fn listening_cue_for_position"));
     assert!(screen.contains("fn listening_answer_for_position"));
 }

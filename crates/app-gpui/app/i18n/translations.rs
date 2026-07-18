@@ -1975,7 +1975,7 @@ impl DialogTranslations {
             (Language::French, Screen::HeadphoneEq) => "Égalisation casque",
             (Language::French, Screen::Spinorama) => "Spinorama",
             (Language::French, Screen::PluginGraph) => "Graphe des modules",
-            (Language::French, Screen::ListeningTest) => "Test d’écoute",
+            (Language::French, Screen::ListeningTest) => "Entraînement auditif",
             (Language::German, Screen::Home | Screen::HomeShelf) => "Startseite",
             (Language::German, Screen::NowPlaying) => "Aktuelle Wiedergabe",
             (Language::German, Screen::Library) => "Mediathek",
@@ -1991,7 +1991,7 @@ impl DialogTranslations {
             (Language::German, Screen::HeadphoneEq) => "Kopfhörer-EQ",
             (Language::German, Screen::Spinorama) => "Spinorama",
             (Language::German, Screen::PluginGraph) => "Plugin-Graph",
-            (Language::German, Screen::ListeningTest) => "Hörtest",
+            (Language::German, Screen::ListeningTest) => "Gehörtraining",
             (Language::Spanish, Screen::Home | Screen::HomeShelf) => "Inicio",
             (Language::Spanish, Screen::NowPlaying) => "Reproduciendo",
             (Language::Spanish, Screen::Library) => "Biblioteca",
@@ -2007,7 +2007,7 @@ impl DialogTranslations {
             (Language::Spanish, Screen::HeadphoneEq) => "EQ de auriculares",
             (Language::Spanish, Screen::Spinorama) => "Spinorama",
             (Language::Spanish, Screen::PluginGraph) => "Grafo de complementos",
-            (Language::Spanish, Screen::ListeningTest) => "Prueba de escucha",
+            (Language::Spanish, Screen::ListeningTest) => "Entrenamiento auditivo",
             (Language::English, Screen::Home | Screen::HomeShelf) => "Home",
             (Language::English, Screen::NowPlaying) => "Now Playing",
             (Language::English, Screen::Library) => "Library",
@@ -2023,7 +2023,7 @@ impl DialogTranslations {
             (Language::English, Screen::HeadphoneEq) => "Headphone EQ",
             (Language::English, Screen::Spinorama) => "Spinorama",
             (Language::English, Screen::PluginGraph) => "Plugin Graph",
-            (Language::English, Screen::ListeningTest) => "Listening Test",
+            (Language::English, Screen::ListeningTest) => "Ear Training",
         }
     }
 
@@ -2077,7 +2077,7 @@ impl DialogTranslations {
                 "Modifiez les nœuds, ports et connexions de la chaîne sans pointeur."
             }
             (Language::French, Screen::ListeningTest) => {
-                "Comparez deux chemins DSP avec appariement de niveau et essais à l’aveugle."
+                "Entraînez l’identification des bandes EQ ou comparez deux chemins DSP à l’aveugle."
             }
             (Language::German, Screen::Home | Screen::HomeShelf) => {
                 "Durchsuchen Sie Alben und öffnen Sie ein Regal, um die gesamte Auswahl zu sehen."
@@ -2125,7 +2125,7 @@ impl DialogTranslations {
                 "Bearbeiten Sie Knoten, Ports und Verbindungen der Signalkette ohne Zeiger."
             }
             (Language::German, Screen::ListeningTest) => {
-                "Vergleichen Sie zwei DSP-Pfade mit Pegelabgleich und Blindversuchen."
+                "Trainieren Sie EQ-Bänder oder vergleichen Sie zwei DSP-Pfade im Blindversuch."
             }
             (Language::Spanish, Screen::Home | Screen::HomeShelf) => {
                 "Explore álbumes y abra un estante para ver toda su selección."
@@ -2171,7 +2171,7 @@ impl DialogTranslations {
                 "Edite nodos, puertos y conexiones de la cadena sin puntero."
             }
             (Language::Spanish, Screen::ListeningTest) => {
-                "Compare dos rutas DSP con ajuste de nivel y pruebas a ciegas."
+                "Entrene bandas EQ o compare dos rutas DSP mediante pruebas a ciegas."
             }
             (Language::English, Screen::Home | Screen::HomeShelf) => {
                 "Browse albums and open a shelf to see its complete selection."
@@ -2215,7 +2215,7 @@ impl DialogTranslations {
                 "Edit chain nodes, ports, and connections without a pointer."
             }
             (Language::English, Screen::ListeningTest) => {
-                "Compare two DSP paths with level matching and blind trials."
+                "Train EQ-band recognition or compare two DSP paths with level-matched blind trials."
             }
         }
     }
@@ -5802,9 +5802,44 @@ impl PluginGraphTranslations {
 
 #[derive(Debug, Clone)]
 pub struct ListeningTestTranslations {
+    pub eq: EqTrainingTranslations,
     pub setup: ListeningTestSetupTranslations,
     pub trial: ListeningTestTrialTranslations,
     pub status: ListeningTestStatusTranslations,
+}
+
+#[derive(Debug, Clone)]
+pub struct EqTrainingTranslations {
+    pub mode_eq: &'static str,
+    pub mode_blind: &'static str,
+    pub suite_subtitle: &'static str,
+    pub title: &'static str,
+    pub subtitle: &'static str,
+    pub session_setup: &'static str,
+    pub source: &'static str,
+    pub no_track: &'static str,
+    pub bands: &'static str,
+    pub change: &'static str,
+    pub gain: &'static str,
+    pub trials: &'static str,
+    pub start: &'static str,
+    pub restart: &'static str,
+    pub requires_ab: &'static str,
+    pub question: &'static str,
+    pub complete: &'static str,
+    pub start_prompt: &'static str,
+    pub original: &'static str,
+    pub filtered: &'static str,
+    pub submit: &'static str,
+    pub next: &'static str,
+    pub shortcuts: &'static str,
+    pub configure_start: &'static str,
+    pub session_started: &'static str,
+    pub add_ab_plugin: &'static str,
+    pub filtered_active: &'static str,
+    pub original_active: &'static str,
+    pub correct: &'static str,
+    pub answer: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -6830,11 +6865,43 @@ impl Translations {
             screen_tools: "Tools",
             screen_recording: "Recording",
             screen_room_eq: "Room EQ",
-            screen_listening_test: "Listening Test",
+            screen_listening_test: "Ear Training",
             screen_headphone_eq: "Headphone EQ",
             screen_spinorama: "Spinorama EQ",
             screen_settings: "Settings",
             listening_test: ListeningTestTranslations {
+                eq: EqTrainingTranslations {
+                    mode_eq: "EQ Band Trainer",
+                    mode_blind: "Blind A/B + ABX",
+                    suite_subtitle: "Critical-listening practice",
+                    title: "EQ Band Trainer",
+                    subtitle: "Compare the original and filtered signal, then identify the changed band.",
+                    session_setup: "Session setup",
+                    source: "Source",
+                    no_track: "No track selected",
+                    bands: "Bands",
+                    change: "Change",
+                    gain: "Gain",
+                    trials: "Trials",
+                    start: "Start session",
+                    restart: "Restart session",
+                    requires_ab: "Playback comparison uses an A/B Compare plugin in the active rack.",
+                    question: "Which band was changed?",
+                    complete: "Session complete",
+                    start_prompt: "Start a session to begin",
+                    original: "Original",
+                    filtered: "Filtered",
+                    submit: "Submit",
+                    next: "Next",
+                    shortcuts: "Space Play/Pause · 1/2 Compare · ←/→ Select · Enter Submit · N Next",
+                    configure_start: "Configure a session, then press Start.",
+                    session_started: "Session started. Compare the two cues.",
+                    add_ab_plugin: "Add an A/B Compare plugin to the active rack before training.",
+                    filtered_active: "Filtered cue active.",
+                    original_active: "Original cue active.",
+                    correct: "Correct",
+                    answer: "Answer",
+                },
                 setup: ListeningTestSetupTranslations {
                     title: "Level-matched Listening Test",
                     subtitle: "Compare two racks or routed graphs with concealed, repeatable assignments.",
@@ -7270,11 +7337,43 @@ impl Translations {
             screen_tools: "Outils",
             screen_recording: "Enregistrement",
             screen_room_eq: "EQ Pièce",
-            screen_listening_test: "Test d’écoute",
+            screen_listening_test: "Entraînement auditif",
             screen_headphone_eq: "EQ Casque",
             screen_spinorama: "Spinorama EQ",
             screen_settings: "Paramètres",
             listening_test: ListeningTestTranslations {
+                eq: EqTrainingTranslations {
+                    mode_eq: "Entraînement aux bandes EQ",
+                    mode_blind: "A/B aveugle + ABX",
+                    suite_subtitle: "Pratique de l’écoute critique",
+                    title: "Entraînement aux bandes EQ",
+                    subtitle: "Comparez le signal original et filtré, puis identifiez la bande modifiée.",
+                    session_setup: "Configuration de la session",
+                    source: "Source",
+                    no_track: "Aucune piste sélectionnée",
+                    bands: "Bandes",
+                    change: "Modification",
+                    gain: "Gain",
+                    trials: "Essais",
+                    start: "Démarrer la session",
+                    restart: "Redémarrer la session",
+                    requires_ab: "La comparaison utilise un plugin Comparaison A/B dans le rack actif.",
+                    question: "Quelle bande a été modifiée ?",
+                    complete: "Session terminée",
+                    start_prompt: "Démarrez une session pour commencer",
+                    original: "Original",
+                    filtered: "Filtré",
+                    submit: "Valider",
+                    next: "Suivant",
+                    shortcuts: "Espace Lecture/Pause · 1/2 Comparer · ←/→ Choisir · Entrée Valider · N Suivant",
+                    configure_start: "Configurez une session, puis appuyez sur Démarrer.",
+                    session_started: "Session démarrée. Comparez les deux signaux.",
+                    add_ab_plugin: "Ajoutez un plugin Comparaison A/B au rack actif avant l’entraînement.",
+                    filtered_active: "Signal filtré actif.",
+                    original_active: "Signal original actif.",
+                    correct: "Correct",
+                    answer: "Réponse",
+                },
                 setup: ListeningTestSetupTranslations {
                     title: "Test d’écoute avec niveaux égalisés",
                     subtitle: "Comparez deux racks ou graphes routés avec des affectations masquées et reproductibles.",
@@ -7710,11 +7809,43 @@ impl Translations {
             screen_tools: "Werkzeuge",
             screen_recording: "Aufnahme",
             screen_room_eq: "Raum-EQ",
-            screen_listening_test: "Hörtest",
+            screen_listening_test: "Gehörtraining",
             screen_headphone_eq: "Kopfhörer-EQ",
             screen_spinorama: "Spinorama EQ",
             screen_settings: "Einstellungen",
             listening_test: ListeningTestTranslations {
+                eq: EqTrainingTranslations {
+                    mode_eq: "EQ-Bandtraining",
+                    mode_blind: "Blindes A/B + ABX",
+                    suite_subtitle: "Training für kritisches Hören",
+                    title: "EQ-Bandtraining",
+                    subtitle: "Vergleichen Sie Original und Filterung und bestimmen Sie das geänderte Band.",
+                    session_setup: "Sitzung einrichten",
+                    source: "Quelle",
+                    no_track: "Kein Titel ausgewählt",
+                    bands: "Bänder",
+                    change: "Änderung",
+                    gain: "Verstärkung",
+                    trials: "Versuche",
+                    start: "Sitzung starten",
+                    restart: "Sitzung neu starten",
+                    requires_ab: "Der Vergleich verwendet ein A/B-Vergleichs-Plugin im aktiven Rack.",
+                    question: "Welches Band wurde geändert?",
+                    complete: "Sitzung abgeschlossen",
+                    start_prompt: "Starten Sie eine Sitzung",
+                    original: "Original",
+                    filtered: "Gefiltert",
+                    submit: "Bestätigen",
+                    next: "Weiter",
+                    shortcuts: "Leertaste Start/Pause · 1/2 Vergleichen · ←/→ Wählen · Eingabe Bestätigen · N Weiter",
+                    configure_start: "Konfigurieren und starten Sie eine Sitzung.",
+                    session_started: "Sitzung gestartet. Vergleichen Sie beide Signale.",
+                    add_ab_plugin: "Fügen Sie vor dem Training ein A/B-Vergleichs-Plugin zum aktiven Rack hinzu.",
+                    filtered_active: "Gefiltertes Signal aktiv.",
+                    original_active: "Originalsignal aktiv.",
+                    correct: "Richtig",
+                    answer: "Antwort",
+                },
                 setup: ListeningTestSetupTranslations {
                     title: "Pegelabgeglichener Hörtest",
                     subtitle: "Vergleichen Sie zwei Racks oder Routing-Graphen mit verdeckten, reproduzierbaren Zuordnungen.",
@@ -8150,11 +8281,43 @@ impl Translations {
             screen_tools: "Herramientas",
             screen_recording: "Grabación",
             screen_room_eq: "EQ de sala",
-            screen_listening_test: "Prueba de escucha",
+            screen_listening_test: "Entrenamiento auditivo",
             screen_headphone_eq: "EQ de auriculares",
             screen_spinorama: "Spinorama EQ",
             screen_settings: "Ajustes",
             listening_test: ListeningTestTranslations {
+                eq: EqTrainingTranslations {
+                    mode_eq: "Entrenador de bandas EQ",
+                    mode_blind: "A/B a ciegas + ABX",
+                    suite_subtitle: "Práctica de escucha crítica",
+                    title: "Entrenador de bandas EQ",
+                    subtitle: "Compare la señal original y filtrada e identifique la banda modificada.",
+                    session_setup: "Configuración de sesión",
+                    source: "Fuente",
+                    no_track: "No hay pista seleccionada",
+                    bands: "Bandas",
+                    change: "Cambio",
+                    gain: "Ganancia",
+                    trials: "Ensayos",
+                    start: "Iniciar sesión",
+                    restart: "Reiniciar sesión",
+                    requires_ab: "La comparación usa un plugin de Comparación A/B en el rack activo.",
+                    question: "¿Qué banda se modificó?",
+                    complete: "Sesión completada",
+                    start_prompt: "Inicie una sesión para comenzar",
+                    original: "Original",
+                    filtered: "Filtrada",
+                    submit: "Confirmar",
+                    next: "Siguiente",
+                    shortcuts: "Espacio Reproducir/Pausa · 1/2 Comparar · ←/→ Elegir · Intro Confirmar · N Siguiente",
+                    configure_start: "Configure una sesión y pulse Iniciar.",
+                    session_started: "Sesión iniciada. Compare las dos señales.",
+                    add_ab_plugin: "Añada un plugin de Comparación A/B al rack activo antes de entrenar.",
+                    filtered_active: "Señal filtrada activa.",
+                    original_active: "Señal original activa.",
+                    correct: "Correcto",
+                    answer: "Respuesta",
+                },
                 setup: ListeningTestSetupTranslations {
                     title: "Prueba auditiva con niveles igualados",
                     subtitle: "Compare dos racks o grafos enrutados con asignaciones ocultas y reproducibles.",

@@ -21,6 +21,7 @@ pub mod database;
 #[cfg(feature = "dev-api")]
 pub mod dev_api_fixtures;
 pub mod diagnostics;
+pub mod ear_training;
 pub mod federation_config;
 pub mod federation_scan;
 pub mod headphone_eq_types;
@@ -145,6 +146,10 @@ pub use diagnostics::{
     AudioDeviceInfo, DiagnosticsBundle, DiagnosticsError, EngineStateSummary, LibraryScanSummary,
     NoAudioReason, PluginGraphSummary, PluginNodeSummary, SystemwideStatus, SystemwideSummary,
     diagnose_no_audio, redact_string, redact_value,
+};
+pub use ear_training::{
+    EqBandStats, EqChange, EqChangeMode, EqTrainingConfig, EqTrainingError, EqTrainingQuestion,
+    EqTrainingResult, EqTrainingSession,
 };
 
 // Re-export controllers

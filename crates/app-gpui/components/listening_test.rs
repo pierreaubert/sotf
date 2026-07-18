@@ -1,14 +1,20 @@
 //! Embedded, reproducible chain-level A/B and ABX listening tests.
 
 use crate::app::actions::{
-    ListeningCapturePathA, ListeningCapturePathB, ListeningCommitAnswer1, ListeningCommitAnswer2,
-    ListeningPlayCue1, ListeningPlayCue2, ListeningPlayCue3, ListeningPrepare, ListeningStartAbx,
+    EarTrainingNextQuestion, EarTrainingPlayFiltered, EarTrainingPlayOriginal,
+    EarTrainingSelectNextBand, EarTrainingSelectPreviousBand, EarTrainingShowBlindComparison,
+    EarTrainingShowEqBands, EarTrainingStart, EarTrainingSubmit, ListeningCapturePathA,
+    ListeningCapturePathB, ListeningCommitAnswer1, ListeningCommitAnswer2, ListeningPlayCue1,
+    ListeningPlayCue2, ListeningPlayCue3, ListeningPrepare, ListeningStartAbx,
     ListeningStartBlindAb,
 };
 #[cfg(feature = "dev-api")]
 use crate::app::dev_api::DevTrackExt;
-use crate::app::state::plugin::ABPathTarget;
+use crate::app::state::plugin::{ABPathTarget, EarTrainingSurface};
 use crate::components::design::Ds;
+use crate::components::graphs::response_graphs::{
+    ChartConfig, Series, channel_color, render_line_chart,
+};
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -30,6 +36,7 @@ use sotf_audio_player::controllers::ab_test_execution::{
 use sotf_audio_player::controllers::ab_test_session::{
     AbTestError, LevelMatchMetric, TrialAnswer, TrialCue, TrialMode,
 };
+use sotf_audio_player::{EqChangeMode, EqTrainingSession};
 
 #[derive(Clone, Copy)]
 enum ListeningPathTarget {
@@ -37,8 +44,83 @@ enum ListeningPathTarget {
     B,
 }
 
+#[derive(Clone, Copy)]
+#[repr(usize)]
+enum EqConfigField {
+    Bands,
+    Gain,
+    Q,
+    Trials,
+}
+
 impl PlayerView {
     pub(crate) fn render_listening_test_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
+        let (theme, eq_text, surface) = {
+            let state = self.state.read(cx);
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.translations.listening_test.eq.clone(),
+                state.app.plugin_state.listening_test_state.surface,
+            )
+        };
+
+        let body = match surface {
+            EarTrainingSurface::EqBands => self.render_eq_training_workbench(cx),
+            EarTrainingSurface::BlindComparison => self.render_blind_comparison_screen(cx),
+        };
+
+        div()
+            .id("ear-training-screen")
+            .size_full()
+            .bg(theme.background)
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex_none()
+                    .p(d.pad_y)
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .bg(theme.surface)
+                    .flex()
+                    .items_center()
+                    .gap(d.gap)
+                    .child(
+                        Button::new("ear-training-eq-mode", eq_text.mode_eq)
+                            .size(ButtonSize::Sm)
+                            .variant(if surface == EarTrainingSurface::EqBands {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Secondary
+                            })
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                view.set_ear_training_surface(EarTrainingSurface::EqBands, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("ear-training-blind-mode", eq_text.mode_blind)
+                            .size(ButtonSize::Sm)
+                            .variant(if surface == EarTrainingSurface::BlindComparison {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Secondary
+                            })
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                view.set_ear_training_surface(
+                                    EarTrainingSurface::BlindComparison,
+                                    cx,
+                                );
+                            })),
+                    )
+                    .child(Text::caption(eq_text.suite_subtitle).color(theme.text_secondary)),
+            )
+            .child(div().flex_1().min_h_0().child(body))
+    }
+
+    fn render_blind_comparison_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         self.ensure_listening_path_canvas(ListeningPathTarget::A, cx);
         self.ensure_listening_path_canvas(ListeningPathTarget::B, cx);
 
@@ -503,6 +585,400 @@ impl PlayerView {
                             listening.status
                         })
                         .color(theme.text_secondary),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_eq_training_workbench(&self, cx: &mut Context<Self>) -> AnyElement {
+        let d = Ds::from_cx(cx);
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
+        let listening = state.app.plugin_state.listening_test_state.clone();
+        let current_track = state
+            .app
+            .get_current_track_path()
+            .and_then(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| eq_text.no_track.into());
+        let session = listening.eq_session.as_ref();
+        let answered = session.is_some_and(EqTrainingSession::current_is_answered);
+        let complete = session.is_some_and(EqTrainingSession::is_complete);
+        let has_question = session.is_some_and(|session| session.current_question.is_some());
+        let trial_number = session
+            .and_then(|session| session.current_question.as_ref())
+            .map_or_else(
+                || session.map_or(0, |session| session.trials.len()),
+                |question| question.number + 1,
+            );
+        let accuracy = session.map_or(0.0, EqTrainingSession::accuracy) * 100.0;
+        let bands = session
+            .map(|session| session.band_frequencies.as_slice())
+            .unwrap_or(&[]);
+        let selected_band = listening
+            .eq_selected_band
+            .min(bands.len().saturating_sub(1));
+
+        let curve_points = session
+            .and_then(|session| session.current_question.as_ref())
+            .filter(|_| answered)
+            .map(|question| question.preview_curve(160))
+            .unwrap_or_else(|| vec![(20.0, 0.0), (20_000.0, 0.0)]);
+        let (x_values, y_values): (Vec<_>, Vec<_>) = curve_points.into_iter().unzip();
+        let chart = render_line_chart(
+            vec![Series::new(
+                "Training EQ",
+                channel_color(&theme, 0),
+                x_values,
+                y_values,
+            )],
+            ChartConfig {
+                title: None,
+                x_label: Some("Frequency (Hz)".into()),
+                y_label: Some("Gain (dB)".into()),
+                x_range: (20.0, 20_000.0),
+                y_range: (-16.0, 16.0),
+                x_scale: gpui_px::ScaleType::Log,
+                width: 760.0,
+                height: 220.0,
+            },
+            &theme,
+            None,
+        );
+
+        let mut answers = div().flex().flex_wrap().gap(d.gap);
+        for (index, frequency) in bands.iter().copied().enumerate() {
+            let is_selected = index == selected_band;
+            let is_answer = answered
+                && session
+                    .and_then(|session| session.current_question.as_ref())
+                    .is_some_and(|question| question.band_index == index);
+            let label = if is_answer {
+                format!("{} ✓", format_frequency(frequency))
+            } else if answered && is_selected {
+                format!("{} •", format_frequency(frequency))
+            } else {
+                format_frequency(frequency)
+            };
+            answers = answers.child(
+                Button::new(("eq-training-band", index), label)
+                    .size(ButtonSize::Sm)
+                    .variant(if is_selected || is_answer {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Secondary
+                    })
+                    .theme(theme.to_button_theme())
+                    .on_click_event(cx.listener(move |view, _, _, cx| {
+                        view.select_eq_training_band(index, cx);
+                    })),
+            );
+        }
+
+        let feedback = session
+            .and_then(|session| session.trials.last())
+            .filter(|_| answered)
+            .map(|result| {
+                if result.correct {
+                    format!(
+                        "{} — {} at {:+.0} dB, Q {:.1}",
+                        eq_text.correct,
+                        format_frequency(result.question.center_frequency_hz),
+                        result.question.signed_gain_db(),
+                        result.question.q
+                    )
+                } else {
+                    format!(
+                        "{}: {} at {:+.0} dB, Q {:.1}",
+                        eq_text.answer,
+                        format_frequency(result.question.center_frequency_hz),
+                        result.question.signed_gain_db(),
+                        result.question.q
+                    )
+                }
+            });
+
+        div()
+            .id("eq-training-workbench")
+            .size_full()
+            .overflow_y_scroll()
+            .p(d.card)
+            .flex()
+            .flex_col()
+            .gap(d.section)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(d.grid)
+                            .child(Text::section_header(eq_text.title))
+                            .child(Text::caption(eq_text.subtitle)),
+                    )
+                    .child(Text::caption(format!(
+                        "Trial {trial_number}/{} · Accuracy {accuracy:.0}%",
+                        listening.eq_config.trial_count
+                    ))),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(d.section)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(rems(18.0))
+                            .p(d.pad_x)
+                            .rounded(d.r_md)
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.surface)
+                            .flex()
+                            .flex_col()
+                            .gap(d.gap)
+                            .child(Text::section_header(eq_text.session_setup))
+                            .child(self.render_eq_source_row(eq_text.source, &current_track, cx))
+                            .child(self.render_eq_config_row(
+                                eq_text.bands,
+                                listening.eq_config.band_count.to_string(),
+                                EqConfigField::Bands,
+                                cx,
+                            ))
+                            .child(self.render_eq_config_row(
+                                eq_text.gain,
+                                format!("±{:.0} dB", listening.eq_config.gain_db),
+                                EqConfigField::Gain,
+                                cx,
+                            ))
+                            .child(self.render_eq_config_row(
+                                "Q",
+                                format!("{:.1}", listening.eq_config.q),
+                                EqConfigField::Q,
+                                cx,
+                            ))
+                            .child(self.render_eq_config_row(
+                                eq_text.trials,
+                                listening.eq_config.trial_count.to_string(),
+                                EqConfigField::Trials,
+                                cx,
+                            ))
+                            .child(
+                                Button::new(
+                                    "eq-training-change-mode",
+                                    format!(
+                                        "{}: {}",
+                                        eq_text.change,
+                                        eq_change_mode_symbol(listening.eq_config.change_mode)
+                                    ),
+                                )
+                                .size(ButtonSize::Sm)
+                                .variant(ButtonVariant::Secondary)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.cycle_eq_training_change_mode(cx);
+                                })),
+                            )
+                            .child(
+                                Button::new(
+                                    "eq-training-start",
+                                    if session.is_some() {
+                                        eq_text.restart
+                                    } else {
+                                        eq_text.start
+                                    },
+                                )
+                                .size(ButtonSize::Sm)
+                                .variant(ButtonVariant::Primary)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.start_eq_training_session(cx);
+                                })),
+                            )
+                            .child(Text::caption(eq_text.requires_ab)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(rems(30.0))
+                            .p(d.pad_x)
+                            .rounded(d.r_md)
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.surface)
+                            .flex()
+                            .flex_col()
+                            .gap(d.gap)
+                            .child(Text::section_header(if complete {
+                                eq_text.complete
+                            } else if session.is_some() {
+                                eq_text.question
+                            } else {
+                                eq_text.start_prompt
+                            }))
+                            .child(answers)
+                            .child(div().w_full().min_h(rems(14.0)).child(chart))
+                            .when_some(feedback, |panel, feedback| {
+                                panel.child(
+                                    Text::body(feedback).color(
+                                        if session
+                                            .and_then(|session| session.trials.last())
+                                            .is_some_and(|result| result.correct)
+                                        {
+                                            theme.success
+                                        } else {
+                                            theme.warning
+                                        },
+                                    ),
+                                )
+                            })
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_wrap()
+                                    .gap(d.gap)
+                                    .child(
+                                        Button::new(
+                                            "eq-training-original",
+                                            format!("1  {}", eq_text.original),
+                                        )
+                                        .size(ButtonSize::Sm)
+                                        .variant(if !listening.eq_filtered {
+                                            ButtonVariant::Primary
+                                        } else {
+                                            ButtonVariant::Secondary
+                                        })
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(
+                                            cx.listener(|view, _, _, cx| {
+                                                view.activate_eq_training_path(false, cx);
+                                            }),
+                                        ),
+                                    )
+                                    .child(
+                                        Button::new(
+                                            "eq-training-filtered",
+                                            format!("2  {}", eq_text.filtered),
+                                        )
+                                        .size(ButtonSize::Sm)
+                                        .variant(if listening.eq_filtered {
+                                            ButtonVariant::Primary
+                                        } else {
+                                            ButtonVariant::Secondary
+                                        })
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(
+                                            cx.listener(|view, _, _, cx| {
+                                                view.activate_eq_training_path(true, cx);
+                                            }),
+                                        ),
+                                    )
+                                    .when(has_question && !answered, |row| {
+                                        row.child(
+                                            Button::new(
+                                                "eq-training-submit",
+                                                format!("Enter  {}", eq_text.submit),
+                                            )
+                                            .size(ButtonSize::Sm)
+                                            .variant(ButtonVariant::Primary)
+                                            .theme(theme.to_button_theme())
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                                view.submit_eq_training_answer(cx);
+                                            })),
+                                        )
+                                    })
+                                    .when(answered, |row| {
+                                        row.child(
+                                            Button::new(
+                                                "eq-training-next",
+                                                format!("N  {}", eq_text.next),
+                                            )
+                                            .size(ButtonSize::Sm)
+                                            .variant(ButtonVariant::Primary)
+                                            .theme(theme.to_button_theme())
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                                view.advance_eq_training_question(cx);
+                                            })),
+                                        )
+                                    }),
+                            )
+                            .child(Text::caption(eq_text.shortcuts)),
+                    ),
+            )
+            .child(
+                div()
+                    .p(d.pad_y)
+                    .rounded(d.r_sm)
+                    .bg(theme.background_secondary)
+                    .child(Text::caption(if listening.status.is_empty() {
+                        eq_text.configure_start
+                    } else {
+                        &listening.status
+                    })),
+            )
+            .into_any_element()
+    }
+
+    fn render_eq_source_row(
+        &self,
+        source_label: &'static str,
+        current_track: &str,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let d = Ds::from_cx(cx);
+        div()
+            .flex()
+            .flex_col()
+            .gap(d.grid)
+            .child(Text::label(source_label))
+            .child(Text::caption(current_track.to_owned()))
+    }
+
+    fn render_eq_config_row(
+        &self,
+        label: &'static str,
+        value: impl Into<SharedString>,
+        field: EqConfigField,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let d = Ds::from_cx(cx);
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(d.gap)
+            .child(Text::label(label))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(d.grid)
+                    .child(
+                        Button::new(("eq-config-minus", field as usize), "−")
+                            .size(ButtonSize::Sm)
+                            .variant(ButtonVariant::Secondary)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(move |view, _, _, cx| {
+                                view.adjust_eq_training_config(field, -1, cx);
+                            })),
+                    )
+                    .child(Text::new(value).color(theme.text_primary))
+                    .child(
+                        Button::new(("eq-config-plus", field as usize), "+")
+                            .size(ButtonSize::Sm)
+                            .variant(ButtonVariant::Secondary)
+                            .theme(theme.to_button_theme())
+                            .on_click_event(cx.listener(move |view, _, _, cx| {
+                                view.adjust_eq_training_config(field, 1, cx);
+                            })),
                     ),
             )
     }
@@ -1906,6 +2382,390 @@ impl PlayerView {
         .detach();
     }
 
+    fn set_ear_training_surface(&mut self, surface: EarTrainingSurface, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _| {
+            state.app.plugin_state.listening_test_state.surface = surface;
+        });
+        cx.notify();
+    }
+
+    fn adjust_eq_training_config(
+        &mut self,
+        field: EqConfigField,
+        direction: i32,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _| {
+            let settings_changed = state
+                .app
+                .ui_state
+                .translations
+                .listening_test
+                .eq
+                .configure_start;
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            match field {
+                EqConfigField::Bands => {
+                    listening.eq_config.band_count =
+                        (listening.eq_config.band_count as i32 + direction).clamp(2, 25) as usize;
+                }
+                EqConfigField::Gain => {
+                    listening.eq_config.gain_db =
+                        (listening.eq_config.gain_db + f64::from(direction)).clamp(1.0, 15.0);
+                }
+                EqConfigField::Q => {
+                    listening.eq_config.q =
+                        (listening.eq_config.q + f64::from(direction) * 0.1).clamp(0.2, 10.0);
+                }
+                EqConfigField::Trials => {
+                    listening.eq_config.trial_count =
+                        (listening.eq_config.trial_count as i32 + direction * 5).clamp(5, 100)
+                            as usize;
+                }
+            }
+            listening.eq_session = None;
+            listening.eq_selected_band = 0;
+            listening.eq_filtered = false;
+            listening.status = settings_changed.into();
+        });
+        cx.notify();
+    }
+
+    fn cycle_eq_training_change_mode(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _| {
+            let settings_changed = state
+                .app
+                .ui_state
+                .translations
+                .listening_test
+                .eq
+                .configure_start;
+            let change_label = state.app.ui_state.translations.listening_test.eq.change;
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            listening.eq_config.change_mode = match listening.eq_config.change_mode {
+                EqChangeMode::Boost => EqChangeMode::Cut,
+                EqChangeMode::Cut => EqChangeMode::Mixed,
+                EqChangeMode::Mixed => EqChangeMode::Boost,
+            };
+            listening.eq_session = None;
+            listening.status = format!(
+                "{}: {}. {settings_changed}",
+                change_label,
+                eq_change_mode_symbol(listening.eq_config.change_mode)
+            );
+        });
+        cx.notify();
+    }
+
+    fn start_eq_training_session(&mut self, cx: &mut Context<Self>) {
+        let started = self.state.update(cx, |state, _| {
+            let session_started = state
+                .app
+                .ui_state
+                .translations
+                .listening_test
+                .eq
+                .session_started;
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            listening.eq_config.seed = listening.eq_config.seed.wrapping_add(1);
+            match EqTrainingSession::new(listening.eq_config.clone()).and_then(|mut session| {
+                session.start()?;
+                Ok(session)
+            }) {
+                Ok(session) => {
+                    listening.eq_session = Some(session);
+                    listening.eq_selected_band = 0;
+                    listening.eq_filtered = false;
+                    listening.status = session_started.into();
+                    true
+                }
+                Err(error) => {
+                    listening.status = error.to_string();
+                    false
+                }
+            }
+        });
+        if started {
+            self.activate_eq_training_path(false, cx);
+        }
+        cx.notify();
+    }
+
+    fn select_eq_training_band(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _| {
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            let band_count = listening
+                .eq_session
+                .as_ref()
+                .map_or(0, |session| session.band_frequencies.len());
+            if index < band_count
+                && !listening
+                    .eq_session
+                    .as_ref()
+                    .is_some_and(EqTrainingSession::current_is_answered)
+            {
+                listening.eq_selected_band = index;
+            }
+        });
+        cx.notify();
+    }
+
+    fn move_eq_training_selection(&mut self, direction: i32, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _| {
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            let band_count = listening
+                .eq_session
+                .as_ref()
+                .map_or(0, |session| session.band_frequencies.len());
+            if band_count == 0
+                || listening
+                    .eq_session
+                    .as_ref()
+                    .is_some_and(EqTrainingSession::current_is_answered)
+            {
+                return;
+            }
+            listening.eq_selected_band = (listening.eq_selected_band as i32 + direction)
+                .rem_euclid(band_count as i32) as usize;
+        });
+        cx.notify();
+    }
+
+    fn activate_eq_training_path(&mut self, filtered: bool, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _| {
+            let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
+            let question = state
+                .app
+                .plugin_state
+                .listening_test_state
+                .eq_session
+                .as_ref()
+                .and_then(|session| session.current_question.clone());
+            let result = question
+                .ok_or_else(|| eq_text.configure_start.to_owned())
+                .and_then(|question| {
+                    let plugin_idx = state
+                        .app
+                        .plugin_state
+                        .graph
+                        .plugins_linear()
+                        .and_then(|plugins| {
+                            plugins
+                                .iter()
+                                .position(|node| node.plugin.plugin_type() == PluginType::ABCompare)
+                        })
+                        .ok_or_else(|| eq_text.add_ab_plugin.to_owned())?;
+                    let path_a = serde_json::to_string(&PathConfig::None)
+                        .map_err(|error| error.to_string())?;
+                    let path_b = serde_json::to_string(&PathConfig::Plugin {
+                        plugin_type: "eq".into(),
+                        parameters: question.plugin_parameters(),
+                    })
+                    .map_err(|error| error.to_string())?;
+                    state.app.set_plugin_param_string(plugin_idx, 9, path_a)?;
+                    state.app.set_plugin_param_string(plugin_idx, 10, path_b)?;
+                    state.app.set_plugin_param(plugin_idx, 0, 0.0);
+                    state.app.set_plugin_param(plugin_idx, 1, 1.0);
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, 2, if filtered { 1.0 } else { 0.0 });
+                    state.app.set_plugin_param(plugin_idx, 4, 0.0);
+                    state.app.set_plugin_param(plugin_idx, 7, 0.0);
+                    state.app.set_plugin_param(plugin_idx, 8, 20.0);
+                    Ok(())
+                });
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            match result {
+                Ok(()) => {
+                    listening.eq_filtered = filtered;
+                    listening.status = if filtered {
+                        eq_text.filtered_active
+                    } else {
+                        eq_text.original_active
+                    }
+                    .into();
+                }
+                Err(error) => listening.status = error,
+            }
+        });
+        cx.notify();
+    }
+
+    fn submit_eq_training_answer(&mut self, cx: &mut Context<Self>) {
+        self.activate_eq_training_path(false, cx);
+        self.state.update(cx, |state, _| {
+            let eq_text = state.app.ui_state.translations.listening_test.eq.clone();
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            let selected = listening.eq_selected_band;
+            let status = match listening.eq_session.as_mut() {
+                Some(session) => match session.submit_answer(selected) {
+                    Ok(result) if result.correct => format!("{}.", eq_text.correct),
+                    Ok(result) => format!(
+                        "{}: {}.",
+                        eq_text.answer,
+                        format_frequency(result.question.center_frequency_hz)
+                    ),
+                    Err(error) => error.to_string(),
+                },
+                None => eq_text.configure_start.into(),
+            };
+            listening.status = status;
+        });
+        cx.notify();
+    }
+
+    fn advance_eq_training_question(&mut self, cx: &mut Context<Self>) {
+        let advanced = self.state.update(cx, |state, _| {
+            let next_trial = state.app.ui_state.translations.listening_test.eq.next;
+            let configure_start = state
+                .app
+                .ui_state
+                .translations
+                .listening_test
+                .eq
+                .configure_start;
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            let status = match listening.eq_session.as_mut() {
+                Some(session) => match session.advance() {
+                    Ok(Some(_)) => {
+                        listening.eq_selected_band = 0;
+                        listening.eq_filtered = false;
+                        next_trial.into()
+                    }
+                    Ok(None) => format!(
+                        "Session complete: {}/{} correct ({:.0}%).",
+                        session.correct_count(),
+                        session.trials.len(),
+                        session.accuracy() * 100.0
+                    ),
+                    Err(error) => error.to_string(),
+                },
+                None => configure_start.into(),
+            };
+            let has_question = listening
+                .eq_session
+                .as_ref()
+                .is_some_and(|session| session.current_question.is_some());
+            listening.status = status;
+            has_question
+        });
+        if advanced {
+            self.activate_eq_training_path(false, cx);
+        }
+        cx.notify();
+    }
+
+    fn is_eq_training_active(&self, cx: &Context<Self>) -> bool {
+        self.is_listening_test_active(cx)
+            && self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .listening_test_state
+                .surface
+                == EarTrainingSurface::EqBands
+    }
+
+    pub(crate) fn ear_training_show_eq_bands(
+        &mut self,
+        _: &EarTrainingShowEqBands,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_listening_test_active(cx) {
+            self.set_ear_training_surface(EarTrainingSurface::EqBands, cx);
+        }
+    }
+
+    pub(crate) fn ear_training_show_blind_comparison(
+        &mut self,
+        _: &EarTrainingShowBlindComparison,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_listening_test_active(cx) {
+            self.set_ear_training_surface(EarTrainingSurface::BlindComparison, cx);
+        }
+    }
+
+    pub(crate) fn ear_training_start(
+        &mut self,
+        _: &EarTrainingStart,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_eq_training_active(cx) {
+            self.start_eq_training_session(cx);
+        }
+    }
+
+    pub(crate) fn ear_training_play_original(
+        &mut self,
+        _: &EarTrainingPlayOriginal,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_eq_training_active(cx) {
+            self.activate_eq_training_path(false, cx);
+        }
+    }
+
+    pub(crate) fn ear_training_play_filtered(
+        &mut self,
+        _: &EarTrainingPlayFiltered,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_eq_training_active(cx) {
+            self.activate_eq_training_path(true, cx);
+        }
+    }
+
+    pub(crate) fn ear_training_select_previous_band(
+        &mut self,
+        _: &EarTrainingSelectPreviousBand,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_eq_training_active(cx) {
+            self.move_eq_training_selection(-1, cx);
+        }
+    }
+
+    pub(crate) fn ear_training_select_next_band(
+        &mut self,
+        _: &EarTrainingSelectNextBand,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_eq_training_active(cx) {
+            self.move_eq_training_selection(1, cx);
+        }
+    }
+
+    pub(crate) fn ear_training_submit(
+        &mut self,
+        _: &EarTrainingSubmit,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_eq_training_active(cx) {
+            self.submit_eq_training_answer(cx);
+        }
+    }
+
+    pub(crate) fn ear_training_next_question(
+        &mut self,
+        _: &EarTrainingNextQuestion,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_eq_training_active(cx) {
+            self.advance_eq_training_question(cx);
+        }
+    }
+
     fn is_listening_test_active(&self, cx: &Context<Self>) -> bool {
         self.state.read(cx).app.ui_state.current_screen == crate::app::Screen::ListeningTest
     }
@@ -2044,6 +2904,27 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.commit_listening_answer_position(1, cx);
+    }
+}
+
+fn format_frequency(frequency_hz: f64) -> String {
+    if frequency_hz >= 1_000.0 {
+        let khz = frequency_hz / 1_000.0;
+        if (khz - khz.round()).abs() < 0.05 {
+            format!("{khz:.0}k")
+        } else {
+            format!("{khz:.1}k")
+        }
+    } else {
+        format!("{frequency_hz:.0}")
+    }
+}
+
+fn eq_change_mode_symbol(mode: EqChangeMode) -> &'static str {
+    match mode {
+        EqChangeMode::Boost => "+",
+        EqChangeMode::Cut => "−",
+        EqChangeMode::Mixed => "±",
     }
 }
 
