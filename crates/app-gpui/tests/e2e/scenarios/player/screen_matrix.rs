@@ -55,8 +55,8 @@ impl TestScenario for ScreenMatrixScenario {
 }
 
 #[gpui::test]
-async fn every_screen_renders_at_compact_and_wide_boundaries(cx: &mut TestAppContext) {
-    for (width, height) in [(700.0, 900.0), (1600.0, 1000.0)] {
+async fn every_screen_renders_at_normal_compact_and_wide_boundaries(cx: &mut TestAppContext) {
+    for (width, height) in [(1200.0, 900.0), (700.0, 900.0), (1600.0, 1000.0)] {
         let runner = E2ERunner::new(ScreenMatrixScenario::new(width, height));
         runner.run(cx).await.unwrap();
     }

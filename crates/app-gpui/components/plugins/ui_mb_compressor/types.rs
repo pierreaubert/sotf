@@ -89,6 +89,7 @@ pub fn render_mb_compressor_plugin(
                         .decimals(0)
                         .size(NumberInputSize::Xs)
                         .width(80.0)
+                        .aria_label(text.bands)
                         .on_change(move |val, _window, cx| {
                             bands_entity.update(cx, |state, _| {
                                 state.app.set_plugin_param(plugin_idx, 0, val);

@@ -1,5 +1,6 @@
 use super::PlayerCommand;
 use crate::app::{App, FilePickerMode, FilePickerOrigin};
+use crate::ui::keybinding_catalog::{DirectoryCommand, TuiCommand, TuiKeyContext, resolve_command};
 use crossterm::event::{KeyCode, KeyEvent};
 
 pub(super) fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
@@ -7,22 +8,64 @@ pub(super) fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<Play
         return handle_directory_text_input(app, key);
     }
 
-    const PAGE_SIZE: usize = 20;
+    if let Some(command) = resolve_command(TuiKeyContext::Directories, key) {
+        let TuiCommand::Directory(command) = command else {
+            unreachable!("non-directory command in Directories context: {command:?}");
+        };
+        return handle_documented_command(app, key, command);
+    }
 
-    match key.code {
-        KeyCode::Char('a') | KeyCode::F(2) => {
+    handle_undocumented_command(app, key)
+}
+
+fn handle_documented_command(
+    app: &mut App,
+    key: KeyEvent,
+    command: DirectoryCommand,
+) -> Option<PlayerCommand> {
+    match command {
+        DirectoryCommand::Navigate => {
+            if matches!(key.code, KeyCode::Up | KeyCode::Char('k')) {
+                app.select_previous_directory();
+            } else {
+                app.select_next_directory();
+            }
+            None
+        }
+        DirectoryCommand::Add => {
             app.library_view.editing_directory = true;
             app.library_view.directory_input.clear();
             None
         }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_directory();
+        DirectoryCommand::Remove => {
+            app.remove_selected_directory();
             None
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_directory();
+        DirectoryCommand::Scan => {
+            app.start_library_scan();
             None
         }
+        DirectoryCommand::ForceScan => {
+            app.start_force_library_scan();
+            None
+        }
+        DirectoryCommand::Maintenance => {
+            let _ = app.clean_library_database();
+            None
+        }
+        DirectoryCommand::ReplayGain => {
+            if let Err(error) = app.start_replay_gain_scan() {
+                app.ui.status_message = Some(format!("Error starting ReplayGain scan: {error}"));
+            }
+            None
+        }
+    }
+}
+
+fn handle_undocumented_command(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    const PAGE_SIZE: usize = 20;
+
+    match key.code {
         KeyCode::PageUp => {
             app.page_up_directories(PAGE_SIZE);
             None
@@ -32,70 +75,39 @@ pub(super) fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<Play
             None
         }
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-            // Toggle directory expansion to show/hide subdirectories
             app.toggle_directory_expansion();
             None
         }
-        KeyCode::Char('d') | KeyCode::Delete => {
-            app.remove_selected_directory();
-            None
-        }
-        KeyCode::Char('s') => {
-            app.start_library_scan();
-            None
-        }
-        KeyCode::Char('m') => {
-            // Maintenance: clean up database
-            // The method handles all progress tracking and status messages
-            let _ = app.clean_library_database();
-            None
-        }
-        KeyCode::Char('r') => {
-            // Start ReplayGain scan for tracks missing data
-            if let Err(e) = app.start_replay_gain_scan() {
-                app.ui.status_message = Some(format!("Error starting ReplayGain scan: {}", e));
-            }
-            None
-        }
         KeyCode::Char('R') => {
-            // Force ReplayGain rescan of all tracks
-            if let Err(e) = app.start_force_replay_gain_scan() {
+            if let Err(error) = app.start_force_replay_gain_scan() {
                 app.ui.status_message =
-                    Some(format!("Error starting ReplayGain force scan: {}", e));
+                    Some(format!("Error starting ReplayGain force scan: {error}"));
             }
             None
         }
         KeyCode::Char('b') => {
-            // Start Bliss audio analysis scan
-            if let Err(e) = app.start_bliss_scan() {
-                app.ui.status_message = Some(format!("Error starting Bliss scan: {}", e));
+            if let Err(error) = app.start_bliss_scan() {
+                app.ui.status_message = Some(format!("Error starting Bliss scan: {error}"));
             }
             None
         }
         KeyCode::Char('B') => {
-            // Force Bliss rescan of all tracks
-            if let Err(e) = app.start_force_bliss_scan() {
-                app.ui.status_message = Some(format!("Error starting Bliss force scan: {}", e));
+            if let Err(error) = app.start_force_bliss_scan() {
+                app.ui.status_message = Some(format!("Error starting Bliss force scan: {error}"));
             }
             None
         }
         KeyCode::Char('w') => {
-            // Start waveform scan for tracks missing data
-            if let Err(e) = app.start_waveform_scan() {
-                app.ui.status_message = Some(format!("Error starting Waveform scan: {}", e));
+            if let Err(error) = app.start_waveform_scan() {
+                app.ui.status_message = Some(format!("Error starting Waveform scan: {error}"));
             }
             None
         }
         KeyCode::Char('W') => {
-            // Force waveform rescan of all tracks
-            if let Err(e) = app.start_force_waveform_scan() {
-                app.ui.status_message = Some(format!("Error starting Waveform force scan: {}", e));
+            if let Err(error) = app.start_force_waveform_scan() {
+                app.ui.status_message =
+                    Some(format!("Error starting Waveform force scan: {error}"));
             }
-            None
-        }
-        KeyCode::Char('S') => {
-            // Force rescan all files (ignores modification time, preserves ReplayGain)
-            app.start_force_library_scan();
             None
         }
         _ => None,
@@ -151,8 +163,8 @@ fn handle_directory_text_input(app: &mut App, key: KeyEvent) -> Option<PlayerCom
             app.autocomplete_up(crate::app::app_autocomplete::set_directory_input);
             None
         }
-        KeyCode::Char(c) => {
-            app.library_view.directory_input.push(c);
+        KeyCode::Char(character) => {
+            app.library_view.directory_input.push(character);
             app.refresh_autocomplete_inline(
                 crate::app::app_autocomplete::get_directory_input,
                 crate::app::app_autocomplete::AutocompleteKind::FilePath,

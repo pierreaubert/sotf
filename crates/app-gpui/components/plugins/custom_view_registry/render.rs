@@ -1,7 +1,12 @@
 use super::types::CustomViewRenderContext;
+use crate::app::state::{
+    ExternalPluginWorkerHealth, external_plugin_error_key, external_plugin_worker_health,
+};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
+use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_ui_kit::{HStack, StackSpacing, Text, VStack};
 use sotf_audio_player::{
     PluginSettings, UpmixerAmbientAnalysisSettings, UpmixerBypassSettings,
     UpmixerDecorrelationSettings, UpmixerDialogueSettings, UpmixerGainSettings,
@@ -47,6 +52,146 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
     } else {
         Empty.into_any_element()
     }
+}
+
+pub(super) fn render_external(
+    ctx: &CustomViewRenderContext,
+    cx: &mut Context<PlayerView>,
+) -> AnyElement {
+    let PluginSettings::External { state } = ctx.settings else {
+        return Empty.into_any_element();
+    };
+    let d = Ds::from_cx(cx);
+    let descriptor = &state.descriptor;
+    let error_key = external_plugin_error_key(descriptor);
+    let (language, build_error, load_error, worker_status) = {
+        let app_state = ctx.entity.read(cx);
+        let plugin_instance_id = ctx
+            .plugin_graph
+            .get_plugin(ctx.plugin_idx)
+            .map(|plugin| plugin.id);
+        let engine_index = ctx
+            .plugin_graph
+            .get_engine_index_by_linear_position(ctx.plugin_idx);
+        let plugin_state = &app_state.app.plugin_state;
+        let ui = &plugin_state.external_plugin_ui;
+        (
+            app_state.app.ui_state.language,
+            plugin_state
+                .external_plugin_build_diagnostic(plugin_instance_id, engine_index)
+                .map(|diagnostic| diagnostic.message.clone()),
+            plugin_instance_id
+                .and_then(|instance_id| ui.worker_errors.get(&instance_id).cloned())
+                .or_else(|| ui.load_errors.get(&error_key).cloned()),
+            ui.worker_statuses
+                .iter()
+                .find(|status| {
+                    (plugin_instance_id.is_some()
+                        && status.plugin_instance_id == plugin_instance_id)
+                        || (status.plugin_instance_id.is_none()
+                            && Some(status.plugin_index) == engine_index)
+                })
+                .cloned(),
+        )
+    };
+    let text = crate::app::i18n::SettingsSurfaceTranslations::for_language(language).external;
+    let format = match descriptor.format {
+        sotf_plugins::PluginFormat::Clap => "CLAP",
+        sotf_plugins::PluginFormat::Vst3 => "VST3",
+        sotf_plugins::PluginFormat::AudioUnit => "AU",
+    };
+    let (hosting, hosting_color) = match state.sandbox_mode {
+        sotf_plugins::ExternalPluginSandboxMode::Isolated => (text.isolated, ctx.theme.success),
+        sotf_plugins::ExternalPluginSandboxMode::InProcess
+        | sotf_plugins::ExternalPluginSandboxMode::Disabled => (text.disabled, ctx.theme.warning),
+    };
+
+    let worker_status_view = worker_status.as_ref().map(|status| {
+        let health_color = match external_plugin_worker_health(status) {
+            ExternalPluginWorkerHealth::Healthy => ctx.theme.success,
+            ExternalPluginWorkerHealth::Degraded => ctx.theme.warning,
+            ExternalPluginWorkerHealth::Failed => ctx.theme.error,
+        };
+        VStack::new()
+            .spacing(StackSpacing::Xs)
+            .child(
+                Text::label(format!(
+                    "{}: {}",
+                    text.worker.status,
+                    text.worker.event_label(status.event.as_ref()),
+                ))
+                .color(health_color),
+            )
+            .child(Text::caption(text.worker.counters(status)).color(ctx.theme.text_secondary))
+            .child(Text::caption(text.worker.sandbox_label(status)).color(ctx.theme.text_muted))
+            .when_some(status.sandbox_reason.as_ref(), |stack, reason| {
+                stack.child(Text::caption(reason.clone()).color(ctx.theme.warning))
+            })
+            .build()
+            .into_any_element()
+    });
+
+    VStack::new()
+        .spacing(StackSpacing::Sm)
+        .child(Text::section_header(descriptor.name.clone()).color(ctx.theme.text_primary))
+        .child(
+            Text::body(format!(
+                "{} · {} · {}",
+                descriptor.vendor, descriptor.version, format
+            ))
+            .color(ctx.theme.text_secondary),
+        )
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .child(
+                    Text::label(format!(
+                        "{}: {} → {}",
+                        text.channels, descriptor.audio_inputs, descriptor.audio_outputs
+                    ))
+                    .color(ctx.theme.text_secondary),
+                )
+                .child(Text::label(hosting).color(hosting_color))
+                .build(),
+        )
+        .child(
+            Text::caption(format!("{}: {}", text.path, descriptor.path.display()))
+                .color(ctx.theme.text_muted),
+        )
+        .child(
+            Text::caption(format!(
+                "{}: {}",
+                text.saved_state,
+                state.opaque_state.len()
+            ))
+            .color(ctx.theme.text_muted),
+        )
+        .when_some(worker_status_view, |stack, status| stack.child(status))
+        .when_some(load_error, |stack, error| {
+            stack.child(
+                div()
+                    .p(d.pad_y)
+                    .rounded(d.r_sm)
+                    .bg(ctx.theme.error.opacity(0.12))
+                    .text_size(d.text_xs)
+                    .text_color(ctx.theme.error)
+                    .child(format!("{}: {error}", text.runtime_error)),
+            )
+        })
+        .when_some(build_error, |stack, error| {
+            stack.child(
+                div()
+                    .p(d.pad_y)
+                    .rounded(d.r_sm)
+                    .bg(ctx.theme.warning.opacity(0.12))
+                    .text_size(d.text_xs)
+                    .text_color(ctx.theme.warning)
+                    .child(format!("{}: {error}", text.host_diagnostic)),
+            )
+        })
+        .child(Text::body(text.parameters_unavailable).color(ctx.theme.warning))
+        .build()
+        .into_any_element()
 }
 
 pub(super) fn render_dynamic_eq(

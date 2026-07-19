@@ -1,3 +1,4 @@
+use super::catalog::catalog_entry;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use super::external::external_plugin_isolation_requested;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -15,10 +16,10 @@ pub fn validate_plugin_security_config(
     plugin_type: &str,
     parameters: &serde_json::Value,
 ) -> Result<(), String> {
-    let lower = plugin_type.to_ascii_lowercase();
-    match lower.as_str() {
-        "external" | "external_plugin" => validate_external_plugin_security_config(parameters),
-        _ => Ok(()),
+    if catalog_entry(plugin_type).is_some_and(|entry| entry.canonical_type == "external") {
+        validate_external_plugin_security_config(parameters)
+    } else {
+        Ok(())
     }
 }
 

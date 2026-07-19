@@ -78,7 +78,7 @@ fn easy_stereo_output_applies_as_editable_persistable_rack() {
     let encoded = serde_json::to_string(&graph).unwrap();
     let mut restored: PluginGraph = serde_json::from_str(&encoded).unwrap();
     let previous_count = restored.plugin_count();
-    restored.add_plugin(&crate::PluginType::Gain);
+    restored.add_plugin(&crate::PluginType::Gain).unwrap();
     assert_eq!(restored.plugin_count(), previous_count + 1);
 }
 

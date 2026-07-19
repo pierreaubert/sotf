@@ -59,7 +59,6 @@ impl PluginController {
         match self.graph.insert_plugin(insert_idx, plugin_type) {
             Ok(_) => {
                 self.selected_plugin_index = insert_idx;
-                self.graph.update_channel_dependent_plugins();
                 PluginUpdateEffect::Structural
             }
             Err(err) => {
@@ -74,41 +73,50 @@ impl PluginController {
         }
     }
 
-    /// Toggle a plugin's enabled state. Returns `Structural` effect.
-    pub fn toggle_plugin(&mut self, index: usize) -> PluginUpdateEffect {
-        let _ = self.graph.toggle_plugin_by_index(index);
-        self.graph.update_channel_dependent_plugins();
-        PluginUpdateEffect::Structural
+    /// Add a plugin whose complete settings are already known. This preserves
+    /// external descriptors and returns insertion failures to the UI.
+    pub fn add_plugin_settings(
+        &mut self,
+        settings: PluginSettings,
+    ) -> Result<PluginUpdateEffect, String> {
+        let insert_idx = self.graph.user_plugin_insert_index();
+        self.graph.insert_plugin_settings(insert_idx, settings)?;
+        self.selected_plugin_index = insert_idx;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    /// Toggle a plugin's enabled state. A rejected channel contract leaves the
+    /// graph unchanged and is returned to the UI.
+    pub fn toggle_plugin(&mut self, index: usize) -> Result<PluginUpdateEffect, String> {
+        self.graph.toggle_plugin_by_index(index)?;
+        Ok(PluginUpdateEffect::Structural)
     }
 
     /// Move a plugin up in the chain. Returns `Structural` if moved, `None` otherwise.
-    pub fn move_plugin_up(&mut self, index: usize) -> PluginUpdateEffect {
+    pub fn move_plugin_up(&mut self, index: usize) -> Result<PluginUpdateEffect, String> {
         if self.graph.can_move_up_by_index(index) {
-            self.graph.move_plugin(index, index - 1);
+            self.graph.move_plugin(index, index - 1)?;
             self.selected_plugin_index = index - 1;
-            self.graph.update_channel_dependent_plugins();
-            PluginUpdateEffect::Structural
+            Ok(PluginUpdateEffect::Structural)
         } else {
-            PluginUpdateEffect::None
+            Ok(PluginUpdateEffect::None)
         }
     }
 
     /// Move a plugin down in the chain. Returns `Structural` if moved, `None` otherwise.
-    pub fn move_plugin_down(&mut self, index: usize) -> PluginUpdateEffect {
+    pub fn move_plugin_down(&mut self, index: usize) -> Result<PluginUpdateEffect, String> {
         if self.graph.can_move_down_by_index(index) {
-            self.graph.move_plugin(index, index + 1);
+            self.graph.move_plugin(index, index + 1)?;
             self.selected_plugin_index = index + 1;
-            self.graph.update_channel_dependent_plugins();
-            PluginUpdateEffect::Structural
+            Ok(PluginUpdateEffect::Structural)
         } else {
-            PluginUpdateEffect::None
+            Ok(PluginUpdateEffect::None)
         }
     }
 
     /// Remove a plugin from the chain. Returns `Structural` if removed, `None` otherwise.
     pub fn remove_plugin(&mut self, index: usize) -> PluginUpdateEffect {
         if self.graph.remove_plugin_by_index(index).is_ok() {
-            self.graph.update_channel_dependent_plugins();
             if self.selected_plugin_index >= self.graph.len() && self.selected_plugin_index > 0 {
                 self.selected_plugin_index = self.graph.len() - 1;
             }
@@ -702,7 +710,9 @@ impl PluginController {
             return PluginUpdateEffect::None;
         };
 
-        let default_settings = PluginSettings::default_for(&plugin_type);
+        let Ok(default_settings) = PluginSettings::default_for(&plugin_type) else {
+            return PluginUpdateEffect::None;
+        };
         let default_value = match default_settings.param_value(param_idx) {
             Some(v) => v,
             None => return PluginUpdateEffect::None,
@@ -766,7 +776,9 @@ impl PluginController {
             return PluginUpdateEffect::None;
         };
 
-        let default_settings = PluginSettings::default_for(&plugin_type);
+        let Ok(default_settings) = PluginSettings::default_for(&plugin_type) else {
+            return PluginUpdateEffect::None;
+        };
         let default_value = match default_settings.param_value(param_idx) {
             Some(v) => v,
             None => return PluginUpdateEffect::None,

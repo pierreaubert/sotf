@@ -983,10 +983,13 @@ Current automated contract/component gates:
 | `just test-systemwide-linux-arm64` | Portable HAL streaming guards, protocol and daemon component/IPC tests, and package-scoped strict Clippy in a pinned native `linux/arm64` Docker image. |
 | `just test-systemwide-macos-linux-arm64` | Runs the two gates sequentially, macOS first. |
 
-These gates do not install the CoreAudio HAL bundle and do not replace the
-future scenario-driven HAL simulator shown above. There is intentionally no
-`just systemwide-lab` recipe yet. The runtime hooks below are available to
-tests and explicit manual lab launches; callers should use a temporary
+These gates do not install the CoreAudio HAL bundle. `just systemwide-lab`
+adds the isolated real-daemon scenarios described above, using a temporary
+runtime directory and the deterministic lab driver. It covers the implemented
+configuration, artifact, encryption, diagnostic, shutdown, and restart cases;
+the remaining device-loss, sleep/wake, helper-resurrection, and captured-audio
+rows in the scenario matrix still require simulator coverage and installed-
+system evidence. Manual lab launches must likewise use a temporary
 `SOTF_SYSTEMWIDE_RUNTIME_DIR` to avoid the real per-user runtime.
 
 | Variable | Effect |

@@ -161,6 +161,8 @@ pub use crate::app::state::plugin::PluginViewMode;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
     Normal,
+    /// Searchable overlay for dispatching registered application commands.
+    CommandPalette,
     Search,
     AddDirectory,
     SavePlugins,
@@ -196,7 +198,8 @@ impl InputMode {
     pub fn is_text_input(&self) -> bool {
         matches!(
             self,
-            InputMode::Search
+            InputMode::CommandPalette
+                | InputMode::Search
                 | InputMode::AddDirectory
                 | InputMode::SavePlugins
                 | InputMode::LoadPlugins

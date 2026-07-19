@@ -3,8 +3,9 @@
 use std::time::{Duration, Instant};
 
 use sotf_host::{
-    DawHost, ExternalPluginProcessEvent, ExternalPluginWorkerCommand, IsolatedExternalPlugin,
-    IsolatedExternalPluginConfig, Plugin, PluginDescriptor, PluginFormat, ProcessContext,
+    DawHost, ExternalPluginProcessEvent, ExternalPluginSandboxPolicy, ExternalPluginWorkerCommand,
+    IsolatedExternalPlugin, IsolatedExternalPluginConfig, Plugin, PluginDescriptor, PluginFormat,
+    ProcessContext,
 };
 
 #[test]
@@ -19,6 +20,7 @@ fn isolated_external_plugin_processes_block_through_worker_binary() {
             worker_command: ExternalPluginWorkerCommand::new(worker_binary)
                 .arg("--idle-sleep-micros")
                 .arg("50"),
+            sandbox_policy: ExternalPluginSandboxPolicy::disabled(),
             ..Default::default()
         },
     )
@@ -35,6 +37,9 @@ fn isolated_external_plugin_processes_block_through_worker_binary() {
 
     assert_eq!(frames, 2);
     assert_eq!(output, input);
+    assert_eq!(plugin.block_timeout_count(), 0);
+    assert_eq!(plugin.block_worker_failure_count(), 0);
+    assert_eq!(plugin.block_wrong_sequence_count(), 0);
 }
 
 #[test]
@@ -46,6 +51,7 @@ fn isolated_external_plugin_worker_exit_can_be_restarted_by_control_side() {
         48_000,
         IsolatedExternalPluginConfig {
             worker_command: ExternalPluginWorkerCommand::new(worker_binary).arg("--once"),
+            sandbox_policy: ExternalPluginSandboxPolicy::disabled(),
             ..Default::default()
         },
     )
@@ -78,6 +84,7 @@ fn isolated_external_plugin_dead_worker_falls_back_without_crashing_host() {
         IsolatedExternalPluginConfig {
             deadline: Duration::from_millis(1),
             worker_command: ExternalPluginWorkerCommand::new(worker_binary).arg("--once"),
+            sandbox_policy: ExternalPluginSandboxPolicy::disabled(),
             ..Default::default()
         },
     )
@@ -117,6 +124,7 @@ fn daw_host_can_poll_and_restart_isolated_external_plugin_workers() {
         48_000,
         IsolatedExternalPluginConfig {
             worker_command: ExternalPluginWorkerCommand::new(worker_binary).arg("--once"),
+            sandbox_policy: ExternalPluginSandboxPolicy::disabled(),
             ..Default::default()
         },
     )

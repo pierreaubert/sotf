@@ -6,9 +6,11 @@
 //! - Emacs: Emacs-style navigation (C-n, C-p, etc.)
 //! - VSCode: VSCode-style shortcuts
 
+mod catalog;
 mod common;
 mod emacs;
 pub(crate) mod listening_test;
+mod plugin_graph;
 mod plugins;
 mod vim;
 mod volume;
@@ -18,12 +20,13 @@ use crate::app::actions;
 use gpui::*;
 
 use common::{common_bindings, plugin_rack_bindings};
-use emacs::{emacs_bindings, emacs_documented_keybindings};
+use emacs::emacs_bindings;
 use listening_test::listening_test_bindings;
+use plugin_graph::plugin_graph_bindings;
 use plugins::plugin_control_bindings;
-use vim::{vim_bindings, vim_documented_keybindings};
+use vim::vim_bindings;
 use volume::volume_control_bindings;
-use vscode::{vscode_bindings, vscode_documented_keybindings};
+use vscode::vscode_bindings;
 
 // Re-export core types from gpui-keybinding
 pub use gpui_keybinding::KeymapPreset;
@@ -78,9 +81,21 @@ impl KeybindingCategory {
 /// A documented keybinding for help display
 #[derive(Debug, Clone)]
 pub struct DocumentedKeybinding {
-    pub key: &'static str,
+    pub key: String,
+    pub raw_key_spec: String,
     pub description: &'static str,
     pub category: KeybindingCategory,
+    pub action_name: Option<&'static str>,
+}
+
+/// One localized, executable command-palette row derived from a documented
+/// runtime keybinding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandPaletteCommand {
+    pub action_name: &'static str,
+    pub key: String,
+    pub description: String,
+    pub category: String,
 }
 
 /// Get all keybindings for a given preset
@@ -98,9 +113,12 @@ pub fn get_keybindings(preset: KeymapPreset) -> Vec<KeyBinding> {
         KeymapPreset::VSCode => bindings.extend(vscode_bindings()),
     }
 
+    bindings.push(command_palette_binding(preset));
+
     // These overlap general navigation and volume keys. Register them after
     // preset bindings so the more specific PluginRack context wins in Studio.
     bindings.extend(plugin_rack_bindings());
+    bindings.extend(plugin_graph_bindings());
 
     // Volume control context bindings (always active when volume control is focused)
     bindings.extend(volume_control_bindings());
@@ -110,6 +128,14 @@ pub fn get_keybindings(preset: KeymapPreset) -> Vec<KeyBinding> {
     bindings.extend(listening_test_bindings());
 
     bindings
+}
+
+fn command_palette_binding(preset: KeymapPreset) -> KeyBinding {
+    let key = match preset {
+        KeymapPreset::Emacs => "ctrl-x p",
+        KeymapPreset::Default | KeymapPreset::Vim | KeymapPreset::VSCode => "secondary-k",
+    };
+    KeyBinding::new(key, actions::ToggleCommandPalette, None)
 }
 
 /// Default preset - custom bindings optimized for the audio player
@@ -129,7 +155,6 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-down", actions::VolumeDownSmall, None),
         // Theme and language - PlayerView context to allow typing T in search
         KeyBinding::new("shift-t", actions::CycleTheme, Some("PlayerView")),
-        KeyBinding::new("T", actions::CycleTheme, Some("PlayerView")),
         KeyBinding::new("alt-l", actions::CycleLanguage, None),
         // Search and view toggles - "/" toggles search, so keep it working in PlayerView
         KeyBinding::new("/", actions::ToggleSearch, Some("PlayerView")),
@@ -169,7 +194,11 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("shift-n", actions::MovePluginDown, Some("PlayerView")),
         // Directory management
         KeyBinding::new("shift-a", actions::AddDirectory, Some("PlayerView")),
-        KeyBinding::new("shift-s", actions::ScanLibrary, Some("PlayerView")),
+        KeyBinding::new(
+            "secondary-shift-s",
+            actions::ScanLibrary,
+            Some("PlayerView"),
+        ),
         KeyBinding::new("S", actions::SwitchToSettings, Some("PlayerView")),
         // Level meter controls - PlayerView context so text editing isn't intercepted
         KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
@@ -185,270 +214,129 @@ fn default_bindings() -> Vec<KeyBinding> {
     ]
 }
 
-/// Get documented keybindings for help display (preset-aware)
+/// Get documented keybindings from the exact runtime registrations for the
+/// selected preset. Semantic descriptions live in the catalog, while key
+/// labels are generated from `KeyBinding::keystrokes()` so they cannot drift.
 pub fn get_documented_keybindings(preset: KeymapPreset) -> Vec<DocumentedKeybinding> {
-    let mut bindings = match preset {
-        KeymapPreset::Default => default_documented_keybindings(),
-        KeymapPreset::Vim => vim_documented_keybindings(),
-        KeymapPreset::Emacs => emacs_documented_keybindings(),
-        KeymapPreset::VSCode => vscode_documented_keybindings(),
-    };
-    bindings.extend([
-        DocumentedKeybinding {
-            key: "Alt+←",
-            description: "Navigate between steps",
-            category: KeybindingCategory::Navigation,
-        },
-        DocumentedKeybinding {
-            key: "Alt+→",
-            description: "Proceed to next step or finish",
-            category: KeybindingCategory::Navigation,
-        },
-    ]);
-    bindings.extend(listening_test_documented_keybindings());
-    bindings
+    let runtime_bindings = get_keybindings(preset);
+    catalog::documented_keybindings_from_runtime(&runtime_bindings)
 }
 
-fn listening_test_documented_keybindings() -> Vec<DocumentedKeybinding> {
-    listening_test::DOCUMENTED_BINDINGS
+/// Get contextual help for one screen from the authoritative runtime
+/// registrations. The screen catalog contributes descriptions and semantic
+/// grouping only; key labels always come from `KeyBinding::keystrokes()`.
+pub fn get_documented_keybindings_for_screen(
+    screen: crate::app::Screen,
+    preset: KeymapPreset,
+) -> Vec<DocumentedKeybinding> {
+    let runtime_bindings = get_keybindings(preset);
+    catalog::documented_keybindings_for_screen_from_runtime(screen, &runtime_bindings)
+}
+
+/// Search executable command-palette rows using gpui-keybinding's discovery
+/// backend. Copy and categories are localized before indexing, so queries work
+/// in the language currently shown by the application.
+pub fn search_command_palette_commands(
+    preset: KeymapPreset,
+    query: &str,
+    action_text: impl Fn(&'static str) -> &'static str,
+    category_text: impl Fn(KeybindingCategory) -> &'static str,
+) -> Vec<CommandPaletteCommand> {
+    use gpui_keybinding::{
+        DocumentedKeybinding as ToolkitDocumentedKeybinding,
+        KeybindingCategory as ToolkitKeybindingCategory, command_palette_entries,
+        search_command_palette,
+    };
+
+    let source = get_documented_keybindings(preset)
+        .into_iter()
+        .filter_map(|binding| {
+            let action_name = binding.action_name?;
+            Some((
+                action_name,
+                binding.key,
+                binding.raw_key_spec,
+                action_text(binding.description).to_string(),
+                category_text(binding.category).to_string(),
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    let searchable = source
         .iter()
-        .map(|(key, description)| DocumentedKeybinding {
-            key,
-            description,
-            category: KeybindingCategory::ListeningTests,
+        .map(|(_, key, raw_key_spec, description, category)| {
+            ToolkitDocumentedKeybinding::new(
+                key.clone(),
+                description.clone(),
+                ToolkitKeybindingCategory::Custom(category.clone()),
+            )
+            .with_raw_key_spec(raw_key_spec.clone())
+        })
+        .collect::<Vec<_>>();
+    let entries = command_palette_entries(&searchable);
+
+    search_command_palette(&entries, query)
+        .into_iter()
+        .filter_map(|entry| {
+            source
+                .iter()
+                .find(|(_, key, _, description, category)| {
+                    *key == entry.key
+                        && *description == entry.description
+                        && category.as_str() == entry.category.name()
+                })
+                .map(
+                    |(action_name, key, _, description, category)| CommandPaletteCommand {
+                        action_name,
+                        key: key.clone(),
+                        description: description.clone(),
+                        category: category.clone(),
+                    },
+                )
         })
         .collect()
 }
 
-fn default_documented_keybindings() -> Vec<DocumentedKeybinding> {
-    vec![
-        // Playback
-        DocumentedKeybinding {
-            key: "Space",
-            description: "Play/Pause",
-            category: KeybindingCategory::Playback,
-        },
-        DocumentedKeybinding {
-            key: "n / >",
-            description: "Next track",
-            category: KeybindingCategory::Playback,
-        },
-        DocumentedKeybinding {
-            key: "b / <",
-            description: "Previous track",
-            category: KeybindingCategory::Playback,
-        },
-        DocumentedKeybinding {
-            key: "+ / =",
-            description: "Volume up",
-            category: KeybindingCategory::Playback,
-        },
-        DocumentedKeybinding {
-            key: "- / _",
-            description: "Volume down",
-            category: KeybindingCategory::Playback,
-        },
-        // Navigation
-        DocumentedKeybinding {
-            key: "j / ↓",
-            description: "Select next",
-            category: KeybindingCategory::Navigation,
-        },
-        DocumentedKeybinding {
-            key: "k / ↑",
-            description: "Select previous",
-            category: KeybindingCategory::Navigation,
-        },
-        DocumentedKeybinding {
-            key: "h / l / ← →",
-            description: "Expand/collapse",
-            category: KeybindingCategory::Navigation,
-        },
-        DocumentedKeybinding {
-            key: "PgUp/PgDn",
-            description: "Page up/down",
-            category: KeybindingCategory::Navigation,
-        },
-        DocumentedKeybinding {
-            key: "Ctrl+←/→",
-            description: "Previous/next page",
-            category: KeybindingCategory::Navigation,
-        },
-        // Screen switching
-        DocumentedKeybinding {
-            key: "Shift+L",
-            description: "Library",
-            category: KeybindingCategory::ScreenSwitch,
-        },
-        DocumentedKeybinding {
-            key: "Shift+Q",
-            description: "Queue",
-            category: KeybindingCategory::ScreenSwitch,
-        },
-        DocumentedKeybinding {
-            key: "Shift+P",
-            description: "Plugins",
-            category: KeybindingCategory::ScreenSwitch,
-        },
-        DocumentedKeybinding {
-            key: "Shift+O",
-            description: "Devices",
-            category: KeybindingCategory::ScreenSwitch,
-        },
-        DocumentedKeybinding {
-            key: "Shift+D",
-            description: "Directory Manager",
-            category: KeybindingCategory::ScreenSwitch,
-        },
-        DocumentedKeybinding {
-            key: "S",
-            description: "Settings",
-            category: KeybindingCategory::ScreenSwitch,
-        },
-        // Library
-        DocumentedKeybinding {
-            key: "/",
-            description: "Search",
-            category: KeybindingCategory::Library,
-        },
-        DocumentedKeybinding {
-            key: "t",
-            description: "Toggle tree/list view",
-            category: KeybindingCategory::Library,
-        },
-        DocumentedKeybinding {
-            key: "s",
-            description: "Cycle sort order",
-            category: KeybindingCategory::Library,
-        },
-        DocumentedKeybinding {
-            key: "c",
-            description: "Cycle channel filter",
-            category: KeybindingCategory::Library,
-        },
-        DocumentedKeybinding {
-            key: "1-4",
-            description: "Set sort (Artist/Album/Title/Year)",
-            category: KeybindingCategory::Library,
-        },
-        DocumentedKeybinding {
-            key: "5-9",
-            description: "Set filter (All/Mono/Stereo/Multi/Mixed)",
-            category: KeybindingCategory::Library,
-        },
-        DocumentedKeybinding {
-            key: "Enter / a",
-            description: "Add to queue",
-            category: KeybindingCategory::Library,
-        },
-        // Queue
-        DocumentedKeybinding {
-            key: "d / Del",
-            description: "Remove item",
-            category: KeybindingCategory::Queue,
-        },
-        // Plugins
-        DocumentedKeybinding {
-            key: "u",
-            description: "Move plugin up",
-            category: KeybindingCategory::Plugins,
-        },
-        DocumentedKeybinding {
-            key: "Shift+N",
-            description: "Move plugin down",
-            category: KeybindingCategory::Plugins,
-        },
-        DocumentedKeybinding {
-            key: "! @ # $ % ^ &",
-            description: "Quick add plugins",
-            category: KeybindingCategory::Plugins,
-        },
-        // Level meters
-        DocumentedKeybinding {
-            key: "Tab / Shift+Tab",
-            description: "Next/prev meter group",
-            category: KeybindingCategory::LevelMeters,
-        },
-        DocumentedKeybinding {
-            key: "m",
-            description: "Toggle mute",
-            category: KeybindingCategory::LevelMeters,
-        },
-        DocumentedKeybinding {
-            key: "Shift+M",
-            description: "Toggle solo",
-            category: KeybindingCategory::LevelMeters,
-        },
-        DocumentedKeybinding {
-            key: "Ctrl+M",
-            description: "Toggle dim",
-            category: KeybindingCategory::LevelMeters,
-        },
-        DocumentedKeybinding {
-            key: "x",
-            description: "Clear mutes/solos",
-            category: KeybindingCategory::LevelMeters,
-        },
-        // System
-        DocumentedKeybinding {
-            key: "Shift+T",
-            description: "Cycle theme",
-            category: KeybindingCategory::System,
-        },
-        DocumentedKeybinding {
-            key: "Alt+L",
-            description: "Cycle language",
-            category: KeybindingCategory::System,
-        },
-        DocumentedKeybinding {
-            key: "?",
-            description: "Show help",
-            category: KeybindingCategory::System,
-        },
-        DocumentedKeybinding {
-            key: "Esc",
-            description: "Cancel/close",
-            category: KeybindingCategory::System,
-        },
-        DocumentedKeybinding {
-            #[cfg(target_os = "macos")]
-            key: "Cmd+,",
-            #[cfg(not(target_os = "macos"))]
-            key: "Ctrl+,",
-            description: "Settings",
-            category: KeybindingCategory::System,
-        },
-        DocumentedKeybinding {
-            #[cfg(target_os = "macos")]
-            key: "Cmd+Q",
-            #[cfg(not(target_os = "macos"))]
-            key: "Ctrl+Q",
-            description: "Quit",
-            category: KeybindingCategory::System,
-        },
-        DocumentedKeybinding {
-            #[cfg(target_os = "macos")]
-            key: "Cmd++",
-            #[cfg(not(target_os = "macos"))]
-            key: "Ctrl++",
-            description: "Increase font size",
-            category: KeybindingCategory::System,
-        },
-        DocumentedKeybinding {
-            #[cfg(target_os = "macos")]
-            key: "Cmd+-",
-            #[cfg(not(target_os = "macos"))]
-            key: "Ctrl+-",
-            description: "Decrease font size",
-            category: KeybindingCategory::System,
-        },
-        DocumentedKeybinding {
-            #[cfg(target_os = "macos")]
-            key: "Cmd+Shift+0",
-            #[cfg(not(target_os = "macos"))]
-            key: "Ctrl+Shift+0",
-            description: "Reset font size",
-            category: KeybindingCategory::System,
-        },
-    ]
+/// Clone the exact action registered for a palette row. Dispatching this box
+/// therefore reaches the same handler as pressing the documented shortcut.
+pub fn command_palette_action(preset: KeymapPreset, action_name: &str) -> Option<Box<dyn Action>> {
+    get_keybindings(preset)
+        .into_iter()
+        .find(|binding| binding.action().name() == action_name)
+        .map(|binding| binding.action().boxed_clone())
+}
+
+/// Validate the authoritative runtime/documentation registry for one preset.
+/// This is intentionally public so integration and release QA can enforce the
+/// same conflict and missing-command rules used by the application.
+pub fn validate_keybinding_registry(preset: KeymapPreset) -> Result<(), String> {
+    use std::collections::BTreeMap;
+
+    let runtime_bindings = get_keybindings(preset);
+    let mut seen = BTreeMap::new();
+    for binding in &runtime_bindings {
+        let keys = binding
+            .keystrokes()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let context = format!("{:?}", binding.predicate());
+        let action = binding.action().name();
+        let identity = (context, keys);
+        if let Some(previous) = seen.insert(identity.clone(), action) {
+            return Err(format!(
+                "{preset:?} registers both {previous} and {action} for {identity:?}"
+            ));
+        }
+    }
+
+    let missing = catalog::missing_documented_commands(&runtime_bindings);
+    if !missing.is_empty() {
+        return Err(format!(
+            "{preset:?} is missing runtime commands documented as: {}",
+            missing.join(", ")
+        ));
+    }
+    Ok(())
 }

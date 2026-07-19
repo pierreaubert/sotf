@@ -1,7 +1,8 @@
 use crate::driver::AppDriver;
 use crate::runner::{E2ERunner, TestScenario};
+use crossterm::event::{KeyCode as TuiKeyCode, KeyEvent as TuiKeyEvent, KeyModifiers};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
-use sotf_audio_player::{Album, PluginSettings, PluginType, Track};
+use sotf_audio_player::{Album, PluginSettings, PluginType, ReleaseChannel, Track};
 use sotf_audio_player_gpui::app::types::{
     HeadphoneEqStep, RecordingStep, RoomEqStep, SpinoramaStep,
 };
@@ -17,6 +18,10 @@ struct KeyboardLibraryQueueScenario;
 struct KeyboardWizardScenario;
 
 struct KeyboardPluginRackScenario;
+
+struct KeyboardCommandPaletteScenario;
+
+struct CrossUiSharedCommandScenario;
 
 fn bind_default_keys(cx: &mut TestAppContext) {
     gpui_ui_kit::clear_all_input_states();
@@ -142,7 +147,7 @@ impl TestScenario for KeyboardWorkflowScenario {
 
 impl TestScenario for KeyboardLibraryQueueScenario {
     fn name(&self) -> &'static str {
-        "Keyboard-only data-backed Library and Queue workflow"
+        "Keyboard-only data-backed Home, Library, and Queue workflow"
     }
 
     fn setup(&mut self, cx: &mut TestAppContext) -> Result<(), Box<dyn Error>> {
@@ -176,17 +181,38 @@ impl TestScenario for KeyboardLibraryQueueScenario {
             app.playback.is_playing = false;
         });
 
-        driver.navigate_to(Screen::Library);
-        driver.simulate_keystrokes("a");
+        driver.navigate_to(Screen::Home);
+        driver.simulate_keystrokes("right");
+        driver.run_until_parked();
+        assert_eq!(
+            driver.read_app(|app| (
+                app.library_state.home_album_selection.shelf_id.clone(),
+                app.library_state.home_album_selection.album_index,
+            )),
+            (Some("favorite".to_string()), 0),
+            "Right did not select the first visible Home album"
+        );
+        driver.simulate_keystrokes("enter");
         driver.run_until_parked();
         assert_eq!(driver.read_app(|app| app.queue_state.len()), 1);
 
         driver.simulate_keystrokes("right");
         driver.run_until_parked();
-        assert_eq!(driver.read_app(|app| app.library_state.selected_index), 1);
-        driver.simulate_keystrokes("a");
+        assert_eq!(
+            driver.read_app(|app| app.library_state.home_album_selection.album_index),
+            1,
+            "Right did not select the next visible Home album"
+        );
+        driver.simulate_keystrokes("enter");
         driver.run_until_parked();
         assert_eq!(driver.read_app(|app| app.queue_state.len()), 2);
+
+        driver.navigate_to(Screen::Library);
+        assert_eq!(
+            driver.read_app(|app| app.library_state.selected_index),
+            1,
+            "Home activation did not synchronize the Library selection"
+        );
 
         driver.simulate_keystrokes("shift-q");
         driver.run_until_parked();
@@ -309,6 +335,7 @@ impl TestScenario for KeyboardPluginRackScenario {
         window: WindowHandle<PlayerView>,
     ) -> Result<(), Box<dyn Error>> {
         let mut driver = AppDriver::new(cx, window);
+        driver.update_app(|app, _| app.ui_state.release_channel = ReleaseChannel::Beta);
         driver.navigate_to(Screen::Studio);
         driver.run_until_parked();
 
@@ -479,6 +506,181 @@ impl TestScenario for KeyboardPluginRackScenario {
     }
 }
 
+impl TestScenario for KeyboardCommandPaletteScenario {
+    fn name(&self) -> &'static str {
+        "Command palette keyboard interaction and shortcut outcome equivalence"
+    }
+
+    fn setup(&mut self, cx: &mut TestAppContext) -> Result<(), Box<dyn Error>> {
+        bind_default_keys(cx);
+        Ok(())
+    }
+
+    fn teardown(&mut self, _cx: &mut TestAppContext) -> Result<(), Box<dyn Error>> {
+        gpui_ui_kit::clear_all_input_states();
+        Ok(())
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        window: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut driver = AppDriver::new(cx, window);
+        driver.navigate_to(Screen::Library);
+
+        driver.simulate_keystrokes("secondary-k");
+        driver.run_until_parked();
+        assert_eq!(
+            driver.read_app(|app| app.ui_state.input_mode),
+            InputMode::CommandPalette
+        );
+        driver.simulate_keystrokes("m a n a g e r");
+        driver.run_until_parked();
+        driver.simulate_keystrokes("escape");
+        driver.run_until_parked();
+        assert_eq!(
+            driver.read_app(|app| app.ui_state.input_mode),
+            InputMode::Normal,
+            "Escape did not close the command palette"
+        );
+
+        driver.simulate_keystrokes("shift-d");
+        driver.run_until_parked();
+        let shortcut_outcome = driver.read_app(|app| {
+            (
+                app.ui_state.current_screen,
+                app.ui_state.active_settings_tab,
+                app.ui_state.input_mode,
+            )
+        });
+
+        driver.update_app(|app, _| {
+            app.ui_state.current_screen = Screen::Library;
+            app.ui_state.active_settings_tab = SettingsTab::AudioDevice;
+            app.ui_state.input_mode = InputMode::Normal;
+        });
+        driver.run_until_parked();
+
+        driver.simulate_keystrokes("secondary-k");
+        driver.run_until_parked();
+        driver.simulate_keystrokes("m a n a g e r");
+        driver.run_until_parked();
+        // Exercise visible-selection navigation even though this focused query
+        // intentionally resolves to a single executable command.
+        driver.simulate_keystrokes("down up");
+        driver.run_until_parked();
+        driver.simulate_keystrokes("enter");
+        driver.run_until_parked();
+
+        let palette_outcome = driver.read_app(|app| {
+            (
+                app.ui_state.current_screen,
+                app.ui_state.active_settings_tab,
+                app.ui_state.input_mode,
+            )
+        });
+        assert_eq!(
+            palette_outcome, shortcut_outcome,
+            "palette dispatch diverged from the registered Shift+D shortcut"
+        );
+
+        Ok(())
+    }
+}
+
+impl TestScenario for CrossUiSharedCommandScenario {
+    fn name(&self) -> &'static str {
+        "GPUI and TUI shared-command outcome equivalence"
+    }
+
+    fn setup(&mut self, cx: &mut TestAppContext) -> Result<(), Box<dyn Error>> {
+        bind_default_keys(cx);
+        Ok(())
+    }
+
+    fn teardown(&mut self, _cx: &mut TestAppContext) -> Result<(), Box<dyn Error>> {
+        gpui_ui_kit::clear_all_input_states();
+        Ok(())
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        window: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        use sotf_audio_player_tui::app::{InputMode as TuiInputMode, Screen as TuiScreen};
+        use sotf_audio_player_tui::events::{PlayerCommand as TuiPlayerCommand, handle_key_event};
+
+        let mut driver = AppDriver::new(cx, window);
+        let mut tui = sotf_audio_player_tui::app::App::new(
+            sotf_audio_player_tui::theme::Theme::default(),
+            false,
+        );
+        tui.current_screen = TuiScreen::Library;
+        tui.input_mode = TuiInputMode::Normal;
+        driver.navigate_to(Screen::Library);
+
+        driver.simulate_keystrokes("shift-q");
+        driver.run_until_parked();
+        let tui_screen_command = handle_key_event(
+            &mut tui,
+            TuiKeyEvent::new(TuiKeyCode::Char('Q'), KeyModifiers::SHIFT),
+        );
+        assert!(tui_screen_command.is_none());
+        assert_eq!(
+            driver.read_app(|app| app.ui_state.current_screen),
+            Screen::Queue
+        );
+        assert_eq!(tui.current_screen, TuiScreen::Queue);
+
+        driver.update_app(|app, _| {
+            app.ui_state.language = sotf_audio_player_gpui::app::i18n::Language::English;
+        });
+        tui.ui.language = sotf_audio_player_tui::i18n::Language::English;
+        driver.simulate_keystrokes("alt-l");
+        driver.run_until_parked();
+        let tui_language_command = handle_key_event(
+            &mut tui,
+            TuiKeyEvent::new(TuiKeyCode::Char('l'), KeyModifiers::ALT),
+        );
+        assert!(tui_language_command.is_none());
+        assert_eq!(
+            driver.read_app(|app| app.ui_state.language),
+            sotf_audio_player_gpui::app::i18n::Language::French
+        );
+        assert_eq!(
+            tui.ui.language,
+            sotf_audio_player_tui::i18n::Language::French
+        );
+
+        driver.update_app(|app, _| app.playback.volume = 0.5);
+        tui.playback.volume = 0.5;
+        driver.simulate_keystrokes("=");
+        driver.run_until_parked();
+        let tui_volume_command = handle_key_event(
+            &mut tui,
+            TuiKeyEvent::new(TuiKeyCode::Char('='), KeyModifiers::NONE),
+        );
+        let gpui_volume = driver.read_app(|app| app.playback.volume);
+        assert!(
+            matches!(
+                tui_volume_command,
+                Some(TuiPlayerCommand::SetVolume(volume))
+                    if (volume - tui.playback.volume).abs() < f32::EPSILON
+            ),
+            "TUI volume shortcut did not emit its resulting volume"
+        );
+        assert!(
+            (gpui_volume - tui.playback.volume).abs() < f32::EPSILON,
+            "volume command diverged: GPUI={gpui_volume}, TUI={}",
+            tui.playback.volume
+        );
+
+        Ok(())
+    }
+}
+
 #[gpui::test]
 async fn whole_app_keyboard_navigation_and_overlays_work(cx: &mut TestAppContext) {
     E2ERunner::new(KeyboardWorkflowScenario)
@@ -506,6 +708,22 @@ async fn keyboard_completes_validated_domain_wizards(cx: &mut TestAppContext) {
 #[gpui::test]
 async fn keyboard_completes_plugin_rack_editing(cx: &mut TestAppContext) {
     E2ERunner::new(KeyboardPluginRackScenario)
+        .run(cx)
+        .await
+        .unwrap();
+}
+
+#[gpui::test]
+async fn command_palette_keyboard_interaction_matches_registered_shortcut(cx: &mut TestAppContext) {
+    E2ERunner::new(KeyboardCommandPaletteScenario)
+        .run(cx)
+        .await
+        .unwrap();
+}
+
+#[gpui::test]
+async fn gpui_and_tui_shared_commands_produce_equivalent_outcomes(cx: &mut TestAppContext) {
+    E2ERunner::new(CrossUiSharedCommandScenario)
         .run(cx)
         .await
         .unwrap();

@@ -1,6 +1,7 @@
 use crate::app::{App, InputMode, Screen};
 use crate::media_controls::TuiMediaControls;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crate::ui::keybinding_catalog::{SharedCommand, TuiCommand, TuiKeyContext, resolve_command};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use sotf_media_controls::MediaControlEvent;
 use std::time::Duration;
 
@@ -88,10 +89,11 @@ pub fn handle_events(
 }
 
 pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    // Ctrl+C always quits, regardless of input mode
-    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        app.should_quit = true;
-        return None;
+    if let Some(command) = resolve_command(TuiKeyContext::Always, key) {
+        let TuiCommand::Shared(command) = command else {
+            unreachable!("non-shared command in Always context: {command:?}");
+        };
+        return dispatch_shared_command(app, key, command);
     }
 
     match app.input_mode {
@@ -141,8 +143,92 @@ mod p1_event_policy_tests {
 /// Returns `Some(cmd)` when the key is handled (cmd may be `None`),
 /// or `None` when the key is not a shared key.
 fn handle_shared_keys(app: &mut App, key: KeyEvent) -> Option<Option<PlayerCommand>> {
-    match key.code {
-        KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::ALT) => {
+    // Screen-specific bindings take precedence over root conveniences. This
+    // makes Plugins `u` and Shift+Up/Down reachable instead of being consumed
+    // as mute or meter-control commands.
+    if app.current_screen == Screen::Plugins
+        && app.input_mode == InputMode::Normal
+        && resolve_command(TuiKeyContext::PluginList, key).is_some()
+    {
+        return None;
+    }
+
+    if !app.input_mode.is_configure_sub_screen()
+        && let Some(command) = resolve_command(TuiKeyContext::GlobalMeters, key)
+    {
+        let TuiCommand::Shared(command) = command else {
+            unreachable!("non-shared command in GlobalMeters context: {command:?}");
+        };
+        return Some(dispatch_shared_command(app, key, command));
+    }
+
+    if !app.input_mode.is_configure_sub_screen()
+        && let Some(command) = resolve_command(TuiKeyContext::NormalRoot, key)
+    {
+        let TuiCommand::Shared(command) = command else {
+            unreachable!("non-shared command in NormalRoot context: {command:?}");
+        };
+        return Some(dispatch_shared_command(app, key, command));
+    }
+
+    if let Some(command) = resolve_command(TuiKeyContext::SharedRoot, key) {
+        let TuiCommand::Shared(command) = command else {
+            unreachable!("non-shared command in SharedRoot context: {command:?}");
+        };
+        return Some(dispatch_shared_command(app, key, command));
+    }
+
+    None
+}
+
+pub(super) fn dispatch_shared_command(
+    app: &mut App,
+    key: KeyEvent,
+    command: SharedCommand,
+) -> Option<PlayerCommand> {
+    match command {
+        SharedCommand::Quit | SharedCommand::ExitApplication => {
+            app.should_quit = true;
+            None
+        }
+        SharedCommand::CycleScreens => {
+            app.current_screen = match app.current_screen {
+                Screen::Loading => Screen::Loading,
+                Screen::Library => Screen::Queue,
+                Screen::Queue => Screen::Playlists,
+                Screen::Playlists => Screen::Plugins,
+                Screen::Plugins => Screen::Devices,
+                Screen::Devices => Screen::Configure,
+                Screen::Configure => Screen::Library,
+            };
+            app.input_mode = if app.current_screen == Screen::Configure {
+                InputMode::Configure
+            } else {
+                InputMode::Normal
+            };
+            None
+        }
+        SharedCommand::SwitchScreen => {
+            let (screen, mode) = match key.code {
+                KeyCode::Char('L') => (Screen::Library, InputMode::Normal),
+                KeyCode::Char('Q') => (Screen::Queue, InputMode::Normal),
+                KeyCode::Char('P') => (Screen::Plugins, InputMode::Normal),
+                KeyCode::Char('O') => (Screen::Devices, InputMode::Normal),
+                KeyCode::Char('Y') => (Screen::Playlists, InputMode::Normal),
+                KeyCode::Char('C') | KeyCode::Char('N') => {
+                    (Screen::Configure, InputMode::Configure)
+                }
+                _ => unreachable!("non-screen chord resolved as SwitchScreen: {key:?}"),
+            };
+            app.current_screen = screen;
+            app.input_mode = mode;
+            None
+        }
+        SharedCommand::FocusLevelMeters => {
+            app.input_mode = InputMode::LevelMeters;
+            None
+        }
+        SharedCommand::CycleLanguage => {
             let language = app.ui.language.next();
             app.ui.language = language;
             app.ui.status_message = Some(
@@ -151,77 +237,101 @@ fn handle_shared_keys(app: &mut App, key: KeyEvent) -> Option<Option<PlayerComma
                     .to_string(),
             );
             app.ui.needs_redraw = true;
-            Some(None)
+            None
         }
-        // Quit
-        KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.should_quit = true;
-            Some(None)
+        SharedCommand::AdjustVolume => {
+            if matches!(key.code, KeyCode::Char('+') | KeyCode::Char('=')) {
+                app.increase_volume();
+            } else {
+                app.decrease_volume();
+            }
+            Some(PlayerCommand::SetVolume(app.playback.volume))
         }
-        KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::SUPER) => {
-            app.should_quit = true;
-            Some(None)
+        SharedCommand::SelectOutputDevice => {
+            if key.code == KeyCode::Right {
+                app.select_next_output_device();
+            } else {
+                app.select_previous_output_device();
+            }
+            app.get_selected_output_device()
+                .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
         }
-
-        // Screen switching
-        KeyCode::Char('L') => {
-            app.current_screen = Screen::Library;
-            app.input_mode = InputMode::Normal;
-            Some(None)
+        SharedCommand::NavigateMeterGroup | SharedCommand::FocusedMeterGroup => {
+            if key.code == KeyCode::Right {
+                app.select_next_level_meter_group();
+            } else {
+                app.select_previous_level_meter_group();
+            }
+            None
         }
-        KeyCode::Char('C') => {
-            app.current_screen = Screen::Configure;
-            app.input_mode = InputMode::Configure;
-            Some(None)
+        SharedCommand::NavigateMeterControl | SharedCommand::FocusedMeterControl => {
+            if key.code == KeyCode::Down {
+                app.select_next_level_meter_control();
+            } else {
+                app.select_previous_level_meter_control();
+            }
+            None
         }
-        KeyCode::Char('Q') => {
-            app.current_screen = Screen::Queue;
-            app.input_mode = InputMode::Normal;
-            Some(None)
+        SharedCommand::ToggleMeterSolo | SharedCommand::FocusedMeterSolo => {
+            app.toggle_level_meter_solo();
+            None
         }
-        KeyCode::Char('P') => {
-            app.current_screen = Screen::Plugins;
-            app.input_mode = InputMode::Normal;
-            Some(None)
+        SharedCommand::ToggleMute => Some(PlayerCommand::ToggleMute),
+        SharedCommand::ToggleReplayGain => {
+            app.playback.replay_gain_enabled = !app.playback.replay_gain_enabled;
+            let mode = if app.playback.replay_gain_enabled {
+                match app.playback.replay_gain_mode {
+                    crate::app::ReplayGainMode::Track => crate::tui_text!(app, "ON (Track mode)"),
+                    crate::app::ReplayGainMode::Album => crate::tui_text!(app, "ON (Album mode)"),
+                }
+            } else {
+                crate::tui_text!(app, "OFF")
+            };
+            app.ui.status_message = Some(format!("ReplayGain: {mode}"));
+            if app.playback.is_playing {
+                app.plugin_rack.needs_update = true;
+            }
+            None
         }
-        KeyCode::Char('O') => {
-            app.current_screen = Screen::Devices;
-            app.input_mode = InputMode::Normal;
-            Some(None)
+        SharedCommand::CycleReplayGainMode => {
+            use crate::app::ReplayGainMode;
+            app.playback.replay_gain_mode = match app.playback.replay_gain_mode {
+                ReplayGainMode::Track => ReplayGainMode::Album,
+                ReplayGainMode::Album => ReplayGainMode::Track,
+            };
+            let mode = match app.playback.replay_gain_mode {
+                ReplayGainMode::Track => crate::tui_text!(app, "Track"),
+                ReplayGainMode::Album => crate::tui_text!(app, "Album"),
+            };
+            app.ui.status_message = Some(format!("ReplayGain mode: {mode}"));
+            if app.playback.is_playing && app.playback.replay_gain_enabled {
+                app.plugin_rack.needs_update = true;
+            }
+            None
         }
-        KeyCode::Char('Y') => {
-            app.current_screen = Screen::Playlists;
-            app.input_mode = InputMode::Normal;
-            Some(None)
-        }
-        KeyCode::Char('N') => {
-            app.current_screen = Screen::Configure;
-            app.input_mode = InputMode::Configure;
-            Some(None)
-        }
-
-        // Help
-        KeyCode::Char('?') => {
+        SharedCommand::ShowHelp => {
             app.enter_overlay_mode(InputMode::ShowHelp);
-            Some(None)
+            None
         }
-
-        // Volume controls (not in configure sub-screens where +/- adjust fields)
-        KeyCode::Char('+') | KeyCode::Char('=') if !app.input_mode.is_configure_sub_screen() => {
-            app.increase_volume();
-            Some(Some(PlayerCommand::SetVolume(app.playback.volume)))
+        SharedCommand::FocusedMeterMute => {
+            app.toggle_level_meter_mute();
+            None
         }
-        KeyCode::Char('-') | KeyCode::Char('_') if !app.input_mode.is_configure_sub_screen() => {
-            app.decrease_volume();
-            Some(Some(PlayerCommand::SetVolume(app.playback.volume)))
+        SharedCommand::FocusedMeterDim => {
+            app.toggle_level_meter_dim();
+            None
         }
-
-        // Mute toggle
-        KeyCode::Char('u') if !app.input_mode.is_configure_sub_screen() => {
-            Some(Some(PlayerCommand::ToggleMute))
+        SharedCommand::FocusedMeterClear => {
+            app.clear_level_meter_mutes_and_solos();
+            None
         }
-
-        _ => None,
+        SharedCommand::ExitLevelMeters => {
+            app.input_mode = InputMode::Normal;
+            if key.code == KeyCode::Tab {
+                app.current_screen = Screen::Library;
+            }
+            None
+        }
     }
 }
 
@@ -241,45 +351,18 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         return playlists::handle_playlists_keys(app, key);
     }
 
-    match key.code {
-        KeyCode::Esc => {
-            app.should_quit = true;
-            None
-        }
-        // TAB to cycle through screens
-        KeyCode::Tab => {
-            app.current_screen = match app.current_screen {
-                Screen::Loading => Screen::Loading,
-                Screen::Library => Screen::Queue,
-                Screen::Queue => Screen::Playlists,
-                Screen::Playlists => Screen::Plugins,
-                Screen::Plugins => Screen::Devices,
-                Screen::Devices => Screen::Configure,
-                Screen::Configure => Screen::Library,
-            };
-            if app.current_screen == Screen::Configure {
-                app.input_mode = InputMode::Configure;
-            } else {
-                app.input_mode = InputMode::Normal;
-            }
-            None
-        }
-        _ => {
-            // Try shared keys
-            if let Some(cmd) = handle_shared_keys(app, key) {
-                return cmd;
-            }
-            // Dispatch based on current screen
-            match app.current_screen {
-                Screen::Loading => None,
-                Screen::Library => handle_library_keys(app, key),
-                Screen::Queue => handle_queue_keys(app, key),
-                Screen::Playlists => playlists::handle_playlists_keys(app, key),
-                Screen::Plugins => handle_plugins_keys(app, key),
-                Screen::Devices => handle_devices_keys(app, key),
-                Screen::Configure => conf::handle_tab_bar_keys(app, key),
-            }
-        }
+    if let Some(command) = handle_shared_keys(app, key) {
+        return command;
+    }
+
+    match app.current_screen {
+        Screen::Loading => None,
+        Screen::Library => handle_library_keys(app, key),
+        Screen::Queue => handle_queue_keys(app, key),
+        Screen::Playlists => playlists::handle_playlists_keys(app, key),
+        Screen::Plugins => handle_plugins_keys(app, key),
+        Screen::Devices => handle_devices_keys(app, key),
+        Screen::Configure => conf::handle_tab_bar_keys(app, key),
     }
 }
 

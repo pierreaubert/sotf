@@ -3,7 +3,6 @@ use super::super::actions::ToggleUpmixerConfig;
 use super::super::level_meters::render_gradient_meter;
 use super::super::render_plugin_content;
 use super::super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_icon};
-use super::misc::speaker_config_to_channels;
 use super::plugin_drag_info::PluginDragInfo;
 use super::short::short_name;
 use super::short::short_name_with_permanent;
@@ -378,32 +377,7 @@ impl PlayerView {
                 .pending_plugin_update
                 .is_some();
 
-            // Chain I/O summary: input is stereo at the rack head; output
-            // depends on whether an Upmixer / BinauralDecoder is active and
-            // enabled. Mirrors the calculation at the meter divider site.
-            let chain_input_channels: usize = 2;
-            let mut chain_output_channels: usize = 2;
-            for p in graph.plugins() {
-                if !p.enabled {
-                    continue;
-                }
-                match p.plugin_type() {
-                    PluginType::Upmixer => {
-                        chain_output_channels =
-                            if let sotf_audio_player::PluginSettings::Upmixer {
-                                speaker_config,
-                                ..
-                            } = &p.settings
-                            {
-                                speaker_config_to_channels(speaker_config)
-                            } else {
-                                6
-                            };
-                    }
-                    PluginType::BinauralDecoder => chain_output_channels = 2,
-                    _ => {}
-                }
-            }
+            let (chain_input_channels, chain_output_channels) = graph.compute_channel_flow();
 
             let chain_sample_rate = state.app.audio_device_state.hal_config.sample_rate;
             let chain_buffer_frames = state.app.audio_device_state.hal_config.buffer_frames;
@@ -571,12 +545,18 @@ impl PlayerView {
                                                 if source_is_monitor && target != 0 && target != chain_len - 1 {
                                                     return;
                                                 }
-                                                state.app.plugin_state.graph.move_plugin(source, target);
-                                                state.app.plugin_state.selected_plugin_index = target;
-                                                state.app.plugin_state.graph.update_channel_dependent_plugins();
-                                                state.app.plugin_state.update_state.pending_plugin_update =
-                                                    Some(PluginUpdateType::Structural);
-                                                state.app.update_level_meter_groups();
+                                                match state.app.plugin_state.graph.move_plugin(source, target) {
+                                                    Ok(()) => {
+                                                        state.app.plugin_state.selected_plugin_index = target;
+                                                        state.app.plugin_state.update_state.pending_plugin_update =
+                                                            Some(PluginUpdateType::Structural);
+                                                        state.app.update_level_meter_groups();
+                                                    }
+                                                    Err(error) => {
+                                                        state.app.ui_state.toast_message =
+                                                            Some(crate::app::ToastMessage::error(error));
+                                                    }
+                                                }
                                             });
                                             cx.notify();
                                         }
@@ -1083,12 +1063,18 @@ impl PlayerView {
                                         if source_is_monitor && target != chain_len - 1 {
                                             return;
                                         }
-                                        state.app.plugin_state.graph.move_plugin(source, target);
-                                        state.app.plugin_state.selected_plugin_index = target;
-                                        state.app.plugin_state.graph.update_channel_dependent_plugins();
-                                        state.app.plugin_state.update_state.pending_plugin_update =
-                                            Some(PluginUpdateType::Structural);
-                                        state.app.update_level_meter_groups();
+                                        match state.app.plugin_state.graph.move_plugin(source, target) {
+                                            Ok(()) => {
+                                                state.app.plugin_state.selected_plugin_index = target;
+                                                state.app.plugin_state.update_state.pending_plugin_update =
+                                                    Some(PluginUpdateType::Structural);
+                                                state.app.update_level_meter_groups();
+                                            }
+                                            Err(error) => {
+                                                state.app.ui_state.toast_message =
+                                                    Some(crate::app::ToastMessage::error(error));
+                                            }
+                                        }
                                     });
                                     cx.notify();
                                 },
@@ -1145,12 +1131,18 @@ impl PlayerView {
                                                 idx
                                             };
                                             if source != target {
-                                                state.app.plugin_state.graph.move_plugin(source, target);
-                                                state.app.plugin_state.selected_plugin_index = target;
-                                                state.app.plugin_state.graph.update_channel_dependent_plugins();
-                                                state.app.plugin_state.update_state.pending_plugin_update =
-                                                    Some(PluginUpdateType::Structural);
-                                                state.app.update_level_meter_groups();
+                                                match state.app.plugin_state.graph.move_plugin(source, target) {
+                                                    Ok(()) => {
+                                                        state.app.plugin_state.selected_plugin_index = target;
+                                                        state.app.plugin_state.update_state.pending_plugin_update =
+                                                            Some(PluginUpdateType::Structural);
+                                                        state.app.update_level_meter_groups();
+                                                    }
+                                                    Err(error) => {
+                                                        state.app.ui_state.toast_message =
+                                                            Some(crate::app::ToastMessage::error(error));
+                                                    }
+                                                }
                                             }
                                         });
                                         cx.notify();
@@ -1845,29 +1837,9 @@ impl PlayerView {
             .when_some(plugin_data, |el, plugin| {
                 let is_editing = editing_idx.is_some();
                 el.child({
-                    // Calculate output channels based on plugin chain for conditional divider
                     let state = self.state.read(cx);
-                    let mut output_channels = 2;
-                    for p in state.app.plugin_state.graph.plugins() {
-                        if p.enabled {
-                            match p.plugin_type() {
-                                PluginType::Upmixer => {
-                                    if let sotf_audio_player::PluginSettings::Upmixer {
-                                        speaker_config,
-                                        ..
-                                    } = &p.settings
-                                    {
-                                        output_channels =
-                                            speaker_config_to_channels(speaker_config);
-                                    } else {
-                                        output_channels = 6;
-                                    }
-                                }
-                                PluginType::BinauralDecoder => output_channels = 2,
-                                _ => {}
-                            }
-                        }
-                    }
+                    let (_, output_channels) =
+                        state.app.plugin_state.graph.compute_channel_flow();
                     // Compute minimum meter width based on actual element sizes:
                     // Each meter bar: 1rem (16px) + 1px gap between bars
                     // Each group: 2×2px padding (p_0p5) = 4px

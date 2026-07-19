@@ -2,7 +2,7 @@
 use super::super::level_meters::render_gradient_meter;
 use super::super::render_plugin_content;
 use super::super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_icon};
-use super::super::ui_rack::{plugin_description, short_name, speaker_config_to_channels};
+use super::super::ui_rack::{plugin_description, short_name};
 use crate::app::constants::spacing;
 use crate::app::i18n::{PluginCommonTranslations, PluginRackTranslations};
 use crate::app::state::plugin::{PluginUiView, available_controllers};
@@ -590,26 +590,9 @@ impl PlayerView {
                                                      */
                 )
                 .child({
-                    // Calculate output channels based on plugin chain for conditional divider
                     let state = self.state.read(cx);
-                    let mut output_channels = 2;
-                    for p in state.app.plugin_state.graph.plugins() {
-                        if p.enabled {
-                            match p.plugin_type() {
-                                PluginType::Upmixer | PluginType::AAE => {
-                                    match &p.settings {
-                                        sotf_audio_player::PluginSettings::Upmixer { speaker_config, .. }
-                                        | sotf_audio_player::PluginSettings::AAE { speaker_config, .. } => {
-                                            output_channels = speaker_config_to_channels(speaker_config);
-                                        }
-                                        _ => output_channels = 6,
-                                    }
-                                }
-                                PluginType::BinauralDecoder => output_channels = 2,
-                                _ => {}
-                            }
-                        }
-                    }
+                    let (_, output_channels) =
+                        state.app.plugin_state.graph.compute_channel_flow();
                     // Compute minimum meter width based on actual element sizes:
                     // Each meter bar: 1rem (16px) + 1px gap between bars
                     // Each group: 2×2px padding (p_0p5) = 4px

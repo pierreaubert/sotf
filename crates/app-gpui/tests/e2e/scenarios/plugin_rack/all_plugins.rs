@@ -2,7 +2,7 @@ use crate::driver::AppDriver;
 use crate::pages::plugin_rack::PluginRackPage;
 use crate::runner::{E2ERunner, TestScenario};
 use gpui::{Pixels, Size, TestAppContext, VisualTestContext, WindowHandle, px, size};
-use sotf_audio::plugins::PluginType;
+use sotf_audio::plugins::{PluginSettings, PluginType};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
@@ -39,6 +39,12 @@ impl TestScenario for AllPluginsScenario {
         let all_types = PluginType::all();
 
         for plugin_type in all_types {
+            let required_input_channels = PluginSettings::default_for(&plugin_type)
+                .expect("generic application plugins have default settings")
+                .required_input_channels()
+                .unwrap_or(2);
+            page.adapt_input_channels(required_input_channels);
+
             // Skip monitoring plugins as they might be permanent or behave differently?
             // "insert one plugin in the default configuration"
             // We can add them using our page helper.
@@ -112,6 +118,7 @@ impl TestScenario for AllPluginsScenario {
         // "If the inserted plugin has 2+ channels, then all eq on the right of it have the same number of channels"
 
         // Add Upmixer (2 -> 6 channels usually, depends on config)
+        page.adapt_input_channels(2);
         let upmixer_id = page.add_plugin(PluginType::Upmixer);
         let upmixer_index = page.find_plugin_index_by_id(upmixer_id).unwrap();
 

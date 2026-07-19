@@ -75,6 +75,8 @@ pub use app::config::{Config, PanelLayout, RecordingConfigState, WindowGeometry}
 // Re-export state types for testing
 #[cfg(not(test))]
 pub use app::state::playback::PlaybackState;
+#[cfg(not(test))]
+pub use app::state::{ExternalPluginRuntimeSummary, ExternalPluginScanCounts};
 
 // Re-export component types for testing
 #[cfg(not(test))]

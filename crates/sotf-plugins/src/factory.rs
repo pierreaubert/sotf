@@ -17,7 +17,6 @@ mod types;
 mod validate;
 
 pub use catalog::*;
-pub use consts::*;
 pub use create::*;
 pub use is::*;
 pub use sandboxed_plugin_creation_options::*;

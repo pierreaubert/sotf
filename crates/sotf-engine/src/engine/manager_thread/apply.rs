@@ -12,7 +12,7 @@ use crate::engine::processing_thread::{
 };
 use arc_swap::ArcSwap;
 use sotf_plugins::PluginHost;
-use sotf_types::EngineOversamplingPolicy;
+use sotf_types::{EngineOversamplingPolicy, PluginBuildDiagnostic};
 use std::sync::Arc;
 
 fn build_plugin_update_host_on_worker(
@@ -20,7 +20,7 @@ fn build_plugin_update_host_on_worker(
     sample_rate: u32,
     input_channels: usize,
     oversampling_policy: EngineOversamplingPolicy,
-) -> Result<(PluginHost, Vec<String>), String> {
+) -> Result<(PluginHost, Vec<PluginBuildDiagnostic>), PluginBuildDiagnostic> {
     std::thread::Builder::new()
         .name("sotf-plugin-host-builder".to_string())
         .spawn(move || {
@@ -31,9 +31,11 @@ fn build_plugin_update_host_on_worker(
                 oversampling_policy,
             )
         })
-        .map_err(|e| format!("failed to spawn plugin host builder: {e}"))?
+        .map_err(|e| {
+            PluginBuildDiagnostic::host(format!("failed to spawn plugin host builder: {e}"))
+        })?
         .join()
-        .map_err(|_| "plugin host builder panicked".to_string())?
+        .map_err(|_| PluginBuildDiagnostic::host("plugin host builder panicked"))?
 }
 
 fn build_plugin_graph_host_on_worker(
@@ -41,7 +43,7 @@ fn build_plugin_graph_host_on_worker(
     sample_rate: u32,
     input_channels: usize,
     oversampling_policy: EngineOversamplingPolicy,
-) -> Result<(PluginHost, Vec<String>), String> {
+) -> Result<(PluginHost, Vec<PluginBuildDiagnostic>), PluginBuildDiagnostic> {
     std::thread::Builder::new()
         .name("sotf-plugin-graph-builder".to_string())
         .spawn(move || {
@@ -52,9 +54,20 @@ fn build_plugin_graph_host_on_worker(
                 oversampling_policy,
             )
         })
-        .map_err(|e| format!("failed to spawn plugin graph builder: {e}"))?
+        .map_err(|e| {
+            PluginBuildDiagnostic::host(format!("failed to spawn plugin graph builder: {e}"))
+        })?
         .join()
-        .map_err(|_| "plugin graph builder panicked".to_string())?
+        .map_err(|_| PluginBuildDiagnostic::host("plugin graph builder panicked"))?
+}
+
+pub(in crate::engine::manager_thread) fn store_plugin_build_diagnostics(
+    state: &Arc<ArcSwap<AudioEngineState>>,
+    diagnostics: Vec<PluginBuildDiagnostic>,
+) {
+    let mut new_state = (**state.load()).clone();
+    new_state.plugin_build_diagnostics = diagnostics;
+    state.store(Arc::new(new_state));
 }
 
 /// Apply a plugin update with proper synchronization and rollback on failure.
@@ -90,30 +103,27 @@ pub(in crate::engine::manager_thread) fn apply_plugin_update(
 
     log::debug!("[Manager Thread] Building plugin host on worker thread...");
 
-    let (host, build_warnings) = build_plugin_update_host_on_worker(
+    let (host, build_diagnostics) = match build_plugin_update_host_on_worker(
         plugins.clone(),
         sample_rate,
         input_channels,
         oversampling_policy,
-    )
-    .map_err(|e| {
-        log::error!("[Manager Thread] Worker build failed: {}", e);
-        ConfigError::ProcessingError { reason: e }
-    })?;
+    ) {
+        Ok(result) => result,
+        Err(diagnostic) => {
+            log::error!("[Manager Thread] Worker build failed: {}", diagnostic);
+            store_plugin_build_diagnostics(state, vec![diagnostic.clone()]);
+            return Err(ConfigError::PluginBuild { diagnostic });
+        }
+    };
 
-    for w in &build_warnings {
-        log::warn!("[Manager Thread] {}", w);
+    for diagnostic in &build_diagnostics {
+        log::warn!("[Manager Thread] {}", diagnostic);
     }
-    // Surface build warnings in engine state so the UI can display them
-    if !build_warnings.is_empty() {
-        let mut new_state = (**state.load()).clone();
-        new_state.last_error = Some(format!(
-            "{} plugin(s) skipped: {}",
-            build_warnings.len(),
-            build_warnings.join("; ")
-        ));
-        state.store(Arc::new(new_state));
-    }
+    // Surface build diagnostics in their dedicated state field. A clean build
+    // deliberately clears diagnostics from the previous attempt without
+    // disturbing the independently-owned general engine error.
+    store_plugin_build_diagnostics(state, build_diagnostics);
 
     log::debug!(
         "[Manager Thread] Worker build successful in {:?}, output channels: {}",
@@ -257,29 +267,24 @@ pub(in crate::engine::manager_thread) fn apply_plugin_graph_update(
         sample_rate
     );
 
-    let (host, build_warnings) = build_plugin_graph_host_on_worker(
+    let (host, build_diagnostics) = match build_plugin_graph_host_on_worker(
         graph_config.clone(),
         sample_rate,
         input_channels,
         oversampling_policy,
-    )
-    .map_err(|e| {
-        log::error!("[Manager Thread] Graph build failed: {}", e);
-        ConfigError::ProcessingError { reason: e }
-    })?;
+    ) {
+        Ok(result) => result,
+        Err(diagnostic) => {
+            log::error!("[Manager Thread] Graph build failed: {}", diagnostic);
+            store_plugin_build_diagnostics(state, vec![diagnostic.clone()]);
+            return Err(ConfigError::PluginBuild { diagnostic });
+        }
+    };
 
-    for w in &build_warnings {
-        log::warn!("[Manager Thread] {}", w);
+    for diagnostic in &build_diagnostics {
+        log::warn!("[Manager Thread] {}", diagnostic);
     }
-    if !build_warnings.is_empty() {
-        let mut new_state = (**state.load()).clone();
-        new_state.last_error = Some(format!(
-            "{} graph node(s) skipped: {}",
-            build_warnings.len(),
-            build_warnings.join("; ")
-        ));
-        state.store(Arc::new(new_state));
-    }
+    store_plugin_build_diagnostics(state, build_diagnostics);
 
     processing
         .send_command(ProcessingCommand::UpdateHost(Box::new(host)))
@@ -301,4 +306,116 @@ pub(in crate::engine::manager_thread) fn apply_plugin_graph_update(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
+
+    #[test]
+    fn plugin_build_diagnostics_persist_warnings_and_clear_stale_values() {
+        let stale = PluginBuildDiagnostic::host("stale build warning");
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            last_error: Some("output device disconnected".to_string()),
+            plugin_build_diagnostics: vec![stale],
+            ..AudioEngineState::default()
+        }));
+
+        store_plugin_build_diagnostics(&state, Vec::new());
+        assert!(state.load().plugin_build_diagnostics.is_empty());
+        assert_eq!(
+            state.load().last_error.as_deref(),
+            Some("output device disconnected")
+        );
+
+        let diagnostic = PluginBuildDiagnostic::graph_node(
+            42,
+            Some(91),
+            "external",
+            "External plugin `/missing/example.vst3` could not be loaded",
+        );
+        store_plugin_build_diagnostics(&state, vec![diagnostic.clone()]);
+        assert_eq!(state.load().plugin_build_diagnostics, vec![diagnostic]);
+        assert_eq!(
+            state.load().last_error.as_deref(),
+            Some("output device disconnected")
+        );
+    }
+
+    #[test]
+    fn failed_graph_candidate_preserves_working_host_and_engine_snapshot() {
+        let (mut processing, processing_commands) = ProcessingThread::command_probe();
+        let (mut playback, playback_commands) = PlaybackThread::command_probe();
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
+            num_channels: 6,
+            plugin_latency_samples: 321,
+            last_error: Some("existing device diagnostic".to_string()),
+            ..AudioEngineState::default()
+        }));
+        let graph = PluginGraphConfig::try_new(
+            vec![
+                PluginGraphNodeConfig::try_new(7, "gain", serde_json::json!({ "gain_db": 0.0 }), 2)
+                    .unwrap(),
+                PluginGraphNodeConfig::try_new(
+                    42,
+                    "definitely-not-a-real-plugin",
+                    serde_json::json!({}),
+                    2,
+                )
+                .unwrap(),
+                PluginGraphNodeConfig::try_new(
+                    99,
+                    "gain",
+                    serde_json::json!({ "gain_db": -6.0 }),
+                    2,
+                )
+                .unwrap(),
+            ],
+            vec![
+                PluginGraphEdgeConfig::new(7, 42),
+                PluginGraphEdgeConfig::new(42, 99),
+            ],
+        )
+        .unwrap();
+
+        let error = apply_plugin_graph_update(
+            &mut processing,
+            &mut playback,
+            &state,
+            graph,
+            48_000,
+            2,
+            EngineOversamplingPolicy::PluginPreferred,
+        )
+        .expect_err("a requested graph node failure must abort the candidate");
+
+        assert!(error.to_string().contains("node 42"), "{error}");
+        assert!(
+            matches!(
+                processing_commands.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ),
+            "a failed candidate must not replace the processing host"
+        );
+        assert!(
+            matches!(
+                playback_commands.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ),
+            "a failed candidate must not reconfigure playback"
+        );
+        let current = state.load();
+        assert_eq!(current.num_channels, 6);
+        assert_eq!(current.plugin_latency_samples, 321);
+        assert_eq!(
+            current.last_error.as_deref(),
+            Some("existing device diagnostic")
+        );
+        assert_eq!(current.plugin_build_diagnostics.len(), 1);
+        assert!(matches!(
+            current.plugin_build_diagnostics[0].target,
+            sotf_types::PluginBuildTarget::GraphNode { node_id: 42 }
+        ));
+    }
 }

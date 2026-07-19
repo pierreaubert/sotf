@@ -8,6 +8,7 @@ use super::spider_disc2_d::SpiderDisc2D;
 #[cfg(feature = "gpu-3d")]
 use super::spider_view3_d::SpiderView3D;
 use crate::app::AppState;
+use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use gpui::prelude::*;
 use gpui::*;
@@ -24,6 +25,7 @@ pub(super) fn build_header(
     ref_channel: usize,
     ref_channel_select_open: bool,
     cfg_opt: Option<&'static SpeakerConfig>,
+    text: PluginCommonTranslations,
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     let e_2d = entity.clone();
@@ -64,6 +66,7 @@ pub(super) fn build_header(
                 .checked(view_mode == SpiderViewMode::Disc2D)
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
+                .aria_label(text.spatial_view_2d)
                 .on_change(move |checked, _, cx| {
                     if checked {
                         e_2d.update(cx, |st, cx| {
@@ -88,6 +91,7 @@ pub(super) fn build_header(
                 .checked(view_mode == SpiderViewMode::View3D)
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
+                .aria_label(text.spatial_view_3d)
                 .on_change(move |checked, _, cx| {
                     if checked {
                         e_3d.update(cx, |st, cx| {
@@ -106,18 +110,13 @@ pub(super) fn build_header(
         );
 
     header
-        .child(
-            div()
-                .flex_none()
-                .w(px(1.0))
-                .h(px(14.0))
-                .bg(theme.border),
-        )
+        .child(div().flex_none().w(px(1.0)).h(px(14.0)).bg(theme.border))
         .child(
             Toggle::new(("spider-mode-spl", plugin_idx))
                 .checked(matches!(spider_mode, SpiderMode::Spl))
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
+                .aria_label(text.spatial_spl_mode)
                 .on_change(move |checked, _, cx| {
                     if checked {
                         e_spl.update(cx, |st, cx| {
@@ -139,6 +138,7 @@ pub(super) fn build_header(
                 .checked(matches!(spider_mode, SpiderMode::CorrelationFromRef { .. }))
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
+                .aria_label(text.spatial_correlation_mode)
                 .on_change({
                     let ref_ch = ref_channel;
                     move |checked, _, cx| {
@@ -169,6 +169,7 @@ pub(super) fn build_header(
             ref_channel,
             ref_channel_select_open,
             cfg_opt,
+            text,
             theme,
         ))
         .into_any_element()
@@ -183,6 +184,7 @@ pub(super) fn build_ref_channel_select(
     ref_channel: usize,
     is_open: bool,
     cfg_opt: Option<&'static SpeakerConfig>,
+    text: PluginCommonTranslations,
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     let active = matches!(spider_mode, SpiderMode::CorrelationFromRef { .. });
@@ -227,6 +229,7 @@ pub(super) fn build_ref_channel_select(
                 .is_open(is_open)
                 .size(SelectSize::Xs)
                 .theme(theme.to_select_theme())
+                .aria_label(text.spatial_reference_channel)
                 .on_toggle({
                     let entity = entity.downgrade();
                     move |open, _window, cx| {

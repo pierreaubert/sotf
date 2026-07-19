@@ -286,7 +286,7 @@ pub(super) fn build_rack_mode_plugins(
                     ));
                 }
 
-                let idx = chain.add_plugin(&PluginType::Upmixer);
+                let idx = chain.add_plugin(&PluginType::Upmixer)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Upmixer {
                         speaker_config: plugins.upmixer.config.clone(),
@@ -372,7 +372,7 @@ pub(super) fn build_rack_mode_plugins(
                     ));
                 }
 
-                let idx = chain.add_plugin(&PluginType::AAE);
+                let idx = chain.add_plugin(&PluginType::AAE)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::AAE {
                         speaker_config: plugins.aae.config.clone(),
@@ -412,7 +412,7 @@ pub(super) fn build_rack_mode_plugins(
                     .ok_or("Binaural decoder requires --sofa-file to be specified")?;
                 let input_channels = chain.output_channels();
 
-                let idx = chain.add_plugin(&PluginType::BinauralDecoder);
+                let idx = chain.add_plugin(&PluginType::BinauralDecoder)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::BinauralDecoder {
                         sofa_file: sofa_path.to_string_lossy().to_string(),
@@ -434,7 +434,7 @@ pub(super) fn build_rack_mode_plugins(
                 let (auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms) =
                     loudness_auto_gain_params;
                 if let Some(lc) = loudness {
-                    let idx = chain.add_plugin(&PluginType::LoudnessCompensation);
+                    let idx = chain.add_plugin(&PluginType::LoudnessCompensation)?;
                     if let Some(plugin) = chain.get_plugin_mut(idx) {
                         plugin.settings = PluginSettings::LoudnessCompensation {
                             low_freq: 100.0,
@@ -458,7 +458,7 @@ pub(super) fn build_rack_mode_plugins(
                     // No --loudness-compensation values supplied: use inert
                     // 0 dB boosts so the plugin is a no-op. The previous +6 dB
                     // defaults were musically destructive and surprising.
-                    let idx = chain.add_plugin(&PluginType::LoudnessCompensation);
+                    let idx = chain.add_plugin(&PluginType::LoudnessCompensation)?;
                     if let Some(plugin) = chain.get_plugin_mut(idx) {
                         plugin.settings = PluginSettings::LoudnessCompensation {
                             low_freq: 100.0,
@@ -487,7 +487,7 @@ pub(super) fn build_rack_mode_plugins(
             }
             "eq" => {
                 let channels = chain.output_channels();
-                let idx = chain.add_plugin(&PluginType::EQ);
+                let idx = chain.add_plugin(&PluginType::EQ)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     let eq_filters: Vec<EQFilter> = filters
                         .iter()
@@ -507,7 +507,7 @@ pub(super) fn build_rack_mode_plugins(
             }
             "gain" => {
                 let channels = chain.output_channels();
-                let idx = chain.add_plugin(&PluginType::Gain);
+                let idx = chain.add_plugin(&PluginType::Gain)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Gain {
                         channels,
@@ -522,7 +522,7 @@ pub(super) fn build_rack_mode_plugins(
             // `mb-compressor` asks for the multiband variant. The traditional
             // `--compressor` enable flag is unrelated here.
             "compressor" | "single-compressor" => {
-                let idx = chain.add_plugin(&PluginType::Compressor);
+                let idx = chain.add_plugin(&PluginType::Compressor)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Compressor {
                         threshold_db: plugins.compressor.threshold_db as f64,
@@ -546,7 +546,7 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added Compressor plugin");
             }
             "mb-compressor" | "multiband-compressor" => {
-                let idx = chain.add_plugin(&PluginType::MultibandCompressor);
+                let idx = chain.add_plugin(&PluginType::MultibandCompressor)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::MultibandCompressor {
                         num_bands: plugins.multiband_compressor.num_bands,
@@ -572,7 +572,7 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added MultibandCompressor plugin");
             }
             "gate" => {
-                let idx = chain.add_plugin(&PluginType::Gate);
+                let idx = chain.add_plugin(&PluginType::Gate)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Gate {
                         threshold_db: plugins.gate.threshold_db as f64,
@@ -595,7 +595,7 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added Gate plugin");
             }
             "limiter" => {
-                let idx = chain.add_plugin(&PluginType::Limiter);
+                let idx = chain.add_plugin(&PluginType::Limiter)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Limiter {
                         threshold_db: plugins.limiter.threshold_db as f64,
@@ -613,7 +613,7 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added Limiter plugin");
             }
             "expander" => {
-                let idx = chain.add_plugin(&PluginType::Expander);
+                let idx = chain.add_plugin(&PluginType::Expander)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Expander {
                         threshold_db: plugins.expander.threshold_db as f64,
@@ -636,7 +636,7 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added Expander plugin");
             }
             "mb-expander" => {
-                let idx = chain.add_plugin(&PluginType::MultibandExpander);
+                let idx = chain.add_plugin(&PluginType::MultibandExpander)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::MultibandExpander {
                         num_bands: plugins.multiband_expander.num_bands,
@@ -663,7 +663,7 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added MultibandExpander plugin");
             }
             "xtc" => {
-                let idx = chain.add_plugin(&PluginType::XTC);
+                let idx = chain.add_plugin(&PluginType::XTC)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::XTC {
                         distance_m: plugins.xtc.distance_m as f64,
@@ -703,7 +703,7 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added XTC plugin");
             }
             "denoiser" => {
-                let idx = chain.add_plugin(&PluginType::Denoiser);
+                let idx = chain.add_plugin(&PluginType::Denoiser)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Denoiser {
                         reduction_db: plugins.denoiser.reduction_db as f64,
@@ -740,7 +740,7 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added Denoiser plugin");
             }
             "pnd" => {
-                let idx = chain.add_plugin(&PluginType::Pnd);
+                let idx = chain.add_plugin(&PluginType::Pnd)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Pnd {
                         correction_strength: plugins.pnd.correction_strength as f64,
@@ -755,7 +755,7 @@ pub(super) fn build_rack_mode_plugins(
             }
             "fletcher-munson" | "fm" => {
                 // FletcherMunson merged into LoudnessCompensation Auto mode
-                let idx = chain.add_plugin(&PluginType::LoudnessCompensation);
+                let idx = chain.add_plugin(&PluginType::LoudnessCompensation)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::LoudnessCompensation {
                         low_freq: 100.0,
@@ -787,7 +787,7 @@ pub(super) fn build_rack_mode_plugins(
                 if !ir_path.exists() {
                     return Err(format!("Convolution IR file not found: {:?}", ir_path));
                 }
-                let idx = chain.add_plugin(&PluginType::Convolution);
+                let idx = chain.add_plugin(&PluginType::Convolution)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Convolution {
                         ir_file: ir_path.to_string_lossy().to_string(),
@@ -801,7 +801,7 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added Convolution plugin");
             }
             "spectrum" | "spectrum-analyzer" => {
-                let idx = chain.add_plugin(&PluginType::SpectrumAnalyzer);
+                let idx = chain.add_plugin(&PluginType::SpectrumAnalyzer)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::SpectrumAnalyzer {
                         num_bins: plugins.spectrum_analyzer.num_bins,
@@ -815,11 +815,11 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added SpectrumAnalyzer plugin");
             }
             "channel-mute-solo" | "mute-solo" => {
-                chain.add_plugin(&PluginType::ChannelMuteSolo);
+                chain.add_plugin(&PluginType::ChannelMuteSolo)?;
                 log::info!("Rack: Added ChannelMuteSolo plugin");
             }
             "ab-compare" | "ab" => {
-                let idx = chain.add_plugin(&PluginType::ABCompare);
+                let idx = chain.add_plugin(&PluginType::ABCompare)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::ABCompare {
                         mix: 0.0,
@@ -844,7 +844,7 @@ pub(super) fn build_rack_mode_plugins(
             }
             "band-split" => {
                 let channels = chain.output_channels();
-                let idx = chain.add_plugin(&PluginType::BandSplit);
+                let idx = chain.add_plugin(&PluginType::BandSplit)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::BandSplit {
                         channels,
@@ -856,7 +856,7 @@ pub(super) fn build_rack_mode_plugins(
             }
             "band-merge" => {
                 let channels = chain.output_channels();
-                let idx = chain.add_plugin(&PluginType::BandMerge);
+                let idx = chain.add_plugin(&PluginType::BandMerge)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::BandMerge {
                         channels,
@@ -867,7 +867,7 @@ pub(super) fn build_rack_mode_plugins(
             }
             "downmix" => {
                 let input_channels = chain.output_channels();
-                let idx = chain.add_plugin(&PluginType::Downmix);
+                let idx = chain.add_plugin(&PluginType::Downmix)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Downmix {
                         input_channels,
@@ -884,7 +884,7 @@ pub(super) fn build_rack_mode_plugins(
                 log::info!("Rack: Added Downmix plugin");
             }
             "mono-to-stereo" => {
-                let idx = chain.add_plugin(&PluginType::MonoToStereo);
+                let idx = chain.add_plugin(&PluginType::MonoToStereo)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::MonoToStereo {
                         stereo_width: plugins.mono_to_stereo.stereo_width as f64,
@@ -899,7 +899,7 @@ pub(super) fn build_rack_mode_plugins(
             "crossfeed" => {
                 let mode = parse_crossfeed_mode(&plugins.crossfeed.mode)?;
                 let preset = parse_crossfeed_preset(&plugins.crossfeed.preset)?;
-                let idx = chain.add_plugin(&PluginType::Crossfeed);
+                let idx = chain.add_plugin(&PluginType::Crossfeed)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Crossfeed {
                         mode,
@@ -963,7 +963,7 @@ pub(super) fn build_rack_mode_plugins(
                     }
                     m
                 };
-                let idx = chain.add_plugin(&PluginType::Matrix);
+                let idx = chain.add_plugin(&PluginType::Matrix)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Matrix {
                         input_channels,
@@ -979,7 +979,7 @@ pub(super) fn build_rack_mode_plugins(
                 );
             }
             "lufs" | "loudness-monitor" => {
-                chain.add_plugin(&PluginType::LoudnessMonitor);
+                chain.add_plugin(&PluginType::LoudnessMonitor)?;
                 has_lufs = true;
                 log::info!("Rack: Added LoudnessMonitor plugin");
             }

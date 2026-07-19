@@ -7,6 +7,7 @@ use crate::external_plugin::{
 use crate::external_plugin_ipc::SecurePluginSharedMemory;
 use crate::external_plugin_process::{ExternalPluginProcessEvent, ExternalPluginWorkerCommand};
 use crate::external_plugin_sandbox::{PluginSandboxLaunchBackend, PluginSandboxPolicy};
+use crate::host::DawHost;
 use crate::plugin::{Plugin, ProcessContext};
 use std::time::Duration;
 
@@ -92,6 +93,35 @@ fn isolated_external_plugin_exposes_worker_poll_state() {
 }
 
 #[test]
+fn graph_host_reports_external_worker_with_stable_plugin_instance_id() {
+    let plugin = IsolatedExternalPlugin::new(
+        descriptor(),
+        48_000,
+        IsolatedExternalPluginConfig {
+            start_worker: false,
+            plugin_instance_id: Some(91),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut host = DawHost::new(2, 48_000);
+    let node_id = host
+        .add_node("external-graph-node".to_string(), Box::new(plugin))
+        .unwrap();
+    host.build().unwrap();
+
+    let reports = host.poll_isolated_external_plugin_workers();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].node_id, node_id);
+    assert_eq!(reports[0].plugin_instance_id, Some(91));
+    assert!(matches!(
+        reports[0].event,
+        Some(ExternalPluginProcessEvent::NotRunning)
+    ));
+}
+
+#[test]
 fn isolated_external_plugin_reads_worker_reported_latency() {
     let plugin = IsolatedExternalPlugin::new(
         descriptor(),
@@ -110,6 +140,58 @@ fn isolated_external_plugin_reads_worker_reported_latency() {
     worker_shared.publish_worker_latency_samples(320);
     assert_eq!(plugin.worker_reported_latency_samples(), Some(320));
     assert_eq!(plugin.latency_samples(), 320);
+}
+
+#[test]
+fn worker_latency_handshake_precedes_daw_host_latency_cache() {
+    let plugin = IsolatedExternalPlugin::new(
+        descriptor(),
+        48_000,
+        IsolatedExternalPluginConfig {
+            start_worker: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let shared_path = plugin.proxy.shared_path().to_path_buf();
+    let publisher = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(10));
+        let worker_shared = SecurePluginSharedMemory::open_existing(shared_path).unwrap();
+        worker_shared.publish_worker_latency_samples(320);
+    });
+
+    assert_eq!(
+        plugin
+            .wait_for_worker_latency_metadata(Duration::from_secs(1))
+            .unwrap(),
+        320
+    );
+    publisher.join().unwrap();
+
+    let mut host = DawHost::new(2, 48_000);
+    host.add_plugin(Box::new(plugin)).unwrap();
+    host.build().unwrap();
+    assert_eq!(host.total_latency_samples(), 320);
+}
+
+#[test]
+fn worker_latency_handshake_timeout_is_actionable() {
+    let plugin = IsolatedExternalPlugin::new(
+        descriptor(),
+        48_000,
+        IsolatedExternalPluginConfig {
+            start_worker: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let error = plugin
+        .wait_for_worker_latency_metadata(Duration::ZERO)
+        .unwrap_err();
+    assert!(error.contains("External Test"), "{error}");
+    assert!(error.contains("latency metadata"), "{error}");
+    assert!(error.contains("within 0 ms"), "{error}");
 }
 
 #[test]
@@ -175,8 +257,11 @@ fn isolated_external_plugin_quarantines_after_repeated_block_failures() {
 
 #[test]
 fn isolated_external_plugin_placeholder_state_round_trips() {
+    let plugin_file = tempfile::Builder::new().suffix(".clap").tempfile().unwrap();
+    let mut descriptor = descriptor();
+    descriptor.path = plugin_file.path().to_path_buf();
     let plugin = IsolatedExternalPlugin::new(
-        descriptor(),
+        descriptor,
         48_000,
         IsolatedExternalPluginConfig {
             start_worker: false,
@@ -202,6 +287,63 @@ fn isolated_external_plugin_placeholder_state_round_trips() {
     assert_eq!(decoded.sandbox_mode, ExternalPluginSandboxMode::Isolated);
     assert_eq!(decoded.opaque_state, vec![9, 8, 7]);
     assert_eq!(restored.descriptor(), plugin.descriptor());
+
+    let mut incompatible = decoded;
+    incompatible.sandbox_mode = ExternalPluginSandboxMode::InProcess;
+    let error = IsolatedExternalPlugin::from_placeholder_state(
+        &incompatible,
+        48_000,
+        IsolatedExternalPluginConfig {
+            start_worker: false,
+            ..Default::default()
+        },
+    )
+    .err()
+    .expect("in-process state must not restore in isolated host");
+    assert!(error.contains("cannot restore isolated plugin"));
+}
+
+#[test]
+fn isolated_external_plugin_persists_initial_state_for_worker_and_removes_sidecar_on_drop() {
+    let plugin_file = tempfile::Builder::new().suffix(".clap").tempfile().unwrap();
+    let mut descriptor = descriptor();
+    descriptor.path = plugin_file.path().to_path_buf();
+    let state = ExternalPluginState::new(
+        descriptor,
+        ExternalPluginSandboxMode::Isolated,
+        vec![9, 8, 7, 6],
+    );
+    let plugin = IsolatedExternalPlugin::new(
+        state.descriptor.clone(),
+        48_000,
+        IsolatedExternalPluginConfig {
+            start_worker: false,
+            initial_state: Some(state.clone()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let state_path = plugin
+        .state_file_path
+        .clone()
+        .expect("initial state must create a worker sidecar");
+    let on_disk: ExternalPluginState =
+        serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+    assert_eq!(on_disk, state);
+    assert_eq!(plugin.placeholder_state(), state);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&state_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    drop(plugin);
+    assert!(!state_path.exists());
 }
 
 #[test]
@@ -276,7 +418,8 @@ fn sandbox_launcher_command_receives_worker_metadata() {
     };
 
     let command =
-        build_worker_launch_command(&config, "{\"id\":\"test\"}".to_string(), Vec::new()).unwrap();
+        build_worker_launch_command(&config, "{\"id\":\"test\"}".to_string(), None, Vec::new())
+            .unwrap();
 
     assert_eq!(
         command.program(),
@@ -295,6 +438,42 @@ fn sandbox_launcher_command_receives_worker_metadata() {
             "SOTF_WORKER_TEST=1".to_string(),
             "--descriptor-json".to_string(),
             "{\"id\":\"test\"}".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn sandbox_launcher_command_receives_external_state_sidecar() {
+    let config = IsolatedExternalPluginConfig {
+        worker_command: ExternalPluginWorkerCommand::new("/tmp/sotf-worker"),
+        sandbox_launch_backend: PluginSandboxLaunchBackend::WindowsAppContainerWorker,
+        sandbox_launcher_command: Some(ExternalPluginWorkerCommand::new(
+            "/tmp/sotf-appcontainer-launcher",
+        )),
+        start_worker: false,
+        ..Default::default()
+    };
+    let state_path = Path::new("/tmp/sotf-external-state.json");
+
+    let command = build_worker_launch_command(
+        &config,
+        "{\"id\":\"test\"}".to_string(),
+        Some(state_path),
+        Vec::new(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        command.command_args(),
+        &[
+            "--sandbox-worker-binary".to_string(),
+            "/tmp/sotf-worker".to_string(),
+            "--descriptor-json".to_string(),
+            "{\"id\":\"test\"}".to_string(),
+            "--external-state-file".to_string(),
+            state_path.display().to_string(),
+            "--sandbox-read-path".to_string(),
+            state_path.display().to_string(),
         ]
     );
 }

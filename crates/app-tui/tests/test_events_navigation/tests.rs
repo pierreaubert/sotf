@@ -1,13 +1,25 @@
+use super::super::tests::key;
+use super::super::{PlayerCommand, handle_key_event};
 use super::app::app_on_library;
 use super::app::app_on_room_eq;
 use super::app::app_on_spinorama_select;
 use super::misc::send_alt_char;
 use super::misc::send_keys;
 use crate::app::{ConfigureSubScreen, InputMode, Screen, SpinoramaStep};
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use sotf_audio_player::room_eq_types::RoomEqStep;
 use sotf_audio_player::{Album, MetadataImportCandidate, Track};
 use std::path::PathBuf;
+
+fn send_modified(
+    app: &mut crate::app::App,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> Option<PlayerCommand> {
+    let mut event = key(code);
+    event.modifiers = modifiers;
+    handle_key_event(app, event)
+}
 
 #[test]
 fn alt_l_cycles_the_required_languages() {
@@ -29,6 +41,84 @@ fn alt_l_cycles_the_required_languages() {
                 .is_some_and(|s| !s.is_empty())
         );
     }
+}
+
+#[test]
+fn restored_global_meter_bindings_dispatch_from_the_active_handler() {
+    let mut app = app_on_library();
+
+    send_modified(&mut app, KeyCode::Char('M'), KeyModifiers::SHIFT);
+    assert_eq!(app.input_mode, InputMode::LevelMeters);
+
+    app.input_mode = InputMode::Normal;
+    app.level_meters.control_selection = 0;
+    send_modified(&mut app, KeyCode::Up, KeyModifiers::SHIFT);
+    assert_eq!(app.level_meters.control_selection, 2);
+}
+
+#[test]
+fn plugin_reorder_bindings_win_over_root_mute_and_meter_shortcuts() {
+    use sotf_audio_player::PluginType;
+
+    let mut app = app_on_library();
+    app.current_screen = Screen::Plugins;
+    let base_index = app.plugin_rack.graph.user_plugin_insert_index();
+    app.add_plugin(&PluginType::Gain);
+    app.add_plugin(&PluginType::EQ);
+    app.plugin_rack.selected_index = base_index + 1;
+
+    send_keys(&mut app, &[KeyCode::Char('u')]);
+    assert!(matches!(
+        app.plugin_rack
+            .graph
+            .get_plugin(base_index)
+            .expect("moved EQ")
+            .plugin_type(),
+        PluginType::EQ
+    ));
+
+    app.move_plugin_down(base_index);
+    app.plugin_rack.selected_index = base_index + 1;
+    app.level_meters.control_selection = 0;
+    send_modified(&mut app, KeyCode::Up, KeyModifiers::SHIFT);
+    assert!(matches!(
+        app.plugin_rack
+            .graph
+            .get_plugin(base_index)
+            .expect("shift-moved EQ")
+            .plugin_type(),
+        PluginType::EQ
+    ));
+    assert_eq!(app.level_meters.control_selection, 0);
+}
+
+#[test]
+fn queue_p_and_space_share_the_same_play_pause_outcome() {
+    let mut app = app_on_library();
+    app.current_screen = Screen::Queue;
+    app.playback.current_queue_index = Some(0);
+
+    app.playback.is_playing = true;
+    assert!(matches!(
+        handle_key_event(&mut app, key(KeyCode::Char('p'))),
+        Some(PlayerCommand::Pause)
+    ));
+    app.playback.is_playing = true;
+    assert!(matches!(
+        handle_key_event(&mut app, key(KeyCode::Char(' '))),
+        Some(PlayerCommand::Pause)
+    ));
+
+    app.playback.is_playing = false;
+    assert!(matches!(
+        handle_key_event(&mut app, key(KeyCode::Char('p'))),
+        Some(PlayerCommand::Resume)
+    ));
+    app.playback.is_playing = false;
+    assert!(matches!(
+        handle_key_event(&mut app, key(KeyCode::Char(' '))),
+        Some(PlayerCommand::Resume)
+    ));
 }
 
 #[path = "tests/app_mod.rs"]

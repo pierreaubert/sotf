@@ -54,4 +54,11 @@ impl ExternalPluginState {
         }
         Ok(())
     }
+
+    /// Validate both the stable state envelope and its concrete plugin
+    /// descriptor before the state is inserted into a host graph.
+    pub fn validate(&self) -> Result<(), String> {
+        self.validate_descriptor_consistency()?;
+        self.descriptor.validate()
+    }
 }

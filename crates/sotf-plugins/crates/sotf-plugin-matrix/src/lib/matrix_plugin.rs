@@ -636,17 +636,21 @@ impl Plugin for MatrixPlugin {
         }
         if let Some(rest) = id_str.strip_prefix("mute_") {
             let ch = rest.parse::<usize>().ok()?;
-            return self
-                .channel_states
-                .get(ch)
-                .map(|s| ParameterValue::Bool(s.muted));
+            if ch < self.num_outputs() {
+                return Some(ParameterValue::Bool(
+                    self.channel_states.get(ch).is_some_and(|s| s.muted),
+                ));
+            }
+            return None;
         }
         if let Some(rest) = id_str.strip_prefix("dim_") {
             let ch = rest.parse::<usize>().ok()?;
-            return self
-                .channel_states
-                .get(ch)
-                .map(|s| ParameterValue::Bool(s.dimmed));
+            if ch < self.num_outputs() {
+                return Some(ParameterValue::Bool(
+                    self.channel_states.get(ch).is_some_and(|s| s.dimmed),
+                ));
+            }
+            return None;
         }
         if id_str == "channel_states" {
             return serde_json::to_string(&self.channel_states)
@@ -969,6 +973,24 @@ mod tests {
         assert_eq!(got_states.len(), 2);
         assert!(got_states[0].muted);
         assert!(got_states[1].dimmed);
+    }
+
+    #[test]
+    fn test_default_channel_controls_are_readable() {
+        let plugin = MatrixPlugin::new(2, 2);
+
+        for channel in 0..2 {
+            assert_eq!(
+                plugin.get_parameter(&ParameterId::from(format!("mute_{channel}"))),
+                Some(ParameterValue::Bool(false))
+            );
+            assert_eq!(
+                plugin.get_parameter(&ParameterId::from(format!("dim_{channel}"))),
+                Some(ParameterValue::Bool(false))
+            );
+        }
+        assert_eq!(plugin.get_parameter(&ParameterId::from("mute_2")), None);
+        assert_eq!(plugin.get_parameter(&ParameterId::from("dim_2")), None);
     }
 
     #[test]

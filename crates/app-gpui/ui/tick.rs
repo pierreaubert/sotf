@@ -169,7 +169,15 @@ impl PlayerView {
         let include_rack_data = screen_shows_rack_data(current_screen, layout_mode);
         let include_compressor = include_rack_data;
         let include_level_meters = include_rack_data;
-        let can_update_autogain = state.app.plugin_state.update_state.pending_plugin_update.is_none();
+        let can_update_autogain = state
+            .app
+            .plugin_state
+            .update_state
+            .pending_plugin_update
+            .is_none();
+        let poll_external_diagnostics = frame_count.is_multiple_of(10);
+        let include_external_diagnostics =
+            poll_external_diagnostics && state.app.plugin_state.has_external_plugins();
 
         let was_playing = state.app.playback.is_playing;
         let (input_monitor_idx, output_monitor_idx, spectrum_idx, compressor_idx) = {
@@ -205,24 +213,40 @@ impl PlayerView {
             loudness_info,
             spectrum_info,
             compressor_info,
+            external_diagnostics,
         )) = state.player.try_with_player(|player| {
+            let external_diagnostics = include_external_diagnostics.then(|| {
+                let engine_state = player.get_engine_state();
+                (
+                    engine_state.plugin_build_diagnostics,
+                    engine_state.isolated_external_plugin_worker_statuses,
+                )
+            });
             (
                 player.get_playback_state(),
                 player.signal_path(),
                 input_monitor_idx
                     .and_then(|idx| player.get_cached_plugin_data(idx))
-                    .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok()),
+                    .and_then(|d| {
+                        std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok()
+                    }),
                 output_monitor_idx
                     .and_then(|idx| player.get_cached_plugin_data(idx))
-                    .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok()),
+                    .and_then(|d| {
+                        std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok()
+                    }),
                 spectrum_idx
                     .and_then(|idx| player.get_cached_plugin_data(idx))
-                    .and_then(|d| std::sync::Arc::downcast::<sotf_audio_player::SpectrumData>(d).ok()),
+                    .and_then(|d| {
+                        std::sync::Arc::downcast::<sotf_audio_player::SpectrumData>(d).ok()
+                    }),
                 compressor_idx
                     .and_then(|i| player.get_cached_plugin_data(i))
                     .and_then(|d| std::sync::Arc::downcast::<sotf_plugins::CompressorData>(d).ok()),
+                external_diagnostics,
             )
-        }) else {
+        })
+        else {
             return (
                 sotf_audio_player::PlaybackState {
                     position_secs: state.app.playback.position_secs,
@@ -238,6 +262,18 @@ impl PlayerView {
                 was_playing,
             );
         };
+
+        if let Some((build_diagnostics, worker_statuses)) = external_diagnostics {
+            state
+                .app
+                .plugin_state
+                .sync_external_plugin_engine_diagnostics(build_diagnostics, worker_statuses);
+        } else if poll_external_diagnostics && !include_external_diagnostics {
+            state
+                .app
+                .plugin_state
+                .sync_external_plugin_engine_diagnostics(Vec::new(), Vec::new());
+        }
 
         state.app.playback.signal_path = Some(signal_path);
         state.app.playback.is_playing = playback_state.is_playing;

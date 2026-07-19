@@ -4,7 +4,7 @@ use crate::components::design::Ds;
 use crate::i18n::PluginGraphTranslations;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::{Context, IntoElement, KeyDownEvent, div};
+use gpui::{Context, IntoElement, KeyDownEvent, Keystroke, Window, div};
 use gpui_ui_kit::{HStack, StackSpacing, Text, TextSize, TextWeight, VStack};
 use sotf_audio_player::{GraphNodeId, NodePosition, PluginGraph, PluginType};
 
@@ -60,7 +60,27 @@ fn mark_graph_changed(state: &mut crate::app::AppState) {
     state.app.plugin_state.graph_state.workflow_canvas = None;
 }
 
+macro_rules! graph_action_handler {
+    ($method:ident, $action:path, $key:literal) => {
+        pub(crate) fn $method(&mut self, _: &$action, _: &mut Window, cx: &mut Context<Self>) {
+            self.dispatch_plugin_graph_key($key, cx);
+        }
+    };
+}
+
 impl PlayerView {
+    fn dispatch_plugin_graph_key(&self, key_spec: &str, cx: &mut Context<Self>) {
+        let Ok(keystroke) = Keystroke::parse(key_spec) else {
+            return;
+        };
+        let event = KeyDownEvent {
+            keystroke,
+            is_held: false,
+            prefer_character_input: false,
+        };
+        debug_assert!(self.handle_plugin_graph_keyboard(&event, cx));
+    }
+
     pub(crate) fn handle_plugin_graph_keyboard(
         &self,
         event: &KeyDownEvent,
@@ -202,11 +222,18 @@ impl PlayerView {
                         .fold(100.0_f32, f32::max)
                         + 220.0;
                     let y = 100.0 + (state.app.plugin_state.graph.nodes.len() % 5) as f32 * 110.0;
-                    let node_id = state
+                    let node_id = match state
                         .app
                         .plugin_state
                         .graph
-                        .add_plugin_node(&plugin_type, NodePosition::new(x, y));
+                        .add_plugin_node(&plugin_type, NodePosition::new(x, y))
+                    {
+                        Ok(node_id) => node_id,
+                        Err(error) => {
+                            state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                            return;
+                        }
+                    };
                     state
                         .app
                         .plugin_state
@@ -286,9 +313,8 @@ impl PlayerView {
                             Some(ToastMessage::info(text.select_node_first));
                         return;
                     };
-                    if state.app.plugin_state.graph.toggle_plugin(node_id).is_err() {
-                        state.app.ui_state.toast_message =
-                            Some(ToastMessage::info(text.special_node_read_only));
+                    if let Err(error) = state.app.plugin_state.graph.toggle_plugin(node_id) {
+                        state.app.ui_state.toast_message = Some(ToastMessage::error(error));
                         return;
                     }
                     mark_graph_changed(state);
@@ -495,6 +521,107 @@ impl PlayerView {
             _ => false,
         }
     }
+
+    graph_action_handler!(
+        graph_select_next_node,
+        crate::app::actions::GraphSelectNextNode,
+        "tab"
+    );
+    graph_action_handler!(
+        graph_select_previous_node,
+        crate::app::actions::GraphSelectPreviousNode,
+        "shift-tab"
+    );
+    graph_action_handler!(
+        graph_select_next_plugin_type,
+        crate::app::actions::GraphSelectNextPluginType,
+        "]"
+    );
+    graph_action_handler!(
+        graph_select_previous_plugin_type,
+        crate::app::actions::GraphSelectPreviousPluginType,
+        "["
+    );
+    graph_action_handler!(
+        graph_select_next_port,
+        crate::app::actions::GraphSelectNextPort,
+        "="
+    );
+    graph_action_handler!(
+        graph_select_previous_port,
+        crate::app::actions::GraphSelectPreviousPort,
+        "-"
+    );
+    graph_action_handler!(
+        graph_add_selected_plugin,
+        crate::app::actions::GraphAddSelectedPlugin,
+        "a"
+    );
+    graph_action_handler!(
+        graph_edit_selected_node,
+        crate::app::actions::GraphEditSelectedNode,
+        "enter"
+    );
+    graph_action_handler!(
+        graph_toggle_selected_bypass,
+        crate::app::actions::GraphToggleSelectedBypass,
+        "b"
+    );
+    graph_action_handler!(
+        graph_connect_selected_node,
+        crate::app::actions::GraphConnectSelectedNode,
+        "c"
+    );
+    graph_action_handler!(
+        graph_disconnect_selected_node,
+        crate::app::actions::GraphDisconnectSelectedNode,
+        "x"
+    );
+    graph_action_handler!(
+        graph_remove_selected_node,
+        crate::app::actions::GraphRemoveSelectedNode,
+        "delete"
+    );
+    graph_action_handler!(
+        graph_move_selected_left,
+        crate::app::actions::GraphMoveSelectedLeft,
+        "left"
+    );
+    graph_action_handler!(
+        graph_move_selected_right,
+        crate::app::actions::GraphMoveSelectedRight,
+        "right"
+    );
+    graph_action_handler!(
+        graph_move_selected_up,
+        crate::app::actions::GraphMoveSelectedUp,
+        "up"
+    );
+    graph_action_handler!(
+        graph_move_selected_down,
+        crate::app::actions::GraphMoveSelectedDown,
+        "down"
+    );
+    graph_action_handler!(
+        graph_move_selected_left_large,
+        crate::app::actions::GraphMoveSelectedLeftLarge,
+        "shift-left"
+    );
+    graph_action_handler!(
+        graph_move_selected_right_large,
+        crate::app::actions::GraphMoveSelectedRightLarge,
+        "shift-right"
+    );
+    graph_action_handler!(
+        graph_move_selected_up_large,
+        crate::app::actions::GraphMoveSelectedUpLarge,
+        "shift-up"
+    );
+    graph_action_handler!(
+        graph_move_selected_down_large,
+        crate::app::actions::GraphMoveSelectedDownLarge,
+        "shift-down"
+    );
 
     pub(super) fn render_graph_keyboard_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);

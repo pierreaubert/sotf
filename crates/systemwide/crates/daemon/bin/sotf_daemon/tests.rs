@@ -70,7 +70,7 @@ fn loudness_data_json_includes_meter_fields() {
 
 #[test]
 fn available_plugin_descriptors_expose_engine_keys() {
-    let settings = sotf_audio::PluginSettings::default_for(&PluginType::Gain);
+    let settings = sotf_audio::PluginSettings::default_for(&PluginType::Gain).unwrap();
     let descriptors = plugin_parameter_descriptors(&settings);
 
     assert!(
@@ -726,7 +726,7 @@ mod ipc_safety_tests {
                 FakeDriver::new(state),
             )))),
             system_state: Arc::new(Mutex::new(SystemwideState::default())),
-            key_manager: Arc::new(Mutex::new(KeyManager::default())),
+            key_manager: Arc::new(Mutex::new(KeyManager::for_test())),
         }
     }
 

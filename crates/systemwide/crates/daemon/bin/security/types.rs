@@ -39,6 +39,11 @@ pub(super) mod encryption_impl {
     }
 
     impl KeyManager {
+        #[cfg(test)]
+        pub(crate) fn for_test() -> Self {
+            Self { enabled: false }
+        }
+
         pub fn new() -> std::io::Result<Self> {
             Ok(Self { enabled: false })
         }

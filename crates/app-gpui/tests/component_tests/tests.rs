@@ -7,6 +7,11 @@ use gpui_design::DesignSystem;
 use sotf_audio_player::ui_params::TuiEditablePlugin;
 use sotf_audio_player::{PluginSettings, PluginType};
 use sotf_audio_player_gpui::IconName;
+use sotf_audio_player_gpui::app::keybindings::KeymapPreset;
+use sotf_audio_player_gpui::app::state::{
+    ExternalPluginUiState, ExternalPluginWorkerHealth, PluginState, external_plugin_error_key,
+    external_plugin_worker_health,
+};
 use sotf_audio_player_gpui::components::design::typography_rems_from_rules;
 use sotf_audio_player_gpui::components::dialogs::get_keybindings_for_screen;
 use sotf_audio_player_gpui::components::home::album_card::{
@@ -23,18 +28,23 @@ use sotf_audio_player_gpui::components::wizard_continue_label;
 use sotf_audio_player_gpui::components::{settings_tab_icon_name, settings_tab_label};
 use sotf_audio_player_gpui::i18n::{
     AutoEqFormTranslations, HeadphoneEasyTranslations, HeadphoneEqTranslations, Language,
-    PluginGraphTranslations, RoomEqEasyTranslations, StreamsTranslations, Translations,
+    PluginGraphTranslations, RoomEqEasyTranslations, SettingsSurfaceTranslations,
+    StreamsTranslations, Translations,
 };
 use sotf_audio_player_gpui::plugin_file_picker::{FilePickerOpenTarget, file_picker_open_target};
 use sotf_audio_player_gpui::theme::{Theme, ThemeId};
-use sotf_audio_player_gpui::{InputMode, Screen, SettingsTab};
+use sotf_audio_player_gpui::{ExternalPluginScanCounts, InputMode, Screen, SettingsTab};
 use sotf_audio_player_midi::auto_map;
 use sotf_audio_player_midi::layouts::{lcxl_layout, xone_k2_layout};
 use sotf_plugins::layout_solver::solve_layout;
 use sotf_plugins::param_specs::{self, ParamType};
 use sotf_plugins::plugin_layout::{ColumnRole, ControlType};
+use sotf_plugins::{
+    ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor, PluginFormat,
+    PluginScanStatus, PluginUiKind, catalog_entry,
+};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn app_source(relative: &str) -> String {
     std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(relative))
@@ -367,6 +377,15 @@ fn listening_test_workflow_is_localized_in_every_supported_language() {
                 listening.setup.subtitle,
                 listening.setup.measure_prepare,
                 listening.setup.graph_hint,
+                listening.setup.level.target_metric,
+                listening.setup.level.momentary_lufs,
+                listening.setup.level.short_term_lufs,
+                listening.setup.level.rms_dbfs,
+                listening.setup.level.window,
+                listening.setup.level.tolerance,
+                listening.setup.level.max_correction,
+                listening.setup.level.media_identity,
+                listening.setup.level.load_saved_media,
                 listening.trial.start_blind_ab,
                 listening.trial.start_abx,
                 listening.trial.notes_placeholder,
@@ -393,6 +412,38 @@ fn listening_test_workflow_is_localized_in_every_supported_language() {
         Language::all().len(),
         "each current language needs its own listening-test title"
     );
+}
+
+#[test]
+fn listening_test_exposes_configurable_matching_and_verified_media_reload() {
+    let screen = app_source("components/listening_test.rs");
+    let state = app_source("app/state/plugin.rs");
+    let playback = app_source("ui/player_view.rs");
+
+    for control in [
+        "listening-metric-momentary",
+        "listening-metric-short-term",
+        "listening-metric-rms",
+        "listening-segment-start",
+        "listening-window",
+        "listening-tolerance",
+        "listening-max-correction",
+        "load-listening-media",
+    ] {
+        assert!(
+            screen.contains(control),
+            "missing listening control {control}"
+        );
+    }
+    assert!(screen.contains("verify_media_segment"));
+    assert!(screen.contains("measurement.residual_error_db()"));
+    assert!(screen.contains("measurement.within_tolerance()"));
+    assert!(!screen.contains("duration_ms: 3_000"));
+    assert!(!screen.contains("metric: LevelMatchMetric::ShortTermLufs"));
+    assert!(state.contains("level_match_config"));
+    assert!(state.contains("segment_start_ms"));
+    assert!(playback.contains("play_listening_source_at"));
+    assert!(playback.contains("track_queue_playback"));
 }
 
 #[test]
@@ -1350,6 +1401,11 @@ fn test_input_mode_is_text_input_search() {
 }
 
 #[test]
+fn test_input_mode_is_text_input_command_palette() {
+    assert!(InputMode::CommandPalette.is_text_input());
+}
+
+#[test]
 fn test_input_mode_is_text_input_normal() {
     assert!(!InputMode::Normal.is_text_input());
 }
@@ -1401,7 +1457,7 @@ fn plugin_choices_and_identity_are_explicit() {
 fn every_screen_has_contextual_keyboard_help() {
     for screen in Screen::all() {
         for language in Language::all() {
-            let bindings = get_keybindings_for_screen(*screen, *language);
+            let bindings = get_keybindings_for_screen(*screen, *language, KeymapPreset::Default);
             assert!(
                 !bindings.is_empty(),
                 "{screen:?} has no contextual keyboard help for {}",
@@ -1422,9 +1478,63 @@ fn every_screen_has_contextual_keyboard_help() {
 }
 
 #[test]
+fn contextual_keyboard_help_is_derived_from_runtime_bindings() {
+    use sotf_audio_player_gpui::app::keybindings::{
+        get_documented_keybindings_for_screen, get_keybindings,
+    };
+
+    let help_source = app_source("components/dialogs/misc.rs");
+    assert!(help_source.contains("get_documented_keybindings_for_screen"));
+    assert!(!help_source.contains("vec!["));
+    assert!(!help_source.contains("match screen"));
+
+    for preset in KeymapPreset::all() {
+        let runtime = get_keybindings(*preset);
+        let runtime_actions = runtime
+            .iter()
+            .map(|binding| binding.action().name())
+            .collect::<std::collections::BTreeSet<_>>();
+        let runtime_key_specs = runtime
+            .iter()
+            .map(|binding| {
+                binding
+                    .keystrokes()
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+
+        for screen in Screen::all() {
+            for binding in get_documented_keybindings_for_screen(*screen, *preset) {
+                let action_name = binding.action_name.unwrap_or_else(|| {
+                    panic!(
+                        "{preset:?} {screen:?} help row '{}' has no runtime action",
+                        binding.description
+                    )
+                });
+                assert!(
+                    runtime_actions.contains(action_name),
+                    "{preset:?} {screen:?} help row '{}' references unregistered action {action_name}",
+                    binding.description
+                );
+                assert!(
+                    runtime_key_specs.contains(&binding.raw_key_spec),
+                    "{preset:?} {screen:?} help row '{}' has non-runtime key spec '{}'",
+                    binding.description,
+                    binding.raw_key_spec
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn documented_keybindings_are_localized_from_the_registry() {
     use sotf_audio_player_gpui::app::keybindings::{
         KeybindingCategory, KeymapPreset, get_documented_keybindings,
+        get_documented_keybindings_for_screen,
     };
     use sotf_audio_player_gpui::i18n::KeybindingTranslations;
 
@@ -1446,6 +1556,20 @@ fn documented_keybindings_are_localized_from_the_registry() {
                     preset,
                     language.code()
                 );
+            }
+            for screen in Screen::all() {
+                for binding in get_documented_keybindings_for_screen(*screen, *preset) {
+                    assert!(
+                        !text
+                            .action_description(binding.description)
+                            .trim()
+                            .is_empty(),
+                        "missing {:?} {:?} screen-help copy for {}",
+                        preset,
+                        screen,
+                        language.code()
+                    );
+                }
             }
         }
     }
@@ -1471,7 +1595,108 @@ fn documented_keybindings_are_localized_from_the_registry() {
 }
 
 #[test]
-fn every_screen_has_an_owned_empty_loading_error_checklist() {
+fn keymap_presets_have_no_duplicate_runtime_dispatches_per_context() {
+    use sotf_audio_player_gpui::app::keybindings::{
+        KeymapPreset, get_keybindings, validate_keybinding_registry,
+    };
+
+    for preset in KeymapPreset::all() {
+        validate_keybinding_registry(*preset).unwrap();
+        let mut seen = BTreeMap::new();
+        for binding in get_keybindings(*preset) {
+            let keys = binding
+                .keystrokes()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let context = format!("{:?}", binding.predicate());
+            let action = binding.action().name();
+            let identity = (context, keys);
+            assert!(
+                seen.insert(identity.clone(), action).is_none(),
+                "{preset:?} registers more than one command for {identity:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn command_palette_rows_are_localized_searchable_runtime_actions() {
+    use sotf_audio_player_gpui::app::keybindings::{
+        command_palette_action, search_command_palette_commands,
+    };
+    use sotf_audio_player_gpui::i18n::KeybindingTranslations;
+
+    for preset in KeymapPreset::all() {
+        let english = KeybindingTranslations::for_language(Language::English);
+        let commands = search_command_palette_commands(
+            *preset,
+            "",
+            |action| english.action_description(action),
+            |category| english.category_name(category),
+        );
+        assert!(!commands.is_empty(), "{preset:?} has no palette commands");
+
+        for command in &commands {
+            let action = command_palette_action(*preset, command.action_name)
+                .unwrap_or_else(|| panic!("{preset:?} cannot resolve {}", command.action_name));
+            assert_eq!(action.name(), command.action_name);
+        }
+
+        let palette_rows = commands
+            .iter()
+            .filter(|command| command.description == "Command palette")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            palette_rows.len(),
+            1,
+            "{preset:?} must expose one command-palette toggle"
+        );
+        let toggle = palette_rows[0];
+        assert!(toggle.action_name.ends_with("ToggleCommandPalette"));
+
+        let shortcut_matches = search_command_palette_commands(
+            *preset,
+            &toggle.key,
+            |action| english.action_description(action),
+            |category| english.category_name(category),
+        );
+        assert!(
+            shortcut_matches
+                .iter()
+                .any(|command| command.action_name == toggle.action_name),
+            "{preset:?} shortcut search did not find the palette toggle"
+        );
+    }
+
+    let french = KeybindingTranslations::for_language(Language::French);
+    let localized_description = search_command_palette_commands(
+        KeymapPreset::Default,
+        "palette de commandes",
+        |action| french.action_description(action),
+        |category| french.category_name(category),
+    );
+    assert!(localized_description.iter().any(|command| {
+        command.description == "Palette de commandes"
+            && command.action_name.ends_with("ToggleCommandPalette")
+    }));
+
+    let localized_category = search_command_palette_commands(
+        KeymapPreset::Default,
+        "tests d’écoute",
+        |action| french.action_description(action),
+        |category| french.category_name(category),
+    );
+    assert!(
+        localized_category
+            .iter()
+            .any(|command| command.category == "Tests d’écoute")
+    );
+}
+
+#[test]
+fn every_screen_has_an_owned_state_and_responsive_checklist() {
     #[derive(Clone, Copy)]
     enum Coverage {
         Owned(&'static str),
@@ -1617,9 +1842,18 @@ fn every_screen_has_an_owned_empty_loading_error_checklist() {
     );
     for checklist in checklists {
         for (state_name, coverage) in [
+            (
+                "normal",
+                Owned("tests/e2e/scenarios/player/screen_matrix.rs"),
+            ),
             ("empty", checklist.empty),
             ("loading", checklist.loading),
             ("error", checklist.error),
+            (
+                "narrow",
+                Owned("tests/e2e/scenarios/player/screen_matrix.rs"),
+            ),
+            ("wide", Owned("tests/e2e/scenarios/player/screen_matrix.rs")),
         ] {
             match coverage {
                 Owned(path) => assert!(
@@ -1986,7 +2220,42 @@ fn plugin_graph_keyboard_copy_is_complete_and_handler_is_wired() {
     assert!(keyboard.contains("editing_graph_node_uuid"));
 
     let render = app_source("ui/render.rs");
-    assert!(render.contains("view.handle_plugin_graph_keyboard(event, cx)"));
+    assert!(keyboard.contains("macro_rules! graph_action_handler"));
+    for handler in [
+        "graph_select_next_node",
+        "graph_select_previous_node",
+        "graph_select_next_plugin_type",
+        "graph_select_previous_plugin_type",
+        "graph_select_next_port",
+        "graph_select_previous_port",
+        "graph_add_selected_plugin",
+        "graph_edit_selected_node",
+        "graph_toggle_selected_bypass",
+        "graph_connect_selected_node",
+        "graph_disconnect_selected_node",
+        "graph_remove_selected_node",
+        "graph_move_selected_left",
+        "graph_move_selected_right",
+        "graph_move_selected_up",
+        "graph_move_selected_down",
+        "graph_move_selected_left_large",
+        "graph_move_selected_right_large",
+        "graph_move_selected_up_large",
+        "graph_move_selected_down_large",
+    ] {
+        assert!(
+            keyboard.contains(handler),
+            "Plugin Graph action handler {handler} is not implemented"
+        );
+        assert!(
+            render.contains(&format!("Self::{handler}")),
+            "Plugin Graph action handler {handler} is not registered"
+        );
+    }
+    assert!(
+        !render.contains("view.handle_plugin_graph_keyboard(event, cx)"),
+        "Plugin Graph raw key dispatcher must not bypass registered GPUI actions"
+    );
     let graph =
         app_source("components/plugins/ui_graph/player_view.rs").replace(".child(\"!\")", "");
     assert!(graph.contains("self.render_graph_keyboard_bar(cx)"));
@@ -2439,10 +2708,39 @@ fn dialog_server_and_phone_copy_is_complete_and_direct_literals_are_extracted() 
         );
 
         let settings = SettingsSurfaceTranslations::for_language(*language);
+        let external = settings.external;
         assert!(
             [
-                settings.activate_external_plugins,
-                settings.scan_external_plugins,
+                settings.max_cpu_cores_description,
+                settings.cpu_cores_unit,
+                external.title,
+                external.activate,
+                external.scan,
+                external.activating,
+                external.scanning,
+                external.runtime_access,
+                external.enabled,
+                external.disabled,
+                external.import_grants,
+                external.media_roots,
+                external.protected_import_roots,
+                external.runtime_error,
+                external.scan_error,
+                external.results,
+                external.loadable,
+                external.discovered,
+                external.unsupported,
+                external.none_found,
+                external.more_results,
+                external.path,
+                external.channels,
+                external.isolated,
+                external.add_to_rack,
+                external.added_to_rack,
+                external.add_error,
+                external.instruments_unsupported,
+                external.parameters_unavailable,
+                external.saved_state,
             ]
             .iter()
             .all(|value| !value.trim().is_empty())
@@ -2599,6 +2897,453 @@ fn dialog_server_and_phone_copy_is_complete_and_direct_literals_are_extracted() 
             );
         }
     }
+}
+
+#[test]
+fn external_plugin_scan_counts_preserve_every_status() {
+    let descriptor = |name: &str, scan_status: PluginScanStatus| PluginDescriptor {
+        id: format!("clap.{name}"),
+        name: name.to_string(),
+        vendor: "Test Vendor".to_string(),
+        version: "1.0".to_string(),
+        format: PluginFormat::Clap,
+        path: PathBuf::from(format!("/tmp/{name}.clap")),
+        audio_inputs: 2,
+        audio_outputs: 2,
+        is_instrument: false,
+        categories: Vec::new(),
+        scan_status,
+    };
+    let plugins = vec![
+        descriptor("loadable", PluginScanStatus::Loadable),
+        descriptor("discovered", PluginScanStatus::Discovered),
+        descriptor("unsupported-a", PluginScanStatus::UnsupportedByBuild),
+        descriptor("unsupported-b", PluginScanStatus::UnsupportedByBuild),
+    ];
+
+    assert_eq!(
+        ExternalPluginScanCounts::from_plugins(&plugins),
+        ExternalPluginScanCounts {
+            total: 4,
+            loadable: 1,
+            discovered: 1,
+            unsupported: 2,
+        }
+    );
+}
+
+#[test]
+fn external_plugin_scan_pagination_reaches_every_result() {
+    let mut ui = ExternalPluginUiState::default();
+    assert_eq!(ui.visible_scan_result_count(250), 100);
+    assert_eq!(ui.show_more_scan_results(250), 200);
+    assert_eq!(ui.show_more_scan_results(250), 250);
+    assert_eq!(ui.show_more_scan_results(250), 250);
+
+    ui.reset_scan_result_pagination();
+    assert_eq!(ui.visible_scan_result_count(250), 100);
+    assert_eq!(ui.visible_scan_result_count(37), 37);
+}
+
+#[test]
+fn external_plugin_worker_health_uses_current_state_not_historical_counters() {
+    use sotf_audio::engine::{
+        IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
+        IsolatedExternalPluginWorkerEvent, IsolatedExternalPluginWorkerStatus,
+    };
+
+    let status = |event, sandbox_status, error: Option<&str>, sandbox_reason: Option<&str>| {
+        IsolatedExternalPluginWorkerStatus {
+            plugin_index: 0,
+            node_id: 7,
+            plugin_instance_id: Some(11),
+            event,
+            error: error.map(str::to_string),
+            worker_start_count: 9,
+            worker_exit_count: 8,
+            worker_launch_failure_count: 7,
+            block_timeout_count: 6,
+            block_worker_failure_count: 5,
+            block_wrong_sequence_count: 4,
+            sandbox_status,
+            sandbox_backend: IsolatedExternalPluginSandboxBackend::LinuxLandlock,
+            sandbox_reason: sandbox_reason.map(str::to_string),
+        }
+    };
+
+    assert_eq!(
+        external_plugin_worker_health(&status(
+            Some(IsolatedExternalPluginWorkerEvent::AlreadyRunning),
+            IsolatedExternalPluginSandboxStatus::Enforced,
+            None,
+            None,
+        )),
+        ExternalPluginWorkerHealth::Healthy,
+        "historical failures must not keep a recovered worker unhealthy"
+    );
+    assert_eq!(
+        external_plugin_worker_health(&status(
+            Some(IsolatedExternalPluginWorkerEvent::NotRunning),
+            IsolatedExternalPluginSandboxStatus::Enforced,
+            None,
+            None,
+        )),
+        ExternalPluginWorkerHealth::Failed
+    );
+    assert_eq!(
+        external_plugin_worker_health(&status(
+            Some(IsolatedExternalPluginWorkerEvent::Started { pid: 42 }),
+            IsolatedExternalPluginSandboxStatus::Disabled,
+            None,
+            Some("sandbox disabled by policy"),
+        )),
+        ExternalPluginWorkerHealth::Degraded
+    );
+    assert_eq!(
+        external_plugin_worker_health(&status(
+            Some(IsolatedExternalPluginWorkerEvent::Started { pid: 42 }),
+            IsolatedExternalPluginSandboxStatus::Enforced,
+            Some("worker handshake failed"),
+            None,
+        )),
+        ExternalPluginWorkerHealth::Failed
+    );
+    assert_eq!(
+        external_plugin_worker_health(&status(
+            None,
+            IsolatedExternalPluginSandboxStatus::Enforced,
+            None,
+            None,
+        )),
+        ExternalPluginWorkerHealth::Degraded
+    );
+}
+
+#[test]
+fn external_plugin_sandbox_backends_have_localized_human_labels() {
+    use sotf_audio::engine::{
+        IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
+        IsolatedExternalPluginWorkerEvent, IsolatedExternalPluginWorkerStatus,
+    };
+
+    let backends = [
+        IsolatedExternalPluginSandboxBackend::Unknown,
+        IsolatedExternalPluginSandboxBackend::LinuxLandlock,
+        IsolatedExternalPluginSandboxBackend::MacosAppSandboxHelper,
+        IsolatedExternalPluginSandboxBackend::MacosProcessIsolation,
+        IsolatedExternalPluginSandboxBackend::WindowsProcessIsolation,
+    ];
+    let languages = [
+        Language::English,
+        Language::French,
+        Language::German,
+        Language::Spanish,
+    ];
+
+    for language in languages {
+        for backend in backends {
+            let status = IsolatedExternalPluginWorkerStatus {
+                plugin_index: 0,
+                node_id: 1,
+                plugin_instance_id: Some(2),
+                event: Some(IsolatedExternalPluginWorkerEvent::AlreadyRunning),
+                error: None,
+                worker_start_count: 1,
+                worker_exit_count: 0,
+                worker_launch_failure_count: 0,
+                block_timeout_count: 0,
+                block_worker_failure_count: 0,
+                block_wrong_sequence_count: 0,
+                sandbox_status: IsolatedExternalPluginSandboxStatus::Enforced,
+                sandbox_backend: backend,
+                sandbox_reason: None,
+            };
+            let label = SettingsSurfaceTranslations::for_language(language)
+                .external
+                .worker
+                .sandbox_label(&status);
+            for debug_variant in [
+                "LinuxLandlock",
+                "MacosAppSandboxHelper",
+                "MacosProcessIsolation",
+                "WindowsProcessIsolation",
+            ] {
+                assert!(
+                    !label.contains(debug_variant),
+                    "sandbox label leaked debug enum {debug_variant}: {label}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn external_plugin_engine_diagnostics_attach_to_descriptor_and_persist() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("diagnostic.clap");
+    std::fs::write(&path, b"fixture").unwrap();
+    let descriptor = PluginDescriptor {
+        id: "clap.diagnostic".to_string(),
+        name: "Diagnostic Plug-in".to_string(),
+        vendor: "Test Vendor".to_string(),
+        version: "1.0".to_string(),
+        format: PluginFormat::Clap,
+        path,
+        audio_inputs: 2,
+        audio_outputs: 4,
+        is_instrument: false,
+        categories: vec!["Effect".to_string()],
+        scan_status: PluginScanStatus::Loadable,
+    };
+    let error_key = external_plugin_error_key(&descriptor);
+    let mut state = PluginState::new();
+    state
+        .add_plugin_settings(PluginSettings::External {
+            state: ExternalPluginState::new(
+                descriptor,
+                ExternalPluginSandboxMode::Isolated,
+                vec![1, 2, 3],
+            ),
+        })
+        .unwrap();
+    let engine_index = state
+        .graph
+        .get_engine_index_by_linear_position(state.selected_plugin_index)
+        .unwrap();
+    let plugin_instance_id = state
+        .graph
+        .get_plugin(state.selected_plugin_index)
+        .unwrap()
+        .id;
+    let worker_error = "worker launch rejected by sandbox".to_string();
+    let worker_status = sotf_audio::engine::IsolatedExternalPluginWorkerStatus {
+        // Deliberately stale/transient slot: stable instance identity must win.
+        plugin_index: engine_index + 100,
+        node_id: 42,
+        plugin_instance_id: Some(plugin_instance_id),
+        event: Some(sotf_audio::engine::IsolatedExternalPluginWorkerEvent::NotRunning),
+        error: Some(worker_error.clone()),
+        worker_start_count: 0,
+        worker_exit_count: 0,
+        worker_launch_failure_count: 1,
+        block_timeout_count: 0,
+        block_worker_failure_count: 0,
+        block_wrong_sequence_count: 0,
+        sandbox_status: sotf_audio::engine::IsolatedExternalPluginSandboxStatus::Enforced,
+        sandbox_backend:
+            sotf_audio::engine::IsolatedExternalPluginSandboxBackend::MacosProcessIsolation,
+        sandbox_reason: None,
+    };
+
+    let build_diagnostic = sotf_audio::engine::PluginBuildDiagnostic::chain_plugin(
+        engine_index,
+        Some(plugin_instance_id),
+        "external",
+        "1 plugin(s) skipped",
+    );
+    state.sync_external_plugin_engine_diagnostics(
+        vec![build_diagnostic.clone()],
+        vec![worker_status.clone()],
+    );
+    assert_eq!(
+        state.external_plugin_ui.build_diagnostics,
+        vec![build_diagnostic.clone()]
+    );
+    assert_eq!(
+        state.external_plugin_build_diagnostic(Some(plugin_instance_id), Some(engine_index)),
+        Some(&build_diagnostic)
+    );
+
+    let graph_fallback = sotf_audio::engine::PluginBuildDiagnostic::graph_node(
+        engine_index,
+        None,
+        "external",
+        "graph node failed",
+    );
+    state.sync_external_plugin_engine_diagnostics(
+        vec![graph_fallback.clone()],
+        vec![worker_status.clone()],
+    );
+    assert_eq!(
+        state.external_plugin_build_diagnostic(Some(plugin_instance_id), Some(engine_index)),
+        Some(&graph_fallback),
+        "legacy graph diagnostics must fall back to the exact engine node id"
+    );
+
+    let host_global = sotf_audio::engine::PluginBuildDiagnostic::host("host setup failed");
+    state.sync_external_plugin_engine_diagnostics(
+        vec![host_global.clone()],
+        vec![worker_status.clone()],
+    );
+    assert_eq!(
+        state.external_plugin_ui.build_diagnostics,
+        vec![host_global]
+    );
+    assert!(
+        state
+            .external_plugin_build_diagnostic(Some(plugin_instance_id), Some(engine_index))
+            .is_none(),
+        "a host-global diagnostic must not be blamed on every external plugin"
+    );
+    assert_eq!(
+        state.external_plugin_ui.worker_statuses,
+        std::slice::from_ref(&worker_status)
+    );
+    assert_eq!(
+        state
+            .external_plugin_ui
+            .worker_errors
+            .get(&plugin_instance_id),
+        Some(&worker_error)
+    );
+    assert!(
+        !state
+            .external_plugin_ui
+            .load_errors
+            .contains_key(&error_key)
+    );
+
+    state.sync_external_plugin_engine_diagnostics(Vec::new(), Vec::new());
+    assert!(state.external_plugin_ui.build_diagnostics.is_empty());
+    assert!(state.external_plugin_ui.worker_statuses.is_empty());
+    assert_eq!(
+        state
+            .external_plugin_ui
+            .worker_errors
+            .get(&plugin_instance_id),
+        Some(&worker_error),
+        "worker failures must remain visible after the worker status disappears"
+    );
+
+    let mut still_stopped = worker_status.clone();
+    still_stopped.error = None;
+    state.sync_external_plugin_engine_diagnostics(Vec::new(), vec![still_stopped.clone()]);
+    assert_eq!(
+        state
+            .external_plugin_ui
+            .worker_errors
+            .get(&plugin_instance_id),
+        Some(&worker_error),
+        "a stopped status without a fresh error must not erase the last actionable failure"
+    );
+
+    let mut recovered = still_stopped;
+    recovered.error = None;
+    recovered.event = Some(sotf_audio::engine::IsolatedExternalPluginWorkerEvent::AlreadyRunning);
+    state.sync_external_plugin_engine_diagnostics(Vec::new(), vec![recovered]);
+    assert!(
+        !state
+            .external_plugin_ui
+            .worker_errors
+            .contains_key(&plugin_instance_id),
+        "an explicit healthy worker status must clear the stale runtime error"
+    );
+}
+
+#[test]
+fn external_plugin_worker_diagnostics_distinguish_duplicate_descriptor_instances() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("duplicate-diagnostic.clap");
+    std::fs::write(&path, b"fixture").unwrap();
+    let settings = PluginSettings::External {
+        state: ExternalPluginState::new(
+            PluginDescriptor {
+                id: "clap.duplicate-diagnostic".to_string(),
+                name: "Duplicate Diagnostic Plug-in".to_string(),
+                vendor: "Test Vendor".to_string(),
+                version: "1.0".to_string(),
+                format: PluginFormat::Clap,
+                path,
+                audio_inputs: 2,
+                audio_outputs: 2,
+                is_instrument: false,
+                categories: vec!["Effect".to_string()],
+                scan_status: PluginScanStatus::Loadable,
+            },
+            ExternalPluginSandboxMode::Isolated,
+            Vec::new(),
+        ),
+    };
+    let mut state = PluginState::new();
+    state.add_plugin_settings(settings.clone()).unwrap();
+    let first_instance_id = state
+        .graph
+        .get_plugin(state.selected_plugin_index)
+        .unwrap()
+        .id;
+    state.add_plugin_settings(settings).unwrap();
+    let second_instance_id = state
+        .graph
+        .get_plugin(state.selected_plugin_index)
+        .unwrap()
+        .id;
+    assert_ne!(first_instance_id, second_instance_id);
+
+    let worker_status = |plugin_instance_id, node_id, error: Option<&str>| {
+        sotf_audio::engine::IsolatedExternalPluginWorkerStatus {
+            // Both transient indices are deliberately unusable: identity must
+            // come exclusively from the persisted player instance id.
+            plugin_index: usize::MAX,
+            node_id,
+            plugin_instance_id: Some(plugin_instance_id),
+            event: Some(sotf_audio::engine::IsolatedExternalPluginWorkerEvent::NotRunning),
+            error: error.map(str::to_string),
+            worker_start_count: 0,
+            worker_exit_count: 0,
+            worker_launch_failure_count: u64::from(error.is_some()),
+            block_timeout_count: 0,
+            block_worker_failure_count: 0,
+            block_wrong_sequence_count: 0,
+            sandbox_status: sotf_audio::engine::IsolatedExternalPluginSandboxStatus::Enforced,
+            sandbox_backend:
+                sotf_audio::engine::IsolatedExternalPluginSandboxBackend::MacosProcessIsolation,
+            sandbox_reason: None,
+        }
+    };
+
+    state.sync_external_plugin_engine_diagnostics(
+        Vec::new(),
+        vec![
+            worker_status(first_instance_id, 101, Some("first worker failed")),
+            worker_status(second_instance_id, 102, Some("second worker failed")),
+        ],
+    );
+    assert_eq!(
+        state
+            .external_plugin_ui
+            .worker_errors
+            .get(&first_instance_id)
+            .map(String::as_str),
+        Some("first worker failed")
+    );
+    assert_eq!(
+        state
+            .external_plugin_ui
+            .worker_errors
+            .get(&second_instance_id)
+            .map(String::as_str),
+        Some("second worker failed")
+    );
+
+    let mut recovered_first = worker_status(first_instance_id, 101, None);
+    recovered_first.event =
+        Some(sotf_audio::engine::IsolatedExternalPluginWorkerEvent::AlreadyRunning);
+    state.sync_external_plugin_engine_diagnostics(Vec::new(), vec![recovered_first]);
+    assert!(
+        !state
+            .external_plugin_ui
+            .worker_errors
+            .contains_key(&first_instance_id)
+    );
+    assert_eq!(
+        state
+            .external_plugin_ui
+            .worker_errors
+            .get(&second_instance_id)
+            .map(String::as_str),
+        Some("second worker failed"),
+        "a healthy duplicate instance must not clear its sibling's failure"
+    );
 }
 
 #[test]
@@ -3406,8 +4151,25 @@ fn every_app_plugin_has_gpui_and_simple_parameter_surfaces() {
     let registry = GpuiViewRegistry::new();
 
     for plugin_type in PluginType::all() {
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let ui_key = plugin_type_key(&settings);
+        let catalog = catalog_entry(plugin_type.wire_name()).unwrap();
+        match catalog.metadata.ui {
+            PluginUiKind::Custom => assert!(
+                registry.get(ui_key).is_some(),
+                "{} catalog says custom UI but registry has none",
+                plugin_type.name()
+            ),
+            PluginUiKind::Generated => assert!(
+                registry.get(ui_key).is_none() && settings.layout().is_some(),
+                "{} catalog says generated UI but custom/declarative registration disagrees",
+                plugin_type.name()
+            ),
+            other => panic!(
+                "generic application plugin {} has invalid UI exposure {other:?}",
+                plugin_type.name()
+            ),
+        }
         assert!(
             registry.get(ui_key).is_some() || settings.layout().is_some(),
             "{} has neither a custom GPUI view nor a declarative PluginLayout",
@@ -3449,7 +4211,7 @@ fn both_midi_controller_layouts_expose_the_same_plugin_parameters() {
     let controllers = [xone_k2_layout(), lcxl_layout()];
 
     for plugin_type in PluginType::all() {
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let params = settings.param_specs();
         let expected: BTreeSet<_> = params
             .iter()
@@ -3494,7 +4256,7 @@ fn both_midi_controller_layouts_expose_the_same_plugin_parameters() {
 #[test]
 fn every_declarative_plugin_layout_solves_at_narrow_and_wide_widths() {
     for plugin_type in PluginType::all() {
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let Some(layout) = settings.layout() else {
             continue;
         };

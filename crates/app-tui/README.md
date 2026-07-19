@@ -66,9 +66,12 @@ resulting playback, queue, plugin, and RoomEQ behavior.
 - Configure tabs use `1`–`8`. RoomEQ Process additionally uses `3`, `4`, and
   `5` for beginner 2.0, 2.1, and 5.1 layouts after that tab is open.
 
-The compact help strip and detailed `?` modal are generated from separate
-compact/detailed tables by design; both are covered by navigation tests and
-must describe keys actually dispatched in that context.
+The cross-frontend command and workflow contract is maintained in
+[`KEYBOARD-WORKFLOW-MATRIX.md`](KEYBOARD-WORKFLOW-MATRIX.md). It records the
+shared GPUI concept, TUI-owned key/context, expected common outcome, and current
+test evidence. Compact and detailed help must converge on one executable
+binding catalog; the matrix keeps that remaining release gate explicit until
+the catalog and exactly-one-dispatch tests replace the legacy separate tables.
 
 ## Dependencies
 

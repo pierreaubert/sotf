@@ -50,6 +50,33 @@ fn test_pluginhost_api_empty_graph() {
 }
 
 #[test]
+fn host_rejects_non_finite_input_without_poisoning_later_blocks() {
+    let mut host = DawHost::new(2, 48_000);
+    let input = [0.25, f32::NAN, f32::INFINITY, f32::NEG_INFINITY];
+    let mut output = [1.0; 4];
+
+    let error = host.process(&input, &mut output).unwrap_err();
+    assert!(error.contains("non-finite sample at index 1"), "{error}");
+    assert_eq!(output, [0.0; 4]);
+
+    let recovered_input = [0.25, -0.5, 0.75, -1.0];
+    let frames = host.process(&recovered_input, &mut output).unwrap();
+    assert_eq!(frames, 2);
+    assert_eq!(output, recovered_input);
+}
+
+#[test]
+fn f64_host_rejects_non_finite_input_with_silent_output() {
+    let mut host = DawHost::new(2, 48_000);
+    let input = [0.25, f64::NAN, 0.75, -1.0];
+    let mut output = [1.0; 4];
+
+    let error = host.process_f64(&input, &mut output).unwrap_err();
+    assert!(error.contains("non-finite sample at index 1"), "{error}");
+    assert_eq!(output, [0.0; 4]);
+}
+
+#[test]
 fn test_process_f64_empty_graph() {
     let mut g = DawHost::new(2, 48000);
     let input = vec![0.25_f64, -0.5, 1.0, -1.0];

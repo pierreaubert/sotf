@@ -15,7 +15,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Divider, Text, TextSize, TextWeight};
-use sotf_audio_player::controllers::ab_compare_path::{ALLOWED_PLUGIN_TYPES, PluginInRack};
+use sotf_audio_player::controllers::ab_compare_path::{PluginInRack, allowed_plugin_types};
 
 /// Render the A/B Compare custom plugin view.
 pub fn render_ab_compare(
@@ -228,7 +228,7 @@ fn render_add_menu(
         .border_1()
         .border_color(theme.accent);
 
-    for &(type_key, display_name) in ALLOWED_PLUGIN_TYPES {
+    for (type_key, display_name) in allowed_plugin_types() {
         let plugin_type = type_key.to_string();
         menu = menu.child(
             Button::new(
@@ -367,7 +367,7 @@ fn render_sub_plugin_card(
 }
 
 fn plugin_display_name(plugin_type: &str) -> &'static str {
-    for &(key, name) in ALLOWED_PLUGIN_TYPES {
+    for (key, name) in allowed_plugin_types() {
         if key == plugin_type {
             return name;
         }

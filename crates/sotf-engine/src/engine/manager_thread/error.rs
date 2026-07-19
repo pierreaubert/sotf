@@ -1,3 +1,5 @@
+use sotf_types::PluginBuildDiagnostic;
+
 /// Structured config error types
 #[derive(Debug, Clone)]
 pub(super) enum ConfigError {
@@ -12,6 +14,8 @@ pub(super) enum ConfigError {
     TimeoutError { waited_ms: u64 },
     /// Plugin update failed in processing thread
     ProcessingError { reason: String },
+    /// Plugin host construction failed before the candidate could be applied.
+    PluginBuild { diagnostic: PluginBuildDiagnostic },
     /// Unexpected response from processing thread
     UnexpectedResponse,
     /// Communication channel disconnected
@@ -36,6 +40,9 @@ impl std::fmt::Display for ConfigError {
             Self::ProcessingError { reason } => {
                 write!(f, "Plugin processing error: {}", reason)
             }
+            Self::PluginBuild { diagnostic } => {
+                write!(f, "Plugin build error: {}", diagnostic)
+            }
             Self::UnexpectedResponse => {
                 write!(f, "Unexpected response from processing thread")
             }
@@ -47,3 +54,9 @@ impl std::fmt::Display for ConfigError {
 }
 
 impl std::error::Error for ConfigError {}
+
+impl ConfigError {
+    pub(super) fn is_plugin_build_error(&self) -> bool {
+        matches!(self, Self::PluginBuild { .. })
+    }
+}

@@ -457,6 +457,7 @@ fn test_thread_event_isolated_external_plugin_worker_statuses() {
     let status = IsolatedExternalPluginWorkerStatus {
         plugin_index: 0,
         node_id: 11,
+        plugin_instance_id: None,
         event: Some(IsolatedExternalPluginWorkerEvent::Started { pid: 1234 }),
         error: Some("timeout".to_string()),
         worker_start_count: 1,

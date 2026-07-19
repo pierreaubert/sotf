@@ -4,21 +4,12 @@ use crate::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
 };
 use crate::serialization::{PluginPreset, SerializablePlugin};
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
-use libloading::Library;
 use std::any::Any;
 use std::collections::HashMap;
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
-use std::ffi::c_void;
 
+/// Reserved engine-config parameter used to correlate a hosted worker with
+/// the persisted player plugin instance that created it.
+pub const EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER: &str = "_sotf_instance_id";
 mod external_hosting_backend;
 mod external_plugin_state;
 mod format;
@@ -53,6 +44,7 @@ pub struct ExternalPlugin {
     parameters: Vec<Parameter>,
     hosting_backend: ExternalHostingBackend,
     restore_error: Option<String>,
+    opaque_state: Vec<u8>,
     /// Format-specific plugin instance (opaque)
     _instance: Option<Box<dyn Any + Send>>,
 }
@@ -84,6 +76,7 @@ impl ExternalPlugin {
             parameters: Vec::new(),
             hosting_backend: hosting_plan.backend,
             restore_error: None,
+            opaque_state: Vec::new(),
             _instance: instance,
         })
     }
@@ -110,7 +103,7 @@ impl ExternalPlugin {
         ExternalPluginState::new(
             self.descriptor.clone(),
             ExternalPluginSandboxMode::InProcess,
-            Vec::new(),
+            self.opaque_state.clone(),
         )
     }
 
@@ -123,14 +116,18 @@ impl ExternalPlugin {
             return Err("sample rate must be positive".into());
         }
         state.validate_descriptor_consistency()?;
-        match Self::new(&state.descriptor, sample_rate) {
-            Ok(plugin) => Ok(plugin),
-            Err(err) => Ok(Self::unavailable_placeholder(
-                state.descriptor.clone(),
-                sample_rate,
-                err,
-            )),
+        if state.sandbox_mode != ExternalPluginSandboxMode::InProcess {
+            return Err(format!(
+                "External plugin state sandbox mode {:?} cannot restore in-process plugin",
+                state.sandbox_mode
+            ));
         }
+        let mut plugin = match Self::new(&state.descriptor, sample_rate) {
+            Ok(plugin) => plugin,
+            Err(err) => Self::unavailable_placeholder(state.descriptor.clone(), sample_rate, err),
+        };
+        plugin.opaque_state = state.opaque_state.clone();
+        Ok(plugin)
     }
 
     fn unavailable_placeholder(
@@ -146,6 +143,7 @@ impl ExternalPlugin {
             parameters: Vec::new(),
             hosting_backend: ExternalHostingBackend::Passthrough,
             restore_error: Some(restore_error),
+            opaque_state: Vec::new(),
             _instance: None,
         }
     }
@@ -309,6 +307,12 @@ impl SerializablePlugin for ExternalPlugin {
                 "external plugin preset is missing external plugin state".to_string(),
             )
         })?;
+        if state.sandbox_mode != ExternalPluginSandboxMode::InProcess {
+            return Err(PluginError::InvalidConfiguration(format!(
+                "external plugin preset sandbox mode {:?} cannot restore in-process plugin",
+                state.sandbox_mode
+            )));
+        }
         if state.format != self.descriptor.format
             || state.plugin_id != self.descriptor.id
             || state.plugin_path != self.descriptor.path
@@ -321,6 +325,8 @@ impl SerializablePlugin for ExternalPlugin {
                 self.descriptor.path.display()
             )));
         }
+
+        self.opaque_state = state.opaque_state;
 
         Ok(())
     }

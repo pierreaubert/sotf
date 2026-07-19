@@ -59,6 +59,7 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::FirDesigner => theme.plugin_palette.plugin_colors.eq,
         PluginType::LinearPhaseEq => theme.plugin_palette.plugin_colors.eq,
         PluginType::SpectralCompressor => theme.plugin_palette.plugin_colors.compressor,
+        PluginType::External => theme.plugin_palette.plugin_colors.upmixer,
     }
 }
 
@@ -123,6 +124,7 @@ pub fn plugin_icon(
         PluginType::FirDesigner => "FIR",
         PluginType::LinearPhaseEq => "LP",
         PluginType::SpectralCompressor => "SC",
+        PluginType::External => "EXT",
     }
 }
 
@@ -191,6 +193,7 @@ pub fn plugin_short_name(
         PluginType::FirDesigner => "FIR Designer",
         PluginType::LinearPhaseEq => "Linear Phase EQ",
         PluginType::SpectralCompressor => "Spectral Compressor",
+        PluginType::External => "External Plugin",
     }
 }
 

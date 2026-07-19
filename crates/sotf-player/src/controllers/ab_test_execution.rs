@@ -4,13 +4,15 @@
 //! The realtime path receives only the prebuilt `ABComparePluginParams` produced
 //! by `AbTestSession::runtime_config_for_pending_cue`.
 
-use std::path::Path;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sotf_plugins::plugin_ab_compare::{PathConfig, build_path_from_config_with_factory};
 
 use super::ab_test_session::{
-    AbTestError, AbTestSession, ChainSnapshot, LevelMatchMeasurement, LevelMatchMetric,
+    AbTestError, AbTestSession, ChainSnapshot, LevelMatchConfig, LevelMatchMeasurement,
     ListeningTestSetup, MediaSegment, measure_level_match,
 };
 
@@ -32,9 +34,7 @@ pub struct AbTestSessionPreparationRequest<'a> {
     pub path_b: &'a PathConfig,
     pub media_path: &'a Path,
     pub start_ms: u64,
-    pub duration_ms: u64,
-    pub metric: LevelMatchMetric,
-    pub max_correction_db: f64,
+    pub level_match: LevelMatchConfig,
     pub block_frames: usize,
     pub switch_transition_ms: f32,
     pub participant_id: Option<String>,
@@ -46,23 +46,31 @@ pub struct AbTestSessionPreparationRequest<'a> {
 pub fn prepare_ab_test_session(
     request: AbTestSessionPreparationRequest<'_>,
 ) -> Result<(AbTestSession, LevelMatchPreparation), AbTestError> {
-    let segment =
-        decode_level_match_segment(request.media_path, request.start_ms, request.duration_ms)?;
+    request.level_match.validate()?;
+    let media_id = media_file_identity(request.media_path)?;
+    let segment = decode_level_match_segment(
+        request.media_path,
+        request.start_ms,
+        request.level_match.window_ms,
+    )?;
     let preparation = prepare_level_match(LevelMatchPreparationRequest {
         path_a: request.path_a,
         path_b: request.path_b,
         sample_rate: segment.sample_rate,
         channels: segment.channels,
         interleaved_segment: &segment.interleaved_samples,
-        metric: request.metric,
-        max_correction_db: request.max_correction_db,
+        level_match: request.level_match,
         block_frames: request.block_frames,
     })?;
+    if media_file_identity(request.media_path)? != media_id {
+        return Err(AbTestError::MediaIdentityMismatch);
+    }
     let setup = ListeningTestSetup {
         path_a: ChainSnapshot::new(request.path_a_label, request.path_a.clone())?,
         path_b: ChainSnapshot::new(request.path_b_label, request.path_b.clone())?,
         media: MediaSegment {
-            media_id: request.media_path.to_string_lossy().into_owned(),
+            media_id,
+            media_path: Some(request.media_path.to_string_lossy().into_owned()),
             start_ms: segment.start_ms,
             duration_ms: segment.duration_ms,
         },
@@ -75,6 +83,41 @@ pub fn prepare_ab_test_session(
     };
     let session = AbTestSession::new(request.session_id, setup, request.assignment_seed)?;
     Ok((session, preparation))
+}
+
+/// Return a stable content identity for reproducible listening-test media.
+pub fn media_file_identity(path: impl AsRef<Path>) -> Result<String, AbTestError> {
+    let mut file = std::fs::File::open(path.as_ref())
+        .map_err(|error| AbTestError::SessionIo(error.to_string()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| AbTestError::SessionIo(error.to_string()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("sha256:{:x}", hasher.finalize()))
+}
+
+/// Resolve and verify the local file backing a saved listening-test segment.
+pub fn verify_media_segment(segment: &MediaSegment) -> Result<PathBuf, AbTestError> {
+    let path = segment
+        .media_path
+        .as_deref()
+        .or_else(|| (!segment.media_id.starts_with("sha256:")).then_some(segment.media_id.as_str()))
+        .map(PathBuf::from)
+        .ok_or(AbTestError::MediaPathUnavailable)?;
+    if !path.is_file() {
+        return Err(AbTestError::MediaPathUnavailable);
+    }
+    if segment.media_id.starts_with("sha256:") && media_file_identity(&path)? != segment.media_id {
+        return Err(AbTestError::MediaIdentityMismatch);
+    }
+    Ok(path)
 }
 
 /// Decode an exact interleaved segment for offline, synchronized path rendering.
@@ -157,8 +200,7 @@ pub struct LevelMatchPreparationRequest<'a> {
     pub sample_rate: u32,
     pub channels: usize,
     pub interleaved_segment: &'a [f32],
-    pub metric: LevelMatchMetric,
-    pub max_correction_db: f64,
+    pub level_match: LevelMatchConfig,
     pub block_frames: usize,
 }
 
@@ -177,8 +219,7 @@ pub fn prepare_level_match(
         sample_rate,
         channels,
         interleaved_segment,
-        metric,
-        max_correction_db,
+        level_match,
         block_frames,
     } = request;
     validate_segment(sample_rate, channels, interleaved_segment, block_frames)?;
@@ -197,14 +238,8 @@ pub fn prepare_level_match(
         interleaved_segment,
         block_frames,
     )?;
-    let measurement = measure_level_match(
-        metric,
-        sample_rate,
-        channels,
-        &rendered_a,
-        &rendered_b,
-        max_correction_db,
-    )?;
+    let measurement =
+        measure_level_match(level_match, sample_rate, channels, &rendered_a, &rendered_b)?;
 
     Ok(LevelMatchPreparation {
         measurement,
@@ -379,8 +414,12 @@ mod tests {
             sample_rate: 48_000,
             channels: 2,
             interleaved_segment: &segment,
-            metric: LevelMatchMetric::Rms,
-            max_correction_db: 12.0,
+            level_match: LevelMatchConfig {
+                metric: crate::controllers::ab_test_session::LevelMatchMetric::Rms,
+                window_ms: 1_000,
+                tolerance_db: 0.1,
+                max_correction_db: 12.0,
+            },
             block_frames: 480,
         })
         .unwrap();
@@ -404,8 +443,12 @@ mod tests {
                 sample_rate: 48_000,
                 channels: 1,
                 interleaved_segment: &vec![0.1; 48_000],
-                metric: LevelMatchMetric::Rms,
-                max_correction_db: 6.0,
+                level_match: LevelMatchConfig {
+                    metric: crate::controllers::ab_test_session::LevelMatchMetric::Rms,
+                    window_ms: 1_000,
+                    tolerance_db: 0.1,
+                    max_correction_db: 6.0,
+                },
                 block_frames: 480,
             }),
             Err(AbTestError::IncompatiblePathLayout)
@@ -415,11 +458,12 @@ mod tests {
     #[test]
     fn validated_session_persistence_omits_pending_assignment() {
         let level_match = LevelMatchMeasurement {
-            metric: LevelMatchMetric::Rms,
+            metric: crate::controllers::ab_test_session::LevelMatchMetric::Rms,
             window_ms: 1_000,
             path_a_db: -12.0,
             path_b_db: -12.0,
             correction_b_db: 0.0,
+            tolerance_db: 0.1,
             max_correction_db: 6.0,
         };
         let setup = ListeningTestSetup {
@@ -427,6 +471,7 @@ mod tests {
             path_b: ChainSnapshot::new("TDF II", PathConfig::None).unwrap(),
             media: MediaSegment {
                 media_id: "fixture".into(),
+                media_path: None,
                 start_ms: 0,
                 duration_ms: 1_000,
             },
@@ -445,9 +490,31 @@ mod tests {
         save_ab_test_session(&session, &path).unwrap();
         let json = std::fs::read_to_string(&path).unwrap();
         assert!(!json.contains("pending"));
+        assert!(json.contains("\"tolerance_db\""));
+        assert!(json.contains("\"media_path\""));
         let restored = load_ab_test_session(&path).unwrap();
         assert!(restored.trials.is_empty());
         assert_eq!(restored.pending_mode(), None);
         restored.validate().unwrap();
+    }
+
+    #[test]
+    fn saved_media_segment_verifies_content_identity_before_reload() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("listening-media.raw");
+        std::fs::write(&path, b"stable listening fixture").unwrap();
+        let segment = MediaSegment {
+            media_id: media_file_identity(&path).unwrap(),
+            media_path: Some(path.to_string_lossy().into_owned()),
+            start_ms: 250,
+            duration_ms: 3_000,
+        };
+
+        assert_eq!(verify_media_segment(&segment).unwrap(), path);
+        std::fs::write(&path, b"changed listening fixture").unwrap();
+        assert_eq!(
+            verify_media_segment(&segment),
+            Err(AbTestError::MediaIdentityMismatch)
+        );
     }
 }

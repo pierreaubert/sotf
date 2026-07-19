@@ -69,65 +69,20 @@ pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     lines
 }
 
-/// Get keybindings for a given screen
+/// Get compact keybindings for a given screen from the same catalog used by
+/// the detailed help modal.
 pub fn get_keybindings_for_screen(
     screen: crate::app::Screen,
     language: crate::i18n::Language,
 ) -> Vec<(&'static str, &'static str)> {
-    use crate::app::Screen;
-
-    let bindings = match screen {
-        Screen::Library => vec![
-            ("/", "Search"),
-            ("↑↓ or k/j", "Browse"),
-            ("a/Enter", "Queue album"),
-            ("q", "Queue"),
-            ("s", "Sort"),
-            ("c", "Filter"),
-            ("t", "Tree/flat view"),
-        ],
-        Screen::Queue => vec![
-            ("↑↓ or k/j", "Browse"),
-            ("Enter", "Play selection"),
-            ("d", "Remove track"),
-            ("c", "Clear"),
-            ("p/Space", "Play/pause"),
-            ("A", "Add active playlist"),
-        ],
-        Screen::Plugins => vec![
-            ("↑↓ or k/j", "Browse"),
-            ("a", "Add plugin"),
-            ("d", "Remove plugin"),
-            ("e/Enter", "Edit"),
-            ("t", "Enable/disable"),
-            ("s", "Save"),
-            ("l", "Load"),
-        ],
-        Screen::Devices => vec![
-            ("↑↓ or k/j", "Browse"),
-            ("Enter/Space", "Select"),
-            ("r", "Rescan"),
-        ],
-        Screen::Configure => vec![
-            ("←→", "Navigate tabs"),
-            ("Enter", "Open tab"),
-            ("Esc", "Back"),
-            ("1-8", "Jump to tab"),
-            ("?", "Help"),
-        ],
-        Screen::Playlists => vec![
-            ("↑↓ or k/j", "Browse"),
-            ("Enter/l", "Open"),
-            ("Esc/h", "Back"),
-            ("n/r/d", "Create/rename/delete"),
-            ("p", "Play all"),
-        ],
-        Screen::Loading => vec![],
-    };
     let text = crate::i18n::TuiTranslations::for_language(language);
-    bindings
-        .into_iter()
-        .map(|(key, action)| (key, text.action_description(action)))
+    super::keybinding_catalog::keybindings_for_screen(screen)
+        .iter()
+        .filter_map(|binding| {
+            binding
+                .compact_description
+                .map(|description| (binding.key, text.action_description(description)))
+        })
         .collect()
 }
 
@@ -157,7 +112,7 @@ mod tests {
 
         let library =
             get_keybindings_for_screen(crate::app::Screen::Library, crate::i18n::Language::English);
-        assert!(library.contains(&("a/Enter", "Queue album")));
+        assert!(library.contains(&("a or Enter", "Queue album")));
         assert!(library.contains(&("q", "Queue")));
         assert!(!library.iter().any(|binding| binding.1 == "Add dir"));
         assert!(!library.iter().any(|binding| binding.0 == "p"));

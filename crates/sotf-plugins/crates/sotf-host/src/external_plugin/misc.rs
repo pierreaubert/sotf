@@ -1,3 +1,15 @@
+#[cfg(any(
+    feature = "external-plugin-clap",
+    feature = "external-plugin-vst3",
+    feature = "external-plugin-au"
+))]
+use std::fs;
+#[cfg(any(
+    feature = "external-plugin-clap",
+    feature = "external-plugin-vst3",
+    feature = "external-plugin-au"
+))]
+use std::path::Path;
 use std::path::PathBuf;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

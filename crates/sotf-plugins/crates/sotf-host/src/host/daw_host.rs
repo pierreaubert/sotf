@@ -824,8 +824,7 @@ impl DawHost {
         &mut self,
     ) -> Vec<IsolatedExternalPluginWorkerReport> {
         let mut reports = Vec::new();
-        let chain_nodes = self.chain_nodes.clone();
-        for (plugin_index, node_id) in chain_nodes.into_iter().enumerate() {
+        for (plugin_index, node_id) in self.worker_report_nodes() {
             let Some(Some(plugin)) = self.plugins.get_mut(node_id) else {
                 continue;
             };
@@ -856,8 +855,7 @@ impl DawHost {
         &mut self,
     ) -> Vec<IsolatedExternalPluginWorkerReport> {
         let mut reports = Vec::new();
-        let chain_nodes = self.chain_nodes.clone();
-        for (plugin_index, node_id) in chain_nodes.into_iter().enumerate() {
+        for (plugin_index, node_id) in self.worker_report_nodes() {
             let Some(Some(plugin)) = self.plugins.get_mut(node_id) else {
                 continue;
             };
@@ -896,6 +894,7 @@ impl DawHost {
         IsolatedExternalPluginWorkerReport {
             plugin_index,
             node_id,
+            plugin_instance_id: plugin.plugin_instance_id(),
             event,
             error,
             worker_start_count: plugin.worker_start_count(),
@@ -908,6 +907,23 @@ impl DawHost {
             sandbox_backend: sandbox.backend,
             sandbox_reason,
         }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    fn worker_report_nodes(&self) -> Vec<(usize, NodeId)> {
+        let mut node_ids = self.nodes.keys().copied().collect::<Vec<_>>();
+        node_ids.sort_unstable();
+        node_ids
+            .into_iter()
+            .map(|node_id| {
+                let plugin_index = self
+                    .chain_nodes
+                    .iter()
+                    .position(|&chain_node_id| chain_node_id == node_id)
+                    .unwrap_or(node_id);
+                (plugin_index, node_id)
+            })
+            .collect()
     }
 
     pub fn input_channels(&self) -> usize {
@@ -1535,6 +1551,17 @@ impl DawHost {
         self.drain_graph_mutations()?;
         if !self.built {
             self.build()?;
+        }
+        if let Some((index, sample)) = input
+            .iter()
+            .copied()
+            .enumerate()
+            .find(|(_, sample)| !sample.is_finite())
+        {
+            output.fill(0.0);
+            return Err(format!(
+                "host input contains non-finite sample at index {index}: {sample}"
+            ));
         }
         let mut events = std::mem::take(&mut self.queues.parameter_event_scratch);
         self.drain_parameter_events_into(&mut events);
@@ -2253,6 +2280,17 @@ impl DawHost {
         self.drain_graph_mutations()?;
         if !self.built {
             self.build()?;
+        }
+        if let Some((index, sample)) = input
+            .iter()
+            .copied()
+            .enumerate()
+            .find(|(_, sample)| !sample.is_finite())
+        {
+            output.fill(0.0);
+            return Err(format!(
+                "host input contains non-finite sample at index {index}: {sample}"
+            ));
         }
         let mut events = std::mem::take(&mut self.queues.parameter_event_scratch);
         self.drain_parameter_events_into(&mut events);

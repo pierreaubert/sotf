@@ -11,7 +11,7 @@ use crate::{
     ExternalPluginSandboxPolicy, ExternalPluginSandboxTiming, ExternalPluginTrust,
     IsolatedExternalPluginConfig,
 };
-use crate::{PluginDescriptor, PluginFormat};
+use crate::{ExternalPluginState, PluginDescriptor, PluginFormat};
 use std::path::{Path, PathBuf};
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -24,6 +24,21 @@ pub(super) fn parse_isolated_external_plugin_config(
         sandbox_policy: ExternalPluginSandboxPolicy::for_trust(trust),
         ..IsolatedExternalPluginConfig::default()
     };
+
+    if let Some(instance_id) = parameters.get(crate::EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER) {
+        let instance_id = instance_id.as_u64().ok_or_else(|| {
+            format!(
+                "`{}` must be a non-negative integer",
+                crate::EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER
+            )
+        })?;
+        config.plugin_instance_id = Some(usize::try_from(instance_id).map_err(|_| {
+            format!(
+                "`{}` is too large",
+                crate::EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER
+            )
+        })?);
+    }
 
     if let Some(max_block_frames) = parameters.get("max_block_frames") {
         let max_block_frames = max_block_frames
@@ -183,6 +198,28 @@ pub(super) fn parse_external_plugin_descriptor(
             .scan_status
             .unwrap_or_else(|| format.build_scan_status()),
     })
+}
+
+pub(super) fn parse_external_plugin_state(
+    parameters: &serde_json::Value,
+    descriptor: &PluginDescriptor,
+) -> Result<Option<ExternalPluginState>, String> {
+    let Some(value) = parameters.get("external_state") else {
+        return Ok(None);
+    };
+    let state: ExternalPluginState = serde_json::from_value(value.clone())
+        .map_err(|error| format!("Failed to parse external plugin state: {error}"))?;
+    state.validate()?;
+    if state.descriptor != *descriptor {
+        return Err(format!(
+            "External plugin state targets '{}' at {}, but the config descriptor targets '{}' at {}",
+            state.descriptor.id,
+            state.descriptor.path.display(),
+            descriptor.id,
+            descriptor.path.display()
+        ));
+    }
+    Ok(Some(state))
 }
 
 pub(super) fn parse_external_format(

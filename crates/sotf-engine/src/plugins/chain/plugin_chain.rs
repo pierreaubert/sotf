@@ -31,42 +31,55 @@ impl PluginChain {
         Self::default()
     }
 
-    pub fn add_plugin(&mut self, plugin_type: &PluginType) -> usize {
+    pub fn add_plugin(&mut self, plugin_type: &PluginType) -> Result<usize, String> {
         let id = self.next_id;
+        let plugin = Plugin::new(id, plugin_type)?;
         self.next_id += 1;
-        self.plugins.push(Plugin::new(id, plugin_type));
-        id
+        self.plugins.push(plugin);
+        Ok(id)
     }
 
     /// Add a permanent plugin that cannot be removed
-    pub fn add_permanent_plugin(&mut self, plugin_type: &PluginType) -> usize {
+    pub fn add_permanent_plugin(&mut self, plugin_type: &PluginType) -> Result<usize, String> {
         let id = self.next_id;
+        let plugin = Plugin::new_permanent(id, plugin_type)?;
         self.next_id += 1;
-        self.plugins.push(Plugin::new_permanent(id, plugin_type));
-        id
+        self.plugins.push(plugin);
+        Ok(id)
     }
 
     /// Add a permanent plugin that starts disabled (passthrough)
-    pub fn add_permanent_disabled_plugin(&mut self, plugin_type: &PluginType) -> usize {
+    pub fn add_permanent_disabled_plugin(
+        &mut self,
+        plugin_type: &PluginType,
+    ) -> Result<usize, String> {
         let id = self.next_id;
+        let mut plugin = Plugin::new_permanent(id, plugin_type)?;
         self.next_id += 1;
-        let mut plugin = Plugin::new_permanent(id, plugin_type);
         plugin.enabled = false;
         self.plugins.push(plugin);
-        id
+        Ok(id)
     }
 
     /// Create a default rack with permanent Input Monitor, ReplayGain, Matrix, and Output Monitor
     pub fn with_default_rack() -> Self {
         let mut chain = Self::new();
         // Input monitor (permanent) - monitors input signal
-        chain.add_permanent_plugin(&PluginType::LoudnessMonitor);
+        chain
+            .add_permanent_plugin(&PluginType::LoudnessMonitor)
+            .expect("input monitor has built-in default settings");
         // ReplayGain (permanent) - applies track/album replay gain correction
-        chain.add_permanent_disabled_plugin(&PluginType::Gain);
+        chain
+            .add_permanent_disabled_plugin(&PluginType::Gain)
+            .expect("ReplayGain has built-in default settings");
         // Matrix (permanent) - channel routing
-        chain.add_permanent_plugin(&PluginType::Matrix);
+        chain
+            .add_permanent_plugin(&PluginType::Matrix)
+            .expect("matrix has built-in default settings");
         // Output monitor (permanent) - monitors output signal
-        chain.add_permanent_plugin(&PluginType::LoudnessMonitor);
+        chain
+            .add_permanent_plugin(&PluginType::LoudnessMonitor)
+            .expect("output monitor has built-in default settings");
         chain
     }
 
@@ -105,15 +118,16 @@ impl PluginChain {
         // Build fresh rack
         let input_id = self.next_id;
         self.next_id += 1;
-        self.plugins.push(Plugin::new_permanent(
-            input_id,
-            &PluginType::LoudnessMonitor,
-        ));
+        self.plugins.push(
+            Plugin::new_permanent(input_id, &PluginType::LoudnessMonitor)
+                .expect("input monitor has built-in default settings"),
+        );
 
         // ReplayGain (permanent, starts disabled)
         let gain_id = self.next_id;
         self.next_id += 1;
-        let mut gain_plugin = Plugin::new_permanent(gain_id, &PluginType::Gain);
+        let mut gain_plugin = Plugin::new_permanent(gain_id, &PluginType::Gain)
+            .expect("ReplayGain has built-in default settings");
         gain_plugin.enabled = false;
         self.plugins.push(gain_plugin);
 
@@ -122,15 +136,17 @@ impl PluginChain {
 
         let matrix_id = self.next_id;
         self.next_id += 1;
-        self.plugins
-            .push(Plugin::new_permanent(matrix_id, &PluginType::Matrix));
+        self.plugins.push(
+            Plugin::new_permanent(matrix_id, &PluginType::Matrix)
+                .expect("matrix has built-in default settings"),
+        );
 
         let output_id = self.next_id;
         self.next_id += 1;
-        self.plugins.push(Plugin::new_permanent(
-            output_id,
-            &PluginType::LoudnessMonitor,
-        ));
+        self.plugins.push(
+            Plugin::new_permanent(output_id, &PluginType::LoudnessMonitor)
+                .expect("output monitor has built-in default settings"),
+        );
 
         log::info!("Ensured default rack: {} plugins total", self.plugins.len());
     }
@@ -284,13 +300,17 @@ impl PluginChain {
     }
 
     /// Insert a plugin at a specific index
-    pub fn insert_plugin(&mut self, index: usize, plugin_type: &PluginType) -> usize {
+    pub fn insert_plugin(
+        &mut self,
+        index: usize,
+        plugin_type: &PluginType,
+    ) -> Result<usize, String> {
         let id = self.next_id;
+        let plugin = Plugin::new(id, plugin_type)?;
         self.next_id += 1;
         let insert_idx = index.min(self.plugins.len());
-        self.plugins
-            .insert(insert_idx, Plugin::new(id, plugin_type));
-        id
+        self.plugins.insert(insert_idx, plugin);
+        Ok(id)
     }
 
     /// Find the index of the first plugin of a given type
@@ -783,6 +803,9 @@ impl PluginChain {
                     output_channels, ..
                 } => {
                     running_channels = *output_channels;
+                }
+                PluginSettings::External { state } => {
+                    running_channels = state.descriptor.audio_outputs;
                 }
                 PluginSettings::BandSplit { .. } => {
                     running_channels *= 2;
@@ -1287,14 +1310,18 @@ mod tests {
         UpmixerDialogueSettings, UpmixerGainSettings, UpmixerHeightSettings, UpmixerLfeSettings,
         UpmixerOutputSettings, UpmixerSubharmonicSettings,
     };
+    use sotf_plugins::{
+        ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor, PluginFormat,
+        PluginScanStatus,
+    };
 
     #[test]
     fn test_plugin_chain() {
         let mut chain = PluginChain::new();
         assert_eq!(chain.len(), 0);
 
-        chain.add_plugin(&PluginType::EQ);
-        chain.add_plugin(&PluginType::Upmixer);
+        chain.add_plugin(&PluginType::EQ).unwrap();
+        chain.add_plugin(&PluginType::Upmixer).unwrap();
         assert_eq!(chain.len(), 2);
 
         let configs = chain.to_plugin_configs(48000.0);
@@ -1309,7 +1336,7 @@ mod tests {
         assert_eq!(chain.output_channels(), 2);
 
         // Add default upmixer (5.1 = 6 channels)
-        chain.add_plugin(&PluginType::Upmixer);
+        chain.add_plugin(&PluginType::Upmixer).unwrap();
         assert_eq!(chain.output_channels(), 6);
 
         // Test that speaker_config is correctly mapped
@@ -1389,7 +1416,7 @@ mod tests {
     #[test]
     fn test_upmixer_binaural_preview_counts_as_stereo_output() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::Upmixer);
+        chain.add_plugin(&PluginType::Upmixer).unwrap();
 
         if let Some(plugin) = chain.get_plugin_mut(0)
             && let PluginSettings::Upmixer {
@@ -1415,8 +1442,8 @@ mod tests {
         let mut chain = PluginChain::new();
 
         // Add upmixer (5.1 = 6 channels) and binaural decoder
-        chain.add_plugin(&PluginType::Upmixer);
-        chain.add_plugin(&PluginType::BinauralDecoder);
+        chain.add_plugin(&PluginType::Upmixer).unwrap();
+        chain.add_plugin(&PluginType::BinauralDecoder).unwrap();
 
         // Initially, BinauralDecoder should have default 6 channels (from default_for)
         if let Some(plugin) = chain.get_plugin(1)
@@ -1608,7 +1635,7 @@ mod tests {
         // Insert a user EQ plugin at the user insert point (before Matrix)
         let insert_idx = chain.user_plugin_insert_index();
         assert_eq!(insert_idx, 2); // Before Matrix (after InputLM and Gain)
-        chain.insert_plugin(insert_idx, &PluginType::EQ);
+        chain.insert_plugin(insert_idx, &PluginType::EQ).unwrap();
 
         // Chain should be [InputLM, Gain(disabled), EQ, Matrix, OutputLM]
         assert_eq!(chain.len(), 5);
@@ -1654,7 +1681,9 @@ mod tests {
     fn test_single_loudness_monitor_not_output() {
         // A chain with only one permanent LoudnessMonitor should not be an output monitor
         let mut chain = PluginChain::new();
-        chain.add_permanent_plugin(&PluginType::LoudnessMonitor);
+        chain
+            .add_permanent_plugin(&PluginType::LoudnessMonitor)
+            .unwrap();
 
         assert!(chain.is_input_monitor(0));
         assert!(!chain.is_output_monitor(0));
@@ -1730,7 +1759,7 @@ mod tests {
     /// Helper: build a chain and set the upmixer's speaker_config.
     fn chain_with_upmixer(speaker_config: &str) -> PluginChain {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::Upmixer);
+        chain.add_plugin(&PluginType::Upmixer).unwrap();
         if let Some(p) = chain.get_plugin_mut(0)
             && let PluginSettings::Upmixer {
                 speaker_config: sc, ..
@@ -1756,8 +1785,8 @@ mod tests {
     fn test_output_channels_non_channel_plugins_passthrough() {
         // Plugins that don't change channels should pass through
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::EQ);
-        chain.add_plugin(&PluginType::Gain);
+        chain.add_plugin(&PluginType::EQ).unwrap();
+        chain.add_plugin(&PluginType::Gain).unwrap();
         assert_eq!(chain.output_channels_for_input(2), 2);
         assert_eq!(chain.output_channels_for_input(6), 6);
     }
@@ -1790,7 +1819,7 @@ mod tests {
     #[test]
     fn test_output_channels_downmix() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::Downmix);
+        chain.add_plugin(&PluginType::Downmix).unwrap();
         assert_eq!(chain.output_channels_for_input(6), 2);
         assert_eq!(chain.output_channels_for_input(10), 2);
     }
@@ -1798,14 +1827,14 @@ mod tests {
     #[test]
     fn test_output_channels_mono_to_stereo() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::MonoToStereo);
+        chain.add_plugin(&PluginType::MonoToStereo).unwrap();
         assert_eq!(chain.output_channels_for_input(1), 2);
     }
 
     #[test]
     fn test_output_channels_binaural_decoder() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::BinauralDecoder);
+        chain.add_plugin(&PluginType::BinauralDecoder).unwrap();
         assert_eq!(chain.output_channels_for_input(6), 2);
         assert_eq!(chain.output_channels_for_input(10), 2);
     }
@@ -1814,7 +1843,7 @@ mod tests {
     fn test_output_channels_matrix() {
         // Matrix with custom output size
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         if let Some(p) = chain.get_plugin_mut(0)
             && let PluginSettings::Matrix {
                 input_channels,
@@ -1835,7 +1864,7 @@ mod tests {
     fn test_output_channels_upmixer_then_binaural() {
         // Last channel-changing plugin wins (reverse walk)
         let mut chain = chain_with_upmixer("5.1.4");
-        chain.add_plugin(&PluginType::BinauralDecoder);
+        chain.add_plugin(&PluginType::BinauralDecoder).unwrap();
         // Binaural is last → output is 2
         assert_eq!(chain.output_channels_for_input(2), 2);
     }
@@ -1843,7 +1872,7 @@ mod tests {
     #[test]
     fn test_output_channels_upmixer_then_downmix() {
         let mut chain = chain_with_upmixer("7.1");
-        chain.add_plugin(&PluginType::Downmix);
+        chain.add_plugin(&PluginType::Downmix).unwrap();
         assert_eq!(chain.output_channels_for_input(2), 2);
     }
 
@@ -1861,7 +1890,7 @@ mod tests {
     fn test_output_channels_eq_after_upmixer() {
         // EQ doesn't change channels → upmixer still determines output
         let mut chain = chain_with_upmixer("5.1");
-        chain.add_plugin(&PluginType::EQ);
+        chain.add_plugin(&PluginType::EQ).unwrap();
         assert_eq!(chain.output_channels_for_input(2), 6);
     }
 
@@ -1885,7 +1914,7 @@ mod tests {
     fn test_adapt_matrix_stereo_file_no_upmixer() {
         // Matrix alone with stereo input stays 2x2
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(2);
         assert_eq!(get_matrix_dims(&chain), Some((2, 2)));
     }
@@ -1894,7 +1923,7 @@ mod tests {
     fn test_adapt_matrix_multichannel_file_no_upmixer() {
         // 6-channel file → matrix adapts to 6x6
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(6);
         assert_eq!(get_matrix_dims(&chain), Some((6, 6)));
     }
@@ -1903,7 +1932,7 @@ mod tests {
     fn test_adapt_matrix_upmixer_before_matrix() {
         // Stereo file, upmixer 5.1.4 (10ch) before matrix → matrix should be 10x10
         let mut chain = chain_with_upmixer("5.1.4");
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(2);
         assert_eq!(get_matrix_dims(&chain), Some((10, 10)));
     }
@@ -1918,7 +1947,7 @@ mod tests {
             ("9.1.6", 16),
         ] {
             let mut chain = chain_with_upmixer(config);
-            chain.add_plugin(&PluginType::Matrix);
+            chain.add_plugin(&PluginType::Matrix).unwrap();
             chain.adapt_matrix_to_input(2);
             assert_eq!(
                 get_matrix_dims(&chain),
@@ -1935,8 +1964,8 @@ mod tests {
     fn test_adapt_matrix_downmix_before_matrix() {
         // Downmix before matrix → matrix gets 2x2 regardless of file channels
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::Downmix);
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::Downmix).unwrap();
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(6);
         assert_eq!(get_matrix_dims(&chain), Some((2, 2)));
     }
@@ -1944,8 +1973,8 @@ mod tests {
     #[test]
     fn test_adapt_matrix_mono_to_stereo_before_matrix() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::MonoToStereo);
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::MonoToStereo).unwrap();
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(1);
         assert_eq!(get_matrix_dims(&chain), Some((2, 2)));
     }
@@ -1953,8 +1982,8 @@ mod tests {
     #[test]
     fn test_adapt_matrix_binaural_before_matrix() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::BinauralDecoder);
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::BinauralDecoder).unwrap();
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(6);
         assert_eq!(get_matrix_dims(&chain), Some((2, 2)));
     }
@@ -1964,8 +1993,8 @@ mod tests {
         // Chain: upmixer(5.1.4=10ch) → binaural(→2ch) → matrix
         // Matrix should see 2 channels (binaural is last before it)
         let mut chain = chain_with_upmixer("5.1.4");
-        chain.add_plugin(&PluginType::BinauralDecoder);
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::BinauralDecoder).unwrap();
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(2);
         assert_eq!(get_matrix_dims(&chain), Some((2, 2)));
     }
@@ -1977,7 +2006,7 @@ mod tests {
         if let Some(p) = chain.get_plugin_mut(0) {
             p.enabled = false;
         }
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(2);
         assert_eq!(get_matrix_dims(&chain), Some((2, 2)));
     }
@@ -1986,8 +2015,8 @@ mod tests {
     fn test_adapt_matrix_eq_between_upmixer_and_matrix() {
         // EQ doesn't change channels → upmixer output carries through
         let mut chain = chain_with_upmixer("7.1");
-        chain.add_plugin(&PluginType::EQ);
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::EQ).unwrap();
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(2);
         assert_eq!(get_matrix_dims(&chain), Some((8, 8)));
     }
@@ -1996,7 +2025,7 @@ mod tests {
     fn test_adapt_matrix_noop_when_already_correct() {
         // If matrix already matches, nothing should change
         let mut chain = chain_with_upmixer("5.1");
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         // First adapt: 2x2 → 6x6
         chain.adapt_matrix_to_input(2);
         assert_eq!(get_matrix_dims(&chain), Some((6, 6)));
@@ -2009,7 +2038,7 @@ mod tests {
     fn test_adapt_matrix_readapt_on_config_change() {
         // Simulate changing upmixer config and re-adapting
         let mut chain = chain_with_upmixer("5.1");
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(2);
         assert_eq!(get_matrix_dims(&chain), Some((6, 6)));
 
@@ -2028,7 +2057,7 @@ mod tests {
     #[test]
     fn test_update_channels_upmixer_then_eq() {
         let mut chain = chain_with_upmixer("5.1.4");
-        chain.add_plugin(&PluginType::EQ);
+        chain.add_plugin(&PluginType::EQ).unwrap();
         chain.update_channel_dependent_plugins();
 
         if let Some(p) = chain.get_plugin(1) {
@@ -2046,7 +2075,7 @@ mod tests {
     #[test]
     fn test_update_channels_respects_mono_input() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::EQ);
+        chain.add_plugin(&PluginType::EQ).unwrap();
         chain.update_channel_dependent_plugins_for_input(1);
 
         if let Some(p) = chain.get_plugin(0) {
@@ -2062,7 +2091,7 @@ mod tests {
     fn test_update_channels_uses_configured_input_channels() {
         let mut chain = PluginChain::new();
         chain.set_input_channels(1);
-        chain.add_plugin(&PluginType::EQ);
+        chain.add_plugin(&PluginType::EQ).unwrap();
         chain.update_channel_dependent_plugins();
 
         if let Some(p) = chain.get_plugin(0) {
@@ -2080,7 +2109,7 @@ mod tests {
     #[test]
     fn test_update_channels_upmixer_then_gain() {
         let mut chain = chain_with_upmixer("7.1");
-        chain.add_plugin(&PluginType::Gain);
+        chain.add_plugin(&PluginType::Gain).unwrap();
         chain.update_channel_dependent_plugins();
 
         if let Some(p) = chain.get_plugin(1) {
@@ -2099,14 +2128,14 @@ mod tests {
     fn test_update_channels_bandsplit_doubles() {
         // BandSplit doubles the channel count
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::BandSplit);
+        chain.add_plugin(&PluginType::BandSplit).unwrap();
         chain.update_channel_dependent_plugins();
 
         // Default input is 2, split → 4 output channels
         // Check via output_channels_for_input (BandSplit isn't in that fn,
         // but update_channel_dependent_plugins tracks it)
         // Instead check that a Gain after the split gets the doubled count
-        chain.add_plugin(&PluginType::Gain);
+        chain.add_plugin(&PluginType::Gain).unwrap();
         chain.update_channel_dependent_plugins();
         if let Some(p) = chain.get_plugin(1) {
             if let PluginSettings::Gain { channels, .. } = &p.settings {
@@ -2124,9 +2153,9 @@ mod tests {
     fn test_update_channels_bandsplit_then_bandmerge() {
         // Split doubles, merge halves → back to original
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::BandSplit);
-        chain.add_plugin(&PluginType::BandMerge);
-        chain.add_plugin(&PluginType::Gain);
+        chain.add_plugin(&PluginType::BandSplit).unwrap();
+        chain.add_plugin(&PluginType::BandMerge).unwrap();
+        chain.add_plugin(&PluginType::Gain).unwrap();
         chain.update_channel_dependent_plugins();
 
         if let Some(p) = chain.get_plugin(2) {
@@ -2142,9 +2171,9 @@ mod tests {
     fn test_update_channels_upmixer_split_merge_gain() {
         // Upmixer(5.1=6) → Split(→12) → Merge(→6) → Gain(6)
         let mut chain = chain_with_upmixer("5.1");
-        chain.add_plugin(&PluginType::BandSplit);
-        chain.add_plugin(&PluginType::BandMerge);
-        chain.add_plugin(&PluginType::Gain);
+        chain.add_plugin(&PluginType::BandSplit).unwrap();
+        chain.add_plugin(&PluginType::BandMerge).unwrap();
+        chain.add_plugin(&PluginType::Gain).unwrap();
         chain.update_channel_dependent_plugins();
 
         // BandSplit should have 6 channels
@@ -2177,8 +2206,8 @@ mod tests {
     fn test_update_channels_downmix_then_eq() {
         // Downmix → EQ: EQ should have 2 channels
         let mut chain = chain_with_upmixer("7.1");
-        chain.add_plugin(&PluginType::Downmix);
-        chain.add_plugin(&PluginType::EQ);
+        chain.add_plugin(&PluginType::Downmix).unwrap();
+        chain.add_plugin(&PluginType::EQ).unwrap();
         chain.update_channel_dependent_plugins();
 
         // Downmix input should be set to 8
@@ -2202,8 +2231,8 @@ mod tests {
     #[test]
     fn test_update_channels_mono_to_stereo_then_gain() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::MonoToStereo);
-        chain.add_plugin(&PluginType::Gain);
+        chain.add_plugin(&PluginType::MonoToStereo).unwrap();
+        chain.add_plugin(&PluginType::Gain).unwrap();
         chain.update_channel_dependent_plugins();
 
         if let Some(p) = chain.get_plugin(1) {
@@ -2227,20 +2256,20 @@ mod tests {
 
         // Only processing plugins: insert at end
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::EQ);
-        chain.add_plugin(&PluginType::Compressor);
+        chain.add_plugin(&PluginType::EQ).unwrap();
+        chain.add_plugin(&PluginType::Compressor).unwrap();
         assert_eq!(chain.find_processing_insert_index(), 2);
 
         // Processing plugin followed by monitor: insert before monitor
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::EQ);
-        chain.add_plugin(&PluginType::LoudnessMonitor);
+        chain.add_plugin(&PluginType::EQ).unwrap();
+        chain.add_plugin(&PluginType::LoudnessMonitor).unwrap();
         assert_eq!(chain.find_processing_insert_index(), 1);
 
         // Monitor first: insert at 0
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::SpectrumAnalyzer);
-        chain.add_plugin(&PluginType::EQ);
+        chain.add_plugin(&PluginType::SpectrumAnalyzer).unwrap();
+        chain.add_plugin(&PluginType::EQ).unwrap();
         assert_eq!(chain.find_processing_insert_index(), 0);
     }
 
@@ -2258,7 +2287,7 @@ mod tests {
 
         // No loudness monitor at all
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::EQ);
+        chain.add_plugin(&PluginType::EQ).unwrap();
         assert_eq!(chain.input_monitor_engine_index(), None);
     }
 
@@ -2270,7 +2299,9 @@ mod tests {
 
         // Single loudness monitor: not an output monitor
         let mut chain = PluginChain::new();
-        chain.add_permanent_plugin(&PluginType::LoudnessMonitor);
+        chain
+            .add_permanent_plugin(&PluginType::LoudnessMonitor)
+            .unwrap();
         assert_eq!(chain.output_monitor_engine_index(), None);
 
         // Disabled output monitor
@@ -2313,7 +2344,9 @@ mod tests {
     fn test_get_engine_index_spectrum_analyzer_as_monitor() {
         let mut chain = PluginChain::with_default_rack();
         // Add a spectrum analyzer as a user plugin after Matrix
-        chain.insert_plugin(3, &PluginType::SpectrumAnalyzer);
+        chain
+            .insert_plugin(3, &PluginType::SpectrumAnalyzer)
+            .unwrap();
 
         // Engine order: InputLM(0), Matrix(1), OutputLM(2), Spectrum(3)
         assert_eq!(chain.get_engine_index(4), Some(3));
@@ -2323,7 +2356,9 @@ mod tests {
     fn test_get_engine_index_compressor_processing_plugin() {
         let mut chain = PluginChain::with_default_rack();
         let insert_idx = chain.user_plugin_insert_index();
-        chain.insert_plugin(insert_idx, &PluginType::Compressor);
+        chain
+            .insert_plugin(insert_idx, &PluginType::Compressor)
+            .unwrap();
 
         // Engine order: InputLM(0), Compressor(1), Matrix(2), OutputLM(3)
         assert_eq!(chain.get_engine_index(insert_idx), Some(1));
@@ -2333,7 +2368,7 @@ mod tests {
     fn test_output_channels_for_input_aae_and_ambisonics() {
         // AAE plugin
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::AAE);
+        chain.add_plugin(&PluginType::AAE).unwrap();
         if let Some(p) = chain.get_plugin_mut(0)
             && let PluginSettings::AAE { speaker_config, .. } = &mut p.settings
         {
@@ -2343,7 +2378,7 @@ mod tests {
 
         // AmbisonicsDecoder plugin
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::AmbisonicsDecoder);
+        chain.add_plugin(&PluginType::AmbisonicsDecoder).unwrap();
         if let Some(p) = chain.get_plugin_mut(0)
             && let PluginSettings::AmbisonicsDecoder { target_layout, .. } = &mut p.settings
         {
@@ -2355,7 +2390,7 @@ mod tests {
     #[test]
     fn test_output_channels_for_input_unknown_speaker_config_defaults_to_5_1() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::Upmixer);
+        chain.add_plugin(&PluginType::Upmixer).unwrap();
         if let Some(p) = chain.get_plugin_mut(0)
             && let PluginSettings::Upmixer { speaker_config, .. } = &mut p.settings
         {
@@ -2367,13 +2402,13 @@ mod tests {
     #[test]
     fn test_adapt_matrix_to_input_aae_before_matrix() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::AAE);
+        chain.add_plugin(&PluginType::AAE).unwrap();
         if let Some(p) = chain.get_plugin_mut(0)
             && let PluginSettings::AAE { speaker_config, .. } = &mut p.settings
         {
             *speaker_config = "7.1".to_string();
         }
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(2);
         assert_eq!(get_matrix_dims(&chain), Some((8, 8)));
     }
@@ -2381,14 +2416,57 @@ mod tests {
     #[test]
     fn test_adapt_matrix_to_input_ambisonics_before_matrix() {
         let mut chain = PluginChain::new();
-        chain.add_plugin(&PluginType::AmbisonicsDecoder);
+        chain.add_plugin(&PluginType::AmbisonicsDecoder).unwrap();
         if let Some(p) = chain.get_plugin_mut(0)
             && let PluginSettings::AmbisonicsDecoder { target_layout, .. } = &mut p.settings
         {
             *target_layout = "5.1.4".to_string();
         }
-        chain.add_plugin(&PluginType::Matrix);
+        chain.add_plugin(&PluginType::Matrix).unwrap();
         chain.adapt_matrix_to_input(4);
         assert_eq!(get_matrix_dims(&chain), Some((10, 10)));
+    }
+
+    #[test]
+    fn external_output_width_is_used_for_downstream_channel_conflicts() {
+        let fixture = tempfile::tempdir().unwrap();
+        let path = fixture.path().join("channel-flow.clap");
+        std::fs::write(&path, b"fixture").unwrap();
+        let descriptor = PluginDescriptor {
+            id: "clap.channel-flow".into(),
+            name: "Channel Flow".into(),
+            vendor: "SOTF".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path,
+            audio_inputs: 2,
+            audio_outputs: 4,
+            is_instrument: false,
+            categories: vec!["Effect".into()],
+            scan_status: PluginScanStatus::Loadable,
+        };
+        let external = Plugin::from_settings(
+            0,
+            PluginSettings::External {
+                state: ExternalPluginState::new(
+                    descriptor,
+                    ExternalPluginSandboxMode::Isolated,
+                    Vec::new(),
+                ),
+            },
+        )
+        .unwrap();
+
+        let mut chain = PluginChain::new();
+        chain.plugins.push(external);
+        chain.next_id = 1;
+        chain.add_plugin(&PluginType::BinauralDecoder).unwrap();
+        let PluginSettings::BinauralDecoder { input_channels, .. } = &mut chain.plugins[1].settings
+        else {
+            unreachable!();
+        };
+        *input_channels = 4;
+
+        assert!(chain.find_channel_conflicts(2).is_empty());
     }
 }

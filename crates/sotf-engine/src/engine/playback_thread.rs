@@ -29,6 +29,18 @@ pub struct PlaybackThread {
 }
 
 impl PlaybackThread {
+    #[cfg(test)]
+    pub(in crate::engine) fn command_probe() -> (Self, Receiver<PlaybackCommand>) {
+        let (command_tx, command_rx) = std::sync::mpsc::channel();
+        (
+            Self {
+                command_tx,
+                thread_handle: None,
+            },
+            command_rx,
+        )
+    }
+
     /// Create and start the playback thread
     #[allow(
         clippy::too_many_arguments,

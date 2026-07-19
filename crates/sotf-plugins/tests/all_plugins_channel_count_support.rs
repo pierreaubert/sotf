@@ -10,7 +10,9 @@
 //! Channel-changing plugins are documented explicitly.
 
 use sotf_host::ProcessContext;
-use sotf_plugins::factory::{SUPPORTED_PLUGIN_TYPES, create_plugin};
+use sotf_plugins::factory::{
+    PLUGIN_CATALOG, PluginChannelOutputModel, PluginSupportedInputLayouts, create_plugin,
+};
 
 const SAMPLE_RATE: u32 = 48_000;
 const FRAMES: usize = 480;
@@ -102,40 +104,6 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
     }
 }
 
-/// For plugins with a strict input channel requirement, return the input count
-/// they require *if* that count is one of the counts being exercised.
-fn required_input_channels(plugin_type: &str) -> Option<usize> {
-    match plugin_type {
-        "mono_to_stereo" => Some(1),
-        "upmixer"
-        | "crossfeed"
-        | "xtc"
-        | "crosstalk_cancellation"
-        | "aae"
-        | "active_acoustic_enhancement"
-        | "aec" => Some(2),
-        "ambisonics_decoder" => Some(4),
-        _ => None,
-    }
-}
-
-fn expects_channel_count(plugin_type: &str, channels: usize) -> bool {
-    match plugin_type {
-        "mono_to_stereo" => channels == 1,
-        "upmixer"
-        | "crossfeed"
-        | "xtc"
-        | "crosstalk_cancellation"
-        | "aae"
-        | "active_acoustic_enhancement"
-        | "aec" => channels == 2,
-        "ambisonics_decoder" => channels == 4,
-        "beamformer" => (2..=8).contains(&channels),
-        "band_merge" => channels >= 2 && channels.is_multiple_of(2),
-        _ => true,
-    }
-}
-
 fn interleaved_sine(channels: usize, frames: usize) -> Vec<f32> {
     let mut buf = vec![0.0f32; frames * channels];
     for i in 0..frames {
@@ -190,14 +158,18 @@ fn try_instantiate_and_process(plugin_type: &str, channels: usize) -> Result<usi
 fn all_plugins_channel_count_support() {
     let mut panics = Vec::new();
     let mut unexpected_failures = Vec::new();
-    let mut results: Vec<(&str, usize, Result<usize, String>)> = Vec::new();
 
-    for &plugin_type in SUPPORTED_PLUGIN_TYPES {
+    for entry in PLUGIN_CATALOG {
+        let plugin_type = entry.canonical_type;
         if is_skipped(plugin_type) {
             continue;
         }
 
-        let required = required_input_channels(plugin_type);
+        let PluginSupportedInputLayouts::Enumerated(supported_inputs) =
+            entry.metadata.channel_layout.supported_inputs
+        else {
+            continue;
+        };
 
         for &channels in CHANNEL_COUNTS {
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -206,8 +178,7 @@ fn all_plugins_channel_count_support() {
 
             match outcome {
                 Ok(result) => {
-                    results.push((plugin_type, channels, result.clone()));
-                    let expected = expects_channel_count(plugin_type, channels);
+                    let expected = supported_inputs.contains(&channels);
                     if expected != result.is_ok() {
                         unexpected_failures.push(format!(
                             "{plugin_type}@{channels}ch expected {} but got {result:?}",
@@ -227,19 +198,6 @@ fn all_plugins_channel_count_support() {
                 }
             }
         }
-
-        // If the plugin has a strict input-channel requirement that happens to
-        // be one of the counts under test, it must succeed there.
-        if let Some(req) = required {
-            let found = results
-                .iter()
-                .any(|(t, ch, r)| *t == plugin_type && *ch == req && r.is_ok());
-            if !found {
-                unexpected_failures.push(format!(
-                    "{plugin_type} did not accept its required {req} input channel(s)"
-                ));
-            }
-        }
     }
 
     assert!(
@@ -255,68 +213,42 @@ fn all_plugins_channel_count_support() {
     );
 }
 
-/// Channel-preserving plugins are expected to accept every tested input channel
-/// count and produce the same number of output channels.
 #[test]
-fn channel_preserving_plugins_maintain_count() {
-    let preserving = [
-        "gain",
-        "eq",
-        "parametric_eq",
-        "compressor",
-        "expander",
-        "limiter",
-        "gate",
-        "delay",
-        "multiband_compressor",
-        "multiband_expander",
-        "de_esser",
-        "dynamic_eq",
-        "fir_designer",
-        "linear_phase_eq",
-        "spectral_compressor",
-        "stereo_imager",
-        "transient_shaper",
-        "saturation",
-        "denoiser",
-        "wiener_denoiser",
-        "speech_denoiser",
-        "rnnoise",
-        "rnnoise_denoiser",
-        "hiss_reducer",
-        "hiss",
-        "declick",
-        "transient_repair",
-        "pnd",
-        "varispeed",
-        "crossover",
-        "matrix",
-        "channel_mute_solo",
-        "loudness_monitor",
-        "spectrum_analyzer",
-        "resampler",
-        "ab_compare",
-        "ab",
-        // band_split/band_merge deliberately multiply/divide channel counts and
-        // are tested separately in channel_changing_plugins_behave_as_documented.
-        "convolution",
-        "loudness_compensation",
-        "fletcher_munson",
-    ];
-
+fn catalog_default_channel_output_contracts_hold() {
     let mut failures = Vec::new();
 
-    for &plugin_type in &preserving {
-        for &channels in CHANNEL_COUNTS {
+    for entry in PLUGIN_CATALOG {
+        let plugin_type = entry.canonical_type;
+        if is_skipped(plugin_type) {
+            continue;
+        }
+        let PluginSupportedInputLayouts::Enumerated(supported_inputs) =
+            entry.metadata.channel_layout.supported_inputs
+        else {
+            continue;
+        };
+
+        for &channels in supported_inputs {
+            let expected_output = match entry.metadata.channel_layout.output {
+                PluginChannelOutputModel::PreservesInput => channels,
+                PluginChannelOutputModel::Fixed(output) => output,
+                PluginChannelOutputModel::Configurable { default_output, .. } => {
+                    default_output.channels(channels)
+                }
+                PluginChannelOutputModel::InputTimesBands => channels * 2,
+                PluginChannelOutputModel::InputDividedByBands => channels / 2,
+                PluginChannelOutputModel::DescriptorDefined
+                | PluginChannelOutputModel::PlatformNegotiated => continue,
+            };
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 try_instantiate_and_process(plugin_type, channels)
             }));
 
             match result {
                 Ok(Ok(out_ch)) => {
-                    if out_ch != channels {
+                    if out_ch != expected_output {
                         failures.push(format!(
-                            "{plugin_type}@{channels}ch produced {out_ch} output channels instead of {channels}"
+                            "{plugin_type}@{channels}ch produced {out_ch} output channels instead of catalog default {expected_output}"
                         ));
                     }
                 }
@@ -335,91 +267,9 @@ fn channel_preserving_plugins_maintain_count() {
 
     assert!(
         failures.is_empty(),
-        "channel-preserving plugins did not maintain channel count:\n{}",
+        "catalog channel-output contracts failed:\n{}",
         failures.join("\n")
     );
-}
-
-/// Documented channel-changing behavior.
-#[test]
-fn channel_changing_plugins_behave_as_documented() {
-    // mono_to_stereo: 1 -> 2
-    let out = try_instantiate_and_process("mono_to_stereo", 1)
-        .expect("mono_to_stereo must accept 1 input channel");
-    assert_eq!(out, 2, "mono_to_stereo output should be stereo");
-
-    // upmixer: 2 -> 6 (default 5.1 speaker configuration)
-    let out =
-        try_instantiate_and_process("upmixer", 2).expect("upmixer must accept 2 input channels");
-    assert_eq!(out, 6, "upmixer default output should be 5.1 (6 channels)");
-
-    // downmix: N -> 2 for surround-capable input channel counts
-    for &channels in &[2usize, 6, 8] {
-        let out = try_instantiate_and_process("downmix", channels)
-            .expect("downmix should accept 2/6/8 input channels");
-        assert_eq!(
-            out, 2,
-            "downmix output should be stereo regardless of input"
-        );
-    }
-
-    // crossfeed: stereo in, stereo out
-    let out = try_instantiate_and_process("crossfeed", 2)
-        .expect("crossfeed must accept 2 input channels");
-    assert_eq!(out, 2, "crossfeed output should be stereo");
-
-    // xtc: stereo in, stereo out
-    let out = try_instantiate_and_process("xtc", 2).expect("xtc must accept 2 input channels");
-    assert_eq!(out, 2, "xtc output should be stereo");
-
-    // aae / active_acoustic_enhancement: stereo in, 5.1 out (default config)
-    let out = try_instantiate_and_process("aae", 2).expect("aae must accept 2 input channels");
-    assert_eq!(out, 6, "aae default output should be 5.1 (6 channels)");
-
-    // aec: stereo reference + signal in, single-channel echo-cancelled output
-    let out = try_instantiate_and_process("aec", 2).expect("aec must accept 2 input channels");
-    assert_eq!(out, 1, "aec output should be mono (1 channel)");
-
-    // binaural_decoder: configured speaker input -> stereo
-    for &channels in CHANNEL_COUNTS {
-        let out = try_instantiate_and_process("binaural_decoder", channels)
-            .expect("binaural_decoder should accept its configured input width");
-        assert_eq!(out, 2, "binaural_decoder output should be stereo");
-    }
-
-    // beamformer: configured microphone array -> mono
-    for &channels in &[2usize, 4, 6, 8] {
-        let out = try_instantiate_and_process("beamformer", channels)
-            .expect("beamformer should accept its configured microphone count");
-        assert_eq!(out, 1, "beamformer output should be mono");
-    }
-
-    // First-order ambisonics (4 channels) -> default 5.1 target.
-    let out = try_instantiate_and_process("ambisonics_decoder", 4)
-        .expect("first-order ambisonics should accept four input channels");
-    assert_eq!(out, 6, "ambisonics default target should be 5.1");
-
-    // band_split: input * num_bands (num_bands=2)
-    for &channels in CHANNEL_COUNTS {
-        let out = try_instantiate_and_process("band_split", channels)
-            .expect("band_split should accept tested channel counts with 2 bands");
-        assert_eq!(
-            out,
-            channels * 2,
-            "band_split output should be input channels * 2"
-        );
-    }
-
-    // band_merge: input / bands (bands=2). Input must be even and >= 2.
-    for &channels in &[2usize, 6, 8] {
-        let out = try_instantiate_and_process("band_merge", channels)
-            .expect("band_merge should accept even channel counts >= 2 with 2 bands");
-        assert_eq!(
-            out,
-            channels / 2,
-            "band_merge output should be input channels / 2"
-        );
-    }
 }
 
 fn panic_payload_description(payload: &(dyn std::any::Any + Send)) -> String {

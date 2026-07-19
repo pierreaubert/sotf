@@ -13,13 +13,77 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Dialog, DialogSize, HStack, Input,
-    InputSize, StackAlign, StackJustify, StackSize, StackSpacing, Text, TextSize, TextWeight,
-    ToastVariant, VStack,
+    Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, CommandItem, CommandPalette, Dialog,
+    DialogSize, HStack, Input, InputSize, StackAlign, StackJustify, StackSize, StackSpacing, Text,
+    TextSize, TextWeight, ToastVariant, VStack,
 };
 use sotf_audio_player::QueuePlaybackEffect;
 
 impl PlayerView {
+    pub(crate) fn render_command_palette(&self, cx: &mut Context<Self>) -> AnyElement {
+        let Some(palette) = self.command_palette.as_ref() else {
+            return div().into_any_element();
+        };
+        let state = self.state.read(cx);
+        let text = DialogTranslations::for_language(state.app.ui_state.language);
+        let query = palette.query.clone();
+        let selected_index = palette.selected_index;
+        let focus_handle = palette.focus_handle.clone();
+
+        let commands = self.command_palette_commands(cx);
+        let items = if commands.is_empty() {
+            vec![
+                CommandItem::new("command-palette-empty", text.command_palette_empty)
+                    .disabled(true),
+            ]
+        } else {
+            commands
+                .into_iter()
+                .map(|command| {
+                    CommandItem::new(command.action_name, command.description)
+                        .shortcut(command.key)
+                        .category(command.category)
+                })
+                .collect()
+        };
+
+        // Search is performed across localized action, category, and shortcut
+        // by gpui-keybinding before items reach the component. Keep the
+        // component query empty to avoid applying a second label-only filter.
+        let query_display = if query.is_empty() {
+            text.command_palette_placeholder.to_string()
+        } else {
+            query
+        };
+        let highlight_view = cx.entity().clone();
+        let select_view = cx.entity().clone();
+        let dismiss_view = cx.entity().clone();
+
+        CommandPalette::new("sotf-command-palette", items)
+            .placeholder(query_display)
+            .query("")
+            .selected_index(selected_index)
+            .focus_handle(focus_handle)
+            .max_visible(12)
+            .on_highlight_change(move |index, _window, cx| {
+                highlight_view.update(cx, |view, cx| {
+                    view.set_command_palette_selection(index);
+                    cx.notify();
+                });
+            })
+            .on_select(move |id, window, cx| {
+                select_view.update(cx, |view, cx| {
+                    view.execute_command_palette_action(id.as_ref(), window, cx);
+                });
+            })
+            .on_dismiss(move |window, cx| {
+                dismiss_view.update(cx, |view, cx| {
+                    view.close_command_palette(window, cx);
+                });
+            })
+            .into_any_element()
+    }
+
     pub(crate) fn render_help_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -30,6 +94,7 @@ impl PlayerView {
         let keybindings = get_keybindings_for_screen(
             state.app.ui_state.current_screen,
             state.app.ui_state.language,
+            state.app.ui_state.keymap_preset,
         );
 
         Dialog::new("help-modal")
@@ -1562,7 +1627,7 @@ impl PlayerView {
                     .filter(|binding| binding.category == *category)
                     .map(|binding| {
                         (
-                            binding.key,
+                            binding.key.as_str(),
                             keybinding_text.action_description(binding.description),
                         )
                     })

@@ -44,7 +44,11 @@ pub struct PluginDescriptor {
 }
 
 impl PluginDescriptor {
-    pub(super) fn validate(&self) -> Result<(), String> {
+    /// Validate that this descriptor can be used to load an audio plugin.
+    ///
+    /// This is public so UI/state layers can reject stale scan results before
+    /// they are committed to a rack or graph.
+    pub fn validate(&self) -> Result<(), String> {
         if !self.path.exists() {
             return Err(format!(
                 "plugin path does not exist: {}",

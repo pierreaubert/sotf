@@ -36,7 +36,7 @@ fn test_create_plugin_all_types() {
             continue;
         }
 
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let config = settings.to_plugin_config(sample_rate as f64);
         let channels = input_channels_for(&plugin_type);
 
@@ -71,7 +71,7 @@ fn test_build_plugin_host_all_types() {
             continue;
         }
 
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let config = settings.to_plugin_config(sample_rate as f64);
         let channels = input_channels_for(&plugin_type);
 
@@ -120,7 +120,7 @@ fn test_process_audio_all_types() {
             continue;
         }
 
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let config = settings.to_plugin_config(sample_rate as f64);
         let in_channels = input_channels_for(&plugin_type);
 
@@ -191,7 +191,7 @@ fn test_parameter_sync_get_matches_parameters_list() {
             continue;
         }
 
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let config = settings.to_plugin_config(sample_rate as f64);
         let channels = input_channels_for(&plugin_type);
 
@@ -234,7 +234,7 @@ fn test_parameter_set_then_get_roundtrip() {
             continue;
         }
 
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let config = settings.to_plugin_config(sample_rate as f64);
         let channels = input_channels_for(&plugin_type);
 
@@ -301,7 +301,7 @@ fn test_nan_parameter_values_rejected_or_safe() {
             continue;
         }
 
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let config = settings.to_plugin_config(sample_rate as f64);
         let channels = input_channels_for(&plugin_type);
 
@@ -366,7 +366,7 @@ fn test_process_zero_frames_does_not_panic() {
             continue;
         }
 
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let config = settings.to_plugin_config(sample_rate as f64);
         let channels = input_channels_for(&plugin_type);
 

@@ -1,14 +1,13 @@
-use super::consts::SUPPORTED_PLUGIN_TYPES;
+use super::catalog::catalog_entry;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::ExternalPluginTrust;
 
 pub fn is_supported_plugin_type(plugin_type: &str) -> bool {
-    let lower = plugin_type.to_lowercase();
-    SUPPORTED_PLUGIN_TYPES.contains(&lower.as_str())
+    catalog_entry(plugin_type).is_some()
 }
 
 pub(super) fn is_external_plugin_type(plugin_type: &str) -> bool {
-    matches!(plugin_type, "external" | "external_plugin")
+    catalog_entry(plugin_type).is_some_and(|entry| entry.canonical_type == "external")
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]

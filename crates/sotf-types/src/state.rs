@@ -170,6 +170,9 @@ pub struct IsolatedExternalPluginWorkerStatus {
     pub plugin_index: usize,
     /// Host node id for the plugin.
     pub node_id: usize,
+    /// Stable player-side plugin instance id. Older engine states may omit it.
+    #[serde(default)]
+    pub plugin_instance_id: Option<usize>,
     /// Latest lifecycle event reported by the worker supervisor.
     pub event: Option<IsolatedExternalPluginWorkerEvent>,
     /// Last error while polling/ensuring worker state.
@@ -197,9 +200,95 @@ pub struct IsolatedExternalPluginWorkerStatus {
     pub sandbox_reason: Option<String>,
 }
 
+/// Engine location associated with a plugin-host construction diagnostic.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum PluginBuildTarget {
+    Host,
+    ChainPlugin { plugin_index: usize },
+    GraphNode { node_id: usize },
+    GraphEdge { from_node: usize, to_node: usize },
+}
+
+/// Structured, non-fatal diagnostic owned by plugin-host construction.
+///
+/// This is deliberately separate from [`AudioEngineState::last_error`], whose
+/// ownership belongs to playback, devices, decoders, transports, and fatal
+/// engine failures.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginBuildDiagnostic {
+    pub target: PluginBuildTarget,
+    /// Stable player-side plugin identity when the originating config carries it.
+    #[serde(default)]
+    pub plugin_instance_id: Option<usize>,
+    /// Canonical/configured plugin type when the diagnostic concerns one plugin.
+    #[serde(default)]
+    pub plugin_type: Option<String>,
+    pub message: String,
+}
+
+impl PluginBuildDiagnostic {
+    pub fn host(message: impl Into<String>) -> Self {
+        Self {
+            target: PluginBuildTarget::Host,
+            plugin_instance_id: None,
+            plugin_type: None,
+            message: message.into(),
+        }
+    }
+
+    pub fn chain_plugin(
+        plugin_index: usize,
+        plugin_instance_id: Option<usize>,
+        plugin_type: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            target: PluginBuildTarget::ChainPlugin { plugin_index },
+            plugin_instance_id,
+            plugin_type: Some(plugin_type.into()),
+            message: message.into(),
+        }
+    }
+
+    pub fn graph_node(
+        node_id: usize,
+        plugin_instance_id: Option<usize>,
+        plugin_type: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            target: PluginBuildTarget::GraphNode { node_id },
+            plugin_instance_id,
+            plugin_type: Some(plugin_type.into()),
+            message: message.into(),
+        }
+    }
+
+    pub fn graph_edge(from_node: usize, to_node: usize, message: impl Into<String>) -> Self {
+        Self {
+            target: PluginBuildTarget::GraphEdge { from_node, to_node },
+            plugin_instance_id: None,
+            plugin_type: None,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for PluginBuildDiagnostic {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for PluginBuildDiagnostic {}
+
 fn default_latency_compensation_enabled() -> bool {
     true
 }
+
+/// Legacy prefix retained for compatibility with older serialized/UI clients.
+pub const PLUGIN_BUILD_DIAGNOSTIC_PREFIX: &str = "[plugin-build] ";
 
 /// Complete audio engine state
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -281,6 +370,9 @@ pub struct AudioEngineState {
     pub stream_metadata: Option<StreamMetadata>,
     /// Last error message, if any
     pub last_error: Option<String>,
+    /// Diagnostics from the latest plugin-host build attempt.
+    #[serde(default)]
+    pub plugin_build_diagnostics: Vec<PluginBuildDiagnostic>,
     /// Seek in progress flag
     pub seeking: bool,
     /// Snapshot of isolated external plugin worker status.
@@ -321,6 +413,7 @@ impl Default for AudioEngineState {
             network_endpoint_status: NetworkEndpointStatus::Disabled,
             stream_metadata: None,
             last_error: None,
+            plugin_build_diagnostics: Vec::new(),
             seeking: false,
             isolated_external_plugin_worker_statuses: Vec::new(),
         }

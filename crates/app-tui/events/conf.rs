@@ -8,6 +8,7 @@
 
 use super::PlayerCommand;
 use crate::app::{App, ConfigureSubScreen, InputMode, Screen};
+use crate::ui::keybinding_catalog::{ConfigureCommand, TuiCommand, TuiKeyContext, resolve_command};
 use crossterm::event::{KeyCode, KeyEvent};
 
 fn configure_sub_screen_prev(s: ConfigureSubScreen) -> ConfigureSubScreen {
@@ -43,10 +44,8 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
         KeyCode::Esc => {
             return match app.input_mode {
                 InputMode::Configure => {
-                    // At tab bar → leave Configure entirely
-                    app.current_screen = Screen::Library;
-                    app.input_mode = InputMode::Normal;
-                    None
+                    // At tab bar, dispatch through the documented registry.
+                    handle_tab_bar_keys(app, key)
                 }
                 InputMode::ConfigureDirectories if app.library_view.editing_directory => {
                     // Editing text → let directory handler cancel editing
@@ -106,6 +105,12 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
         _ => {}
     }
 
+    if app.input_mode == InputMode::Configure
+        && resolve_command(TuiKeyContext::ConfigureTabs, key).is_some()
+    {
+        return handle_tab_bar_keys(app, key);
+    }
+
     // Try shared keys
     if let Some(cmd) = super::handle_shared_keys(app, key) {
         return cmd;
@@ -142,28 +147,40 @@ pub(super) fn handle_tab_bar_keys(app: &mut App, key: KeyEvent) -> Option<Player
         }
     }
 
-    match key.code {
-        KeyCode::Left | KeyCode::Up => {
-            app.configure_sub_screen = configure_sub_screen_prev(app.configure_sub_screen);
+    let command = match resolve_command(TuiKeyContext::ConfigureTabs, key) {
+        Some(TuiCommand::Configure(command)) => command,
+        Some(command) => unreachable!("non-configure command in ConfigureTabs: {command:?}"),
+        None => return None,
+    };
+
+    match command {
+        ConfigureCommand::NavigateTabs => {
+            if matches!(key.code, KeyCode::Left | KeyCode::Up | KeyCode::BackTab) {
+                app.configure_sub_screen = configure_sub_screen_prev(app.configure_sub_screen);
+            } else {
+                app.configure_sub_screen = configure_sub_screen_next(app.configure_sub_screen);
+            }
         }
-        KeyCode::Right | KeyCode::Down | KeyCode::Tab => {
-            app.configure_sub_screen = configure_sub_screen_next(app.configure_sub_screen);
+        ConfigureCommand::OpenTab => enter_sub_screen(app, app.configure_sub_screen),
+        ConfigureCommand::Exit => {
+            app.current_screen = Screen::Library;
+            app.input_mode = InputMode::Normal;
         }
-        KeyCode::BackTab => {
-            app.configure_sub_screen = configure_sub_screen_prev(app.configure_sub_screen);
+        ConfigureCommand::JumpToTab => {
+            let sub_screen = match key.code {
+                KeyCode::Char('1') => ConfigureSubScreen::Directories,
+                KeyCode::Char('2') => ConfigureSubScreen::Recording,
+                KeyCode::Char('3') => ConfigureSubScreen::RoomEq,
+                KeyCode::Char('4') => ConfigureSubScreen::HeadphoneEq,
+                KeyCode::Char('5') => ConfigureSubScreen::SpinoramaEq,
+                KeyCode::Char('6') => ConfigureSubScreen::FederationSources,
+                KeyCode::Char('7') => ConfigureSubScreen::Servers,
+                KeyCode::Char('8') => ConfigureSubScreen::MetadataServices,
+                _ => unreachable!("non-tab chord resolved as JumpToTab: {key:?}"),
+            };
+            enter_sub_screen(app, sub_screen);
         }
-        KeyCode::Enter => {
-            enter_sub_screen(app, app.configure_sub_screen);
-        }
-        KeyCode::Char('1') => enter_sub_screen(app, ConfigureSubScreen::Directories),
-        KeyCode::Char('2') => enter_sub_screen(app, ConfigureSubScreen::Recording),
-        KeyCode::Char('3') => enter_sub_screen(app, ConfigureSubScreen::RoomEq),
-        KeyCode::Char('4') => enter_sub_screen(app, ConfigureSubScreen::HeadphoneEq),
-        KeyCode::Char('5') => enter_sub_screen(app, ConfigureSubScreen::SpinoramaEq),
-        KeyCode::Char('6') => enter_sub_screen(app, ConfigureSubScreen::FederationSources),
-        KeyCode::Char('7') => enter_sub_screen(app, ConfigureSubScreen::Servers),
-        KeyCode::Char('8') => enter_sub_screen(app, ConfigureSubScreen::MetadataServices),
-        _ => {}
+        ConfigureCommand::Help => app.enter_overlay_mode(InputMode::ShowHelp),
     }
     None
 }

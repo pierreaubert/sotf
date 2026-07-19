@@ -1605,7 +1605,11 @@ fn test_head_yaw_background_update_changes_state() {
         plugin.process(&input, &mut output, &context).unwrap();
     }
 
-    let final_state = plugin.state.load_full();
+    // Dropping the plugin joins the worker, so the assertion does not race its
+    // queued recomputation when the workspace runs under heavy parallel load.
+    let state = Arc::clone(&plugin.state);
+    drop(plugin);
+    let final_state = state.load_full();
     let left_filter = &final_state.hrtf_filters_freq[0][..freq_size];
     let is_identity = left_filter.iter().all(|c| c.norm() < 1e-3);
     assert!(

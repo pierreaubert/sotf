@@ -22,6 +22,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     /// For now, we will use direct state manipulation to add plugins as it's cleaner for E2E logic
     /// unless we explicitly want to test the *menu*.
     pub fn add_plugin(&mut self, plugin_type: PluginType) -> usize {
+        let plugin_label = format!("{plugin_type:?}");
         let max_id_opt = self
             .driver
             .read_app(|app| app.plugin_state.graph.plugins().iter().map(|p| p.id).max());
@@ -37,12 +38,18 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                 .iter()
                 .map(|p| p.id)
                 .find(|&id| max_id_opt.is_none_or(|max| id > max))
-                .expect("Should have at least one plugin now")
+                .unwrap_or_else(|| panic!("Should have added {plugin_label} to the plugin rack"))
         })
     }
 
     pub fn get_plugin_count(&mut self) -> usize {
         self.driver.read_app(|app| app.plugin_state.graph.len())
+    }
+
+    pub fn adapt_input_channels(&mut self, channels: usize) {
+        self.driver.update_app(move |app, _| {
+            app.plugin_state.graph.adapt_matrix_to_input(channels);
+        });
     }
 
     pub fn get_plugin_type(&mut self, index: usize) -> Option<PluginType> {

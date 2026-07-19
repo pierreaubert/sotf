@@ -1,6 +1,7 @@
 use super::render::render_ab_compare;
 use super::render::render_dynamic_eq;
 use super::render::render_eq;
+use super::render::render_external;
 use super::render::render_fir_designer;
 use super::render::render_linear_phase_eq;
 use super::render::render_loudness;
@@ -35,6 +36,7 @@ impl GpuiViewRegistry {
         views.insert("multiband_expander", render_mb_expander);
         views.insert("ab_compare", render_ab_compare);
         views.insert("upmixer", render_upmixer);
+        views.insert("external", render_external);
 
         Self { views }
     }

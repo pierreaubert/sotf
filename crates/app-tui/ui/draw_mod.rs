@@ -1,3 +1,6 @@
+use super::keybinding_catalog::{
+    SharedCommand, TuiCommand, TuiKeyContext, keybindings_for_contexts,
+};
 use super::misc::{centered_modal_rect, get_detailed_keybindings_for_screen};
 pub(crate) use super::utilities::wrap_text;
 pub(crate) use crate::app::{App, MetadataEditorState, Screen};
@@ -71,7 +74,24 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
     // Build help text
     let mut lines = vec![];
 
-    // Global keybindings
+    let push_registry_rows = |lines: &mut Vec<Line<'_>>, contexts: &[TuiKeyContext]| {
+        for binding in keybindings_for_contexts(contexts) {
+            let description = match binding.command {
+                Some(TuiCommand::Shared(SharedCommand::CycleLanguage)) => {
+                    format!("  {}", translations.cycle_language)
+                }
+                _ => crate::tui_text!(app, binding.description),
+            };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {}", binding.key),
+                    Style::default().fg(app.theme.accent_primary),
+                ),
+                Span::raw(description),
+            ]));
+        }
+    };
+
     lines.push(Line::from(vec![Span::styled(
         translations.global_keybindings,
         Style::default()
@@ -79,43 +99,14 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
     )]));
     lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled("  TAB", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(
-            app,
-            "  Cycle through screens and level meters pane"
-        )),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  L/Q/P/O/C", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(
-            app,
-            "  Jump to Library/Queue/Plugins/Devices/Configure"
-        )),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  Shift+M", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(app, "  Focus level meters pane")),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  Alt+L", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(format!("  {}", translations.cycle_language)),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  +/=", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(app, "  Increase volume")),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  -/_", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(app, "  Decrease volume")),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled(
-            "  Ctrl+Left/Right",
-            Style::default().fg(app.theme.accent_primary),
-        ),
-        Span::raw(crate::tui_text!(app, "  Select output device")),
-    ]));
+    push_registry_rows(
+        &mut lines,
+        &[
+            TuiKeyContext::Always,
+            TuiKeyContext::SharedRoot,
+            TuiKeyContext::NormalRoot,
+        ],
+    );
     lines.push(Line::from(""));
     lines.push(Line::from(vec![Span::styled(
         translations.level_meters_focused,
@@ -123,32 +114,7 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
             .fg(app.theme.border_color)
             .add_modifier(Modifier::BOLD),
     )]));
-    lines.push(Line::from(vec![
-        Span::styled(
-            "  Left/Right",
-            Style::default().fg(app.theme.accent_primary),
-        ),
-        Span::raw(crate::tui_text!(app, "  Navigate between channel groups")),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  Up/Down", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(app, "  Select mute/solo control")),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  m/s", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(
-            app,
-            "  Toggle mute/solo on selected group"
-        )),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  c", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(app, "  Clear all mutes and solos")),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  ESC", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(app, "  Return to main pane")),
-    ]));
+    push_registry_rows(&mut lines, &[TuiKeyContext::LevelMeters]);
     lines.push(Line::from(""));
     lines.push(Line::from(vec![Span::styled(
         translations.level_meters_global,
@@ -156,40 +122,7 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
             .fg(app.theme.border_color)
             .add_modifier(Modifier::BOLD),
     )]));
-    lines.push(Line::from(vec![
-        Span::styled(
-            "  Shift+Left/Right",
-            Style::default().fg(app.theme.accent_primary),
-        ),
-        Span::raw(crate::tui_text!(app, "  Navigate level meter groups")),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled(
-            "  Shift+Up/Down",
-            Style::default().fg(app.theme.accent_primary),
-        ),
-        Span::raw(crate::tui_text!(app, "  Select mute/solo control")),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  Shift+S", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(app, "  Toggle solo on selected group")),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("  Shift+C", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(app, "  Clear all mutes and solos")),
-    ]));
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled("  ?", Style::default().fg(app.theme.accent_primary)),
-        Span::raw(crate::tui_text!(app, "  Show this help")),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled(
-            "  Ctrl+Q/Cmd+Q",
-            Style::default().fg(app.theme.accent_primary),
-        ),
-        Span::raw(crate::tui_text!(app, "  Quit (ESC quits from main pane)")),
-    ]));
+    push_registry_rows(&mut lines, &[TuiKeyContext::GlobalMeters]);
     lines.push(Line::from(""));
 
     // Screen-specific keybindings

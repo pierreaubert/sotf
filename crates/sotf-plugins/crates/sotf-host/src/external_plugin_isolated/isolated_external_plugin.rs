@@ -11,9 +11,13 @@ use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
 };
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 pub struct IsolatedExternalPlugin {
     pub(super) descriptor: PluginDescriptor,
+    pub(super) plugin_instance_id: Option<usize>,
     pub(super) proxy: ExternalPluginHostProxy,
     pub(super) supervisor: Option<ExternalPluginProcessSupervisor>,
     pub(super) input_channels: usize,
@@ -23,6 +27,8 @@ pub struct IsolatedExternalPlugin {
     pub(super) max_consecutive_block_failures: u32,
     pub(super) quarantined: bool,
     pub(super) quarantine_reason: Option<String>,
+    pub(super) opaque_state: Vec<u8>,
+    pub(super) state_file_path: Option<PathBuf>,
 }
 
 impl IsolatedExternalPlugin {
@@ -33,6 +39,24 @@ impl IsolatedExternalPlugin {
     ) -> Result<Self, String> {
         if sample_rate == 0 {
             return Err("sample rate must be positive".into());
+        }
+        if let Some(state) = config.initial_state.as_ref() {
+            state.validate()?;
+            if state.descriptor != descriptor {
+                return Err(format!(
+                    "External plugin state targets '{}' at {}, not '{}' at {}",
+                    state.descriptor.id,
+                    state.descriptor.path.display(),
+                    descriptor.id,
+                    descriptor.path.display()
+                ));
+            }
+            if state.sandbox_mode != ExternalPluginSandboxMode::Isolated {
+                return Err(format!(
+                    "External plugin state sandbox mode {:?} cannot restore isolated plugin",
+                    state.sandbox_mode
+                ));
+            }
         }
 
         let input_channels = descriptor.audio_inputs;
@@ -47,13 +71,25 @@ impl IsolatedExternalPlugin {
         let proxy = ExternalPluginHostProxy::new(layout, config.deadline)?;
         let descriptor_json = serde_json::to_string(&descriptor)
             .map_err(|err| format!("failed to serialize external plugin descriptor: {err}"))?;
+        let state_file_path = if let Some(state) = config.initial_state.as_ref() {
+            let path = proxy.shared_path().with_extension("state.json");
+            write_initial_state_file(&path, state)?;
+            Some(path)
+        } else {
+            None
+        };
         let sandbox_args = match &config.capability_sandbox_policy {
             Some(policy) => policy.command_args_for_backend(config.sandbox_launch_backend)?,
             None => config.sandbox_policy.command_args(),
         };
-        let command = build_worker_launch_command(&config, descriptor_json, sandbox_args)?;
+        let command = build_worker_launch_command(
+            &config,
+            descriptor_json,
+            state_file_path.as_deref(),
+            sandbox_args,
+        )?;
         let mut supervisor =
-            ExternalPluginProcessSupervisor::new(command, proxy.shared_path().to_path_buf());
+            ExternalPluginProcessSupervisor::new(command, proxy.shared_path().to_path_buf())?;
         let launch_error = if config.start_worker {
             supervisor.ensure_running().err()
         } else {
@@ -64,22 +100,57 @@ impl IsolatedExternalPlugin {
             descriptor.name, config.max_consecutive_block_failures
         );
 
-        Ok(Self {
+        let mut plugin = Self {
             descriptor,
+            plugin_instance_id: config.plugin_instance_id,
             proxy,
             supervisor: Some(supervisor),
             input_channels,
             output_channels,
+            quarantined: launch_error.is_some(),
             launch_error,
             consecutive_block_failures: 0,
             max_consecutive_block_failures: config.max_consecutive_block_failures,
-            quarantined: false,
             quarantine_reason: Some(quarantine_reason),
-        })
+            opaque_state: config
+                .initial_state
+                .as_ref()
+                .map(|state| state.opaque_state.clone())
+                .unwrap_or_default(),
+            state_file_path,
+        };
+
+        if config.start_worker
+            && plugin.launch_error.is_none()
+            && let Err(mut error) =
+                plugin.wait_for_worker_latency_metadata(config.worker_startup_timeout)
+        {
+            if let Some(supervisor) = plugin.supervisor.as_mut() {
+                if let Ok(Some(ExternalPluginProcessEvent::Exited { status })) = supervisor.poll() {
+                    let detail = supervisor
+                        .last_stderr()
+                        .map(|stderr| format!(": {stderr}"))
+                        .unwrap_or_default();
+                    error = format!(
+                        "isolated external plugin '{}' worker exited with {status} before publishing latency metadata{detail}",
+                        plugin.descriptor.name,
+                    );
+                }
+                let _ = supervisor.terminate();
+            }
+            plugin.launch_error = Some(error);
+            plugin.quarantined = true;
+        }
+
+        Ok(plugin)
     }
 
     pub fn descriptor(&self) -> &PluginDescriptor {
         &self.descriptor
+    }
+
+    pub fn plugin_instance_id(&self) -> Option<usize> {
+        self.plugin_instance_id
     }
 
     pub fn hosting_plan(&self) -> ExternalPluginHostingPlan {
@@ -90,7 +161,7 @@ impl IsolatedExternalPlugin {
         ExternalPluginState::new(
             self.descriptor.clone(),
             ExternalPluginSandboxMode::Isolated,
-            Vec::new(),
+            self.opaque_state.clone(),
         )
     }
 
@@ -106,6 +177,8 @@ impl IsolatedExternalPlugin {
                 state.sandbox_mode
             ));
         }
+        let mut config = config;
+        config.initial_state = Some(state.clone());
         Self::new(state.descriptor.clone(), sample_rate, config)
     }
 
@@ -177,6 +250,34 @@ impl IsolatedExternalPlugin {
 
     pub fn worker_reported_latency_samples(&self) -> Option<usize> {
         self.proxy.worker_latency_samples()
+    }
+
+    /// Wait for immutable worker metadata on the control/build thread.
+    ///
+    /// `DawHost::build` caches both total latency and compensation delays, so
+    /// construction must not return a running plugin whose latency is still
+    /// unknown. This bounded wait never runs from `Plugin::process`.
+    pub(super) fn wait_for_worker_latency_metadata(
+        &self,
+        timeout: Duration,
+    ) -> Result<usize, String> {
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| "external plugin worker startup timeout is too large".to_string())?;
+        loop {
+            if let Some(latency_samples) = self.worker_reported_latency_samples() {
+                return Ok(latency_samples);
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return Err(format!(
+                    "isolated external plugin '{}' worker did not publish latency metadata within {} ms",
+                    self.descriptor.name,
+                    timeout.as_millis(),
+                ));
+            }
+            std::thread::sleep((deadline - now).min(Duration::from_millis(1)));
+        }
     }
 
     pub(super) fn validate_process_buffers(
@@ -255,13 +356,41 @@ impl IsolatedExternalPlugin {
         if self.quarantined {
             return;
         }
-        if let Some(supervisor) = self.supervisor.as_mut() {
-            let _ = supervisor.terminate();
+        if let Some(supervisor) = self.supervisor.as_ref() {
+            let _ = supervisor.request_terminate();
         }
         self.launch_error = Some(reason);
         self.quarantined = true;
         if let Some(reason) = self.launch_error.as_deref() {
             crate::rate_limited_log!(warn, 1, "{reason}");
+        }
+    }
+}
+
+fn write_initial_state_file(path: &Path, state: &ExternalPluginState) -> Result<(), String> {
+    let bytes = serde_json::to_vec(state)
+        .map_err(|error| format!("failed to serialize external plugin state: {error}"))?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(path)
+        .map_err(|error| format!("failed to create external plugin state file: {error}"))?;
+    file.write_all(&bytes)
+        .map_err(|error| format!("failed to write external plugin state file: {error}"))
+}
+
+impl Drop for IsolatedExternalPlugin {
+    fn drop(&mut self) {
+        if let Some(supervisor) = self.supervisor.as_mut() {
+            let _ = supervisor.terminate();
+        }
+        if let Some(path) = self.state_file_path.as_ref() {
+            let _ = std::fs::remove_file(path);
         }
     }
 }

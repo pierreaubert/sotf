@@ -25,4 +25,5 @@ pub use state::{AudioEngineState, AudioFrame, PlaybackState, StreamMetadata};
 pub use state::{
     IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
     IsolatedExternalPluginWorkerEvent, IsolatedExternalPluginWorkerStatus,
+    PLUGIN_BUILD_DIAGNOSTIC_PREFIX, PluginBuildDiagnostic, PluginBuildTarget,
 };

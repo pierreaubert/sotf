@@ -606,6 +606,7 @@ fn isolated_worker_status_roundtrip_and_defaults() {
     let status = IsolatedExternalPluginWorkerStatus {
         plugin_index: 0,
         node_id: 7,
+        plugin_instance_id: None,
         event: Some(IsolatedExternalPluginWorkerEvent::Started { pid: 1234 }),
         error: None,
         worker_start_count: 1,

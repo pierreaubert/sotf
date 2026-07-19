@@ -1,3 +1,4 @@
+use super::catalog::catalog_entry;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use super::external::external_plugin_isolation_requested;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -5,6 +6,7 @@ use super::external::external_plugin_trust;
 use super::is::is_external_plugin_type;
 use super::misc::resize_matrix;
 use super::parse::parse_external_plugin_descriptor;
+use super::parse::parse_external_plugin_state;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use super::parse::parse_isolated_external_plugin_config;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -58,6 +60,10 @@ pub fn create_plugin(
     channels: usize,
     sample_rate: u32,
 ) -> Result<Box<dyn Plugin>, String> {
+    let plugin_type = catalog_entry(plugin_type)
+        .map(|entry| entry.canonical_type)
+        .ok_or_else(|| format!("Unknown plugin type: {plugin_type}"))?;
+
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     if is_external_plugin_type(plugin_type)
         && let Some(options) = default_sandboxed_plugin_creation_options()
@@ -79,7 +85,7 @@ pub fn create_plugin(
             Ok(Box::new(ParametricPluginAdapter::new(plugin)))
         }
 
-        "eq" | "parametric_eq" => {
+        "eq" => {
             let params: EqPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse EQ params: {e}"))?;
             EqPlugin::from_params(channels, sample_rate, params).map(|p| p.into_boxed_plugin())
@@ -138,7 +144,7 @@ pub fn create_plugin(
             Ok(Box::new(plugin))
         }
 
-        "aae" | "active_acoustic_enhancement" => {
+        "aae" => {
             if channels != 2 {
                 return Err(format!("AAE requires 2 input channels, got {channels}"));
             }
@@ -281,7 +287,7 @@ pub fn create_plugin(
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
-        "xtc" | "crosstalk_cancellation" => {
+        "xtc" => {
             if channels != 2 {
                 return Err(format!(
                     "XTC requires 2 input channels (stereo), got {channels}"
@@ -293,35 +299,35 @@ pub fn create_plugin(
             Ok(Box::new(plugin))
         }
 
-        "denoiser" | "wiener_denoiser" => {
+        "denoiser" => {
             let params: DenoiserPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse denoiser params: {e}"))?;
             let plugin = DenoiserPlugin::from_params(channels, params);
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
-        "speech_denoiser" | "rnnoise" | "rnnoise_denoiser" => {
+        "speech_denoiser" => {
             let params: SpeechDenoiserPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse speech denoiser params: {e}"))?;
             let plugin = SpeechDenoiserPlugin::from_params(channels, params);
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
-        "hiss_reducer" | "hiss" => {
+        "hiss_reducer" => {
             let params: HissReducerPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse hiss reducer params: {e}"))?;
             let plugin = HissReducerPlugin::from_params(channels, params);
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
-        "declick" | "transient_repair" => {
+        "declick" => {
             let params: DeclickPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse declick params: {e}"))?;
             let plugin = DeclickPlugin::from_params(channels, params);
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
-        "pnd" | "varispeed" => {
+        "pnd" => {
             let params: PndPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse PND params: {e}"))?;
             let plugin = PndPlugin::from_params(channels, params);
@@ -424,7 +430,7 @@ pub fn create_plugin(
             Ok(Box::new(plugin))
         }
 
-        "ab_compare" | "ab" => {
+        "ab_compare" => {
             let params: ABComparePluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse A/B compare params: {e}"))?;
             let mut plugin = ABComparePlugin::from_params(channels, params)?;
@@ -482,10 +488,11 @@ pub fn create_plugin(
             Ok(Box::new(plugin))
         }
 
-        "external" | "external_plugin" => {
+        "external" => {
             validate_external_plugin_security_config(parameters)?;
             let descriptor = parse_external_plugin_descriptor(parameters)
                 .map_err(|e| format!("Failed to parse external plugin descriptor: {e}"))?;
+            let external_state = parse_external_plugin_state(parameters, &descriptor)?;
             if descriptor.audio_inputs != 0 && descriptor.audio_inputs != channels {
                 return Err(format!(
                     "External plugin '{}' requires {} input channels, got {channels}",
@@ -497,18 +504,20 @@ pub fn create_plugin(
             {
                 let plugin_trust = external_plugin_trust(parameters)?;
                 if external_plugin_isolation_requested(parameters, plugin_trust)? {
-                    let plugin = IsolatedExternalPlugin::new(
-                        descriptor,
-                        sample_rate,
-                        parse_isolated_external_plugin_config(parameters, plugin_trust)?,
-                    )
-                    .map_err(|e| format!("Failed to create isolated external plugin: {e}"))?;
+                    let mut config =
+                        parse_isolated_external_plugin_config(parameters, plugin_trust)?;
+                    config.initial_state = external_state.clone();
+                    let plugin = IsolatedExternalPlugin::new(descriptor, sample_rate, config)
+                        .map_err(|e| format!("Failed to create isolated external plugin: {e}"))?;
                     return Ok(Box::new(plugin));
                 }
             }
 
-            let plugin = ExternalPlugin::new(&descriptor, sample_rate)
-                .map_err(|e| format!("Failed to load external plugin: {e}"))?;
+            let plugin = match external_state {
+                Some(state) => ExternalPlugin::from_placeholder_state(&state, sample_rate),
+                None => ExternalPlugin::new(&descriptor, sample_rate),
+            }
+            .map_err(|e| format!("Failed to load external plugin: {e}"))?;
             Ok(Box::new(plugin))
         }
 
@@ -630,11 +639,10 @@ pub fn create_plugin_with_sandbox_options(
     sample_rate: u32,
     options: &SandboxedPluginCreationOptions,
 ) -> Result<Box<dyn Plugin>, String> {
-    match plugin_type {
-        "external" | "external_plugin" => {
-            create_external_plugin_with_sandbox_options(parameters, channels, sample_rate, options)
-        }
-        _ => create_plugin(plugin_type, parameters, channels, sample_rate),
+    if catalog_entry(plugin_type).is_some_and(|entry| entry.canonical_type == "external") {
+        create_external_plugin_with_sandbox_options(parameters, channels, sample_rate, options)
+    } else {
+        create_plugin(plugin_type, parameters, channels, sample_rate)
     }
 }
 
@@ -648,6 +656,7 @@ fn create_external_plugin_with_sandbox_options(
     validate_external_plugin_security_config(parameters)?;
     let descriptor = parse_external_plugin_descriptor(parameters)
         .map_err(|e| format!("Failed to parse external plugin descriptor: {e}"))?;
+    let external_state = parse_external_plugin_state(parameters, &descriptor)?;
     if descriptor.audio_inputs != 0 && descriptor.audio_inputs != channels {
         return Err(format!(
             "External plugin '{}' requires {} input channels, got {channels}",
@@ -662,13 +671,17 @@ fn create_external_plugin_with_sandbox_options(
         config.sandbox_launcher_command = options.sandbox_launcher_command.clone();
         config.capability_sandbox_policy =
             Some(sandbox_policy_for_creation_options(options, &descriptor)?);
+        config.initial_state = external_state;
         let plugin = IsolatedExternalPlugin::new(descriptor, sample_rate, config)
             .map_err(|e| format!("Failed to create isolated external plugin: {e}"))?;
         return Ok(Box::new(plugin));
     }
 
-    let plugin = ExternalPlugin::new(&descriptor, sample_rate)
-        .map_err(|e| format!("Failed to load external plugin: {e}"))?;
+    let plugin = match external_state {
+        Some(state) => ExternalPlugin::from_placeholder_state(&state, sample_rate),
+        None => ExternalPlugin::new(&descriptor, sample_rate),
+    }
+    .map_err(|e| format!("Failed to load external plugin: {e}"))?;
     Ok(Box::new(plugin))
 }
 

@@ -18,6 +18,7 @@ pub(super) fn isolated_external_plugin_status(
     IsolatedExternalPluginWorkerStatus {
         plugin_index: report.plugin_index,
         node_id: report.node_id,
+        plugin_instance_id: report.plugin_instance_id,
         event: report.event.map(isolated_external_plugin_event),
         error: report.error,
         worker_start_count: report.worker_start_count,

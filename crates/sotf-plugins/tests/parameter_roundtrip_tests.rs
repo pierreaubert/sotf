@@ -17,7 +17,7 @@
 
 use sotf_host::param_specs::UpdateMode;
 use sotf_host::{Parameter, ParameterId, ParameterValue, Plugin, ProcessContext};
-use sotf_plugins::factory::{SUPPORTED_PLUGIN_TYPES, create_plugin};
+use sotf_plugins::factory::{create_plugin, supported_plugin_types};
 
 const SAMPLE_RATE: u32 = 48_000;
 // 480 keeps frame-size-sensitive plugins (e.g. speech denoiser) happy.
@@ -319,7 +319,7 @@ fn create_and_init_plugin(
 fn all_plugins_roundtrip_parameters() {
     let mut failures = Vec::new();
 
-    for &plugin_type in SUPPORTED_PLUGIN_TYPES {
+    for plugin_type in supported_plugin_types() {
         // Skip plugin types that need external resources or macOS HAL.
         if plugin_type == "external"
             || plugin_type == "external_plugin"

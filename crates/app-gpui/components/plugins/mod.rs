@@ -211,6 +211,7 @@ pub fn render_plugin_content(
             available_width,
             auto_config_width,
             auto_output_width,
+            text,
             theme,
             &plugin_theme,
             spider_snapshot,

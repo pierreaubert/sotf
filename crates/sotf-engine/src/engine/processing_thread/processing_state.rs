@@ -384,16 +384,6 @@ pub(super) fn handle_processing_command(
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         ProcessingCommand::PollIsolatedExternalPluginWorkers => {
             let reports = state.host.poll_isolated_external_plugin_workers();
-            for report in &reports {
-                if let Some(error) = &report.error {
-                    event_tx
-                        .send(ThreadEvent::ProcessingWarning(format!(
-                            "external plugin worker poll failed (plugin {}, node {}): {}",
-                            report.plugin_index, report.node_id, error
-                        )))
-                        .ok();
-                }
-            }
             let statuses = reports
                 .into_iter()
                 .map(isolated_external_plugin_status)

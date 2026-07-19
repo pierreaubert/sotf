@@ -10,10 +10,12 @@ use std::sync::Arc;
 // Re-export shared types from sotf-types
 pub use sotf_types::{
     AudioEngineState, AudioFrame, DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy,
-    IsolatedExternalPluginWorkerStatus, LatencyCompensationMode, NetworkEndpointConfig,
-    NetworkEndpointMode, NetworkEndpointStatus, OutputAccessMode, OutputAccessStatus,
-    PlaybackState, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
-    StreamMetadata,
+    IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
+    IsolatedExternalPluginWorkerEvent, IsolatedExternalPluginWorkerStatus, LatencyCompensationMode,
+    NetworkEndpointConfig, NetworkEndpointMode, NetworkEndpointStatus, OutputAccessMode,
+    OutputAccessStatus, PLUGIN_BUILD_DIAGNOSTIC_PREFIX, PlaybackState, PluginBuildDiagnostic,
+    PluginBuildTarget, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig,
+    PluginGraphNodeConfig, StreamMetadata,
 };
 
 // ============================================================================

@@ -224,7 +224,7 @@ fn test_validate_plugin_configs_accepts_all_types() {
     let sample_rate = 48000.0;
 
     for plugin_type in PluginType::all() {
-        let settings = PluginSettings::default_for(&plugin_type);
+        let settings = PluginSettings::default_for(&plugin_type).unwrap();
         let config = settings.to_plugin_config(sample_rate);
 
         let result = validate_plugin_configs(std::slice::from_ref(&config));
@@ -510,6 +510,7 @@ fn test_handle_thread_event_updates_isolated_external_plugin_worker_statuses() {
     let initial_status = sotf_types::IsolatedExternalPluginWorkerStatus {
         plugin_index: 1,
         node_id: 77,
+        plugin_instance_id: None,
         event: Some(sotf_types::IsolatedExternalPluginWorkerEvent::NotRunning),
         error: Some("transient".to_string()),
         worker_start_count: 1,
@@ -537,6 +538,7 @@ fn test_handle_thread_event_updates_isolated_external_plugin_worker_statuses() {
     let replacement_status = sotf_types::IsolatedExternalPluginWorkerStatus {
         plugin_index: 2,
         node_id: 99,
+        plugin_instance_id: None,
         event: Some(sotf_types::IsolatedExternalPluginWorkerEvent::Started { pid: 42 }),
         error: None,
         worker_start_count: 10,

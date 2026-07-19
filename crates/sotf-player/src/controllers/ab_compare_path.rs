@@ -10,55 +10,13 @@ pub use sotf_plugins::plugin_ab_compare::{
     GraphEdgeConfig, GraphNodeConfig, PathConfig, PluginInRack,
 };
 
-/// Plugin types available in A/B sub-racks.
-///
-/// Includes all processing plugins. Excludes only:
-/// - `ab_compare` (no nesting)
-/// - `loudness_monitor`, `spectrum_analyzer` (analyzers)
-/// - `resampler` (infrastructure)
-/// - `hal_input`, `hal_output` (platform-specific I/O)
-pub const ALLOWED_PLUGIN_TYPES: &[(&str, &str)] = &[
-    ("eq", "EQ"),
-    ("gain", "Gain"),
-    ("compressor", "Compressor"),
-    ("expander", "Expander"),
-    ("limiter", "Limiter"),
-    ("gate", "Gate"),
-    ("delay", "Delay"),
-    ("convolution", "Convolution"),
-    ("upmixer", "Upmixer"),
-    ("aae", "AAE Reverb"),
-    ("downmix", "Downmix"),
-    ("mono_to_stereo", "Mono to Stereo"),
-    ("matrix", "Matrix"),
-    ("channel_mute_solo", "Mute/Solo"),
-    ("crossover", "Crossover"),
-    ("crossfeed", "Crossfeed"),
-    ("xtc", "XTC"),
-    ("binaural_decoder", "Binaural"),
-    ("loudness_compensation", "Loudness Comp"),
-    ("denoiser", "Denoiser"),
-    ("pnd", "PND"),
-    ("multiband_compressor", "MB Compressor"),
-    ("multiband_expander", "MB Expander"),
-    ("de_esser", "De-Esser"),
-    ("dynamic_eq", "Dynamic EQ"),
-    ("linear_phase_eq", "Linear Phase EQ"),
-    ("fir_designer", "FIR Designer"),
-    ("spectral_compressor", "Spectral Comp"),
-    ("stereo_imager", "Stereo Imager"),
-    ("transient_shaper", "Transient Shaper"),
-    ("saturation", "Saturation"),
-    ("band_split", "Band Split"),
-    ("band_merge", "Band Merge"),
-    ("fletcher_munson", "Fletcher-Munson"),
-    ("speech_denoiser", "Speech Denoiser"),
-    ("hiss_reducer", "Hiss Reducer"),
-    ("declick", "Declick"),
-    ("aec", "AEC"),
-    ("beamformer", "Beamformer"),
-    ("ambisonics_decoder", "Ambisonics Decoder"),
-];
+/// Plugin types available in A/B sub-racks, derived from the canonical plugin
+/// catalog. Nested A/B, analyzers, infrastructure, external-discovery entries,
+/// and platform I/O are excluded by catalog metadata.
+pub fn allowed_plugin_types() -> impl Iterator<Item = (&'static str, &'static str)> {
+    sotf_plugins::ab_compare_catalog_entries()
+        .map(|entry| (entry.canonical_type, entry.metadata.exposed_name))
+}
 
 /// Parse a path config JSON string into a flat list of plugins.
 /// Returns empty vec for `None`, single-element vec for `Plugin`, full vec for `Rack`.
@@ -505,8 +463,12 @@ mod tests {
     fn linear_identity_graph_converts_to_rack() {
         let mut graph = PluginGraph::new();
         let input = graph.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
-        let gain = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(1.0, 0.0));
-        let eq = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(2.0, 0.0));
+        let gain = graph
+            .add_plugin_node(&PluginType::Gain, NodePosition::new(1.0, 0.0))
+            .unwrap();
+        let eq = graph
+            .add_plugin_node(&PluginType::EQ, NodePosition::new(2.0, 0.0))
+            .unwrap();
         let output =
             graph.add_special_node(SpecialNodeType::Output, NodePosition::new(3.0, 0.0), 2);
         connect_identity(&mut graph, input, gain);
@@ -526,8 +488,12 @@ mod tests {
     fn crossed_linear_graph_preserves_exact_ports() {
         let mut graph = PluginGraph::new();
         let input = graph.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
-        let gain = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(1.0, 0.0));
-        let eq = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(2.0, 0.0));
+        let gain = graph
+            .add_plugin_node(&PluginType::Gain, NodePosition::new(1.0, 0.0))
+            .unwrap();
+        let eq = graph
+            .add_plugin_node(&PluginType::EQ, NodePosition::new(2.0, 0.0))
+            .unwrap();
         let output =
             graph.add_special_node(SpecialNodeType::Output, NodePosition::new(3.0, 0.0), 2);
         connect_identity(&mut graph, input, gain);
@@ -553,9 +519,15 @@ mod tests {
     fn nonlinear_graph_preserves_each_plugin_port_connection() {
         let mut graph = PluginGraph::new();
         let input = graph.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
-        let path_a = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(1.0, -1.0));
-        let path_b = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(1.0, 1.0));
-        let merge = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(2.0, 0.0));
+        let path_a = graph
+            .add_plugin_node(&PluginType::Gain, NodePosition::new(1.0, -1.0))
+            .unwrap();
+        let path_b = graph
+            .add_plugin_node(&PluginType::Gain, NodePosition::new(1.0, 1.0))
+            .unwrap();
+        let merge = graph
+            .add_plugin_node(&PluginType::EQ, NodePosition::new(2.0, 0.0))
+            .unwrap();
         let output =
             graph.add_special_node(SpecialNodeType::Output, NodePosition::new(3.0, 0.0), 2);
         connect_identity(&mut graph, input, path_a);

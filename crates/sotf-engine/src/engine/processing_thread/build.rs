@@ -1,8 +1,15 @@
 use super::super::PluginConfig;
 use super::misc::configure_host_oversampling;
 use super::misc::create_plugin;
-use sotf_plugins::PluginHost;
-use sotf_types::EngineOversamplingPolicy;
+use sotf_plugins::{EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER, PluginHost};
+use sotf_types::{EngineOversamplingPolicy, PluginBuildDiagnostic};
+
+fn plugin_instance_id(parameters: &serde_json::Value) -> Option<usize> {
+    parameters
+        .get(EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER)
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+}
 
 /// Build a plugin host from configs.
 ///
@@ -13,7 +20,7 @@ pub fn build_plugin_host(
     configs: &[PluginConfig],
     sample_rate: u32,
     channels: usize,
-) -> Result<(PluginHost, Vec<String>), String> {
+) -> Result<(PluginHost, Vec<PluginBuildDiagnostic>), PluginBuildDiagnostic> {
     build_plugin_host_with_policy(
         configs,
         sample_rate,
@@ -27,11 +34,12 @@ pub fn build_plugin_host_with_policy(
     sample_rate: u32,
     channels: usize,
     oversampling_policy: EngineOversamplingPolicy,
-) -> Result<(PluginHost, Vec<String>), String> {
+) -> Result<(PluginHost, Vec<PluginBuildDiagnostic>), PluginBuildDiagnostic> {
     let mut host = PluginHost::new(channels, sample_rate);
-    configure_host_oversampling(&mut host, oversampling_policy)?;
+    configure_host_oversampling(&mut host, oversampling_policy)
+        .map_err(PluginBuildDiagnostic::host)?;
     let mut current_channels = channels;
-    let mut warnings: Vec<String> = Vec::new();
+    let mut warnings: Vec<PluginBuildDiagnostic> = Vec::new();
 
     for (i, config) in configs.iter().enumerate() {
         log::info!(
@@ -56,7 +64,12 @@ pub fn build_plugin_host_with_policy(
                         current_channels
                     );
                     log::warn!("[Processing Thread] {}", msg);
-                    warnings.push(msg);
+                    warnings.push(PluginBuildDiagnostic::chain_plugin(
+                        i,
+                        plugin_instance_id(&config.parameters),
+                        &config.plugin_type,
+                        msg,
+                    ));
                     continue;
                 }
 
@@ -70,12 +83,27 @@ pub fn build_plugin_host_with_policy(
                     plugin.output_channels()
                 );
 
-                host.add_plugin(plugin)?;
+                host.add_plugin(plugin).map_err(|error| {
+                    PluginBuildDiagnostic::chain_plugin(
+                        i,
+                        plugin_instance_id(&config.parameters),
+                        &config.plugin_type,
+                        format!(
+                            "Plugin '{}' could not be added: {error}",
+                            config.plugin_type
+                        ),
+                    )
+                })?;
             }
             Err(e) => {
                 let msg = format!("Plugin '{}' skipped: {}", config.plugin_type, e);
                 log::warn!("[Processing Thread] {}", msg);
-                warnings.push(msg);
+                warnings.push(PluginBuildDiagnostic::chain_plugin(
+                    i,
+                    plugin_instance_id(&config.parameters),
+                    &config.plugin_type,
+                    msg,
+                ));
             }
         }
     }
@@ -116,13 +144,15 @@ mod tests {
 /// `DawHost::add_node()` + `add_edge()` to create arbitrary graph topologies
 /// needed for multi-driver crossover setups.
 ///
-/// Nodes that fail to create are skipped, and edges referencing them are dropped.
+/// Graph construction is atomic: every declared node and edge must load before
+/// a host is returned. Skipping a failed node would silently change topology
+/// and can leave an apparently built but disconnected processing DAG.
 #[allow(dead_code)]
 pub fn build_plugin_graph_host(
     config: &super::super::types::PluginGraphConfig,
     sample_rate: u32,
     channels: usize,
-) -> Result<(PluginHost, Vec<String>), String> {
+) -> Result<(PluginHost, Vec<PluginBuildDiagnostic>), PluginBuildDiagnostic> {
     build_plugin_graph_host_with_policy(
         config,
         sample_rate,
@@ -136,69 +166,102 @@ pub fn build_plugin_graph_host_with_policy(
     sample_rate: u32,
     channels: usize,
     oversampling_policy: EngineOversamplingPolicy,
-) -> Result<(PluginHost, Vec<String>), String> {
+) -> Result<(PluginHost, Vec<PluginBuildDiagnostic>), PluginBuildDiagnostic> {
     use sotf_plugins::GraphEdge;
     use std::collections::HashMap;
 
+    config.validate().map_err(|error| {
+        PluginBuildDiagnostic::host(format!("Invalid plugin graph configuration: {error}"))
+    })?;
+
     let mut host = PluginHost::new(channels, sample_rate);
-    configure_host_oversampling(&mut host, oversampling_policy)?;
+    configure_host_oversampling(&mut host, oversampling_policy)
+        .map_err(PluginBuildDiagnostic::host)?;
     let mut id_map: HashMap<usize, usize> = HashMap::new();
-    let mut warnings: Vec<String> = Vec::new();
 
     for node_config in &config.nodes {
-        match create_plugin(
+        let plugin = create_plugin(
             &node_config.plugin_type,
             &node_config.parameters,
             node_config.input_channels,
             sample_rate,
-        ) {
-            Ok(plugin) => {
-                let host_id = host.add_node(format!("node_{}", node_config.id), plugin)?;
-                if node_config.bypassed {
-                    host.bypass_node(host_id)?;
-                }
-                id_map.insert(node_config.id, host_id);
-            }
-            Err(e) => {
-                let msg = format!(
-                    "Graph node {} ('{}') skipped: {}",
-                    node_config.id, node_config.plugin_type, e
-                );
-                log::warn!("[Processing Thread] {}", msg);
-                warnings.push(msg);
-            }
+        )
+        .map_err(|error| {
+            PluginBuildDiagnostic::graph_node(
+                node_config.id,
+                plugin_instance_id(&node_config.parameters),
+                &node_config.plugin_type,
+                format!(
+                    "Plugin graph node {} ('{}') failed to load: {error}",
+                    node_config.id, node_config.plugin_type
+                ),
+            )
+        })?;
+        let host_id = host
+            .add_node(format!("node_{}", node_config.id), plugin)
+            .map_err(|error| {
+                PluginBuildDiagnostic::graph_node(
+                    node_config.id,
+                    plugin_instance_id(&node_config.parameters),
+                    &node_config.plugin_type,
+                    format!(
+                        "Plugin graph node {} ('{}') could not be added: {error}",
+                        node_config.id, node_config.plugin_type
+                    ),
+                )
+            })?;
+        if node_config.bypassed {
+            host.bypass_node(host_id).map_err(|error| {
+                PluginBuildDiagnostic::graph_node(
+                    node_config.id,
+                    plugin_instance_id(&node_config.parameters),
+                    &node_config.plugin_type,
+                    format!(
+                        "Plugin graph node {} ('{}') could not be bypassed: {error}",
+                        node_config.id, node_config.plugin_type
+                    ),
+                )
+            })?;
         }
+        id_map.insert(node_config.id, host_id);
     }
 
     for edge in &config.edges {
-        let from = match id_map.get(&edge.from_node) {
-            Some(&id) => id,
-            None => {
-                let msg = format!(
-                    "Edge {}->{} skipped: from_node {} was not loaded",
+        let from = *id_map.get(&edge.from_node).ok_or_else(|| {
+            PluginBuildDiagnostic::graph_edge(
+                edge.from_node,
+                edge.to_node,
+                format!(
+                    "Plugin graph edge {} -> {} references unloaded from_node {}",
                     edge.from_node, edge.to_node, edge.from_node
-                );
-                log::warn!("[Processing Thread] {}", msg);
-                warnings.push(msg);
-                continue;
-            }
-        };
-        let to = match id_map.get(&edge.to_node) {
-            Some(&id) => id,
-            None => {
-                let msg = format!(
-                    "Edge {}->{} skipped: to_node {} was not loaded",
+                ),
+            )
+        })?;
+        let to = *id_map.get(&edge.to_node).ok_or_else(|| {
+            PluginBuildDiagnostic::graph_edge(
+                edge.from_node,
+                edge.to_node,
+                format!(
+                    "Plugin graph edge {} -> {} references unloaded to_node {}",
                     edge.from_node, edge.to_node, edge.to_node
-                );
-                log::warn!("[Processing Thread] {}", msg);
-                warnings.push(msg);
-                continue;
-            }
-        };
-        host.add_edge(GraphEdge::new(from, to))?;
+                ),
+            )
+        })?;
+        host.add_edge(GraphEdge::new(from, to)).map_err(|error| {
+            PluginBuildDiagnostic::graph_edge(
+                edge.from_node,
+                edge.to_node,
+                format!(
+                    "Plugin graph edge {} -> {} is invalid: {error}",
+                    edge.from_node, edge.to_node
+                ),
+            )
+        })?;
     }
 
-    host.build()?;
+    host.build().map_err(|error| {
+        PluginBuildDiagnostic::host(format!("Plugin graph host build failed: {error}"))
+    })?;
 
     log::info!(
         "[Processing Thread] Plugin graph loaded: {} nodes, {} edges ({}ch -> {}ch), {} warnings",
@@ -206,8 +269,8 @@ pub fn build_plugin_graph_host_with_policy(
         config.edges.len(),
         channels,
         host.output_channels(),
-        warnings.len()
+        0
     );
 
-    Ok((host, warnings))
+    Ok((host, Vec::new()))
 }

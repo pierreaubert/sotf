@@ -1696,10 +1696,10 @@ const DYNAMIC_TRANSLATIONS: &[DynamicTranslation] = &[
         "  Recorrer pantallas y panel de niveles",
     ),
     dynamic_translation(
-        "  Jump to Library/Queue/Plugins/Devices/Configure",
-        "  Aller à Bibliothèque/File d’attente/Modules/Périphériques/Configuration",
-        "  Zu Mediathek/Warteschlange/Plugins/Geräte/Konfiguration wechseln",
-        "  Ir a Biblioteca/Cola/Complementos/Dispositivos/Configuración",
+        "  Jump to Library/Queue/Plugins/Devices/Configure/Playlists",
+        "  Aller à Bibliothèque/File d’attente/Modules/Périphériques/Configuration/Listes de lecture",
+        "  Zu Mediathek/Warteschlange/Plugins/Geräte/Konfiguration/Wiedergabelisten wechseln",
+        "  Ir a Biblioteca/Cola/Complementos/Dispositivos/Configuración/Listas de reproducción",
     ),
     dynamic_translation(
         "  Focus level meters pane",
@@ -1766,6 +1766,30 @@ const DYNAMIC_TRANSLATIONS: &[DynamicTranslation] = &[
         "  Basculer le solo du groupe sélectionné",
         "  Solo für gewählte Gruppe umschalten",
         "  Alternar solo en el grupo seleccionado",
+    ),
+    dynamic_translation(
+        "  Toggle dim on selected group",
+        "  Basculer l’atténuation du groupe sélectionné",
+        "  Dämpfung für die gewählte Gruppe umschalten",
+        "  Alternar atenuación en el grupo seleccionado",
+    ),
+    dynamic_translation(
+        "  Toggle mute",
+        "  Basculer le mode muet",
+        "  Stummschaltung umschalten",
+        "  Alternar silencio",
+    ),
+    dynamic_translation(
+        "  Toggle ReplayGain",
+        "  Basculer ReplayGain",
+        "  ReplayGain umschalten",
+        "  Alternar ReplayGain",
+    ),
+    dynamic_translation(
+        "  Cycle ReplayGain mode",
+        "  Changer le mode ReplayGain",
+        "  ReplayGain-Modus wechseln",
+        "  Cambiar el modo ReplayGain",
     ),
     dynamic_translation(
         "  Show this help",
@@ -4365,8 +4389,8 @@ const FRENCH_ACTIONS: &[(&str, &str)] = &[
     ),
     ("Filter", "Filtrer"),
     (
-        "Filter: All/Mono/Stereo/Multi/Mixed",
-        "Filtrer : Tous/Mono/Stéréo/Multi/Mixte",
+        "Filter: All/Mono/Stereo/Surround/Mixed",
+        "Filtrer : Tous/Mono/Stéréo/Surround/Mixte",
     ),
     (
         "Force rescan ALL files (preserves ReplayGain)",
@@ -4473,8 +4497,8 @@ const FRENCH_ACTIONS: &[(&str, &str)] = &[
     ("Servers sub-screen", "Sous-écran Serveurs"),
     ("Sort", "Trier"),
     (
-        "Sort by Artist/Album/Title/Year",
-        "Trier par Artiste/Album/Titre/Année",
+        "Sort: cycle / Year / Genre / Artist / Album",
+        "Tri : cycle / Année / Genre / Artiste / Album",
     ),
     (
         "Spinorama EQ sub-screen",
@@ -4570,8 +4594,8 @@ const GERMAN_ACTIONS: &[(&str, &str)] = &[
     ),
     ("Filter", "Filtern"),
     (
-        "Filter: All/Mono/Stereo/Multi/Mixed",
-        "Filtern: Alle/Mono/Stereo/Mehrkanal/Gemischt",
+        "Filter: All/Mono/Stereo/Surround/Mixed",
+        "Filtern: Alle/Mono/Stereo/Surround/Gemischt",
     ),
     (
         "Force rescan ALL files (preserves ReplayGain)",
@@ -4678,8 +4702,8 @@ const GERMAN_ACTIONS: &[(&str, &str)] = &[
     ("Servers sub-screen", "Unterbereich Server"),
     ("Sort", "Sortieren"),
     (
-        "Sort by Artist/Album/Title/Year",
-        "Nach Interpret/Album/Titel/Jahr sortieren",
+        "Sort: cycle / Year / Genre / Artist / Album",
+        "Sortierung: wechseln / Jahr / Genre / Interpret / Album",
     ),
     ("Spinorama EQ sub-screen", "Unterbereich Spinorama-EQ"),
     (
@@ -4763,8 +4787,8 @@ const SPANISH_ACTIONS: &[(&str, &str)] = &[
     ),
     ("Filter", "Filtrar"),
     (
-        "Filter: All/Mono/Stereo/Multi/Mixed",
-        "Filtrar: Todo/Mono/Estéreo/Multicanal/Mixto",
+        "Filter: All/Mono/Stereo/Surround/Mixed",
+        "Filtrar: Todo/Mono/Estéreo/Envolvente/Mixto",
     ),
     (
         "Force rescan ALL files (preserves ReplayGain)",
@@ -4868,8 +4892,8 @@ const SPANISH_ACTIONS: &[(&str, &str)] = &[
     ("Servers sub-screen", "Subpantalla Servidores"),
     ("Sort", "Ordenar"),
     (
-        "Sort by Artist/Album/Title/Year",
-        "Ordenar por Artista/Álbum/Título/Año",
+        "Sort: cycle / Year / Genre / Artist / Album",
+        "Ordenar: alternar / Año / Género / Artista / Álbum",
     ),
     ("Spinorama EQ sub-screen", "Subpantalla EQ Spinorama"),
     (
@@ -5146,7 +5170,6 @@ mod tests {
                 "spinorama_eq",
                 include_str!("events/conf_spinoramaeq/spinorama.rs"),
             ),
-            ("temporary_controls", include_str!("events/tmp.rs")),
             ("devices", include_str!("events/devices.rs")),
         ];
 

@@ -19,7 +19,6 @@ use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginType;
 use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP, aae::PARAMS as AAE_P};
 use crate::components::themed_tooltip as make_tooltip;
-use super::ui_rack::{plugin_description, short_name, speaker_config_to_channels};
+use super::ui_rack::{plugin_description, short_name};
 
 mod misc;
-

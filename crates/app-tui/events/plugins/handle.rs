@@ -1,7 +1,11 @@
 use super::super::PlayerCommand;
 use super::misc::open_file_path_param;
 use crate::app::{App, FilePickerMode, FilePickerOrigin, InputMode, MatrixEditMode};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crate::ui::keybinding_catalog::{
+    AddPluginCommand, PluginEditCommand, PluginListCommand, TuiCommand, TuiKeyContext,
+    resolve_command,
+};
+use crossterm::event::{KeyCode, KeyEvent};
 use sotf_audio_player::{PluginSettings, PluginType};
 
 pub(in super::super) fn handle_add_plugin_mode(
@@ -17,104 +21,96 @@ pub(in super::super) fn handle_add_plugin_mode(
         .collect();
     let num_plugins = plugin_types.len();
 
-    match key.code {
-        KeyCode::Esc => {
+    let command = match resolve_command(TuiKeyContext::AddPlugin, key) {
+        Some(TuiCommand::AddPlugin(command)) => command,
+        Some(command) => unreachable!("non-add-plugin command in AddPlugin context: {command:?}"),
+        None => return None,
+    };
+
+    match command {
+        AddPluginCommand::Cancel => {
             app.input_mode = InputMode::Normal;
             None
         }
-        KeyCode::Enter => {
-            // Add the selected plugin
+        AddPluginCommand::Select => {
             if let Some(plugin_type) = plugin_types.get(app.plugin_rack.add_selected_index) {
                 app.add_plugin(plugin_type);
             }
             app.input_mode = InputMode::Normal;
             None
         }
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.plugin_rack.add_selected_index > 0 {
-                app.plugin_rack.add_selected_index -= 1;
+        AddPluginCommand::Navigate => {
+            if matches!(key.code, KeyCode::Up | KeyCode::Char('k')) {
+                if app.plugin_rack.add_selected_index > 0 {
+                    app.plugin_rack.add_selected_index -= 1;
+                } else {
+                    app.plugin_rack.add_selected_index = num_plugins.saturating_sub(1);
+                }
             } else {
-                app.plugin_rack.add_selected_index = num_plugins.saturating_sub(1);
+                if app.plugin_rack.add_selected_index + 1 < num_plugins {
+                    app.plugin_rack.add_selected_index += 1;
+                } else {
+                    app.plugin_rack.add_selected_index = 0;
+                }
             }
             None
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.plugin_rack.add_selected_index + 1 < num_plugins {
-                app.plugin_rack.add_selected_index += 1;
-            } else {
-                app.plugin_rack.add_selected_index = 0;
-            }
-            None
-        }
-        _ => None,
     }
 }
 
 pub(in super::super) fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift+Up: Move plugin up in the list
-            app.move_plugin_up(app.plugin_rack.selected_index);
+    let command = match resolve_command(TuiKeyContext::PluginList, key) {
+        Some(TuiCommand::PluginList(command)) => command,
+        Some(command) => unreachable!("non-plugin command in PluginList context: {command:?}"),
+        None => return None,
+    };
+
+    match command {
+        PluginListCommand::Navigate => {
+            if matches!(key.code, KeyCode::Up | KeyCode::Char('k')) {
+                app.select_previous_plugin();
+            } else {
+                app.select_next_plugin();
+            }
             None
         }
-        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift+Down: Move plugin down in the list
-            app.move_plugin_down(app.plugin_rack.selected_index);
+        PluginListCommand::Add => {
+            app.plugin_rack.add_selected_index = 0;
+            app.input_mode = InputMode::AddPlugin;
             None
         }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_plugin();
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_plugin();
-            None
-        }
-        KeyCode::Char('e') | KeyCode::Enter => {
-            // Edit selected plugin
+        PluginListCommand::Edit => {
             app.enter_plugin_edit_mode();
             None
         }
-        KeyCode::Char('s') => {
-            // Save plugin chain
+        PluginListCommand::Toggle => {
+            app.toggle_plugin(app.plugin_rack.selected_index);
+            None
+        }
+        PluginListCommand::Remove => {
+            app.remove_plugin(app.plugin_rack.selected_index);
+            None
+        }
+        PluginListCommand::MoveUp => {
+            app.move_plugin_up(app.plugin_rack.selected_index);
+            None
+        }
+        PluginListCommand::MoveDown => {
+            app.move_plugin_down(app.plugin_rack.selected_index);
+            None
+        }
+        PluginListCommand::Save => {
             app.input_mode = InputMode::SavePlugins;
             app.plugin_rack.file_input.clear();
-            // Refresh available presets to show in dialog
             app.refresh_plugin_presets();
             None
         }
-        KeyCode::Char('l') => {
-            // Load plugin chain
+        PluginListCommand::Load => {
             app.input_mode = InputMode::LoadPlugins;
             app.plugin_rack.file_input.clear();
             app.refresh_plugin_presets();
             None
         }
-        KeyCode::Char('a') => {
-            // Open plugin selection dialog
-            app.plugin_rack.add_selected_index = 0;
-            app.input_mode = InputMode::AddPlugin;
-            None
-        }
-        KeyCode::Char('t') => {
-            // Toggle plugin enabled/disabled
-            app.toggle_plugin(app.plugin_rack.selected_index);
-            None
-        }
-        KeyCode::Char('d') | KeyCode::Delete => {
-            app.remove_plugin(app.plugin_rack.selected_index);
-            None
-        }
-        KeyCode::Char('u') | KeyCode::Char('U') => {
-            app.move_plugin_up(app.plugin_rack.selected_index);
-            None
-        }
-        KeyCode::Char('w') | KeyCode::Char('W') => {
-            // Move plugin down (also available via Shift+Down)
-            app.move_plugin_down(app.plugin_rack.selected_index);
-            None
-        }
-        _ => None,
     }
 }
 
@@ -133,12 +129,16 @@ pub(in super::super) fn handle_edit_plugin_mode(
         return handle_matrix_edit_mode(app, key);
     }
 
-    // Standard plugin editing
+    if let Some(command) = resolve_command(TuiKeyContext::PluginEdit, key) {
+        let TuiCommand::PluginEdit(command) = command else {
+            unreachable!("non-edit command in PluginEdit context: {command:?}");
+        };
+        return handle_documented_plugin_edit_command(app, key, command);
+    }
+
+    // Uncommon plugin-specific file actions that intentionally remain outside
+    // the common editor help catalog.
     match key.code {
-        KeyCode::Esc => {
-            app.exit_plugin_edit_mode();
-            None
-        }
         KeyCode::Enter | KeyCode::Char('e') => {
             // Open file explorer for FilePath parameters
             if let Some(plugin) = app
@@ -155,90 +155,6 @@ pub(in super::super) fn handle_edit_plugin_mode(
                 )
             {
                 open_file_path_param(app, spec.engine_key);
-            }
-            None
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_param();
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_param();
-            None
-        }
-        KeyCode::Left | KeyCode::Char('h') => {
-            // Decrease parameter value
-            if app.adjust_selected_param(-1.0) {
-                app.request_plugin_update();
-                None
-            } else {
-                None
-            }
-        }
-        KeyCode::Right | KeyCode::Char('l') => {
-            // Increase parameter value
-            if app.adjust_selected_param(1.0) {
-                app.request_plugin_update();
-                None
-            } else {
-                None
-            }
-        }
-        KeyCode::Char('[') => {
-            // Large decrease
-            if app.adjust_selected_param(-10.0) {
-                app.request_plugin_update();
-                None
-            } else {
-                None
-            }
-        }
-        KeyCode::Char(']') => {
-            // Large increase
-            if app.adjust_selected_param(10.0) {
-                app.request_plugin_update();
-                None
-            } else {
-                None
-            }
-        }
-        KeyCode::Char('a') => {
-            // Load APO file (for EQ plugins)
-            if let Some(plugin) = app
-                .plugin_rack
-                .graph
-                .get_plugin(app.plugin_rack.selected_index)
-            {
-                if matches!(plugin.settings, PluginSettings::EQ { .. }) {
-                    app.input_mode = InputMode::LoadApoFile;
-                    app.ui.status_message = Some("Enter path to APO file:".to_string());
-                } else {
-                    app.ui.status_message =
-                        Some("APO files can only be loaded for EQ plugins".to_string());
-                }
-            }
-            None
-        }
-        KeyCode::Char('o') => {
-            // Open SOFA file browser (for Binaural Decoder plugins)
-            if let Some(plugin) = app
-                .plugin_rack
-                .graph
-                .get_plugin(app.plugin_rack.selected_index)
-            {
-                if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
-                    app.open_file_explorer(
-                        FilePickerOrigin::SofaFile,
-                        FilePickerMode::File,
-                        "Select SOFA File",
-                        Some(&app.plugin_rack.sofa_input.clone()),
-                        Some("sofa"),
-                    );
-                } else {
-                    app.ui.status_message = Some(
-                        "SOFA files can only be loaded for Binaural Decoder plugins".to_string(),
-                    );
-                }
             }
             None
         }
@@ -306,6 +222,87 @@ pub(in super::super) fn handle_edit_plugin_mode(
             None
         }
         _ => None,
+    }
+}
+
+fn handle_documented_plugin_edit_command(
+    app: &mut App,
+    key: KeyEvent,
+    command: PluginEditCommand,
+) -> Option<PlayerCommand> {
+    match command {
+        PluginEditCommand::Exit => {
+            app.exit_plugin_edit_mode();
+            None
+        }
+        PluginEditCommand::NavigateParameter => {
+            if matches!(key.code, KeyCode::Up | KeyCode::Char('k')) {
+                app.select_previous_param();
+            } else {
+                app.select_next_param();
+            }
+            None
+        }
+        PluginEditCommand::AdjustSmall => {
+            let delta = if matches!(key.code, KeyCode::Left | KeyCode::Char('h')) {
+                -1.0
+            } else {
+                1.0
+            };
+            if app.adjust_selected_param(delta) {
+                app.request_plugin_update();
+            }
+            None
+        }
+        PluginEditCommand::AdjustLarge => {
+            let delta = if key.code == KeyCode::Char('[') {
+                -10.0
+            } else {
+                10.0
+            };
+            if app.adjust_selected_param(delta) {
+                app.request_plugin_update();
+            }
+            None
+        }
+        PluginEditCommand::LoadApo => {
+            if let Some(plugin) = app
+                .plugin_rack
+                .graph
+                .get_plugin(app.plugin_rack.selected_index)
+            {
+                if matches!(plugin.settings, PluginSettings::EQ { .. }) {
+                    app.input_mode = InputMode::LoadApoFile;
+                    app.ui.status_message = Some("Enter path to APO file:".to_string());
+                } else {
+                    app.ui.status_message =
+                        Some("APO files can only be loaded for EQ plugins".to_string());
+                }
+            }
+            None
+        }
+        PluginEditCommand::LoadSofa => {
+            if let Some(plugin) = app
+                .plugin_rack
+                .graph
+                .get_plugin(app.plugin_rack.selected_index)
+            {
+                if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
+                    app.open_file_explorer(
+                        FilePickerOrigin::SofaFile,
+                        FilePickerMode::File,
+                        "Select SOFA File",
+                        Some(&app.plugin_rack.sofa_input.clone()),
+                        Some("sofa"),
+                    );
+                } else {
+                    app.ui.status_message = Some(
+                        "SOFA files can only be loaded for Binaural Decoder plugins".to_string(),
+                    );
+                }
+            }
+            None
+        }
     }
 }
 

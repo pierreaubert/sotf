@@ -9,7 +9,9 @@ use crate::app::types::PluginUpdateType;
 use crate::components::plugins::theme::RackThemeState;
 use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
-use sotf_audio_player::{ConnectionDrag, GraphNodeId, GraphSelection, NodeDrag, PluginController};
+use sotf_audio_player::{
+    ConnectionDrag, GraphNodeId, GraphSelection, NodeDrag, PluginController, PluginSettings,
+};
 use sotf_audio_player_midi::MidiMappingEngine;
 use std::collections::HashMap;
 
@@ -52,6 +54,142 @@ pub struct PluginState {
 
     /// Plugins discovered by scanning external plugin directories.
     pub scanned_external_plugins: Vec<sotf_plugins::PluginDescriptor>,
+
+    /// Discovery and sandbox-permission state for the external-plugin settings surface.
+    pub external_plugin_ui: ExternalPluginUiState,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ExternalPluginUiState {
+    pub scan_in_progress: bool,
+    pub scan_completed: bool,
+    pub scan_error: Option<String>,
+    pub runtime_update_in_progress: bool,
+    pub runtime_error: Option<String>,
+    pub runtime_summary: Option<ExternalPluginRuntimeSummary>,
+    /// Structured plugin-host build diagnostics. They remain visible until a
+    /// clean host rebuild clears the authoritative engine field.
+    pub build_diagnostics: Vec<sotf_audio::engine::PluginBuildDiagnostic>,
+    /// Latest structured status for every isolated external-plugin worker.
+    pub worker_statuses: Vec<sotf_audio::engine::IsolatedExternalPluginWorkerStatus>,
+    /// Persistent insertion/load validation errors keyed by descriptor id/path.
+    pub load_errors: HashMap<String, String>,
+    /// Runtime worker errors keyed by stable player plugin instance id.
+    pub worker_errors: HashMap<usize, String>,
+    /// Number of external-plugin scan results currently exposed by the settings list.
+    pub visible_scan_results: usize,
+}
+
+pub const EXTERNAL_PLUGIN_SCAN_PAGE_SIZE: usize = 100;
+
+impl ExternalPluginUiState {
+    pub fn reset_scan_result_pagination(&mut self) {
+        self.visible_scan_results = EXTERNAL_PLUGIN_SCAN_PAGE_SIZE;
+    }
+
+    pub fn visible_scan_result_count(&self, total: usize) -> usize {
+        self.visible_scan_results
+            .max(EXTERNAL_PLUGIN_SCAN_PAGE_SIZE)
+            .min(total)
+    }
+
+    pub fn show_more_scan_results(&mut self, total: usize) -> usize {
+        self.visible_scan_results = self
+            .visible_scan_result_count(total)
+            .saturating_add(EXTERNAL_PLUGIN_SCAN_PAGE_SIZE)
+            .min(total);
+        self.visible_scan_results
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalPluginWorkerHealth {
+    Healthy,
+    Degraded,
+    Failed,
+}
+
+pub fn external_plugin_worker_health(
+    status: &sotf_audio::engine::IsolatedExternalPluginWorkerStatus,
+) -> ExternalPluginWorkerHealth {
+    use sotf_audio::engine::{
+        IsolatedExternalPluginSandboxStatus, IsolatedExternalPluginWorkerEvent,
+    };
+
+    if status.error.is_some()
+        || matches!(
+            status.event,
+            Some(
+                IsolatedExternalPluginWorkerEvent::Exited { .. }
+                    | IsolatedExternalPluginWorkerEvent::NotRunning
+            )
+        )
+    {
+        return ExternalPluginWorkerHealth::Failed;
+    }
+
+    if matches!(
+        status.event,
+        Some(
+            IsolatedExternalPluginWorkerEvent::AlreadyRunning
+                | IsolatedExternalPluginWorkerEvent::Started { .. }
+        )
+    ) && status.sandbox_status == IsolatedExternalPluginSandboxStatus::Enforced
+        && status.sandbox_reason.is_none()
+    {
+        ExternalPluginWorkerHealth::Healthy
+    } else {
+        ExternalPluginWorkerHealth::Degraded
+    }
+}
+
+pub fn external_plugin_error_key(plugin: &sotf_plugins::PluginDescriptor) -> String {
+    format!("{}:{}", plugin.id, plugin.path.display())
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExternalPluginRuntimeSummary {
+    pub runtime_external_access_disabled: bool,
+    pub persistent_grant_count: usize,
+    pub media_read_path_count: usize,
+    pub protected_import_path_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExternalPluginScanCounts {
+    pub total: usize,
+    pub loadable: usize,
+    pub discovered: usize,
+    pub unsupported: usize,
+}
+
+impl ExternalPluginScanCounts {
+    pub fn from_plugins(plugins: &[sotf_plugins::PluginDescriptor]) -> Self {
+        let mut counts = Self {
+            total: plugins.len(),
+            ..Self::default()
+        };
+        for plugin in plugins {
+            match plugin.scan_status {
+                sotf_plugins::PluginScanStatus::Loadable => counts.loadable += 1,
+                sotf_plugins::PluginScanStatus::Discovered => counts.discovered += 1,
+                sotf_plugins::PluginScanStatus::UnsupportedByBuild => counts.unsupported += 1,
+            }
+        }
+        counts
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+impl From<sotf_audio_player::config::PluginSandboxRuntimeStatus> for ExternalPluginRuntimeSummary {
+    fn from(status: sotf_audio_player::config::PluginSandboxRuntimeStatus) -> Self {
+        Self {
+            runtime_external_access_disabled: status.runtime_external_access_disabled,
+            persistent_grant_count: status.persistent_grant_count,
+            media_read_path_count: status.media_read_paths.len(),
+            protected_import_path_count: status.protected_import_paths.len(),
+        }
+    }
 }
 
 /// Tracks whether the plugin chain has been modified since the last save and
@@ -108,6 +246,8 @@ pub struct ListeningTestState {
     pub path_b_label: String,
     pub session: Option<sotf_audio_player::controllers::ab_test_session::AbTestSession>,
     pub trial_mode: sotf_audio_player::controllers::ab_test_session::TrialMode,
+    pub level_match_config: sotf_audio_player::controllers::ab_test_session::LevelMatchConfig,
+    pub segment_start_ms: u64,
     pub confidence: u8,
     pub notes: String,
     pub status: String,
@@ -128,6 +268,9 @@ impl Default for ListeningTestState {
             path_b_label: "Path B".into(),
             session: None,
             trial_mode: sotf_audio_player::controllers::ab_test_session::TrialMode::Abx,
+            level_match_config:
+                sotf_audio_player::controllers::ab_test_session::LevelMatchConfig::default(),
+            segment_start_ms: 0,
             confidence: 50,
             notes: String::new(),
             status: String::new(),
@@ -208,6 +351,87 @@ impl PluginState {
     pub fn is_rack_available(&self) -> bool {
         self.ctrl.is_linear()
     }
+
+    pub fn has_external_plugins(&self) -> bool {
+        self.ctrl
+            .graph
+            .nodes
+            .values()
+            .any(|node| matches!(node.plugin.settings, PluginSettings::External { .. }))
+    }
+
+    /// Mirror authoritative engine diagnostics into persistent UI state and
+    /// associate worker failures with the exact descriptor that owns the
+    /// corresponding engine slot.
+    pub fn sync_external_plugin_engine_diagnostics(
+        &mut self,
+        build_diagnostics: Vec<sotf_audio::engine::PluginBuildDiagnostic>,
+        worker_statuses: Vec<sotf_audio::engine::IsolatedExternalPluginWorkerStatus>,
+    ) {
+        let instance_errors: Vec<(usize, Option<String>, bool)> = worker_statuses
+            .iter()
+            .filter_map(|status| {
+                let instance_id = status.plugin_instance_id.or_else(|| {
+                    self.ctrl.graph.nodes.values().find_map(|node| {
+                        (self.ctrl.graph.get_engine_index(node.id) == Some(status.plugin_index))
+                            .then_some(node.plugin.id)
+                    })
+                })?;
+                Some((
+                    instance_id,
+                    status.error.clone(),
+                    external_plugin_worker_health(status) == ExternalPluginWorkerHealth::Healthy,
+                ))
+            })
+            .collect();
+
+        let ui = &mut self.external_plugin_ui;
+        ui.build_diagnostics = build_diagnostics;
+        ui.worker_statuses = worker_statuses;
+        for (instance_id, error, explicitly_healthy) in instance_errors {
+            match error {
+                Some(error) => {
+                    ui.worker_errors.insert(instance_id, error);
+                }
+                None if explicitly_healthy => {
+                    ui.worker_errors.remove(&instance_id);
+                }
+                None => {}
+            }
+        }
+    }
+
+    /// Return the build diagnostic owned by one external-plugin instance.
+    /// Stable instance identity wins; engine chain/node indices are a fallback
+    /// for older configurations that do not carry the instance parameter.
+    pub fn external_plugin_build_diagnostic(
+        &self,
+        plugin_instance_id: Option<usize>,
+        engine_index: Option<usize>,
+    ) -> Option<&sotf_audio::engine::PluginBuildDiagnostic> {
+        use sotf_audio::engine::PluginBuildTarget;
+
+        self.external_plugin_ui
+            .build_diagnostics
+            .iter()
+            .find(|diagnostic| {
+                if let Some(diagnostic_instance_id) = diagnostic.plugin_instance_id {
+                    return Some(diagnostic_instance_id) == plugin_instance_id;
+                }
+
+                let Some(engine_index) = engine_index else {
+                    return false;
+                };
+                match diagnostic.target {
+                    PluginBuildTarget::ChainPlugin { plugin_index } => plugin_index == engine_index,
+                    PluginBuildTarget::GraphNode { node_id } => node_id == engine_index,
+                    PluginBuildTarget::GraphEdge { from_node, to_node } => {
+                        from_node == engine_index || to_node == engine_index
+                    }
+                    PluginBuildTarget::Host => false,
+                }
+            })
+    }
 }
 
 /// Dropdown open states for AB Compare plugin UI
@@ -285,6 +509,7 @@ impl Default for PluginState {
             midi_mapping: MidiMappingEngine::new(),
             rack_theme_state: RackThemeState::default(),
             scanned_external_plugins: Vec::new(),
+            external_plugin_ui: ExternalPluginUiState::default(),
         }
     }
 }

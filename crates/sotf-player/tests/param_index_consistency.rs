@@ -5,7 +5,7 @@ use sotf_audio_player::param_specs::{ParamSpec, ParamType, UpdateMode};
 use sotf_audio_player::{PluginSettings, PluginType};
 
 fn default(pt: &PluginType) -> PluginSettings {
-    PluginSettings::default_for(pt)
+    PluginSettings::default_for(pt).unwrap()
 }
 
 fn is_bool(pt: &ParamType) -> bool {

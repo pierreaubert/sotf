@@ -69,10 +69,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let daemon = AudioDaemon::new();
 
-    // A fresh key per daemon lifetime guarantees that resetting the shared
-    // frame counter during mmap initialization cannot reuse an AEAD nonce.
-    // This is deliberately daemon-owned: the mmap layer must not mutate key
-    // files behind KeyManager's cached cipher/fingerprint.
+    // A fresh key per HAL-enabled daemon lifetime guarantees that resetting
+    // the shared frame counter during mmap initialization cannot reuse an AEAD
+    // nonce. Non-HAL builds have no encrypted shared-memory transport, so they
+    // must still start for the null/lab driver instead of treating the
+    // deliberately unsupported manual rotation API as a startup failure.
+    #[cfg(all(target_os = "macos", feature = "hal"))]
     daemon.key_manager.lock().force_rotate()?;
 
     // Setup signal handling for graceful shutdown — use the daemon's own

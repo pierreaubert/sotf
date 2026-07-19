@@ -36,6 +36,7 @@ pub type NodeId = usize;
 pub struct IsolatedExternalPluginWorkerReport {
     pub plugin_index: usize,
     pub node_id: NodeId,
+    pub plugin_instance_id: Option<usize>,
     pub event: Option<ExternalPluginProcessEvent>,
     pub error: Option<String>,
     pub worker_start_count: u64,

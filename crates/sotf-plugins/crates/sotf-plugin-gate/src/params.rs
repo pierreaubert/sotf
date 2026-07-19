@@ -100,6 +100,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Sidechain",
     )
     .setup()
+    .structural()
     .doc("Use external sidechain input"),
     ParamSpec::float("Range", "range_db", 80.0, 0.0, 120.0, 1.0, "dB", "Dynamics")
         .doc("Max attenuation when gate closed"),

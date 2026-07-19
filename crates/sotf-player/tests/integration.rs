@@ -105,7 +105,9 @@ fn graph_manual_construction_and_topological_sort() {
     let mut graph = PluginGraph::new();
 
     let input_id = graph.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
-    let eq_id = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0));
+    let eq_id = graph
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0))
+        .unwrap();
     let output_id =
         graph.add_special_node(SpecialNodeType::Output, NodePosition::new(200.0, 0.0), 2);
 
@@ -129,8 +131,12 @@ fn graph_manual_construction_and_topological_sort() {
 #[test]
 fn graph_rejects_cycles_and_self_loops() {
     let mut graph = PluginGraph::new();
-    let a = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(0.0, 0.0));
-    let b = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0));
+    let a = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(0.0, 0.0))
+        .unwrap();
+    let b = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0))
+        .unwrap();
 
     graph.add_connection(a, 0, b, 0).unwrap();
 
@@ -151,7 +157,9 @@ fn graph_rejects_cycles_and_self_loops() {
 fn graph_rejects_duplicate_connection() {
     let mut graph = PluginGraph::new();
     let input = graph.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
-    let gain = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0));
+    let gain = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0))
+        .unwrap();
 
     graph.add_connection(input, 0, gain, 0).unwrap();
     let duplicate = graph.add_connection(input, 0, gain, 0);

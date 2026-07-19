@@ -11,10 +11,15 @@ pub use sotf_host::serde_param_default;
 // Shared plugin factory
 pub mod factory;
 pub use factory::{
-    PLUGIN_CATALOG, PluginCatalogEntry, PluginCategory, PluginStabilityEvidence,
-    PluginStabilitySummary, SUPPORTED_PLUGIN_TYPES, StabilityEvidenceState, catalog_entry,
-    create_plugin, is_supported_plugin_type, plugin_stability_summary,
-    validate_plugin_security_config,
+    EVEN_BAND_CHANNEL_WIDTHS, ExternalReferenceImplementation, FIRST_ORDER_AMBISONIC_WIDTH,
+    MICROPHONE_ARRAY_WIDTHS, MONO_CHANNEL_WIDTH, PLUGIN_CATALOG, PluginCatalogEntry,
+    PluginCatalogMetadata, PluginCategory, PluginChannelLayoutContract, PluginChannelOutputModel,
+    PluginDefaultChannelOutput, PluginLatencyModel, PluginMaturity, PluginParameterSchema,
+    PluginPickerExposure, PluginPresetSupport, PluginStabilityEvidence, PluginStabilitySummary,
+    PluginSupportedInputLayouts, PluginUiKind, STANDARD_CHANNEL_WIDTHS, STEREO_CHANNEL_WIDTH,
+    StabilityEvidenceState, ab_compare_catalog_entries, catalog_entry, create_plugin,
+    generic_app_catalog_entries, is_supported_plugin_type, plugin_stability_summary,
+    supported_plugin_types, validate_plugin_security_config,
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use factory::{
@@ -52,9 +57,9 @@ pub use sotf_host::{
     default_plugin_sandbox_protected_media_paths, enter_external_plugin_sandbox,
 };
 pub use sotf_host::{
-    ExternalHostingBackend, ExternalPlugin, ExternalPluginSandboxMode, ExternalPluginState,
-    PluginDescriptor, PluginFormat, PluginFormatCapability, PluginScanStatus, PluginScanner,
-    plugin_format_capabilities,
+    EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER, ExternalHostingBackend, ExternalPlugin,
+    ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor, PluginFormat,
+    PluginFormatCapability, PluginScanStatus, PluginScanner, plugin_format_capabilities,
 };
 /// Parameter specifications: types from `sotf-host`, per-plugin definitions
 /// from individual plugin crates.

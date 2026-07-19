@@ -404,10 +404,12 @@ fn easy_bass_managed_outputs_apply_as_editable_persistable_graphs() {
         let encoded = serde_json::to_string(&graph).unwrap();
         let mut restored: PluginGraph = serde_json::from_str(&encoded).unwrap();
         let previous_count = restored.plugin_count();
-        restored.add_plugin_node(
-            &crate::PluginType::Gain,
-            crate::plugin_graph::NodePosition::new(12.0, 8.0),
-        );
+        restored
+            .add_plugin_node(
+                &crate::PluginType::Gain,
+                crate::plugin_graph::NodePosition::new(12.0, 8.0),
+            )
+            .unwrap();
         assert_eq!(restored.plugin_count(), previous_count + 1);
     }
 }

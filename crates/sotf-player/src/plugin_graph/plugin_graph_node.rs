@@ -63,6 +63,10 @@ impl PluginGraphNode {
                 output_channels,
                 ..
             } => (*input_channels, *output_channels),
+            PluginSettings::External { state } => (
+                state.descriptor.audio_inputs,
+                state.descriptor.audio_outputs,
+            ),
             _ => (2, 2), // Most plugins are stereo in/out
         }
     }

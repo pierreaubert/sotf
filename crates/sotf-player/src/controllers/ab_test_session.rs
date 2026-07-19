@@ -84,6 +84,10 @@ impl ChainSnapshot {
 pub struct MediaSegment {
     /// Stable media identity, such as a library track ID or content hash.
     pub media_id: String,
+    /// Recoverable local path used to reload the saved segment. Older sessions
+    /// stored the path directly in `media_id` and leave this field empty.
+    #[serde(default)]
+    pub media_path: Option<String>,
     pub start_ms: u64,
     pub duration_ms: u64,
 }
@@ -96,6 +100,50 @@ pub enum LevelMatchMetric {
     Rms,
 }
 
+impl LevelMatchMetric {
+    pub const fn minimum_window_ms(self) -> u64 {
+        match self {
+            Self::MomentaryLufs => 400,
+            Self::ShortTermLufs => 3_000,
+            Self::Rms => 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LevelMatchConfig {
+    pub metric: LevelMatchMetric,
+    pub window_ms: u64,
+    pub tolerance_db: f64,
+    pub max_correction_db: f64,
+}
+
+impl Default for LevelMatchConfig {
+    fn default() -> Self {
+        Self {
+            metric: LevelMatchMetric::ShortTermLufs,
+            window_ms: 3_000,
+            tolerance_db: 0.1,
+            max_correction_db: 12.0,
+        }
+    }
+}
+
+impl LevelMatchConfig {
+    pub fn validate(self) -> Result<(), AbTestError> {
+        if self.window_ms == 0
+            || self.window_ms < self.metric.minimum_window_ms()
+            || !self.tolerance_db.is_finite()
+            || self.tolerance_db < 0.0
+            || !self.max_correction_db.is_finite()
+            || self.max_correction_db < 0.0
+        {
+            return Err(AbTestError::InvalidLevelMatchConfig);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LevelMatchMeasurement {
     pub metric: LevelMatchMetric,
@@ -104,26 +152,54 @@ pub struct LevelMatchMeasurement {
     pub path_b_db: f64,
     /// Gain applied to path B to match path A.
     pub correction_b_db: f64,
+    #[serde(default = "default_level_match_tolerance_db")]
+    pub tolerance_db: f64,
     pub max_correction_db: f64,
+}
+
+const fn default_level_match_tolerance_db() -> f64 {
+    0.1
 }
 
 impl LevelMatchMeasurement {
     pub fn validate(&self) -> Result<(), AbTestError> {
+        self.config()
+            .validate()
+            .map_err(|_| AbTestError::InvalidLevelMatch)?;
         let values = [
             self.path_a_db,
             self.path_b_db,
             self.correction_b_db,
+            self.tolerance_db,
             self.max_correction_db,
         ];
         if self.window_ms == 0 || values.iter().any(|value| !value.is_finite()) {
             return Err(AbTestError::InvalidLevelMatch);
         }
-        if self.max_correction_db < 0.0
+        if self.tolerance_db < 0.0
+            || self.max_correction_db < 0.0
             || self.correction_b_db.abs() > self.max_correction_db + f64::EPSILON
         {
             return Err(AbTestError::InvalidLevelMatch);
         }
         Ok(())
+    }
+
+    pub fn config(&self) -> LevelMatchConfig {
+        LevelMatchConfig {
+            metric: self.metric,
+            window_ms: self.window_ms,
+            tolerance_db: self.tolerance_db,
+            max_correction_db: self.max_correction_db,
+        }
+    }
+
+    pub fn residual_error_db(&self) -> f64 {
+        (self.path_a_db - (self.path_b_db + self.correction_b_db)).abs()
+    }
+
+    pub fn within_tolerance(&self) -> bool {
+        self.residual_error_db() <= self.tolerance_db + f64::EPSILON
     }
 }
 
@@ -134,21 +210,19 @@ impl LevelMatchMeasurement {
 /// loudness monitor. The correction is deliberately measured once and saved
 /// in the session instead of adapting during a blind trial.
 pub fn measure_level_match(
-    metric: LevelMatchMetric,
+    config: LevelMatchConfig,
     sample_rate: u32,
     channels: usize,
     path_a: &[f32],
     path_b: &[f32],
-    max_correction_db: f64,
 ) -> Result<LevelMatchMeasurement, AbTestError> {
+    config.validate()?;
     if sample_rate == 0
         || channels == 0
         || u32::try_from(channels).is_err()
         || path_a.is_empty()
         || path_a.len() != path_b.len()
         || !path_a.len().is_multiple_of(channels)
-        || !max_correction_db.is_finite()
-        || max_correction_db < 0.0
     {
         return Err(AbTestError::InvalidLevelMatchInput);
     }
@@ -161,27 +235,30 @@ pub fn measure_level_match(
     }
 
     let frames = path_a.len() / channels;
-    let minimum_window_ms = match metric {
-        LevelMatchMetric::MomentaryLufs => 400,
-        LevelMatchMetric::ShortTermLufs => 3_000,
-        LevelMatchMetric::Rms => 0,
-    };
+    let metric = config.metric;
+    let minimum_window_ms = metric.minimum_window_ms();
     let minimum_frames = (u64::from(sample_rate) * minimum_window_ms).div_ceil(1_000) as usize;
     if frames < minimum_frames {
         return Err(AbTestError::LevelMatchWindowTooShort);
+    }
+    let window_ms: u64 = ((frames as u128 * 1_000) / u128::from(sample_rate))
+        .try_into()
+        .map_err(|_| AbTestError::InvalidLevelMatchInput)?;
+    if window_ms.abs_diff(config.window_ms) > 1 {
+        return Err(AbTestError::InvalidLevelMatchInput);
     }
 
     let path_a_db = measure_path_level(metric, sample_rate, channels, path_a)?;
     let path_b_db = measure_path_level(metric, sample_rate, channels, path_b)?;
     let measurement = LevelMatchMeasurement {
         metric,
-        window_ms: ((frames as u128 * 1_000) / u128::from(sample_rate))
-            .try_into()
-            .map_err(|_| AbTestError::InvalidLevelMatchInput)?,
+        window_ms,
         path_a_db,
         path_b_db,
-        correction_b_db: (path_a_db - path_b_db).clamp(-max_correction_db, max_correction_db),
-        max_correction_db,
+        correction_b_db: (path_a_db - path_b_db)
+            .clamp(-config.max_correction_db, config.max_correction_db),
+        tolerance_db: config.tolerance_db,
+        max_correction_db: config.max_correction_db,
     };
     measurement.validate()?;
     Ok(measurement)
@@ -336,6 +413,9 @@ impl AbTestSession {
     }
 
     pub fn start_trial(&mut self, mode: TrialMode) -> Result<u32, AbTestError> {
+        if !self.setup.level_match.within_tolerance() {
+            return Err(AbTestError::LevelMatchOutsideTolerance);
+        }
         if self.pending.is_some() {
             return Err(AbTestError::TrialAlreadyPending);
         }
@@ -433,6 +513,9 @@ impl ListeningTestSetup {
         selected: PathSelection,
     ) -> Result<ABComparePluginParams, AbTestError> {
         self.validate()?;
+        if !self.level_match.within_tolerance() {
+            return Err(AbTestError::LevelMatchOutsideTolerance);
+        }
         Ok(ABComparePluginParams {
             path_a: self.path_a.config.clone(),
             path_b: append_gain_stage(&self.path_b.config, self.level_match.correction_b_db as f32),
@@ -462,12 +545,16 @@ pub enum AbTestError {
     InvalidSetup,
     #[error("invalid level-match measurement")]
     InvalidLevelMatch,
+    #[error("invalid level-match configuration")]
+    InvalidLevelMatchConfig,
     #[error("invalid synchronized audio supplied for level matching")]
     InvalidLevelMatchInput,
     #[error("audio is shorter than the selected level-match metric requires")]
     LevelMatchWindowTooShort,
     #[error("audio is too quiet to level match reliably")]
     LevelMatchSignalTooQuiet,
+    #[error("level-match residual exceeds the configured tolerance")]
+    LevelMatchOutsideTolerance,
     #[error("level-match measurement failed: {0}")]
     LevelMatchMeasurement(String),
     #[error("failed to prepare a comparison path: {0}")]
@@ -478,6 +565,10 @@ pub enum AbTestError {
     IncompatiblePathLayout,
     #[error("failed to read or write a listening-test session: {0}")]
     SessionIo(String),
+    #[error("saved listening-test media path is unavailable")]
+    MediaPathUnavailable,
+    #[error("saved listening-test media no longer matches its content identity")]
+    MediaIdentityMismatch,
     #[error("invalid listening-test switch transition")]
     InvalidSwitchTransition,
     #[error("chain snapshot no longer matches its hash")]
@@ -654,6 +745,7 @@ mod tests {
             path_b: ChainSnapshot::new("TDF II", PathConfig::Rack { plugins: vec![] }).unwrap(),
             media: MediaSegment {
                 media_id: "track-sha256".into(),
+                media_path: None,
                 start_ms: 10_000,
                 duration_ms: 20_000,
             },
@@ -665,6 +757,7 @@ mod tests {
                 path_a_db: -18.0,
                 path_b_db: -16.5,
                 correction_b_db: -1.5,
+                tolerance_db: 0.1,
                 max_correction_db: 6.0,
             },
             switch_transition_ms: 20.0,
@@ -688,12 +781,24 @@ mod tests {
     fn rms_level_match_measures_and_clamps_fixed_path_b_correction() {
         let path_a = stereo_sine(48_000, 1, 0.25);
         let path_b = stereo_sine(48_000, 1, 0.5);
-        let measured =
-            measure_level_match(LevelMatchMetric::Rms, 48_000, 2, &path_a, &path_b, 3.0).unwrap();
+        let measured = measure_level_match(
+            LevelMatchConfig {
+                metric: LevelMatchMetric::Rms,
+                window_ms: 1_000,
+                tolerance_db: 0.1,
+                max_correction_db: 3.0,
+            },
+            48_000,
+            2,
+            &path_a,
+            &path_b,
+        )
+        .unwrap();
 
         assert!((measured.path_b_db - measured.path_a_db - 6.0206).abs() < 0.001);
         assert_eq!(measured.correction_b_db, -3.0);
         assert_eq!(measured.window_ms, 1_000);
+        assert!(!measured.within_tolerance());
     }
 
     #[test]
@@ -705,7 +810,19 @@ mod tests {
             LevelMatchMetric::MomentaryLufs,
             LevelMatchMetric::ShortTermLufs,
         ] {
-            let measured = measure_level_match(metric, 48_000, 2, &path_a, &path_b, 12.0).unwrap();
+            let measured = measure_level_match(
+                LevelMatchConfig {
+                    metric,
+                    window_ms: 3_000,
+                    tolerance_db: 0.1,
+                    max_correction_db: 12.0,
+                },
+                48_000,
+                2,
+                &path_a,
+                &path_b,
+            )
+            .unwrap();
             assert!((measured.correction_b_db + 6.0206).abs() < 0.05);
             assert_eq!(measured.window_ms, 3_000);
         }
@@ -716,22 +833,48 @@ mod tests {
         let short = vec![0.1; 48_000 * 2];
         assert_eq!(
             measure_level_match(
-                LevelMatchMetric::ShortTermLufs,
+                LevelMatchConfig {
+                    metric: LevelMatchMetric::ShortTermLufs,
+                    window_ms: 3_000,
+                    tolerance_db: 0.1,
+                    max_correction_db: 6.0,
+                },
                 48_000,
                 2,
                 &short,
                 &short,
-                6.0,
             ),
             Err(AbTestError::LevelMatchWindowTooShort)
         );
 
         assert_eq!(
-            measure_level_match(LevelMatchMetric::Rms, 48_000, 2, &[0.0; 4], &[0.0; 4], 6.0),
+            measure_level_match(
+                LevelMatchConfig {
+                    metric: LevelMatchMetric::Rms,
+                    window_ms: 1,
+                    tolerance_db: 0.1,
+                    max_correction_db: 6.0,
+                },
+                48_000,
+                2,
+                &[0.0; 4],
+                &[0.0; 4],
+            ),
             Err(AbTestError::LevelMatchSignalTooQuiet)
         );
         assert_eq!(
-            measure_level_match(LevelMatchMetric::Rms, 48_000, 2, &[0.1; 4], &[0.1; 2], 6.0),
+            measure_level_match(
+                LevelMatchConfig {
+                    metric: LevelMatchMetric::Rms,
+                    window_ms: 1,
+                    tolerance_db: 0.1,
+                    max_correction_db: 6.0,
+                },
+                48_000,
+                2,
+                &[0.1; 4],
+                &[0.1; 2],
+            ),
             Err(AbTestError::InvalidLevelMatchInput)
         );
     }
@@ -913,6 +1056,19 @@ mod tests {
         assert_eq!(
             invalid.validate(),
             Err(AbTestError::InvalidSwitchTransition)
+        );
+    }
+
+    #[test]
+    fn trial_cannot_start_when_safety_clamp_leaves_level_error_outside_tolerance() {
+        let mut setup = setup();
+        setup.level_match.correction_b_db = -1.0;
+        setup.level_match.tolerance_db = 0.1;
+        let mut session = AbTestSession::new("outside-tolerance", setup, 42).unwrap();
+
+        assert_eq!(
+            session.start_trial(TrialMode::Abx),
+            Err(AbTestError::LevelMatchOutsideTolerance)
         );
     }
 }

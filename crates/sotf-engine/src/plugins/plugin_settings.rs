@@ -317,6 +317,7 @@ use super::plugin_type::PluginType;
 use crate::engine::PluginConfig;
 use math_audio_iir_fir::BiquadFilterType;
 use serde::{Deserialize, Serialize};
+use sotf_plugins::ExternalPluginState;
 
 use sotf_plugins::param_specs::aae as aae_specs;
 use sotf_plugins::param_specs::ab_compare as ab_compare_specs;
@@ -1427,6 +1428,11 @@ pub enum PluginSettings {
         #[serde(default)]
         adaptive_offset_db: f64,
     },
+    /// Concrete third-party plugin state. Unlike built-in variants, this must
+    /// be created from a scanner-provided descriptor and has no default.
+    External {
+        state: ExternalPluginState,
+    },
 }
 
 impl PluginSettings {
@@ -1495,6 +1501,7 @@ impl PluginSettings {
             Self::FirDesigner { .. } => PluginType::FirDesigner,
             Self::LinearPhaseEq { .. } => PluginType::LinearPhaseEq,
             Self::SpectralCompressor { .. } => PluginType::SpectralCompressor,
+            Self::External { .. } => PluginType::External,
             Self::AAE { .. } => PluginType::AAE,
         }
     }
@@ -1514,6 +1521,9 @@ impl PluginSettings {
             Self::AmbisonicsDecoder { order, .. } => {
                 let channels_per_axis = order.saturating_add(1);
                 Some(channels_per_axis.saturating_mul(channels_per_axis))
+            }
+            Self::External { state } if state.descriptor.audio_inputs > 0 => {
+                Some(state.descriptor.audio_inputs)
             }
             _ => None,
         }
@@ -1538,10 +1548,10 @@ impl PluginSettings {
     }
 
     /// Create default settings for a plugin type
-    pub fn default_for(plugin_type: &PluginType) -> Self {
+    pub fn default_for(plugin_type: &PluginType) -> Result<Self, String> {
         use sotf_plugins::param_specs::find_by_key as p;
 
-        match plugin_type {
+        let settings = match plugin_type {
             PluginType::EQ => Self::EQ {
                 channels: default_channels(),
                 filters: vec![
@@ -2223,7 +2233,11 @@ impl PluginSettings {
                     solo_late: false,
                 }
             }
-        }
+            PluginType::External => {
+                return Err("external plugins require concrete discovered settings".to_string());
+            }
+        };
+        Ok(settings)
     }
 }
 
@@ -2234,7 +2248,7 @@ mod tests {
     #[test]
     fn every_plugin_default_setting_round_trips_through_preset_json() {
         for plugin_type in PluginType::all() {
-            let settings = PluginSettings::default_for(&plugin_type);
+            let settings = PluginSettings::default_for(&plugin_type).unwrap();
             let json = serde_json::to_value(&settings)
                 .unwrap_or_else(|error| panic!("{} serialize failed: {error}", plugin_type.name()));
             let restored: PluginSettings =

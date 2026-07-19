@@ -1,4 +1,5 @@
 use crate::app::{App, PlaylistMode};
+use crate::ui::keybinding_catalog::{PlaylistCommand, TuiCommand, TuiKeyContext, resolve_command};
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::PlayerCommand;
@@ -14,17 +15,22 @@ pub fn handle_playlists_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 }
 
 fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.playlists.controller.select_prev_playlist();
+    let command = match resolve_command(TuiKeyContext::PlaylistList, key) {
+        Some(TuiCommand::Playlist(command)) => command,
+        Some(command) => unreachable!("non-playlist command in PlaylistList: {command:?}"),
+        None => return None,
+    };
+
+    match command {
+        PlaylistCommand::Navigate => {
+            if matches!(key.code, KeyCode::Up | KeyCode::Char('k')) {
+                app.playlists.controller.select_prev_playlist();
+            } else {
+                app.playlists.controller.select_next_playlist();
+            }
             None
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.playlists.controller.select_next_playlist();
-            None
-        }
-        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-            // Open the selected playlist
+        PlaylistCommand::Open => {
             if let Some(db) = app.library.get_database() {
                 let idx = app.playlists.controller.selected_playlist_index;
                 match app.playlists.controller.open_playlist(db, idx) {
@@ -34,14 +40,12 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             }
             None
         }
-        KeyCode::Char('n') => {
-            // Create new playlist
+        PlaylistCommand::Create => {
             app.playlists.name_input.clear();
             app.playlists.mode = PlaylistMode::Create;
             None
         }
-        KeyCode::Char('r') => {
-            // Rename selected playlist
+        PlaylistCommand::Rename => {
             if let Some(playlist) = app
                 .playlists
                 .controller
@@ -53,19 +57,14 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             }
             None
         }
-        KeyCode::Char('d') => {
-            // Confirm delete
+        PlaylistCommand::Delete => {
             if !app.playlists.controller.playlists().is_empty() {
                 app.playlists.mode = PlaylistMode::ConfirmDelete;
             }
             None
         }
-        KeyCode::Char('p') => {
-            // Play all tracks from selected playlist
-            play_selected_playlist(app)
-        }
-        KeyCode::Char('i') => {
-            // Import M3U — open file explorer
+        PlaylistCommand::PlayAll => play_selected_playlist(app),
+        PlaylistCommand::Import => {
             use crate::app::{FilePickerMode, FilePickerOrigin};
             app.open_file_explorer(
                 FilePickerOrigin::PlaylistImport,
@@ -76,8 +75,7 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             );
             None
         }
-        KeyCode::Char('e') => {
-            // Export active playlist — ensure a playlist is open first
+        PlaylistCommand::Export => {
             use crate::app::{FilePickerMode, FilePickerOrigin};
             let has_active = app.playlists.controller.active_playlist().is_some();
             if !has_active && let Some(db) = app.library.get_database() {
@@ -97,27 +95,34 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             }
             None
         }
-        _ => None,
+        PlaylistCommand::Back | PlaylistCommand::RemoveTrack | PlaylistCommand::MoveTrack => {
+            unreachable!("tracks-only command resolved in PlaylistList: {command:?}")
+        }
     }
 }
 
 fn handle_tracks_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.playlists.controller.select_prev_track();
+    let command = match resolve_command(TuiKeyContext::PlaylistTracks, key) {
+        Some(TuiCommand::Playlist(command)) => command,
+        Some(command) => unreachable!("non-playlist command in PlaylistTracks: {command:?}"),
+        None => return None,
+    };
+
+    match command {
+        PlaylistCommand::Navigate => {
+            if matches!(key.code, KeyCode::Up | KeyCode::Char('k')) {
+                app.playlists.controller.select_prev_track();
+            } else {
+                app.playlists.controller.select_next_track();
+            }
             None
         }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.playlists.controller.select_next_track();
-            None
-        }
-        KeyCode::Esc | KeyCode::Left | KeyCode::Char('h') => {
+        PlaylistCommand::Back => {
             app.playlists.controller.close_playlist();
             app.playlists.mode = PlaylistMode::List;
             None
         }
-        KeyCode::Char('x') => {
-            // Remove track
+        PlaylistCommand::RemoveTrack => {
             if let Some(db) = app.library.get_database() {
                 let idx = app.playlists.controller.selected_track_index;
                 if let Err(e) = app.playlists.controller.remove_track(db, idx) {
@@ -126,29 +131,28 @@ fn handle_tracks_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             }
             None
         }
-        KeyCode::Char('K') => {
-            // Move track up
-            if let Some(db) = app.library.get_database()
-                && let Err(e) = app.playlists.controller.move_track_up(db)
-            {
-                app.ui.status_message = Some(format!("Error: {}", e));
+        PlaylistCommand::MoveTrack => {
+            if let Some(db) = app.library.get_database() {
+                let result = if key.code == KeyCode::Char('K') {
+                    app.playlists.controller.move_track_up(db)
+                } else {
+                    app.playlists.controller.move_track_down(db)
+                };
+                if let Err(error) = result {
+                    app.ui.status_message = Some(format!("Error: {error}"));
+                }
             }
             None
         }
-        KeyCode::Char('J') => {
-            // Move track down
-            if let Some(db) = app.library.get_database()
-                && let Err(e) = app.playlists.controller.move_track_down(db)
-            {
-                app.ui.status_message = Some(format!("Error: {}", e));
-            }
-            None
+        PlaylistCommand::PlayAll => play_active_playlist(app),
+        PlaylistCommand::Open
+        | PlaylistCommand::Create
+        | PlaylistCommand::Rename
+        | PlaylistCommand::Delete
+        | PlaylistCommand::Import
+        | PlaylistCommand::Export => {
+            unreachable!("list-only command resolved in PlaylistTracks: {command:?}")
         }
-        KeyCode::Char('p') => {
-            // Play all from active playlist
-            play_active_playlist(app)
-        }
-        _ => None,
     }
 }
 

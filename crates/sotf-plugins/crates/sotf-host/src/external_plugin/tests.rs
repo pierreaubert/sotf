@@ -345,7 +345,6 @@ fn test_external_plugin_placeholder_state_round_trips() {
     };
     let plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
     let mut state = plugin.placeholder_state();
-    state.sandbox_mode = ExternalPluginSandboxMode::Isolated;
     state.opaque_state = vec![1, 2, 3, 4];
 
     let json = serde_json::to_string(&state).unwrap();
@@ -354,8 +353,15 @@ fn test_external_plugin_placeholder_state_round_trips() {
 
     assert_eq!(decoded, state);
     assert_eq!(restored.descriptor(), &desc);
-    assert_eq!(decoded.sandbox_mode, ExternalPluginSandboxMode::Isolated);
+    assert_eq!(decoded.sandbox_mode, ExternalPluginSandboxMode::InProcess);
     assert_eq!(decoded.opaque_state, vec![1, 2, 3, 4]);
+
+    let mut incompatible = decoded;
+    incompatible.sandbox_mode = ExternalPluginSandboxMode::Isolated;
+    let error = ExternalPlugin::from_placeholder_state(&incompatible, 48_000)
+        .err()
+        .expect("isolated state must not restore in process");
+    assert!(error.contains("cannot restore in-process plugin"));
 
     fs::remove_file(plugin_path).unwrap();
     fs::remove_dir_all(tmp_path).unwrap();
@@ -450,6 +456,20 @@ fn test_external_plugin_serializable_preset_round_trips_placeholder_state() {
     );
     assert!(restored_state.opaque_state.is_empty());
     SerializablePlugin::deserialize(&mut plugin, &preset).unwrap();
+
+    let mut isolated_state = restored_state;
+    isolated_state.sandbox_mode = ExternalPluginSandboxMode::Isolated;
+    let mut incompatible_preset = preset.clone();
+    incompatible_preset
+        .set_external_plugin_state(&isolated_state)
+        .unwrap();
+    let error = SerializablePlugin::deserialize(&mut plugin, &incompatible_preset)
+        .expect_err("isolated preset must not restore into in-process plugin");
+    assert!(
+        error
+            .to_string()
+            .contains("cannot restore in-process plugin")
+    );
 
     fs::remove_file(plugin_path).unwrap();
     fs::remove_dir_all(tmp_path).unwrap();

@@ -387,6 +387,7 @@ fn render_narrow_area(
             entity.clone(),
             plugin_idx,
             state,
+            text,
             theme,
         ))
         .child(
@@ -452,7 +453,7 @@ fn render_compact_config_content(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "SubHarmonic",
+                    text.label("SubHarmonic"),
                     state.enable_subharmonic_synth,
                     param_idx::ENABLE_SUBHARMONIC_SYNTH,
                     theme,
@@ -745,7 +746,7 @@ fn render_compact_config_content(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "HR Direct",
+                    text.label("HR Direct"),
                     state.enable_hr_direct,
                     param_idx::ENABLE_HR_DIRECT,
                     theme,
@@ -830,7 +831,7 @@ fn render_compact_config_content(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "Low Latency",
+                    text.label("Low Latency"),
                     state.low_latency,
                     param_idx::LOW_LATENCY,
                     theme,
@@ -895,7 +896,7 @@ fn render_compact_config_content(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "Bypass All",
+                    text.label("Bypass All"),
                     state.bypass_all_processing,
                     param_idx::BYPASS_ALL_PROCESSING,
                     theme,
@@ -904,7 +905,7 @@ fn render_compact_config_content(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "Bypass Decorr",
+                    text.label("Bypass Decorr"),
                     state.bypass_decorrelation,
                     param_idx::BYPASS_DECORRELATION,
                     theme,
@@ -913,7 +914,7 @@ fn render_compact_config_content(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "Bypass Trans",
+                    text.label("Bypass Trans"),
                     state.bypass_transient_detection,
                     param_idx::BYPASS_TRANSIENT_DETECTION,
                     theme,
@@ -922,7 +923,7 @@ fn render_compact_config_content(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "ML Detect",
+                    text.label("ML Detect"),
                     state.enable_ml_detection,
                     param_idx::ENABLE_ML_DETECTION,
                     theme,
@@ -931,7 +932,7 @@ fn render_compact_config_content(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "Multi Source",
+                    text.label("Multi Source"),
                     state.multi_source_extraction,
                     param_idx::MULTI_SOURCE_EXTRACTION,
                     theme,
@@ -940,7 +941,7 @@ fn render_compact_config_content(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "Binaural",
+                    text.label("Binaural"),
                     state.binaural_preview,
                     param_idx::BINAURAL_PREVIEW,
                     theme,
@@ -949,7 +950,7 @@ fn render_compact_config_content(
                     d,
                     entity,
                     plugin_idx,
-                    "Auto Gain",
+                    text.label("Auto Gain"),
                     state.auto_gain_enabled,
                     param_idx::AUTO_GAIN_ENABLED,
                     theme,
@@ -963,7 +964,9 @@ fn render_compact_config_content(
             .flex_col()
             .gap(d.gap)
             .child(render_section_header(d, text.label("Spatial"), theme))
-            .child(render_spider_controls(d, entity, plugin_idx, state, theme))
+            .child(render_spider_controls(
+                d, entity, plugin_idx, state, text, theme,
+            ))
             .into_any_element(),
         _ => div().into_any_element(),
     }
@@ -1048,6 +1051,7 @@ fn render_compact_toggle_row(
                 .checked(checked)
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
+                .aria_label(label)
                 .on_change(move |new_value, _, cx| {
                     entity.update(cx, |state, _| {
                         state.app.set_plugin_param(
@@ -1085,7 +1089,9 @@ fn render_upmixer_header(
             text,
             theme,
         ))
-        .child(render_spider_controls(d, entity, plugin_idx, state, theme))
+        .child(render_spider_controls(
+            d, entity, plugin_idx, state, text, theme,
+        ))
 }
 
 fn render_upmixer_summary_strip(
@@ -1176,6 +1182,7 @@ fn render_spider_controls(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> AnyElement {
     use crate::components::plugins::spatial_spider::{
@@ -1187,7 +1194,7 @@ fn render_spider_controls(
         ui: state.spatial_spider.clone(),
     };
     let cfg_opt = resolve_speaker_config(&snapshot, Some(state.speaker_config));
-    render_spatial_spider_controls(d, entity, plugin_idx, &snapshot, cfg_opt, theme)
+    render_spatial_spider_controls(d, entity, plugin_idx, &snapshot, cfg_opt, text, theme)
 }
 
 fn render_primary_control_strip(
@@ -1640,7 +1647,7 @@ fn render_config_content(
             .into_any_element(),
         7 => render_config_analysis(d, entity, plugin_idx, state, text, theme).into_any_element(),
         8 => render_config_diagnostic(d, entity, plugin_idx, state, text, theme).into_any_element(),
-        9 => render_config_spatial(d, entity, plugin_idx, state, theme).into_any_element(),
+        9 => render_config_spatial(d, entity, plugin_idx, state, text, theme).into_any_element(),
         _ => div().into_any_element(),
     }
 }
@@ -1683,6 +1690,7 @@ fn render_config_lfe(
                         .checked(subharm_enabled)
                         .style(ToggleStyle::Segmented)
                         .theme(theme.to_toggle_theme())
+                        .aria_label(text.label("SubHarmonic"))
                         .on_change({
                             let entity = entity.clone();
                             move |new_value, _, cx| {
@@ -2068,6 +2076,7 @@ fn render_config_hr_direct(
                         .checked(state.enable_hr_direct)
                         .style(ToggleStyle::Segmented)
                         .theme(theme.to_toggle_theme())
+                        .aria_label(text.label("HR Direct"))
                         .on_change({
                             let entity = entity.clone();
                             move |new_value, _, cx| {
@@ -2252,6 +2261,7 @@ fn render_config_analysis(
                         .checked(state.multi_source_extraction)
                         .style(ToggleStyle::Segmented)
                         .theme(theme.to_toggle_theme())
+                        .aria_label(text.label("Source Extraction"))
                         .on_change({
                             let entity = entity.clone();
                             move |new_value, _, cx| {
@@ -2464,6 +2474,7 @@ fn render_diag_toggle(
                 .checked(value)
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
+                .aria_label(label)
                 .on_change({
                     move |new_value, _, cx| {
                         entity.update(cx, |state, _| {
@@ -2486,6 +2497,7 @@ fn render_config_spatial(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     use crate::components::plugins::spatial_spider::{
@@ -2497,7 +2509,7 @@ fn render_config_spatial(
         ui: state.spatial_spider.clone(),
     };
     let cfg_opt = resolve_speaker_config(&snapshot, Some(state.speaker_config));
-    render_spatial_spider_controls(d, entity, plugin_idx, &snapshot, cfg_opt, theme)
+    render_spatial_spider_controls(d, entity, plugin_idx, &snapshot, cfg_opt, text, theme)
 }
 
 /// Permanent spider graph row below the tab bar. Always visible regardless

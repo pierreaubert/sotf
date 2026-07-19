@@ -6,9 +6,9 @@ mod desktop {
     use clap::Parser;
     use sotf_host::{
         ExternalPlugin, ExternalPluginSandboxPolicy, ExternalPluginSandboxStatus,
-        ExternalPluginSandboxTiming, ExternalPluginWorker, ExternalPluginWorkerStep,
-        PluginDescriptor, PluginSandboxBackendCode, PluginSandboxPolicy, PluginSandboxStatusCode,
-        SecurePluginSharedMemory, enter_external_plugin_sandbox,
+        ExternalPluginSandboxTiming, ExternalPluginState, ExternalPluginWorker,
+        ExternalPluginWorkerStep, PluginDescriptor, PluginSandboxBackendCode, PluginSandboxPolicy,
+        PluginSandboxStatusCode, SecurePluginSharedMemory, enter_external_plugin_sandbox,
     };
 
     #[derive(Debug, Parser)]
@@ -28,6 +28,10 @@ mod desktop {
         /// Path to a JSON file containing the external plugin descriptor.
         #[arg(long, conflicts_with = "descriptor_json")]
         descriptor_file: Option<PathBuf>,
+
+        /// Path to the validated external-plugin state envelope to restore.
+        #[arg(long)]
+        external_state_file: Option<PathBuf>,
 
         /// Process at most one available block, then exit.
         #[arg(long)]
@@ -80,6 +84,18 @@ mod desktop {
 
     fn run(args: Args) -> Result<(), String> {
         let descriptor = load_descriptor(&args)?;
+        let external_state = load_external_state(&args)?;
+        if let Some(state) = external_state.as_ref()
+            && state.descriptor != descriptor
+        {
+            return Err(format!(
+                "external plugin state targets '{}' at {}, not '{}' at {}",
+                state.descriptor.id,
+                state.descriptor.path.display(),
+                descriptor.id,
+                descriptor.path.display()
+            ));
+        }
         let shared_memory = shared_memory_path(&args)?;
         let shared = SecurePluginSharedMemory::open_existing(&shared_memory)
             .map_err(|err| format!("failed to open shared memory: {err}"))?;
@@ -93,8 +109,11 @@ mod desktop {
             publish_sandbox_runtime_status(&shared, &status);
         }
 
-        let plugin = ExternalPlugin::new(&descriptor, sample_rate)
-            .map_err(|err| format!("failed to create external plugin wrapper: {err}"))?;
+        let plugin = match external_state.as_ref() {
+            Some(state) => ExternalPlugin::from_placeholder_state(state, sample_rate),
+            None => ExternalPlugin::new(&descriptor, sample_rate),
+        }
+        .map_err(|err| format!("failed to create external plugin wrapper: {err}"))?;
 
         if sandbox_policy.timing == ExternalPluginSandboxTiming::AfterPluginLoad {
             let status =
@@ -182,6 +201,26 @@ mod desktop {
         Err("missing --descriptor-json or --descriptor-file".to_string())
     }
 
+    fn load_external_state(args: &Args) -> Result<Option<ExternalPluginState>, String> {
+        let Some(path) = args.external_state_file.as_ref() else {
+            return Ok(None);
+        };
+        let bytes = std::fs::read(path).map_err(|error| {
+            format!(
+                "failed to read external plugin state '{}': {error}",
+                path.display()
+            )
+        })?;
+        let state: ExternalPluginState = serde_json::from_slice(&bytes).map_err(|error| {
+            format!(
+                "failed to parse external plugin state '{}': {error}",
+                path.display()
+            )
+        })?;
+        state.validate()?;
+        Ok(Some(state))
+    }
+
     fn shared_memory_path(args: &Args) -> Result<PathBuf, String> {
         if let Some(path) = &args.shared_memory {
             return Ok(path.clone());
@@ -240,7 +279,46 @@ mod desktop {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use sotf_host::PluginFormat;
+        use sotf_host::{ExternalPluginSandboxMode, PluginFormat};
+        use std::path::Path;
+
+        fn args_with_external_state_file(path: Option<PathBuf>) -> Args {
+            Args {
+                shared_memory: Some(PathBuf::from("/tmp/fake.shm")),
+                descriptor_json: None,
+                descriptor_file: None,
+                external_state_file: path,
+                once: true,
+                idle_sleep_micros: 1,
+                sandbox_timing: "disabled".to_string(),
+                sandbox_policy_json: None,
+                sandbox_policy_file: None,
+                sandbox_required: false,
+                sandbox_allow_network: false,
+                sandbox_allow_child_processes: false,
+                sandbox_read_paths: Vec::new(),
+                sandbox_write_paths: Vec::new(),
+            }
+        }
+
+        fn state_descriptor(path: &Path) -> PluginDescriptor {
+            parse_descriptor_json(
+                &serde_json::json!({
+                    "id": "clap.fake",
+                    "name": "Fake",
+                    "vendor": "Test",
+                    "version": "1.0",
+                    "format": "Clap",
+                    "path": path,
+                    "audio_inputs": 2,
+                    "audio_outputs": 2,
+                    "is_instrument": false,
+                    "categories": [],
+                })
+                .to_string(),
+            )
+            .unwrap()
+        }
 
         #[test]
         fn parse_descriptor_json_accepts_descriptor() {
@@ -270,6 +348,7 @@ mod desktop {
                 shared_memory: Some(PathBuf::from("/tmp/fake.shm")),
                 descriptor_json: None,
                 descriptor_file: None,
+                external_state_file: None,
                 once: true,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
@@ -291,6 +370,7 @@ mod desktop {
                 shared_memory: Some(PathBuf::from("/tmp/from-arg.shm")),
                 descriptor_json: None,
                 descriptor_file: None,
+                external_state_file: None,
                 once: true,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
@@ -315,6 +395,7 @@ mod desktop {
                 shared_memory: Some(PathBuf::from("/tmp/fake.shm")),
                 descriptor_json: None,
                 descriptor_file: None,
+                external_state_file: None,
                 once: true,
                 idle_sleep_micros: 1,
                 sandbox_timing: "before-plugin-load".to_string(),
@@ -347,6 +428,7 @@ mod desktop {
                 shared_memory: Some(PathBuf::from("/tmp/fake.shm")),
                 descriptor_json: None,
                 descriptor_file: None,
+                external_state_file: None,
                 once: true,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
@@ -377,6 +459,7 @@ mod desktop {
                 shared_memory: Some(PathBuf::from("/tmp/fake.shm")),
                 descriptor_json: None,
                 descriptor_file: None,
+                external_state_file: None,
                 once: true,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
@@ -399,6 +482,46 @@ mod desktop {
                 sandbox_backend_code("macos-app-sandbox-helper"),
                 PluginSandboxBackendCode::MacosAppSandboxHelper
             );
+        }
+
+        #[test]
+        fn load_external_state_reads_and_validates_envelope() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("external-state.json");
+            let plugin_path = temp.path().join("fake.clap");
+            std::fs::write(&plugin_path, []).unwrap();
+            let descriptor = state_descriptor(&plugin_path);
+            let state = ExternalPluginState::new(
+                descriptor,
+                ExternalPluginSandboxMode::Isolated,
+                vec![1, 3, 3, 7],
+            );
+            std::fs::write(&path, serde_json::to_vec(&state).unwrap()).unwrap();
+
+            assert_eq!(
+                load_external_state(&args_with_external_state_file(Some(path))).unwrap(),
+                Some(state)
+            );
+        }
+
+        #[test]
+        fn load_external_state_rejects_inconsistent_envelope() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("external-state.json");
+            let plugin_path = temp.path().join("fake.clap");
+            std::fs::write(&plugin_path, []).unwrap();
+            let descriptor = state_descriptor(&plugin_path);
+            let mut state = ExternalPluginState::new(
+                descriptor,
+                ExternalPluginSandboxMode::Isolated,
+                vec![1, 3, 3, 7],
+            );
+            state.plugin_id = "different.plugin".to_string();
+            std::fs::write(&path, serde_json::to_vec(&state).unwrap()).unwrap();
+
+            let error =
+                load_external_state(&args_with_external_state_file(Some(path))).unwrap_err();
+            assert!(error.contains("descriptor fields are inconsistent"));
         }
     }
 }

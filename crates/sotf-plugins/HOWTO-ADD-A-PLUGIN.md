@@ -321,9 +321,12 @@ If the plugin changes channel count, add `PluginType::MyPlugin` alongside
 If it has a `speaker_config` field, add `PluginSettings::MyPlugin { speaker_config, .. }`
 alongside `PluginSettings::Upmixer { speaker_config, .. }`.
 
-### 7.2 sotf-player/src/controllers/ab_compare_path.rs
+### 7.2 Canonical catalog exposure
 
-Add `("<name>", "Display Name")` to `ALLOWED_PLUGIN_TYPES`.
+Set `allowed_in_ab_compare: true` in the plugin's canonical `PLUGIN_CATALOG`
+metadata when it can be constructed without discovery or platform state. The
+player and GPUI A/B pickers are derived from that metadata; do not add another
+plugin list.
 
 ---
 

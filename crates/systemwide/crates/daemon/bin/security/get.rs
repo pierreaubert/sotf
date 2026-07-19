@@ -176,6 +176,19 @@ pub(super) mod encryption_impl {
     }
 
     impl KeyManager {
+        #[cfg(test)]
+        pub(crate) fn for_test() -> Self {
+            let key = [0x53; 32];
+            Self {
+                key,
+                fingerprint: compute_fingerprint(&key),
+                cipher: Some(AudioCipher::new(&key)),
+                last_check: Instant::now(),
+                last_mtime: None,
+                enabled: true,
+            }
+        }
+
         pub fn new() -> io::Result<Self> {
             let key_path = get_key_path();
             let (key, mtime) = if key_path.exists() {

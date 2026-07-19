@@ -53,6 +53,7 @@ pub(super) fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::FirDesigner => theme.success,
         PluginType::LinearPhaseEq => theme.success,
         PluginType::SpectralCompressor => theme.warning,
+        PluginType::External => theme.accent,
     }
 }
 
@@ -152,6 +153,9 @@ pub(super) fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) 
         PluginType::FirDesigner => (2, 2),
         // Spectral compressor: in-place processing
         PluginType::SpectralCompressor => (2, 2),
+        // Concrete external graph nodes carry descriptor-specific counts in
+        // PluginGraphNode; this fallback is only used by type-only palettes.
+        PluginType::External => (2, 2),
     }
 }
 

@@ -51,6 +51,17 @@ pub enum LibraryResponse {
     None,
 }
 
+/// Visible keyboard selection within the Home screen's album shelves.
+///
+/// The shelf identifier keeps repeated albums in separate discovery rows from
+/// producing multiple simultaneous selections, while the index remains stable
+/// for the currently rendered collapsed or expanded shelf.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HomeAlbumSelection {
+    pub shelf_id: Option<String>,
+    pub album_index: usize,
+}
+
 /// Library state — wraps `LibraryController` with GPUI-specific additions.
 ///
 /// Deref/DerefMut to `LibraryController` so all existing field access
@@ -62,6 +73,8 @@ pub struct LibraryState {
 
     /// Number of columns in grid layout (UI-specific, not in controller)
     pub library_columns: usize,
+    /// Keyboard selection for the local or remote Home discovery shelves.
+    pub home_album_selection: HomeAlbumSelection,
     /// Bumped when the underlying local album/track data changes.
     content_generation: u64,
 }
@@ -90,6 +103,7 @@ impl LibraryState {
         Self {
             ctrl: LibraryController::new(),
             library_columns: 4,
+            home_album_selection: HomeAlbumSelection::default(),
             content_generation: 0,
         }
     }
@@ -98,6 +112,7 @@ impl LibraryState {
         Self {
             ctrl: LibraryController::with_library(library),
             library_columns: 4,
+            home_album_selection: HomeAlbumSelection::default(),
             content_generation: 0,
         }
     }
@@ -106,6 +121,7 @@ impl LibraryState {
         Self {
             ctrl: LibraryController::new_for_test(),
             library_columns: 4,
+            home_album_selection: HomeAlbumSelection::default(),
             content_generation: 0,
         }
     }

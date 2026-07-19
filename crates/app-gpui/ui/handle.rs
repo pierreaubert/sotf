@@ -35,16 +35,18 @@ impl PlayerView {
                     state.app.clear_autocomplete();
                     match state.app.load_apo_file() {
                         Ok(()) => {
-                            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
-                                "APO file loaded successfully",
-                            ));
+                            state.app.ui_state.toast_message = Some(
+                                crate::app::ToastMessage::success("APO file loaded successfully"),
+                            );
                             state.app.input_state.apo_file_input.clear();
                             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                         }
                         Err(e) => {
-                            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
-                                format!("Failed to load APO file: {}", e),
-                            ));
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::ToastMessage::error(format!(
+                                    "Failed to load APO file: {}",
+                                    e
+                                )));
                         }
                     }
                 });
@@ -99,16 +101,18 @@ impl PlayerView {
                     state.app.clear_autocomplete();
                     match state.app.load_sofa_file() {
                         Ok(()) => {
-                            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
-                                "SOFA file loaded successfully",
-                            ));
+                            state.app.ui_state.toast_message = Some(
+                                crate::app::ToastMessage::success("SOFA file loaded successfully"),
+                            );
                             state.app.input_state.sofa_file_input.clear();
                             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                         }
                         Err(e) => {
-                            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
-                                format!("Failed to load SOFA file: {}", e),
-                            ));
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::ToastMessage::error(format!(
+                                    "Failed to load SOFA file: {}",
+                                    e
+                                )));
                         }
                     }
                 });
@@ -337,6 +341,9 @@ impl PlayerView {
 
             // Handle screen-specific actions in Normal mode
             match state.app.ui_state.current_screen {
+                Screen::Home | Screen::HomeShelf => {
+                    crate::components::home::home_screen::activate_selected_home_album(state);
+                }
                 Screen::Library => {
                     // Add selected album to queue
                     match state.app.add_album_to_queue() {
@@ -384,355 +391,235 @@ impl PlayerView {
         cx.notify();
     }
 
-        fn handle_directory_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+    fn handle_directory_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // ... (existing code)
 
-            // ... (existing code)
+        match event.keystroke.key.as_str() {
+            "backspace" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.input_state.directory_input.pop();
 
-            match event.keystroke.key.as_str() {
+                    state.app.clear_autocomplete();
+                });
 
-                "backspace" => {
+                cx.notify();
+            }
 
+            "tab" => {
+                // Tab autocomplete
+
+                self.state.update(cx, |state, _cx| {
+                    if state.app.input_state.autocomplete_suggestions.is_empty() {
+                        state.app.generate_autocomplete_suggestions();
+                    } else {
+                        state.app.next_autocomplete();
+                    }
+                });
+
+                cx.notify();
+            }
+
+            "escape" => {
+
+                // Already handled by Cancel action
+            }
+
+            "enter" => {
+
+                // Already handled by Enter action (adds directory)
+            }
+
+            _ => {
+                // Add character to directory input
+
+                if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
-
-                        state.app.input_state.directory_input.pop();
+                        state.app.input_state.directory_input.push_str(text);
 
                         state.app.clear_autocomplete();
-
                     });
 
                     cx.notify();
-
                 }
-
-                "tab" => {
-
-                    // Tab autocomplete
-
-                    self.state.update(cx, |state, _cx| {
-
-                        if state.app.input_state.autocomplete_suggestions.is_empty() {
-
-                            state.app.generate_autocomplete_suggestions();
-
-                        } else {
-
-                            state.app.next_autocomplete();
-
-                        }
-
-                    });
-
-                    cx.notify();
-
-                }
-
-                "escape" => {
-
-                    // Already handled by Cancel action
-
-                }
-
-                "enter" => {
-
-                    // Already handled by Enter action (adds directory)
-
-                }
-
-                _ => {
-
-                    // Add character to directory input
-
-                    if let Some(text) = event.keystroke.key_char.as_ref() {
-
-                        self.state.update(cx, |state, _cx| {
-
-                            state.app.input_state.directory_input.push_str(text);
-
-                            state.app.clear_autocomplete();
-
-                        });
-
-                        cx.notify();
-
-                    }
-
-                }
-
             }
+        }
+    }
 
+    pub(crate) fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
+        let screen = self.state.read(cx).app.ui_state.current_screen;
+
+        match screen {
+            Screen::Home | Screen::HomeShelf => self.state.update(cx, |state, _cx| {
+                crate::components::home::home_screen::move_home_album_selection(state, true);
+            }),
+
+            Screen::Library => self
+                .state
+                .update(cx, |state, _cx| state.app.select_next_album()),
+
+            Screen::NowPlaying | Screen::Queue => self
+                .state
+                .update(cx, |state, _cx| state.app.select_next_queue_item()),
+
+            Screen::Studio => self.state.update(cx, |state, _cx| {
+                state.app.select_next_plugin();
+            }),
+
+            Screen::Settings => self
+                .state
+                .update(cx, |state, _cx| state.app.select_next_directory()),
+
+            _ => {}
         }
 
+        cx.notify();
+    }
 
+    pub(crate) fn select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
+        let screen = self.state.read(cx).app.ui_state.current_screen;
 
-        pub(crate) fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
+        match screen {
+            Screen::Home | Screen::HomeShelf => self.state.update(cx, |state, _cx| {
+                crate::components::home::home_screen::move_home_album_selection(state, false);
+            }),
 
-            let screen = self.state.read(cx).app.ui_state.current_screen;
+            Screen::Library => self
+                .state
+                .update(cx, |state, _cx| state.app.select_previous_album()),
 
-            match screen {
+            Screen::NowPlaying | Screen::Queue => self
+                .state
+                .update(cx, |state, _cx| state.app.select_previous_queue_item()),
 
-                Screen::Library => self.state.update(cx, |state, _cx| state.app.select_next_album()),
+            Screen::Studio => self.state.update(cx, |state, _cx| {
+                state.app.select_previous_plugin();
+            }),
 
-                Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| state.app.select_next_queue_item()),
+            Screen::Settings => self
+                .state
+                .update(cx, |state, _cx| state.app.select_previous_directory()),
 
-                Screen::Studio => self.state.update(cx, |state, _cx| {
-
-                    state.app.select_next_plugin();
-
-                }),
-
-                Screen::Settings => {
-
-                    self.state.update(cx, |state, _cx| state.app.select_next_directory())
-
-                }
-
-                _ => {}
-
-            }
-
-            cx.notify();
-
+            _ => {}
         }
 
-    
+        cx.notify();
+    }
 
-        pub(crate) fn select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn select_next_page(
+        &mut self,
 
-            let screen = self.state.read(cx).app.ui_state.current_screen;
+        _: &SelectNextPage,
 
-            match screen {
+        _: &mut Window,
 
-                Screen::Library => self.state.update(cx, |state, _cx| state.app.select_previous_album()),
+        cx: &mut Context<Self>,
+    ) {
+        let screen = self.state.read(cx).app.ui_state.current_screen;
 
-                Screen::NowPlaying | Screen::Queue => {
+        match screen {
+            Screen::Home | Screen::HomeShelf => self.state.update(cx, |state, _cx| {
+                crate::components::home::home_screen::move_home_album_selection(state, false);
+            }),
 
-                    self.state.update(cx, |state, _cx| state.app.select_previous_queue_item())
+            Screen::Library => self.state.update(cx, |state, _cx| {
+                let page_size = state.app.library_state.items_per_page;
 
-                }
+                state.app.page_up_albums(page_size); // Corrected from page_down which was removed
+            }),
 
-                Screen::Studio => self.state.update(cx, |state, _cx| {
+            Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| {
+                state.app.page_down_queue(10);
+            }),
 
-                    state.app.select_previous_plugin();
+            Screen::Settings => self.state.update(cx, |state, _cx| {
+                state.app.page_down_directories(10);
+            }),
 
-                }),
-
-                Screen::Settings => {
-
-                    self.state.update(cx, |state, _cx| state.app.select_previous_directory())
-
-                }
-
-                _ => {}
-
-            }
-
-            cx.notify();
-
+            _ => {}
         }
 
-    
+        cx.notify();
+    }
 
-        pub(crate) fn select_next_page(
+    pub(crate) fn select_prev_page(
+        &mut self,
 
-            &mut self,
+        _: &SelectPrevPage,
 
-            _: &SelectNextPage,
+        _: &mut Window,
 
-            _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let screen = self.state.read(cx).app.ui_state.current_screen;
 
-            cx: &mut Context<Self>,
+        match screen {
+            Screen::Library => self.state.update(cx, |state, _cx| {
+                let page_size = state.app.library_state.items_per_page;
 
-        ) {
+                state.app.page_up_albums(page_size);
+            }),
 
-            let screen = self.state.read(cx).app.ui_state.current_screen;
+            Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| {
+                state.app.page_up_queue(10);
+            }),
 
-            match screen {
+            Screen::Settings => self.state.update(cx, |state, _cx| {
+                state.app.page_up_directories(10);
+            }),
 
-                Screen::Library => self.state.update(cx, |state, _cx| {
-
-                    let page_size = state.app.library_state.items_per_page;
-
-                    state.app.page_up_albums(page_size); // Corrected from page_down which was removed
-
-                }),
-
-                Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| {
-
-                    state.app.page_down_queue(10);
-
-                }),
-
-                Screen::Settings => self.state.update(cx, |state, _cx| {
-
-                    state.app.page_down_directories(10);
-
-                }),
-
-                _ => {}
-
-            }
-
-            cx.notify();
-
+            _ => {}
         }
 
-    
+        cx.notify();
+    }
 
-        pub(crate) fn select_prev_page(
+    pub(crate) fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
+        let (screen, cols) = {
+            let state = self.state.read(cx);
 
-            &mut self,
+            let app = &state.app;
 
-            _: &SelectPrevPage,
+            (
+                app.ui_state.current_screen,
+                app.library_state.library_columns,
+            )
+        };
 
-            _: &mut Window,
+        match screen {
+            Screen::Library => self.state.update(cx, |state, _cx| {
+                state.app.library_state.select_grid_left(cols);
+            }),
 
-            cx: &mut Context<Self>,
+            Screen::Studio => self.state.update(cx, |state, _cx| {
+                state.app.select_previous_param();
+            }),
 
-        ) {
-
-            let screen = self.state.read(cx).app.ui_state.current_screen;
-
-            match screen {
-
-                Screen::Library => self.state.update(cx, |state, _cx| {
-
-                    let page_size = state.app.library_state.items_per_page;
-
-                    state.app.page_up_albums(page_size);
-
-                }),
-
-                Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| {
-
-                    state.app.page_up_queue(10);
-
-                }),
-
-                Screen::Settings => self.state.update(cx, |state, _cx| {
-
-                    state.app.page_up_directories(10);
-
-                }),
-
-                _ => {}
-
-            }
-
-            cx.notify();
-
+            _ => {}
         }
 
-    
+        cx.notify();
+    }
 
-        pub(crate) fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
+        let (screen, cols) = {
+            let state = self.state.read(cx);
+            let app = &state.app;
+            (
+                app.ui_state.current_screen,
+                app.library_state.library_columns,
+            )
+        };
 
-            let (screen, cols) = {
-
-                let state = self.state.read(cx);
-
-                let app = &state.app;
-
-                (app.ui_state.current_screen, app.library_state.library_columns)
-
-            };
-
-            match screen {
-
-                Screen::Library => self.state.update(cx, |state, _cx| {
-
-                    state.app.library_state.select_grid_left(cols);
-
-                }),
-
-                Screen::Studio => self.state.update(cx, |state, _cx| {
-
-                    state.app.select_previous_param();
-
-                }),
-
-                _ => {}
-
-            }
-
-            cx.notify();
-
-        }
-
-    
-
-        pub(crate) fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
-            let (screen, cols) = {
-                let state = self.state.read(cx);
-                let app = &state.app;
-                (app.ui_state.current_screen, app.library_state.library_columns)
-            };
-
-            match screen {
-                Screen::Library => {
-                    let mut should_load_more = false;
-                    self.state.update(cx, |state, _cx| {
-                        let total = state.app.filtered_albums().len();
-                        if total > 0 && state.app.library_state.selected_index < total - 1 {
-                            state.app.library_state.select_grid_right(cols);
-                        } else {
-                            should_load_more = true;
-                        }
-                    });
-
-                    if should_load_more {
-                        self.load_more_albums(cx);
-                    }
-                }
-                Screen::Studio => self.state.update(cx, |state, _cx| {
-                    state.app.select_next_param();
-                }),
-                _ => {}
-            }
-            cx.notify();
-        }
-
-    
-
-        pub(crate) fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
-            let (screen, cols) = {
-                let state = self.state.read(cx);
-                let app = &state.app;
-                (app.ui_state.current_screen, app.library_state.library_columns)
-            };
-
-            match screen {
-                Screen::Library => self.state.update(cx, |state, _cx| {
-                    state.app.library_state.select_grid_up(cols);
-                }),
-                Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| {
-                    state.app.select_previous_queue_item();
-                }),
-                Screen::Settings => self.state.update(cx, |state, _cx| {
-                    state.app.select_previous_directory();
-                }),
-                _ => {}
-            }
-
-            cx.notify();
-        }
-
-    
-
-        pub(crate) fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
-            let (screen, cols) = {
-                let state = self.state.read(cx);
-                let app = &state.app;
-                (app.ui_state.current_screen, app.library_state.library_columns)
-            };
-
-            if screen == Screen::Library {
+        match screen {
+            Screen::Home | Screen::HomeShelf => self.state.update(cx, |state, _cx| {
+                crate::components::home::home_screen::move_home_album_selection(state, true);
+            }),
+            Screen::Library => {
                 let mut should_load_more = false;
                 self.state.update(cx, |state, _cx| {
-                    let current_count = state.app.get_paginated_albums().len();
-                    let next_row_index = state.app.library_state.selected_index + cols;
-
-                    if next_row_index < current_count {
-                        state.app.library_state.select_grid_down(cols);
+                    let total = state.app.filtered_albums().len();
+                    if total > 0 && state.app.library_state.selected_index < total - 1 {
+                        state.app.library_state.select_grid_right(cols);
                     } else {
                         should_load_more = true;
                     }
@@ -740,34 +627,102 @@ impl PlayerView {
 
                 if should_load_more {
                     self.load_more_albums(cx);
-                    // After load more, we try to move down again
-                    self.state.update(cx, |state, _cx| {
-                        let total = state.app.filtered_albums().len();
-                        if state.app.library_state.selected_index + cols < total {
-                            state.app.library_state.select_grid_down(cols);
-                        } else {
-                            state.app.library_state.selected_index = total.saturating_sub(1);
-                        }
-                    });
-                }
-            } else {
-                match screen {
-                    Screen::NowPlaying | Screen::Queue => {
-                        self.state.update(cx, |state, _cx| {
-                            state.app.select_next_queue_item();
-                        });
-                    }
-                    Screen::Settings => {
-                        self.state.update(cx, |state, _cx| {
-                            state.app.select_next_directory();
-                        });
-                    }
-                    _ => {}
                 }
             }
-            cx.notify();
+            Screen::Studio => self.state.update(cx, |state, _cx| {
+                state.app.select_next_param();
+            }),
+            _ => {}
         }
-
+        cx.notify();
     }
 
-    
+    pub(crate) fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
+        let (screen, cols) = {
+            let state = self.state.read(cx);
+            let app = &state.app;
+            (
+                app.ui_state.current_screen,
+                app.library_state.library_columns,
+            )
+        };
+
+        match screen {
+            Screen::Home | Screen::HomeShelf => self.state.update(cx, |state, _cx| {
+                crate::components::home::home_screen::move_home_album_selection(state, false);
+            }),
+            Screen::Library => self.state.update(cx, |state, _cx| {
+                state.app.library_state.select_grid_up(cols);
+            }),
+            Screen::NowPlaying | Screen::Queue => self.state.update(cx, |state, _cx| {
+                state.app.select_previous_queue_item();
+            }),
+            Screen::Settings => self.state.update(cx, |state, _cx| {
+                state.app.select_previous_directory();
+            }),
+            _ => {}
+        }
+
+        cx.notify();
+    }
+
+    pub(crate) fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
+        let (screen, cols) = {
+            let state = self.state.read(cx);
+            let app = &state.app;
+            (
+                app.ui_state.current_screen,
+                app.library_state.library_columns,
+            )
+        };
+
+        if screen == Screen::Library {
+            let mut should_load_more = false;
+            self.state.update(cx, |state, _cx| {
+                let current_count = state.app.get_paginated_albums().len();
+                let next_row_index = state.app.library_state.selected_index + cols;
+
+                if next_row_index < current_count {
+                    state.app.library_state.select_grid_down(cols);
+                } else {
+                    should_load_more = true;
+                }
+            });
+
+            if should_load_more {
+                self.load_more_albums(cx);
+                // After load more, we try to move down again
+                self.state.update(cx, |state, _cx| {
+                    let total = state.app.filtered_albums().len();
+                    if state.app.library_state.selected_index + cols < total {
+                        state.app.library_state.select_grid_down(cols);
+                    } else {
+                        state.app.library_state.selected_index = total.saturating_sub(1);
+                    }
+                });
+            }
+        } else {
+            match screen {
+                Screen::Home | Screen::HomeShelf => {
+                    self.state.update(cx, |state, _cx| {
+                        crate::components::home::home_screen::move_home_album_selection(
+                            state, true,
+                        );
+                    });
+                }
+                Screen::NowPlaying | Screen::Queue => {
+                    self.state.update(cx, |state, _cx| {
+                        state.app.select_next_queue_item();
+                    });
+                }
+                Screen::Settings => {
+                    self.state.update(cx, |state, _cx| {
+                        state.app.select_next_directory();
+                    });
+                }
+                _ => {}
+            }
+        }
+        cx.notify();
+    }
+}

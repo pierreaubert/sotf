@@ -12,7 +12,7 @@ fn validate_all_plugin_layout_indices() {
     let mut all_errors = Vec::new();
     for pt in PluginType::all() {
         let name = pt.name();
-        let settings = PluginSettings::default_for(&pt);
+        let settings = PluginSettings::default_for(&pt).unwrap();
         let params = settings.param_specs();
         if let Some(layout) = settings.layout() {
             let errors = layout.validate(params.len(), name);
@@ -38,7 +38,7 @@ fn validate_all_params_have_layout_coverage() {
     let mut all_errors = Vec::new();
     for pt in PluginType::all() {
         let name = pt.name();
-        let settings = PluginSettings::default_for(&pt);
+        let settings = PluginSettings::default_for(&pt).unwrap();
         let params = settings.param_specs();
         if let Some(layout) = settings.layout() {
             let errors = layout.validate_coverage(params, name);
@@ -76,7 +76,7 @@ fn validate_engine_keys_exist_in_dsp_plugin() {
     let mut all_errors = Vec::new();
     for pt in PluginType::all() {
         let name = pt.name();
-        let settings = PluginSettings::default_for(&pt);
+        let settings = PluginSettings::default_for(&pt).unwrap();
         let specs = settings.param_specs();
 
         if specs.is_empty() {
@@ -130,7 +130,7 @@ fn validate_engine_keys_exist_in_dsp_plugin() {
 
 #[test]
 fn spectrum_tilt_params_do_not_emit_engine_updates() {
-    let settings = PluginSettings::default_for(&PluginType::SpectrumAnalyzer);
+    let settings = PluginSettings::default_for(&PluginType::SpectrumAnalyzer).unwrap();
 
     let tilt_correction_idx =
         param_specs::index_of(param_specs::spectrum::PARAMS, "tilt_correction");
@@ -147,7 +147,7 @@ fn crossover_is_exposed_with_editable_layout_and_dsp_config() {
         "Crossover must stay in the app-facing plugin inventory"
     );
 
-    let settings = PluginSettings::default_for(&PluginType::Crossover);
+    let settings = PluginSettings::default_for(&PluginType::Crossover).unwrap();
     let layout = settings
         .layout()
         .expect("Crossover must have an editable declarative layout");

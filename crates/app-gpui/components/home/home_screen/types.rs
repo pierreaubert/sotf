@@ -91,6 +91,139 @@ fn cached_home_shelves(
     })
 }
 
+#[derive(Clone)]
+enum HomeAlbumTarget {
+    Local(Arc<Album>),
+    Remote { id: String, title: String },
+}
+
+#[derive(Clone)]
+struct HomeAlbumEntry {
+    shelf_id: String,
+    album_index: usize,
+    target: HomeAlbumTarget,
+}
+
+fn visible_home_album_entries(state: &crate::app::AppState) -> Vec<HomeAlbumEntry> {
+    let app = &state.app;
+    let ui = &app.ui_state;
+    let collapsed_limit = collapsed_album_limit_for_width(ui.window_width);
+    let expanded_limit = expanded_album_limit_for_dimensions(
+        ui.window_width,
+        ui.window_height,
+        ui.font_scale,
+        ui.min_font_size_px,
+        ui.max_font_size_px,
+    );
+
+    if app.remote.server_store.selected_server_id.is_some() {
+        let Some(page) = app.remote.current_album_page.as_ref() else {
+            return Vec::new();
+        };
+        let mut entries = Vec::new();
+        for shelf in build_remote_home_shelves(&page.albums) {
+            let limit = if ui.expanded_home_sections.contains(&shelf.id) {
+                expanded_limit
+            } else {
+                collapsed_limit
+            };
+            for (album_index, source_index) in
+                shelf.album_indices.into_iter().take(limit).enumerate()
+            {
+                if let Some(album) = page.albums.get(source_index) {
+                    entries.push(HomeAlbumEntry {
+                        shelf_id: shelf.id.clone(),
+                        album_index,
+                        target: HomeAlbumTarget::Remote {
+                            id: album.id.clone(),
+                            title: album.title.clone(),
+                        },
+                    });
+                }
+            }
+        }
+        return entries;
+    }
+
+    let shelves = cached_home_shelves(
+        &app.library_state.library.albums,
+        app.library_state.content_generation(),
+        collapsed_limit,
+        expanded_limit,
+    );
+    let mut entries = Vec::new();
+    for shelf in shelves {
+        let limit = if ui.expanded_home_sections.contains(&shelf.id) {
+            expanded_limit
+        } else {
+            collapsed_limit
+        };
+        for (album_index, album) in shelf.albums.into_iter().take(limit).enumerate() {
+            entries.push(HomeAlbumEntry {
+                shelf_id: shelf.id.clone(),
+                album_index,
+                target: HomeAlbumTarget::Local(album),
+            });
+        }
+    }
+    entries
+}
+
+fn selected_home_entry_index(
+    entries: &[HomeAlbumEntry],
+    selection: &crate::app::state::library::HomeAlbumSelection,
+) -> Option<usize> {
+    let shelf_id = selection.shelf_id.as_deref()?;
+    entries
+        .iter()
+        .position(|entry| entry.shelf_id == shelf_id && entry.album_index == selection.album_index)
+}
+
+/// Move through exactly the album cards currently visible on the Home screen.
+pub(crate) fn move_home_album_selection(state: &mut crate::app::AppState, forward: bool) {
+    let entries = visible_home_album_entries(state);
+    if entries.is_empty() {
+        state.app.library_state.home_album_selection = Default::default();
+        return;
+    }
+
+    let current =
+        selected_home_entry_index(&entries, &state.app.library_state.home_album_selection);
+    let next = match (current, forward) {
+        (Some(index), true) => (index + 1) % entries.len(),
+        (Some(0), false) => entries.len() - 1,
+        (Some(index), false) => index - 1,
+        (None, true) => 0,
+        (None, false) => entries.len() - 1,
+    };
+    let entry = &entries[next];
+    state.app.library_state.home_album_selection.shelf_id = Some(entry.shelf_id.clone());
+    state.app.library_state.home_album_selection.album_index = entry.album_index;
+}
+
+/// Activate the selected Home album through the same queue path as its card.
+pub(crate) fn activate_selected_home_album(state: &mut crate::app::AppState) {
+    let entries = visible_home_album_entries(state);
+    if entries.is_empty() {
+        state.app.library_state.home_album_selection = Default::default();
+        return;
+    }
+
+    let selected =
+        selected_home_entry_index(&entries, &state.app.library_state.home_album_selection)
+            .unwrap_or(0);
+    let entry = entries[selected].clone();
+    state.app.library_state.home_album_selection.shelf_id = Some(entry.shelf_id);
+    state.app.library_state.home_album_selection.album_index = entry.album_index;
+
+    match entry.target {
+        HomeAlbumTarget::Local(album) => add_home_album_to_queue(state, &album, false),
+        HomeAlbumTarget::Remote { id, title } => {
+            state.app.start_remote_add_album_to_queue(id, title, false);
+        }
+    }
+}
+
 impl PlayerView {
     pub(crate) fn render_home_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         if self
@@ -259,6 +392,8 @@ impl PlayerView {
         };
         let can_expand = shelf.total_count > collapsed_limit;
         let shelf_id = shelf.id.clone();
+        let album_shelf_id = shelf.id.clone();
+        let selection = state.app.library_state.home_album_selection.clone();
         let state_for_toggle = self.state.clone();
 
         div()
@@ -325,14 +460,20 @@ impl PlayerView {
                     .gap(d.gap_md)
                     .when(is_expanded, |el| el.flex_wrap())
                     .when(!is_expanded, |el| el.overflow_hidden())
-                    .children(
-                        shelf
-                            .albums
-                            .into_iter()
-                            .take(limit)
-                            .enumerate()
-                            .map(|(idx, album)| self.render_home_album_card(album, idx, cx)),
-                    ),
+                    .children(shelf.albums.into_iter().take(limit).enumerate().map(
+                        |(idx, album)| {
+                            let is_selected = selection.shelf_id.as_deref()
+                                == Some(album_shelf_id.as_str())
+                                && selection.album_index == idx;
+                            self.render_home_album_card(
+                                &album_shelf_id,
+                                album,
+                                idx,
+                                is_selected,
+                                cx,
+                            )
+                        },
+                    )),
             )
             .into_any_element()
     }
@@ -363,6 +504,8 @@ impl PlayerView {
         };
         let can_expand = shelf.album_indices.len() > collapsed_limit;
         let shelf_id = shelf.id.clone();
+        let album_shelf_id = shelf.id.clone();
+        let selection = state.app.library_state.home_album_selection.clone();
         let state_for_toggle = self.state.clone();
 
         div()
@@ -439,9 +582,18 @@ impl PlayerView {
                             .take(limit)
                             .enumerate()
                             .filter_map(|(idx, album_idx)| {
-                                albums
-                                    .get(album_idx)
-                                    .map(|album| self.render_remote_home_album_card(album, idx, cx))
+                                albums.get(album_idx).map(|album| {
+                                    let is_selected = selection.shelf_id.as_deref()
+                                        == Some(album_shelf_id.as_str())
+                                        && selection.album_index == idx;
+                                    self.render_remote_home_album_card(
+                                        &album_shelf_id,
+                                        album,
+                                        idx,
+                                        is_selected,
+                                        cx,
+                                    )
+                                })
                             }),
                     ),
             )
@@ -450,11 +602,15 @@ impl PlayerView {
 
     pub(super) fn render_home_album_card(
         &self,
+        shelf_id: &str,
         album: Arc<Album>,
         idx: usize,
+        is_selected: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let shelf_id_for_click = shelf_id.to_string();
+        let shelf_id_for_menu = shelf_id.to_string();
         let album_for_click = Arc::clone(&album);
         let album_for_menu = Arc::clone(&album);
         let state_entity = self.state.clone();
@@ -468,6 +624,9 @@ impl PlayerView {
             .flex_none()
             .on_click(cx.listener(move |view, event: &ClickEvent, _window, cx| {
                 view.state.update(cx, |state, _cx| {
+                    state.app.library_state.home_album_selection.shelf_id =
+                        Some(shelf_id_for_click.clone());
+                    state.app.library_state.home_album_selection.album_index = idx;
                     add_home_album_to_queue(state, &album_for_click, event.click_count() >= 2);
                 });
             }))
@@ -475,6 +634,9 @@ impl PlayerView {
                 MouseButton::Right,
                 cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
+                        state.app.library_state.home_album_selection.shelf_id =
+                            Some(shelf_id_for_menu.clone());
+                        state.app.library_state.home_album_selection.album_index = idx;
                         if let Some(id) = album_for_menu.id
                             && let Some(filtered_idx) = state
                                 .app
@@ -496,7 +658,7 @@ impl PlayerView {
                 }),
             )
             .child(
-                AlbumCard::new(album, idx, false, theme)
+                AlbumCard::new(album, idx, is_selected, theme)
                     .mode(AlbumCardMode::Grid)
                     .state(state_entity),
             )
@@ -505,8 +667,10 @@ impl PlayerView {
 
     pub(super) fn render_remote_home_album_card(
         &self,
+        shelf_id: &str,
         album: &SotfApiAlbum,
         idx: usize,
+        is_selected: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
@@ -521,6 +685,7 @@ impl PlayerView {
         let album_id_for_click = album_id.clone();
         let album_id_for_add = album_id.clone();
         let album_id_for_play = album_id.clone();
+        let shelf_id_for_click = shelf_id.to_string();
         let year = album.year.map(|year| year.to_string()).unwrap_or_default();
         let dynamic_range = album.dynamic_range.map(|dr| format!("DR{dr}"));
         let hover_bg = theme.surface_hover;
@@ -536,20 +701,31 @@ impl PlayerView {
             .p(d.pad_y)
             .rounded(d.r_sm)
             .border_1()
-            .border_color(theme.border)
-            .bg(theme.surface)
+            .border_color(if is_selected {
+                theme.accent
+            } else {
+                theme.border
+            })
+            .bg(if is_selected {
+                theme.surface_selected
+            } else {
+                theme.surface
+            })
             .hover(move |style| style.bg(hover_bg))
             .on_click(cx.listener(move |view, event: &ClickEvent, _window, cx| {
-                if event.click_count() >= 2 {
-                    view.state.update(cx, |state, _cx| {
+                view.state.update(cx, |state, _cx| {
+                    state.app.library_state.home_album_selection.shelf_id =
+                        Some(shelf_id_for_click.clone());
+                    state.app.library_state.home_album_selection.album_index = idx;
+                    if event.click_count() >= 2 {
                         state.app.start_remote_add_album_to_queue(
                             album_id_for_click.clone(),
                             title_for_click.clone(),
-                            false,
+                            true,
                         );
-                    });
-                    cx.notify();
-                }
+                    }
+                });
+                cx.notify();
             }))
             .child(
                 div()

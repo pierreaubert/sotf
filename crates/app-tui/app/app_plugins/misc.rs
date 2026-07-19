@@ -17,62 +17,70 @@ impl App {
 
     pub fn add_plugin(&mut self, plugin_type: &PluginType) {
         let insert_idx = self.plugin_rack.graph.user_plugin_insert_index();
-        self.plugin_rack
+        match self
+            .plugin_rack
             .graph
             .insert_plugin(insert_idx, plugin_type)
-            .ok();
-        // Update BinauralDecoder input channels after adding
-        self.plugin_rack.graph.update_channel_dependent_plugins();
-        self.request_plugin_update();
+        {
+            Ok(_) => self.request_plugin_update(),
+            Err(error) => self.ui.status_message = Some(error),
+        }
     }
 
     pub fn clear_plugins(&mut self) {
-        let _ = self.plugin_rack.graph.clear_user_plugins();
+        if let Err(error) = self.plugin_rack.graph.clear_user_plugins() {
+            self.ui.status_message = Some(error);
+            return;
+        }
         if self.plugin_rack.selected_index >= self.plugin_rack.graph.len()
             && self.plugin_rack.selected_index > 0
         {
             self.plugin_rack.selected_index = self.plugin_rack.graph.len().saturating_sub(1);
         }
-        self.plugin_rack.graph.update_channel_dependent_plugins();
         self.request_plugin_update();
     }
 
     pub fn remove_plugin(&mut self, index: usize) {
-        self.plugin_rack.graph.remove_plugin_by_index(index).ok();
+        if let Err(error) = self.plugin_rack.graph.remove_plugin_by_index(index) {
+            self.ui.status_message = Some(error);
+            return;
+        }
         if self.plugin_rack.selected_index >= self.plugin_rack.graph.len()
             && self.plugin_rack.selected_index > 0
         {
             self.plugin_rack.selected_index = self.plugin_rack.graph.len() - 1;
         }
-        // Update BinauralDecoder input channels after removal
-        self.plugin_rack.graph.update_channel_dependent_plugins();
         self.request_plugin_update();
     }
 
     pub fn toggle_plugin(&mut self, index: usize) {
-        self.plugin_rack.graph.toggle_plugin_by_index(index).ok();
-        // Update BinauralDecoder input channels after toggle
-        self.plugin_rack.graph.update_channel_dependent_plugins();
-        self.request_plugin_update();
+        match self.plugin_rack.graph.toggle_plugin_by_index(index) {
+            Ok(()) => self.request_plugin_update(),
+            Err(error) => self.ui.status_message = Some(error),
+        }
     }
 
     pub fn move_plugin_up(&mut self, index: usize) {
         if self.plugin_rack.graph.can_move_up_by_index(index) {
-            self.plugin_rack.graph.move_plugin(index, index - 1);
-            self.plugin_rack.selected_index = index - 1;
-            // Update BinauralDecoder input channels after move
-            self.plugin_rack.graph.update_channel_dependent_plugins();
-            self.request_plugin_update();
+            match self.plugin_rack.graph.move_plugin(index, index - 1) {
+                Ok(()) => {
+                    self.plugin_rack.selected_index = index - 1;
+                    self.request_plugin_update();
+                }
+                Err(error) => self.ui.status_message = Some(error),
+            }
         }
     }
 
     pub fn move_plugin_down(&mut self, index: usize) {
         if self.plugin_rack.graph.can_move_down_by_index(index) {
-            self.plugin_rack.graph.move_plugin(index, index + 1);
-            self.plugin_rack.selected_index = index + 1;
-            // Update BinauralDecoder input channels after move
-            self.plugin_rack.graph.update_channel_dependent_plugins();
-            self.request_plugin_update();
+            match self.plugin_rack.graph.move_plugin(index, index + 1) {
+                Ok(()) => {
+                    self.plugin_rack.selected_index = index + 1;
+                    self.request_plugin_update();
+                }
+                Err(error) => self.ui.status_message = Some(error),
+            }
         }
     }
 

@@ -141,6 +141,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Sidechain",
     )
     .setup()
+    .structural()
     .doc("Use external signal for detection"),
 ];
 

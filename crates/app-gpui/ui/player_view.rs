@@ -19,6 +19,14 @@ use super::misc::{
     sotf_ios_take_imported_files_json, sotf_ios_take_scanned_qr_payload,
 };
 
+/// Transient command-palette state. This belongs to the view because its
+/// query, highlight, and focus lifetime are all overlay-local UI concerns.
+pub(crate) struct CommandPaletteState {
+    pub(crate) query: String,
+    pub(crate) selected_index: usize,
+    pub(crate) focus_handle: FocusHandle,
+}
+
 /// `PlayerView` is GPUI's view type. The code-review (`reviews/review-app-gpui.md`)
 /// flags `impl PlayerView { … }` as a god-class spread across ~12 files (ui/mod.rs,
 /// components/recording/capture.rs, components/plugins/ui_rack.rs,
@@ -33,6 +41,7 @@ use super::misc::{
 pub struct PlayerView {
     pub state: Entity<AppState>,
     pub focus_handle: FocusHandle,
+    pub(crate) command_palette: Option<CommandPaletteState>,
     pub(crate) volume_focus_handle: FocusHandle,
     pub(super) last_saved_window_bounds: Option<Bounds<Pixels>>,
     /// Scroll handle for library grid view
@@ -265,6 +274,7 @@ impl PlayerView {
         Self {
             state,
             focus_handle,
+            command_palette: None,
             volume_focus_handle,
             last_saved_window_bounds: None,
             grid_scroll_handle: ScrollHandle::new(),
@@ -820,7 +830,183 @@ impl PlayerView {
         cx.notify();
     }
 
-    pub(super) fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn toggle_command_palette(
+        &mut self,
+        _: &ToggleCommandPalette,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let input_mode = self.state.read(cx).app.ui_state.input_mode;
+        if input_mode == crate::app::InputMode::CommandPalette {
+            self.close_command_palette(window, cx);
+            return;
+        }
+
+        // Do not steal a chord from an active text or number editor. The
+        // palette itself is a text-input mode once opened.
+        if input_mode.is_text_input() || gpui_ui_kit::is_number_input_editing() {
+            return;
+        }
+
+        let focus_handle = cx.focus_handle();
+        self.command_palette = Some(CommandPaletteState {
+            query: String::new(),
+            selected_index: 0,
+            focus_handle: focus_handle.clone(),
+        });
+        self.state.update(cx, |state, _| {
+            state.app.ui_state.input_mode = crate::app::InputMode::CommandPalette;
+            state.app.ui_state.context_menu = None;
+            state.app.ui_state.active_menu = crate::app::ActiveMenu::None;
+        });
+        focus_handle.focus(window, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn command_palette_commands(
+        &self,
+        cx: &Context<Self>,
+    ) -> Vec<crate::app::keybindings::CommandPaletteCommand> {
+        let state = self.state.read(cx);
+        let preset = state.app.ui_state.keymap_preset;
+        let language = state.app.ui_state.language;
+        let query = self
+            .command_palette
+            .as_ref()
+            .map(|palette| palette.query.as_str())
+            .unwrap_or_default();
+        let text = crate::app::i18n::KeybindingTranslations::for_language(language);
+        crate::app::keybindings::search_command_palette_commands(
+            preset,
+            query,
+            |action| text.action_description(action),
+            |category| text.category_name(category),
+        )
+    }
+
+    pub(crate) fn set_command_palette_selection(&mut self, selected_index: usize) {
+        if let Some(palette) = self.command_palette.as_mut() {
+            palette.selected_index = selected_index;
+        }
+    }
+
+    pub(crate) fn close_command_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.command_palette = None;
+        self.state.update(cx, |state, _| {
+            if state.app.ui_state.input_mode == crate::app::InputMode::CommandPalette {
+                state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+            }
+        });
+        self.focus_handle.focus(window, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn execute_command_palette_action(
+        &mut self,
+        action_name: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let preset = self.state.read(cx).app.ui_state.keymap_preset;
+        let Some(action) = crate::app::keybindings::command_palette_action(preset, action_name)
+        else {
+            return;
+        };
+        self.close_command_palette(window, cx);
+        window.dispatch_action(action, cx);
+    }
+
+    pub(crate) fn handle_command_palette_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let command_count = self.command_palette_commands(cx).len();
+        let key = event.keystroke.key.as_str();
+
+        match key {
+            "escape" => self.close_command_palette(window, cx),
+            "backspace" => {
+                if let Some(palette) = self.command_palette.as_mut() {
+                    palette.query.pop();
+                    palette.selected_index = 0;
+                }
+                cx.notify();
+            }
+            "up" => {
+                if let Some(palette) = self.command_palette.as_mut() {
+                    palette.selected_index = palette.selected_index.saturating_sub(1);
+                }
+                cx.notify();
+            }
+            "down" => {
+                if let Some(palette) = self.command_palette.as_mut()
+                    && command_count > 0
+                {
+                    palette.selected_index = (palette.selected_index + 1).min(command_count - 1);
+                }
+                cx.notify();
+            }
+            "home" => {
+                self.set_command_palette_selection(0);
+                cx.notify();
+            }
+            "end" => {
+                self.set_command_palette_selection(command_count.saturating_sub(1));
+                cx.notify();
+            }
+            "enter" => {
+                let action_name = self.command_palette.as_ref().and_then(|palette| {
+                    self.command_palette_commands(cx)
+                        .get(palette.selected_index)
+                        .map(|command| command.action_name)
+                });
+                if let Some(action_name) = action_name {
+                    self.execute_command_palette_action(action_name, window, cx);
+                }
+            }
+            _ => {
+                let modifiers = event.keystroke.modifiers;
+                if !modifiers.control
+                    && !modifiers.platform
+                    && !modifiers.alt
+                    && let Some(text) = event.keystroke.key_char.as_ref()
+                    && !text.chars().any(char::is_control)
+                {
+                    if let Some(palette) = self.command_palette.as_mut() {
+                        palette.query.push_str(text);
+                        palette.selected_index = 0;
+                    }
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    pub(super) fn cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
+        if self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::CommandPalette {
+            self.close_command_palette(window, cx);
+            return;
+        }
+        let cancels_graph_connection = {
+            let state = self.state.read(cx);
+            state.app.ui_state.current_screen == Screen::PluginGraph
+                && state
+                    .app
+                    .plugin_state
+                    .graph_state
+                    .keyboard_connect_source
+                    .is_some()
+        };
+        if cancels_graph_connection {
+            self.state.update(cx, |state, _| {
+                state.app.plugin_state.graph_state.keyboard_connect_source = None;
+                state.app.plugin_state.graph_state.keyboard_target_port = 0;
+            });
+            cx.notify();
+            return;
+        }
         let was_search =
             self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Search;
         self.state.update(cx, |state, _cx| {
@@ -1239,6 +1425,66 @@ impl PlayerView {
             .and_then(|track| track.sample_rate)
             .unwrap_or(48000);
 
+        Self::play_track_at_inner_with_format(
+            state,
+            source,
+            position,
+            track_channels,
+            track_sample_rate,
+            prefer_smooth_switch,
+            true,
+        );
+    }
+
+    pub(crate) fn play_listening_source_at(
+        state: &mut AppState,
+        source: sotf_audio::decoder::AudioSource,
+        position: f64,
+        track_channels: usize,
+        track_sample_rate: u32,
+    ) -> bool {
+        state.app.plugin_state.graph.clear_suspensions();
+        state
+            .app
+            .plugin_state
+            .graph
+            .update_channel_dependent_plugins();
+
+        let conflicts = state
+            .app
+            .plugin_state
+            .graph
+            .find_channel_conflicts(track_channels);
+        if !conflicts.is_empty() {
+            state.app.modal.channel_conflicts = conflicts;
+            state.app.modal.channel_conflict_path = Some(source);
+            state.app.modal.channel_conflict_track_channels = track_channels;
+            state.app.ui_state.input_mode = crate::app::InputMode::ChannelConflict;
+            return false;
+        }
+
+        Self::play_track_at_inner_with_format(
+            state,
+            source,
+            Some(position),
+            track_channels,
+            track_sample_rate,
+            false,
+            false,
+        );
+        true
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn play_track_at_inner_with_format(
+        state: &mut AppState,
+        source: sotf_audio::decoder::AudioSource,
+        position: Option<f64>,
+        track_channels: usize,
+        track_sample_rate: u32,
+        prefer_smooth_switch: bool,
+        track_queue_playback: bool,
+    ) {
         let device_name = state
             .app
             .audio_device_state
@@ -1282,13 +1528,17 @@ impl PlayerView {
         }
 
         // Apply ReplayGain correction to the permanent Gain plugin
-        let rg_gain = state
-            .app
-            .playback
-            .current_queue_index
-            .and_then(|idx| state.app.queue_state.get(idx))
-            .and_then(|item| item.current_track())
-            .and_then(|track| state.app.playback.get_replay_gain_adjustment(track));
+        let rg_gain = track_queue_playback
+            .then(|| {
+                state
+                    .app
+                    .playback
+                    .current_queue_index
+                    .and_then(|idx| state.app.queue_state.get(idx))
+                    .and_then(|item| item.current_track())
+                    .and_then(|track| state.app.playback.get_replay_gain_adjustment(track))
+            })
+            .flatten();
         state.app.plugin_state.graph.set_replay_gain(rg_gain);
 
         let plugins = state.app.plugin_state.graph.to_plugin_configs(sample_rate);
@@ -1322,14 +1572,16 @@ impl PlayerView {
                 .record_playback_error(format!("Play track failed: {}", e));
         } else {
             state.app.playback.is_playing = true;
-            if let Some(queue_index) = state.app.playback.current_queue_index {
-                state.app.record_playback_started(
-                    queue_index,
-                    state.app.queue_state.current_track_path(),
-                );
-            }
-            if let Some(path) = state.app.queue_state.current_track_path() {
-                state.app.start_track_tracking(path);
+            if track_queue_playback {
+                if let Some(queue_index) = state.app.playback.current_queue_index {
+                    state.app.record_playback_started(
+                        queue_index,
+                        state.app.queue_state.current_track_path(),
+                    );
+                }
+                if let Some(path) = state.app.queue_state.current_track_path() {
+                    state.app.start_track_tracking(path);
+                }
             }
         }
     }

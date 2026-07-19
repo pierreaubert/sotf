@@ -203,6 +203,7 @@ mod tests {
             let status = sotf_types::IsolatedExternalPluginWorkerStatus {
                 plugin_index: 0,
                 node_id: 1,
+                plugin_instance_id: None,
                 event: Some(sotf_types::IsolatedExternalPluginWorkerEvent::Started { pid: 123 }),
                 error: None,
                 worker_start_count: 1,

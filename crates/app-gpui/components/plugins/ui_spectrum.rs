@@ -244,6 +244,7 @@ pub fn render_spectrum_analyzer_plugin(
                             .is_open(state.tilt_select_open)
                             .size(SelectSize::Xs)
                             .theme(theme.to_select_theme())
+                            .aria_label(text.tilt)
                             .on_toggle({
                                 let entity = entity.downgrade();
                                 move |is_open, _window, cx| {
@@ -304,6 +305,7 @@ pub fn render_spectrum_analyzer_plugin(
                             .is_open(state.reference_select_open)
                             .size(SelectSize::Xs)
                             .theme(theme.to_select_theme())
+                            .aria_label(text.reference)
                             .on_toggle({
                                 let entity = entity.downgrade();
                                 move |is_open, _window, cx| {

@@ -16,13 +16,13 @@ pub mod queue;
 pub mod scan;
 
 pub use ab_test_execution::{
-    LevelMatchPreparation, LevelMatchPreparationRequest, load_ab_test_session, prepare_level_match,
-    save_ab_test_session,
+    LevelMatchPreparation, LevelMatchPreparationRequest, load_ab_test_session, media_file_identity,
+    prepare_level_match, save_ab_test_session, verify_media_segment,
 };
 pub use ab_test_session::{
-    AbTestError, AbTestSession, ChainSnapshot, LevelMatchMeasurement, LevelMatchMetric,
-    ListeningTestSetup, MediaSegment, PathSelection, TrialAnswer, TrialCue, TrialMode, TrialRecord,
-    TrialResult, measure_level_match,
+    AbTestError, AbTestSession, ChainSnapshot, LevelMatchConfig, LevelMatchMeasurement,
+    LevelMatchMetric, ListeningTestSetup, MediaSegment, PathSelection, TrialAnswer, TrialCue,
+    TrialMode, TrialRecord, TrialResult, measure_level_match,
 };
 pub use library::LibraryController;
 pub use playback::PlaybackController;

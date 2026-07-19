@@ -69,6 +69,7 @@ mod draw_status_bar;
 mod draw_title;
 mod draw_transport;
 mod draw_volume;
+pub(crate) mod keybinding_catalog;
 mod utilities;
 
 mod draw_mod;

@@ -474,6 +474,7 @@ fn audio_engine_state_missing_optional_fields_use_defaults() {
     assert_eq!(state.playback_buffer_fill_percent, 0);
     assert!(state.latency_compensation_enabled);
     assert_eq!(state.output_access_mode, OutputAccessMode::Shared);
+    assert!(state.plugin_build_diagnostics.is_empty());
     assert!(state.isolated_external_plugin_worker_statuses.is_empty());
 }
 
@@ -515,6 +516,12 @@ fn audio_engine_state_serde_roundtrip() {
             bitrate_kbps: Some(1411),
         }),
         last_error: None,
+        plugin_build_diagnostics: vec![crate::PluginBuildDiagnostic::graph_node(
+            7,
+            Some(42),
+            "external",
+            "worker could not load plugin",
+        )],
         seeking: false,
         isolated_external_plugin_worker_statuses: Vec::new(),
     };
@@ -523,6 +530,10 @@ fn audio_engine_state_serde_roundtrip() {
     let decoded: AudioEngineState = serde_json::from_str(&json).unwrap();
     assert_eq!(decoded.playback_state, state.playback_state);
     assert_eq!(decoded.position, state.position);
+    assert_eq!(
+        decoded.plugin_build_diagnostics,
+        state.plugin_build_diagnostics
+    );
     assert_eq!(decoded.volume, state.volume);
     assert_eq!(decoded.muted, state.muted);
     assert_eq!(decoded.playback_output_device, state.playback_output_device);

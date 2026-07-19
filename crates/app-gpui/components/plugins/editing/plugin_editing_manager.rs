@@ -84,14 +84,26 @@ impl PluginEditingManager for App {
 
     fn toggle_plugin(&mut self, index: usize) {
         self.plugin_state.clear_confirmations();
-        let effect = self.plugin_state.toggle_plugin(index);
+        let effect = match self.plugin_state.toggle_plugin(index) {
+            Ok(effect) => effect,
+            Err(error) => {
+                self.ui_state.toast_message = Some(ToastMessage::error(error));
+                return;
+            }
+        };
         self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
         self.sync_spectrum_visible();
     }
 
     fn move_plugin_up(&mut self, index: usize) {
         self.plugin_state.clear_confirmations();
-        let effect = self.plugin_state.move_plugin_up(index);
+        let effect = match self.plugin_state.move_plugin_up(index) {
+            Ok(effect) => effect,
+            Err(error) => {
+                self.ui_state.toast_message = Some(ToastMessage::error(error));
+                return;
+            }
+        };
         if matches!(effect, sotf_audio_player::PluginUpdateEffect::Structural) && index > 0 {
             self.plugin_state
                 .rack_theme_state
@@ -102,7 +114,13 @@ impl PluginEditingManager for App {
 
     fn move_plugin_down(&mut self, index: usize) {
         self.plugin_state.clear_confirmations();
-        let effect = self.plugin_state.move_plugin_down(index);
+        let effect = match self.plugin_state.move_plugin_down(index) {
+            Ok(effect) => effect,
+            Err(error) => {
+                self.ui_state.toast_message = Some(ToastMessage::error(error));
+                return;
+            }
+        };
         if matches!(effect, sotf_audio_player::PluginUpdateEffect::Structural) {
             self.plugin_state
                 .rack_theme_state

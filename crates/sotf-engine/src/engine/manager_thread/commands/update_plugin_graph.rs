@@ -1,6 +1,5 @@
 use super::{ManagerCommandHandler, ManagerContext, ManagerResponse};
 use crate::engine::PluginGraphConfig;
-use std::sync::Arc;
 
 /// Update the processing graph topology.
 pub struct UpdatePluginGraphCommand(pub PluginGraphConfig);
@@ -23,17 +22,9 @@ impl ManagerCommandHandler for UpdatePluginGraphCommand {
             ctx.config.input_channels,
             ctx.config.oversampling_policy,
         ) {
-            Ok(()) => {
-                let mut new_state = (**ctx.state.load()).clone();
-                new_state.last_error = None;
-                ctx.state.store(Arc::new(new_state));
-                ManagerResponse::Ok
-            }
+            Ok(()) => ManagerResponse::Ok,
             Err(e) => {
                 let message = e.to_string();
-                let mut new_state = (**ctx.state.load()).clone();
-                new_state.last_error = Some(message.clone());
-                ctx.state.store(Arc::new(new_state));
                 ManagerResponse::Error(message)
             }
         }

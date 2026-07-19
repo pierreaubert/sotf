@@ -10,9 +10,12 @@ use super::parse::parse_external_plugin_descriptor;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use super::parse::parse_isolated_external_plugin_config;
 use super::validate::validate_plugin_security_config;
+use crate::{
+    ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor, PluginFormat,
+    PluginScanStatus,
+};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::{ExternalPluginSandboxTiming, ExternalPluginTrust};
-use crate::{PluginDescriptor, PluginFormat, PluginScanStatus};
 use std::path::PathBuf;
 
 use tempfile::tempdir;
@@ -101,6 +104,51 @@ fn create_external_plugin_from_embedded_descriptor() {
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 #[test]
+fn factory_rejects_external_state_for_a_different_sandbox_mode() {
+    let dir = tempdir().unwrap();
+    let plugin_path = dir.path().join("external-state-mode.clap");
+    std::fs::write(&plugin_path, b"stub plugin").unwrap();
+    let descriptor = PluginDescriptor {
+        id: "test.external.state-mode".into(),
+        name: "External State Mode Test".into(),
+        vendor: "Test".into(),
+        version: "0.1.0".into(),
+        format: PluginFormat::Clap,
+        path: plugin_path,
+        audio_inputs: 2,
+        audio_outputs: 2,
+        is_instrument: false,
+        categories: vec!["testing".into()],
+        scan_status: PluginScanStatus::Discovered,
+    };
+    let descriptor = parse_external_plugin_descriptor(&serde_json::json!({
+        "descriptor": descriptor
+    }))
+    .unwrap();
+    let state = ExternalPluginState::new(
+        descriptor.clone(),
+        ExternalPluginSandboxMode::InProcess,
+        vec![1, 2, 3],
+    );
+
+    let error = match create_plugin(
+        "external",
+        &serde_json::json!({
+            "descriptor": descriptor,
+            "external_state": state,
+            "start_worker": false,
+        }),
+        2,
+        48_000,
+    ) {
+        Ok(_) => panic!("in-process state must not load into the default isolated host"),
+        Err(error) => error,
+    };
+    assert!(error.contains("cannot restore isolated plugin"), "{error}");
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[test]
 fn create_external_plugin_defaults_to_isolated_when_trust_unknown() {
     let dir = tempdir().unwrap();
     let plugin_path = dir.path().join("external-test-plugin-isolated.clap");
@@ -114,11 +162,17 @@ fn create_external_plugin_defaults_to_isolated_when_trust_unknown() {
         "plugin_trust": "unknown",
         "start_worker": false,
         "deadline_micros": 0,
+        "_sotf_instance_id": 37,
     });
 
     let mut plugin = create_plugin("external", &params, 2, 48_000).unwrap();
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 2);
+    let isolated = plugin
+        .as_any()
+        .and_then(|plugin| plugin.downcast_ref::<crate::IsolatedExternalPlugin>())
+        .expect("factory must construct an isolated external plugin");
+    assert_eq!(isolated.plugin_instance_id(), Some(37));
 
     let input = vec![0.25, -0.5, 1.0, -1.0];
     let mut output = vec![0.0; input.len()];
@@ -344,6 +398,7 @@ fn isolated_external_plugin_config_uses_bundled_worker() {
             "start_worker": false,
             "deadline_micros": 250,
             "max_block_frames": 1024,
+            "_sotf_instance_id": 37,
         }),
         ExternalPluginTrust::Unknown,
     )
@@ -355,6 +410,7 @@ fn isolated_external_plugin_config_uses_bundled_worker() {
     assert!(!config.start_worker);
     assert_eq!(config.deadline, std::time::Duration::from_micros(250));
     assert_eq!(config.max_block_frames, 1024);
+    assert_eq!(config.plugin_instance_id, Some(37));
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]

@@ -13,6 +13,7 @@
 
 use super::SpatialSpiderSnapshot;
 use crate::app::AppState;
+use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use gpui::prelude::*;
 use gpui::*;
@@ -52,10 +53,12 @@ pub fn render_spatial_spider_panel(
     plugin_idx: usize,
     snapshot: &SpatialSpiderSnapshot,
     speaker_config_id: Option<&str>,
+    text: PluginCommonTranslations,
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     let cfg_opt = resolve_speaker_config(snapshot, speaker_config_id);
-    let header = render_spatial_spider_controls(d, entity, plugin_idx, snapshot, cfg_opt, theme);
+    let header =
+        render_spatial_spider_controls(d, entity, plugin_idx, snapshot, cfg_opt, text, theme);
     let body = render_spatial_spider_graph(d, snapshot, cfg_opt, theme);
 
     VStack::new()
@@ -75,6 +78,7 @@ pub fn render_spatial_spider_controls(
     plugin_idx: usize,
     snapshot: &SpatialSpiderSnapshot,
     cfg_opt: Option<&'static SpeakerConfig>,
+    text: PluginCommonTranslations,
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     build_header(
@@ -86,6 +90,7 @@ pub fn render_spatial_spider_controls(
         snapshot.ui.correlation_ref_channel,
         snapshot.ui.ref_channel_select_open,
         cfg_opt,
+        text,
         theme,
     )
 }

@@ -6,8 +6,9 @@
 //! types that lack dedicated coverage and ensures new parameters are at least
 //! reachable through `set_parameter`/`get_parameter`.
 
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::{ParameterId, ParameterValue, Plugin, ProcessContext};
-use sotf_plugins::factory::{SUPPORTED_PLUGIN_TYPES, create_plugin};
+use sotf_plugins::factory::{create_plugin, supported_plugin_types};
 
 const SAMPLE_RATE: u32 = 48_000;
 // RNNoise requires block sizes that are a multiple of 480.
@@ -117,29 +118,33 @@ fn interleaved_sine(channels: usize, frames: usize, freq: f32) -> Vec<f32> {
 
 fn process_plugin(plugin: &mut Box<dyn Plugin>, channels: usize) {
     plugin.initialize(SAMPLE_RATE).expect("initialize failed");
+    process_initialized_plugin(plugin, channels).expect("process failed");
+}
+
+fn process_initialized_plugin(plugin: &mut Box<dyn Plugin>, channels: usize) -> Result<(), String> {
     let input = interleaved_sine(channels, FRAMES, 440.0);
     let output_channels = plugin.output_channels();
     let mut output = vec![0.0f32; output_channels * FRAMES];
-    plugin
-        .process(
-            &input,
-            &mut output,
-            &ProcessContext::new(SAMPLE_RATE, FRAMES),
-        )
-        .expect("process failed");
+    plugin.process(
+        &input,
+        &mut output,
+        &ProcessContext::new(SAMPLE_RATE, FRAMES),
+    )?;
 
-    assert!(
-        output.iter().all(|s| s.is_finite()),
-        "{} produced non-finite samples",
-        plugin.info().name
-    );
+    if output.iter().any(|sample| !sample.is_finite()) {
+        return Err(format!(
+            "{} produced non-finite samples",
+            plugin.info().name
+        ));
+    }
+    Ok(())
 }
 
 #[test]
 fn all_plugins_instantiate_with_defaults() {
     let mut failures = Vec::new();
 
-    for &plugin_type in SUPPORTED_PLUGIN_TYPES {
+    for plugin_type in supported_plugin_types() {
         // Skip external plugins (require filesystem artifacts) and HAL plugins
         // (require macOS + feature flag).
         if plugin_type == "external"
@@ -206,7 +211,7 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
     let mut unexpected_failures = Vec::new();
     let mut expected_rejections_seen = Vec::new();
 
-    for &plugin_type in SUPPORTED_PLUGIN_TYPES {
+    for plugin_type in supported_plugin_types() {
         if plugin_type == "external"
             || plugin_type == "external_plugin"
             || plugin_type == "hal_input"
@@ -265,6 +270,119 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
     );
 }
 
+#[test]
+fn all_realtime_numeric_and_boolean_parameters_tolerate_rapid_updates() {
+    let mut failures = Vec::new();
+    let mut exercised = 0usize;
+
+    for plugin_type in supported_plugin_types() {
+        if plugin_type == "external"
+            || plugin_type == "external_plugin"
+            || plugin_type == "hal_input"
+            || plugin_type == "hal_output"
+        {
+            continue;
+        }
+
+        let channels = channels_for_type(plugin_type);
+        let params = default_params(plugin_type);
+        let mut plugin = match create_plugin(plugin_type, &params, channels, SAMPLE_RATE) {
+            Ok(plugin) => plugin,
+            Err(error) => {
+                failures.push(format!("{plugin_type}: instantiate failed: {error}"));
+                continue;
+            }
+        };
+        if let Err(error) = plugin.initialize(SAMPLE_RATE) {
+            failures.push(format!("{plugin_type}: initialize failed: {error}"));
+            continue;
+        }
+
+        for parameter in plugin.parameters() {
+            if parameter.update_mode != UpdateMode::Realtime
+                || EXPECTED_SET_REJECTIONS
+                    .iter()
+                    .any(|(kind, id, _)| *kind == plugin_type && *id == parameter.id.as_str())
+            {
+                continue;
+            }
+
+            let values = match (
+                parameter.min_value.as_ref(),
+                parameter.max_value.as_ref(),
+                &parameter.default_value,
+            ) {
+                (Some(ParameterValue::Float(minimum)), Some(ParameterValue::Float(maximum)), _)
+                    if minimum < maximum =>
+                {
+                    vec![
+                        ParameterValue::Float(*minimum),
+                        ParameterValue::Float(*maximum),
+                    ]
+                }
+                (Some(ParameterValue::Int(minimum)), Some(ParameterValue::Int(maximum)), _)
+                    if minimum < maximum =>
+                {
+                    vec![ParameterValue::Int(*minimum), ParameterValue::Int(*maximum)]
+                }
+                (_, _, ParameterValue::Bool(default)) => vec![
+                    ParameterValue::Bool(!default),
+                    ParameterValue::Bool(*default),
+                ],
+                _ => continue,
+            };
+            let Some(original) = plugin.get_parameter(&parameter.id) else {
+                failures.push(format!(
+                    "{plugin_type}/{}: realtime parameter has no readable current value",
+                    parameter.id
+                ));
+                continue;
+            };
+
+            let mut parameter_failed = false;
+            for update in 0..6 {
+                let value = values[update % values.len()].clone();
+                if let Err(error) = plugin.set_parameter(parameter.id.clone(), value) {
+                    failures.push(format!(
+                        "{plugin_type}/{}: rapid update failed: {error}",
+                        parameter.id
+                    ));
+                    parameter_failed = true;
+                    break;
+                }
+                if let Err(error) = process_initialized_plugin(&mut plugin, channels) {
+                    failures.push(format!(
+                        "{plugin_type}/{}: processing after rapid update failed: {error}",
+                        parameter.id
+                    ));
+                    parameter_failed = true;
+                    break;
+                }
+            }
+            if let Err(error) = plugin.set_parameter(parameter.id.clone(), original) {
+                failures.push(format!(
+                    "{plugin_type}/{}: restoring the pre-test value failed: {error}",
+                    parameter.id
+                ));
+                parameter_failed = true;
+            }
+            if !parameter_failed {
+                exercised += 1;
+            }
+        }
+    }
+
+    assert!(
+        exercised > 0,
+        "the rapid-update matrix exercised no parameters"
+    );
+    assert!(
+        failures.is_empty(),
+        "rapid realtime-parameter failures:\n{}",
+        failures.join("\n")
+    );
+}
+
 /// Plugins whose `set_parameter` silently ignores unknown parameter ids.
 /// New plugin types should reject unknown parameters; this list only documents
 /// existing behavior so the cross-cutting test stays green while fixes are
@@ -276,7 +394,7 @@ fn all_plugins_reject_unknown_parameters() {
     let mut unexpected_acceptors = Vec::new();
     let mut known_acceptors = Vec::new();
 
-    for &plugin_type in SUPPORTED_PLUGIN_TYPES {
+    for plugin_type in supported_plugin_types() {
         if plugin_type == "external"
             || plugin_type == "external_plugin"
             || plugin_type == "hal_input"

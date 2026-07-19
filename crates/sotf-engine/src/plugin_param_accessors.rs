@@ -629,7 +629,7 @@ impl_param_accessors! {
         }
     ];
     no_params_unit: [LoudnessMonitor];
-    no_params_struct: [Matrix]
+    no_params_struct: [Matrix, External]
 }
 
 mod aae;

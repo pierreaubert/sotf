@@ -3,3 +3,5 @@ pub(super) const DEFAULT_MAX_BLOCK_FRAMES: u32 = 8192;
 pub(super) const DEFAULT_DEADLINE_MICROS: u64 = 2_000;
 
 pub(super) const DEFAULT_MAX_CONSECUTIVE_BLOCK_FAILURES: u32 = 8;
+
+pub(super) const DEFAULT_WORKER_STARTUP_TIMEOUT_MILLIS: u64 = 5_000;

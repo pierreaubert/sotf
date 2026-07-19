@@ -21,13 +21,13 @@ fn test_fft_chain_arbitrary_frame_sizes() {
     let mut chain = PluginChain::new();
 
     // Add Upmixer (5.1 config = 6 channels)
-    let upmixer_idx = chain.add_plugin(&PluginType::Upmixer);
+    let upmixer_idx = chain.add_plugin(&PluginType::Upmixer).unwrap();
 
     // Add Denoiser (processes 6 channels)
-    let _denoiser_idx = chain.add_plugin(&PluginType::Denoiser);
+    let _denoiser_idx = chain.add_plugin(&PluginType::Denoiser).unwrap();
 
     // Add Spectrum Analyzer (processes 6 channels)
-    let _spectrum_idx = chain.add_plugin(&PluginType::SpectrumAnalyzer);
+    let _spectrum_idx = chain.add_plugin(&PluginType::SpectrumAnalyzer).unwrap();
 
     // Configure Upmixer for 5.1
     if let Some(plugin) = chain.get_plugin_mut(upmixer_idx)

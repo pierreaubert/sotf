@@ -7,7 +7,7 @@ fn test_plugin_parameter_sync() {
 
     for plugin_type in plugin_types {
         // Create default settings for this plugin type
-        let mut settings = PluginSettings::default_for(&plugin_type);
+        let mut settings = PluginSettings::default_for(&plugin_type).unwrap();
 
         let descriptors = settings.get_descriptors();
         let params = settings.get_params();
@@ -48,7 +48,7 @@ fn test_plugin_parameter_sync() {
 
 #[test]
 fn test_upmixer_parameter_sync_deep() {
-    let mut settings = PluginSettings::default_for(&PluginType::Upmixer);
+    let mut settings = PluginSettings::default_for(&PluginType::Upmixer).unwrap();
     let descriptors = settings.get_descriptors();
     let params = settings.get_params();
 
@@ -67,7 +67,7 @@ fn test_upmixer_parameter_sync_deep() {
 
 #[test]
 fn test_crossfeed_parameter_sync_deep() {
-    let mut settings = PluginSettings::default_for(&PluginType::Crossfeed);
+    let mut settings = PluginSettings::default_for(&PluginType::Crossfeed).unwrap();
     let descriptors = settings.get_descriptors();
 
     // Crossfeed is expected to have 17 parameters (0-16)
@@ -81,7 +81,7 @@ fn test_crossfeed_parameter_sync_deep() {
 
 #[test]
 fn test_eq_filter_limit() {
-    let mut settings = PluginSettings::default_for(&PluginType::EQ);
+    let mut settings = PluginSettings::default_for(&PluginType::EQ).unwrap();
 
     // Default max_filters should be 5
     // Default filters count is 5
@@ -130,7 +130,7 @@ fn test_eq_filter_limit() {
 
 #[test]
 fn test_delay_parameter_sync_deep() {
-    let mut settings = PluginSettings::default_for(&PluginType::Delay);
+    let mut settings = PluginSettings::default_for(&PluginType::Delay).unwrap();
     let descriptors = settings.get_descriptors();
 
     // Delay has 7 parameters: delay_ms, feedback, mix, lfo_rate_hz, lfo_depth_ms,
@@ -155,7 +155,7 @@ fn test_delay_parameter_sync_deep() {
 
 #[test]
 fn test_crossfeed_mode_cycling() {
-    let mut settings = PluginSettings::default_for(&PluginType::Crossfeed);
+    let mut settings = PluginSettings::default_for(&PluginType::Crossfeed).unwrap();
 
     // Index 0 is the mode (choice parameter)
     // Default is Mb (index 3) per PluginSettings::default_for
@@ -206,7 +206,7 @@ fn test_crossfeed_mode_cycling() {
 
 #[test]
 fn test_out_of_range_parameter_index() {
-    let settings = PluginSettings::default_for(&PluginType::Gain);
+    let settings = PluginSettings::default_for(&PluginType::Gain).unwrap();
 
     // Gain has 2 parameters (gain_db, smoothing_ms)
     let descriptors = settings.get_descriptors();
@@ -219,7 +219,7 @@ fn test_out_of_range_parameter_index() {
 #[test]
 fn test_boundary_values() {
     // Test Delay boundary values
-    let mut settings = PluginSettings::default_for(&PluginType::Delay);
+    let mut settings = PluginSettings::default_for(&PluginType::Delay).unwrap();
 
     // delay_ms: 0.0 to 5000.0 ms
     // Try adjusting to boundary

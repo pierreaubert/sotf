@@ -22,6 +22,20 @@ pub struct ProcessingThread {
 }
 
 impl ProcessingThread {
+    #[cfg(test)]
+    pub(in crate::engine) fn command_probe() -> (Self, Receiver<ProcessingCommand>) {
+        let (command_tx, command_rx) = std::sync::mpsc::channel();
+        let (_response_tx, response_rx) = std::sync::mpsc::channel();
+        (
+            Self {
+                command_tx,
+                response_rx,
+                thread_handle: None,
+            },
+            command_rx,
+        )
+    }
+
     /// Create and start the processing thread
     #[allow(clippy::too_many_arguments)] // thread constructor takes many channel endpoints
     pub fn new(

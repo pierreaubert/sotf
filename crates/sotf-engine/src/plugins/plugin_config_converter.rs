@@ -7,6 +7,7 @@
 //! Unmigrated variants still fall back to the inline match in `plugin_settings.rs`.
 
 use crate::plugins::{EQFilter, PluginSettings};
+use sotf_plugins::ExternalPluginSandboxMode;
 use sotf_types::PluginConfig;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -98,12 +99,28 @@ impl PluginConfigConverterRegistry {
         registry.register("downmix", spatial::convert_downmix);
         registry.register("mono_to_stereo", spatial::convert_mono_to_stereo);
         registry.register("aae", spatial::convert_aae);
+        registry.register("external", convert_external);
         registry
     }
 
     fn register(&mut self, plugin_type: &'static str, converter: PluginConfigConverter) {
         self.converters.insert(plugin_type, converter);
     }
+}
+
+fn convert_external(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
+    let PluginSettings::External { state } = settings else {
+        return None;
+    };
+    Some(PluginConfig::new(
+        "external",
+        serde_json::json!({
+            "descriptor": state.descriptor,
+            "plugin_trust": "unknown",
+            "isolated": matches!(state.sandbox_mode, ExternalPluginSandboxMode::Isolated),
+            "external_state": state,
+        }),
+    ))
 }
 
 fn convert_gain(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
@@ -400,10 +417,57 @@ mod tests {
     }
 
     #[test]
+    fn external_settings_convert_descriptor_and_isolation_losslessly() {
+        use sotf_plugins::{
+            ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor, PluginFormat,
+            PluginScanStatus,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.clap");
+        std::fs::write(&path, b"fixture").unwrap();
+        let descriptor = PluginDescriptor {
+            id: "clap.test".into(),
+            name: "Test Plug-in".into(),
+            vendor: "SOTF".into(),
+            version: "1.0".into(),
+            format: PluginFormat::Clap,
+            path,
+            audio_inputs: 2,
+            audio_outputs: 4,
+            is_instrument: false,
+            categories: vec!["Effect".into()],
+            scan_status: PluginScanStatus::Loadable,
+        };
+        let state = ExternalPluginState::new(
+            descriptor.clone(),
+            ExternalPluginSandboxMode::Isolated,
+            vec![1, 2, 3],
+        );
+        let settings = PluginSettings::External {
+            state: state.clone(),
+        };
+
+        let config = settings.to_plugin_config(48_000.0);
+
+        assert_eq!(config.plugin_type, "external");
+        assert_eq!(
+            config.parameters["descriptor"],
+            serde_json::json!(descriptor)
+        );
+        assert_eq!(
+            config.parameters["external_state"],
+            serde_json::json!(state)
+        );
+        assert_eq!(config.parameters["isolated"], true);
+        assert_eq!(config.parameters["plugin_trust"], "unknown");
+    }
+
+    #[test]
     fn registry_converts_all_plugin_types() {
         use crate::plugins::PluginType;
         for plugin_type in PluginType::all() {
-            let settings = PluginSettings::default_for(&plugin_type);
+            let settings = PluginSettings::default_for(&plugin_type).unwrap();
             let wire_type = settings.plugin_type().wire_name();
             let config = PluginConfigConverterRegistry::global()
                 .convert(wire_type, &settings, 48_000.0)

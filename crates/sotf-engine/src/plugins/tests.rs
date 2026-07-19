@@ -4,7 +4,7 @@ use super::plugin_type::PluginType;
 
 #[test]
 fn binaural_decoder_defaults_do_not_require_removed_ui_params() {
-    let settings = PluginSettings::default_for(&PluginType::BinauralDecoder);
+    let settings = PluginSettings::default_for(&PluginType::BinauralDecoder).unwrap();
 
     match settings {
         PluginSettings::BinauralDecoder {

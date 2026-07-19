@@ -10,7 +10,9 @@ use sotf_audio::plugins::{PluginSettings, PluginType};
 fn test_add_and_remove_nodes() {
     let mut graph = PluginGraph::new();
 
-    let node_id = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0));
+    let node_id = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0))
+        .unwrap();
     assert!(graph.nodes.contains_key(&node_id));
     assert_eq!(graph.nodes.len(), 1);
 
@@ -23,8 +25,12 @@ fn test_add_and_remove_nodes() {
 fn test_connections() {
     let mut graph = PluginGraph::new();
 
-    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
-    let node2 = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0));
+    let node1 = graph
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0))
+        .unwrap();
+    let node2 = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0))
+        .unwrap();
 
     // Add connection
     let conn_id = graph.add_connection(node1, 0, node2, 0).unwrap();
@@ -39,8 +45,12 @@ fn test_connections() {
 fn test_cycle_detection() {
     let mut graph = PluginGraph::new();
 
-    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
-    let node2 = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0));
+    let node1 = graph
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0))
+        .unwrap();
+    let node2 = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0))
+        .unwrap();
 
     // Valid connection
     graph.add_connection(node1, 0, node2, 0).unwrap();
@@ -54,9 +64,15 @@ fn test_cycle_detection() {
 fn test_topological_sort() {
     let mut graph = PluginGraph::new();
 
-    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
-    let node2 = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0));
-    let node3 = graph.add_plugin_node(&PluginType::Compressor, NodePosition::new(500.0, 100.0));
+    let node1 = graph
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0))
+        .unwrap();
+    let node2 = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0))
+        .unwrap();
+    let node3 = graph
+        .add_plugin_node(&PluginType::Compressor, NodePosition::new(500.0, 100.0))
+        .unwrap();
 
     graph.add_connection(node1, 0, node2, 0).unwrap();
     graph.add_connection(node2, 0, node3, 0).unwrap();
@@ -221,8 +237,12 @@ fn test_move_user_plugin() {
 fn test_non_linear_graph() {
     let mut g = PluginGraph::new();
     let input = g.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
-    let a = g.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0));
-    let b = g.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0));
+    let a = g
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0))
+        .unwrap();
+    let b = g
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0))
+        .unwrap();
     let output = g.add_special_node(SpecialNodeType::Output, NodePosition::new(200.0, 50.0), 2);
 
     // Input splits to both A and B (non-linear)
@@ -242,8 +262,12 @@ fn test_to_plugin_graph_config_preserves_parallel_branches() {
     // drops the per-port duplicates into a single logical edge per pair.
     let mut g = PluginGraph::new();
     let input = g.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
-    let a = g.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0));
-    let b = g.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0));
+    let a = g
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0))
+        .unwrap();
+    let b = g
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0))
+        .unwrap();
     let output = g.add_special_node(SpecialNodeType::Output, NodePosition::new(200.0, 50.0), 2);
 
     // Two stereo wires from Input to A; one wire from Input to B; two
@@ -285,8 +309,12 @@ fn test_to_plugin_graph_config_dedups_per_port_edges() {
     // engine config carries logical edges only — both ports collapse
     // into one edge.
     let mut g = PluginGraph::new();
-    let a = g.add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0));
-    let b = g.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0));
+    let a = g
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0))
+        .unwrap();
+    let b = g
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0))
+        .unwrap();
     g.add_connection(a, 0, b, 0).unwrap();
     g.add_connection(a, 1, b, 1).unwrap();
 
@@ -302,8 +330,12 @@ fn test_to_plugin_graph_config_dedups_per_port_edges() {
 #[test]
 fn test_to_plugin_graph_config_skips_disabled() {
     let mut g = PluginGraph::new();
-    let a = g.add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0));
-    let b = g.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0));
+    let a = g
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0))
+        .unwrap();
+    let b = g
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 0.0))
+        .unwrap();
     g.add_connection(a, 0, b, 0).unwrap();
     // Disable b — `to_plugin_config(sr)` returns None for disabled plugins.
     g.nodes.get_mut(&b).unwrap().plugin.enabled = false;
@@ -436,7 +468,7 @@ fn test_move_plugin_drag_down() {
     assert_eq!(plugins[4].id, c_id);
 
     // Move EQ from index 2 to index 4
-    g.move_plugin(2, 4);
+    g.move_plugin(2, 4).unwrap();
 
     let plugins = g.plugins_linear().unwrap();
     assert_eq!(plugins[2].id, b_id);
@@ -452,7 +484,7 @@ fn test_move_plugin_drag_up() {
     let c_id = g.add_user_plugin(&PluginType::Gain).unwrap();
 
     // Move Gain from index 4 to index 2
-    g.move_plugin(4, 2);
+    g.move_plugin(4, 2).unwrap();
 
     let plugins = g.plugins_linear().unwrap();
     assert_eq!(plugins[2].id, c_id);
@@ -528,8 +560,12 @@ fn test_ascii_diagram_linear() {
 fn test_ascii_diagram_non_linear() {
     let mut g = PluginGraph::new();
     let input = g.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
-    let a = g.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0));
-    let b = g.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0));
+    let a = g
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0))
+        .unwrap();
+    let b = g
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0))
+        .unwrap();
     let output = g.add_special_node(SpecialNodeType::Output, NodePosition::new(200.0, 50.0), 2);
     g.add_connection(input, 0, a, 0).unwrap();
     g.add_connection(input, 1, b, 0).unwrap();
@@ -742,8 +778,12 @@ fn test_disabled_eq_excluded_from_configs() {
 #[test]
 fn test_add_connection_missing_source_node() {
     let mut graph = PluginGraph::new();
-    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
-    let node2 = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0));
+    let node1 = graph
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0))
+        .unwrap();
+    let node2 = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0))
+        .unwrap();
     graph.remove_node(node1);
     let result = graph.add_connection(node1, 0, node2, 0);
     assert!(result.is_err());
@@ -753,8 +793,12 @@ fn test_add_connection_missing_source_node() {
 #[test]
 fn test_add_connection_missing_target_node() {
     let mut graph = PluginGraph::new();
-    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
-    let node2 = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0));
+    let node1 = graph
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0))
+        .unwrap();
+    let node2 = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0))
+        .unwrap();
     graph.remove_node(node2);
     let result = graph.add_connection(node1, 0, node2, 0);
     assert!(result.is_err());
@@ -764,8 +808,12 @@ fn test_add_connection_missing_target_node() {
 #[test]
 fn test_add_connection_duplicate() {
     let mut graph = PluginGraph::new();
-    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
-    let node2 = graph.add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0));
+    let node1 = graph
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0))
+        .unwrap();
+    let node2 = graph
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(300.0, 100.0))
+        .unwrap();
     graph.add_connection(node1, 0, node2, 0).unwrap();
     let result = graph.add_connection(node1, 0, node2, 0);
     assert!(result.is_err());
@@ -775,7 +823,9 @@ fn test_add_connection_duplicate() {
 #[test]
 fn test_add_connection_self_loop() {
     let mut graph = PluginGraph::new();
-    let node1 = graph.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0));
+    let node1 = graph
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 100.0))
+        .unwrap();
     let result = graph.add_connection(node1, 0, node1, 0);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err(), "Connection would create a cycle");
@@ -873,8 +923,12 @@ fn test_update_channel_dependent_plugins_suspended_skipped() {
 fn test_update_channel_dependent_plugins_non_linear_returns_early() {
     let mut g = PluginGraph::new();
     let input = g.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
-    let a = g.add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0));
-    let b = g.add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0));
+    let a = g
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0))
+        .unwrap();
+    let b = g
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(100.0, 100.0))
+        .unwrap();
     let output = g.add_special_node(SpecialNodeType::Output, NodePosition::new(200.0, 50.0), 2);
 
     g.add_connection(input, 0, a, 0).unwrap();
@@ -946,8 +1000,12 @@ fn test_node_input_output_channels_for_special_nodes() {
 #[test]
 fn test_node_input_output_channels_for_plugins() {
     let mut g = PluginGraph::new();
-    let eq = g.add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0));
-    let upmixer = g.add_plugin_node(&PluginType::Upmixer, NodePosition::new(0.0, 0.0));
+    let eq = g
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0))
+        .unwrap();
+    let upmixer = g
+        .add_plugin_node(&PluginType::Upmixer, NodePosition::new(0.0, 0.0))
+        .unwrap();
 
     assert_eq!(g.node_input_channels(eq), 2);
     assert_eq!(g.node_output_channels(eq), 2);

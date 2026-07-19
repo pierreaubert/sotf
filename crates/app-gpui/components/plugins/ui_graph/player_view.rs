@@ -13,6 +13,7 @@ use super::plugin::plugin_color;
 use super::plugin::plugin_max_ports;
 use super::plugin::plugin_node_menu_items;
 use super::types::PaletteItemType;
+use crate::app::ToastMessage;
 use crate::app::types::Screen;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
@@ -283,7 +284,15 @@ impl PlayerView {
                             sotf_audio_player::NodePosition::new(drop_x, drop_y),
                         )
                     });
-                    Some(id)
+                    match id {
+                        Ok(id) => Some(id),
+                        Err(error) => {
+                            self.state.update(cx, |state, _| {
+                                state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                            });
+                            return;
+                        }
+                    }
                 }
                 PaletteItemType::Player => None, // Player nodes are special, not plugin nodes
             };

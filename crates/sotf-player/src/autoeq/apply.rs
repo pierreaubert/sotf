@@ -204,7 +204,7 @@ pub fn apply_headphone_easy_chain(
     candidate.insert_plugin(loudness_idx, &PluginType::LoudnessCompensation)?;
     if let Some(plugin) = candidate.get_plugin_mut(loudness_idx) {
         plugin.name = Some("Headphone Loudness Compensation".to_string());
-        let mut settings = PluginSettings::default_for(&PluginType::LoudnessCompensation);
+        let mut settings = PluginSettings::default_for(&PluginType::LoudnessCompensation)?;
         if let PluginSettings::LoudnessCompensation {
             mode,
             playback_level_db: playback,
@@ -463,7 +463,7 @@ fn apply_dsp_params_to_settings(
 /// applies the optimizer's actual parameters via [`apply_dsp_params_to_settings`],
 /// adds Input/Output special nodes, wires connections, and auto-lays-out
 /// positions left-to-right by topological depth.
-pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> PluginGraph {
+pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> Result<PluginGraph, String> {
     let mut graph = PluginGraph::new();
     let graph_channels = config
         .nodes
@@ -516,7 +516,7 @@ pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> PluginGraph {
 
         let plugin_type = PluginType::from_name(&node_config.plugin_type).unwrap_or(PluginType::EQ);
 
-        let node_id = graph.add_plugin_node(&plugin_type, NodePosition::new(x, y));
+        let node_id = graph.add_plugin_node(&plugin_type, NodePosition::new(x, y))?;
 
         let derived_name = derive_plugin_name(&node_config.plugin_type, &node_config.parameters);
 
@@ -576,7 +576,7 @@ pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> PluginGraph {
         }
     }
 
-    graph
+    Ok(graph)
 }
 
 /// Apply a `DspChainOutput` to a UI plugin graph, auto-selecting between
@@ -629,7 +629,7 @@ pub fn apply_room_eq_graph_to_chain(
         num_nodes,
         num_edges
     );
-    *graph = build_ui_graph_from_config(&config);
+    *graph = build_ui_graph_from_config(&config)?;
     Ok(GraphApplyOutcome {
         config,
         num_nodes,
@@ -865,7 +865,7 @@ mod tests {
             edges: vec![],
         };
 
-        let graph = build_ui_graph_from_config(&config);
+        let graph = build_ui_graph_from_config(&config).unwrap();
         let eq_node = graph
             .nodes
             .values()
@@ -909,7 +909,7 @@ mod tests {
             edges: vec![],
         };
 
-        let graph = build_ui_graph_from_config(&config);
+        let graph = build_ui_graph_from_config(&config).unwrap();
         let delay_node = graph
             .nodes
             .values()
@@ -942,7 +942,7 @@ mod tests {
             edges: vec![],
         };
 
-        let graph = build_ui_graph_from_config(&config);
+        let graph = build_ui_graph_from_config(&config).unwrap();
         let gain_node = graph
             .nodes
             .values()

@@ -56,6 +56,7 @@ pub(super) fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
         PluginType::FirDesigner => "fir_designer",
         PluginType::LinearPhaseEq => "linear_phase_eq",
         PluginType::SpectralCompressor => "spectral_compressor",
+        PluginType::External => "external",
     }
 }
 
@@ -101,5 +102,18 @@ pub(super) fn plugin_type_category(pt: &PluginType) -> &'static str {
         PluginType::FirDesigner => "EQ & Tone",
         PluginType::LinearPhaseEq => "EQ",
         PluginType::SpectralCompressor => "Dynamics",
+        PluginType::External => "External",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn concrete_external_plugin_has_daemon_metadata_without_a_generic_picker_entry() {
+        assert_eq!(plugin_type_to_engine_str(&PluginType::External), "external");
+        assert_eq!(plugin_type_category(&PluginType::External), "External");
+        assert!(!PluginType::all().contains(&PluginType::External));
     }
 }

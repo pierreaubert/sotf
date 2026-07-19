@@ -6,7 +6,9 @@ use std::path::PathBuf;
 
 use sotf_audio_player::Album;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-use sotf_audio_player::config::install_authorized_runtime_plugin_sandbox;
+use sotf_audio_player::config::{
+    install_authorized_runtime_plugin_sandbox, plugin_sandbox_runtime_status,
+};
 
 use super::state::App;
 use super::state::library::{ChannelFilter, LibrarySortOrder};
@@ -118,10 +120,20 @@ impl App {
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     pub fn install_external_plugin_runtime_sandbox(&mut self) {
         let directories = self.external_plugin_media_directories();
-        match install_authorized_runtime_plugin_sandbox(directories) {
-            Ok(_) => {}
+        match install_authorized_runtime_plugin_sandbox(directories.clone()) {
+            Ok(_) => match plugin_sandbox_runtime_status(directories) {
+                Ok(status) => {
+                    self.plugin_state.external_plugin_ui.runtime_summary = Some(status.into());
+                    self.plugin_state.external_plugin_ui.runtime_error = None;
+                }
+                Err(err) => {
+                    log::warn!("Failed to read external plugin runtime sandbox status: {err}");
+                    self.plugin_state.external_plugin_ui.runtime_error = Some(err.to_string());
+                }
+            },
             Err(err) => {
                 log::warn!("Failed to install external plugin runtime sandbox policy: {err}");
+                self.plugin_state.external_plugin_ui.runtime_error = Some(err.to_string());
             }
         }
     }

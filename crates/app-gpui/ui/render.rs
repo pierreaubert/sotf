@@ -235,6 +235,8 @@ impl Render for PlayerView {
             "PlayerView ListeningTest"
         } else if current_screen == Screen::Studio {
             "PlayerView PluginRack"
+        } else if current_screen == Screen::PluginGraph {
+            "PlayerView PluginGraph"
         } else {
             "PlayerView"
         };
@@ -297,7 +299,28 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::toggle_library_view))
             .on_action(cx.listener(Self::toggle_help))
             .on_action(cx.listener(Self::toggle_help_support))
+            .on_action(cx.listener(Self::toggle_command_palette))
             .on_action(cx.listener(Self::toggle_screen_guide))
+            .on_action(cx.listener(Self::graph_select_next_node))
+            .on_action(cx.listener(Self::graph_select_previous_node))
+            .on_action(cx.listener(Self::graph_select_next_plugin_type))
+            .on_action(cx.listener(Self::graph_select_previous_plugin_type))
+            .on_action(cx.listener(Self::graph_select_next_port))
+            .on_action(cx.listener(Self::graph_select_previous_port))
+            .on_action(cx.listener(Self::graph_add_selected_plugin))
+            .on_action(cx.listener(Self::graph_edit_selected_node))
+            .on_action(cx.listener(Self::graph_toggle_selected_bypass))
+            .on_action(cx.listener(Self::graph_connect_selected_node))
+            .on_action(cx.listener(Self::graph_disconnect_selected_node))
+            .on_action(cx.listener(Self::graph_remove_selected_node))
+            .on_action(cx.listener(Self::graph_move_selected_left))
+            .on_action(cx.listener(Self::graph_move_selected_right))
+            .on_action(cx.listener(Self::graph_move_selected_up))
+            .on_action(cx.listener(Self::graph_move_selected_down))
+            .on_action(cx.listener(Self::graph_move_selected_left_large))
+            .on_action(cx.listener(Self::graph_move_selected_right_large))
+            .on_action(cx.listener(Self::graph_move_selected_up_large))
+            .on_action(cx.listener(Self::graph_move_selected_down_large))
             .on_action(cx.listener(Self::about))
             .on_action(cx.listener(Self::cycle_sort_order))
             .on_action(cx.listener(Self::set_sort_artist))
@@ -399,7 +422,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::toggle_meter_solo))
             .on_action(cx.listener(Self::toggle_meter_dim))
             .on_action(cx.listener(Self::clear_meter_mutes_solos))
-            .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
+            .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
                 // Handle text input for search mode and add directory mode
                 let (input_mode, current_screen) = {
                     let state = view.state.read(cx);
@@ -416,6 +439,10 @@ impl Render for PlayerView {
                 );
 
                 match input_mode {
+                    crate::app::InputMode::CommandPalette => {
+                        cx.stop_propagation();
+                        view.handle_command_palette_key(event, window, cx);
+                    }
                     crate::app::InputMode::Search => {}
                     crate::app::InputMode::AddDirectory => {
                         cx.stop_propagation(); // Prevent actions from processing this keystroke
@@ -560,13 +587,6 @@ impl Render for PlayerView {
                         }
                     }
                     crate::app::InputMode::Normal
-                        if current_screen == crate::app::Screen::PluginGraph =>
-                    {
-                        if view.handle_plugin_graph_keyboard(event, cx) {
-                            cx.stop_propagation();
-                        }
-                    }
-                    crate::app::InputMode::Normal
                         if current_screen == crate::app::Screen::Settings
                             && view
                                 .state
@@ -658,6 +678,9 @@ impl Render for PlayerView {
             ))
             .when(input_mode == crate::app::InputMode::Help, |div| {
                 div.child(self.render_help_modal(cx))
+            })
+            .when(input_mode == crate::app::InputMode::CommandPalette, |div| {
+                div.child(self.render_command_palette(cx))
             })
             .when(input_mode == crate::app::InputMode::LoadApoFile, |div| {
                 div.child(self.render_apo_file_dialog(cx))

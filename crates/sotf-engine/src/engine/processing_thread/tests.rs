@@ -1,6 +1,9 @@
 use super::super::PluginDataCache;
-use super::super::{PluginConfig, ProcessingCommand};
-use super::build::build_plugin_host;
+use super::super::{
+    PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
+    ProcessingCommand,
+};
+use super::build::{build_plugin_graph_host, build_plugin_host};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use super::isolated::isolated_external_plugin_event;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -33,7 +36,7 @@ mod test;
 #[test]
 fn test_downmix_adapts_to_current_chain_channel_count() {
     let sample_rate = 48000;
-    let settings = PluginSettings::default_for(&PluginType::Downmix);
+    let settings = PluginSettings::default_for(&PluginType::Downmix).unwrap();
     let config = settings.to_plugin_config(sample_rate as f64);
 
     let plugin = create_plugin(&config.plugin_type, &config.parameters, 10, sample_rate)
@@ -59,10 +62,62 @@ fn invalid_spectrum_analyzer_config_is_reported() {
 
     assert_eq!(warnings.len(), 1);
     assert!(
-        warnings[0].contains("Failed to parse spectrum analyzer params"),
+        warnings[0]
+            .message
+            .contains("Failed to parse spectrum analyzer params"),
         "unexpected warning: {}",
         warnings[0]
     );
+}
+
+#[test]
+fn graph_build_rejects_failed_node_instead_of_returning_partial_dag() {
+    let gain = PluginSettings::default_for(&PluginType::Gain)
+        .unwrap()
+        .to_plugin_config(48_000.0);
+    let trailing_gain = PluginSettings::default_for(&PluginType::Gain)
+        .unwrap()
+        .to_plugin_config(48_000.0);
+    let graph = PluginGraphConfig::try_new(
+        vec![
+            PluginGraphNodeConfig::try_new(7, gain.plugin_type, gain.parameters, 2).unwrap(),
+            PluginGraphNodeConfig::try_new(
+                42,
+                "definitely-not-a-real-plugin",
+                serde_json::json!({}),
+                2,
+            )
+            .unwrap(),
+            PluginGraphNodeConfig::try_new(
+                99,
+                trailing_gain.plugin_type,
+                trailing_gain.parameters,
+                2,
+            )
+            .unwrap(),
+        ],
+        vec![
+            PluginGraphEdgeConfig::new(7, 42),
+            PluginGraphEdgeConfig::new(42, 99),
+        ],
+    )
+    .unwrap();
+
+    let error = match build_plugin_graph_host(&graph, 48_000, 2) {
+        Ok(_) => panic!("invalid graph node unexpectedly produced a host"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(
+        error.target,
+        sotf_types::PluginBuildTarget::GraphNode { node_id: 42 }
+    ));
+    assert!(error.message.contains("node 42"), "{error}");
+    assert!(
+        error.message.contains("definitely-not-a-real-plugin"),
+        "{error}"
+    );
+    assert!(error.message.contains("failed to load"), "{error}");
 }
 
 /// Test that a non-square matrix (1 input → N outputs) is NOT auto-resized.
@@ -429,6 +484,7 @@ fn test_isolated_external_plugin_event_and_status_mappings() {
     let report = IsolatedExternalPluginWorkerReport {
         plugin_index: 3,
         node_id: 9,
+        plugin_instance_id: Some(77),
         event: Some(ExternalPluginProcessEvent::Started { pid: 777 }),
         error: Some("blocked".into()),
         worker_start_count: 4,
@@ -444,6 +500,7 @@ fn test_isolated_external_plugin_event_and_status_mappings() {
     let status = isolated_external_plugin_status(report);
     assert_eq!(status.plugin_index, 3);
     assert_eq!(status.node_id, 9);
+    assert_eq!(status.plugin_instance_id, Some(77));
     assert_eq!(status.error, Some("blocked".into()));
     assert_eq!(status.worker_start_count, 4);
     assert_eq!(status.worker_exit_count, 2);

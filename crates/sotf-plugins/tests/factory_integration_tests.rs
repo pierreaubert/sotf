@@ -7,7 +7,7 @@
 // through multiple factory-created plugins.
 
 use sotf_plugins::{
-    DawHost, PluginHost, SUPPORTED_PLUGIN_TYPES, create_plugin, is_supported_plugin_type,
+    DawHost, PluginHost, create_plugin, is_supported_plugin_type, supported_plugin_types,
 };
 use std::collections::HashSet;
 
@@ -45,8 +45,8 @@ fn supported_plugin_types_includes_core_dsp_plugins() {
             "expected '{t}' to be reported as supported"
         );
         assert!(
-            SUPPORTED_PLUGIN_TYPES.contains(&t),
-            "expected '{t}' to appear in SUPPORTED_PLUGIN_TYPES"
+            supported_plugin_types().any(|plugin_type| plugin_type == t),
+            "expected '{t}' to appear in the canonical catalog"
         );
     }
 }
@@ -159,7 +159,7 @@ fn advertised_factory_types_are_smoke_covered_or_documented_special_cases() {
         .iter()
         .map(|(plugin_type, _, _)| *plugin_type)
         .collect();
-    for plugin_type in SUPPORTED_PLUGIN_TYPES {
+    for plugin_type in supported_plugin_types() {
         assert!(
             covered.contains(plugin_type) || special_cases.contains(plugin_type),
             "advertised plugin type '{plugin_type}' is neither smoke-tested nor documented as a special case"

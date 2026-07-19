@@ -943,7 +943,8 @@ impl AudioDaemon {
                 .map(|pt| {
                     let engine_type = plugin_type_to_engine_str(&pt);
                     let category = plugin_type_category(&pt);
-                    let default_settings = sotf_audio::PluginSettings::default_for(&pt);
+                    let default_settings = sotf_audio::PluginSettings::default_for(&pt)
+                        .expect("PluginType::all must only contain plugins with default settings");
                     let default_parameters = default_settings.to_plugin_config(48_000.0).parameters;
                     serde_json::json!({
                         "type": engine_type,

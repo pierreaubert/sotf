@@ -25,34 +25,29 @@ pub fn plugin_action(graph: &mut PluginGraph, name: &str, payload: Option<Value>
                 .ok_or_else(|| anyhow!("unknown plugin type `{plugin_type}`"))?;
             let idx = graph.user_plugin_insert_index();
             graph.insert_plugin(idx, &ty).map_err(|e| anyhow!(e))?;
-            graph.update_channel_dependent_plugins();
             Ok(())
         }
         "PluginRemove" => {
             let idx = payload_u64(&payload, "index")? as usize;
             graph.remove_plugin_by_index(idx).map_err(|e| anyhow!(e))?;
-            graph.update_channel_dependent_plugins();
             Ok(())
         }
         "PluginToggle" => {
             let idx = payload_u64(&payload, "index")? as usize;
             graph.toggle_plugin_by_index(idx).map_err(|e| anyhow!(e))?;
-            graph.update_channel_dependent_plugins();
             Ok(())
         }
         "PluginMoveUp" => {
             let idx = payload_u64(&payload, "index")? as usize;
             if graph.can_move_up_by_index(idx) {
-                graph.move_plugin(idx, idx - 1);
-                graph.update_channel_dependent_plugins();
+                graph.move_plugin(idx, idx - 1).map_err(|e| anyhow!(e))?;
             }
             Ok(())
         }
         "PluginMoveDown" => {
             let idx = payload_u64(&payload, "index")? as usize;
             if graph.can_move_down_by_index(idx) {
-                graph.move_plugin(idx, idx + 1);
-                graph.update_channel_dependent_plugins();
+                graph.move_plugin(idx, idx + 1).map_err(|e| anyhow!(e))?;
             }
             Ok(())
         }

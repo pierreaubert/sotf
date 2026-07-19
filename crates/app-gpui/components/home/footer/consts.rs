@@ -308,7 +308,6 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = &state.app.ui_state.theme;
-        let text = FooterTranslations::for_language(state.app.ui_state.language);
         let translations = state.app.ui_state.translations.clone();
         let window_width = state.app.ui_state.window_width;
         let window_height = state.app.ui_state.window_height;
@@ -719,6 +718,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = &state.app.ui_state.theme;
+        let text = FooterTranslations::for_language(state.app.ui_state.language);
 
         // Check if we're in HAL mode - hide waveform/time display
         #[cfg(all(target_os = "macos", feature = "hal"))]

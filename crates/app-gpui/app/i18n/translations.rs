@@ -1720,6 +1720,8 @@ pub struct DialogTranslations {
     pub keyboard_shortcuts: &'static str,
     pub channel_conflict: &'static str,
     pub dont_show_again: &'static str,
+    pub command_palette_placeholder: &'static str,
+    pub command_palette_empty: &'static str,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1795,6 +1797,8 @@ impl DialogTranslations {
                 keyboard_shortcuts: "Keyboard Shortcuts",
                 channel_conflict: "Channel Conflict",
                 dont_show_again: "Don't show again",
+                command_palette_placeholder: "Type a command…",
+                command_palette_empty: "No commands found",
             },
             Language::French => Self {
                 language,
@@ -1844,6 +1848,8 @@ impl DialogTranslations {
                 keyboard_shortcuts: "Raccourcis clavier",
                 channel_conflict: "Conflit de canaux",
                 dont_show_again: "Ne plus afficher",
+                command_palette_placeholder: "Saisissez une commande…",
+                command_palette_empty: "Aucune commande trouvée",
             },
             Language::German => Self {
                 language,
@@ -1893,6 +1899,8 @@ impl DialogTranslations {
                 keyboard_shortcuts: "Tastenkürzel",
                 channel_conflict: "Kanalkonflikt",
                 dont_show_again: "Nicht mehr anzeigen",
+                command_palette_placeholder: "Befehl eingeben…",
+                command_palette_empty: "Keine Befehle gefunden",
             },
             Language::Spanish => Self {
                 language,
@@ -1942,6 +1950,8 @@ impl DialogTranslations {
                 keyboard_shortcuts: "Atajos de teclado",
                 channel_conflict: "Conflicto de canales",
                 dont_show_again: "No volver a mostrar",
+                command_palette_placeholder: "Escriba un comando…",
+                command_palette_empty: "No se encontraron comandos",
             },
         }
     }
@@ -3420,6 +3430,10 @@ impl KeybindingTranslations {
 
 const FRENCH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ("Add album to queue", "Ajouter l’album à la file"),
+    (
+        "Add library directory",
+        "Ajouter un dossier à la bibliothèque",
+    ),
     ("Add plugins", "Ajouter des modules"),
     ("Add selected plugin", "Ajouter le module sélectionné"),
     ("Add to queue", "Ajouter à la file"),
@@ -3440,6 +3454,7 @@ const FRENCH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ),
     ("Clear entire queue", "Vider toute la file"),
     ("Clear mutes/solos", "Effacer les modes muet et solo"),
+    ("Command palette", "Palette de commandes"),
     (
         "Collapse/expand artists in tree view",
         "Réduire ou développer les artistes dans l’arborescence",
@@ -3498,7 +3513,6 @@ const FRENCH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
         "Next/prev meter group",
         "Groupe d’indicateurs suivant ou précédent",
     ),
-    ("Open album", "Ouvrir l’album"),
     ("Open playlist", "Ouvrir la liste de lecture"),
     (
         "Open selected studio tool",
@@ -3541,12 +3555,17 @@ const FRENCH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ("Save/Load preset", "Sauvegarder ou charger un préréglage"),
     ("Screen guide", "Guide de l’écran"),
     ("Search", "Rechercher"),
+    ("Scan library", "Analyser la bibliothèque"),
     ("Search albums", "Rechercher des albums"),
     ("Select connection port", "Choisir le port de connexion"),
     ("Select next", "Sélectionner le suivant"),
     (
         "Select next / previous node",
         "Sélectionner le nœud suivant ou précédent",
+    ),
+    (
+        "Select next / previous plugin",
+        "Sélectionner le module suivant ou précédent",
     ),
     ("Select previous", "Sélectionner le précédent"),
     (
@@ -3590,6 +3609,7 @@ const FRENCH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
 
 const GERMAN_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ("Add album to queue", "Album zur Warteschlange hinzufügen"),
+    ("Add library directory", "Mediathekordner hinzufügen"),
     ("Add plugins", "Plugins hinzufügen"),
     ("Add selected plugin", "Ausgewähltes Plugin hinzufügen"),
     ("Add to queue", "Zur Warteschlange hinzufügen"),
@@ -3610,6 +3630,7 @@ const GERMAN_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ),
     ("Clear entire queue", "Gesamte Warteschlange leeren"),
     ("Clear mutes/solos", "Stumm- und Soloschaltungen aufheben"),
+    ("Command palette", "Befehlspalette"),
     (
         "Collapse/expand artists in tree view",
         "Interpreten in der Baumansicht ein- oder ausklappen",
@@ -3665,7 +3686,6 @@ const GERMAN_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
         "Next/prev meter group",
         "Nächste oder vorherige Pegelgruppe",
     ),
-    ("Open album", "Album öffnen"),
     ("Open playlist", "Wiedergabeliste öffnen"),
     (
         "Open selected studio tool",
@@ -3708,12 +3728,17 @@ const GERMAN_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ("Save/Load preset", "Preset speichern oder laden"),
     ("Screen guide", "Bildschirmhilfe"),
     ("Search", "Suchen"),
+    ("Scan library", "Mediathek scannen"),
     ("Search albums", "Alben suchen"),
     ("Select connection port", "Verbindungsport auswählen"),
     ("Select next", "Nächstes auswählen"),
     (
         "Select next / previous node",
         "Nächsten oder vorherigen Knoten auswählen",
+    ),
+    (
+        "Select next / previous plugin",
+        "Nächstes oder vorheriges Plugin auswählen",
     ),
     ("Select previous", "Vorheriges auswählen"),
     (
@@ -3757,6 +3782,10 @@ const GERMAN_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
 
 const SPANISH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ("Add album to queue", "Añadir el álbum a la cola"),
+    (
+        "Add library directory",
+        "Añadir una carpeta a la biblioteca",
+    ),
     ("Add plugins", "Añadir complementos"),
     ("Add selected plugin", "Añadir el complemento seleccionado"),
     ("Add to queue", "Añadir a la cola"),
@@ -3777,6 +3806,7 @@ const SPANISH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ),
     ("Clear entire queue", "Vaciar toda la cola"),
     ("Clear mutes/solos", "Desactivar silencios y solos"),
+    ("Command palette", "Paleta de comandos"),
     (
         "Collapse/expand artists in tree view",
         "Contraer o expandir artistas en la vista de árbol",
@@ -3832,7 +3862,6 @@ const SPANISH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
         "Next/prev meter group",
         "Grupo de medidores siguiente o anterior",
     ),
-    ("Open album", "Abrir álbum"),
     ("Open playlist", "Abrir lista"),
     (
         "Open selected studio tool",
@@ -3878,12 +3907,17 @@ const SPANISH_KEYBINDING_ACTIONS: &[(&str, &str)] = &[
     ("Save/Load preset", "Guardar o cargar un preajuste"),
     ("Screen guide", "Guía de la pantalla"),
     ("Search", "Buscar"),
+    ("Scan library", "Analizar la biblioteca"),
     ("Search albums", "Buscar álbumes"),
     ("Select connection port", "Seleccionar puerto de conexión"),
     ("Select next", "Seleccionar siguiente"),
     (
         "Select next / previous node",
         "Seleccionar el nodo siguiente o anterior",
+    ),
+    (
+        "Select next / previous plugin",
+        "Seleccionar el complemento siguiente o anterior",
     ),
     ("Select previous", "Seleccionar anterior"),
     (
@@ -4313,6 +4347,11 @@ pub struct PluginCommonTranslations {
     pub reset_hint: &'static str,
     pub load: &'static str,
     pub configuration: &'static str,
+    pub spatial_view_2d: &'static str,
+    pub spatial_view_3d: &'static str,
+    pub spatial_spl_mode: &'static str,
+    pub spatial_correlation_mode: &'static str,
+    pub spatial_reference_channel: &'static str,
 }
 
 impl PluginCommonTranslations {
@@ -4327,6 +4366,11 @@ impl PluginCommonTranslations {
                 reset_hint: "Double-click a control to reset it",
                 load: "Load",
                 configuration: "Configuration",
+                spatial_view_2d: "Show the 2D spatial view",
+                spatial_view_3d: "Show the 3D spatial view",
+                spatial_spl_mode: "Show sound pressure level",
+                spatial_correlation_mode: "Show channel correlation",
+                spatial_reference_channel: "Correlation reference channel",
             },
             Language::French => Self {
                 language,
@@ -4337,6 +4381,11 @@ impl PluginCommonTranslations {
                 reset_hint: "Double-cliquez sur un contrôle pour le réinitialiser",
                 load: "Charger",
                 configuration: "Configuration",
+                spatial_view_2d: "Afficher la vue spatiale 2D",
+                spatial_view_3d: "Afficher la vue spatiale 3D",
+                spatial_spl_mode: "Afficher le niveau de pression acoustique",
+                spatial_correlation_mode: "Afficher la corrélation des canaux",
+                spatial_reference_channel: "Canal de référence pour la corrélation",
             },
             Language::German => Self {
                 language,
@@ -4347,6 +4396,11 @@ impl PluginCommonTranslations {
                 reset_hint: "Steuerelement zum Zurücksetzen doppelklicken",
                 load: "Laden",
                 configuration: "Konfiguration",
+                spatial_view_2d: "Räumliche 2D-Ansicht anzeigen",
+                spatial_view_3d: "Räumliche 3D-Ansicht anzeigen",
+                spatial_spl_mode: "Schalldruckpegel anzeigen",
+                spatial_correlation_mode: "Kanalkorrelation anzeigen",
+                spatial_reference_channel: "Referenzkanal für die Korrelation",
             },
             Language::Spanish => Self {
                 language,
@@ -4357,6 +4411,11 @@ impl PluginCommonTranslations {
                 reset_hint: "Haga doble clic en un control para restablecerlo",
                 load: "Cargar",
                 configuration: "Configuración",
+                spatial_view_2d: "Mostrar la vista espacial 2D",
+                spatial_view_3d: "Mostrar la vista espacial 3D",
+                spatial_spl_mode: "Mostrar el nivel de presión sonora",
+                spatial_correlation_mode: "Mostrar la correlación de canales",
+                spatial_reference_channel: "Canal de referencia de correlación",
             },
         }
     }
@@ -4436,6 +4495,9 @@ impl PluginCommonTranslations {
                 PluginType::LinearPhaseEq => "Apply parametric EQ as linear-phase FIR convolution.",
                 PluginType::SpectralCompressor => {
                     "Control dynamics independently in FFT frequency bins."
+                }
+                PluginType::External => {
+                    "Host a discovered third-party audio effect in an isolated worker."
                 }
             },
             Language::French => match plugin_type {
@@ -4525,6 +4587,9 @@ impl PluginCommonTranslations {
                 }
                 PluginType::SpectralCompressor => {
                     "Contrôlez séparément la dynamique de chaque bin FFT."
+                }
+                PluginType::External => {
+                    "Hébergez un effet audio tiers détecté dans un processus isolé."
                 }
             },
             Language::German => match plugin_type {
@@ -4625,6 +4690,9 @@ impl PluginCommonTranslations {
                 PluginType::SpectralCompressor => {
                     "Regeln Sie die Dynamik in einzelnen FFT-Frequenzbins."
                 }
+                PluginType::External => {
+                    "Hosten Sie einen erkannten Audioeffekt eines Drittanbieters in einem isolierten Prozess."
+                }
             },
             Language::Spanish => match plugin_type {
                 PluginType::EQ => "Modele el equilibrio tonal con filtros paramétricos.",
@@ -4712,6 +4780,9 @@ impl PluginCommonTranslations {
                 PluginType::SpectralCompressor => {
                     "Controle la dinámica por separado en cada bin FFT."
                 }
+                PluginType::External => {
+                    "Aloje un efecto de audio de terceros detectado en un proceso aislado."
+                }
             },
         }
     }
@@ -4743,6 +4814,14 @@ const FRENCH_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Output", "Sortie"),
     ("LFE & Bass", "LFE et graves"),
     ("SubHarmonic", "Sous-harmonique"),
+    ("Low Latency", "Faible latence"),
+    ("Bypass All", "Tout contourner"),
+    ("Bypass Decorr", "Contourner la décorrélation"),
+    ("Bypass Trans", "Contourner les transitoires"),
+    ("ML Detect", "Détection ML"),
+    ("Multi Source", "Multi-source"),
+    ("Binaural", "Binaural"),
+    ("Auto Gain", "Gain automatique"),
     ("Dialogue", "Dialogue"),
     ("Ambient", "Ambiance"),
     ("Height", "Hauteur"),
@@ -4824,6 +4903,14 @@ const GERMAN_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Output", "Ausgang"),
     ("LFE & Bass", "LFE und Bass"),
     ("SubHarmonic", "Subharmonisch"),
+    ("Low Latency", "Niedrige Latenz"),
+    ("Bypass All", "Alles umgehen"),
+    ("Bypass Decorr", "Dekorrelation umgehen"),
+    ("Bypass Trans", "Transienten umgehen"),
+    ("ML Detect", "ML-Erkennung"),
+    ("Multi Source", "Mehrquellen"),
+    ("Binaural", "Binaural"),
+    ("Auto Gain", "Auto-Gain"),
     ("Dialogue", "Dialog"),
     ("Ambient", "Ambiente"),
     ("Height", "Höhe"),
@@ -4905,6 +4992,14 @@ const SPANISH_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("Output", "Salida"),
     ("LFE & Bass", "LFE y graves"),
     ("SubHarmonic", "Subarmónico"),
+    ("Low Latency", "Baja latencia"),
+    ("Bypass All", "Omitir todo"),
+    ("Bypass Decorr", "Omitir descorrelación"),
+    ("Bypass Trans", "Omitir transitorios"),
+    ("ML Detect", "Detección ML"),
+    ("Multi Source", "Multifuente"),
+    ("Binaural", "Binaural"),
+    ("Auto Gain", "Ganancia automática"),
     ("Dialogue", "Diálogo"),
     ("Ambient", "Ambiente"),
     ("Height", "Altura"),
@@ -4975,6 +5070,380 @@ const SPANISH_PLUGIN_LABELS: &[(&str, &str)] = &[
 ];
 
 #[derive(Debug, Clone, Copy)]
+pub struct ExternalPluginWorkerTranslations {
+    pub status: &'static str,
+    pub running: &'static str,
+    pub stopped: &'static str,
+    pub exited: &'static str,
+    pub unknown: &'static str,
+    pub starts: &'static str,
+    pub exits: &'static str,
+    pub launch_failures: &'static str,
+    pub timeouts: &'static str,
+    pub process_failures: &'static str,
+    pub sequence_errors: &'static str,
+    pub history: &'static str,
+    pub sandbox: &'static str,
+    pub sandbox_enforced: &'static str,
+    pub sandbox_disabled: &'static str,
+    pub sandbox_unsupported: &'static str,
+    pub sandbox_backend_unknown: &'static str,
+    pub sandbox_linux_landlock: &'static str,
+    pub sandbox_macos_app_sandbox: &'static str,
+    pub sandbox_macos_process: &'static str,
+    pub sandbox_windows_process: &'static str,
+}
+
+impl ExternalPluginWorkerTranslations {
+    pub fn event_label(
+        self,
+        event: Option<&sotf_audio::engine::IsolatedExternalPluginWorkerEvent>,
+    ) -> String {
+        use sotf_audio::engine::IsolatedExternalPluginWorkerEvent;
+        match event {
+            Some(IsolatedExternalPluginWorkerEvent::AlreadyRunning) => self.running.to_string(),
+            Some(IsolatedExternalPluginWorkerEvent::Started { pid }) => {
+                format!("{} (PID {pid})", self.running)
+            }
+            Some(IsolatedExternalPluginWorkerEvent::Exited { exit_code }) => exit_code.map_or_else(
+                || self.exited.to_string(),
+                |code| format!("{} ({code})", self.exited),
+            ),
+            Some(IsolatedExternalPluginWorkerEvent::NotRunning) => self.stopped.to_string(),
+            None => self.unknown.to_string(),
+        }
+    }
+
+    pub fn counters(
+        self,
+        status: &sotf_audio::engine::IsolatedExternalPluginWorkerStatus,
+    ) -> String {
+        format!(
+            "{} · {}: {} · {}: {} · {}: {} · {}: {} · {}: {} · {}: {}",
+            self.history,
+            self.starts,
+            status.worker_start_count,
+            self.exits,
+            status.worker_exit_count,
+            self.launch_failures,
+            status.worker_launch_failure_count,
+            self.timeouts,
+            status.block_timeout_count,
+            self.process_failures,
+            status.block_worker_failure_count,
+            self.sequence_errors,
+            status.block_wrong_sequence_count,
+        )
+    }
+
+    pub fn sandbox_label(
+        self,
+        status: &sotf_audio::engine::IsolatedExternalPluginWorkerStatus,
+    ) -> String {
+        use sotf_audio::engine::{
+            IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
+        };
+        let sandbox_status = match status.sandbox_status {
+            IsolatedExternalPluginSandboxStatus::Unknown => self.unknown,
+            IsolatedExternalPluginSandboxStatus::Disabled => self.sandbox_disabled,
+            IsolatedExternalPluginSandboxStatus::Enforced => self.sandbox_enforced,
+            IsolatedExternalPluginSandboxStatus::Unsupported => self.sandbox_unsupported,
+        };
+        let backend = match status.sandbox_backend {
+            IsolatedExternalPluginSandboxBackend::Unknown => self.sandbox_backend_unknown,
+            IsolatedExternalPluginSandboxBackend::LinuxLandlock => self.sandbox_linux_landlock,
+            IsolatedExternalPluginSandboxBackend::MacosAppSandboxHelper => {
+                self.sandbox_macos_app_sandbox
+            }
+            IsolatedExternalPluginSandboxBackend::MacosProcessIsolation => {
+                self.sandbox_macos_process
+            }
+            IsolatedExternalPluginSandboxBackend::WindowsProcessIsolation => {
+                self.sandbox_windows_process
+            }
+        };
+        format!("{}: {} ({backend})", self.sandbox, sandbox_status)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ExternalPluginSettingsTranslations {
+    pub title: &'static str,
+    pub activate: &'static str,
+    pub scan: &'static str,
+    pub activating: &'static str,
+    pub scanning: &'static str,
+    pub runtime_access: &'static str,
+    pub enabled: &'static str,
+    pub disabled: &'static str,
+    pub import_grants: &'static str,
+    pub media_roots: &'static str,
+    pub protected_import_roots: &'static str,
+    pub runtime_error: &'static str,
+    pub scan_error: &'static str,
+    pub results: &'static str,
+    pub loadable: &'static str,
+    pub discovered: &'static str,
+    pub unsupported: &'static str,
+    pub none_found: &'static str,
+    pub more_results: &'static str,
+    pub path: &'static str,
+    pub channels: &'static str,
+    pub isolated: &'static str,
+    pub add_to_rack: &'static str,
+    pub added_to_rack: &'static str,
+    pub add_error: &'static str,
+    pub instruments_unsupported: &'static str,
+    pub parameters_unavailable: &'static str,
+    pub saved_state: &'static str,
+    pub host_diagnostic: &'static str,
+    pub worker: ExternalPluginWorkerTranslations,
+}
+
+impl ExternalPluginSettingsTranslations {
+    fn for_language(language: Language) -> Self {
+        match language {
+            Language::English => Self {
+                title: "External Plugins",
+                activate: "Activate External Plugins",
+                scan: "Scan External Plugins",
+                activating: "Activating…",
+                scanning: "Scanning…",
+                runtime_access: "Runtime external access",
+                enabled: "Enabled",
+                disabled: "Disabled",
+                import_grants: "Import grants",
+                media_roots: "Media roots",
+                protected_import_roots: "Protected import roots",
+                runtime_error: "Runtime policy error",
+                scan_error: "Plugin scan error",
+                results: "Scan results",
+                loadable: "Loadable",
+                discovered: "Discovered",
+                unsupported: "Unsupported by this build",
+                none_found: "No external plugins found in standard locations.",
+                more_results: "Additional results",
+                path: "Path",
+                channels: "Channels",
+                isolated: "Isolated worker",
+                add_to_rack: "Add to rack",
+                added_to_rack: "Added to rack",
+                add_error: "Could not add plugin",
+                instruments_unsupported: "Instruments are not supported in the audio rack",
+                parameters_unavailable: "This hosting backend does not expose editable parameters yet.",
+                saved_state: "Saved state bytes",
+                host_diagnostic: "Plugin host diagnostic",
+                worker: ExternalPluginWorkerTranslations {
+                    status: "Worker status",
+                    running: "Running",
+                    stopped: "Not running",
+                    exited: "Exited",
+                    unknown: "Awaiting status",
+                    starts: "Starts",
+                    exits: "Exits",
+                    launch_failures: "Launch failures",
+                    timeouts: "Block timeouts",
+                    process_failures: "Processing failures",
+                    sequence_errors: "Sequence errors",
+                    history: "History",
+                    sandbox: "Sandbox",
+                    sandbox_enforced: "Enforced",
+                    sandbox_disabled: "Disabled",
+                    sandbox_unsupported: "Unsupported",
+                    sandbox_backend_unknown: "Unknown backend",
+                    sandbox_linux_landlock: "Linux Landlock isolation",
+                    sandbox_macos_app_sandbox: "macOS App Sandbox helper",
+                    sandbox_macos_process: "macOS process isolation",
+                    sandbox_windows_process: "Windows process isolation",
+                },
+            },
+            Language::French => Self {
+                title: "Modules externes",
+                activate: "Activer les modules externes",
+                scan: "Analyser les modules externes",
+                activating: "Activation…",
+                scanning: "Analyse…",
+                runtime_access: "Accès externe à l’exécution",
+                enabled: "Activé",
+                disabled: "Désactivé",
+                import_grants: "Autorisations d’importation",
+                media_roots: "Racines multimédias",
+                protected_import_roots: "Racines d’importation protégées",
+                runtime_error: "Erreur de politique d’exécution",
+                scan_error: "Erreur d’analyse des modules",
+                results: "Résultats de l’analyse",
+                loadable: "Chargeable",
+                discovered: "Détecté",
+                unsupported: "Non pris en charge par cette version",
+                none_found: "Aucun module externe trouvé dans les emplacements standard.",
+                more_results: "Résultats supplémentaires",
+                path: "Chemin",
+                channels: "Canaux",
+                isolated: "Processus isolé",
+                add_to_rack: "Ajouter au rack",
+                added_to_rack: "Ajouté au rack",
+                add_error: "Impossible d’ajouter le module",
+                instruments_unsupported: "Les instruments ne sont pas pris en charge dans le rack audio",
+                parameters_unavailable: "Ce moteur d’hébergement n’expose pas encore de paramètres modifiables.",
+                saved_state: "Octets d’état enregistrés",
+                host_diagnostic: "Diagnostic de l’hôte de modules",
+                worker: ExternalPluginWorkerTranslations {
+                    status: "État du processus",
+                    running: "En cours d’exécution",
+                    stopped: "À l’arrêt",
+                    exited: "Terminé",
+                    unknown: "État en attente",
+                    starts: "Démarrages",
+                    exits: "Arrêts",
+                    launch_failures: "Échecs de lancement",
+                    timeouts: "Délais de bloc dépassés",
+                    process_failures: "Échecs de traitement",
+                    sequence_errors: "Erreurs de séquence",
+                    history: "Historique",
+                    sandbox: "Bac à sable",
+                    sandbox_enforced: "Appliqué",
+                    sandbox_disabled: "Désactivé",
+                    sandbox_unsupported: "Non pris en charge",
+                    sandbox_backend_unknown: "Moteur d’isolation inconnu",
+                    sandbox_linux_landlock: "Isolement Linux Landlock",
+                    sandbox_macos_app_sandbox: "Assistant App Sandbox macOS",
+                    sandbox_macos_process: "Isolement de processus macOS",
+                    sandbox_windows_process: "Isolement de processus Windows",
+                },
+            },
+            Language::German => Self {
+                title: "Externe Plugins",
+                activate: "Externe Plugins aktivieren",
+                scan: "Externe Plugins suchen",
+                activating: "Aktivierung…",
+                scanning: "Suche…",
+                runtime_access: "Externer Laufzeitzugriff",
+                enabled: "Aktiviert",
+                disabled: "Deaktiviert",
+                import_grants: "Importfreigaben",
+                media_roots: "Medienverzeichnisse",
+                protected_import_roots: "Geschützte Importverzeichnisse",
+                runtime_error: "Laufzeitrichtlinienfehler",
+                scan_error: "Plugin-Suchfehler",
+                results: "Suchergebnisse",
+                loadable: "Ladbar",
+                discovered: "Gefunden",
+                unsupported: "Von diesem Build nicht unterstützt",
+                none_found: "Keine externen Plugins an den Standardorten gefunden.",
+                more_results: "Weitere Ergebnisse",
+                path: "Pfad",
+                channels: "Kanäle",
+                isolated: "Isolierter Prozess",
+                add_to_rack: "Zum Rack hinzufügen",
+                added_to_rack: "Zum Rack hinzugefügt",
+                add_error: "Plugin konnte nicht hinzugefügt werden",
+                instruments_unsupported: "Instrumente werden im Audio-Rack nicht unterstützt",
+                parameters_unavailable: "Dieses Hosting-Backend stellt noch keine bearbeitbaren Parameter bereit.",
+                saved_state: "Gespeicherte Zustandsbytes",
+                host_diagnostic: "Plugin-Host-Diagnose",
+                worker: ExternalPluginWorkerTranslations {
+                    status: "Worker-Status",
+                    running: "Wird ausgeführt",
+                    stopped: "Nicht aktiv",
+                    exited: "Beendet",
+                    unknown: "Status ausstehend",
+                    starts: "Starts",
+                    exits: "Beendigungen",
+                    launch_failures: "Startfehler",
+                    timeouts: "Block-Zeitüberschreitungen",
+                    process_failures: "Verarbeitungsfehler",
+                    sequence_errors: "Sequenzfehler",
+                    history: "Verlauf",
+                    sandbox: "Sandbox",
+                    sandbox_enforced: "Erzwungen",
+                    sandbox_disabled: "Deaktiviert",
+                    sandbox_unsupported: "Nicht unterstützt",
+                    sandbox_backend_unknown: "Unbekanntes Backend",
+                    sandbox_linux_landlock: "Linux-Landlock-Isolierung",
+                    sandbox_macos_app_sandbox: "macOS-App-Sandbox-Helfer",
+                    sandbox_macos_process: "macOS-Prozessisolierung",
+                    sandbox_windows_process: "Windows-Prozessisolierung",
+                },
+            },
+            Language::Spanish => Self {
+                title: "Complementos externos",
+                activate: "Activar complementos externos",
+                scan: "Buscar complementos externos",
+                activating: "Activando…",
+                scanning: "Buscando…",
+                runtime_access: "Acceso externo en tiempo de ejecución",
+                enabled: "Activado",
+                disabled: "Desactivado",
+                import_grants: "Permisos de importación",
+                media_roots: "Raíces multimedia",
+                protected_import_roots: "Raíces de importación protegidas",
+                runtime_error: "Error de política de ejecución",
+                scan_error: "Error al buscar complementos",
+                results: "Resultados de la búsqueda",
+                loadable: "Cargable",
+                discovered: "Encontrado",
+                unsupported: "No compatible con esta compilación",
+                none_found: "No se encontraron complementos externos en las ubicaciones estándar.",
+                more_results: "Resultados adicionales",
+                path: "Ruta",
+                channels: "Canales",
+                isolated: "Proceso aislado",
+                add_to_rack: "Añadir al rack",
+                added_to_rack: "Añadido al rack",
+                add_error: "No se pudo añadir el complemento",
+                instruments_unsupported: "Los instrumentos no son compatibles con el rack de audio",
+                parameters_unavailable: "Este motor de alojamiento aún no expone parámetros editables.",
+                saved_state: "Bytes de estado guardados",
+                host_diagnostic: "Diagnóstico del host de complementos",
+                worker: ExternalPluginWorkerTranslations {
+                    status: "Estado del proceso",
+                    running: "En ejecución",
+                    stopped: "Detenido",
+                    exited: "Finalizado",
+                    unknown: "Estado pendiente",
+                    starts: "Inicios",
+                    exits: "Finalizaciones",
+                    launch_failures: "Fallos de inicio",
+                    timeouts: "Tiempos de espera de bloque",
+                    process_failures: "Fallos de procesamiento",
+                    sequence_errors: "Errores de secuencia",
+                    history: "Historial",
+                    sandbox: "Entorno aislado",
+                    sandbox_enforced: "Aplicado",
+                    sandbox_disabled: "Desactivado",
+                    sandbox_unsupported: "No compatible",
+                    sandbox_backend_unknown: "Motor de aislamiento desconocido",
+                    sandbox_linux_landlock: "Aislamiento Linux Landlock",
+                    sandbox_macos_app_sandbox: "Ayudante de App Sandbox de macOS",
+                    sandbox_macos_process: "Aislamiento de procesos de macOS",
+                    sandbox_windows_process: "Aislamiento de procesos de Windows",
+                },
+            },
+        }
+    }
+
+    pub fn added_to_rack_message(self, plugin_name: &str) -> String {
+        format!("{}: {plugin_name}", self.added_to_rack)
+    }
+
+    pub fn add_error_message(self, error: &str) -> String {
+        format!("{}: {error}", self.add_error)
+    }
+
+    pub fn scan_results_message(self, count: usize) -> String {
+        format!("{}: {count}", self.results)
+    }
+
+    pub fn runtime_enabled_message(self) -> String {
+        format!("{}: {}", self.runtime_access, self.enabled)
+    }
+
+    pub fn runtime_error_message(self, error: &str) -> String {
+        format!("{}: {error}", self.runtime_error)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct SettingsSurfaceTranslations {
     pub scanner_threads: &'static str,
     pub thread_count: &'static str,
@@ -4982,14 +5451,14 @@ pub struct SettingsSurfaceTranslations {
     pub metadata_services: &'static str,
     pub musicbrainz_description: &'static str,
     pub musicbrainz: &'static str,
-    pub external_plugins: &'static str,
     pub miscellaneous: &'static str,
     pub max_cpu_cores: &'static str,
+    pub max_cpu_cores_description: &'static str,
+    pub cpu_cores_unit: &'static str,
     pub stable: &'static str,
     pub beta: &'static str,
     pub alpha: &'static str,
-    pub activate_external_plugins: &'static str,
-    pub scan_external_plugins: &'static str,
+    pub external: ExternalPluginSettingsTranslations,
 }
 
 impl SettingsSurfaceTranslations {
@@ -5002,14 +5471,14 @@ impl SettingsSurfaceTranslations {
                 metadata_services: "Metadata Services",
                 musicbrainz_description: "MusicBrainz search works without an account. Optional credentials are reserved for user-data features.",
                 musicbrainz: "MusicBrainz",
-                external_plugins: "External Plugins",
                 miscellaneous: "Miscellaneous",
                 max_cpu_cores: "Maximum CPU Cores",
+                max_cpu_cores_description: "Limit how many CPU cores SOTF can use. Lower values leave more capacity for other applications.",
+                cpu_cores_unit: "cores",
                 stable: "Stable",
                 beta: "Beta",
                 alpha: "Alpha",
-                activate_external_plugins: "Activate External Plugins",
-                scan_external_plugins: "Scan External Plugins",
+                external: ExternalPluginSettingsTranslations::for_language(Language::English),
             },
             Language::French => Self {
                 scanner_threads: "Threads d’analyse",
@@ -5018,14 +5487,14 @@ impl SettingsSurfaceTranslations {
                 metadata_services: "Services de métadonnées",
                 musicbrainz_description: "La recherche MusicBrainz fonctionne sans compte. Les identifiants facultatifs sont réservés aux fonctions de données utilisateur.",
                 musicbrainz: "MusicBrainz",
-                external_plugins: "Modules externes",
                 miscellaneous: "Divers",
                 max_cpu_cores: "Nombre maximal de cœurs CPU",
+                max_cpu_cores_description: "Limitez le nombre de cœurs CPU utilisables par SOTF. Une valeur basse laisse plus de ressources aux autres applications.",
+                cpu_cores_unit: "cœurs",
                 stable: "Stable",
                 beta: "Bêta",
                 alpha: "Alpha",
-                activate_external_plugins: "Activer les modules externes",
-                scan_external_plugins: "Analyser les modules externes",
+                external: ExternalPluginSettingsTranslations::for_language(Language::French),
             },
             Language::German => Self {
                 scanner_threads: "Scan-Threads",
@@ -5034,14 +5503,14 @@ impl SettingsSurfaceTranslations {
                 metadata_services: "Metadatendienste",
                 musicbrainz_description: "Die MusicBrainz-Suche funktioniert ohne Konto. Optionale Zugangsdaten sind für Benutzerdatenfunktionen reserviert.",
                 musicbrainz: "MusicBrainz",
-                external_plugins: "Externe Plugins",
                 miscellaneous: "Verschiedenes",
                 max_cpu_cores: "Maximale CPU-Kerne",
+                max_cpu_cores_description: "Begrenzt die von SOTF nutzbaren CPU-Kerne. Niedrigere Werte lassen anderen Anwendungen mehr Leistung.",
+                cpu_cores_unit: "Kerne",
                 stable: "Stabil",
                 beta: "Beta",
                 alpha: "Alpha",
-                activate_external_plugins: "Externe Plugins aktivieren",
-                scan_external_plugins: "Externe Plugins suchen",
+                external: ExternalPluginSettingsTranslations::for_language(Language::German),
             },
             Language::Spanish => Self {
                 scanner_threads: "Hilos de análisis",
@@ -5050,14 +5519,14 @@ impl SettingsSurfaceTranslations {
                 metadata_services: "Servicios de metadatos",
                 musicbrainz_description: "La búsqueda en MusicBrainz funciona sin cuenta. Las credenciales opcionales se reservan para funciones de datos de usuario.",
                 musicbrainz: "MusicBrainz",
-                external_plugins: "Complementos externos",
                 miscellaneous: "Varios",
                 max_cpu_cores: "Máximo de núcleos de CPU",
+                max_cpu_cores_description: "Limita los núcleos de CPU que puede usar SOTF. Los valores bajos dejan más capacidad para otras aplicaciones.",
+                cpu_cores_unit: "núcleos",
                 stable: "Estable",
                 beta: "Beta",
                 alpha: "Alfa",
-                activate_external_plugins: "Activar complementos externos",
-                scan_external_plugins: "Buscar complementos externos",
+                external: ExternalPluginSettingsTranslations::for_language(Language::Spanish),
             },
         }
     }
@@ -5356,6 +5825,7 @@ pub struct ListeningTestSetupTranslations {
     pub done: &'static str,
     pub level_title: &'static str,
     pub level_description: &'static str,
+    pub level: ListeningTestLevelTranslations,
     pub measure_prepare: &'static str,
     pub plugin: &'static str,
     pub plugins: &'static str,
@@ -5364,6 +5834,44 @@ pub struct ListeningTestSetupTranslations {
     pub current_chain: &'static str,
     pub path_json_filter: &'static str,
     pub session_filter: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListeningTestLevelTranslations {
+    pub target_metric: &'static str,
+    pub momentary_lufs: &'static str,
+    pub short_term_lufs: &'static str,
+    pub rms_dbfs: &'static str,
+    pub segment_start: &'static str,
+    pub use_current_position: &'static str,
+    pub window: &'static str,
+    pub tolerance: &'static str,
+    pub max_correction: &'static str,
+    pub media_segment: &'static str,
+    pub media_identity: &'static str,
+    pub correction: &'static str,
+    pub residual: &'static str,
+    pub within_tolerance: &'static str,
+    pub outside_tolerance: &'static str,
+    pub load_saved_media: &'static str,
+    pub media_loaded: &'static str,
+    pub media_unavailable: &'static str,
+    pub media_identity_mismatch: &'static str,
+    pub seconds_unit: &'static str,
+}
+
+impl ListeningTestLevelTranslations {
+    pub fn metric_label(
+        &self,
+        metric: sotf_audio_player::controllers::ab_test_session::LevelMatchMetric,
+    ) -> &'static str {
+        use sotf_audio_player::controllers::ab_test_session::LevelMatchMetric;
+        match metric {
+            LevelMatchMetric::MomentaryLufs => self.momentary_lufs,
+            LevelMatchMetric::ShortTermLufs => self.short_term_lufs,
+            LevelMatchMetric::Rms => self.rms_dbfs,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -6343,7 +6851,29 @@ impl Translations {
                     graph_hint: "Double-click a node to edit its parameter JSON.",
                     done: "Done",
                     level_title: "Repeatable level match",
-                    level_description: "Renders both paths offline from the same 3-second segment at the current track position using short-term LUFS.",
+                    level_description: "Renders both paths offline from the same synchronized media segment using the selected programme-level metric.",
+                    level: ListeningTestLevelTranslations {
+                        target_metric: "Programme-level metric",
+                        momentary_lufs: "Momentary LUFS (EBU R128)",
+                        short_term_lufs: "Short-term LUFS (EBU R128)",
+                        rms_dbfs: "RMS level (dBFS)",
+                        segment_start: "Segment start",
+                        use_current_position: "Use current position",
+                        window: "Measurement window",
+                        tolerance: "Match tolerance",
+                        max_correction: "Correction safety clamp",
+                        media_segment: "Media segment",
+                        media_identity: "Content identity",
+                        correction: "Path B correction",
+                        residual: "Residual error",
+                        within_tolerance: "Within tolerance",
+                        outside_tolerance: "Outside tolerance",
+                        load_saved_media: "Load saved media segment",
+                        media_loaded: "Loaded saved media at the recorded segment start",
+                        media_unavailable: "Saved media file is unavailable",
+                        media_identity_mismatch: "Saved media content no longer matches this session",
+                        seconds_unit: "s",
+                    },
                     measure_prepare: "Measure and prepare",
                     plugin: "plugin",
                     plugins: "plugins",
@@ -6376,7 +6906,7 @@ impl Translations {
                     captured: "Captured the current DSP topology without flattening routes.",
                     load_or_prepare: "Load or prepare a level-matched session first.",
                     select_paths_and_track: "Select both paths and play or queue a local track first.",
-                    measuring: "Rendering synchronized paths and measuring short-term LUFS…",
+                    measuring: "Rendering synchronized paths and measuring the configured level metric…",
                     no_session: "No listening-test session is loaded.",
                     add_ab_plugin: "Add one A/B Compare plugin to the active rack before playing cues.",
                     cue_active: "Cue active with fixed saved level correction and synchronized transport.",
@@ -6761,7 +7291,29 @@ impl Translations {
                     graph_hint: "Double-cliquez sur un nœud pour modifier ses paramètres JSON.",
                     done: "Terminé",
                     level_title: "Égalisation de niveau reproductible",
-                    level_description: "Rend les deux chemins hors ligne à partir du même segment de 3 secondes à la position actuelle, avec LUFS court terme.",
+                    level_description: "Rend les deux chemins hors ligne à partir du même segment multimédia synchronisé avec la métrique de niveau choisie.",
+                    level: ListeningTestLevelTranslations {
+                        target_metric: "Métrique de niveau du programme",
+                        momentary_lufs: "LUFS momentané (EBU R128)",
+                        short_term_lufs: "LUFS court terme (EBU R128)",
+                        rms_dbfs: "Niveau RMS (dBFS)",
+                        segment_start: "Début du segment",
+                        use_current_position: "Utiliser la position actuelle",
+                        window: "Fenêtre de mesure",
+                        tolerance: "Tolérance d’égalisation",
+                        max_correction: "Limite de sécurité de correction",
+                        media_segment: "Segment multimédia",
+                        media_identity: "Identité du contenu",
+                        correction: "Correction du chemin B",
+                        residual: "Erreur résiduelle",
+                        within_tolerance: "Dans la tolérance",
+                        outside_tolerance: "Hors tolérance",
+                        load_saved_media: "Charger le segment multimédia enregistré",
+                        media_loaded: "Segment multimédia enregistré chargé au début indiqué",
+                        media_unavailable: "Le fichier multimédia enregistré est indisponible",
+                        media_identity_mismatch: "Le contenu multimédia ne correspond plus à cette session",
+                        seconds_unit: "s",
+                    },
                     measure_prepare: "Mesurer et préparer",
                     plugin: "plugin",
                     plugins: "plugins",
@@ -6794,7 +7346,7 @@ impl Translations {
                     captured: "Topologie DSP actuelle capturée sans aplatir les routages.",
                     load_or_prepare: "Chargez ou préparez d’abord une session avec niveaux égalisés.",
                     select_paths_and_track: "Sélectionnez les deux chemins et lisez ou mettez en file une piste locale.",
-                    measuring: "Rendu synchronisé et mesure LUFS court terme…",
+                    measuring: "Rendu synchronisé et mesure avec la métrique configurée…",
                     no_session: "Aucune session de test d’écoute n’est chargée.",
                     add_ab_plugin: "Ajoutez un plugin Comparaison A/B au rack actif avant d’écouter les signaux.",
                     cue_active: "Signal actif avec correction fixe enregistrée et transport synchronisé.",
@@ -7179,7 +7731,29 @@ impl Translations {
                     graph_hint: "Doppelklicken Sie auf einen Knoten, um sein Parameter-JSON zu bearbeiten.",
                     done: "Fertig",
                     level_title: "Reproduzierbarer Pegelabgleich",
-                    level_description: "Rendert beide Pfade offline aus demselben 3-Sekunden-Segment an der aktuellen Position mit Kurzzeit-LUFS.",
+                    level_description: "Rendert beide Pfade offline aus demselben synchronisierten Mediensegment mit der gewählten Programmpegelmetrik.",
+                    level: ListeningTestLevelTranslations {
+                        target_metric: "Programmpegelmetrik",
+                        momentary_lufs: "Momentan-LUFS (EBU R128)",
+                        short_term_lufs: "Kurzzeit-LUFS (EBU R128)",
+                        rms_dbfs: "RMS-Pegel (dBFS)",
+                        segment_start: "Segmentanfang",
+                        use_current_position: "Aktuelle Position verwenden",
+                        window: "Messfenster",
+                        tolerance: "Abgleichtoleranz",
+                        max_correction: "Sicherheitsgrenze der Korrektur",
+                        media_segment: "Mediensegment",
+                        media_identity: "Inhaltsidentität",
+                        correction: "Korrektur für Pfad B",
+                        residual: "Restfehler",
+                        within_tolerance: "Innerhalb der Toleranz",
+                        outside_tolerance: "Außerhalb der Toleranz",
+                        load_saved_media: "Gespeichertes Mediensegment laden",
+                        media_loaded: "Gespeichertes Medium am erfassten Segmentanfang geladen",
+                        media_unavailable: "Gespeicherte Mediendatei ist nicht verfügbar",
+                        media_identity_mismatch: "Der Medieninhalt stimmt nicht mehr mit dieser Sitzung überein",
+                        seconds_unit: "s",
+                    },
                     measure_prepare: "Messen und vorbereiten",
                     plugin: "Plugin",
                     plugins: "Plugins",
@@ -7212,7 +7786,7 @@ impl Translations {
                     captured: "Aktuelle DSP-Topologie ohne Abflachung der Routen erfasst.",
                     load_or_prepare: "Laden oder erstellen Sie zuerst eine pegelabgeglichene Sitzung.",
                     select_paths_and_track: "Wählen Sie beide Pfade und spielen Sie einen lokalen Titel ab.",
-                    measuring: "Synchrones Rendering und Kurzzeit-LUFS-Messung…",
+                    measuring: "Synchrones Rendering und Messung mit der gewählten Pegelmetrik…",
                     no_session: "Keine Hörtestsitzung geladen.",
                     add_ab_plugin: "Fügen Sie vor der Wiedergabe ein A/B-Vergleichs-Plugin zum aktiven Rack hinzu.",
                     cue_active: "Signal mit fester Pegelkorrektur und synchronisiertem Transport aktiv.",
@@ -7597,7 +8171,29 @@ impl Translations {
                     graph_hint: "Haga doble clic en un nodo para editar sus parámetros JSON.",
                     done: "Listo",
                     level_title: "Igualación de nivel reproducible",
-                    level_description: "Renderiza ambas rutas sin conexión desde el mismo segmento de 3 segundos en la posición actual usando LUFS a corto plazo.",
+                    level_description: "Renderiza ambas rutas sin conexión desde el mismo segmento multimedia sincronizado con la métrica de nivel elegida.",
+                    level: ListeningTestLevelTranslations {
+                        target_metric: "Métrica de nivel de programa",
+                        momentary_lufs: "LUFS momentáneo (EBU R128)",
+                        short_term_lufs: "LUFS a corto plazo (EBU R128)",
+                        rms_dbfs: "Nivel RMS (dBFS)",
+                        segment_start: "Inicio del segmento",
+                        use_current_position: "Usar posición actual",
+                        window: "Ventana de medición",
+                        tolerance: "Tolerancia de igualación",
+                        max_correction: "Límite de seguridad de corrección",
+                        media_segment: "Segmento multimedia",
+                        media_identity: "Identidad del contenido",
+                        correction: "Corrección de la ruta B",
+                        residual: "Error residual",
+                        within_tolerance: "Dentro de tolerancia",
+                        outside_tolerance: "Fuera de tolerancia",
+                        load_saved_media: "Cargar segmento multimedia guardado",
+                        media_loaded: "Multimedia guardado cargado al inicio registrado",
+                        media_unavailable: "El archivo multimedia guardado no está disponible",
+                        media_identity_mismatch: "El contenido multimedia ya no coincide con esta sesión",
+                        seconds_unit: "s",
+                    },
                     measure_prepare: "Medir y preparar",
                     plugin: "plugin",
                     plugins: "plugins",
@@ -7630,7 +8226,7 @@ impl Translations {
                     captured: "Topología DSP actual capturada sin aplanar las rutas.",
                     load_or_prepare: "Cargue o prepare primero una sesión con niveles igualados.",
                     select_paths_and_track: "Seleccione ambas rutas y reproduzca o ponga en cola una pista local.",
-                    measuring: "Renderizando rutas sincronizadas y midiendo LUFS a corto plazo…",
+                    measuring: "Renderizando rutas sincronizadas y midiendo con la métrica configurada…",
                     no_session: "No hay ninguna sesión de prueba auditiva cargada.",
                     add_ab_plugin: "Añada un plugin de Comparación A/B al rack activo antes de reproducir señales.",
                     cue_active: "Señal activa con corrección fija guardada y transporte sincronizado.",

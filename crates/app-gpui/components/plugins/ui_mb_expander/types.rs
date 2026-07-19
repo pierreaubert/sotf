@@ -540,10 +540,7 @@ pub fn render_mb_expander_plugin(
                 .child(right_col),
         )
     } else {
-        content
-            .child(global_col)
-            .child(center_col)
-            .child(right_col)
+        content.child(global_col).child(center_col).child(right_col)
     };
 
     div().w_full().min_w_0().p(d.pad_x).child(content)

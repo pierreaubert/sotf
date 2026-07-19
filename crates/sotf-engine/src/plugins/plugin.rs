@@ -22,27 +22,77 @@ pub struct Plugin {
 }
 
 impl Plugin {
-    pub fn new(id: usize, plugin_type: &PluginType) -> Self {
-        Self {
+    pub fn new(id: usize, plugin_type: &PluginType) -> Result<Self, String> {
+        Ok(Self {
             id,
             enabled: true,
-            settings: PluginSettings::default_for(plugin_type),
+            settings: PluginSettings::default_for(plugin_type)?,
             permanent: false,
             suspended: false,
             name: None,
-        }
+        })
     }
 
     /// Create a permanent plugin that cannot be removed
-    pub fn new_permanent(id: usize, plugin_type: &PluginType) -> Self {
-        Self {
+    pub fn new_permanent(id: usize, plugin_type: &PluginType) -> Result<Self, String> {
+        Ok(Self {
             id,
             enabled: true,
-            settings: PluginSettings::default_for(plugin_type),
+            settings: PluginSettings::default_for(plugin_type)?,
             permanent: true,
             suspended: false,
             name: None,
-        }
+        })
+    }
+
+    /// Construct a plugin from concrete settings without requiring a generic
+    /// [`PluginType`] default. This is the only supported construction path
+    /// for external plugins.
+    pub fn from_settings(id: usize, settings: PluginSettings) -> Result<Self, String> {
+        let name = Self::validated_default_name(&settings)?;
+
+        Ok(Self {
+            id,
+            enabled: true,
+            settings,
+            permanent: false,
+            suspended: false,
+            name,
+        })
+    }
+
+    /// Revalidate deserialized settings before they are committed to a graph.
+    pub fn validate(&self) -> Result<(), String> {
+        Self::validated_default_name(&self.settings).map(|_| ())
+    }
+
+    fn validated_default_name(settings: &PluginSettings) -> Result<Option<String>, String> {
+        let name = match settings {
+            PluginSettings::External { state } => {
+                state.validate()?;
+                if state.descriptor.is_instrument || state.descriptor.audio_inputs == 0 {
+                    return Err(format!(
+                        "External plugin '{}' is an instrument; the audio-effect rack requires at least one input channel",
+                        state.descriptor.name
+                    ));
+                }
+                if state.sandbox_mode != sotf_plugins::ExternalPluginSandboxMode::Isolated {
+                    return Err(format!(
+                        "External plugin '{}' must use isolated hosting",
+                        state.descriptor.name
+                    ));
+                }
+                if state.descriptor.scan_status != sotf_plugins::PluginScanStatus::Loadable {
+                    return Err(format!(
+                        "External plugin '{}' is not loadable in this build ({:?})",
+                        state.descriptor.name, state.descriptor.scan_status
+                    ));
+                }
+                Some(state.descriptor.name.clone())
+            }
+            _ => None,
+        };
+        Ok(name)
     }
 
     pub fn plugin_type(&self) -> PluginType {
@@ -65,7 +115,16 @@ impl Plugin {
 
     pub fn to_plugin_config(&self, sample_rate: f64) -> Option<PluginConfig> {
         if self.enabled && !self.suspended {
-            Some(self.settings.to_plugin_config(sample_rate))
+            let mut config = self.settings.to_plugin_config(sample_rate);
+            if matches!(self.settings, PluginSettings::External { .. })
+                && let Some(parameters) = config.parameters.as_object_mut()
+            {
+                parameters.insert(
+                    sotf_plugins::EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER.to_string(),
+                    serde_json::json!(self.id),
+                );
+            }
+            Some(config)
         } else {
             None
         }

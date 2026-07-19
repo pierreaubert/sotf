@@ -13,7 +13,8 @@ fn make_controller_with_eq() -> (PluginController, crate::plugin_graph::GraphNod
     ctrl.graph = PluginGraph::new();
     let node_id = ctrl
         .graph
-        .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0));
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0))
+        .unwrap();
     // The EQ plugin defaults to a non-empty filter list — we only need
     // to know how many bands it starts with.
     (ctrl, node_id)
@@ -49,7 +50,8 @@ fn add_eq_band_by_node_id_rejects_non_eq_plugin() {
     ctrl.graph = PluginGraph::new();
     let id = ctrl
         .graph
-        .add_plugin_node(&PluginType::Gain, NodePosition::new(0.0, 0.0));
+        .add_plugin_node(&PluginType::Gain, NodePosition::new(0.0, 0.0))
+        .unwrap();
     assert!(ctrl.add_eq_band_by_node_id(id).is_err());
 }
 
@@ -107,10 +109,12 @@ fn eq_band_by_node_id_does_not_affect_sibling_node() {
     ctrl.graph = PluginGraph::new();
     let a = ctrl
         .graph
-        .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0));
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0))
+        .unwrap();
     let b = ctrl
         .graph
-        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0));
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(100.0, 0.0))
+        .unwrap();
     let a_before = eq_filter_count(&ctrl, a);
     let b_before = eq_filter_count(&ctrl, b);
     ctrl.add_eq_band_by_node_id(a).unwrap();
@@ -347,7 +351,7 @@ fn move_user_plugin_by_index_swaps_two_user_plugins() {
         .collect();
 
     // Move first user plugin down to second user plugin position
-    ctrl.graph.move_plugin(2, 3);
+    ctrl.graph.move_plugin(2, 3).unwrap();
 
     let order_after: Vec<String> = ctrl
         .graph

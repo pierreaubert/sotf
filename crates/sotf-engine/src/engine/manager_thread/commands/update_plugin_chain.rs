@@ -1,6 +1,5 @@
 use super::{ManagerCommandHandler, ManagerContext, ManagerResponse};
 use crate::engine::PluginConfig;
-use std::sync::Arc;
 
 /// Replace the active plugin chain.
 pub struct UpdatePluginChainCommand(pub Vec<PluginConfig>);
@@ -69,17 +68,11 @@ impl ManagerCommandHandler for UpdatePluginChainCommand {
             ctx.config.oversampling_policy,
         ) {
             Ok(()) => {
-                let mut new_state = (**ctx.state.load()).clone();
-                new_state.last_error = None;
-                ctx.state.store(Arc::new(new_state));
                 log::trace!("[Manager Thread] UpdatePluginChain: Update applied successfully");
                 ManagerResponse::Ok
             }
             Err(e) => {
                 let message = e.to_string();
-                let mut new_state = (**ctx.state.load()).clone();
-                new_state.last_error = Some(message.clone());
-                ctx.state.store(Arc::new(new_state));
                 log::trace!("[Manager Thread] UpdatePluginChain: Update failed: {}", e);
                 ManagerResponse::Error(message)
             }

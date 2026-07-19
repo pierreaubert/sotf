@@ -1,5 +1,6 @@
 use super::release_channel::ReleaseChannel;
 use serde::{Deserialize, Serialize};
+use sotf_plugins::{PluginMaturity, catalog_entry, generic_app_catalog_entries};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PluginType {
@@ -46,55 +47,17 @@ pub enum PluginType {
     FirDesigner,
     LinearPhaseEq,
     SpectralCompressor,
+    /// A concrete external plugin. External plugins are intentionally omitted
+    /// from [`PluginType::all`] because they require a discovered descriptor
+    /// and therefore have no generic default settings.
+    External,
 }
 
 impl PluginType {
     pub fn name(&self) -> &'static str {
-        match self {
-            Self::EQ => "EQ",
-            Self::Gain => "Gain",
-            Self::Upmixer => "Upmixer",
-            Self::AAE => "AAE",
-            Self::Compressor => "Compressor",
-            Self::Gate => "Gate",
-            Self::Limiter => "Limiter",
-            Self::Expander => "Expander",
-            Self::MultibandCompressor => "Multiband Compressor",
-            Self::MultibandExpander => "Multiband Expander",
-            Self::LoudnessCompensation => "Loudness Compensation",
-            Self::FletcherMunson => "Fletcher-Munson",
-            Self::BinauralDecoder => "Binaural Decoder",
-            Self::Convolution => "Convolution",
-            Self::LoudnessMonitor => "Loudness Monitor",
-            Self::SpectrumAnalyzer => "Spectrum Analyzer",
-            Self::ChannelMuteSolo => "Channel Mute/Solo",
-            Self::Matrix => "Matrix Mixer",
-            Self::XTC => "Crosstalk Cancellation",
-            Self::Denoiser => "Denoiser",
-            Self::Declick => "Declick",
-            Self::HissReducer => "Hiss Reducer",
-            Self::SpeechDenoiser => "Speech Denoiser",
-            Self::Pnd => "PND Varispeed",
-            Self::ABCompare => "A/B Compare",
-            Self::Crossover => "Crossover",
-            Self::BandSplit => "Band Split",
-            Self::BandMerge => "Band Merge",
-            Self::Downmix => "Downmix",
-            Self::MonoToStereo => "Mono to Stereo",
-            Self::Crossfeed => "Crossfeed",
-            Self::Delay => "Delay",
-            Self::Aec => "AEC",
-            Self::Beamformer => "Beamformer",
-            Self::AmbisonicsDecoder => "Ambisonics Decoder",
-            Self::StereoImager => "Stereo Imager",
-            Self::DeEsser => "De-Esser",
-            Self::TransientShaper => "Transient Shaper",
-            Self::Saturation => "Saturation",
-            Self::DynamicEq => "Dynamic EQ",
-            Self::FirDesigner => "FIR Designer",
-            Self::LinearPhaseEq => "Linear-Phase EQ",
-            Self::SpectralCompressor => "Spectral Compressor",
-        }
+        catalog_entry(self.wire_name())
+            .map(|entry| entry.metadata.exposed_name)
+            .expect("every PluginType must have canonical catalog metadata")
     }
 
     /// Wire / serde-friendly identifier used in `PluginConfig.plugin_type` and the factory.
@@ -143,6 +106,7 @@ impl PluginType {
             Self::FirDesigner => "fir_designer",
             Self::LinearPhaseEq => "linear_phase_eq",
             Self::SpectralCompressor => "spectral_compressor",
+            Self::External => "external",
         }
     }
 
@@ -193,55 +157,68 @@ impl PluginType {
             Self::SpectralCompressor => {
                 "Per-bin FFT dynamics processor for surgical spectral compression"
             }
+            Self::External => "Third-party audio plugin hosted in an isolated worker",
         }
     }
 
     pub fn all() -> Vec<Self> {
-        vec![
-            Self::EQ,
-            Self::Gain,
-            Self::Upmixer,
-            Self::AAE,
-            Self::Compressor,
-            Self::Limiter,
-            Self::Gate,
-            Self::Expander,
-            Self::MultibandCompressor,
-            Self::MultibandExpander,
-            Self::LoudnessCompensation,
-            Self::FletcherMunson,
-            Self::BinauralDecoder,
-            Self::Convolution,
-            Self::LoudnessMonitor,
-            Self::SpectrumAnalyzer,
-            Self::ChannelMuteSolo,
-            Self::Matrix,
-            Self::XTC,
-            Self::Denoiser,
-            Self::Declick,
-            Self::HissReducer,
-            Self::SpeechDenoiser,
-            Self::Pnd,
-            Self::ABCompare,
-            Self::Crossover,
-            Self::BandSplit,
-            Self::BandMerge,
-            Self::Downmix,
-            Self::MonoToStereo,
-            Self::Crossfeed,
-            Self::Delay,
-            Self::Aec,
-            Self::Beamformer,
-            Self::AmbisonicsDecoder,
-            Self::StereoImager,
-            Self::DeEsser,
-            Self::TransientShaper,
-            Self::Saturation,
-            Self::DynamicEq,
-            Self::FirDesigner,
-            Self::LinearPhaseEq,
-            Self::SpectralCompressor,
-        ]
+        generic_app_catalog_entries()
+            .map(|entry| {
+                Self::from_wire_name(entry.canonical_type)
+                    .expect("generic catalog entries must map to PluginType")
+            })
+            .collect()
+    }
+
+    /// Resolve a canonical factory name or compatibility alias.
+    pub fn from_wire_name(name: &str) -> Option<Self> {
+        match catalog_entry(name)?.canonical_type {
+            "eq" => Some(Self::EQ),
+            "gain" => Some(Self::Gain),
+            "upmixer" => Some(Self::Upmixer),
+            "aae" => Some(Self::AAE),
+            "compressor" => Some(Self::Compressor),
+            "limiter" => Some(Self::Limiter),
+            "gate" => Some(Self::Gate),
+            "expander" => Some(Self::Expander),
+            "multiband_compressor" => Some(Self::MultibandCompressor),
+            "multiband_expander" => Some(Self::MultibandExpander),
+            "loudness_compensation" => Some(Self::LoudnessCompensation),
+            "fletcher_munson" => Some(Self::FletcherMunson),
+            "binaural_decoder" => Some(Self::BinauralDecoder),
+            "convolution" => Some(Self::Convolution),
+            "loudness_monitor" => Some(Self::LoudnessMonitor),
+            "spectrum_analyzer" => Some(Self::SpectrumAnalyzer),
+            "channel_mute_solo" => Some(Self::ChannelMuteSolo),
+            "matrix" => Some(Self::Matrix),
+            "xtc" => Some(Self::XTC),
+            "denoiser" => Some(Self::Denoiser),
+            "declick" => Some(Self::Declick),
+            "hiss_reducer" => Some(Self::HissReducer),
+            "speech_denoiser" => Some(Self::SpeechDenoiser),
+            "pnd" => Some(Self::Pnd),
+            "ab_compare" => Some(Self::ABCompare),
+            "crossover" => Some(Self::Crossover),
+            "band_split" => Some(Self::BandSplit),
+            "band_merge" => Some(Self::BandMerge),
+            "downmix" => Some(Self::Downmix),
+            "mono_to_stereo" => Some(Self::MonoToStereo),
+            "crossfeed" => Some(Self::Crossfeed),
+            "delay" => Some(Self::Delay),
+            "aec" => Some(Self::Aec),
+            "beamformer" => Some(Self::Beamformer),
+            "ambisonics_decoder" => Some(Self::AmbisonicsDecoder),
+            "stereo_imager" => Some(Self::StereoImager),
+            "de_esser" => Some(Self::DeEsser),
+            "transient_shaper" => Some(Self::TransientShaper),
+            "saturation" => Some(Self::Saturation),
+            "dynamic_eq" => Some(Self::DynamicEq),
+            "fir_designer" => Some(Self::FirDesigner),
+            "linear_phase_eq" => Some(Self::LinearPhaseEq),
+            "spectral_compressor" => Some(Self::SpectralCompressor),
+            "external" => Some(Self::External),
+            _ => None,
+        }
     }
 
     /// Parse a plugin type from its name or serde variant (case-insensitive).
@@ -273,52 +250,17 @@ impl PluginType {
 
     /// Returns the maturity level of this plugin type.
     pub fn maturity(&self) -> ReleaseChannel {
-        match self {
-            Self::EQ
-            | Self::Gain
-            | Self::Compressor
-            | Self::ChannelMuteSolo
-            | Self::Crossfeed
-            | Self::Delay
-            | Self::Expander
-            | Self::FletcherMunson
-            | Self::Gate
-            | Self::Limiter
-            | Self::LoudnessMonitor
-            | Self::Matrix
-            | Self::MultibandCompressor
-            | Self::MultibandExpander
-            | Self::SpectrumAnalyzer
-            | Self::Upmixer
-            | Self::XTC => ReleaseChannel::Prod,
-
-            Self::AAE
-            | Self::ABCompare
-            | Self::Crossover
-            | Self::BandSplit
-            | Self::BandMerge
-            | Self::Downmix
-            | Self::LoudnessCompensation
-            | Self::MonoToStereo
-            | Self::StereoImager
-            | Self::DeEsser
-            | Self::TransientShaper
-            | Self::Saturation
-            | Self::DynamicEq
-            | Self::FirDesigner
-            | Self::LinearPhaseEq => ReleaseChannel::Beta,
-
-            Self::BinauralDecoder
-            | Self::Convolution
-            | Self::Pnd
-            | Self::Denoiser
-            | Self::Declick
-            | Self::HissReducer
-            | Self::SpeechDenoiser
-            | Self::Aec
-            | Self::Beamformer
-            | Self::AmbisonicsDecoder
-            | Self::SpectralCompressor => ReleaseChannel::Alpha,
+        match catalog_entry(self.wire_name())
+            .expect("every PluginType must have canonical catalog metadata")
+            .metadata
+            .maturity
+        {
+            PluginMaturity::Stable => ReleaseChannel::Prod,
+            PluginMaturity::Beta => ReleaseChannel::Beta,
+            PluginMaturity::Alpha => ReleaseChannel::Alpha,
+            PluginMaturity::Infrastructure => {
+                unreachable!("infrastructure entries are not application PluginType values")
+            }
         }
     }
 }
@@ -330,7 +272,15 @@ mod tests {
     #[test]
     fn every_app_plugin_type_has_a_canonical_factory_catalog_entry() {
         let mut missing = Vec::new();
-        for plugin_type in PluginType::all() {
+        let plugin_types = PluginType::all();
+        let generic_entries: Vec<_> = generic_app_catalog_entries().collect();
+        assert_eq!(
+            plugin_types.len(),
+            generic_entries.len(),
+            "generic catalog and PluginType enumeration drifted"
+        );
+
+        for plugin_type in plugin_types {
             let wire_name = plugin_type.wire_name();
             match sotf_plugins::catalog_entry(wire_name) {
                 Some(entry) if entry.canonical_type == wire_name => {}
@@ -342,5 +292,20 @@ mod tests {
             }
         }
         assert!(missing.is_empty(), "{}", missing.join("\n"));
+    }
+
+    #[test]
+    fn compatibility_aliases_resolve_to_the_same_plugin_type() {
+        for entry in generic_app_catalog_entries() {
+            let canonical = PluginType::from_wire_name(entry.canonical_type).unwrap();
+            for alias in entry.aliases {
+                assert_eq!(
+                    PluginType::from_wire_name(alias),
+                    Some(canonical.clone()),
+                    "alias '{alias}' drifted from {}",
+                    entry.canonical_type
+                );
+            }
+        }
     }
 }

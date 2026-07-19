@@ -21,6 +21,7 @@ use super::types::LayoutTabContent;
 use super::types::collect_all_tabs;
 use crate::app::AppState;
 use crate::app::constants::spacing;
+use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::theme::PluginTheme;
@@ -53,6 +54,7 @@ pub fn render_from_layout(
     available_width: f32,
     config_width_override: Option<f32>,
     output_width_override: Option<f32>,
+    text: PluginCommonTranslations,
     theme: &Theme,
     plugin_theme: &PluginTheme,
     spider_snapshot: Option<crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
@@ -93,6 +95,7 @@ pub fn render_from_layout(
         available_width,
         config_width_override,
         output_width_override,
+        text,
         &chassis_theme,
         spider_snapshot.as_ref(),
     )
@@ -139,6 +142,7 @@ pub fn render_main_controls_from_layout(
         selected_param,
         0,
         plugin_data,
+        None,
         None,
         theme,
         false,
@@ -266,6 +270,7 @@ pub fn render_tabs_from_layout(
                     plugin_data,
                     theme,
                     None,
+                    None,
                 )),
         );
     }
@@ -290,6 +295,7 @@ fn render_solved_layout(
     available_width: f32,
     config_width_override: Option<f32>,
     output_width_override: Option<f32>,
+    text: PluginCommonTranslations,
     theme: &Theme,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
 ) -> AnyElement {
@@ -393,6 +399,7 @@ fn render_solved_layout(
         active_tab,
         plugin_data,
         spider_snapshot,
+        Some(text),
         theme,
         true,
     ));
@@ -413,6 +420,7 @@ fn render_solved_layout(
                     entity.clone(),
                     plugin_idx,
                     snapshot,
+                    text,
                     theme,
                 ));
             }
@@ -432,10 +440,11 @@ fn render_spatial_spider_viz(
     entity: Entity<AppState>,
     plugin_idx: usize,
     snapshot: &crate::components::plugins::spatial_spider::SpatialSpiderSnapshot,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> AnyElement {
     crate::components::plugins::spatial_spider::render_spatial_spider_panel(
-        d, entity, plugin_idx, snapshot, None, theme,
+        d, entity, plugin_idx, snapshot, None, text, theme,
     )
 }
 
@@ -496,6 +505,7 @@ fn render_main_column(
     active_tab: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
+    text: Option<PluginCommonTranslations>,
     theme: &Theme,
     include_tabs: bool,
 ) -> impl IntoElement {
@@ -573,6 +583,7 @@ fn render_main_column(
                 plugin_data,
                 theme,
                 spider_snapshot,
+                text,
             ));
         }
         center = center.child(container);
@@ -683,6 +694,7 @@ fn render_main_column(
                     plugin_data,
                     theme,
                     spider_snapshot,
+                    text,
                 );
                 center = center.child(tab_div);
             }
@@ -709,6 +721,7 @@ fn render_group(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     theme: &Theme,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
+    text: Option<PluginCommonTranslations>,
 ) -> impl IntoElement {
     // Individual controls carry their own visual frames. The generated group
     // wrapper should size to content instead of drawing a large empty chassis.
@@ -807,12 +820,13 @@ fn render_group(
                 } if *target == group.title
                     && *name == sotf_plugins::plugin_layout::viz_names::SPATIAL_SPIDER =>
                 {
-                    if let Some(snapshot) = spider_snapshot {
+                    if let (Some(snapshot), Some(text)) = (spider_snapshot, text) {
                         col = col.child(render_spatial_spider_viz(
                             d,
                             entity.clone(),
                             plugin_idx,
                             snapshot,
+                            text,
                             theme,
                         ));
                     }
@@ -1609,6 +1623,7 @@ fn render_layout_tab_content(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     theme: &Theme,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
+    text: Option<PluginCommonTranslations>,
 ) -> AnyElement {
     match content {
         LayoutTabContent::Controls(controls) => {
@@ -1652,6 +1667,7 @@ fn render_layout_tab_content(
                 plugin_data,
                 theme,
                 spider_snapshot,
+                text,
             ))
             .into_any_element(),
     }

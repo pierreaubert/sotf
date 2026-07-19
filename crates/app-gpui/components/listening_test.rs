@@ -20,15 +20,15 @@ use gpui_ui_kit::{
 };
 use sotf_audio::plugins::PluginType;
 use sotf_audio_player::controllers::ab_compare_path::{
-    ALLOWED_PLUGIN_TYPES, GraphEdgeConfig, GraphNodeConfig, PathConfig, PluginInRack,
+    GraphEdgeConfig, GraphNodeConfig, PathConfig, PluginInRack, allowed_plugin_types,
     path_config_from_plugin_graph, simplify_linear_path_config,
 };
 use sotf_audio_player::controllers::ab_test_execution::{
     AbTestSessionPreparationRequest, load_ab_test_session, prepare_ab_test_session,
-    save_ab_test_session,
+    save_ab_test_session, verify_media_segment,
 };
 use sotf_audio_player::controllers::ab_test_session::{
-    LevelMatchMetric, TrialAnswer, TrialCue, TrialMode,
+    AbTestError, LevelMatchMetric, TrialAnswer, TrialCue, TrialMode,
 };
 
 #[derive(Clone, Copy)]
@@ -48,6 +48,10 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.listening_test.clone();
         let listening = state.app.plugin_state.listening_test_state.clone();
         let has_session = listening.session.is_some();
+        let trial_ready = listening
+            .session
+            .as_ref()
+            .is_some_and(|session| session.setup.level_match.within_tolerance());
         let paths_ready = listening.path_a.is_some() && listening.path_b.is_some();
         let pending_mode = listening
             .session
@@ -61,6 +65,82 @@ impl PlayerView {
             .session
             .as_ref()
             .map(|session| session.abx_score());
+        let level_text = translations.setup.level.clone();
+        let level_match = listening.level_match_config;
+        let prepared_evidence = listening.session.as_ref().map(|session| {
+            let measurement = &session.setup.level_match;
+            let confidence = if measurement.within_tolerance() {
+                level_text.within_tolerance
+            } else {
+                level_text.outside_tolerance
+            };
+            let confidence_color = if measurement.within_tolerance() {
+                theme.success
+            } else {
+                theme.warning
+            };
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.grid)
+                .p(d.pad_y)
+                .rounded(d.r_sm)
+                .bg(theme.background_secondary)
+                .child(
+                    div()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .text_size(d.text_xs)
+                        .text_color(theme.text_secondary)
+                        .child(format!(
+                            "{}: {} · {:.2}–{:.2} {}",
+                            level_text.media_segment,
+                            session
+                                .setup
+                                .media
+                                .media_path
+                                .as_deref()
+                                .unwrap_or(&session.setup.media.media_id),
+                            session.setup.media.start_ms as f64 / 1_000.0,
+                            (session.setup.media.start_ms + session.setup.media.duration_ms) as f64
+                                / 1_000.0,
+                            level_text.seconds_unit,
+                        )),
+                )
+                .child(
+                    Text::caption(format!(
+                        "{}: {}",
+                        level_text.media_identity, session.setup.media.media_id
+                    ))
+                    .color(theme.text_muted),
+                )
+                .child(
+                    Text::caption(format!(
+                        "{} · {}: {:+.2} dB · {}: {:.3} dB / {:.3} dB · {}: ±{:.2} dB",
+                        level_text.metric_label(measurement.metric),
+                        level_text.correction,
+                        measurement.correction_b_db,
+                        level_text.residual,
+                        measurement.residual_error_db(),
+                        measurement.tolerance_db,
+                        level_text.max_correction,
+                        measurement.max_correction_db,
+                    ))
+                    .color(theme.text_secondary),
+                )
+                .child(Text::label(confidence).color(confidence_color))
+                .child(
+                    Button::new("load-listening-media", level_text.load_saved_media)
+                        .size(ButtonSize::Xs)
+                        .variant(ButtonVariant::Secondary)
+                        .theme(theme.to_button_theme())
+                        .on_click_event(cx.listener(|view, _, _, cx| {
+                            view.load_listening_session_media(cx);
+                        })),
+                )
+                .into_any_element()
+        });
         div()
             .id("listening-test-screen")
             .size_full()
@@ -135,35 +215,220 @@ impl PlayerView {
                     .border_color(theme.border)
                     .bg(theme.surface)
                     .flex()
-                    .items_center()
-                    .justify_between()
+                    .flex_col()
+                    .gap(d.gap)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(d.grid)
+                                    .child(
+                                        Text::new(translations.setup.level_title)
+                                            .weight(TextWeight::Semibold),
+                                    )
+                                    .child(Text::caption(translations.setup.level_description)),
+                            )
+                            .when(paths_ready, |row| {
+                                row.child(
+                                    Button::new(
+                                        "prepare-listening-session",
+                                        translations.setup.measure_prepare,
+                                    )
+                                    .size(ButtonSize::Sm)
+                                    .variant(ButtonVariant::Primary)
+                                    .theme(theme.to_button_theme())
+                                    .on_click_event(
+                                        cx.listener(|view, _, _, cx| {
+                                            view.prepare_current_listening_session(cx);
+                                        }),
+                                    ),
+                                )
+                            }),
+                    )
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .gap(d.grid)
+                            .child(Text::caption(level_text.target_metric))
                             .child(
-                                Text::new(translations.setup.level_title)
-                                    .weight(TextWeight::Semibold),
-                            )
-                            .child(Text::caption(translations.setup.level_description)),
+                                div()
+                                    .flex()
+                                    .flex_wrap()
+                                    .gap(d.grid)
+                                    .child(self.listening_metric_button(
+                                        "listening-metric-momentary",
+                                        level_text.momentary_lufs,
+                                        LevelMatchMetric::MomentaryLufs,
+                                        level_match.metric,
+                                        cx,
+                                    ))
+                                    .child(self.listening_metric_button(
+                                        "listening-metric-short-term",
+                                        level_text.short_term_lufs,
+                                        LevelMatchMetric::ShortTermLufs,
+                                        level_match.metric,
+                                        cx,
+                                    ))
+                                    .child(self.listening_metric_button(
+                                        "listening-metric-rms",
+                                        level_text.rms_dbfs,
+                                        LevelMatchMetric::Rms,
+                                        level_match.metric,
+                                        cx,
+                                    )),
+                            ),
                     )
-                    .when(paths_ready, |panel| {
-                        panel.child(
-                            Button::new(
-                                "prepare-listening-session",
-                                translations.setup.measure_prepare,
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_end()
+                            .gap(d.gap)
+                            .child({
+                                let state_entity = self.state.clone();
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(d.grid)
+                                    .child(Text::caption(level_text.segment_start))
+                                    .child(
+                                        NumberInput::new("listening-segment-start")
+                                            .value(listening.segment_start_ms as f64 / 1_000.0)
+                                            .range(0.0, 86_400.0)
+                                            .step(0.1)
+                                            .decimals(2)
+                                            .unit(level_text.seconds_unit)
+                                            .aria_label(level_text.segment_start)
+                                            .size(NumberInputSize::Sm)
+                                            .width(140.0)
+                                            .on_change(move |value, _window, cx| {
+                                                state_entity.update(cx, |state, _| {
+                                                    let listening = &mut state
+                                                        .app
+                                                        .plugin_state
+                                                        .listening_test_state;
+                                                    listening.segment_start_ms =
+                                                        (value.max(0.0) * 1_000.0).round() as u64;
+                                                    listening.session = None;
+                                                });
+                                            }),
+                                    )
+                            })
+                            .child(
+                                Button::new(
+                                    "listening-use-current-position",
+                                    level_text.use_current_position,
+                                )
+                                .size(ButtonSize::Xs)
+                                .variant(ButtonVariant::Secondary)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.use_current_listening_position(cx);
+                                })),
                             )
-                            .size(ButtonSize::Sm)
-                            .variant(ButtonVariant::Primary)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(
-                                |view, _, _, cx| {
-                                    view.prepare_current_listening_session(cx);
-                                },
-                            )),
-                        )
-                    }),
+                            .child({
+                                let state_entity = self.state.clone();
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(d.grid)
+                                    .child(Text::caption(level_text.window))
+                                    .child(
+                                        NumberInput::new("listening-window")
+                                            .value(level_match.window_ms as f64 / 1_000.0)
+                                            .range(
+                                                level_match.metric.minimum_window_ms() as f64
+                                                    / 1_000.0,
+                                                60.0,
+                                            )
+                                            .step(0.1)
+                                            .decimals(2)
+                                            .unit(level_text.seconds_unit)
+                                            .aria_label(level_text.window)
+                                            .size(NumberInputSize::Sm)
+                                            .width(140.0)
+                                            .on_change(move |value, _window, cx| {
+                                                state_entity.update(cx, |state, _| {
+                                                    let listening = &mut state
+                                                        .app
+                                                        .plugin_state
+                                                        .listening_test_state;
+                                                    listening.level_match_config.window_ms =
+                                                        (value.max(0.001) * 1_000.0).round() as u64;
+                                                    listening.session = None;
+                                                });
+                                            }),
+                                    )
+                            })
+                            .child({
+                                let state_entity = self.state.clone();
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(d.grid)
+                                    .child(Text::caption(level_text.tolerance))
+                                    .child(
+                                        NumberInput::new("listening-tolerance")
+                                            .value(level_match.tolerance_db)
+                                            .range(0.0, 3.0)
+                                            .step(0.01)
+                                            .decimals(2)
+                                            .unit("dB")
+                                            .aria_label(level_text.tolerance)
+                                            .size(NumberInputSize::Sm)
+                                            .width(140.0)
+                                            .on_change(move |value, _window, cx| {
+                                                state_entity.update(cx, |state, _| {
+                                                    let listening = &mut state
+                                                        .app
+                                                        .plugin_state
+                                                        .listening_test_state;
+                                                    listening.level_match_config.tolerance_db =
+                                                        value.max(0.0);
+                                                    listening.session = None;
+                                                });
+                                            }),
+                                    )
+                            })
+                            .child({
+                                let state_entity = self.state.clone();
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(d.grid)
+                                    .child(Text::caption(level_text.max_correction))
+                                    .child(
+                                        NumberInput::new("listening-max-correction")
+                                            .value(level_match.max_correction_db)
+                                            .range(0.0, 24.0)
+                                            .step(0.5)
+                                            .decimals(1)
+                                            .unit("dB")
+                                            .aria_label(level_text.max_correction)
+                                            .size(NumberInputSize::Sm)
+                                            .width(140.0)
+                                            .on_change(move |value, _window, cx| {
+                                                state_entity.update(cx, |state, _| {
+                                                    let listening = &mut state
+                                                        .app
+                                                        .plugin_state
+                                                        .listening_test_state;
+                                                    listening
+                                                        .level_match_config
+                                                        .max_correction_db = value.max(0.0);
+                                                    listening.session = None;
+                                                });
+                                            }),
+                                    )
+                            }),
+                    )
+                    .when_some(prepared_evidence, |panel, evidence| panel.child(evidence)),
             )
             .child(
                 div()
@@ -193,7 +458,7 @@ impl PlayerView {
                                 }
                             })),
                     )
-                    .when(has_session && pending_mode.is_none(), |panel| {
+                    .when(trial_ready && pending_mode.is_none(), |panel| {
                         panel.child(
                             div()
                                 .flex()
@@ -220,6 +485,10 @@ impl PlayerView {
                     })
                     .when(!has_session, |panel| {
                         panel.child(Text::caption(translations.trial.no_session))
+                    })
+                    .when(has_session && !trial_ready, |panel| {
+                        panel
+                            .child(Text::caption(level_text.outside_tolerance).color(theme.warning))
                     }),
             )
             .child(
@@ -622,7 +891,7 @@ impl PlayerView {
             .border_1()
             .border_color(theme.border)
             .bg(theme.background);
-        for &(plugin_type, label) in ALLOWED_PLUGIN_TYPES {
+        for (plugin_type, label) in allowed_plugin_types() {
             let plugin_type = plugin_type.to_owned();
             menu = menu.child(
                 Button::new(
@@ -1109,6 +1378,114 @@ impl PlayerView {
         button
     }
 
+    fn listening_metric_button(
+        &self,
+        id: &'static str,
+        label: &'static str,
+        metric: LevelMatchMetric,
+        selected: LevelMatchMetric,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        Button::new(id, label)
+            .size(ButtonSize::Xs)
+            .variant(if metric == selected {
+                ButtonVariant::Primary
+            } else {
+                ButtonVariant::Secondary
+            })
+            .theme(theme.to_button_theme())
+            .on_click_event(cx.listener(move |view, _, _, cx| {
+                view.state.update(cx, |state, _| {
+                    let listening = &mut state.app.plugin_state.listening_test_state;
+                    listening.level_match_config.metric = metric;
+                    listening.level_match_config.window_ms = listening
+                        .level_match_config
+                        .window_ms
+                        .max(metric.minimum_window_ms().max(1));
+                    listening.session = None;
+                });
+                cx.notify();
+            }))
+    }
+
+    fn use_current_listening_position(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _| {
+            let start_ms = (state.app.playback.position_secs.max(0.0) * 1_000.0).round() as u64;
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            listening.segment_start_ms = start_ms;
+            listening.session = None;
+        });
+        cx.notify();
+    }
+
+    fn load_listening_session_media(&mut self, cx: &mut Context<Self>) {
+        let request = {
+            let state = self.state.read(cx);
+            state
+                .app
+                .plugin_state
+                .listening_test_state
+                .session
+                .as_ref()
+                .map(|session| {
+                    (
+                        session.setup.media.clone(),
+                        session.setup.media.start_ms as f64 / 1_000.0,
+                        session.setup.channels,
+                        session.setup.sample_rate,
+                    )
+                })
+        };
+        let Some((media, position, channels, sample_rate)) = request else {
+            return;
+        };
+        let weak_state = self.state.downgrade();
+        cx.spawn(async move |_, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { verify_media_segment(&media) })
+                .await;
+            let Some(entity) = weak_state.upgrade() else {
+                return;
+            };
+            entity.update(&mut cx.clone(), |state, cx| {
+                let text = state
+                    .app
+                    .ui_state
+                    .translations
+                    .listening_test
+                    .setup
+                    .level
+                    .clone();
+                match result {
+                    Ok(path) => {
+                        if Self::play_listening_source_at(
+                            state,
+                            sotf_audio::decoder::AudioSource::from(path),
+                            position,
+                            channels,
+                            sample_rate,
+                        ) {
+                            state.app.plugin_state.listening_test_state.status =
+                                text.media_loaded.into();
+                        }
+                    }
+                    Err(AbTestError::MediaIdentityMismatch) => {
+                        state.app.plugin_state.listening_test_state.status =
+                            text.media_identity_mismatch.into();
+                    }
+                    Err(error) => {
+                        state.app.plugin_state.listening_test_state.status =
+                            format!("{}: {error}", text.media_unavailable);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn listening_test_file_button(
         &self,
         id: &'static str,
@@ -1214,12 +1591,15 @@ impl PlayerView {
                     listening.path_a_label.clone(),
                     listening.path_b_label.clone(),
                     media_path,
-                    (state.app.playback.position_secs.max(0.0) * 1_000.0) as u64,
+                    listening.segment_start_ms,
+                    listening.level_match_config,
                 )),
                 _ => None,
             }
         };
-        let Some((path_a, path_b, label_a, label_b, media_path, start_ms)) = request_data else {
+        let Some((path_a, path_b, label_a, label_b, media_path, start_ms, level_match)) =
+            request_data
+        else {
             self.state.update(cx, |state, _| {
                 state.app.plugin_state.listening_test_state.status = state
                     .app
@@ -1264,9 +1644,7 @@ impl PlayerView {
                         path_b: &path_b,
                         media_path: &media_path,
                         start_ms,
-                        duration_ms: 3_000,
-                        metric: LevelMatchMetric::ShortTermLufs,
-                        max_correction_db: 12.0,
+                        level_match,
                         block_frames: 1_024,
                         switch_transition_ms: 20.0,
                         participant_id: None,
@@ -1514,6 +1892,8 @@ impl PlayerView {
                         listening.path_b_label = session.setup.path_b.label.clone();
                         listening.path_a_canvas = None;
                         listening.path_b_canvas = None;
+                        listening.level_match_config = session.setup.level_match.config();
+                        listening.segment_start_ms = session.setup.media.start_ms;
                         listening.session = Some(session);
                         listening.status = localized.session_loaded.into();
                     }

@@ -46,5 +46,6 @@ pub fn plugin_type_key(settings: &PluginSettings) -> &'static str {
         PluginSettings::FirDesigner { .. } => "fir_designer",
         PluginSettings::LinearPhaseEq { .. } => "linear_phase_eq",
         PluginSettings::SpectralCompressor { .. } => "spectral_compressor",
+        PluginSettings::External { .. } => "external",
     }
 }

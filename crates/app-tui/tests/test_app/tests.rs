@@ -31,7 +31,7 @@ fn test_navigation_with_empty_directories() {
 #[test]
 fn test_adjust_eq_parameters() {
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::EQ);
+    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::EQ).unwrap();
     app.plugin_rack.editing_index = Some(plugin_idx);
 
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
@@ -90,7 +90,11 @@ fn test_adjust_eq_parameters() {
 #[test]
 fn test_adjust_upmixer_parameters() {
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::Upmixer);
+    let plugin_idx = app
+        .plugin_rack
+        .graph
+        .add_plugin(&PluginType::Upmixer)
+        .unwrap();
     app.plugin_rack.editing_index = Some(plugin_idx);
 
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
@@ -238,7 +242,11 @@ fn test_adjust_upmixer_parameters() {
 fn test_adjust_compressor_limiter_gate_loudness_parameters() {
     // Compressor
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::Compressor);
+    let plugin_idx = app
+        .plugin_rack
+        .graph
+        .add_plugin(&PluginType::Compressor)
+        .unwrap();
     app.plugin_rack.editing_index = Some(plugin_idx);
 
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
@@ -316,7 +324,11 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
 
     // Limiter (use -1.0 since mix starts at 1.0 which is max)
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::Limiter);
+    let plugin_idx = app
+        .plugin_rack
+        .graph
+        .add_plugin(&PluginType::Limiter)
+        .unwrap();
     app.plugin_rack.editing_index = Some(plugin_idx);
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let (orig_thresh, orig_rel, orig_look, orig_soft, orig_mix) = match &plugin.settings {
@@ -354,7 +366,7 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
 
     // Gate - test parameters individually since mix starts at max (1.0) and hpf at min (0.0)
     let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::Gate);
+    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::Gate).unwrap();
     app.plugin_rack.editing_index = Some(plugin_idx);
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let (
@@ -423,7 +435,8 @@ fn test_adjust_compressor_limiter_gate_loudness_parameters() {
     let plugin_idx = app
         .plugin_rack
         .graph
-        .add_plugin(&PluginType::LoudnessCompensation);
+        .add_plugin(&PluginType::LoudnessCompensation)
+        .unwrap();
     app.plugin_rack.editing_index = Some(plugin_idx);
     let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
     let (orig_low_freq, orig_low_gain, orig_high_freq, orig_high_gain) = match &plugin.settings {
@@ -462,7 +475,8 @@ fn test_adjust_binaural_decoder_parameters_and_set_sofa() {
     let plugin_idx = app
         .plugin_rack
         .graph
-        .add_plugin(&PluginType::BinauralDecoder);
+        .add_plugin(&PluginType::BinauralDecoder)
+        .unwrap();
     app.plugin_rack.editing_index = Some(plugin_idx);
     app.plugin_rack.selected_index = plugin_idx;
 

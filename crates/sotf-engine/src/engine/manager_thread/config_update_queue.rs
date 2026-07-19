@@ -3,7 +3,7 @@ use super::super::{
     ManagerResponse, PlaybackCommand, PlaybackThread, PluginDataCache, ProcessingCommand,
     ProcessingThread, ThreadEvent, plan_engine_features,
 };
-use super::apply::apply_plugin_update;
+use super::apply::{apply_plugin_update, store_plugin_build_diagnostics};
 use super::config_error::ensure_output_channel_capacity;
 use super::config_update_metrics::ConfigUpdateMetrics;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -295,10 +295,11 @@ pub(super) fn run_manager_thread(
         );
 
         match host_result {
-            Ok((host, build_warnings)) => {
-                for w in &build_warnings {
-                    log::warn!("[Manager Thread] Initial plugin load: {}", w);
+            Ok((host, build_diagnostics)) => {
+                for diagnostic in &build_diagnostics {
+                    log::warn!("[Manager Thread] Initial plugin load: {}", diagnostic);
                 }
+                store_plugin_build_diagnostics(&state, build_diagnostics);
                 ensure_output_channel_capacity(
                     host.output_channels(),
                     config.output_channels,
@@ -368,8 +369,12 @@ pub(super) fn run_manager_thread(
                     }
                 }
             }
-            Err(e) => {
-                return Err(format!("Failed to build initial plugin chain: {}", e));
+            Err(diagnostic) => {
+                store_plugin_build_diagnostics(&state, vec![diagnostic.clone()]);
+                return Err(format!(
+                    "Failed to build initial plugin chain: {}",
+                    diagnostic
+                ));
             }
         }
     } else {
@@ -498,16 +503,18 @@ pub(super) fn run_manager_thread(
                 config.oversampling_policy,
             ) {
                 log::error!("[Manager Thread] Failed to apply config update: {}", e);
-                // Avoid cloning the whole state when the same error is reported
-                // repeatedly. Only perform the in-place update when the error
-                // actually changes.
-                let error_string = e.to_string();
-                let current = state.load();
-                if current.last_error.as_deref() != Some(error_string.as_str()) {
-                    drop(current);
-                    super::state_helpers::update_engine_state(&state, |new_state| {
-                        new_state.last_error = Some(error_string);
-                    });
+                if !e.is_plugin_build_error() {
+                    // Avoid cloning the whole state when the same error is reported
+                    // repeatedly. Only perform the in-place update when the error
+                    // actually changes.
+                    let error_string = e.to_string();
+                    let current = state.load();
+                    if current.last_error.as_deref() != Some(error_string.as_str()) {
+                        drop(current);
+                        super::state_helpers::update_engine_state(&state, |new_state| {
+                            new_state.last_error = Some(error_string);
+                        });
+                    }
                 }
             }
             config_update_queue.complete_processing();
