@@ -1,108 +1,62 @@
+use super::native_backend::NativeExternalPluginBackend;
 use super::plugin_descriptor::PluginDescriptor;
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
-use super::plugin_descriptor::resolve_dynamic_library_path;
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
-use super::types::LoadedDynamicLibrary;
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
-use libloading::Library;
-use std::any::Any;
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
-use std::ffi::c_void;
 
 #[cfg(feature = "external-plugin-clap")]
 pub(super) fn load_clap_backend(
     descriptor: &PluginDescriptor,
-) -> Result<Box<dyn Any + Send>, String> {
-    load_dynamic_library_with_symbols(descriptor, &[b"clap_entry\0"], "CLAP")
+    sample_rate: u32,
+) -> Result<Box<dyn NativeExternalPluginBackend>, String> {
+    Ok(Box::new(super::clap_backend::ClapBackend::load(
+        descriptor,
+        sample_rate,
+    )?))
 }
 
 #[cfg(not(feature = "external-plugin-clap"))]
 pub(super) fn load_clap_backend(
     _descriptor: &PluginDescriptor,
-) -> Result<Box<dyn Any + Send>, String> {
+    _sample_rate: u32,
+) -> Result<Box<dyn NativeExternalPluginBackend>, String> {
     Err("CLAP backend feature is disabled".to_string())
 }
 
 #[cfg(feature = "external-plugin-vst3")]
 pub(super) fn load_vst3_backend(
     descriptor: &PluginDescriptor,
-) -> Result<Box<dyn Any + Send>, String> {
-    load_dynamic_library_with_symbols(descriptor, &[b"GetPluginFactory\0"], "VST3")
+    sample_rate: u32,
+) -> Result<Box<dyn NativeExternalPluginBackend>, String> {
+    Ok(Box::new(super::vst3_backend::Vst3Backend::load(
+        descriptor,
+        sample_rate,
+    )?))
 }
 
 #[cfg(not(feature = "external-plugin-vst3"))]
 pub(super) fn load_vst3_backend(
     _descriptor: &PluginDescriptor,
-) -> Result<Box<dyn Any + Send>, String> {
+    _sample_rate: u32,
+) -> Result<Box<dyn NativeExternalPluginBackend>, String> {
     Err("VST3 backend feature is disabled".to_string())
 }
 
-#[cfg(feature = "external-plugin-au")]
+#[cfg(all(feature = "external-plugin-au", target_os = "macos"))]
 pub(super) fn load_audio_unit_backend(
     descriptor: &PluginDescriptor,
-) -> Result<Box<dyn Any + Send>, String> {
-    load_dynamic_library_with_symbols(
+    sample_rate: u32,
+) -> Result<Box<dyn NativeExternalPluginBackend>, String> {
+    Ok(Box::new(super::au_backend::AudioUnitBackend::load(
         descriptor,
-        &[b"AudioComponentFactoryFunction\0"],
-        "AudioUnit",
-    )
-}
-
-#[cfg(not(feature = "external-plugin-au"))]
-pub(super) fn load_audio_unit_backend(
-    _descriptor: &PluginDescriptor,
-) -> Result<Box<dyn Any + Send>, String> {
-    Err("AudioUnit backend feature is disabled".to_string())
+        sample_rate,
+    )?))
 }
 
 #[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
+    not(feature = "external-plugin-au"),
+    all(feature = "external-plugin-au", not(target_os = "macos"))
 ))]
-pub(super) fn load_dynamic_library_with_symbols(
-    descriptor: &PluginDescriptor,
-    symbols: &[&[u8]],
-    format_name: &str,
-) -> Result<Box<dyn Any + Send>, String> {
-    let library_path = resolve_dynamic_library_path(descriptor)?;
-    let library = unsafe { Library::new(&library_path) }.map_err(|err| {
-        format!(
-            "failed to load {format_name} plugin library '{}': {err}",
-            library_path.display()
-        )
-    })?;
-
-    for symbol in symbols {
-        unsafe {
-            library.get::<*const c_void>(symbol).map_err(|err| {
-                format!(
-                    "{format_name} plugin '{}' is missing required symbol '{}': {err}",
-                    library_path.display(),
-                    String::from_utf8_lossy(&symbol[..symbol.len().saturating_sub(1)])
-                )
-            })?
-        };
-    }
-
-    Ok(Box::new(LoadedDynamicLibrary {
-        path: library_path,
-        library,
-    }))
+pub(super) fn load_audio_unit_backend(
+    _descriptor: &PluginDescriptor,
+    _sample_rate: u32,
+) -> Result<Box<dyn NativeExternalPluginBackend>, String> {
+    Err("AudioUnit backend is available only on macOS builds with external-plugin-au".to_string())
 }

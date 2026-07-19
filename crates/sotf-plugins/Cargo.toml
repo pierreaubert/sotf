@@ -18,6 +18,9 @@ iamf = []
 onnx = ["dep:tract-onnx", "sotf-plugin-upmixer/onnx"]
 hal = ["sotf-plugin-hal-input", "sotf-plugin-hal-input/hal", "sotf-plugin-hal-output", "sotf-plugin-hal-output/hal", "driver-hal"]
 qa = ["sotf-host/qa", "dep:criterion"]
+external-plugin-clap = ["sotf-host/external-plugin-clap"]
+external-plugin-vst3 = ["sotf-host/external-plugin-vst3"]
+external-plugin-au = ["sotf-host/external-plugin-au"]
 
 [dependencies]
 sotf-host = { workspace = true }

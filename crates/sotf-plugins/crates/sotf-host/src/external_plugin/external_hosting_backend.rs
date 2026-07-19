@@ -12,11 +12,11 @@ use super::load::load_clap_backend;
 use super::load::load_vst3_backend;
 #[cfg(not(feature = "external-plugin-vst3"))]
 use super::load::load_vst3_backend;
+use super::native_backend::NativeExternalPluginBackend;
 use super::plugin_descriptor::PluginDescriptor;
 use super::plugin_format::PluginFormat;
 use super::types::ExternalHostingBackend;
 use super::types::ExternalPluginHostingPlan;
-use std::any::Any;
 
 pub fn plan_external_plugin_hosting(descriptor: &PluginDescriptor) -> ExternalPluginHostingPlan {
     let backend = select_hosting_backend(descriptor.format);
@@ -73,11 +73,14 @@ pub(super) fn select_hosting_backend(format: PluginFormat) -> ExternalHostingBac
 pub(super) fn try_load_dynamic_backend(
     descriptor: &PluginDescriptor,
     backend: ExternalHostingBackend,
-) -> Result<Option<Box<dyn Any + Send>>, String> {
+    sample_rate: u32,
+) -> Result<Option<Box<dyn NativeExternalPluginBackend>>, String> {
     match backend {
         ExternalHostingBackend::Passthrough => Ok(None),
-        ExternalHostingBackend::Clap => load_clap_backend(descriptor).map(Some),
-        ExternalHostingBackend::Vst3 => load_vst3_backend(descriptor).map(Some),
-        ExternalHostingBackend::AudioUnit => load_audio_unit_backend(descriptor).map(Some),
+        ExternalHostingBackend::Clap => load_clap_backend(descriptor, sample_rate).map(Some),
+        ExternalHostingBackend::Vst3 => load_vst3_backend(descriptor, sample_rate).map(Some),
+        ExternalHostingBackend::AudioUnit => {
+            load_audio_unit_backend(descriptor, sample_rate).map(Some)
+        }
     }
 }

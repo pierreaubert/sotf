@@ -5,10 +5,11 @@ mod desktop {
 
     use clap::Parser;
     use sotf_host::{
-        ExternalPlugin, ExternalPluginSandboxPolicy, ExternalPluginSandboxStatus,
-        ExternalPluginSandboxTiming, ExternalPluginState, ExternalPluginWorker,
-        ExternalPluginWorkerStep, PluginDescriptor, PluginSandboxBackendCode, PluginSandboxPolicy,
-        PluginSandboxStatusCode, SecurePluginSharedMemory, enter_external_plugin_sandbox,
+        ExternalPlugin, ExternalPluginSandboxMode, ExternalPluginSandboxPolicy,
+        ExternalPluginSandboxStatus, ExternalPluginSandboxTiming, ExternalPluginState,
+        ExternalPluginWorker, ExternalPluginWorkerStep, PluginDescriptor, PluginSandboxBackendCode,
+        PluginSandboxPolicy, PluginSandboxStatusCode, SecurePluginSharedMemory,
+        enter_external_plugin_sandbox,
     };
 
     #[derive(Debug, Parser)]
@@ -109,7 +110,11 @@ mod desktop {
             publish_sandbox_runtime_status(&shared, &status);
         }
 
-        let plugin = match external_state.as_ref() {
+        let worker_state = external_state
+            .as_ref()
+            .map(worker_restore_state)
+            .transpose()?;
+        let plugin = match worker_state.as_ref() {
             Some(state) => ExternalPlugin::from_placeholder_state(state, sample_rate),
             None => ExternalPlugin::new(&descriptor, sample_rate),
         }
@@ -143,6 +148,21 @@ mod desktop {
                 }
             }
         }
+    }
+
+    fn worker_restore_state(state: &ExternalPluginState) -> Result<ExternalPluginState, String> {
+        state.validate()?;
+        if state.sandbox_mode != ExternalPluginSandboxMode::Isolated {
+            return Err(format!(
+                "external plugin worker expected isolated state, got {:?}",
+                state.sandbox_mode
+            ));
+        }
+        Ok(ExternalPluginState::new(
+            state.descriptor.clone(),
+            ExternalPluginSandboxMode::InProcess,
+            state.opaque_state.clone(),
+        ))
     }
 
     fn sandbox_policy(args: &Args) -> Result<ExternalPluginSandboxPolicy, String> {
@@ -502,6 +522,41 @@ mod desktop {
                 load_external_state(&args_with_external_state_file(Some(path))).unwrap(),
                 Some(state)
             );
+        }
+
+        #[test]
+        fn worker_restore_state_translates_isolated_envelope_for_native_loader() {
+            let temp = tempfile::tempdir().unwrap();
+            let plugin_path = temp.path().join("fake.clap");
+            std::fs::write(&plugin_path, []).unwrap();
+            let state = ExternalPluginState::new(
+                state_descriptor(&plugin_path),
+                ExternalPluginSandboxMode::Isolated,
+                vec![1, 3, 3, 7],
+            );
+
+            let worker_state = worker_restore_state(&state).unwrap();
+            assert_eq!(
+                worker_state.sandbox_mode,
+                ExternalPluginSandboxMode::InProcess
+            );
+            assert_eq!(worker_state.descriptor, state.descriptor);
+            assert_eq!(worker_state.opaque_state, state.opaque_state);
+        }
+
+        #[test]
+        fn worker_restore_state_rejects_non_isolated_envelope() {
+            let temp = tempfile::tempdir().unwrap();
+            let plugin_path = temp.path().join("fake.clap");
+            std::fs::write(&plugin_path, []).unwrap();
+            let state = ExternalPluginState::new(
+                state_descriptor(&plugin_path),
+                ExternalPluginSandboxMode::InProcess,
+                vec![],
+            );
+
+            let error = worker_restore_state(&state).unwrap_err();
+            assert!(error.contains("expected isolated state"));
         }
 
         #[test]

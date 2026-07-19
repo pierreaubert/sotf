@@ -4,17 +4,21 @@ use crate::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
 };
 use crate::serialization::{PluginPreset, SerializablePlugin};
-use std::any::Any;
 use std::collections::HashMap;
 
 /// Reserved engine-config parameter used to correlate a hosted worker with
 /// the persisted player plugin instance that created it.
 pub const EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER: &str = "_sotf_instance_id";
+#[cfg(all(feature = "external-plugin-au", target_os = "macos"))]
+mod au_backend;
+#[cfg(feature = "external-plugin-clap")]
+mod clap_backend;
 mod external_hosting_backend;
 mod external_plugin_state;
 mod format;
 mod load;
 mod misc;
+mod native_backend;
 mod plugin;
 mod plugin_descriptor;
 mod plugin_format;
@@ -23,6 +27,8 @@ mod plugin_scanner;
 #[cfg(test)]
 mod tests;
 mod types;
+#[cfg(feature = "external-plugin-vst3")]
+mod vst3_backend;
 
 pub use external_hosting_backend::*;
 pub use external_plugin_state::*;
@@ -35,18 +41,18 @@ pub use plugin_scanner::*;
 pub use types::*;
 
 use external_hosting_backend::try_load_dynamic_backend;
+use native_backend::NativeExternalPluginBackend;
 
 pub struct ExternalPlugin {
     descriptor: PluginDescriptor,
     input_channels: usize,
     output_channels: usize,
-    _sample_rate: u32,
+    sample_rate: u32,
     parameters: Vec<Parameter>,
     hosting_backend: ExternalHostingBackend,
     restore_error: Option<String>,
     opaque_state: Vec<u8>,
-    /// Format-specific plugin instance (opaque)
-    _instance: Option<Box<dyn Any + Send>>,
+    native_backend: Option<Box<dyn NativeExternalPluginBackend>>,
 }
 
 impl ExternalPlugin {
@@ -66,18 +72,36 @@ impl ExternalPlugin {
 
         descriptor.validate()?;
         let hosting_plan = plan_external_plugin_hosting(descriptor);
-        let instance = try_load_dynamic_backend(descriptor, hosting_plan.backend)?;
+        let native_backend =
+            try_load_dynamic_backend(descriptor, hosting_plan.backend, sample_rate)?;
+        let mut resolved_descriptor = descriptor.clone();
+        let (input_channels, output_channels) = native_backend
+            .as_ref()
+            .map(|backend| {
+                let metadata = backend.metadata();
+                resolved_descriptor.id.clone_from(&metadata.id);
+                resolved_descriptor.name.clone_from(&metadata.name);
+                resolved_descriptor.vendor.clone_from(&metadata.vendor);
+                resolved_descriptor.version.clone_from(&metadata.version);
+                resolved_descriptor.audio_inputs = metadata.input_channels;
+                resolved_descriptor.audio_outputs = metadata.output_channels;
+                (metadata.input_channels, metadata.output_channels)
+            })
+            .unwrap_or((descriptor.audio_inputs, descriptor.audio_outputs.max(1)));
+        let parameters = native_backend
+            .as_ref()
+            .map_or_else(Vec::new, |backend| backend.parameters());
 
         Ok(Self {
-            descriptor: descriptor.clone(),
-            input_channels: descriptor.audio_inputs,
-            output_channels: descriptor.audio_outputs.max(1),
-            _sample_rate: sample_rate,
-            parameters: Vec::new(),
+            descriptor: resolved_descriptor,
+            input_channels,
+            output_channels,
+            sample_rate,
+            parameters,
             hosting_backend: hosting_plan.backend,
             restore_error: None,
             opaque_state: Vec::new(),
-            _instance: instance,
+            native_backend,
         })
     }
 
@@ -127,6 +151,14 @@ impl ExternalPlugin {
             Err(err) => Self::unavailable_placeholder(state.descriptor.clone(), sample_rate, err),
         };
         plugin.opaque_state = state.opaque_state.clone();
+        if let Some(backend) = plugin.native_backend.as_mut()
+            && let Err(error) = backend.load_state(&state.opaque_state)
+        {
+            let mut unavailable =
+                Self::unavailable_placeholder(state.descriptor.clone(), sample_rate, error);
+            unavailable.opaque_state = state.opaque_state.clone();
+            return Ok(unavailable);
+        }
         Ok(plugin)
     }
 
@@ -139,12 +171,12 @@ impl ExternalPlugin {
             input_channels: descriptor.audio_inputs,
             output_channels: descriptor.audio_outputs.max(1),
             descriptor,
-            _sample_rate: sample_rate,
+            sample_rate,
             parameters: Vec::new(),
             hosting_backend: ExternalHostingBackend::Passthrough,
             restore_error: Some(restore_error),
             opaque_state: Vec::new(),
-            _instance: None,
+            native_backend: None,
         }
     }
 
@@ -157,7 +189,21 @@ impl ExternalPlugin {
             EXTERNAL_PLUGIN_PRESET_ID.to_string(),
             env!("CARGO_PKG_VERSION").to_string(),
         );
-        preset.set_external_plugin_state(&self.placeholder_state())?;
+        let opaque_state = match self.native_backend.as_ref() {
+            Some(backend) => backend.save_state().map_err(|error| {
+                PluginError::InvalidConfiguration(format!(
+                    "failed to save external plugin '{}': {error}",
+                    self.descriptor.name
+                ))
+            })?,
+            None => None,
+        }
+        .unwrap_or_else(|| self.opaque_state.clone());
+        preset.set_external_plugin_state(&ExternalPluginState::new(
+            self.descriptor.clone(),
+            ExternalPluginSandboxMode::InProcess,
+            opaque_state,
+        ))?;
         Ok(preset)
     }
 
@@ -193,16 +239,26 @@ impl ExternalPlugin {
         ctx.num_frames
     }
 
-    fn process_clap(&self, input: &[f32], output: &mut [f32], ctx: &ProcessContext) -> usize {
-        self.process_passthrough(input, output, ctx)
-    }
-
-    fn process_vst3(&self, input: &[f32], output: &mut [f32], ctx: &ProcessContext) -> usize {
-        self.process_passthrough(input, output, ctx)
-    }
-
-    fn process_audio_unit(&self, input: &[f32], output: &mut [f32], ctx: &ProcessContext) -> usize {
-        self.process_passthrough(input, output, ctx)
+    fn process_native(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        ctx: &ProcessContext,
+    ) -> Result<usize, String> {
+        let backend = self.native_backend.as_mut().ok_or_else(|| {
+            format!(
+                "external plugin '{}' selected {:?} hosting without a native instance",
+                self.descriptor.name, self.hosting_backend
+            )
+        })?;
+        backend.process(
+            input,
+            output,
+            ctx.num_frames,
+            self.input_channels,
+            self.output_channels,
+        )?;
+        Ok(ctx.num_frames)
     }
 }
 
@@ -223,6 +279,12 @@ impl Plugin for ExternalPlugin {
         PluginCompileMetadata::boundary(PluginCostClass::External, self.latency_samples())
     }
 
+    fn latency_samples(&self) -> usize {
+        self.native_backend
+            .as_ref()
+            .map_or(0, |backend| backend.latency_samples())
+    }
+
     fn input_channels(&self) -> usize {
         self.input_channels
     }
@@ -235,18 +297,28 @@ impl Plugin for ExternalPlugin {
         self.parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
-        if self.parameters.iter().any(|p| p.id == id) {
-            return Ok(());
-        }
-        Err(format!(
-            "parameter '{id}' is not exposed by external plugin '{}'",
-            self.descriptor.name
-        ))
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        let parameter = self.parameters.iter().find(|parameter| parameter.id == id);
+        let Some(parameter) = parameter else {
+            return Err(format!(
+                "parameter '{id}' is not exposed by external plugin '{}'",
+                self.descriptor.name
+            ));
+        };
+        parameter.validate(&value)?;
+        self.native_backend
+            .as_mut()
+            .ok_or_else(|| {
+                format!(
+                    "parameter '{id}' cannot be changed because external plugin '{}' is unavailable",
+                    self.descriptor.name
+                )
+            })?
+            .set_parameter(&id, &value)
     }
 
-    fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
-        None
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        self.native_backend.as_ref()?.get_parameter(id)
     }
 
     fn process(
@@ -277,13 +349,12 @@ impl Plugin for ExternalPlugin {
             ));
         }
 
-        let frames = match self.hosting_backend {
-            ExternalHostingBackend::Passthrough => self.process_passthrough(input, output, ctx),
-            ExternalHostingBackend::Clap => self.process_clap(input, output, ctx),
-            ExternalHostingBackend::Vst3 => self.process_vst3(input, output, ctx),
-            ExternalHostingBackend::AudioUnit => self.process_audio_unit(input, output, ctx),
-        };
-        Ok(frames)
+        match self.hosting_backend {
+            ExternalHostingBackend::Passthrough => Ok(self.process_passthrough(input, output, ctx)),
+            ExternalHostingBackend::Clap
+            | ExternalHostingBackend::Vst3
+            | ExternalHostingBackend::AudioUnit => self.process_native(input, output, ctx),
+        }
     }
 }
 
@@ -326,6 +397,12 @@ impl SerializablePlugin for ExternalPlugin {
             )));
         }
 
+        let replacement =
+            try_load_dynamic_backend(&self.descriptor, self.hosting_backend, self.sample_rate)?;
+        if let Some(mut replacement) = replacement {
+            replacement.load_state(&state.opaque_state)?;
+            self.native_backend = Some(replacement);
+        }
         self.opaque_state = state.opaque_state;
 
         Ok(())

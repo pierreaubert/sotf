@@ -1,14 +1,6 @@
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
+#[cfg(any(feature = "external-plugin-clap", feature = "external-plugin-vst3"))]
 use super::misc::dynamic_library_extensions;
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
+#[cfg(any(feature = "external-plugin-clap", feature = "external-plugin-vst3"))]
 use super::misc::find_dynamic_library_in_dir;
 use super::plugin_format::PluginFormat;
 use super::types::PluginScanStatus;
@@ -81,11 +73,7 @@ impl PluginDescriptor {
     }
 }
 
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
+#[cfg(any(feature = "external-plugin-clap", feature = "external-plugin-vst3"))]
 pub(super) fn resolve_dynamic_library_path(
     descriptor: &PluginDescriptor,
 ) -> Result<PathBuf, String> {

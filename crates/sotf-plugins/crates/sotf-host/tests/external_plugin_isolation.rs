@@ -1,14 +1,17 @@
 #![cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 
+#[cfg(not(feature = "external-plugin-clap"))]
 use std::time::{Duration, Instant};
 
 use sotf_host::{
-    DawHost, ExternalPluginProcessEvent, ExternalPluginSandboxPolicy, ExternalPluginWorkerCommand,
-    IsolatedExternalPlugin, IsolatedExternalPluginConfig, Plugin, PluginDescriptor, PluginFormat,
-    ProcessContext,
+    DawHost, ExternalPluginProcessEvent, ExternalPluginWorkerCommand, IsolatedExternalPlugin,
+    IsolatedExternalPluginConfig, PluginDescriptor, PluginFormat,
 };
+#[cfg(not(feature = "external-plugin-clap"))]
+use sotf_host::{ExternalPluginSandboxPolicy, Plugin, ProcessContext};
 
 #[test]
+#[cfg(not(feature = "external-plugin-clap"))]
 fn isolated_external_plugin_processes_block_through_worker_binary() {
     let (_dir, descriptor) = test_descriptor("external-worker-smoke");
     let worker_binary = env!("CARGO_BIN_EXE_sotf-external-plugin-worker");
@@ -43,6 +46,7 @@ fn isolated_external_plugin_processes_block_through_worker_binary() {
 }
 
 #[test]
+#[cfg(not(feature = "external-plugin-clap"))]
 fn isolated_external_plugin_worker_exit_can_be_restarted_by_control_side() {
     let (_dir, descriptor) = test_descriptor("external-worker-restart");
     let worker_binary = env!("CARGO_BIN_EXE_sotf-external-plugin-worker");
@@ -75,6 +79,7 @@ fn isolated_external_plugin_worker_exit_can_be_restarted_by_control_side() {
 }
 
 #[test]
+#[cfg(not(feature = "external-plugin-clap"))]
 fn isolated_external_plugin_dead_worker_falls_back_without_crashing_host() {
     let (_dir, descriptor) = test_descriptor("external-worker-dead-fallback");
     let worker_binary = env!("CARGO_BIN_EXE_sotf-external-plugin-worker");
@@ -116,6 +121,7 @@ fn isolated_external_plugin_dead_worker_falls_back_without_crashing_host() {
 }
 
 #[test]
+#[cfg(not(feature = "external-plugin-clap"))]
 fn daw_host_can_poll_and_restart_isolated_external_plugin_workers() {
     let (_dir, descriptor) = test_descriptor("external-worker-host-control");
     let worker_binary = env!("CARGO_BIN_EXE_sotf-external-plugin-worker");

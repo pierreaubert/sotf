@@ -36,9 +36,13 @@ path = "bin/macos_sandbox_helper.rs"
 [features]
 default = []
 qa = ["dep:criterion"]
-external-plugin-clap = ["dep:libloading"]
-external-plugin-vst3 = ["dep:libloading"]
-external-plugin-au = ["dep:libloading"]
+external-plugin-clap = ["dep:clap-sys", "dep:libloading"]
+external-plugin-vst3 = ["dep:libloading", "dep:vst3-com", "dep:vst3-sys"]
+external-plugin-au = [
+    "dep:objc2-audio-toolbox",
+    "dep:objc2-core-audio-types",
+    "dep:objc2-core-foundation",
+]
 
 [dependencies]
 gpui-design = { workspace = true }
@@ -63,6 +67,9 @@ rubato = { workspace = true }
 audioadapter-buffers = { workspace = true }
 criterion = { workspace = true, optional = true }
 libloading = { workspace = true, optional = true }
+clap-sys = { git = "https://github.com/micahrj/clap-sys.git", rev = "25d7f53fdb6363ad63fbd80049cb7a42a97ac156", optional = true }
+vst3-sys = { git = "https://github.com/robbert-vdh/vst3-sys.git", branch = "fix/drop-box-from-raw", optional = true }
+vst3-com = { git = "https://github.com/robbert-vdh/vst3-sys.git", branch = "fix/drop-box-from-raw", optional = true }
 
 [dev-dependencies]
 insta = { workspace = true }
@@ -78,4 +85,26 @@ windows-sys = { workspace = true, features = [
     "Win32_Storage_FileSystem",
     "Win32_System_SystemServices",
     "Win32_System_Threading",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-audio-toolbox = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "AUComponent",
+    "AudioComponent",
+    "AudioUnitProperties",
+    "objc2-core-audio-types",
+    "objc2-core-foundation",
+] }
+objc2-core-audio-types = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "CoreAudioBaseTypes",
+] }
+objc2-core-foundation = { version = "0.3", optional = true, default-features = false, features = [
+    "std",
+    "CFBase",
+    "CFData",
+    "CFError",
+    "CFPropertyList",
+    "CFString",
 ] }

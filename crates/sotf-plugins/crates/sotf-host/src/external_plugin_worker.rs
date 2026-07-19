@@ -50,11 +50,14 @@ impl ExternalPluginWorker {
         }
         shared.publish_worker_latency_samples(plugin.latency_samples());
 
+        let max_input_samples = layout.max_frames as usize * layout.input_channels as usize;
+        let max_output_samples = layout.max_frames as usize * layout.output_channels as usize;
+
         Ok(Self {
             shared,
             plugin,
-            input_scratch: Vec::new(),
-            output_scratch: Vec::new(),
+            input_scratch: Vec::with_capacity(max_input_samples),
+            output_scratch: Vec::with_capacity(max_output_samples),
         })
     }
 

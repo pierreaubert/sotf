@@ -3,6 +3,15 @@ use super::consts::SAMPLE_RATE;
 use super::consts::generate_test_buffer;
 use super::misc::assert_no_allocs;
 use serial_test::serial;
+#[cfg(any(
+    feature = "external-plugin-clap",
+    feature = "external-plugin-vst3",
+    feature = "external-plugin-au"
+))]
+use sotf_host::external_plugin::ExternalPlugin;
+use sotf_host::{
+    ExternalPluginWorker, ExternalPluginWorkerStep, PluginIpcLayout, SecurePluginSharedMemory,
+};
 use sotf_plugin_ambisonics::{AmbisonicsDecoderConfig, AmbisonicsDecoderPlugin};
 use sotf_plugins::{
     ABComparePlugin, AaePlugin, AaePluginParams, AecPlugin, AecPluginParams, AutoGain,
@@ -20,6 +29,12 @@ use sotf_plugins::{
     StereoImagerPlugin, StereoImagerPluginParams, TransientShaperPlugin, UpmixerPlugin, XtcPlugin,
     XtcPluginParams,
 };
+#[cfg(any(
+    feature = "external-plugin-clap",
+    feature = "external-plugin-vst3",
+    feature = "external-plugin-au"
+))]
+use std::path::PathBuf;
 use std::time::Duration;
 
 fn assert_parametric_in_place_process_zero_alloc<P>(
@@ -1050,4 +1065,125 @@ fn test_isolated_external_host_timeout_and_quarantine_zero_alloc() {
         },
     );
     assert_eq!(output, input);
+}
+
+#[test]
+#[serial]
+fn test_external_plugin_worker_successful_round_trip_zero_alloc() {
+    let layout = PluginIpcLayout::new(SAMPLE_RATE, BUFFER_SIZE as u32, 2, 2).unwrap();
+    let mut host_shared = SecurePluginSharedMemory::create(layout).unwrap();
+    let worker_shared = SecurePluginSharedMemory::open_existing(host_shared.path()).unwrap();
+    let plugin = Box::new(ParametricPluginAdapter::new(GainPlugin::new(2, 0.0)));
+    let mut worker = ExternalPluginWorker::new(worker_shared, plugin).unwrap();
+    let input = generate_test_buffer(BUFFER_SIZE, 2);
+    let mut output = vec![0.0; input.len()];
+
+    host_shared
+        .publish_host_block(1, BUFFER_SIZE, &input)
+        .unwrap();
+    assert!(matches!(
+        worker.process_one().unwrap(),
+        ExternalPluginWorkerStep::Processed {
+            frames: BUFFER_SIZE,
+            ..
+        }
+    ));
+    host_shared.copy_worker_output(&mut output).unwrap();
+
+    let mut sequence = 2;
+    assert_no_allocs("ExternalPluginWorker::successful_round_trip", || {
+        for _ in 0..1000 {
+            host_shared
+                .publish_host_block(sequence, BUFFER_SIZE, &input)
+                .unwrap();
+            worker.process_one().unwrap();
+            host_shared.copy_worker_output(&mut output).unwrap();
+            sequence += 1;
+        }
+    });
+    assert_eq!(output, input);
+}
+
+#[cfg(feature = "external-plugin-clap")]
+#[test]
+#[serial]
+#[ignore = "requires SOTF_TEST_CLAP_PLUGIN to point to the built plugins-nih gain CLAP library"]
+fn test_native_clap_successful_process_zero_alloc() {
+    let path = PathBuf::from(
+        std::env::var_os("SOTF_TEST_CLAP_PLUGIN")
+            .expect("SOTF_TEST_CLAP_PLUGIN must point to a .clap file or bundle"),
+    );
+    let descriptor = native_gain_descriptor(PluginFormat::Clap, path);
+    let mut plugin = ExternalPlugin::new(&descriptor, SAMPLE_RATE).expect("load native CLAP gain");
+    assert_plugin_process_zero_alloc(
+        "ExternalPlugin::CLAP::successful_process",
+        &mut plugin,
+        BUFFER_SIZE,
+    );
+}
+
+#[cfg(feature = "external-plugin-vst3")]
+#[test]
+#[serial]
+#[ignore = "requires SOTF_TEST_VST3_PLUGIN to point to the built plugins-nih gain VST3 library"]
+fn test_native_vst3_successful_process_zero_alloc() {
+    let path = PathBuf::from(
+        std::env::var_os("SOTF_TEST_VST3_PLUGIN")
+            .expect("SOTF_TEST_VST3_PLUGIN must point to a .vst3 file or bundle"),
+    );
+    let descriptor = native_gain_descriptor(PluginFormat::Vst3, path);
+    let mut plugin = ExternalPlugin::new(&descriptor, SAMPLE_RATE).expect("load native VST3 gain");
+    assert_plugin_process_zero_alloc(
+        "ExternalPlugin::VST3::successful_process",
+        &mut plugin,
+        BUFFER_SIZE,
+    );
+}
+
+#[cfg(all(feature = "external-plugin-au", target_os = "macos"))]
+#[test]
+#[serial]
+#[ignore = "requires the built-in Apple AUDelay Audio Unit and CoreAudio component registrar"]
+fn test_native_audio_unit_successful_process_zero_alloc() {
+    let descriptor = PluginDescriptor {
+        id: "au.AUDelay".into(),
+        name: "AUDelay".into(),
+        vendor: "Apple".into(),
+        version: "system".into(),
+        format: PluginFormat::AudioUnit,
+        path: PathBuf::from("/System/Library/Components/CoreAudio.component"),
+        audio_inputs: 2,
+        audio_outputs: 2,
+        is_instrument: false,
+        categories: vec!["audio-effect".into()],
+        scan_status: PluginScanStatus::Loadable,
+    };
+    let mut plugin =
+        ExternalPlugin::new(&descriptor, SAMPLE_RATE).expect("load built-in Apple AUDelay");
+    assert_plugin_process_zero_alloc(
+        "ExternalPlugin::AudioUnit::successful_process",
+        &mut plugin,
+        BUFFER_SIZE,
+    );
+}
+
+#[cfg(any(feature = "external-plugin-clap", feature = "external-plugin-vst3"))]
+fn native_gain_descriptor(format: PluginFormat, path: PathBuf) -> PluginDescriptor {
+    PluginDescriptor {
+        id: match format {
+            PluginFormat::Clap => "org.spinorama.sotf.gain".into(),
+            PluginFormat::Vst3 => "vst3.SOTF: Gain".into(),
+            PluginFormat::AudioUnit => unreachable!("native allocation fixture is CLAP/VST3"),
+        },
+        name: "SOTF: Gain".into(),
+        vendor: "SOTF".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        format,
+        path,
+        audio_inputs: 2,
+        audio_outputs: 2,
+        is_instrument: false,
+        categories: vec!["audio-effect".into()],
+        scan_status: PluginScanStatus::Loadable,
+    }
 }

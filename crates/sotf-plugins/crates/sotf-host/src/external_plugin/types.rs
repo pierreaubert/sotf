@@ -1,17 +1,5 @@
 use super::plugin_format::PluginFormat;
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
-use libloading::Library;
 use serde::{Deserialize, Serialize};
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
-use std::path::PathBuf;
 
 /// Scanner status for a discovered external plugin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -84,17 +72,4 @@ pub struct ExternalPluginHostingPlan {
     pub backend: ExternalHostingBackend,
     pub native_backend_available: bool,
     pub reason: Option<String>,
-}
-
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
-#[derive(Debug)]
-pub(super) struct LoadedDynamicLibrary {
-    #[allow(dead_code)]
-    pub(super) path: PathBuf,
-    #[allow(dead_code)]
-    pub(super) library: Library,
 }

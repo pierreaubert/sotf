@@ -1,14 +1,6 @@
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
+#[cfg(any(feature = "external-plugin-clap", feature = "external-plugin-vst3"))]
 use std::fs;
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
+#[cfg(any(feature = "external-plugin-clap", feature = "external-plugin-vst3"))]
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -22,11 +14,7 @@ pub(super) fn home_dir() -> Option<PathBuf> {
 
 pub const EXTERNAL_PLUGIN_PRESET_ID: &str = "external-plugin";
 
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
+#[cfg(any(feature = "external-plugin-clap", feature = "external-plugin-vst3"))]
 pub(super) fn dynamic_library_extensions() -> &'static [&'static str] {
     #[cfg(target_os = "windows")]
     {
@@ -44,11 +32,7 @@ pub(super) fn dynamic_library_extensions() -> &'static [&'static str] {
     &[]
 }
 
-#[cfg(any(
-    feature = "external-plugin-clap",
-    feature = "external-plugin-vst3",
-    feature = "external-plugin-au"
-))]
+#[cfg(any(feature = "external-plugin-clap", feature = "external-plugin-vst3"))]
 pub(super) fn find_dynamic_library_in_dir(root: &Path, max_depth: usize) -> Option<PathBuf> {
     fn recurse(path: &Path, depth: usize, max_depth: usize) -> Option<PathBuf> {
         if depth > max_depth {

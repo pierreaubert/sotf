@@ -22,6 +22,14 @@ use std::path::{Path, PathBuf};
 use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn unavailable_test_plugin(descriptor: &PluginDescriptor, sample_rate: u32) -> ExternalPlugin {
+    ExternalPlugin::unavailable_placeholder(
+        descriptor.clone(),
+        sample_rate,
+        "intentional test placeholder".to_string(),
+    )
+}
+
 #[test]
 fn test_plugin_scanner_search_paths() {
     // Verify search paths are non-empty for at least one format
@@ -108,7 +116,7 @@ fn test_external_plugin_passthrough() {
         scan_status: PluginScanStatus::Discovered,
     };
 
-    let mut plugin = ExternalPlugin::new(&desc, 48000).unwrap();
+    let mut plugin = unavailable_test_plugin(&desc, 48_000);
     let input = vec![0.5f32; 2048];
     let mut output = vec![0.0f32; 2048];
     let ctx = ProcessContext::new(48000, 1024);
@@ -310,7 +318,7 @@ fn test_external_plugin_set_parameter_unknown() {
         scan_status: PluginScanStatus::Discovered,
     };
 
-    let mut plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
+    let mut plugin = unavailable_test_plugin(&desc, 48_000);
     let result = plugin.set_parameter(ParameterId::from("unknown"), ParameterValue::Float(1.0));
     assert!(result.is_err());
 
@@ -343,7 +351,7 @@ fn test_external_plugin_placeholder_state_round_trips() {
         categories: vec!["state".into()],
         scan_status: PluginScanStatus::Discovered,
     };
-    let plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
+    let plugin = unavailable_test_plugin(&desc, 48_000);
     let mut state = plugin.placeholder_state();
     state.opaque_state = vec![1, 2, 3, 4];
 
@@ -443,7 +451,7 @@ fn test_external_plugin_serializable_preset_round_trips_placeholder_state() {
         categories: vec!["state".into()],
         scan_status: PluginScanStatus::Discovered,
     };
-    let mut plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
+    let mut plugin = unavailable_test_plugin(&desc, 48_000);
 
     let preset = SerializablePlugin::serialize(&plugin).unwrap();
     let restored_state = preset.external_plugin_state().unwrap().unwrap();
@@ -500,7 +508,7 @@ fn test_external_plugin_deserialize_rejects_different_descriptor() {
         categories: vec![],
         scan_status: PluginScanStatus::Discovered,
     };
-    let mut plugin = ExternalPlugin::new(&desc, 48_000).unwrap();
+    let mut plugin = unavailable_test_plugin(&desc, 48_000);
     let mut state = plugin.placeholder_state();
     state.plugin_id = "other.plugin".into();
     state.descriptor.id = "other.plugin".into();
