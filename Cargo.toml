@@ -194,23 +194,23 @@ sofa-reader = { git = "https://github.com/pierreaubert/sofa-reader", version = "
 autoeq = { git = "https://github.com/pierreaubert/autoeq", version = "0.4.46" }
 
 # GPUI toolkit
-gpui-d3rs = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-px = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-audio-kit = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-component-lab = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-design-tools = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-ui-kit = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-ui-kit-macros = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-themes = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-miniapp = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-builder = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-design = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-keybinding = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-pretext = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-d3rs = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-px = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-audio-kit = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-component-lab = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-design-tools = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-ui-kit = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-ui-kit-macros = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-themes = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-miniapp = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-builder = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-design = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-keybinding = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-pretext = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 
-gpui-ios = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-android = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-au = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-ios = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-android = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-au = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }
@@ -508,9 +508,6 @@ strip = "symbols"
 
 # Patches for tvOS/watchOS/visionOS support (Tier 3 Apple platforms):
 # - coreaudio-rs: cfg(target_os = "ios") doesn't include tvos
-[patch."https://github.com/pierreaubert/gpui-toolkit"]
-gpui-android = { path = "patches/gpui-android" }
-
 [patch.crates-io]
 nnnoiseless = { path = "crates/3rdparties/nnnoiseless" }
 coreaudio-rs = { path = "crates/3rdparties/coreaudio-rs" }
