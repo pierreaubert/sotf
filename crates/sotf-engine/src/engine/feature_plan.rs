@@ -1,5 +1,5 @@
+use crate::EngineConfig;
 use serde::{Deserialize, Serialize};
-use sotf_types::EngineConfig;
 
 use super::{
     DsdOutputPlan, NetworkEndpointPlan, OutputAccessPlan, plan_dsd_output, plan_network_endpoint,
@@ -24,7 +24,7 @@ pub fn plan_engine_features(config: &EngineConfig) -> EngineFeaturePlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sotf_types::{
+    use crate::{
         DsdOutputMode, NetworkEndpointConfig, NetworkEndpointMode, NetworkEndpointStatus,
         OutputAccessMode,
     };

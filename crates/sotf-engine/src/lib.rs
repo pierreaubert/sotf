@@ -51,16 +51,19 @@ pub mod engine;
 #[cfg(not(target_os = "ios"))]
 pub use engine::CpalSink;
 pub use engine::{
-    AudioEngine, AudioEngineState, AudioSink, DsdOutputBackend, DsdOutputPlan, EngineConfig,
-    EngineFeaturePlan, NetworkEndpointBackend, NetworkEndpointPlan, OutputAccessBackend,
-    OutputAccessPlan, PlaybackState, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig,
-    PluginGraphNodeConfig, SinkConfig, SinkOpenResult, SinkType, plan_dsd_output,
-    plan_engine_features, plan_network_endpoint, plan_output_access,
+    AudioEngine, AudioSink, DsdOutputBackend, DsdOutputPlan, EngineFeaturePlan,
+    NetworkEndpointBackend, NetworkEndpointPlan, OutputAccessBackend, OutputAccessPlan,
+    plan_dsd_output, plan_engine_features, plan_network_endpoint, plan_output_access,
 };
-pub use sotf_types::{
-    DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy, LatencyCompensationMode,
-    NetworkEndpointConfig, NetworkEndpointMode, NetworkEndpointStatus, OutputAccessMode,
-    OutputAccessStatus,
+mod types;
+pub use types::{
+    AudioEngineState, AudioFrame, AudioSource, DsdOutputMode, DsdOutputStatus,
+    EngineConfig, EngineOversamplingPolicy, IsolatedExternalPluginSandboxBackend,
+    IsolatedExternalPluginSandboxStatus, IsolatedExternalPluginWorkerEvent,
+    IsolatedExternalPluginWorkerStatus, LatencyCompensationMode, NetworkEndpointConfig,
+    NetworkEndpointMode, NetworkEndpointStatus, OutputAccessMode, OutputAccessStatus,
+    PlaybackState, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig,
+    PluginGraphNodeConfig, ServiceId, SinkConfig, SinkOpenResult, SinkType, StreamMetadata,
 };
 
 // Re-export driver-common types for daemon and other consumers

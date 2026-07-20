@@ -1,7 +1,7 @@
+use crate::DsdOutputMode;
 use crate::decoder::error::{AudioDecoderError, AudioDecoderResult};
 use crate::decoder::formats::{AudioFormat, SymphoniaDecoder};
 use crate::decoder::source::AudioSource;
-use sotf_types::DsdOutputMode;
 use std::path::Path;
 use std::time::Duration;
 
@@ -519,7 +519,7 @@ mod tests {
     #[test]
     fn test_create_decoder_from_source_service_stream() {
         let source = AudioSource::ServiceStream {
-            service: sotf_types::ServiceId::Spotify,
+            service: crate::ServiceId::Spotify,
             track_id: "test-track".to_string(),
         };
 

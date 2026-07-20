@@ -1,5 +1,5 @@
 use super::{PlaybackCommand, ProcessingMessage, ThreadEvent};
-use sotf_types::OutputAccessMode;
+use crate::OutputAccessMode;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
 mod apply;

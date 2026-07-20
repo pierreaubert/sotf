@@ -1,15 +1,15 @@
 use super::super::IsolatedExternalPluginWorkerStatus;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use crate::{
+    IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
+    IsolatedExternalPluginWorkerEvent,
+};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_plugins::ExternalPluginProcessEvent;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_plugins::IsolatedExternalPluginWorkerReport;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_plugins::{PluginSandboxBackendCode, PluginSandboxStatusCode};
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-use sotf_types::{
-    IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
-    IsolatedExternalPluginWorkerEvent,
-};
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub(super) fn isolated_external_plugin_status(

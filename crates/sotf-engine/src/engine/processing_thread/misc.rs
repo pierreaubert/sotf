@@ -1,6 +1,6 @@
 use super::super::ProcessingCommand;
+use crate::EngineOversamplingPolicy;
 use sotf_plugins::{Plugin, PluginHost};
-use sotf_types::EngineOversamplingPolicy;
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::time::Duration;
 

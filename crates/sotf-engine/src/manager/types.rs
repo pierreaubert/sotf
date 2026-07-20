@@ -1,7 +1,7 @@
 use super::streaming_state::StreamingState;
+use crate::StreamMetadata;
 use crate::decoder::AudioSource;
 use crate::{AudioFormat, AudioSpec};
-use sotf_types::StreamMetadata;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};

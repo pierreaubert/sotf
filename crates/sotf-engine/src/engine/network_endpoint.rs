@@ -1,5 +1,5 @@
+use crate::{NetworkEndpointConfig, NetworkEndpointMode, NetworkEndpointStatus};
 use serde::{Deserialize, Serialize};
-use sotf_types::{NetworkEndpointConfig, NetworkEndpointMode, NetworkEndpointStatus};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

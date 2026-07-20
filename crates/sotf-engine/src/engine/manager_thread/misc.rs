@@ -1,10 +1,10 @@
 use super::super::{AudioEngineState, EngineConfig, plan_engine_features};
 #[cfg(feature = "streaming")]
+use crate::{NetworkEndpointMode, NetworkEndpointStatus};
+#[cfg(feature = "streaming")]
 use arc_swap::ArcSwap;
 #[cfg(feature = "streaming")]
 use sotf_streaming::{PcmStreamHandle, PcmStreamServer, PcmStreamServerConfig};
-#[cfg(feature = "streaming")]
-use sotf_types::{NetworkEndpointMode, NetworkEndpointStatus};
 #[cfg(feature = "streaming")]
 use std::sync::Arc;
 

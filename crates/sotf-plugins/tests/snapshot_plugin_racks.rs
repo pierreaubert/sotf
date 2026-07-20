@@ -1,8 +1,8 @@
 //! Snapshot tests for plugin racks/configs and parameter descriptors.
 
 use serde_json::{Value, json};
+use sotf_audio::PluginConfig;
 use sotf_plugins::create_plugin;
-use sotf_types::PluginConfig;
 
 /// Recursively sort object keys so snapshots are stable regardless of
 /// serde_json's map backend (BTreeMap vs IndexMap/preserve_order).

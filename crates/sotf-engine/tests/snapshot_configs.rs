@@ -1,7 +1,7 @@
 //! Snapshot tests for SOTF shared configuration types.
 
 use serde_json::json;
-use sotf_types::{
+use sotf_audio::{
     EngineConfig, EngineOversamplingPolicy, NetworkEndpointConfig, NetworkEndpointMode,
     OutputAccessMode, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig,
     PluginGraphNodeConfig,

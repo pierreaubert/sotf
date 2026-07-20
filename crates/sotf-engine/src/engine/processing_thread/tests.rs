@@ -13,6 +13,11 @@ use super::processing_state::{
     ProcessingState, handle_processing_command, update_plugin_data_cache,
 };
 use crate::plugins::{PluginSettings, PluginType};
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+use crate::{
+    IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
+    IsolatedExternalPluginWorkerEvent,
+};
 use arc_swap::ArcSwap;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_plugins::ExternalPluginProcessEvent;
@@ -20,11 +25,6 @@ use sotf_plugins::ExternalPluginProcessEvent;
 use sotf_plugins::IsolatedExternalPluginWorkerReport;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_plugins::{PluginSandboxBackendCode, PluginSandboxStatusCode};
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-use sotf_types::{
-    IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
-    IsolatedExternalPluginWorkerEvent,
-};
 use std::sync::Arc;
 
 mod misc;
@@ -328,7 +328,7 @@ fn send_or_interrupt_errors_when_channel_disconnected() {
 
 #[test]
 fn audio_frame_new_enforces_data_length_invariant() {
-    use sotf_types::AudioFrame;
+    use crate::AudioFrame;
 
     // Valid: data.len() == num_frames * num_channels
     let frame = AudioFrame::new(vec![0.0; 2048], 1024, 2, 48000);
@@ -339,7 +339,7 @@ fn audio_frame_new_enforces_data_length_invariant() {
 
 #[test]
 fn audio_frame_silent_produces_all_zeros() {
-    use sotf_types::AudioFrame;
+    use crate::AudioFrame;
 
     let frame = AudioFrame::silent(512, 6, 48000);
     assert_eq!(frame.data.len(), 512 * 6);
@@ -348,7 +348,7 @@ fn audio_frame_silent_produces_all_zeros() {
 
 #[test]
 fn audio_frame_clear_resets_to_silence() {
-    use sotf_types::AudioFrame;
+    use crate::AudioFrame;
 
     let mut frame = AudioFrame::new(vec![1.0; 1024], 512, 2, 48000);
     assert!(frame.data.iter().all(|&s| s == 1.0));
@@ -362,7 +362,7 @@ fn audio_frame_clear_resets_to_silence() {
 
 #[test]
 fn audio_frame_invariants_across_channel_counts() {
-    use sotf_types::AudioFrame;
+    use crate::AudioFrame;
 
     for channels in [1, 2, 4, 6, 8] {
         let frames = 256;

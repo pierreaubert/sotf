@@ -1,5 +1,5 @@
 // ============================================================================
-// Audio Source — re-exported from sotf-types
+// Audio Source — re-exported from the engine types module.
 // ============================================================================
 
-pub use sotf_types::{AudioSource, ServiceId};
+pub use crate::{AudioSource, ServiceId};

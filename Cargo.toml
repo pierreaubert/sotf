@@ -46,7 +46,6 @@ members = [
     "crates/sotf-plugins/crates/sotf-plugin-upmixer",
     "crates/sotf-plugins/crates/sotf-plugin-xtc",
     "crates/sotf-plugins",
-    "crates/sotf-types",
     "crates/sotf-engine",
     "crates/sotf-player",
     "crates/sotf-tools",
@@ -271,7 +270,6 @@ sotf-tls = { path = "crates/sotf-server/crates/sotf-tls" }
 sotf-engine = { path = "crates/sotf-engine", default-features = false }
 sotf-testkit = { path = "crates/sotf-testkit" }
 sotf-test = { path = "crates/sotf-test-macros" }
-sotf-types = { path = "crates/sotf-types" }
 sotf-player = { path = "crates/sotf-player" }
 sotf-midi = { path = "crates/sotf-midi" }
 sotf-plugins = { path = "crates/sotf-plugins", default-features = false }

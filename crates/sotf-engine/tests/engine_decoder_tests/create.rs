@@ -1,7 +1,7 @@
 use super::misc::collect_decoder_until_eos;
 use hound::{WavSpec, WavWriter};
+use sotf_audio::DsdOutputMode;
 use sotf_audio::engine::{DecoderCommand, DecoderMessage, DecoderThread, ThreadEvent};
-use sotf_types::DsdOutputMode;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel};
 use std::time::Duration;

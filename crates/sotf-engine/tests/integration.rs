@@ -1,4 +1,4 @@
-//! Integration tests for `sotf-types` exercising the public API as a black box.
+//! Integration tests for the engine's public types, exercising the API as a black box.
 //!
 //! These tests cover:
 //! - Serialization/deserialization roundtrips for the public types
@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sotf_types::{
+use sotf_audio::{
     AudioEngineState, AudioFrame, AudioSource, DsdOutputMode, DsdOutputStatus, EngineConfig,
     EngineOversamplingPolicy, IsolatedExternalPluginSandboxBackend,
     IsolatedExternalPluginSandboxStatus, IsolatedExternalPluginWorkerEvent,
@@ -294,10 +294,7 @@ fn engine_config_sanitize_resets_invalid_defaults() {
 #[test]
 fn engine_config_file_save_and_load_roundtrip() {
     let dir = std::env::temp_dir();
-    let path = dir.join(format!(
-        "sotf-types-engine-config-{}.json",
-        std::process::id()
-    ));
+    let path = dir.join(format!("sotf-engine-config-{}.json", std::process::id()));
 
     let mut config = EngineConfig::default();
     config.volume = 0.5;

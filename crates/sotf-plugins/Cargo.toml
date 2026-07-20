@@ -128,7 +128,7 @@ serial_test = { workspace = true }
 proptest = { workspace = true }
 sofa-reader = { workspace = true }
 sotf-test = { workspace = true }
-sotf-types = { workspace = true }
+sotf-engine = { workspace = true }
 
 [[bin]]
 name = "plugin-fuzzer"

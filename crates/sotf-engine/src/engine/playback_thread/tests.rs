@@ -11,9 +11,9 @@ use super::playback_state::read_ring_buffer;
 use super::playback_state::request_flush;
 use super::runtime::minimum_ring_space_required;
 use super::runtime::should_emit_underrun_milestone;
+use crate::{OutputAccessMode, OutputAccessStatus};
 use cpal::SampleFormat;
 use rtrb::RingBuffer;
-use sotf_types::{OutputAccessMode, OutputAccessStatus};
 use std::sync::atomic::Ordering;
 
 #[cfg(test)]

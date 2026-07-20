@@ -1,5 +1,5 @@
 // ============================================================================
-// Engine Configuration — re-exported from sotf-types
+// Engine Configuration — re-exported from the engine types module.
 // ============================================================================
 
-pub use sotf_types::EngineConfig;
+pub use crate::EngineConfig;

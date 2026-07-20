@@ -1,8 +1,8 @@
 use super::super::ThreadEvent;
+use crate::OutputAccessStatus;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{Device, SampleFormat};
 use rtrb::{CopyToUninit, Producer, chunks::WriteChunkUninit};
-use sotf_types::OutputAccessStatus;
 use std::sync::mpsc::{Sender, SyncSender};
 
 pub(super) const SPIN_MS_RINGBUFFER: u64 = 5;

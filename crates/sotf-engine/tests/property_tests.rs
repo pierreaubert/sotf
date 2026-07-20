@@ -1,5 +1,5 @@
 // ============================================================================
-// Property-Based Tests for sotf-types
+// Property-based tests for the engine's public types.
 // ============================================================================
 //
 // This module uses proptest to verify invariants of shared configuration types
@@ -7,7 +7,7 @@
 
 use proptest::prelude::*;
 use serde_json::json;
-use sotf_types::{
+use sotf_audio::{
     AudioFrame, EngineConfig, PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig,
     PluginGraphNodeConfig,
 };

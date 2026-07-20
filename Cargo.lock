@@ -9850,6 +9850,7 @@ dependencies = [
  "env_logger",
  "hound",
  "id3",
+ "insta",
  "libc",
  "log",
  "math-dsp",
@@ -9857,6 +9858,7 @@ dependencies = [
  "ndarray 0.17.2",
  "notify",
  "num-complex 0.4.6",
+ "proptest 1.11.0",
  "rand 0.9.4",
  "ratatui",
  "realfft",
@@ -9876,7 +9878,6 @@ dependencies = [
  "sotf-streaming",
  "sotf-test",
  "sotf-testkit",
- "sotf-types",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",
@@ -10717,6 +10718,7 @@ dependencies = [
  "serial_test",
  "signal-hook 0.4.4",
  "sofa-reader 0.1.6 (git+https://github.com/pierreaubert/sofa-reader)",
+ "sotf-engine",
  "sotf-host",
  "sotf-plugin-aae",
  "sotf-plugin-ab-compare",
@@ -10761,7 +10763,6 @@ dependencies = [
  "sotf-plugin-upmixer",
  "sotf-plugin-xtc",
  "sotf-test",
- "sotf-types",
  "symphonia 0.6.0",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3 0.6.0",
@@ -10940,17 +10941,6 @@ dependencies = [
  "sotf-engine",
  "sotf-gpui",
  "sotf-player",
-]
-
-[[package]]
-name = "sotf-types"
-version = "0.7.10"
-dependencies = [
- "insta",
- "log",
- "proptest 1.11.0",
- "serde",
- "serde_json",
 ]
 
 [[package]]

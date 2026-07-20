@@ -1,8 +1,8 @@
 use super::super::PluginConfig;
 use super::misc::configure_host_oversampling;
 use super::misc::create_plugin;
+use crate::EngineOversamplingPolicy;
 use sotf_plugins::PluginHost;
-use sotf_types::EngineOversamplingPolicy;
 
 /// Build a plugin host from configs.
 ///

@@ -7,12 +7,12 @@ use super::error::ConfigError;
 use super::estimate::estimate_graph_update_timeout;
 use super::estimate::estimate_update_timeout;
 use super::wait::wait_for_plugin_chain_update;
+use crate::EngineOversamplingPolicy;
 use crate::engine::processing_thread::{
     build_plugin_graph_host_with_policy, build_plugin_host_with_policy,
 };
 use arc_swap::ArcSwap;
 use sotf_plugins::PluginHost;
-use sotf_types::EngineOversamplingPolicy;
 use std::sync::Arc;
 
 fn build_plugin_update_host_on_worker(
