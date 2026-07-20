@@ -181,36 +181,39 @@ realfft = "3.5"
 nalgebra = { version = "0.33", default-features = false, features = ["std"] }
 metaheuristics-nature = "10.1"
 
-# using crates version
+# using git version
 math-test-functions = { git = "https://github.com/pierreaubert/math-audio", version = "0.5", default-features = false }
 math-delaunay = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
 math-iir-fir = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
 math-optimisation = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
 math-dsp = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
 math-rir = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
-
 sofa-reader = { git = "https://github.com/pierreaubert/sofa-reader", version = "0.1.6" }
+autoeq = { git = "https://github.com/pierreaubert/autoeq", version = ">=0.4.51" }
 
-autoeq = { git = "https://github.com/pierreaubert/autoeq", version = "0.4.46" }
+# using git version
+symphonia-codec-dsd = { git = "https://github.com/pierreaubert/symphonia-add-ons", version = "0.1.0" }
+symphonia-codec-dst = { git = "https://github.com/pierreaubert/symphonia-add-ons", version = "0.1.0" }
+symphonia-codec-wavpack = { git = "https://github.com/pierreaubert/symphonia-add-ons", version = "0.1.0" }
+symphonia-format-sacd = { git = "https://github.com/pierreaubert/symphonia-add-ons", version = "0.1.0" }
 
 # GPUI toolkit
-gpui-d3rs = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-px = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-audio-kit = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-component-lab = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-design-tools = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-ui-kit = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-ui-kit-macros = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-themes = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-miniapp = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-builder = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-design = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-keybinding = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-pretext = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-
-gpui-ios = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-android = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-au = { version = "0.8", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-d3rs = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-px = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-audio-kit = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-component-lab = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-design-tools = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-ui-kit = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-ui-kit-macros = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-themes = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-miniapp = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-builder = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-design = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-keybinding = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-pretext = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-ios = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-android = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
+gpui-au = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 
 # SotF
 sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }
@@ -257,10 +260,6 @@ sotf-plugin-transient-shaper = { path = "crates/sotf-plugins/crates/sotf-plugin-
 sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer", default-features = false }
 sotf-plugin-xtc = { path = "crates/sotf-plugins/crates/sotf-plugin-xtc" }
 sotf-iamf = { path = "crates/sotf-iamf" }
-symphonia-codec-dsd = { git = "https://github.com/pierreaubert/symphonia-add-ons" }
-symphonia-codec-dst = { git = "https://github.com/pierreaubert/symphonia-add-ons" }
-symphonia-codec-wavpack = { git = "https://github.com/pierreaubert/symphonia-add-ons" }
-symphonia-format-sacd = { git = "https://github.com/pierreaubert/symphonia-add-ons" }
 sotf-streaming = { path = "crates/sotf-server/crates/sotf-streaming" }
 sotf-mpd = { path = "crates/sotf-server/crates/sotf-mpd" }
 sotf-services = { path = "crates/sotf-server/crates/sotf-services", default-features = false }
@@ -508,9 +507,6 @@ strip = "symbols"
 
 # Patches for tvOS/watchOS/visionOS support (Tier 3 Apple platforms):
 # - coreaudio-rs: cfg(target_os = "ios") doesn't include tvos
-[patch."https://github.com/pierreaubert/gpui-toolkit"]
-gpui-android = { path = "patches/gpui-android" }
-
 [patch.crates-io]
 nnnoiseless = { path = "crates/3rdparties/nnnoiseless" }
 coreaudio-rs = { path = "crates/3rdparties/coreaudio-rs" }
