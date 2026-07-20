@@ -12,6 +12,7 @@
 use crate::discovery::CastDevice;
 use rustls::pki_types::ServerName;
 use serde_json::{Value, json};
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -27,6 +28,7 @@ const RECEIVER_ID: &str = "receiver-0";
 const CAST_MIME_TYPE: &str = "audio/wav";
 const CAST_STREAM_PATH: &str = "/stream.wav";
 const CAST_READ_LIMIT: usize = 12;
+const CAST_AUDIO_BUFFER_CAPACITY: usize = 44_100 * 2 * 2 * 2;
 
 type CastTlsStream = rustls::StreamOwned<rustls::ClientConnection, TcpStream>;
 
@@ -49,18 +51,11 @@ pub struct ChromecastSender {
     request_id: u32,
     streaming: AtomicBool,
     volume: f32,
-    audio_buffer: Arc<std::sync::Mutex<AudioRingBuffer>>,
+    audio_buffer: Arc<std::sync::Mutex<VecDeque<u8>>>,
+    audio_format: Arc<std::sync::Mutex<(u32, u16)>>,
     http_stop: Arc<AtomicBool>,
     cast_stream: Option<CastTlsStream>,
     tofu_config_dir: PathBuf,
-}
-
-struct AudioRingBuffer {
-    data: Vec<u8>,
-    write_pos: usize,
-    read_pos: usize,
-    sample_rate: u32,
-    channels: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,55 +66,8 @@ struct CastMessage {
     payload_utf8: String,
 }
 
-impl AudioRingBuffer {
-    fn new(capacity: usize) -> Self {
-        Self {
-            data: vec![0u8; capacity],
-            write_pos: 0,
-            read_pos: 0,
-            sample_rate: 44_100,
-            channels: 2,
-        }
-    }
-
-    #[cfg(test)]
-    fn available(&self) -> usize {
-        if self.write_pos >= self.read_pos {
-            self.write_pos - self.read_pos
-        } else {
-            self.data.len() - self.read_pos + self.write_pos
-        }
-    }
-
-    fn write(&mut self, bytes: &[u8]) -> usize {
-        let cap = self.data.len();
-        let mut written = 0;
-        for &b in bytes {
-            let next = (self.write_pos + 1) % cap;
-            if next == self.read_pos {
-                break;
-            }
-            self.data[self.write_pos] = b;
-            self.write_pos = next;
-            written += 1;
-        }
-        written
-    }
-
-    fn read(&mut self, buf: &mut [u8]) -> usize {
-        let mut read = 0;
-        while read < buf.len() && self.read_pos != self.write_pos {
-            buf[read] = self.data[self.read_pos];
-            self.read_pos = (self.read_pos + 1) % self.data.len();
-            read += 1;
-        }
-        read
-    }
-}
-
 impl ChromecastSender {
     pub fn new(device: CastDevice) -> Self {
-        let buffer_capacity = 44_100 * 2 * 2 * 2;
         Self {
             device,
             state: ChromecastState::Disconnected,
@@ -130,7 +78,10 @@ impl ChromecastSender {
             request_id: 0,
             streaming: AtomicBool::new(false),
             volume: 1.0,
-            audio_buffer: Arc::new(std::sync::Mutex::new(AudioRingBuffer::new(buffer_capacity))),
+            audio_buffer: Arc::new(std::sync::Mutex::new(VecDeque::with_capacity(
+                CAST_AUDIO_BUFFER_CAPACITY,
+            ))),
+            audio_format: Arc::new(std::sync::Mutex::new((44_100, 2))),
             http_stop: Arc::new(AtomicBool::new(false)),
             cast_stream: None,
             tofu_config_dir: default_tofu_config_dir(),
@@ -203,11 +154,7 @@ impl ChromecastSender {
             .clone()
             .ok_or("Media receiver not launched")?;
 
-        {
-            let mut buf = self.audio_buffer.lock().unwrap();
-            buf.sample_rate = sample_rate;
-            buf.channels = channels;
-        }
+        *self.audio_format.lock().unwrap() = (sample_rate, channels);
 
         let stream_url = format!("http://{local_ip}:{http_port}{CAST_STREAM_PATH}");
         let request_id = self.next_request_id();
@@ -243,7 +190,10 @@ impl ChromecastSender {
         }
 
         let mut buf = self.audio_buffer.lock().unwrap();
-        let written = buf.write(&pcm_bytes);
+        let written = pcm_bytes
+            .len()
+            .min(CAST_AUDIO_BUFFER_CAPACITY.saturating_sub(buf.len()));
+        buf.extend(pcm_bytes[..written].iter().copied());
         Ok(written / 2)
     }
 
@@ -280,10 +230,11 @@ impl ChromecastSender {
         self.http_port = Some(http_port);
 
         let buffer = Arc::clone(&self.audio_buffer);
+        let audio_format = Arc::clone(&self.audio_format);
         let stop = Arc::clone(&self.http_stop);
         std::thread::Builder::new()
             .name("chromecast-http".to_string())
-            .spawn(move || run_http_stream_server(http_listener, buffer, stop))
+            .spawn(move || run_http_stream_server(http_listener, buffer, audio_format, stop))
             .map_err(|e| format!("HTTP thread spawn failed: {e}"))?;
 
         Ok(())
@@ -606,7 +557,8 @@ fn read_string(input: &[u8], pos: &mut usize) -> Result<String, String> {
 
 fn run_http_stream_server(
     listener: TcpListener,
-    buffer: Arc<std::sync::Mutex<AudioRingBuffer>>,
+    buffer: Arc<std::sync::Mutex<VecDeque<u8>>>,
+    audio_format: Arc<std::sync::Mutex<(u32, u16)>>,
     stop: Arc<AtomicBool>,
 ) {
     listener.set_nonblocking(true).ok();
@@ -615,10 +567,11 @@ fn run_http_stream_server(
             Ok((stream, peer)) => {
                 log::debug!("[Chromecast HTTP] connection from {peer}");
                 let buf = Arc::clone(&buffer);
+                let audio_format = Arc::clone(&audio_format);
                 let stop = Arc::clone(&stop);
                 let _ = std::thread::Builder::new()
                     .name("chromecast-http-client".to_string())
-                    .spawn(move || handle_stream_request(stream, buf, stop));
+                    .spawn(move || handle_stream_request(stream, buf, audio_format, stop));
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -633,15 +586,13 @@ fn run_http_stream_server(
 
 fn handle_stream_request(
     mut stream: TcpStream,
-    buffer: Arc<std::sync::Mutex<AudioRingBuffer>>,
+    buffer: Arc<std::sync::Mutex<VecDeque<u8>>>,
+    audio_format: Arc<std::sync::Mutex<(u32, u16)>>,
     stop: Arc<AtomicBool>,
 ) {
     let mut request_buf = [0u8; 1024];
     let _ = stream.read(&mut request_buf);
-    let (sample_rate, channels) = {
-        let buf = buffer.lock().unwrap();
-        (buf.sample_rate, buf.channels)
-    };
+    let (sample_rate, channels) = *audio_format.lock().unwrap();
     let wav_header = build_wav_header(sample_rate, channels, u32::MAX - 36);
     let response = "HTTP/1.1 200 OK\r\n\
 Content-Type: audio/wav\r\n\
@@ -661,7 +612,11 @@ Access-Control-Allow-Origin: *\r\n\
     while !stop.load(Ordering::Acquire) {
         let n = {
             let mut buf = buffer.lock().unwrap();
-            buf.read(&mut read_buf)
+            let n = buf.len().min(read_buf.len());
+            for (destination, byte) in read_buf[..n].iter_mut().zip(buf.drain(..n)) {
+                *destination = byte;
+            }
+            n
         };
         if n > 0 {
             if send_chunk(&mut stream, &read_buf[..n]).is_err() {
@@ -920,18 +875,20 @@ mod tests {
     }
 
     #[test]
-    fn test_audio_ring_buffer_wraparound() {
-        let mut buf = AudioRingBuffer::new(8);
-        assert_eq!(buf.write(&[1, 2, 3, 4, 5, 6, 7]), 7);
-        let mut out = [0u8; 4];
-        assert_eq!(buf.read(&mut out), 4);
-        assert_eq!(out, [1, 2, 3, 4]);
-        assert_eq!(buf.write(&[8, 9, 10, 11]), 4);
-        let mut out2 = [0u8; 7];
-        let n = buf.read(&mut out2);
-        assert_eq!(n, 7);
-        assert_eq!(&out2[..7], &[5, 6, 7, 8, 9, 10, 11]);
-        assert_eq!(buf.available(), 0);
+    fn test_audio_buffer_is_bounded() {
+        let mut sender = ChromecastSender::new(test_device());
+        sender.streaming.store(true, Ordering::Release);
+        sender
+            .audio_buffer
+            .lock()
+            .unwrap()
+            .resize(CAST_AUDIO_BUFFER_CAPACITY - 2, 0);
+
+        assert_eq!(sender.write_audio(&[0.5, -0.5]).unwrap(), 1);
+        assert_eq!(
+            sender.audio_buffer.lock().unwrap().len(),
+            CAST_AUDIO_BUFFER_CAPACITY
+        );
     }
 
     #[test]
@@ -946,11 +903,7 @@ mod tests {
         let mut sender = ChromecastSender::new(test_device());
         sender.start_http_stream_server().unwrap();
         let port = sender.http_port.unwrap();
-        {
-            let mut buffer = sender.audio_buffer.lock().unwrap();
-            buffer.sample_rate = 48_000;
-            buffer.channels = 2;
-        }
+        *sender.audio_format.lock().unwrap() = (48_000, 2);
         sender.streaming.store(true, Ordering::Release);
         assert_eq!(sender.write_audio(&[0.5, -0.5, 0.25, -0.25]).unwrap(), 4);
 
