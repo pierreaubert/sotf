@@ -13,7 +13,7 @@ fn temp_config_path(test_name: &str) -> PathBuf {
         .unwrap()
         .as_nanos();
     std::env::temp_dir().join(format!(
-        "sotf-types-{test_name}-{}-{unique}.json",
+        "sotf-engine-types-{test_name}-{}-{unique}.json",
         std::process::id()
     ))
 }

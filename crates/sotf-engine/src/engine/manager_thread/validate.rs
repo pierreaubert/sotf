@@ -125,7 +125,7 @@ pub(in crate::engine::manager_thread) fn validate_plugin_configs(
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use sotf_types::PluginConfig;
+    use crate::PluginConfig;
 
     fn config_with_params(plugin_type: &str, params: serde_json::Value) -> PluginConfig {
         PluginConfig {

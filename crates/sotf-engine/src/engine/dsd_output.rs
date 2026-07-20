@@ -1,5 +1,5 @@
+use crate::{DsdOutputMode, DsdOutputStatus};
 use serde::{Deserialize, Serialize};
-use sotf_types::{DsdOutputMode, DsdOutputStatus};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

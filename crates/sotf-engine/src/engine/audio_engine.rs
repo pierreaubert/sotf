@@ -206,7 +206,7 @@ impl AudioEngine {
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     pub fn get_isolated_external_plugin_worker_statuses(
         &self,
-    ) -> Vec<sotf_types::IsolatedExternalPluginWorkerStatus> {
+    ) -> Vec<crate::IsolatedExternalPluginWorkerStatus> {
         self.manager
             .get_state()
             .isolated_external_plugin_worker_statuses

@@ -6,7 +6,7 @@ use super::hal_input_guard_trip::guard_hal_input_block;
 use super::misc::frames_to_sample_count;
 use super::sample_queue::SampleQueue;
 use super::types::run_decoder_thread;
-use sotf_types::DsdOutputMode;
+use crate::DsdOutputMode;
 
 use std::path::PathBuf;
 use std::time::Duration;

@@ -1,7 +1,7 @@
 use super::super::{DecoderCommand, DecoderMessage, DecoderResponse, ThreadEvent};
 use super::consts::SPIN_MS_SLEEP_DECODER;
 use super::decoder_state::DecoderState;
-use sotf_types::DsdOutputMode;
+use crate::DsdOutputMode;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::Duration;
 

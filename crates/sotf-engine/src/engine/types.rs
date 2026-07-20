@@ -7,8 +7,8 @@ use sotf_plugins::PluginHost;
 use std::any::Any;
 use std::sync::Arc;
 
-// Re-export shared types from sotf-types
-pub use sotf_types::{
+// Re-export shared types from the engine types module.
+pub use crate::{
     AudioEngineState, AudioFrame, DsdOutputMode, DsdOutputStatus, EngineOversamplingPolicy,
     IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
     IsolatedExternalPluginWorkerEvent, IsolatedExternalPluginWorkerStatus, LatencyCompensationMode,
@@ -256,7 +256,7 @@ pub enum ThreadEvent {
     StreamMetadataChanged(Option<StreamMetadata>),
     PlaybackChannelsChanged(usize),
     PlaybackOutputDeviceChanged(String),
-    PlaybackOutputAccessChanged(sotf_types::OutputAccessStatus),
+    PlaybackOutputAccessChanged(crate::OutputAccessStatus),
     /// Playback thread hardware-consumption diagnostics changed.
     PlaybackStats {
         callback_count: u64,

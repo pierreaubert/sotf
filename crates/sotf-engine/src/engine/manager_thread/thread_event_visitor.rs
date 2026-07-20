@@ -39,7 +39,7 @@ pub trait ThreadEventVisitor {
     fn playback_output_access_changed(
         &mut self,
         _state: &mut AudioEngineState,
-        _status: sotf_types::OutputAccessStatus,
+        _status: crate::OutputAccessStatus,
     ) {
     }
     fn playback_stats(&mut self, _state: &mut AudioEngineState, _stats: &PlaybackStatsSnapshot) {}
@@ -164,7 +164,7 @@ impl ThreadEventVisitor for AudioEngineStateUpdater {
     fn playback_output_access_changed(
         &mut self,
         state: &mut AudioEngineState,
-        status: sotf_types::OutputAccessStatus,
+        status: crate::OutputAccessStatus,
     ) {
         state.output_access_status = status;
     }

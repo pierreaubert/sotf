@@ -13,6 +13,9 @@ use super::misc::frames_to_sample_count;
 use super::misc::take_frame_buffer;
 use super::sample_queue::SampleQueue;
 use super::types::DecoderLoopAction;
+use crate::DsdOutputMode;
+#[cfg(feature = "streaming")]
+use crate::StreamMetadata;
 use crate::decoder::{
     AudioDecoder, AudioSource, AudioSpec, DecodedAudio,
     create_decoder_from_source_with_dsd_mode_and_metadata,
@@ -20,9 +23,6 @@ use crate::decoder::{
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalInputReader;
 use sotf_plugins::{Plugin, ProcessContext, ResamplerPlugin};
-use sotf_types::DsdOutputMode;
-#[cfg(feature = "streaming")]
-use sotf_types::StreamMetadata;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::{Duration, Instant};
 

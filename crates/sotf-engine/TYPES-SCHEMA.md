@@ -1,10 +1,10 @@
-# sotf-types schema stability guide
+# Engine types schema stability guide
 
-This document lists the persisted JSON/config schemas in `sotf-types` and
+This document lists the persisted JSON/config schemas owned by `sotf-engine` and
 classifies each field as **stable** (safe for external tools to read or write)
 or **internal** (may change without a migration window).
 
-For migration rules, see the crate-level `CHANGELOG.md`.
+For migration rules, see `TYPES-CHANGELOG.md`.
 
 ## `EngineConfig`
 

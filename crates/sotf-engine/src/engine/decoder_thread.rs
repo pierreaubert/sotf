@@ -1,5 +1,5 @@
 use super::{DecoderCommand, DecoderMessage, DecoderResponse, ThreadEvent};
-use sotf_types::DsdOutputMode;
+use crate::DsdOutputMode;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
 mod consts;

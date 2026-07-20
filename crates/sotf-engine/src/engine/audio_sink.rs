@@ -8,7 +8,7 @@
 use std::sync::mpsc::Sender;
 
 use super::ThreadEvent;
-pub use sotf_types::{SinkConfig, SinkOpenResult, SinkType};
+pub use crate::{SinkConfig, SinkOpenResult, SinkType};
 
 /// Output destination for processed audio.
 ///

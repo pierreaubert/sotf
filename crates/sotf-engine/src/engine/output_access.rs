@@ -1,5 +1,5 @@
+use crate::{OutputAccessMode, OutputAccessStatus};
 use serde::{Deserialize, Serialize};
-use sotf_types::{OutputAccessMode, OutputAccessStatus};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -1,8 +1,8 @@
 use super::super::PluginConfig;
 use super::misc::configure_host_oversampling;
 use super::misc::create_plugin;
+use crate::{EngineOversamplingPolicy, PluginBuildDiagnostic};
 use sotf_plugins::{EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER, PluginHost};
-use sotf_types::{EngineOversamplingPolicy, PluginBuildDiagnostic};
 
 fn plugin_instance_id(parameters: &serde_json::Value) -> Option<usize> {
     parameters

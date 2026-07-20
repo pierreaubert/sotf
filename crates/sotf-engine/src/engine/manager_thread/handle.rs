@@ -63,14 +63,12 @@ mod tests {
 
         // PlaybackOutputAccessChanged
         handle_thread_event(
-            ThreadEvent::PlaybackOutputAccessChanged(
-                sotf_types::OutputAccessStatus::ExclusiveActive,
-            ),
+            ThreadEvent::PlaybackOutputAccessChanged(crate::OutputAccessStatus::ExclusiveActive),
             &state,
         );
         assert_eq!(
             state.load().output_access_status,
-            sotf_types::OutputAccessStatus::ExclusiveActive
+            crate::OutputAccessStatus::ExclusiveActive
         );
 
         // PlaybackStats
@@ -114,7 +112,7 @@ mod tests {
         drop(s);
 
         // StreamMetadataChanged
-        let metadata = sotf_types::StreamMetadata {
+        let metadata = crate::StreamMetadata {
             stream_title: Some("Title".to_string()),
             stream_url: None,
             content_type: Some("audio/mpeg".to_string()),
@@ -200,11 +198,11 @@ mod tests {
 
         #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         {
-            let status = sotf_types::IsolatedExternalPluginWorkerStatus {
+            let status = crate::IsolatedExternalPluginWorkerStatus {
                 plugin_index: 0,
                 node_id: 1,
                 plugin_instance_id: None,
-                event: Some(sotf_types::IsolatedExternalPluginWorkerEvent::Started { pid: 123 }),
+                event: Some(crate::IsolatedExternalPluginWorkerEvent::Started { pid: 123 }),
                 error: None,
                 worker_start_count: 1,
                 worker_exit_count: 0,
@@ -212,9 +210,8 @@ mod tests {
                 block_timeout_count: 0,
                 block_worker_failure_count: 0,
                 block_wrong_sequence_count: 0,
-                sandbox_status: sotf_types::IsolatedExternalPluginSandboxStatus::Enforced,
-                sandbox_backend:
-                    sotf_types::IsolatedExternalPluginSandboxBackend::MacosProcessIsolation,
+                sandbox_status: crate::IsolatedExternalPluginSandboxStatus::Enforced,
+                sandbox_backend: crate::IsolatedExternalPluginSandboxBackend::MacosProcessIsolation,
                 sandbox_reason: None,
             };
             handle_thread_event(

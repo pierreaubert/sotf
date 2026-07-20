@@ -1,10 +1,10 @@
-# sotf-types (lib: `sotf_types`)
+# Engine configuration and state types
 
-Shared configuration types for the SOTF audio system.
+Public configuration and runtime-state types for the SOTF audio engine.
 
 ## Overview
 
-Provides lightweight, serializable types used across the SOTF workspace without pulling in audio processing dependencies (cpal, symphonia, rustfft). Any crate in the workspace can depend on `sotf-types` without bloating its dependency tree.
+These serializable types are owned and exported by `sotf-engine`.
 
 ## Features
 
@@ -17,13 +17,13 @@ Provides lightweight, serializable types used across the SOTF workspace without 
 
 ## Schema stability
 
-See [`SCHEMA.md`](./SCHEMA.md) for the stable-versus-internal field classification
+See [`TYPES-SCHEMA.md`](./TYPES-SCHEMA.md) for the stable-versus-internal field classification
 and version-compatibility rules for persisted config/state types.
 
 ## Usage
 
 ```rust
-use sotf_types::{EngineConfig, PluginConfig};
+use sotf_audio::{EngineConfig, PluginConfig};
 
 // Create a default engine config
 let mut config = EngineConfig::default();
@@ -47,7 +47,7 @@ config.save_to_file(&"config.json".into()).unwrap();
 ## Architecture
 
 ```
-src/
+src/types/
 ├── audio_source.rs   -- AudioSource, ServiceId
 ├── config.rs         -- EngineConfig (the central configuration type)
 ├── plugin_config.rs  -- PluginConfig, PluginGraphConfig
@@ -63,8 +63,8 @@ src/
 ## Testing
 
 ```bash
-cargo test -p sotf-types
-cargo check -p sotf-types && cargo clippy -p sotf-types
+cargo test -p sotf-engine
+cargo check -p sotf-engine && cargo clippy -p sotf-engine
 ```
 
 ## License

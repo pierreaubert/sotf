@@ -10,9 +10,9 @@ use super::wait::wait_for_plugin_chain_update;
 use crate::engine::processing_thread::{
     build_plugin_graph_host_with_policy, build_plugin_host_with_policy,
 };
+use crate::{EngineOversamplingPolicy, PluginBuildDiagnostic};
 use arc_swap::ArcSwap;
 use sotf_plugins::PluginHost;
-use sotf_types::{EngineOversamplingPolicy, PluginBuildDiagnostic};
 use std::sync::Arc;
 
 fn build_plugin_update_host_on_worker(
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(current.plugin_build_diagnostics.len(), 1);
         assert!(matches!(
             current.plugin_build_diagnostics[0].target,
-            sotf_types::PluginBuildTarget::GraphNode { node_id: 42 }
+            crate::PluginBuildTarget::GraphNode { node_id: 42 }
         ));
     }
 }

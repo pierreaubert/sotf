@@ -2,7 +2,7 @@ use sotf_audio::engine::{
     AudioEngineState, AudioFrame, DecoderCommand, DecoderMessage, PlaybackCommand, PlaybackState,
     PluginConfig, ProcessingMessage, ThreadEvent,
 };
-use sotf_types::{
+use sotf_audio::{
     IsolatedExternalPluginSandboxBackend, IsolatedExternalPluginSandboxStatus,
     IsolatedExternalPluginWorkerEvent, IsolatedExternalPluginWorkerStatus,
 };

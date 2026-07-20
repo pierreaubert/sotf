@@ -24,9 +24,8 @@ hls = ["streaming", "sotf-streaming/hls"]
 driver-common = { workspace = true }
 tokio = { workspace = true }
 ndarray = { workspace = true }
-sotf-types = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["preserve_order"] }
 tempfile = { workspace = true }
 serde_yaml = { workspace = true }
 which = { workspace = true }
@@ -92,6 +91,8 @@ driver-hal = { workspace = true, optional = true }
 rand = { workspace = true }
 criterion = { workspace = true }
 serial_test = { workspace = true }
+proptest = { workspace = true }
+insta = { workspace = true }
 sotf-testkit = { workspace = true, features = ["engine"] }
 sotf-test = { workspace = true }
 

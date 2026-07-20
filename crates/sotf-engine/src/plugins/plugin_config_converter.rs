@@ -6,9 +6,9 @@
 //!
 //! Unmigrated variants still fall back to the inline match in `plugin_settings.rs`.
 
+use crate::PluginConfig;
 use crate::plugins::{EQFilter, PluginSettings};
 use sotf_plugins::ExternalPluginSandboxMode;
-use sotf_types::PluginConfig;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 

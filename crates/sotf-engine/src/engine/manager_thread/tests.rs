@@ -314,13 +314,13 @@ fn test_handle_thread_event_updates_output_access_status() {
     let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
 
     handle_thread_event(
-        ThreadEvent::PlaybackOutputAccessChanged(sotf_types::OutputAccessStatus::FallbackShared),
+        ThreadEvent::PlaybackOutputAccessChanged(crate::OutputAccessStatus::FallbackShared),
         &state,
     );
 
     assert_eq!(
         state.load().output_access_status,
-        sotf_types::OutputAccessStatus::FallbackShared
+        crate::OutputAccessStatus::FallbackShared
     );
 }
 
@@ -354,7 +354,7 @@ fn test_handle_thread_event_updates_playback_stats() {
 #[test]
 fn test_handle_thread_event_updates_stream_metadata() {
     let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
-    let metadata = sotf_types::StreamMetadata {
+    let metadata = crate::StreamMetadata {
         stream_title: Some("Artist - Song".to_string()),
         stream_url: Some("https://station.example/live".to_string()),
         content_type: Some("audio/mpeg".to_string()),
@@ -507,11 +507,11 @@ fn test_processing_warning_sets_error_without_stopping() {
 #[test]
 fn test_handle_thread_event_updates_isolated_external_plugin_worker_statuses() {
     let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
-    let initial_status = sotf_types::IsolatedExternalPluginWorkerStatus {
+    let initial_status = crate::IsolatedExternalPluginWorkerStatus {
         plugin_index: 1,
         node_id: 77,
         plugin_instance_id: None,
-        event: Some(sotf_types::IsolatedExternalPluginWorkerEvent::NotRunning),
+        event: Some(crate::IsolatedExternalPluginWorkerEvent::NotRunning),
         error: Some("transient".to_string()),
         worker_start_count: 1,
         worker_exit_count: 2,
@@ -519,8 +519,8 @@ fn test_handle_thread_event_updates_isolated_external_plugin_worker_statuses() {
         block_timeout_count: 4,
         block_worker_failure_count: 5,
         block_wrong_sequence_count: 6,
-        sandbox_status: sotf_types::IsolatedExternalPluginSandboxStatus::Unknown,
-        sandbox_backend: sotf_types::IsolatedExternalPluginSandboxBackend::Unknown,
+        sandbox_status: crate::IsolatedExternalPluginSandboxStatus::Unknown,
+        sandbox_backend: crate::IsolatedExternalPluginSandboxBackend::Unknown,
         sandbox_reason: None,
     };
 
@@ -535,11 +535,11 @@ fn test_handle_thread_event_updates_isolated_external_plugin_worker_statuses() {
         vec![initial_status]
     );
 
-    let replacement_status = sotf_types::IsolatedExternalPluginWorkerStatus {
+    let replacement_status = crate::IsolatedExternalPluginWorkerStatus {
         plugin_index: 2,
         node_id: 99,
         plugin_instance_id: None,
-        event: Some(sotf_types::IsolatedExternalPluginWorkerEvent::Started { pid: 42 }),
+        event: Some(crate::IsolatedExternalPluginWorkerEvent::Started { pid: 42 }),
         error: None,
         worker_start_count: 10,
         worker_exit_count: 20,
@@ -547,8 +547,8 @@ fn test_handle_thread_event_updates_isolated_external_plugin_worker_statuses() {
         block_timeout_count: 40,
         block_worker_failure_count: 50,
         block_wrong_sequence_count: 60,
-        sandbox_status: sotf_types::IsolatedExternalPluginSandboxStatus::Enforced,
-        sandbox_backend: sotf_types::IsolatedExternalPluginSandboxBackend::LinuxLandlock,
+        sandbox_status: crate::IsolatedExternalPluginSandboxStatus::Enforced,
+        sandbox_backend: crate::IsolatedExternalPluginSandboxBackend::LinuxLandlock,
         sandbox_reason: None,
     };
 
@@ -646,12 +646,12 @@ fn test_initial_engine_state_surfaces_feature_policies() {
         output_channels: 6,
         volume: 0.5,
         muted: true,
-        latency_compensation: sotf_types::LatencyCompensationMode::Disabled,
-        output_access: sotf_types::OutputAccessMode::ExclusivePreferred,
-        dsd_output: sotf_types::DsdOutputMode::DopPreferred,
-        oversampling_policy: sotf_types::EngineOversamplingPolicy::Force2x,
-        network_endpoint: sotf_types::NetworkEndpointConfig {
-            mode: sotf_types::NetworkEndpointMode::HttpEndpoint,
+        latency_compensation: crate::LatencyCompensationMode::Disabled,
+        output_access: crate::OutputAccessMode::ExclusivePreferred,
+        dsd_output: crate::DsdOutputMode::DopPreferred,
+        oversampling_policy: crate::EngineOversamplingPolicy::Force2x,
+        network_endpoint: crate::NetworkEndpointConfig {
+            mode: crate::NetworkEndpointMode::HttpEndpoint,
             ..Default::default()
         },
         ..EngineConfig::default()
@@ -665,21 +665,21 @@ fn test_initial_engine_state_surfaces_feature_policies() {
     assert!(state.muted);
     assert!(!state.latency_compensation_enabled);
     #[cfg(target_os = "macos")]
-    let expected_output_access_status = sotf_types::OutputAccessStatus::ExclusivePending;
+    let expected_output_access_status = crate::OutputAccessStatus::ExclusivePending;
     #[cfg(not(target_os = "macos"))]
-    let expected_output_access_status = sotf_types::OutputAccessStatus::FallbackShared;
+    let expected_output_access_status = crate::OutputAccessStatus::FallbackShared;
     assert_eq!(state.output_access_status, expected_output_access_status);
     assert_eq!(
         state.dsd_output_status,
-        sotf_types::DsdOutputStatus::DopFallbackPcm
+        crate::DsdOutputStatus::DopFallbackPcm
     );
     assert_eq!(
         state.oversampling_policy,
-        sotf_types::EngineOversamplingPolicy::Force2x
+        crate::EngineOversamplingPolicy::Force2x
     );
     assert_eq!(
         state.network_endpoint_status,
-        sotf_types::NetworkEndpointStatus::EndpointUnavailable
+        crate::NetworkEndpointStatus::EndpointUnavailable
     );
 }
 
@@ -695,24 +695,24 @@ fn test_dsd_output_statuses_distinguish_pcm_fallbacks_from_required_bitstream() 
     };
 
     assert_eq!(
-        status_for_mode(sotf_types::DsdOutputMode::PcmDecode),
-        sotf_types::DsdOutputStatus::PcmDecodeAvailable
+        status_for_mode(crate::DsdOutputMode::PcmDecode),
+        crate::DsdOutputStatus::PcmDecodeAvailable
     );
     assert_eq!(
-        status_for_mode(sotf_types::DsdOutputMode::DopPreferred),
-        sotf_types::DsdOutputStatus::DopFallbackPcm
+        status_for_mode(crate::DsdOutputMode::DopPreferred),
+        crate::DsdOutputStatus::DopFallbackPcm
     );
     assert_eq!(
-        status_for_mode(sotf_types::DsdOutputMode::DopRequired),
-        sotf_types::DsdOutputStatus::DopUnavailable
+        status_for_mode(crate::DsdOutputMode::DopRequired),
+        crate::DsdOutputStatus::DopUnavailable
     );
     assert_eq!(
-        status_for_mode(sotf_types::DsdOutputMode::NativePreferred),
-        sotf_types::DsdOutputStatus::NativeFallbackPcm
+        status_for_mode(crate::DsdOutputMode::NativePreferred),
+        crate::DsdOutputStatus::NativeFallbackPcm
     );
     assert_eq!(
-        status_for_mode(sotf_types::DsdOutputMode::NativeRequired),
-        sotf_types::DsdOutputStatus::NativeUnavailable
+        status_for_mode(crate::DsdOutputMode::NativeRequired),
+        crate::DsdOutputStatus::NativeUnavailable
     );
 }
 
@@ -723,8 +723,8 @@ fn test_start_network_stream_server_updates_state_and_publishes_audio() {
     let config = EngineConfig {
         output_sample_rate: 48_000,
         output_channels: 2,
-        network_endpoint: sotf_types::NetworkEndpointConfig {
-            mode: sotf_types::NetworkEndpointMode::HttpEndpoint,
+        network_endpoint: crate::NetworkEndpointConfig {
+            mode: crate::NetworkEndpointMode::HttpEndpoint,
             bind_addr: "127.0.0.1".to_string(),
             port: 0,
         },
@@ -747,7 +747,7 @@ fn test_start_network_stream_server_updates_state_and_publishes_audio() {
     let current = state.load();
     assert_eq!(
         current.network_endpoint_status,
-        sotf_types::NetworkEndpointStatus::EndpointRunning
+        crate::NetworkEndpointStatus::EndpointRunning
     );
     assert_ne!(current.network_endpoint.port, 0);
 
@@ -917,7 +917,7 @@ fn test_manager_thread_init_failure_records_error_without_full_state_clone() {
     // DSD bitstream required is unavailable on every platform, so
     // run_manager_thread will fail before spawning worker threads.
     let config = EngineConfig {
-        dsd_output: sotf_types::DsdOutputMode::DopRequired,
+        dsd_output: crate::DsdOutputMode::DopRequired,
         ..EngineConfig::default()
     };
 
