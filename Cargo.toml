@@ -317,7 +317,6 @@ gpui_macos = { version="0.1.0", git = "https://github.com/zed-industries/zed.git
 gpui_linux = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
 gpui_windows = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
 gpui_wgpu = { version="0.1.0", git = "https://github.com/zed-industries/zed.git", tag = "v1.9.0" }
-wgpu = { version="29.0.0", git = "https://github.com/zed-industries/wgpu.git", branch = "v29" }
 
 # System and low-level
 objc = "0.2"
@@ -342,8 +341,6 @@ proptest = "1.9"
 syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
 
 # Graphics and visualization
-plotly = "0.13"
-plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"] }
 bytemuck = { version = "1.14", features = ["derive"] }
 glam = "0.30"
 pollster = "0.4"
@@ -352,7 +349,6 @@ fontdue = "0.9"
 delaunator = "1.0"
 raw-window-handle = "0.6"
 pathfinder_geometry = "0.5"
-smallvec = { version = "1.6", features = ["union", "const_new"] }
 
 # GPU and macOS graphics
 oslog = "0.2"
