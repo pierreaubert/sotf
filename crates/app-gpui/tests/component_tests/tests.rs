@@ -4316,3 +4316,23 @@ fn every_declarative_plugin_layout_solves_at_narrow_and_wide_widths() {
         }
     }
 }
+
+#[test]
+fn eq_drag_preview_is_taken_only_by_its_plugin() {
+    use sotf_audio_player_gpui::app::state::EqDragPreview;
+    use sotf_audio_player_gpui::app::state::plugin::PluginUiState;
+
+    let preview = EqDragPreview {
+        plugin_idx: 4,
+        band_idx: 3,
+        frequency: 1_250.0,
+        gain_db: -2.5,
+    };
+    let mut state = PluginUiState::default();
+    state.preview_eq_drag(preview);
+
+    assert_eq!(state.take_eq_drag_preview_for(2), None);
+    assert_eq!(state.eq_drag_preview, Some(preview));
+    assert_eq!(state.take_eq_drag_preview_for(4), Some(preview));
+    assert_eq!(state.eq_drag_preview, None);
+}

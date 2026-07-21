@@ -46,7 +46,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Mutex, OnceLock};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EqBandIndexing {
     pub(crate) stride: usize,
     pub(crate) frequency: usize,
@@ -77,6 +77,36 @@ impl EqBandIndexing {
     fn param(self, band_idx: usize, local_idx: usize) -> usize {
         band_idx * self.stride + local_idx
     }
+}
+
+fn commit_eq_drag_preview(
+    entity: &Entity<AppState>,
+    plugin_idx: usize,
+    indexing: EqBandIndexing,
+    cx: &mut App,
+) {
+    entity.update(cx, |state, cx| {
+        let Some(preview) = state
+            .app
+            .plugin_state
+            .plugin_ui_state
+            .take_eq_drag_preview_for(plugin_idx)
+        else {
+            return;
+        };
+
+        state.app.set_plugin_param(
+            plugin_idx,
+            indexing.param(preview.band_idx, indexing.frequency),
+            preview.frequency,
+        );
+        state.app.set_plugin_param(
+            plugin_idx,
+            indexing.param(preview.band_idx, indexing.gain),
+            preview.gain_db,
+        );
+        cx.notify();
+    });
 }
 
 #[derive(Clone, Copy)]
@@ -1229,19 +1259,46 @@ pub(crate) fn render_eq_visualization_sized(
 
                 entity.update(cx, |state, cx| {
                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                    state.app.set_plugin_param(
-                        plugin_idx,
-                        indexing.param(band_idx, indexing.frequency),
-                        new_freq,
-                    );
-                    state.app.set_plugin_param(
-                        plugin_idx,
-                        indexing.param(band_idx, indexing.gain),
-                        new_gain,
-                    );
+                    if indexing == EqBandIndexing::FIR {
+                        state.app.plugin_state.plugin_ui_state.preview_eq_drag(
+                            crate::app::state::EqDragPreview {
+                                plugin_idx,
+                                band_idx,
+                                frequency: new_freq,
+                                gain_db: new_gain,
+                            },
+                        );
+                    } else {
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            indexing.param(band_idx, indexing.frequency),
+                            new_freq,
+                        );
+                        state.app.set_plugin_param(
+                            plugin_idx,
+                            indexing.param(band_idx, indexing.gain),
+                            new_gain,
+                        );
+                    }
                     cx.notify();
                 });
                 // window.refresh();
+            }
+        })
+        .on_mouse_up(MouseButton::Left, {
+            let entity = entity.clone();
+            move |_event, _window, cx| {
+                if indexing == EqBandIndexing::FIR {
+                    commit_eq_drag_preview(&entity, plugin_idx, indexing, cx);
+                }
+            }
+        })
+        .on_mouse_up_out(MouseButton::Left, {
+            let entity = entity.clone();
+            move |_event, _window, cx| {
+                if indexing == EqBandIndexing::FIR {
+                    commit_eq_drag_preview(&entity, plugin_idx, indexing, cx);
+                }
             }
         });
 
@@ -1348,6 +1405,27 @@ pub fn render_eq_plugin(
     } else {
         EqBandIndexing::STANDARD
     };
+
+    // FIR coefficient generation is intentionally deferred until pointer release.
+    // Render the pending values locally so the point and curve still track the drag.
+    let drag_preview = entity
+        .read(cx)
+        .app
+        .plugin_state
+        .plugin_ui_state
+        .eq_drag_preview;
+    let preview_filters = drag_preview
+        .filter(|preview| preview.plugin_idx == plugin_idx && indexing == EqBandIndexing::FIR)
+        .map(|preview| {
+            let mut filters = display_filters.to_vec();
+            if let Some(filter) = filters.get_mut(preview.band_idx) {
+                filter.frequency = preview.frequency;
+                filter.gain_db = preview.gain_db;
+            }
+            filters
+        });
+    let display_filters = preview_filters.as_deref().unwrap_or(display_filters);
+
     let layout = EqCompactLayout::from_width(state.available_width);
 
     // Compute selected param for editing mode

@@ -324,6 +324,15 @@ pub enum EarTrainingSurface {
 }
 
 /// GPUI-specific state for the plugin UI view mode and open pickers/overlays.
+/// Transient EQ graph edit that has not yet been sent to the audio engine.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EqDragPreview {
+    pub plugin_idx: usize,
+    pub band_idx: usize,
+    pub frequency: f64,
+    pub gain_db: f64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PluginUiState {
     /// Which plugin UI view mode to show
@@ -338,6 +347,20 @@ pub struct PluginUiState {
     pub eq_compact_config_open: bool,
     /// Compact EQ: whether the graph is visible in inspector mode.
     pub eq_compact_graph_visible: bool,
+    /// FIR EQ point currently being previewed. Committed on pointer release.
+    pub eq_drag_preview: Option<EqDragPreview>,
+}
+
+impl PluginUiState {
+    pub fn preview_eq_drag(&mut self, preview: EqDragPreview) {
+        self.eq_drag_preview = Some(preview);
+    }
+
+    pub fn take_eq_drag_preview_for(&mut self, plugin_idx: usize) -> Option<EqDragPreview> {
+        self.eq_drag_preview
+            .filter(|preview| preview.plugin_idx == plugin_idx)?;
+        self.eq_drag_preview.take()
+    }
 }
 
 /// GPUI-specific state for the per-plugin preset picker and destructive-action
