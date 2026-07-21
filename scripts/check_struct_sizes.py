@@ -27,7 +27,9 @@ ALLOWLIST: set[tuple[str, str]] = {
     # groups only when the public command/config surface can absorb it.
     ("crates/app-cli/bin/sotf_player_cli/types.rs", "UpmixerArgs"),
     ("crates/app-gpui/app/config.rs", "Config"),
-    ("crates/sotf-types/src/state.rs", "AudioEngineState"),
+    # Moved from sotf-types during the engine type consolidation. Planned
+    # split: transport, decode, processing, output, and diagnostics state.
+    ("crates/sotf-engine/src/types/state.rs", "AudioEngineState"),
     # App/remote state models. Planned split: transport/library/server
     # connectivity sub-states with explicit update effects.
     ("crates/app-gpui/app/state/app/remote_state.rs", "RemoteState"),
