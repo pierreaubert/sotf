@@ -3733,7 +3733,7 @@ fn application_visible_literal_sinks_require_explicit_technical_allowlist() {
         "Hiss Reducer",
         "JSON",
         "Limiter",
-        "Linear-Phase EQ",
+        "FIR EQ",
         "Loudness Compensation",
         "Loudness Monitor",
         "Matrix Mixer",

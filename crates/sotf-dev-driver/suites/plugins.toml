@@ -140,7 +140,6 @@ tags = ["plugin"]
 
 [[scenario]]
 name = "plugin_firdesigner"
-path = "crates/sotf-dev-driver/scenarios/plugins/FirDesigner.scn"
 timeout = "30s"
 tags = ["plugin"]
 

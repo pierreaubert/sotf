@@ -253,10 +253,6 @@ invariant_test!(
     sotf_plugin_dynamic_eq::params::Params
 );
 invariant_test!(
-    invariants_fir_designer,
-    sotf_plugin_fir_designer::params::Params
-);
-invariant_test!(
     invariants_linear_phase_eq,
     sotf_plugin_linear_phase_eq::params::Params
 );

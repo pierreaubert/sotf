@@ -18,21 +18,9 @@ pub enum EqViewMode {
         latency_ms: f32,
         /// Current FIR length (samples) for display
         fir_length: usize,
-        /// Whether auto_gain is enabled
-        auto_gain: bool,
-        /// Wet/dry mix
-        mix: f64,
-    },
-    FirDesigner {
-        /// Latency in samples = (fir_length - 1) / 2 in linear mode.
-        latency_samples: usize,
-        /// Latency in milliseconds at the current sample rate.
-        latency_ms: f32,
-        /// Current FIR length (samples) for display.
-        fir_length: usize,
         /// Current FIR phase design mode.
         phase_mode: &'static str,
-        /// Whether auto_gain is enabled.
+        /// Whether auto_gain is enabled
         auto_gain: bool,
         /// Wet/dry mix
         mix: f64,
@@ -60,7 +48,7 @@ pub struct EqRenderState<'a> {
     pub midi_overlay: Option<&'a MidiOverlay>,
     /// View variant — Standard biquad EQ or LinearPhase FIR EQ
     pub mode: EqViewMode,
-    /// Number of active filters (for EQ, LinearPhaseEq, FirDesigner)
+    /// Number of active filters (for EQ and LinearPhaseEq)
     pub num_filters: usize,
     /// Use Transposed Direct Form II (Standard EQ only)
     pub tdf2: bool,

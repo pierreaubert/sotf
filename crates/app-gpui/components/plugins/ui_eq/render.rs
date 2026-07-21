@@ -40,7 +40,7 @@ use sotf_audio_player::{EQFilter, PluginSettings};
 use sotf_audio_player_midi::mapping::MidiOverlay;
 use sotf_plugins::param_specs::{
     eq::BAND_TEMPLATE as EQ, eq::GLOBAL_PARAMS as EQ_GLOBAL, find_by_key as pk,
-    fir_designer::PARAMS as FIR_PARAMS, linear_phase_eq::PARAMS as LP_PARAMS,
+    linear_phase_eq::PARAMS as LP_PARAMS,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -116,13 +116,9 @@ pub(crate) enum EqGlobalControl {
     StandardTopology,
     LpNumFilters,
     LpFirLength,
+    LpPhaseMode,
     LpAutoGain,
     LpMix,
-    FirNumFilters,
-    FirLength,
-    FirPhaseMode,
-    FirAutoGain,
-    FirMix,
 }
 
 #[derive(Clone, Copy)]
@@ -1395,11 +1391,7 @@ pub fn render_eq_plugin(
     } else {
         None
     };
-    let is_fir_mode = matches!(&state.mode, EqViewMode::FirDesigner { .. });
-    let is_lp_mode = matches!(
-        &state.mode,
-        EqViewMode::LinearPhase { .. } | EqViewMode::FirDesigner { .. }
-    );
+    let is_lp_mode = matches!(&state.mode, EqViewMode::LinearPhase { .. });
     let indexing = if is_lp_mode {
         EqBandIndexing::FIR
     } else {
@@ -1983,20 +1975,6 @@ pub fn render_eq_plugin(
             latency_samples,
             latency_ms,
             fir_length,
-            auto_gain,
-            mix,
-        } => Some((
-            *latency_samples,
-            *latency_ms,
-            *fir_length,
-            "Linear",
-            *auto_gain,
-            *mix,
-        )),
-        EqViewMode::FirDesigner {
-            latency_samples,
-            latency_ms,
-            fir_length,
             phase_mode,
             auto_gain,
             mix,
@@ -2027,11 +2005,7 @@ pub fn render_eq_plugin(
                     &ds,
                     entity.clone(),
                     plugin_idx,
-                    if is_fir_mode {
-                        EqGlobalControl::FirNumFilters
-                    } else {
-                        EqGlobalControl::LpNumFilters
-                    },
+                    EqGlobalControl::LpNumFilters,
                     "Filters",
                     state.num_filters.to_string(),
                     theme,
@@ -2040,33 +2014,22 @@ pub fn render_eq_plugin(
                     &ds,
                     entity.clone(),
                     plugin_idx,
-                    if is_fir_mode {
-                        EqGlobalControl::FirLength
-                    } else {
-                        EqGlobalControl::LpFirLength
-                    },
+                    EqGlobalControl::LpFirLength,
                     "FIR length",
                     fir_length.to_string(),
                     theme,
                 ))
-                .child(if is_fir_mode {
-                    render_eq_global_toggle(
-                        &ds,
-                        entity.clone(),
-                        plugin_idx,
-                        EqGlobalControl::FirPhaseMode,
-                        "Phase",
-                        phase_mode == "Minimum",
-                        "Minimum",
-                        "Linear",
-                        theme,
-                    )
-                } else {
-                    div()
-                        .text_size(ds.text_sm)
-                        .child(format!("Phase: {phase_mode}"))
-                        .into_any_element()
-                })
+                .child(render_eq_global_toggle(
+                    &ds,
+                    entity.clone(),
+                    plugin_idx,
+                    EqGlobalControl::LpPhaseMode,
+                    "Phase",
+                    phase_mode == "Minimum",
+                    "Minimum",
+                    "Linear",
+                    theme,
+                ))
                 .child(format!(
                     "Latency: {latency_samples} samples ({latency_ms:.2} ms)"
                 ))
@@ -2074,11 +2037,7 @@ pub fn render_eq_plugin(
                     &ds,
                     entity.clone(),
                     plugin_idx,
-                    if is_fir_mode {
-                        EqGlobalControl::FirAutoGain
-                    } else {
-                        EqGlobalControl::LpAutoGain
-                    },
+                    EqGlobalControl::LpAutoGain,
                     "Auto-gain",
                     auto_gain,
                     "On",
@@ -2089,11 +2048,7 @@ pub fn render_eq_plugin(
                     &ds,
                     entity.clone(),
                     plugin_idx,
-                    if is_fir_mode {
-                        EqGlobalControl::FirMix
-                    } else {
-                        EqGlobalControl::LpMix
-                    },
+                    EqGlobalControl::LpMix,
                     "Mix",
                     format!("{:.0}%", mix * 100.0),
                     theme,
@@ -2481,6 +2436,9 @@ fn adjust_eq_global_control(
                     pk(LP_PARAMS, "fir_length").max_f64(),
                 );
             }
+            (PluginSettings::LinearPhaseEq { phase_mode, .. }, EqGlobalControl::LpPhaseMode) => {
+                *phase_mode = if *phase_mode >= 0.5 { 0.0 } else { 1.0 };
+            }
             (PluginSettings::LinearPhaseEq { auto_gain, .. }, EqGlobalControl::LpAutoGain) => {
                 *auto_gain = !*auto_gain;
             }
@@ -2488,30 +2446,6 @@ fn adjust_eq_global_control(
                 *mix = (*mix + delta * 0.01).clamp(
                     pk(LP_PARAMS, "mix").min_f64(),
                     pk(LP_PARAMS, "mix").max_f64(),
-                );
-            }
-            (PluginSettings::FirDesigner { num_filters, .. }, EqGlobalControl::FirNumFilters) => {
-                *num_filters = (*num_filters + delta).clamp(
-                    pk(FIR_PARAMS, "num_filters").min_f64(),
-                    pk(FIR_PARAMS, "num_filters").max_f64(),
-                );
-            }
-            (PluginSettings::FirDesigner { fir_length, .. }, EqGlobalControl::FirLength) => {
-                *fir_length = (*fir_length + delta).clamp(
-                    pk(FIR_PARAMS, "fir_length").min_f64(),
-                    pk(FIR_PARAMS, "fir_length").max_f64(),
-                );
-            }
-            (PluginSettings::FirDesigner { phase_mode, .. }, EqGlobalControl::FirPhaseMode) => {
-                *phase_mode = if *phase_mode > 0.5 { 0.0 } else { 1.0 };
-            }
-            (PluginSettings::FirDesigner { auto_gain, .. }, EqGlobalControl::FirAutoGain) => {
-                *auto_gain = !*auto_gain;
-            }
-            (PluginSettings::FirDesigner { mix, .. }, EqGlobalControl::FirMix) => {
-                *mix = (*mix + delta * 0.01).clamp(
-                    pk(FIR_PARAMS, "mix").min_f64(),
-                    pk(FIR_PARAMS, "mix").max_f64(),
                 );
             }
             _ => return,

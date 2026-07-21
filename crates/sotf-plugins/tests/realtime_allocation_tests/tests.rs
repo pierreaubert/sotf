@@ -19,7 +19,7 @@ use sotf_plugins::{
     ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedMode, CrossfeedPlugin,
     CrossfeedPluginParams, CrossoverPlugin, DeEsserPlugin, DeclickPlugin, DelayPlugin,
     DenoiserPlugin, DownmixPlugin, DownmixPluginParams, DynamicEqPlugin, EqPlugin, ExpanderPlugin,
-    FirDesignerPlugin, GainPlugin, GatePlugin, HissReducerPlugin, IsolatedExternalPlugin,
+    GainPlugin, GatePlugin, HissReducerPlugin, IsolatedExternalPlugin,
     IsolatedExternalPluginConfig, LimiterPlugin, LinearPhaseEqPlugin, LoudnessCompensationPlugin,
     LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
     MultibandExpanderPlugin, ParametricInPlacePlugin, ParametricPluginAdapter, Plugin,
@@ -885,17 +885,6 @@ fn test_dynamic_eq_zero_alloc() {
         DynamicEqPlugin::new(2),
         2,
         BUFFER_SIZE,
-    );
-}
-
-#[test]
-#[serial]
-fn test_fir_designer_zero_alloc() {
-    assert_parametric_in_place_process_zero_alloc(
-        "FirDesignerPlugin::process_in_place",
-        FirDesignerPlugin::new(2, SAMPLE_RATE),
-        2,
-        1024,
     );
 }
 

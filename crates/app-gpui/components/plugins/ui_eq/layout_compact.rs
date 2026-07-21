@@ -67,10 +67,7 @@ pub(crate) fn render_eq_bottom_strip(
     }
 
     let selected_channel = entity.read(cx).app.plugin_state.selected_eq_channel;
-    let is_lp_mode = matches!(
-        state.mode,
-        EqViewMode::LinearPhase { .. } | EqViewMode::FirDesigner { .. }
-    );
+    let is_lp_mode = matches!(state.mode, EqViewMode::LinearPhase { .. });
 
     if !is_lp_mode {
         root = root.child(super::render::render_eq_channel_toolbar(
@@ -155,10 +152,7 @@ pub(crate) fn render_eq_inspector(
         .plugin_ui_state
         .eq_compact_config_open;
     let selected_channel = entity.read(cx).app.plugin_state.selected_eq_channel;
-    let is_lp_mode = matches!(
-        state.mode,
-        EqViewMode::LinearPhase { .. } | EqViewMode::FirDesigner { .. }
-    );
+    let is_lp_mode = matches!(state.mode, EqViewMode::LinearPhase { .. });
 
     let mut root = div().flex().flex_col().gap(d.section).size_full();
 
@@ -443,8 +437,7 @@ fn render_compact_global_bar(
 
     let mode_label = match state.mode {
         EqViewMode::Standard => "EQ",
-        EqViewMode::LinearPhase { .. } => "Linear-Phase EQ",
-        EqViewMode::FirDesigner { .. } => "FIR Designer",
+        EqViewMode::LinearPhase { .. } => "FIR EQ",
     };
 
     let mut bar = div()
@@ -527,10 +520,7 @@ fn render_compact_config_panel(
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
-    let is_lp_mode = matches!(
-        state.mode,
-        EqViewMode::LinearPhase { .. } | EqViewMode::FirDesigner { .. }
-    );
+    let is_lp_mode = matches!(state.mode, EqViewMode::LinearPhase { .. });
 
     let mut col = div()
         .flex()
@@ -645,6 +635,7 @@ fn render_compact_config_panel(
             latency_samples,
             latency_ms,
             fir_length,
+            phase_mode,
             auto_gain,
             mix,
             ..
@@ -677,6 +668,17 @@ fn render_compact_config_panel(
                             d,
                             entity.clone(),
                             plugin_idx,
+                            EqGlobalControl::LpPhaseMode,
+                            "Phase",
+                            *phase_mode == "Minimum",
+                            "Minimum",
+                            "Linear",
+                            theme,
+                        ))
+                        .child(render_eq_global_toggle(
+                            d,
+                            entity.clone(),
+                            plugin_idx,
                             EqGlobalControl::LpAutoGain,
                             "Auto-gain",
                             *auto_gain,
@@ -689,80 +691,6 @@ fn render_compact_config_panel(
                             entity.clone(),
                             plugin_idx,
                             EqGlobalControl::LpMix,
-                            "Mix",
-                            format!("{:.0}%", mix * 100.0),
-                            theme,
-                        )),
-                )
-                .child(
-                    div()
-                        .text_size(d.text_xs)
-                        .text_color(theme.text_muted)
-                        .child(format!(
-                            "Latency: {latency_samples} samples ({latency_ms:.2} ms)"
-                        )),
-                );
-        }
-        EqViewMode::FirDesigner {
-            latency_samples,
-            latency_ms,
-            fir_length,
-            phase_mode,
-            auto_gain,
-            mix,
-            ..
-        } => {
-            col = col
-                .child(
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap(d.gap)
-                        .child(render_eq_global_stepper(
-                            d,
-                            entity.clone(),
-                            plugin_idx,
-                            EqGlobalControl::FirNumFilters,
-                            "Filters",
-                            state.num_filters.to_string(),
-                            theme,
-                        ))
-                        .child(render_eq_global_stepper(
-                            d,
-                            entity.clone(),
-                            plugin_idx,
-                            EqGlobalControl::FirLength,
-                            "FIR length",
-                            fir_length.to_string(),
-                            theme,
-                        ))
-                        .child(render_eq_global_toggle(
-                            d,
-                            entity.clone(),
-                            plugin_idx,
-                            EqGlobalControl::FirPhaseMode,
-                            "Phase",
-                            *phase_mode == "Minimum",
-                            "Minimum",
-                            "Linear",
-                            theme,
-                        ))
-                        .child(render_eq_global_toggle(
-                            d,
-                            entity.clone(),
-                            plugin_idx,
-                            EqGlobalControl::FirAutoGain,
-                            "Auto-gain",
-                            *auto_gain,
-                            "On",
-                            "Off",
-                            theme,
-                        ))
-                        .child(render_eq_global_stepper(
-                            d,
-                            entity.clone(),
-                            plugin_idx,
-                            EqGlobalControl::FirMix,
                             "Mix",
                             format!("{:.0}%", mix * 100.0),
                             theme,

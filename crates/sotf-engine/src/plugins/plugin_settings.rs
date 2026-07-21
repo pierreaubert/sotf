@@ -156,10 +156,6 @@ use super::default_expander_ratio;
 use super::default_expander_release_ms;
 use super::default_expander_sidechain_hpf_hz;
 use super::default_expander_threshold_db;
-use super::default_fird_fir_length;
-use super::default_fird_mix;
-use super::default_fird_num_filters;
-use super::default_fird_phase_mode;
 use super::default_gain_smoothing_ms;
 use super::default_gate_detection_mode;
 use super::default_gate_hold_ms;
@@ -186,6 +182,7 @@ use super::default_limiter_soft;
 use super::default_lpeq_fir_length;
 use super::default_lpeq_mix;
 use super::default_lpeq_num_filters;
+use super::default_lpeq_phase_mode;
 use super::default_mb_compressor_attack_ms;
 use super::default_mb_compressor_crossover_freq_1;
 use super::default_mb_compressor_crossover_freq_2;
@@ -338,7 +335,6 @@ use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
 use sotf_plugins::param_specs::find_by_key as pk;
-use sotf_plugins::param_specs::fir_designer as fir_designer_specs;
 use sotf_plugins::param_specs::gain as gain_specs;
 use sotf_plugins::param_specs::gate as gate_specs;
 use sotf_plugins::param_specs::hiss_reducer as hiss_reducer_specs;
@@ -1375,28 +1371,17 @@ pub enum PluginSettings {
         #[serde(default = "default_dyneq_bands")]
         bands: Vec<DynEqBandParams>,
     },
+    #[serde(alias = "FirDesigner")]
     LinearPhaseEq {
         #[serde(default = "default_lpeq_num_filters")]
         num_filters: f64,
         #[serde(default = "default_lpeq_fir_length")]
         fir_length: f64,
-        #[serde(default)]
-        auto_gain: bool,
-        #[serde(default = "default_lpeq_mix")]
-        mix: f64,
-        #[serde(default)]
-        filters: Vec<EQFilter>,
-    },
-    FirDesigner {
-        #[serde(default = "default_fird_num_filters")]
-        num_filters: f64,
-        #[serde(default = "default_fird_fir_length")]
-        fir_length: f64,
-        #[serde(default = "default_fird_phase_mode")]
+        #[serde(default = "default_lpeq_phase_mode")]
         phase_mode: f64,
         #[serde(default)]
         auto_gain: bool,
-        #[serde(default = "default_fird_mix")]
+        #[serde(default = "default_lpeq_mix")]
         mix: f64,
         #[serde(default)]
         filters: Vec<EQFilter>,
@@ -1442,7 +1427,6 @@ impl PluginSettings {
         match self {
             Self::EQ { filters, .. } => Some(filters),
             Self::LinearPhaseEq { filters, .. } => Some(filters),
-            Self::FirDesigner { filters, .. } => Some(filters),
             _ => None,
         }
     }
@@ -1452,7 +1436,6 @@ impl PluginSettings {
         match self {
             Self::EQ { filters, .. } => Some(filters),
             Self::LinearPhaseEq { filters, .. } => Some(filters),
-            Self::FirDesigner { filters, .. } => Some(filters),
             _ => None,
         }
     }
@@ -1498,7 +1481,6 @@ impl PluginSettings {
             Self::TransientShaper { .. } => PluginType::TransientShaper,
             Self::Saturation { .. } => PluginType::Saturation,
             Self::DynamicEq { .. } => PluginType::DynamicEq,
-            Self::FirDesigner { .. } => PluginType::FirDesigner,
             Self::LinearPhaseEq { .. } => PluginType::LinearPhaseEq,
             Self::SpectralCompressor { .. } => PluginType::SpectralCompressor,
             Self::External { .. } => PluginType::External,
@@ -2166,23 +2148,9 @@ impl PluginSettings {
                 Self::LinearPhaseEq {
                     num_filters: p(lp, "num_filters").default_f64(),
                     fir_length: p(lp, "fir_length").default_f64(),
+                    phase_mode: p(lp, "phase_mode").default_f64(),
                     auto_gain: p(lp, "auto_gain").default_bool(),
                     mix: p(lp, "mix").default_f64(),
-                    filters,
-                }
-            }
-            PluginType::FirDesigner => {
-                let fd = fir_designer_specs::PARAMS;
-                let n = p(fd, "num_filters").default_f64() as usize;
-                let filters = (0..n)
-                    .map(|_| EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0))
-                    .collect();
-                Self::FirDesigner {
-                    num_filters: p(fd, "num_filters").default_f64(),
-                    fir_length: p(fd, "fir_length").default_f64(),
-                    phase_mode: p(fd, "phase_mode").default_f64(),
-                    auto_gain: p(fd, "auto_gain").default_bool(),
-                    mix: p(fd, "mix").default_f64(),
                     filters,
                 }
             }
@@ -2270,6 +2238,33 @@ mod tests {
                 plugin_type.name()
             );
         }
+    }
+
+    #[test]
+    fn fir_designer_preset_migrates_to_linear_phase_eq() {
+        let legacy = serde_json::json!({
+            "FirDesigner": {
+                "num_filters": 1.0,
+                "fir_length": 2.0,
+                "phase_mode": 1.0,
+                "auto_gain": true,
+                "mix": 0.75,
+                "filters": []
+            }
+        });
+
+        let settings: PluginSettings = serde_json::from_value(legacy).unwrap();
+        assert!(matches!(
+            settings,
+            PluginSettings::LinearPhaseEq {
+                phase_mode: 1.0,
+                ..
+            }
+        ));
+
+        let serialized = serde_json::to_value(settings).unwrap();
+        assert!(serialized.get("LinearPhaseEq").is_some());
+        assert!(serialized.get("FirDesigner").is_none());
     }
 
     #[test]

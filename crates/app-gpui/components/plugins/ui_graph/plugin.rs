@@ -50,7 +50,6 @@ pub(super) fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::TransientShaper => theme.warning,
         PluginType::Saturation => theme.warning,
         PluginType::DynamicEq => theme.warning,
-        PluginType::FirDesigner => theme.success,
         PluginType::LinearPhaseEq => theme.success,
         PluginType::SpectralCompressor => theme.warning,
         PluginType::External => theme.accent,
@@ -147,10 +146,9 @@ pub(super) fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) 
         PluginType::Saturation => (2, 2),
         // Dynamic EQ: in-place processing
         PluginType::DynamicEq => (2, 2),
-        // Linear-Phase EQ: in-place processing
+        // FIR EQ: in-place processing
         PluginType::LinearPhaseEq => (2, 2),
         // FIR Designer: in-place processing
-        PluginType::FirDesigner => (2, 2),
         // Spectral compressor: in-place processing
         PluginType::SpectralCompressor => (2, 2),
         // Concrete external graph nodes carry descriptor-specific counts in

@@ -51,14 +51,6 @@ pub(super) fn plugin_registry() -> Vec<PluginEntry> {
             band_template: None,
         },
         PluginEntry {
-            slug: "fir-designer",
-            name: "FIR Designer",
-            description: "Linear-phase and minimum-phase FIR equalizer designed from parametric EQ bands.",
-            params: param_specs::fir_designer::PARAMS,
-            global_params: None,
-            band_template: Some(param_specs::fir_designer::BAND_TEMPLATE),
-        },
-        PluginEntry {
             slug: "multiband-compressor",
             name: "Multiband Compressor",
             description: "Per-band dynamic range compression with 2-5 frequency bands and independent compressor settings per band.",
@@ -292,11 +284,11 @@ pub(super) fn plugin_registry() -> Vec<PluginEntry> {
         },
         PluginEntry {
             slug: "linear-phase-eq",
-            name: "Linear Phase EQ",
-            description: "Zero-phase parametric equalizer using FFT convolution. No phase shift, but adds latency.",
+            name: "FIR EQ",
+            description: "Parametric FIR equalizer with selectable linear or minimum phase and FFT convolution.",
             params: param_specs::linear_phase_eq::PARAMS,
             global_params: None,
-            band_template: None,
+            band_template: Some(param_specs::linear_phase_eq::BAND_TEMPLATE),
         },
         PluginEntry {
             slug: "saturation",

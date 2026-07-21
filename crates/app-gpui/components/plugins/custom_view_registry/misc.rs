@@ -43,7 +43,6 @@ pub fn plugin_type_key(settings: &PluginSettings) -> &'static str {
         PluginSettings::TransientShaper { .. } => "transient_shaper",
         PluginSettings::Saturation { .. } => "saturation",
         PluginSettings::DynamicEq { .. } => "dynamic_eq",
-        PluginSettings::FirDesigner { .. } => "fir_designer",
         PluginSettings::LinearPhaseEq { .. } => "linear_phase_eq",
         PluginSettings::SpectralCompressor { .. } => "spectral_compressor",
         PluginSettings::External { .. } => "external",

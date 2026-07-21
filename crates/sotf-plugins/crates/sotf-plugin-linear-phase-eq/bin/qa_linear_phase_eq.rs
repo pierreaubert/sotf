@@ -15,6 +15,7 @@ fn main() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 1,
         fir_length_index: 1, // Medium FIR length
+        phase_mode_index: 0,
         auto_gain: false,
         mix: 1.0,
         filters: vec![BandConfig {

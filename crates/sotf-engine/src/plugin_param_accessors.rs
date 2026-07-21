@@ -547,14 +547,6 @@ impl_param_accessors! {
         layout: Some(&param_specs::linear_phase_eq::LAYOUT),
         fields: [
             num_filters: f64, fir_length: f64,
-            auto_gain: bool, mix: f64,
-        ]
-    },
-    FirDesigner {
-        params: param_specs::fir_designer::PARAMS,
-        layout: Some(&param_specs::fir_designer::LAYOUT),
-        fields: [
-            num_filters: f64, fir_length: f64,
             phase_mode: f64, auto_gain: bool, mix: f64,
         ]
     },

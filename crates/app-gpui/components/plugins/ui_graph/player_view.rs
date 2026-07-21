@@ -538,8 +538,7 @@ impl PlayerView {
                 "EQ",
                 vec![
                     (PluginType::EQ, "Parametric"),
-                    (PluginType::LinearPhaseEq, "Linear Phase"),
-                    (PluginType::FirDesigner, "FIR Designer"),
+                    (PluginType::LinearPhaseEq, "FIR EQ"),
                     (PluginType::DynamicEq, "Dynamic EQ"),
                 ],
             ),

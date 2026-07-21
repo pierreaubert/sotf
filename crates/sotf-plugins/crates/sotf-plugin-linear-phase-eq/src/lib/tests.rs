@@ -23,6 +23,7 @@ fn test_large_block_is_chunked_not_silently_bypassed() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 1,
         fir_length_index: 1,
+        phase_mode_index: 0,
         auto_gain: false,
         mix: 1.0,
         filters: vec![BandConfig {
@@ -63,6 +64,7 @@ fn test_large_block_ola_matches_small_chunks() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 1,
         fir_length_index: 0, // 1024 taps, fft_size 2048, max valid block 1025
+        phase_mode_index: 0,
         auto_gain: false,
         mix: 1.0,
         filters: vec![BandConfig {
@@ -196,6 +198,7 @@ fn test_dc_gain_not_hardcoded() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 1,
         fir_length_index: 2, // 4096 taps
+        phase_mode_index: 0,
         auto_gain: false,
         mix: 1.0,
         filters: vec![BandConfig {
@@ -223,6 +226,7 @@ fn auto_gain_does_not_explode_highpass_design() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 1,
         fir_length_index: 0,
+        phase_mode_index: 0,
         auto_gain: true,
         mix: 1.0,
         filters: vec![BandConfig {
@@ -269,6 +273,7 @@ fn auto_gain_normalizes_lowshelf_dc_to_unity() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 1,
         fir_length_index: 0,
+        phase_mode_index: 0,
         auto_gain: true,
         mix: 1.0,
         filters: vec![BandConfig {
@@ -293,6 +298,7 @@ fn auto_gain_keeps_narrow_lowpass_unity_and_bounded() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 1,
         fir_length_index: 0,
+        phase_mode_index: 0,
         auto_gain: true,
         mix: 1.0,
         filters: vec![BandConfig {
@@ -474,6 +480,7 @@ fn test_from_params_fills_missing_bands() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 3,
         fir_length_index: 0,
+        phase_mode_index: 0,
         auto_gain: false,
         mix: 1.0,
         filters: vec![BandConfig {
@@ -495,7 +502,7 @@ fn test_info_and_channels() {
     let plugin = LinearPhaseEqPlugin::new(4, 48000);
     assert_eq!(plugin.channels(), 4);
     let info = plugin.info();
-    assert_eq!(info.name, "Linear-Phase EQ");
+    assert_eq!(info.name, "FIR EQ");
 }
 
 #[test]
@@ -633,6 +640,7 @@ fn test_process_with_mix() {
         LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 0,
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 0.5,
             filters: vec![BandConfig {

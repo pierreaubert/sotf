@@ -2,7 +2,6 @@ use super::render::render_ab_compare;
 use super::render::render_dynamic_eq;
 use super::render::render_eq;
 use super::render::render_external;
-use super::render::render_fir_designer;
 use super::render::render_linear_phase_eq;
 use super::render::render_loudness;
 use super::render::render_matrix;
@@ -26,7 +25,7 @@ impl GpuiViewRegistry {
 
         views.insert("eq", render_eq);
         views.insert("dynamic_eq", render_dynamic_eq);
-        views.insert("fir_designer", render_fir_designer);
+        views.insert("fir_designer", render_linear_phase_eq);
         views.insert("linear_phase_eq", render_linear_phase_eq);
         views.insert("spectrum_analyzer", render_spectrum);
         views.insert("channel_mute_solo", render_mute_solo);

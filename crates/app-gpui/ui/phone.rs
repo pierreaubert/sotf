@@ -2327,8 +2327,7 @@ impl PlayerView {
 
         match &plugin.settings {
             sotf_audio_player::PluginSettings::EQ { filters, .. }
-            | sotf_audio_player::PluginSettings::LinearPhaseEq { filters, .. }
-            | sotf_audio_player::PluginSettings::FirDesigner { filters, .. } => filters
+            | sotf_audio_player::PluginSettings::LinearPhaseEq { filters, .. } => filters
                 .first()
                 .map(|filter| {
                     format!(

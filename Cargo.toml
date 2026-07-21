@@ -29,7 +29,6 @@ members = [
     "crates/sotf-plugins/crates/sotf-plugin-gate",
     "crates/sotf-plugins/crates/sotf-plugin-hal-input",
     "crates/sotf-plugins/crates/sotf-plugin-hal-output",
-    "crates/sotf-plugins/crates/sotf-plugin-fir-designer",
     "crates/sotf-plugins/crates/sotf-plugin-linear-phase-eq",
     "crates/sotf-plugins/crates/sotf-plugin-limiter",
     "crates/sotf-plugins/crates/sotf-plugin-loudness-compensation",
@@ -242,7 +241,6 @@ sotf-plugin-gain = { path = "crates/sotf-plugins/crates/sotf-plugin-gain" }
 sotf-plugin-gate = { path = "crates/sotf-plugins/crates/sotf-plugin-gate" }
 sotf-plugin-hal-input = { path = "crates/sotf-plugins/crates/sotf-plugin-hal-input" }
 sotf-plugin-hal-output = { path = "crates/sotf-plugins/crates/sotf-plugin-hal-output" }
-sotf-plugin-fir-designer = { path = "crates/sotf-plugins/crates/sotf-plugin-fir-designer" }
 sotf-plugin-linear-phase-eq = { path = "crates/sotf-plugins/crates/sotf-plugin-linear-phase-eq" }
 sotf-plugin-limiter = { path = "crates/sotf-plugins/crates/sotf-plugin-limiter" }
 sotf-plugin-loudness-compensation = { path = "crates/sotf-plugins/crates/sotf-plugin-loudness-compensation" }

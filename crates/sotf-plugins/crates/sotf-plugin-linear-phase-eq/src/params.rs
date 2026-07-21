@@ -1,4 +1,4 @@
-//! Linear-Phase EQ plugin parameter definitions -- single source of truth.
+//! FIR EQ plugin parameter definitions -- single source of truth.
 //!
 //! This file owns:
 //! - Parameter specs (PARAMS array)
@@ -20,6 +20,7 @@ use sotf_host::plugin_params::PluginParamDef;
 // ============================================================================
 
 pub const FIR_LENGTH_OPTIONS: &[&str] = &["1024", "2048", "4096", "8192"];
+pub const PHASE_MODE_OPTIONS: &[&str] = &["Linear", "Minimum"];
 
 // ============================================================================
 // Parameter Specifications
@@ -32,6 +33,9 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::choice("FIR Length", "fir_length", 1, FIR_LENGTH_OPTIONS, "Quality")
         .setup()
         .doc("FIR length in taps (higher = better bass resolution, more latency)"),
+    ParamSpec::choice("Phase Mode", "phase_mode", 0, PHASE_MODE_OPTIONS, "Phase")
+        .setup()
+        .doc("FIR phase design mode"),
     ParamSpec::bool_param("Auto Gain", "auto_gain", false, "Output").doc("Compensate output level"),
     ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output")
         .scaled(100.0)
@@ -77,11 +81,12 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::knob(0),     // num_filters
         ControlSpec::selector(1), // fir_length
+        ControlSpec::selector(2), // phase_mode
     ],
     main: &[],
     output: &[
-        ControlSpec::toggle(2), // auto_gain
-        ControlSpec::knob(3),   // mix
+        ControlSpec::toggle(3), // auto_gain
+        ControlSpec::knob(4),   // mix
     ],
     tabs: &[],
     visualizations: &[],
@@ -97,7 +102,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 // Serializable Parameter State
 // ============================================================================
 
-/// Linear-Phase EQ plugin parameters.
+/// FIR EQ plugin parameters.
 ///
 /// All serde defaults are derived from PARAMS -- adding a field here with
 /// the correct default function is enough to support old presets that
@@ -108,6 +113,8 @@ pub struct Params {
     pub num_filters: f64,
     #[serde(default = "d_fir_length")]
     pub fir_length: f64,
+    #[serde(default = "d_phase_mode")]
+    pub phase_mode: f64,
     #[serde(default = "d_auto_gain")]
     pub auto_gain: f64,
     #[serde(default = "d_mix")]
@@ -119,6 +126,9 @@ fn d_num_filters() -> f64 {
 }
 fn d_fir_length() -> f64 {
     pk(PARAMS, "fir_length").default_f64()
+}
+fn d_phase_mode() -> f64 {
+    pk(PARAMS, "phase_mode").default_f64()
 }
 fn d_auto_gain() -> f64 {
     pk(PARAMS, "auto_gain").default_f64()
@@ -132,6 +142,7 @@ impl Default for Params {
         Self {
             num_filters: d_num_filters(),
             fir_length: d_fir_length(),
+            phase_mode: d_phase_mode(),
             auto_gain: d_auto_gain(),
             mix: d_mix(),
         }
@@ -152,8 +163,9 @@ impl PluginParamDef for Params {
         match index {
             0 => Some(self.num_filters),
             1 => Some(self.fir_length),
-            2 => Some(self.auto_gain),
-            3 => Some(self.mix),
+            2 => Some(self.phase_mode),
+            3 => Some(self.auto_gain),
+            4 => Some(self.mix),
             _ => None,
         }
     }
@@ -162,8 +174,9 @@ impl PluginParamDef for Params {
         match index {
             0 => self.num_filters = value,
             1 => self.fir_length = value,
-            2 => self.auto_gain = value,
-            3 => self.mix = value,
+            2 => self.phase_mode = value,
+            3 => self.auto_gain = value,
+            4 => self.mix = value,
             _ => {}
         }
     }
@@ -200,6 +213,7 @@ mod tests {
         let restored: Params = serde_json::from_value(json).unwrap();
         assert_eq!(original.num_filters, restored.num_filters);
         assert_eq!(original.fir_length, restored.fir_length);
+        assert_eq!(original.phase_mode, restored.phase_mode);
         assert_eq!(original.auto_gain, restored.auto_gain);
         assert_eq!(original.mix, restored.mix);
     }
@@ -209,6 +223,7 @@ mod tests {
         let p: Params = serde_json::from_str("{}").unwrap();
         assert_eq!(p.num_filters, pk(PARAMS, "num_filters").default_f64());
         assert_eq!(p.fir_length, pk(PARAMS, "fir_length").default_f64());
+        assert_eq!(p.phase_mode, pk(PARAMS, "phase_mode").default_f64());
         assert_eq!(p.auto_gain, pk(PARAMS, "auto_gain").default_f64());
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64());
     }

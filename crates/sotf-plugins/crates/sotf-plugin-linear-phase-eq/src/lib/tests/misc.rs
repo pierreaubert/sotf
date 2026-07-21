@@ -19,6 +19,7 @@ use super::DEFAULT_SAMPLE_RATE;
         let params = LinearPhaseEqPluginParams {
             num_filters: 3,
             fir_length_index: 1, // 2048 taps
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 1.0,
             filters: vec![
@@ -101,6 +102,7 @@ use super::DEFAULT_SAMPLE_RATE;
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 2, // 4096 taps
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 1.0,
             filters: vec![BandConfig {
@@ -170,6 +172,7 @@ use super::DEFAULT_SAMPLE_RATE;
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 1, // 2048 taps
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 1.0,
             filters: vec![BandConfig {
@@ -277,6 +280,7 @@ use super::DEFAULT_SAMPLE_RATE;
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 2, // 4096 taps for clean HP response
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 1.0,
             filters: vec![BandConfig {
@@ -326,6 +330,7 @@ use super::DEFAULT_SAMPLE_RATE;
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 2,
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 1.0,
             filters: vec![BandConfig {
@@ -369,6 +374,7 @@ use super::DEFAULT_SAMPLE_RATE;
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 2, // 4096 taps
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 1.0,
             filters: vec![BandConfig {

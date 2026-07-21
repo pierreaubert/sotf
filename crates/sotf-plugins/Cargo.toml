@@ -50,7 +50,6 @@ sotf-plugin-gain = { workspace = true }
 sotf-plugin-gate = { workspace = true }
 sotf-plugin-hal-input = { workspace = true, optional = true }
 sotf-plugin-hal-output = { workspace = true, optional = true }
-sotf-plugin-fir-designer = { workspace = true }
 sotf-plugin-linear-phase-eq = { workspace = true }
 sotf-plugin-limiter = { workspace = true }
 sotf-plugin-loudness-compensation = { workspace = true }

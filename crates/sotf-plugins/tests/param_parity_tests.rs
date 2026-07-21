@@ -19,8 +19,8 @@ use sotf_plugins::param_specs::{self, ParamSpec, ParamType, UpdateMode};
 use sotf_plugins::{
     ABComparePlugin, BandMergePlugin, BandSplitPlugin, BinauralDecoderPlugin,
     ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedPlugin, DelayPlugin,
-    DenoiserPlugin, DownmixPlugin, ExpanderPlugin, FirDesignerPlugin, GainPlugin, GatePlugin,
-    LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin, MonoToStereoPlugin,
+    DenoiserPlugin, DownmixPlugin, ExpanderPlugin, GainPlugin, GatePlugin, LimiterPlugin,
+    LinearPhaseEqPlugin, LoudnessCompensationPlugin, MatrixPlugin, MonoToStereoPlugin,
     MultibandCompressorPlugin, MultibandExpanderPlugin, ParameterId, ParameterValue,
     ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin, PndPlugin, RoomModel,
     UpmixerPlugin, XtcPlugin, XtcPluginParams,
@@ -190,12 +190,11 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
             params: param_specs::convolution::PARAMS,
         },
         PluginWithSpec {
-            name: "fir_designer",
-            plugin: Box::new(ParametricInPlacePluginAdapter::new(FirDesignerPlugin::new(
-                2,
-                SAMPLE_RATE,
-            ))),
-            params: param_specs::fir_designer::PARAMS,
+            name: "linear_phase_eq",
+            plugin: Box::new(ParametricInPlacePluginAdapter::new(
+                LinearPhaseEqPlugin::new(2, SAMPLE_RATE),
+            )),
+            params: param_specs::linear_phase_eq::PARAMS,
         },
     ]
 }
