@@ -110,7 +110,7 @@ fn graph_build_rejects_failed_node_instead_of_returning_partial_dag() {
 
     assert!(matches!(
         error.target,
-        sotf_types::PluginBuildTarget::GraphNode { node_id: 42 }
+        crate::PluginBuildTarget::GraphNode { node_id: 42 }
     ));
     assert!(error.message.contains("node 42"), "{error}");
     assert!(

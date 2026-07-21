@@ -102,7 +102,7 @@ impl PlayerView {
                             })),
                     )
                     .child(
-                        Button::new("ear-training-courses", "Courses")
+                        Button::new("ear-training-courses", eq_text.courses)
                             .size(ButtonSize::Sm)
                             .variant(if surface == EarTrainingSurface::Courses {
                                 ButtonVariant::Primary
@@ -115,7 +115,7 @@ impl PlayerView {
                             })),
                     )
                     .child(
-                        Button::new("ear-training-progress", "Progress")
+                        Button::new("ear-training-progress", eq_text.progress)
                             .size(ButtonSize::Sm)
                             .variant(if surface == EarTrainingSurface::Progress {
                                 ButtonVariant::Primary
@@ -152,6 +152,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let eq_text = &state.app.ui_state.translations.listening_test.eq;
         let progress = &state.app.plugin_state.listening_test_state.eq_progress;
         let mut courses = div().flex().flex_wrap().gap(d.section);
         for course in EarTrainingCourse::ALL {
@@ -180,7 +181,7 @@ impl PlayerView {
                     )))
                     .child(Text::caption(format!("{completed} sessions completed")))
                     .child(
-                        Button::new(("ear-course-start", course as usize), "Start course")
+                        Button::new(("ear-course-start", course as usize), eq_text.start_course)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Primary)
                             .theme(theme.to_button_theme())
@@ -198,10 +199,8 @@ impl PlayerView {
             .flex()
             .flex_col()
             .gap(d.section)
-            .child(Text::section_header("Guided courses"))
-            .child(Text::caption(
-                "Build from broad, obvious EQ changes toward fine-band mastery.",
-            ))
+            .child(Text::section_header(eq_text.guided_courses))
+            .child(Text::caption(eq_text.guided_courses_subtitle))
             .child(courses)
             .into_any_element()
     }
@@ -210,6 +209,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let eq_text = &state.app.ui_state.translations.listening_test.eq;
         let progress = &state.app.plugin_state.listening_test_state.eq_progress;
         let recent = progress.sessions.iter().rev().take(8).fold(
             div().flex().flex_col().gap(d.grid),
@@ -236,7 +236,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .gap(d.section)
-            .child(Text::section_header("Training progress"))
+            .child(Text::section_header(eq_text.training_progress))
             .child(
                 div()
                     .flex()
@@ -289,7 +289,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap)
-                    .child(Text::section_header("Coach recommendation"))
+                    .child(Text::section_header(eq_text.coach_recommendation))
                     .child(Text::body(progress.recommendation())),
             )
             .child(
@@ -302,7 +302,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap)
-                    .child(Text::section_header("Recent sessions"))
+                    .child(Text::section_header(eq_text.recent_sessions))
                     .child(recent),
             )
             .into_any_element()
@@ -941,14 +941,38 @@ impl PlayerView {
                             .child(Text::section_header(eq_text.session_setup))
                             .child(self.render_eq_source_row(eq_text.source, &current_track, cx))
                             .child(
-                                Button::new("eq-training-exercise", format!("Exercise: {}", listening.eq_config.exercise.label()))
-                                    .size(ButtonSize::Sm).variant(ButtonVariant::Secondary).theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(|view, _, _, cx| view.cycle_eq_training_exercise(cx))),
+                                Button::new(
+                                    "eq-training-exercise",
+                                    format!("Exercise: {}", listening.eq_config.exercise.label()),
+                                )
+                                .size(ButtonSize::Sm)
+                                .variant(ButtonVariant::Secondary)
+                                .theme(theme.to_button_theme())
+                                .on_click_event(
+                                    cx.listener(|view, _, _, cx| {
+                                        view.cycle_eq_training_exercise(cx)
+                                    }),
+                                ),
                             )
                             .child(
-                                Button::new("eq-training-adaptive", if listening.eq_adaptive { "Adaptive difficulty: on" } else { "Adaptive difficulty: off" })
-                                    .size(ButtonSize::Sm).variant(if listening.eq_adaptive { ButtonVariant::Primary } else { ButtonVariant::Secondary }).theme(theme.to_button_theme())
-                                    .on_click_event(cx.listener(|view, _, _, cx| view.toggle_eq_training_adaptive(cx))),
+                                Button::new(
+                                    "eq-training-adaptive",
+                                    if listening.eq_adaptive {
+                                        "Adaptive difficulty: on"
+                                    } else {
+                                        "Adaptive difficulty: off"
+                                    },
+                                )
+                                .size(ButtonSize::Sm)
+                                .variant(if listening.eq_adaptive {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
+                                .theme(theme.to_button_theme())
+                                .on_click_event(cx.listener(|view, _, _, cx| {
+                                    view.toggle_eq_training_adaptive(cx)
+                                })),
                             )
                             .child(self.render_eq_config_row(
                                 eq_text.bands,
@@ -1006,7 +1030,7 @@ impl PlayerView {
                                     view.start_eq_training_session(cx);
                                 })),
                             )
-                            .child(Text::caption("A temporary isolated audition path is created automatically and removed when you leave.")),
+                            .child(Text::caption(eq_text.audition_path_hint)),
                     )
                     .child(
                         div()
@@ -1137,6 +1161,9 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> Div {
         let d = Ds::from_cx(cx);
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let eq_text = &state.app.ui_state.translations.listening_test.eq;
         div()
             .flex()
             .flex_col()
@@ -1149,55 +1176,55 @@ impl PlayerView {
                     .flex_wrap()
                     .gap(d.grid)
                     .child(
-                        Button::new("eq-source-add", "Add current")
+                        Button::new("eq-source-add", eq_text.add_current)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
-                            .theme(self.state.read(cx).app.ui_state.theme.to_button_theme())
+                            .theme(theme.to_button_theme())
                             .on_click_event(
                                 cx.listener(|view, _, _, cx| view.add_current_eq_source(cx)),
                             ),
                     )
                     .child(
-                        Button::new("eq-source-prev", "Previous")
+                        Button::new("eq-source-prev", eq_text.previous)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
-                            .theme(self.state.read(cx).app.ui_state.theme.to_button_theme())
+                            .theme(theme.to_button_theme())
                             .on_click_event(
                                 cx.listener(|view, _, _, cx| view.navigate_eq_source(-1, cx)),
                             ),
                     )
                     .child(
-                        Button::new("eq-source-next", "Next")
+                        Button::new("eq-source-next", eq_text.next)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
-                            .theme(self.state.read(cx).app.ui_state.theme.to_button_theme())
+                            .theme(theme.to_button_theme())
                             .on_click_event(
                                 cx.listener(|view, _, _, cx| view.navigate_eq_source(1, cx)),
                             ),
                     )
                     .child(
-                        Button::new("eq-loop-start", "Set loop start")
+                        Button::new("eq-loop-start", eq_text.set_loop_start)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
-                            .theme(self.state.read(cx).app.ui_state.theme.to_button_theme())
+                            .theme(theme.to_button_theme())
                             .on_click_event(
                                 cx.listener(|view, _, _, cx| view.set_eq_loop_boundary(true, cx)),
                             ),
                     )
                     .child(
-                        Button::new("eq-loop-end", "Set loop end")
+                        Button::new("eq-loop-end", eq_text.set_loop_end)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
-                            .theme(self.state.read(cx).app.ui_state.theme.to_button_theme())
+                            .theme(theme.to_button_theme())
                             .on_click_event(
                                 cx.listener(|view, _, _, cx| view.set_eq_loop_boundary(false, cx)),
                             ),
                     )
                     .child(
-                        Button::new("eq-loop-toggle", "Toggle loop")
+                        Button::new("eq-loop-toggle", eq_text.toggle_loop)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
-                            .theme(self.state.read(cx).app.ui_state.theme.to_button_theme())
+                            .theme(theme.to_button_theme())
                             .on_click_event(cx.listener(|view, _, _, cx| view.toggle_eq_loop(cx))),
                     ),
             )
