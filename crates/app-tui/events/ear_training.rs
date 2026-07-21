@@ -1,29 +1,76 @@
 use super::PlayerCommand;
 use crate::app::{App, EarTrainingTab};
+use crate::ui::keybinding_catalog::{
+    EarTrainingCommand, TuiCommand, TuiKeyContext, resolve_command,
+};
 use crossterm::event::{KeyCode, KeyEvent};
 use sotf_audio_player::{EarTrainingCourse, EqChangeMode};
 
 pub fn handle_ear_training_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::F(1) => app.ui.ear_training.tab = EarTrainingTab::Practice,
-        KeyCode::F(2) => app.ui.ear_training.tab = EarTrainingTab::Courses,
-        KeyCode::F(3) => app.ui.ear_training.tab = EarTrainingTab::Progress,
-        _ => match app.ui.ear_training.tab {
-            EarTrainingTab::Practice => return handle_practice_keys(app, key),
-            EarTrainingTab::Courses => handle_course_keys(app, key),
-            EarTrainingTab::Progress => {}
+    let command = match resolve_command(TuiKeyContext::EarTraining, key) {
+        Some(TuiCommand::EarTraining(command)) => command,
+        Some(command) => {
+            unreachable!("non-ear-training command in EarTraining context: {command:?}")
+        }
+        None => return None,
+    };
+
+    let player_command = match command {
+        EarTrainingCommand::SwitchTab => {
+            app.ui.ear_training.tab = match key.code {
+                KeyCode::F(1) => EarTrainingTab::Practice,
+                KeyCode::F(2) => EarTrainingTab::Courses,
+                KeyCode::F(3) => EarTrainingTab::Progress,
+                _ => unreachable!("non-tab chord resolved as SwitchTab: {key:?}"),
+            };
+            None
+        }
+        EarTrainingCommand::Activate => match app.ui.ear_training.tab {
+            EarTrainingTab::Practice => {
+                if app
+                    .ui
+                    .ear_training
+                    .session
+                    .as_ref()
+                    .is_some_and(sotf_audio_player::EqTrainingSession::current_is_answered)
+                {
+                    app.advance_ear_training();
+                } else {
+                    app.submit_ear_training_answer();
+                }
+                None
+            }
+            EarTrainingTab::Courses => {
+                app.start_selected_ear_training_course();
+                None
+            }
+            EarTrainingTab::Progress => None,
         },
-    }
+        EarTrainingCommand::NavigateCourse
+            if app.ui.ear_training.tab == EarTrainingTab::Courses =>
+        {
+            navigate_course(app, key);
+            None
+        }
+        command if app.ui.ear_training.tab == EarTrainingTab::Practice => {
+            handle_practice_command(app, key, command)
+        }
+        _ => None,
+    };
     app.ui.needs_redraw = true;
-    None
+    player_command
 }
 
-fn handle_practice_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Char('s') => app.start_ear_training(None),
-        KeyCode::Char('e') => app.cycle_ear_training_exercise(),
-        KeyCode::Char('a') => app.toggle_ear_training_adaptive(),
-        KeyCode::Char('c') => {
+fn handle_practice_command(
+    app: &mut App,
+    key: KeyEvent,
+    command: EarTrainingCommand,
+) -> Option<PlayerCommand> {
+    match command {
+        EarTrainingCommand::StartSession => app.start_ear_training(None),
+        EarTrainingCommand::CycleExercise => app.cycle_ear_training_exercise(),
+        EarTrainingCommand::ToggleAdaptive => app.toggle_ear_training_adaptive(),
+        EarTrainingCommand::CycleChangeMode => {
             app.ui.ear_training.config.change_mode = match app.ui.ear_training.config.change_mode {
                 EqChangeMode::Boost => EqChangeMode::Cut,
                 EqChangeMode::Cut => EqChangeMode::Mixed,
@@ -32,63 +79,81 @@ fn handle_practice_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.ui.ear_training.session = None;
             app.ui.ear_training.active_course = None;
         }
-        KeyCode::Char('b') => adjust_config(app, |config| {
-            config.band_count = config.band_count.saturating_sub(1).max(2)
-        }),
-        KeyCode::Char('B') => adjust_config(app, |config| {
-            config.band_count = (config.band_count + 1).min(25)
-        }),
-        KeyCode::Char('g') => adjust_config(app, |config| {
-            config.gain_db = (config.gain_db - 1.0).max(1.0)
-        }),
-        KeyCode::Char('G') => adjust_config(app, |config| {
-            config.gain_db = (config.gain_db + 1.0).min(15.0)
-        }),
-        KeyCode::Char('v') => adjust_config(app, |config| config.q = (config.q - 0.1).max(0.2)),
-        KeyCode::Char('V') => adjust_config(app, |config| config.q = (config.q + 0.1).min(10.0)),
-        KeyCode::Char('t') => adjust_config(app, |config| {
-            config.trial_count = config.trial_count.saturating_sub(5).max(5)
-        }),
-        KeyCode::Char('T') => adjust_config(app, |config| {
-            config.trial_count = (config.trial_count + 5).min(500)
-        }),
-        KeyCode::Left | KeyCode::Char('h') => app.move_ear_training_answer(-1),
-        KeyCode::Right | KeyCode::Char('l') => app.move_ear_training_answer(1),
-        KeyCode::Enter => {
-            if app
-                .ui
-                .ear_training
-                .session
-                .as_ref()
-                .is_some_and(sotf_audio_player::EqTrainingSession::current_is_answered)
-            {
-                app.advance_ear_training();
+        EarTrainingCommand::AdjustBandCount => {
+            if key.code == KeyCode::Char('b') {
+                adjust_config(app, |config| {
+                    config.band_count = config.band_count.saturating_sub(1).max(2)
+                });
             } else {
-                app.submit_ear_training_answer();
+                adjust_config(app, |config| {
+                    config.band_count = (config.band_count + 1).min(25)
+                });
             }
         }
-        KeyCode::Char('n') => app.advance_ear_training(),
-        KeyCode::Char('1') => app.activate_ear_training_path(false),
-        KeyCode::Char('2') => app.activate_ear_training_path(true),
-        KeyCode::Char('i') => app.add_current_ear_training_source(),
-        KeyCode::Char(',') => {
+        EarTrainingCommand::AdjustGain => {
+            if key.code == KeyCode::Char('g') {
+                adjust_config(app, |config| {
+                    config.gain_db = (config.gain_db - 1.0).max(1.0)
+                });
+            } else {
+                adjust_config(app, |config| {
+                    config.gain_db = (config.gain_db + 1.0).min(15.0)
+                });
+            }
+        }
+        EarTrainingCommand::AdjustQ => {
+            if key.code == KeyCode::Char('v') {
+                adjust_config(app, |config| config.q = (config.q - 0.1).max(0.2));
+            } else {
+                adjust_config(app, |config| config.q = (config.q + 0.1).min(10.0));
+            }
+        }
+        EarTrainingCommand::AdjustTrialCount => {
+            if key.code == KeyCode::Char('t') {
+                adjust_config(app, |config| {
+                    config.trial_count = config.trial_count.saturating_sub(5).max(5)
+                });
+            } else {
+                adjust_config(app, |config| {
+                    config.trial_count = (config.trial_count + 5).min(500)
+                });
+            }
+        }
+        EarTrainingCommand::SelectAnswer => {
+            let delta = if matches!(key.code, KeyCode::Left | KeyCode::Char('h')) {
+                -1
+            } else {
+                1
+            };
+            app.move_ear_training_answer(delta);
+        }
+        EarTrainingCommand::NextTrial => app.advance_ear_training(),
+        EarTrainingCommand::Audition => {
+            app.activate_ear_training_path(key.code == KeyCode::Char('2'))
+        }
+        EarTrainingCommand::AddSource => app.add_current_ear_training_source(),
+        EarTrainingCommand::NavigateSource if key.code == KeyCode::Char(',') => {
             return app
                 .navigate_ear_training_source(-1)
                 .map(PlayerCommand::Play);
         }
-        KeyCode::Char('.') => {
+        EarTrainingCommand::NavigateSource => {
             return app.navigate_ear_training_source(1).map(PlayerCommand::Play);
         }
-        KeyCode::Char('[') => app.set_ear_training_loop_boundary(true),
-        KeyCode::Char(']') => app.set_ear_training_loop_boundary(false),
-        KeyCode::Char('\\') => app.toggle_ear_training_loop(),
-        _ => return None,
+        EarTrainingCommand::SetLoopBoundary => {
+            app.set_ear_training_loop_boundary(key.code == KeyCode::Char('['))
+        }
+        EarTrainingCommand::ToggleLoop => app.toggle_ear_training_loop(),
+        EarTrainingCommand::SwitchTab
+        | EarTrainingCommand::Activate
+        | EarTrainingCommand::NavigateCourse => {
+            unreachable!("command handled before practice dispatch: {command:?}")
+        }
     }
-    app.ui.needs_redraw = true;
     None
 }
 
-fn handle_course_keys(app: &mut App, key: KeyEvent) {
+fn navigate_course(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => {
             app.ui.ear_training.course_selection =
@@ -98,7 +163,6 @@ fn handle_course_keys(app: &mut App, key: KeyEvent) {
             app.ui.ear_training.course_selection =
                 (app.ui.ear_training.course_selection + 1).min(EarTrainingCourse::ALL.len() - 1)
         }
-        KeyCode::Enter => app.start_selected_ear_training_course(),
         _ => {}
     }
 }
@@ -137,7 +201,8 @@ mod tests {
         assert!(app.ui.ear_training.filtered);
         handle_ear_training_keys(&mut app, key(KeyCode::Enter));
         assert!(
-            app.ui.ear_training
+            app.ui
+                .ear_training
                 .session
                 .as_ref()
                 .is_some_and(sotf_audio_player::EqTrainingSession::current_is_answered)

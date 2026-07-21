@@ -1,4 +1,4 @@
-use sotf_types::PluginBuildDiagnostic;
+use crate::PluginBuildDiagnostic;
 
 /// Structured config error types
 #[derive(Debug, Clone)]

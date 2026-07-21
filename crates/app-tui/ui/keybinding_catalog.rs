@@ -16,6 +16,7 @@ pub(crate) enum TuiKeyContext {
     PlaylistList,
     PlaylistTracks,
     Devices,
+    EarTraining,
     ConfigureTabs,
     Directories,
 }
@@ -125,6 +126,28 @@ pub(crate) enum DeviceCommand {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EarTrainingCommand {
+    SwitchTab,
+    StartSession,
+    CycleExercise,
+    ToggleAdaptive,
+    CycleChangeMode,
+    AdjustBandCount,
+    AdjustGain,
+    AdjustQ,
+    AdjustTrialCount,
+    SelectAnswer,
+    Activate,
+    NextTrial,
+    Audition,
+    AddSource,
+    NavigateSource,
+    SetLoopBoundary,
+    ToggleLoop,
+    NavigateCourse,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ConfigureCommand {
     NavigateTabs,
     OpenTab,
@@ -154,6 +177,7 @@ pub(crate) enum TuiCommand {
     PluginEdit(PluginEditCommand),
     Playlist(PlaylistCommand),
     Device(DeviceCommand),
+    EarTraining(EarTrainingCommand),
     Configure(ConfigureCommand),
     Directory(DirectoryCommand),
 }
@@ -273,8 +297,8 @@ const ALWAYS_KEYBINDINGS: &[TuiKeybindingHelp] = &[binding(
 
 const SHARED_ROOT_KEYBINDINGS: &[TuiKeybindingHelp] = &[
     binding(
-        "L/Q/P/O/C/Y/N",
-        "  Jump to Library/Queue/Plugins/Devices/Configure/Playlists",
+        "L/Q/P/O/C/Y/N/E",
+        "  Jump to Library/Queue/Plugins/Devices/Configure/Playlists/Ear Training",
         None,
         &[TuiKeyContext::SharedRoot],
         &[
@@ -285,6 +309,7 @@ const SHARED_ROOT_KEYBINDINGS: &[TuiKeybindingHelp] = &[
             KeyChord::plain(KeyCode::Char('C')),
             KeyChord::plain(KeyCode::Char('Y')),
             KeyChord::plain(KeyCode::Char('N')),
+            KeyChord::plain(KeyCode::Char('E')),
         ],
         TuiCommand::Shared(SharedCommand::SwitchScreen),
     ),
@@ -1142,6 +1167,189 @@ const DEVICE_KEYBINDINGS: &[TuiKeybindingHelp] = &[
     ),
 ];
 
+const EAR_TRAINING_KEYBINDINGS: &[TuiKeybindingHelp] = &[
+    binding(
+        "F1/F2/F3",
+        "Practice / Courses / Progress",
+        Some("Practice/Courses/Progress"),
+        &[TuiKeyContext::EarTraining],
+        &[
+            KeyChord::plain(KeyCode::F(1)),
+            KeyChord::plain(KeyCode::F(2)),
+            KeyChord::plain(KeyCode::F(3)),
+        ],
+        TuiCommand::EarTraining(EarTrainingCommand::SwitchTab),
+    ),
+    binding(
+        "s",
+        "Start or restart session",
+        Some("Start session"),
+        &[TuiKeyContext::EarTraining],
+        &[KeyChord::plain(KeyCode::Char('s'))],
+        TuiCommand::EarTraining(EarTrainingCommand::StartSession),
+    ),
+    binding(
+        "1/2",
+        "Listen to original / filtered",
+        Some("Original/filtered"),
+        &[TuiKeyContext::EarTraining],
+        &[
+            KeyChord::plain(KeyCode::Char('1')),
+            KeyChord::plain(KeyCode::Char('2')),
+        ],
+        TuiCommand::EarTraining(EarTrainingCommand::Audition),
+    ),
+    binding(
+        "←/→ or h/l",
+        "Select answer",
+        Some("Choose/submit"),
+        &[TuiKeyContext::EarTraining],
+        &[
+            KeyChord::plain(KeyCode::Left),
+            KeyChord::plain(KeyCode::Right),
+            KeyChord::plain(KeyCode::Char('h')),
+            KeyChord::plain(KeyCode::Char('l')),
+        ],
+        TuiCommand::EarTraining(EarTrainingCommand::SelectAnswer),
+    ),
+    binding(
+        "Enter",
+        "Submit answer / next trial",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[KeyChord::plain(KeyCode::Enter)],
+        TuiCommand::EarTraining(EarTrainingCommand::Activate),
+    ),
+    binding(
+        "n",
+        "Submit answer / next trial",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[KeyChord::plain(KeyCode::Char('n'))],
+        TuiCommand::EarTraining(EarTrainingCommand::NextTrial),
+    ),
+    binding(
+        "e",
+        "Exercise / adaptive / boost-cut mode",
+        Some("Exercise/adaptive/change"),
+        &[TuiKeyContext::EarTraining],
+        &[KeyChord::plain(KeyCode::Char('e'))],
+        TuiCommand::EarTraining(EarTrainingCommand::CycleExercise),
+    ),
+    binding(
+        "a",
+        "Exercise / adaptive / boost-cut mode",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[KeyChord::plain(KeyCode::Char('a'))],
+        TuiCommand::EarTraining(EarTrainingCommand::ToggleAdaptive),
+    ),
+    binding(
+        "c",
+        "Exercise / adaptive / boost-cut mode",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[KeyChord::plain(KeyCode::Char('c'))],
+        TuiCommand::EarTraining(EarTrainingCommand::CycleChangeMode),
+    ),
+    binding(
+        "b/B",
+        "Adjust bands, gain, Q, trials",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[
+            KeyChord::plain(KeyCode::Char('b')),
+            KeyChord::plain(KeyCode::Char('B')),
+        ],
+        TuiCommand::EarTraining(EarTrainingCommand::AdjustBandCount),
+    ),
+    binding(
+        "g/G",
+        "Adjust bands, gain, Q, trials",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[
+            KeyChord::plain(KeyCode::Char('g')),
+            KeyChord::plain(KeyCode::Char('G')),
+        ],
+        TuiCommand::EarTraining(EarTrainingCommand::AdjustGain),
+    ),
+    binding(
+        "v/V",
+        "Adjust bands, gain, Q, trials",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[
+            KeyChord::plain(KeyCode::Char('v')),
+            KeyChord::plain(KeyCode::Char('V')),
+        ],
+        TuiCommand::EarTraining(EarTrainingCommand::AdjustQ),
+    ),
+    binding(
+        "t/T",
+        "Adjust bands, gain, Q, trials",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[
+            KeyChord::plain(KeyCode::Char('t')),
+            KeyChord::plain(KeyCode::Char('T')),
+        ],
+        TuiCommand::EarTraining(EarTrainingCommand::AdjustTrialCount),
+    ),
+    binding(
+        "i",
+        "Add / previous / next training source",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[KeyChord::plain(KeyCode::Char('i'))],
+        TuiCommand::EarTraining(EarTrainingCommand::AddSource),
+    ),
+    binding(
+        ", / .",
+        "Add / previous / next training source",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[
+            KeyChord::plain(KeyCode::Char(',')),
+            KeyChord::plain(KeyCode::Char('.')),
+        ],
+        TuiCommand::EarTraining(EarTrainingCommand::NavigateSource),
+    ),
+    binding(
+        "[ / ]",
+        "Set loop bounds / toggle loop",
+        Some("Loop controls"),
+        &[TuiKeyContext::EarTraining],
+        &[
+            KeyChord::plain(KeyCode::Char('[')),
+            KeyChord::plain(KeyCode::Char(']')),
+        ],
+        TuiCommand::EarTraining(EarTrainingCommand::SetLoopBoundary),
+    ),
+    binding(
+        "\\",
+        "Set loop bounds / toggle loop",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[KeyChord::plain(KeyCode::Char('\\'))],
+        TuiCommand::EarTraining(EarTrainingCommand::ToggleLoop),
+    ),
+    binding(
+        "↑/↓ or k/j",
+        "Navigate courses",
+        None,
+        &[TuiKeyContext::EarTraining],
+        &[
+            KeyChord::plain(KeyCode::Up),
+            KeyChord::plain(KeyCode::Down),
+            KeyChord::plain(KeyCode::Char('k')),
+            KeyChord::plain(KeyCode::Char('j')),
+        ],
+        TuiCommand::EarTraining(EarTrainingCommand::NavigateCourse),
+    ),
+    section("Esc", "Return to library and clean audition path"),
+];
+
 const ALL_CATALOGS: &[&[TuiKeybindingHelp]] = &[
     ALWAYS_KEYBINDINGS,
     SHARED_ROOT_KEYBINDINGS,
@@ -1153,6 +1361,7 @@ const ALL_CATALOGS: &[&[TuiKeybindingHelp]] = &[
     PLUGIN_KEYBINDINGS,
     PLAYLIST_KEYBINDINGS,
     DEVICE_KEYBINDINGS,
+    EAR_TRAINING_KEYBINDINGS,
 ];
 
 pub(super) fn keybindings_for_contexts(
@@ -1180,6 +1389,7 @@ pub(super) fn keybindings_for_screen(screen: Screen) -> &'static [TuiKeybindingH
         Screen::Plugins => PLUGIN_KEYBINDINGS,
         Screen::Playlists => PLAYLIST_KEYBINDINGS,
         Screen::Devices => DEVICE_KEYBINDINGS,
+        Screen::EarTraining => EAR_TRAINING_KEYBINDINGS,
     }
 }
 

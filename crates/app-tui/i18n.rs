@@ -1861,10 +1861,10 @@ const DYNAMIC_TRANSLATIONS: &[DynamicTranslation] = &[
         "  Recorrer pantallas y panel de niveles",
     ),
     dynamic_translation(
-        "  Jump to Library/Queue/Plugins/Devices/Configure/Playlists",
-        "  Aller à Bibliothèque/File d’attente/Modules/Périphériques/Configuration/Listes de lecture",
-        "  Zu Mediathek/Warteschlange/Plugins/Geräte/Konfiguration/Wiedergabelisten wechseln",
-        "  Ir a Biblioteca/Cola/Complementos/Dispositivos/Configuración/Listas de reproducción",
+        "  Jump to Library/Queue/Plugins/Devices/Configure/Playlists/Ear Training",
+        "  Aller à Bibliothèque/File d’attente/Modules/Périphériques/Configuration/Listes de lecture/Entraînement auditif",
+        "  Zu Mediathek/Warteschlange/Plugins/Geräte/Konfiguration/Wiedergabelisten/Gehörtraining wechseln",
+        "  Ir a Biblioteca/Cola/Complementos/Dispositivos/Configuración/Listas de reproducción/Entrenamiento auditivo",
     ),
     dynamic_translation(
         "  Focus level meters pane",
@@ -4489,6 +4489,7 @@ const FRENCH_ACTIONS: &[(&str, &str)] = &[
         "Écouter l’original / le signal filtré",
     ),
     ("Select answer", "Choisir la réponse"),
+    ("Navigate courses", "Parcourir les cours"),
     ("Submit answer / next trial", "Valider / essai suivant"),
     (
         "Exercise / adaptive / boost-cut mode",
@@ -4734,6 +4735,7 @@ const GERMAN_ACTIONS: &[(&str, &str)] = &[
         "Original / gefiltert anhören",
     ),
     ("Select answer", "Antwort auswählen"),
+    ("Navigate courses", "Kurse auswählen"),
     (
         "Submit answer / next trial",
         "Antwort senden / nächste Runde",
@@ -4976,6 +4978,7 @@ const SPANISH_ACTIONS: &[(&str, &str)] = &[
         "Escuchar original / filtrado",
     ),
     ("Select answer", "Seleccionar respuesta"),
+    ("Navigate courses", "Navegar por los cursos"),
     (
         "Submit answer / next trial",
         "Enviar respuesta / siguiente prueba",
