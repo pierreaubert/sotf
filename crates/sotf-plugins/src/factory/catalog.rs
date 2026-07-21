@@ -731,41 +731,22 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
         )
     ),
     entry!(
-        "fir_designer",
-        ["fir_designer"],
+        "linear_phase_eq",
+        ["linear_phase_eq", "fir_designer"],
         Processor,
         builtin_metadata!(
-            "sotf-plugin-fir-designer",
-            "FIR Designer",
+            "sotf-plugin-linear-phase-eq",
+            "FIR EQ",
             Beta,
             PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
             PluginChannelOutputModel::PreservesInput,
             PluginLatencyModel::FrameBased("FIR length and phase mode"),
-            "sotf_plugin_fir_designer::params::PARAMS",
-            Custom,
-            true,
-        ),
-        zero_alloc_evidence(
-            "sotf-plugin-fir-designer impulse, phase-linearity, minimum/linear-phase latency, dry-path, transition, and response tests"
-        )
-    ),
-    entry!(
-        "linear_phase_eq",
-        ["linear_phase_eq"],
-        Processor,
-        builtin_metadata!(
-            "sotf-plugin-linear-phase-eq",
-            "Linear-Phase EQ",
-            Beta,
-            PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
-            PluginChannelOutputModel::PreservesInput,
-            PluginLatencyModel::FrameBased("FIR length and partition configuration"),
             "sotf_plugin_linear_phase_eq::params::PARAMS",
             Custom,
             true,
         ),
         zero_alloc_evidence(
-            "sotf-plugin-linear-phase-eq boost response, phase linearity, dry transparency, latency, reset, and varied-block tests"
+            "sotf-plugin-linear-phase-eq boost response, linear/minimum phase, dry transparency, latency, reset, and varied-block tests"
         )
     ),
     entry!(

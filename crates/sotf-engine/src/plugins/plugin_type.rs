@@ -44,7 +44,7 @@ pub enum PluginType {
     TransientShaper,
     Saturation,
     DynamicEq,
-    FirDesigner,
+    #[serde(alias = "FirDesigner")]
     LinearPhaseEq,
     SpectralCompressor,
     /// A concrete external plugin. External plugins are intentionally omitted
@@ -103,7 +103,6 @@ impl PluginType {
             Self::TransientShaper => "transient_shaper",
             Self::Saturation => "saturation",
             Self::DynamicEq => "dynamic_eq",
-            Self::FirDesigner => "fir_designer",
             Self::LinearPhaseEq => "linear_phase_eq",
             Self::SpectralCompressor => "spectral_compressor",
             Self::External => "external",
@@ -152,8 +151,7 @@ impl PluginType {
             Self::TransientShaper => "SPL Transient Designer — attack/sustain shaping",
             Self::Saturation => "Harmonic saturation / exciter with multiple modes",
             Self::DynamicEq => "Frequency-selective dynamics (hybrid EQ + compressor)",
-            Self::FirDesigner => "FIR magnitude and phase design",
-            Self::LinearPhaseEq => "Parametric EQ with linear-phase FIR convolution",
+            Self::LinearPhaseEq => "Parametric EQ with linear or minimum-phase FIR convolution",
             Self::SpectralCompressor => {
                 "Per-bin FFT dynamics processor for surgical spectral compression"
             }
@@ -213,7 +211,6 @@ impl PluginType {
             "transient_shaper" => Some(Self::TransientShaper),
             "saturation" => Some(Self::Saturation),
             "dynamic_eq" => Some(Self::DynamicEq),
-            "fir_designer" => Some(Self::FirDesigner),
             "linear_phase_eq" => Some(Self::LinearPhaseEq),
             "spectral_compressor" => Some(Self::SpectralCompressor),
             "external" => Some(Self::External),

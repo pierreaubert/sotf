@@ -29,18 +29,18 @@ use crate::{
     CrossoverPlugin, CrossoverPluginParams, DeEsserPlugin, DeEsserPluginParams, DeclickPlugin,
     DeclickPluginParams, DelayPlugin, DelayPluginParams, DenoiserPlugin, DenoiserPluginParams,
     DownmixPlugin, DownmixPluginParams, DynamicEqPlugin, DynamicEqPluginParams, EqPlugin,
-    EqPluginParams, ExpanderPlugin, ExpanderPluginParams, FirDesignerPlugin,
-    FirDesignerPluginParams, GainPlugin, GainPluginParams, GatePlugin, GatePluginParams,
-    HissReducerPlugin, HissReducerPluginParams, LimiterPlugin, LimiterPluginParams,
-    LinearPhaseEqPlugin, LinearPhaseEqPluginParams, LoudnessCompensationPlugin,
-    LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin,
-    MonoToStereoPluginParams, MultibandCompressorPlugin, MultibandCompressorPluginParams,
-    MultibandExpanderPlugin, MultibandExpanderPluginParams, ParametricInPlacePluginAdapter,
-    ParametricPluginAdapter, Plugin, PndPlugin, PndPluginParams, ResamplerPlugin, SaturationPlugin,
-    SaturationPluginParams, SpectralCompressorPlugin, SpectralCompressorPluginParams,
-    SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin, SpeechDenoiserPluginParams,
-    StereoImagerPlugin, StereoImagerPluginParams, TransientShaperPlugin,
-    TransientShaperPluginParams, UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
+    EqPluginParams, ExpanderPlugin, ExpanderPluginParams, GainPlugin, GainPluginParams, GatePlugin,
+    GatePluginParams, HissReducerPlugin, HissReducerPluginParams, LimiterPlugin,
+    LimiterPluginParams, LinearPhaseEqPlugin, LinearPhaseEqPluginParams,
+    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
+    MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams, MultibandCompressorPlugin,
+    MultibandCompressorPluginParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
+    ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin, PndPlugin, PndPluginParams,
+    ResamplerPlugin, SaturationPlugin, SaturationPluginParams, SpectralCompressorPlugin,
+    SpectralCompressorPluginParams, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
+    SpeechDenoiserPluginParams, StereoImagerPlugin, StereoImagerPluginParams,
+    TransientShaperPlugin, TransientShaperPluginParams, UpmixerPlugin, UpmixerPluginParams,
+    XtcPlugin, XtcPluginParams,
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::{
@@ -208,14 +208,6 @@ pub fn create_plugin(
             let params: DynamicEqPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse dynamic EQ params: {e}"))?;
             let plugin = DynamicEqPlugin::from_params(channels, params);
-            Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
-        }
-
-        "fir_designer" => {
-            let params: FirDesignerPluginParams = serde_json::from_value(parameters.clone())
-                .map_err(|e| format!("Failed to parse FIR designer params: {e}"))?;
-            let plugin = FirDesignerPlugin::from_params(channels, sample_rate, params)
-                .map_err(|e| format!("Failed to create FIR designer plugin: {e}"))?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 

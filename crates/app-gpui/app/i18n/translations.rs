@@ -4491,8 +4491,9 @@ impl PluginCommonTranslations {
                     "Add controlled harmonic colour with saturation or exciter modes."
                 }
                 PluginType::DynamicEq => "Apply frequency-selective compression and expansion.",
-                PluginType::FirDesigner => "Design an FIR filter from magnitude and phase targets.",
-                PluginType::LinearPhaseEq => "Apply parametric EQ as linear-phase FIR convolution.",
+                PluginType::LinearPhaseEq => {
+                    "Apply parametric EQ as linear or minimum-phase FIR convolution."
+                }
                 PluginType::SpectralCompressor => {
                     "Control dynamics independently in FFT frequency bins."
                 }
@@ -4579,11 +4580,8 @@ impl PluginCommonTranslations {
                 PluginType::DynamicEq => {
                     "Appliquez compression et expansion de façon sélective en fréquence."
                 }
-                PluginType::FirDesigner => {
-                    "Concevez un filtre FIR à partir de cibles d’amplitude et de phase."
-                }
                 PluginType::LinearPhaseEq => {
-                    "Appliquez un égaliseur paramétrique par convolution FIR à phase linéaire."
+                    "Appliquez un égaliseur paramétrique FIR à phase linéaire ou minimale."
                 }
                 PluginType::SpectralCompressor => {
                     "Contrôlez séparément la dynamique de chaque bin FFT."
@@ -4681,11 +4679,8 @@ impl PluginCommonTranslations {
                 PluginType::DynamicEq => {
                     "Wenden Sie frequenzselektive Kompression und Expansion an."
                 }
-                PluginType::FirDesigner => {
-                    "Entwerfen Sie einen FIR-Filter aus Amplituden- und Phasenzielen."
-                }
                 PluginType::LinearPhaseEq => {
-                    "Wenden Sie parametrischen EQ als linearphasige FIR-Faltung an."
+                    "Wenden Sie parametrischen EQ als FIR-Filter mit linearer oder minimaler Phase an."
                 }
                 PluginType::SpectralCompressor => {
                     "Regeln Sie die Dynamik in einzelnen FFT-Frequenzbins."
@@ -4771,11 +4766,8 @@ impl PluginCommonTranslations {
                 PluginType::DynamicEq => {
                     "Aplique compresión y expansión selectivas por frecuencia."
                 }
-                PluginType::FirDesigner => {
-                    "Diseñe un filtro FIR desde objetivos de magnitud y fase."
-                }
                 PluginType::LinearPhaseEq => {
-                    "Aplique EQ paramétrica como convolución FIR de fase lineal."
+                    "Aplique EQ paramétrica como FIR de fase lineal o mínima."
                 }
                 PluginType::SpectralCompressor => {
                     "Controle la dinámica por separado en cada bin FFT."

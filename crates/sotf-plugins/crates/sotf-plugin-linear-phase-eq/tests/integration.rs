@@ -27,7 +27,7 @@ fn plugin_info_and_channels() {
     let plugin = LinearPhaseEqPlugin::new(2, 48000);
     let adapter = ParametricInPlacePluginAdapter::new(plugin);
 
-    assert!(adapter.info().name.contains("Linear-Phase"));
+    assert!(adapter.info().name.contains("FIR EQ"));
     assert_eq!(adapter.input_channels(), 2);
     assert_eq!(adapter.output_channels(), 2);
     assert!(!adapter.parameters().is_empty());
@@ -105,6 +105,7 @@ fn dry_mix_passthrough() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 1,
         fir_length_index: 0,
+        phase_mode_index: 0,
         auto_gain: false,
         mix: 0.0,
         filters: vec![],
@@ -138,6 +139,7 @@ fn eq_boost_changes_amplitude() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 1,
         fir_length_index: 0,
+        phase_mode_index: 0,
         auto_gain: false,
         mix: 1.0,
         filters: vec![BandConfig {
@@ -176,6 +178,7 @@ fn latency_matches_fir_length() {
     let params = LinearPhaseEqPluginParams {
         num_filters: 1,
         fir_length_index: 2, // 4096 taps
+        phase_mode_index: 0,
         auto_gain: false,
         mix: 1.0,
         filters: vec![],
@@ -242,4 +245,35 @@ fn reset_then_process_is_stable() {
         .unwrap();
 
     assert!(output2.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn minimum_phase_processes_finite_audio() {
+    let params = LinearPhaseEqPluginParams {
+        num_filters: 1,
+        fir_length_index: 0,
+        phase_mode_index: 1,
+        auto_gain: false,
+        mix: 1.0,
+        filters: vec![BandConfig {
+            filter_type: "Peak".to_string(),
+            frequency: 1_000.0,
+            q: 1.0,
+            gain_db: 6.0,
+            active: true,
+        }],
+    };
+    let plugin = LinearPhaseEqPlugin::from_params(1, 48_000, params).unwrap();
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
+    adapter.initialize(48_000).unwrap();
+
+    let input = sine_buffer(2_048, 1, 1_000.0, 48_000);
+    let mut output = vec![0.0; input.len()];
+    adapter
+        .process(&input, &mut output, &ProcessContext::new(48_000, 2_048))
+        .unwrap();
+
+    assert_eq!(adapter.latency_samples(), 0);
+    assert!(output.iter().all(|sample| sample.is_finite()));
+    assert!(output.iter().any(|sample| sample.abs() > 1.0e-6));
 }

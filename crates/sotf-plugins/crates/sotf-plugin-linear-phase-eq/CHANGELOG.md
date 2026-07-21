@@ -1,3 +1,10 @@
+# Unreleased
+
+## Changed
+
+- Added selectable linear and minimum-phase FIR design modes.
+- Consolidated the former FIR Designer implementation; legacy `FirDesigner` presets and the `fir_designer` factory name now migrate to FIR EQ.
+
 # 0.5.5
 
 ## Fixes

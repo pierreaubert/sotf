@@ -39,7 +39,6 @@ pub const CATEGORIES: &[PluginCategory] = &[
         plugins: &[
             PluginType::EQ,
             PluginType::LinearPhaseEq,
-            PluginType::FirDesigner,
             PluginType::Gain,
             PluginType::Delay,
             PluginType::LoudnessCompensation,

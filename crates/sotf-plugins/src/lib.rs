@@ -176,7 +176,8 @@ pub mod param_specs {
         pub use sotf_plugin_eq::params::*;
     }
     pub mod fir_designer {
-        pub use sotf_plugin_fir_designer::params::*;
+        //! Compatibility alias for the consolidated FIR EQ parameter schema.
+        pub use sotf_plugin_linear_phase_eq::params::*;
     }
     pub mod linear_phase_eq {
         pub use sotf_plugin_linear_phase_eq::params::*;
@@ -246,7 +247,6 @@ pub use sotf_plugin_dither;
 pub use sotf_plugin_downmix as plugin_downmix;
 pub use sotf_plugin_dynamic_eq as plugin_dynamic_eq;
 pub use sotf_plugin_eq as plugin_eq;
-pub use sotf_plugin_fir_designer as plugin_fir_designer;
 pub use sotf_plugin_gain as plugin_gain;
 pub use sotf_plugin_gate as plugin_gate;
 pub use sotf_plugin_hiss_reducer as plugin_hiss_reducer;
@@ -306,7 +306,6 @@ pub use plugin_dynamic_eq::{
 pub use plugin_eq::{
     BiquadFilterConfig, EqFilterTopology, EqPlugin, EqPluginParams, KautzSectionConfig,
 };
-pub use plugin_fir_designer::{FirDesignerPlugin, FirDesignerPluginParams};
 pub use plugin_linear_phase_eq::{LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 pub use sotf_plugin_dither::{DitherPlugin, DitherPluginParams};
 pub type ExpanderPlugin = sotf_plugin_multiband_expander::MultibandExpanderPlugin;

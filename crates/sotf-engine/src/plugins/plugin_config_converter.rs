@@ -63,7 +63,7 @@ impl PluginConfigConverterRegistry {
         registry.register("saturation", effects::convert_saturation);
         registry.register("dynamic_eq", dynamics::convert_dynamic_eq);
         registry.register("linear_phase_eq", eq::convert_linear_phase_eq);
-        registry.register("fir_designer", eq::convert_fir_designer);
+        registry.register("fir_designer", eq::convert_linear_phase_eq);
         registry.register("spectral_compressor", dynamics::convert_spectral_compressor);
         registry.register("upmixer", spatial::convert_upmixer);
         registry.register("compressor", dynamics::convert_compressor);

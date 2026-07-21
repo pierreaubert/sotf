@@ -66,8 +66,7 @@ pub(super) fn build_menu_items(
     // EQ section
     items.push(MenuItem::new("eq-header", "EQ").disabled(true));
     items.push(MenuItem::new("plugin-eq", "Parametric EQ"));
-    items.push(MenuItem::new("plugin-linear-phase-eq", "Linear-Phase EQ"));
-    items.push(MenuItem::new("plugin-fir-designer", "FIR Designer"));
+    items.push(MenuItem::new("plugin-linear-phase-eq", "FIR EQ"));
     items.push(MenuItem::new("plugin-dynamic-eq", "Dynamic EQ"));
 
     items.push(MenuItem::separator());

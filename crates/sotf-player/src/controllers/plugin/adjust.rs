@@ -63,8 +63,7 @@ pub(super) fn adjust_plugin_param(
 
             adjust_eq_band_field_for_plugin(filter_idx, field_idx, filters, delta, true)
         }
-        PluginSettings::LinearPhaseEq { filters, .. }
-        | PluginSettings::FirDesigner { filters, .. } => {
+        PluginSettings::LinearPhaseEq { filters, .. } => {
             if filters.is_empty() {
                 return false;
             }

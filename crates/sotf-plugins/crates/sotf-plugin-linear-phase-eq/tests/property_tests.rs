@@ -22,6 +22,7 @@ fn minimal_plugin() -> LinearPhaseEqPlugin {
         LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 0,
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 1.0,
             filters: vec![],
@@ -46,7 +47,7 @@ proptest! {
         plugin.process_in_place(&mut buf, &ProcessContext::new(48000, 64)).unwrap();
 
         prop_assert!(buf.iter().all(|s| s.is_finite()),
-            "Default Linear-Phase EQ should produce finite output");
+            "Default FIR EQ should produce finite output");
     }
 
     #[test]
@@ -54,6 +55,7 @@ proptest! {
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 0,
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 1.0,
             filters: vec![BandConfig {
@@ -69,7 +71,7 @@ proptest! {
         plugin.process_in_place(&mut buf, &ProcessContext::new(48000, 64)).unwrap();
 
         prop_assert!(buf.iter().all(|s| s.is_finite()),
-            "Active Linear-Phase EQ band should produce finite output");
+            "Active FIR EQ band should produce finite output");
     }
 
     // -------------------------------------------------------------------------
@@ -121,6 +123,16 @@ proptest! {
     }
 
     #[test]
+    fn roundtrip_phase_mode(idx in 0i32..2i32) {
+        let mut plugin = minimal_plugin();
+        plugin.set_parameter(ParameterId::from("phase_mode"), ParameterValue::Int(idx)).unwrap();
+        let got = plugin.get_parameter(&ParameterId::from("phase_mode"));
+
+        prop_assert_eq!(got, Some(ParameterValue::Int(idx)),
+            "phase_mode set->get should round-trip");
+    }
+
+    #[test]
     fn roundtrip_band_gain(gain_db in -24.0f32..24.0f32) {
         let mut plugin = minimal_plugin();
         plugin.set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(gain_db)).unwrap();
@@ -144,6 +156,7 @@ proptest! {
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 0,
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 0.0,
             filters: vec![],
@@ -164,6 +177,7 @@ proptest! {
         let params = LinearPhaseEqPluginParams {
             num_filters: 2,
             fir_length_index: 0,
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 1.0,
             filters: vec![
@@ -216,6 +230,7 @@ proptest! {
         let params = LinearPhaseEqPluginParams {
             num_filters: 1,
             fir_length_index: 0, // 1024 taps
+            phase_mode_index: 0,
             auto_gain: false,
             mix: 1.0,
             filters: vec![BandConfig {
@@ -230,5 +245,29 @@ proptest! {
         let expected = (1024 - 1) / 2;
         prop_assert_eq!(plugin.latency_samples(), expected,
             "Linear-phase latency should equal (fir_length - 1) / 2");
+    }
+
+    #[test]
+    fn minimum_phase_latency_is_zero(
+        gain_db in -12.0f32..12.0f32,
+        freq in 200.0f32..8000.0f32
+    ) {
+        let params = LinearPhaseEqPluginParams {
+            num_filters: 1,
+            fir_length_index: 0,
+            phase_mode_index: 1,
+            auto_gain: false,
+            mix: 1.0,
+            filters: vec![BandConfig {
+                filter_type: "Peak".to_string(),
+                frequency: freq as f64,
+                q: 1.0,
+                gain_db: gain_db as f64,
+                active: true,
+            }],
+        };
+        let plugin = LinearPhaseEqPlugin::from_params(1, 48000, params).unwrap();
+        prop_assert_eq!(plugin.latency_samples(), 0,
+            "Minimum-phase FIR should not report linear-phase group delay");
     }
 }

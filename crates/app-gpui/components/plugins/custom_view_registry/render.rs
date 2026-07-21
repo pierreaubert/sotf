@@ -220,72 +220,6 @@ pub(super) fn render_linear_phase_eq(
     if let PluginSettings::LinearPhaseEq {
         num_filters,
         fir_length,
-        auto_gain,
-        mix,
-        filters,
-        ..
-    } = ctx.settings
-    {
-        let fir_len_samples: usize = match *fir_length as usize {
-            0 => 1024,
-            1 => 2048,
-            2 => 4096,
-            3 => 8192,
-            _ => 2048,
-        };
-        let latency_samples = fir_len_samples.saturating_sub(1) / 2;
-        let sample_rate = ctx
-            .entity
-            .read(cx)
-            .app
-            .audio_device_state
-            .hal_config
-            .sample_rate
-            .max(1);
-        let latency_ms = (latency_samples as f32) * 1000.0 / (sample_rate as f32);
-
-        let selected_band_idx = ctx.selected_band_idx.min(filters.len().saturating_sub(1));
-        super::super::render_eq_plugin(
-            ctx.entity.clone(),
-            ctx.plugin_idx,
-            ui_eq::EqRenderState {
-                channels: 2,
-                filters,
-                channel_filters: &None,
-                per_channel_mode: false,
-                is_editing: ctx.is_editing,
-                selected_param: ctx.selected_param,
-                selected_band_idx,
-                midi_overlay: ctx.midi_overlay,
-                mode: ui_eq::EqViewMode::LinearPhase {
-                    latency_samples,
-                    latency_ms,
-                    fir_length: fir_len_samples,
-                    auto_gain: *auto_gain,
-                    mix: *mix,
-                },
-                num_filters: *num_filters as usize,
-                tdf2: false,
-                topology: 0.0,
-                available_width: ctx.available_width,
-            },
-            ctx.theme,
-            cx,
-        )
-        .into_any_element()
-    } else {
-        Empty.into_any_element()
-    }
-}
-
-pub(super) fn render_fir_designer(
-    ctx: &CustomViewRenderContext,
-    cx: &mut Context<PlayerView>,
-) -> AnyElement {
-    use super::super::ui_eq;
-    if let PluginSettings::FirDesigner {
-        num_filters,
-        fir_length,
         phase_mode,
         auto_gain,
         mix,
@@ -332,7 +266,7 @@ pub(super) fn render_fir_designer(
                 selected_param: ctx.selected_param,
                 selected_band_idx,
                 midi_overlay: ctx.midi_overlay,
-                mode: ui_eq::EqViewMode::FirDesigner {
+                mode: ui_eq::EqViewMode::LinearPhase {
                     latency_samples,
                     latency_ms,
                     fir_length: fir_len_samples,

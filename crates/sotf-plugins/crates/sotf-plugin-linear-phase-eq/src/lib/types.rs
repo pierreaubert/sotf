@@ -4,6 +4,7 @@ use super::default::default_fir_length_index;
 use super::default::default_frequency;
 use super::default::default_mix;
 use super::default::default_num_filters;
+use super::default::default_phase_mode_index;
 use super::default::default_q;
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,8 @@ pub struct LinearPhaseEqPluginParams {
     pub num_filters: usize,
     #[serde(default = "default_fir_length_index")]
     pub fir_length_index: usize,
+    #[serde(default = "default_phase_mode_index", alias = "phase_mode")]
+    pub phase_mode_index: usize,
     #[serde(default)]
     pub auto_gain: bool,
     #[serde(default = "default_mix")]

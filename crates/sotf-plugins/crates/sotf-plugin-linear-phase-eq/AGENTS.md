@@ -1,6 +1,6 @@
 # sotf-plugin-linear-phase-eq
 
-Linear-phase EQ — parametric EQ with FIR convolution for zero phase distortion.
+FIR EQ — parametric EQ with selectable linear or minimum-phase FIR convolution.
 
 ## Architecture
 
@@ -19,6 +19,6 @@ cargo test -p sotf-plugin-linear-phase-eq
 
 ## Important Notes
 
-- Uses FIR filters instead of IIR biquads — zero phase distortion but introduces latency
-- Higher latency than standard EQ due to FIR convolution
-- Useful when phase coherence is critical (e.g., crossover alignment, mastering)
+- Linear phase preserves phase coherence and reports `(fir_length - 1) / 2` latency.
+- Minimum phase reports no fixed group delay and avoids pre-ringing.
+- FIR convolution remains more CPU-intensive than the standard IIR EQ.

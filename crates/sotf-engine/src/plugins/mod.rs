@@ -25,7 +25,6 @@ use sotf_plugins::param_specs::denoiser as denoiser_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
-use sotf_plugins::param_specs::fir_designer as fir_designer_specs;
 use sotf_plugins::param_specs::gain as gain_specs;
 use sotf_plugins::param_specs::gate as gate_specs;
 use sotf_plugins::param_specs::hiss_reducer as hiss_reducer_specs;
@@ -444,14 +443,8 @@ sotf_plugins::serde_param_default! {
     linear_phase_eq_specs::PARAMS;
     fn default_lpeq_num_filters() -> f64 = "num_filters";
     fn default_lpeq_fir_length() -> f64 = "fir_length";
+    fn default_lpeq_phase_mode() -> f64 = "phase_mode";
     fn default_lpeq_mix() -> f64 = "mix";
-}
-sotf_plugins::serde_param_default! {
-    fir_designer_specs::PARAMS;
-    fn default_fird_num_filters() -> f64 = "num_filters";
-    fn default_fird_fir_length() -> f64 = "fir_length";
-    fn default_fird_phase_mode() -> f64 = "phase_mode";
-    fn default_fird_mix() -> f64 = "mix";
 }
 pub mod chain;
 pub mod eq;

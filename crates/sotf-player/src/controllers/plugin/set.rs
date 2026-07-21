@@ -89,8 +89,7 @@ pub fn set_plugin_param_value(
 
             set_eq_band_field_for_plugin(filter_idx, field_idx, filters, value, true)
         }
-        PluginSettings::LinearPhaseEq { filters, .. }
-        | PluginSettings::FirDesigner { filters, .. } => {
+        PluginSettings::LinearPhaseEq { filters, .. } => {
             let filter_idx = param_idx / 5;
             let field_idx = param_idx % 5;
 
@@ -448,6 +447,7 @@ mod tests {
             ],
             num_filters: 2.0,
             fir_length: 1024.0,
+            phase_mode: 0.0,
             auto_gain: true,
             mix: 1.0,
         };
@@ -470,8 +470,8 @@ mod tests {
     }
 
     #[test]
-    fn set_plugin_param_value_fir_designer_active_field_controls_mute_state() {
-        let mut settings = PluginSettings::FirDesigner {
+    fn set_plugin_param_value_fir_eq_active_field_controls_mute_state() {
+        let mut settings = PluginSettings::LinearPhaseEq {
             filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)],
             num_filters: 1.0,
             fir_length: 2048.0,
@@ -483,14 +483,14 @@ mod tests {
 
         assert!(set_plugin_param_value(&mut settings, 4, 0.0, &mut changed));
         match &settings {
-            PluginSettings::FirDesigner { filters, .. } => assert!(filters[0].muted),
-            _ => panic!("expected FirDesigner"),
+            PluginSettings::LinearPhaseEq { filters, .. } => assert!(filters[0].muted),
+            _ => panic!("expected LinearPhaseEq"),
         }
 
         assert!(set_plugin_param_value(&mut settings, 4, 1.0, &mut changed));
         match settings {
-            PluginSettings::FirDesigner { filters, .. } => assert!(!filters[0].muted),
-            _ => panic!("expected FirDesigner"),
+            PluginSettings::LinearPhaseEq { filters, .. } => assert!(!filters[0].muted),
+            _ => panic!("expected LinearPhaseEq"),
         }
     }
 

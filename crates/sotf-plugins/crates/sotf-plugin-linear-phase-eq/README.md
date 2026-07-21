@@ -1,6 +1,6 @@
 # sotf-plugin-linear-phase-eq
 
-Linear-phase parametric EQ with FIR convolution for zero phase distortion.
+Parametric FIR EQ with selectable linear or minimum phase.
 
 ## What It Does
 
@@ -9,6 +9,7 @@ A parametric equalizer that uses FIR (Finite Impulse Response) filters instead o
 ## Features
 
 - **Zero phase distortion**: All frequencies delayed equally
+- **Minimum-phase mode**: Low-latency, causal response without linear-phase pre-ringing
 - **FIR convolution**: Uses frequency-domain convolution for efficient processing
 - **Parametric bands**: Standard frequency, Q, and gain controls
 - **High precision**: Ideal for mastering and critical listening
@@ -21,7 +22,7 @@ A parametric equalizer that uses FIR (Finite Impulse Response) filters instead o
 - Mastering chains where phase transparency is critical
 - Situations where latency is acceptable (not live monitoring)
 
-For low-latency use cases, prefer `sotf-plugin-eq` (minimum-phase IIR).
+For the lowest CPU cost, prefer `sotf-plugin-eq` (minimum-phase IIR).
 
 ## Architecture
 

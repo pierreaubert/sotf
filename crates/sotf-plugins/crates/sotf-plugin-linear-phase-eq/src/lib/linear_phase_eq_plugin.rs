@@ -1,5 +1,6 @@
 use super::default::default_fir_length_index;
 use super::default::default_num_filters;
+use super::default::default_phase_mode_index;
 use super::eq_band::EqBand;
 use super::misc::MAG_RESPONSE_POINTS;
 use super::misc::filter_type_to_index;
@@ -7,12 +8,13 @@ use super::misc::fir_length_from_index;
 use super::misc::index_to_filter_type;
 use super::misc::parse_filter_type;
 use super::types::LinearPhaseEqPluginParams;
-use crate::params::{FIR_LENGTH_OPTIONS, PARAMS as LP_PARAMS};
+use crate::params::{FIR_LENGTH_OPTIONS, PARAMS as LP_PARAMS, PHASE_MODE_OPTIONS};
 use math_audio_iir_fir::{
     Biquad, BiquadFilterType, FirDesignConfig, FirPhase, WindowType, generate_fir_from_response,
 };
 use num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
+use sotf_host::param_bridge::apply_spec_update_modes;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
@@ -30,6 +32,7 @@ pub struct LinearPhaseEqPlugin {
     pub(super) sample_rate: u32,
     pub(super) num_filters: usize,
     pub(super) fir_length_index: usize,
+    pub(super) phase_mode_index: usize,
     pub(super) auto_gain: bool,
     pub(super) mix_value: f32,
 
@@ -81,6 +84,7 @@ impl LinearPhaseEqPlugin {
             num_filters,
             fir_length_index,
             fir_length,
+            default_phase_mode_index(),
             false,
             1.0,
             Vec::new(),
@@ -93,6 +97,7 @@ impl LinearPhaseEqPlugin {
         params: LinearPhaseEqPluginParams,
     ) -> Result<Self, String> {
         let fir_length_index = params.fir_length_index.min(FIR_LENGTH_OPTIONS.len() - 1);
+        let phase_mode_index = params.phase_mode_index.min(PHASE_MODE_OPTIONS.len() - 1);
         let fir_length = fir_length_from_index(fir_length_index);
         let num_filters = params.num_filters.clamp(1, 10);
         let sr = sample_rate as f64;
@@ -130,6 +135,7 @@ impl LinearPhaseEqPlugin {
             num_filters,
             fir_length_index,
             fir_length,
+            phase_mode_index,
             params.auto_gain,
             params.mix,
             bands,
@@ -146,6 +152,7 @@ impl LinearPhaseEqPlugin {
         num_filters: usize,
         fir_length_index: usize,
         fir_length: usize,
+        phase_mode_index: usize,
         auto_gain: bool,
         mix: f32,
         mut bands: Vec<EqBand>,
@@ -183,6 +190,7 @@ impl LinearPhaseEqPlugin {
             sample_rate,
             num_filters,
             fir_length_index,
+            phase_mode_index,
             auto_gain,
             mix_value: mix,
             bands,
@@ -267,11 +275,14 @@ impl LinearPhaseEqPlugin {
                 .push(Self::band_contribution_db(&self.bands, freq));
         }
 
-        // Generate the linear-phase FIR
+        let phase = match self.phase_mode_index {
+            1 => FirPhase::Minimum,
+            _ => FirPhase::Linear,
+        };
         let config = FirDesignConfig {
             n_taps: fir_length,
             sample_rate: sr,
-            phase: FirPhase::Linear,
+            phase,
             window: WindowType::Kaiser,
             ..Default::default()
         };
@@ -360,6 +371,15 @@ impl LinearPhaseEqPlugin {
             )
             .with_description("FIR length in taps")
             .with_group("Quality"),
+            Parameter::new_int(
+                "phase_mode",
+                "Phase Mode",
+                self.phase_mode_index as i32,
+                0,
+                (PHASE_MODE_OPTIONS.len() - 1) as i32,
+            )
+            .with_description("FIR phase design mode")
+            .with_group("Phase"),
             Parameter::new_bool("auto_gain", "Auto Gain", self.auto_gain)
                 .with_description("Compensate output level")
                 .with_group("Output"),
@@ -417,6 +437,7 @@ impl LinearPhaseEqPlugin {
             );
         }
 
+        apply_spec_update_modes(&mut params, LP_PARAMS);
         self.cached_parameters = params;
     }
 
@@ -451,9 +472,8 @@ impl LinearPhaseEqPlugin {
 
 impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Linear-Phase EQ", env!("CARGO_PKG_VERSION"), "SOTF").with_description(
-            "Parametric EQ with linear-phase FIR convolution for zero phase distortion",
-        )
+        PluginInfo::new("FIR EQ", env!("CARGO_PKG_VERSION"), "SOTF")
+            .with_description("Parametric EQ with linear or minimum-phase FIR convolution")
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -494,6 +514,10 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
         values.insert(
             ParameterId::from("fir_length"),
             ParameterValue::Int(self.fir_length_index as i32),
+        );
+        values.insert(
+            ParameterId::from("phase_mode"),
+            ParameterValue::Int(self.phase_mode_index as i32),
         );
         values.insert(
             ParameterId::from("auto_gain"),
@@ -563,6 +587,16 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
                             self.fir_length_index = idx;
                             self.fir_coeffs.resize(self.fir_length(), 0.0);
                             self.resize_fft_buffers();
+                            self.fir_dirty = true;
+                            self.rebuild_cached_parameters();
+                        }
+                    }
+                }
+                "phase_mode" => {
+                    if let ParameterValue::Int(v) = value {
+                        let idx = (v as usize).min(PHASE_MODE_OPTIONS.len() - 1);
+                        if idx != self.phase_mode_index {
+                            self.phase_mode_index = idx;
                             self.fir_dirty = true;
                             self.rebuild_cached_parameters();
                         }
@@ -781,9 +815,12 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        // Linear-phase FIR has symmetrical impulse response.
-        // Delay = (fir_length - 1) / 2
-        (self.fir_length() - 1) / 2
+        if self.phase_mode_index == 0 {
+            // Linear-phase FIR has symmetrical impulse response.
+            (self.fir_length() - 1) / 2
+        } else {
+            0
+        }
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
