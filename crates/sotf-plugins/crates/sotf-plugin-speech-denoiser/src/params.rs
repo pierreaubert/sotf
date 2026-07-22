@@ -8,10 +8,11 @@ pub const PARAMS: &[ParamSpec] = &[ParamSpec::bool_param("Enabled", "enabled", t
 
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
-    main: &[ControlGroup {
-        title: "SPEECH",
-        controls: &[ControlSpec::toggle(0)],
-    }],
+    main: &[ControlGroup::new(
+        "SPEECH",
+        "SPEECH",
+        &[ControlSpec::toggle(0)],
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],

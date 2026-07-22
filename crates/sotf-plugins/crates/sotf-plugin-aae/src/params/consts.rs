@@ -212,24 +212,26 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::selector(6), // room_preset
     ],
     main: &[
-        ControlGroup {
-            title: "ROOM",
-            controls: &[
+        ControlGroup::new(
+            "room",
+            "ROOM",
+            &[
                 ControlSpec::slider(1), // room_size
                 ControlSpec::slider(2), // rt60
                 ControlSpec::slider(3), // bass_ratio
                 ControlSpec::slider(4), // treble_ratio
                 ControlSpec::slider(5), // pre_delay_ms
             ],
-        },
-        ControlGroup {
-            title: "LEVELS",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "levels",
+            "LEVELS",
+            &[
                 ControlSpec::slider(8),  // er_level
                 ControlSpec::slider(9),  // late_level
                 ControlSpec::slider(10), // lfe_level
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::slider(7),  // dry_level

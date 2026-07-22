@@ -44,13 +44,14 @@ pub const PARAMS: &[ParamSpec] = &[
 
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
-    main: &[ControlGroup {
-        title: "CROSSOVER",
-        controls: &[
+    main: &[ControlGroup::new(
+        "CROSSOVER",
+        "CROSSOVER",
+        &[
             ControlSpec::knob(0),                          // frequency
             ControlSpec::button_set(1, &["LR24", "LR48"]), // type
         ],
-    }],
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],

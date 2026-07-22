@@ -47,13 +47,14 @@ pub const PARAMS: &[ParamSpec] = &[
 /// Dither: idx 0=bit_depth, 1=noise_shaping, 2=dither_type
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[ControlSpec::toggle(1)], // noise_shaping
-    main: &[ControlGroup {
-        title: "DITHER",
-        controls: &[
+    main: &[ControlGroup::new(
+        "DITHER",
+        "DITHER",
+        &[
             ControlSpec::selector(0), // bit_depth
             ControlSpec::selector(2), // dither_type
         ],
-    }],
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],

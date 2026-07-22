@@ -1,6 +1,5 @@
-use super::misc::group_column_width;
 use super::types::ModeSelectorInfo;
-use sotf_plugins::layout_solver::SolvedLayout;
+use sotf_plugins::layout_solver::solve_control_groups;
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
 use sotf_plugins::plugin_layout::*;
 
@@ -38,33 +37,25 @@ pub(super) fn mode_visible_groups(
     groups
 }
 
-pub(super) fn partition_main_groups(
+pub(super) fn solve_main_groups(
     layout: &'static PluginLayout,
     values: &[f64],
-    solved: &SolvedLayout,
     mode: Option<&ModeSelectorInfo>,
     main_width: f32,
 ) -> (Vec<&'static ControlGroup>, Vec<&'static ControlGroup>) {
     let groups = mode_visible_groups(layout, values, mode);
-    let gap = 16.0;
-    let mut used = 0.0;
-    let mut visible = Vec::new();
-    let mut overflow = Vec::new();
-
-    for group in groups {
-        let width = group_column_width(group, solved.knob_size);
-        let next_used = if visible.is_empty() {
-            width
-        } else {
-            used + gap + width
-        };
-        if visible.is_empty() || next_used <= main_width {
-            visible.push(group);
-            used = next_used;
-        } else {
-            overflow.push(group);
-        }
-    }
+    let solved = solve_control_groups(&groups, main_width)
+        .unwrap_or_else(|error| panic!("invalid generated plugin group layout: {error}"));
+    let visible = groups
+        .iter()
+        .copied()
+        .filter(|group| solved.find(group.id).is_some_and(|node| node.visible()))
+        .collect();
+    let overflow = groups
+        .iter()
+        .copied()
+        .filter(|group| solved.find(group.id).is_some_and(|node| !node.visible()))
+        .collect();
 
     (visible, overflow)
 }

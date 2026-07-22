@@ -52,10 +52,11 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::knob(0),     // order
         ControlSpec::selector(1), // target_layout
     ],
-    main: &[ControlGroup {
-        title: "",
-        controls: &[ControlSpec::toggle(2), ControlSpec::toggle(3)], // max_re_weighting, dual_band
-    }],
+    main: &[ControlGroup::new(
+        "primary",
+        "",
+        &[ControlSpec::toggle(2), ControlSpec::toggle(3)], // max_re_weighting, dual_band
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],

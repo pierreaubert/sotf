@@ -112,9 +112,10 @@ pub const PARAMS: &[ParamSpec] = &[
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
     main: &[
-        ControlGroup {
-            title: "A/B MIX",
-            controls: &[
+        ControlGroup::new(
+            "A/B MIX",
+            "A/B MIX",
+            &[
                 ControlSpec::slider(0),                         // mix (A/B)
                 ControlSpec::button_set(1, &["Pot", "Binary"]), // mix_mode
                 ControlSpec::button_set(2, &["A", "B"]),        // selected_path
@@ -122,23 +123,25 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::toggle(13),                        // difference_mode
                 ControlSpec::knob(8),                           // mix_transition_ms
             ],
-        },
-        ControlGroup {
-            title: "PHASE",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "PHASE",
+            "PHASE",
+            &[
                 ControlSpec::toggle(11), // phase_invert_a
                 ControlSpec::toggle(12), // phase_invert_b
             ],
-        },
-        ControlGroup {
-            title: "AUTO GAIN",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "AUTO GAIN",
+            "AUTO GAIN",
+            &[
                 ControlSpec::toggle(4),   // auto_gain
                 ControlSpec::selector(5), // loudness_type
                 ControlSpec::knob(6),     // max_auto_gain
                 ControlSpec::knob(7),     // gain_smoothing
             ],
-        },
+        ),
     ],
     output: &[],
     tabs: &[TabSpec {

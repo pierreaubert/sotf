@@ -237,35 +237,39 @@ pub const PARAMS: &[ParamSpec] = &[
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[ControlSpec::toggle(5)],
     main: &[
-        ControlGroup {
-            title: "REDUCTION",
-            controls: &[
+        ControlGroup::new(
+            "REDUCTION",
+            "REDUCTION",
+            &[
                 ControlSpec::slider(0),
                 ControlSpec::slider(1),
                 ControlSpec::slider(2),
                 ControlSpec::slider(11),
             ],
-        },
-        ControlGroup {
-            title: "TIMING",
-            controls: &[ControlSpec::knob(3), ControlSpec::knob(4)],
-        },
-        ControlGroup {
-            title: "SPECTRAL SUB",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "TIMING",
+            "TIMING",
+            &[ControlSpec::knob(3), ControlSpec::knob(4)],
+        ),
+        ControlGroup::new(
+            "SPECTRAL SUB",
+            "SPECTRAL SUB",
+            &[
                 ControlSpec::toggle(17),
                 ControlSpec::knob(18),
                 ControlSpec::knob(19),
             ],
-        },
-        ControlGroup {
-            title: "NOISE PROFILE",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "NOISE PROFILE",
+            "NOISE PROFILE",
+            &[
                 ControlSpec::toggle(20),
                 ControlSpec::toggle(21),
                 ControlSpec::toggle(22),
             ],
-        },
+        ),
     ],
     output: &[],
     tabs: &[

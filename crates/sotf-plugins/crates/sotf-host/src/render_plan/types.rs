@@ -25,6 +25,10 @@ pub struct PluginRenderPlan {
     pub show_visualizations: bool,
     pub columns_visible: Vec<String>,
     pub columns_collapsed: Vec<String>,
+    /// Stable IDs of main groups rendered on the primary surface.
+    pub visible_group_ids: Vec<String>,
+    /// Stable IDs of main groups rendered in responsive overflow.
+    pub overflow_group_ids: Vec<String>,
 
     // Controls by column
     pub config_controls: Vec<ControlPlan>,
@@ -49,6 +53,7 @@ pub struct ControlPlan {
 /// A named group of controls.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct GroupPlan {
+    pub id: String,
     pub title: String,
     pub controls: Vec<ControlPlan>,
 }
@@ -78,6 +83,7 @@ pub struct DynamicSectionPlan {
 
 pub(super) fn group_to_plan(group: &ControlGroup, params: &[ParamSpec]) -> GroupPlan {
     GroupPlan {
+        id: group.id.to_string(),
         title: group.title.to_string(),
         controls: controls_to_plans(group.controls, params),
     }

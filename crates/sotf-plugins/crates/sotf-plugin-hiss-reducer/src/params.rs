@@ -35,15 +35,16 @@ pub const PARAMS: &[ParamSpec] = &[
 
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
-    main: &[ControlGroup {
-        title: "HISS",
-        controls: &[
+    main: &[ControlGroup::new(
+        "HISS",
+        "HISS",
+        &[
             ControlSpec::toggle(0),
             ControlSpec::knob(1),
             ControlSpec::knob(2),
             ControlSpec::slider(3),
         ],
-    }],
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],

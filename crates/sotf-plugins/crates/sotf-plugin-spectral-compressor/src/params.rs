@@ -110,21 +110,23 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::knob(11),    // adaptive_offset_db
     ],
     main: &[
-        ControlGroup {
-            title: "DYNAMICS",
-            controls: &[
+        ControlGroup::new(
+            "DYNAMICS",
+            "DYNAMICS",
+            &[
                 ControlSpec::slider(1), // threshold
                 ControlSpec::slider(2), // ratio
                 ControlSpec::slider(5), // knee
             ],
-        },
-        ControlGroup {
-            title: "TIMING",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "TIMING",
+            "TIMING",
+            &[
                 ControlSpec::slider(3), // attack
                 ControlSpec::slider(4), // release
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::knob(7), // mix

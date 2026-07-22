@@ -79,22 +79,24 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::selector(6), // mode
     ],
     main: &[
-        ControlGroup {
-            title: "DETECTION",
-            controls: &[
+        ControlGroup::new(
+            "detection",
+            "DETECTION",
+            &[
                 ControlSpec::slider(0), // frequency
                 ControlSpec::slider(1), // q
             ],
-        },
-        ControlGroup {
-            title: "DYNAMICS",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "dynamics",
+            "DYNAMICS",
+            &[
                 ControlSpec::slider(2), // threshold
                 ControlSpec::slider(3), // ratio
                 ControlSpec::slider(4), // attack
                 ControlSpec::slider(5), // release
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::meter(-30.0, 0.0), // GR meter

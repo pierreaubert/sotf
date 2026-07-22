@@ -10,7 +10,7 @@ use super::types::group_to_plan;
 use super::types::tab_to_plan;
 use super::types::viz_to_plan;
 use crate::design_system::DesignSystem;
-use crate::layout_solver::{self};
+use crate::layout_solver::{self, solve_control_groups};
 use crate::param_specs::ParamSpec;
 use crate::plugin_layout::PluginLayout;
 use crate::plugin_params::PluginParamDef;
@@ -45,6 +45,13 @@ pub fn build_render_plan_from_layout(
 ) -> PluginRenderPlan {
     let solved =
         layout_solver::solve_layout_with_ds(layout.column_constraints, available_width, ds);
+    let group_refs: Vec<_> = layout.main.iter().collect();
+    let main_width = solved
+        .column_width(crate::plugin_layout::ColumnRole::Main)
+        .unwrap_or(available_width);
+    let solved_groups = solve_control_groups(&group_refs, main_width).unwrap_or_else(|error| {
+        panic!("invalid control-group layout for plugin '{plugin_type}': {error}")
+    });
 
     PluginRenderPlan {
         plugin_type: plugin_type.to_string(),
@@ -68,6 +75,19 @@ pub fn build_render_plan_from_layout(
             .collapsed_tabs
             .iter()
             .map(|t| format!("{:?}", t.role).to_lowercase())
+            .collect(),
+        visible_group_ids: group_refs
+            .iter()
+            .filter(|group| {
+                solved_groups
+                    .find(group.id)
+                    .is_some_and(|node| node.visible())
+            })
+            .map(|group| group.id.to_string())
+            .collect(),
+        overflow_group_ids: solved_groups
+            .collapsed_slots()
+            .map(|slot| slot.id.to_string())
             .collect(),
         config_controls: controls_to_plans(layout.config, params),
         main_groups: layout
@@ -134,10 +154,8 @@ mod tests {
     ];
 
     static TEST_MAIN_CONTROLS: [ControlSpec; 1] = [ControlSpec::knob(0)];
-    static TEST_MAIN_GROUPS: [ControlGroup; 1] = [ControlGroup {
-        title: "MAIN",
-        controls: &TEST_MAIN_CONTROLS,
-    }];
+    static TEST_MAIN_GROUPS: [ControlGroup; 1] =
+        [ControlGroup::new("main", "MAIN", &TEST_MAIN_CONTROLS)];
     static TEST_OUTPUT_CONTROLS: [ControlSpec; 1] = [ControlSpec::knob(1)];
     static TEST_COLUMN_CONSTRAINTS: [ColumnConstraint; 2] = [
         ColumnConstraint::main(200.0),
@@ -193,6 +211,56 @@ mod tests {
         assert_eq!(plan.slider_height, SLIDER_HEIGHT_COMPACT);
         assert!(!plan.show_visualizations);
         assert!(plan.columns_collapsed.contains(&"output".to_string()));
+    }
+
+    static RESPONSIVE_GROUPS: [ControlGroup; 3] = [
+        ControlGroup::new("primary", "PRIMARY", &TEST_MAIN_CONTROLS),
+        ControlGroup::new("timing", "TIMING", &TEST_MAIN_CONTROLS),
+        ControlGroup::new("metering", "METERING", &TEST_MAIN_CONTROLS),
+    ];
+    static RESPONSIVE_CONSTRAINTS: [ColumnConstraint; 1] = [ColumnConstraint::main(200.0)];
+    static RESPONSIVE_LAYOUT: PluginLayout = PluginLayout {
+        config: &[],
+        main: &RESPONSIVE_GROUPS,
+        output: &[],
+        tabs: &[],
+        visualizations: &[],
+        column_constraints: &RESPONSIVE_CONSTRAINTS,
+        dynamic_sections: &[],
+    };
+
+    #[test]
+    fn responsive_group_id_snapshots_at_standard_widths() {
+        let snapshot = |width| {
+            let plan = build_render_plan_from_layout(
+                "responsive",
+                &TEST_PARAMS,
+                &RESPONSIVE_LAYOUT,
+                width,
+                &DesignSystem::neutral(),
+            );
+            (plan.visible_group_ids, plan.overflow_group_ids)
+        };
+
+        assert_eq!(
+            snapshot(320.0),
+            (
+                vec!["primary".to_string()],
+                vec!["timing".to_string(), "metering".to_string()],
+            )
+        );
+        assert_eq!(
+            snapshot(700.0),
+            (
+                vec![
+                    "primary".to_string(),
+                    "timing".to_string(),
+                    "metering".to_string(),
+                ],
+                vec![],
+            )
+        );
+        assert_eq!(snapshot(1400.0), snapshot(700.0));
     }
 
     static VIZ_LAYOUT_CONSTRAINTS: [ColumnConstraint; 1] = [ColumnConstraint::main(200.0)];
@@ -261,10 +329,8 @@ mod tests {
     }
 
     static METER_CONTROLS: [ControlSpec; 1] = [ControlSpec::meter(-60.0, 0.0)];
-    static METER_GROUPS: [ControlGroup; 1] = [ControlGroup {
-        title: "METERS",
-        controls: &METER_CONTROLS,
-    }];
+    static METER_GROUPS: [ControlGroup; 1] =
+        [ControlGroup::new("meters", "METERS", &METER_CONTROLS)];
     static METER_LAYOUT: PluginLayout = PluginLayout {
         config: &[],
         main: &METER_GROUPS,

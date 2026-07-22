@@ -60,21 +60,3 @@ pub(super) fn extract_file_paths(
     }
     file_paths
 }
-
-pub(super) fn group_column_width(group: &ControlGroup, knob_size: KnobSize) -> f32 {
-    if group
-        .controls
-        .iter()
-        .any(|c| matches!(c.control_type, ControlType::VerticalSlider))
-    {
-        let visible = group.controls.iter().filter(|c| !c.hidden).count().max(1);
-        return 72.0 * visible as f32;
-    }
-
-    let base_width = control_column_width(knob_size);
-    if visible_control_count(group) >= 4 {
-        base_width * 2.0 + 16.0
-    } else {
-        base_width
-    }
-}

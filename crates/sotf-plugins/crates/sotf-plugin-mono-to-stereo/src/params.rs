@@ -64,10 +64,11 @@ pub const PARAMS: &[ParamSpec] = &[
 
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
-    main: &[ControlGroup {
-        title: "",
-        controls: &[ControlSpec::slider(0)], // stereo_width
-    }],
+    main: &[ControlGroup::new(
+        "primary",
+        "",
+        &[ControlSpec::slider(0)], // stereo_width
+    )],
     output: &[],
     tabs: &[TabSpec {
         name: "Advanced",

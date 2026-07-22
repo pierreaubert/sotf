@@ -241,10 +241,96 @@ impl ControlSpec {
 /// A named group of controls rendered together (e.g., "DYNAMICS", "TIMING").
 #[derive(Debug, Clone, Copy)]
 pub struct ControlGroup {
+    /// Stable, non-localized identity used by responsive layout and state.
+    pub id: &'static str,
     /// Section title displayed above the group (e.g., "DYNAMICS").
     pub title: &'static str,
     /// Controls within this group.
     pub controls: &'static [ControlSpec],
+    /// Optional responsive layout overrides.
+    pub layout: GroupLayoutHints,
+}
+
+/// Whether a control group may move into the responsive overflow surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GroupOverflow {
+    /// Allow the constraint solver to collapse this group atomically.
+    #[default]
+    Auto,
+    /// Keep this group visible at every width.
+    KeepVisible,
+}
+
+/// Optional sizing and collapse overrides for a control group.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GroupLayoutHints {
+    /// Minimum visible width. Inferred from control types when omitted.
+    pub min_width: Option<f32>,
+    /// Preferred visible width. Inferred from control types when omitted.
+    pub preferred_width: Option<f32>,
+    /// Priority for staying visible, from 0 (first to collapse) to 1.
+    pub collapse_priority: f32,
+    /// Whether this group may move into overflow.
+    pub overflow: GroupOverflow,
+}
+
+impl GroupLayoutHints {
+    /// Inferred sizing, declaration-order collapse, and automatic overflow.
+    pub const fn inferred() -> Self {
+        Self {
+            min_width: None,
+            preferred_width: None,
+            collapse_priority: 0.5,
+            overflow: GroupOverflow::Auto,
+        }
+    }
+
+    /// Override inferred minimum and preferred widths.
+    pub const fn widths(mut self, min_width: f32, preferred_width: f32) -> Self {
+        self.min_width = Some(min_width);
+        self.preferred_width = Some(preferred_width);
+        self
+    }
+
+    /// Override collapse priority.
+    pub const fn priority(mut self, priority: f32) -> Self {
+        self.collapse_priority = priority;
+        self
+    }
+
+    /// Keep the group on the primary surface at every width.
+    pub const fn keep_visible(mut self) -> Self {
+        self.overflow = GroupOverflow::KeepVisible;
+        self
+    }
+}
+
+impl Default for GroupLayoutHints {
+    fn default() -> Self {
+        Self::inferred()
+    }
+}
+
+impl ControlGroup {
+    /// Define a group with inferred responsive sizing.
+    pub const fn new(
+        id: &'static str,
+        title: &'static str,
+        controls: &'static [ControlSpec],
+    ) -> Self {
+        Self {
+            id,
+            title,
+            controls,
+            layout: GroupLayoutHints::inferred(),
+        }
+    }
+
+    /// Override inferred responsive layout behavior.
+    pub const fn with_layout(mut self, layout: GroupLayoutHints) -> Self {
+        self.layout = layout;
+        self
+    }
 }
 
 /// A tab section at the bottom of the plugin UI.

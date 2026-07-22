@@ -45,6 +45,7 @@ external-plugin-au = [
 ]
 
 [dependencies]
+gpui-builder = { workspace = true }
 gpui-design = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

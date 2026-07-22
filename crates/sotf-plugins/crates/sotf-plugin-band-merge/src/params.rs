@@ -28,10 +28,11 @@ pub const PARAMS: &[ParamSpec] = &[ParamSpec::int("Bands", "bands", 2, 2, 8, 1, 
 
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
-    main: &[ControlGroup {
-        title: "MERGE CONFIG",
-        controls: &[ControlSpec::knob(0)], // bands
-    }],
+    main: &[ControlGroup::new(
+        "merge-config",
+        "MERGE CONFIG",
+        &[ControlSpec::knob(0)], // bands
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],

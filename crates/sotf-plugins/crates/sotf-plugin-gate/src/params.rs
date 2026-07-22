@@ -146,25 +146,27 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::toggle(10),  // sidechain_external
     ],
     main: &[
-        ControlGroup {
-            title: "DYNAMICS",
-            controls: &[
+        ControlGroup::new(
+            "DYNAMICS",
+            "DYNAMICS",
+            &[
                 ControlSpec::slider(0),  // threshold
                 ControlSpec::slider(1),  // ratio
                 ControlSpec::slider(11), // range_db
                 ControlSpec::slider(12), // hysteresis_db
                 ControlSpec::slider(13), // knee_db
             ],
-        },
-        ControlGroup {
-            title: "TIMING",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "TIMING",
+            "TIMING",
+            &[
                 ControlSpec::slider(2), // attack
                 ControlSpec::slider(3), // hold
                 ControlSpec::slider(4), // release
                 ControlSpec::knob(14),  // lookahead_ms
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::meter(-30.0, 0.0), // GR meter

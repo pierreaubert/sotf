@@ -50,13 +50,14 @@ pub const PARAMS: &[ParamSpec] = &[
 
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[ControlSpec::toggle(0)], // enabled
-    main: &[ControlGroup {
-        title: "",
-        controls: &[
+    main: &[ControlGroup::new(
+        "primary",
+        "",
+        &[
             ControlSpec::knob(1), // dim_gain_db
             ControlSpec::knob(2), // fade_ms
         ],
-    }],
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],

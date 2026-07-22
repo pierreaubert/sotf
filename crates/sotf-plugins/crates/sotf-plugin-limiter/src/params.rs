@@ -91,20 +91,22 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::toggle(9),
     ], // soft_knee, true_peak, isp_mode, dual_release, feed_forward
     main: &[
-        ControlGroup {
-            title: "DYNAMICS",
-            controls: &[
+        ControlGroup::new(
+            "DYNAMICS",
+            "DYNAMICS",
+            &[
                 ControlSpec::slider(0), // threshold (ceiling)
                 ControlSpec::slider(8), // link_amount
             ],
-        },
-        ControlGroup {
-            title: "TIMING",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "TIMING",
+            "TIMING",
+            &[
                 ControlSpec::slider(1), // release
                 ControlSpec::slider(2), // lookahead
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::meter(-20.0, 0.0), // GR meter (limiter range)

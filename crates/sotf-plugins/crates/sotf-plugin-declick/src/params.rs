@@ -21,10 +21,11 @@ pub const PARAMS: &[ParamSpec] = &[
 
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
-    main: &[ControlGroup {
-        title: "REPAIR",
-        controls: &[ControlSpec::toggle(0), ControlSpec::knob_large(1)],
-    }],
+    main: &[ControlGroup::new(
+        "REPAIR",
+        "REPAIR",
+        &[ControlSpec::toggle(0), ControlSpec::knob_large(1)],
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],

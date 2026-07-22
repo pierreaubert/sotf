@@ -155,23 +155,25 @@ pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::toggle(15),   // sidechain_external
     ],
     main: &[
-        ControlGroup {
-            title: "DYNAMICS",
-            controls: &[
+        ControlGroup::new(
+            "DYNAMICS",
+            "DYNAMICS",
+            &[
                 ControlSpec::slider(0),
                 ControlSpec::slider(1),
                 ControlSpec::slider(4),
             ],
-        },
-        ControlGroup {
-            title: "TIMING",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "TIMING",
+            "TIMING",
+            &[
                 ControlSpec::slider(2),
                 ControlSpec::slider(3),
                 ControlSpec::knob(12),
                 ControlSpec::toggle(13),
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::meter(-30.0, 0.0),
@@ -339,23 +341,25 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::slider(15),  // sidechain_tilt_db
     ],
     main: &[
-        ControlGroup {
-            title: "DYNAMICS",
-            controls: &[
+        ControlGroup::new(
+            "DYNAMICS",
+            "DYNAMICS",
+            &[
                 ControlSpec::slider(6),  // threshold
                 ControlSpec::slider(7),  // ratio
                 ControlSpec::slider(10), // knee
             ],
-        },
-        ControlGroup {
-            title: "TIMING",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "TIMING",
+            "TIMING",
+            &[
                 ControlSpec::slider(8),  // attack
                 ControlSpec::slider(9),  // release
                 ControlSpec::knob(13),   // lookahead
                 ControlSpec::toggle(14), // ms_mode
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::meter(-30.0, 0.0), // GR meter

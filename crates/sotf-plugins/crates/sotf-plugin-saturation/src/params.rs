@@ -124,27 +124,30 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::toggle(11),  // use_adaa
     ],
     main: &[
-        ControlGroup {
-            title: "SATURATION",
-            controls: &[
+        ControlGroup::new(
+            "SATURATION",
+            "SATURATION",
+            &[
                 ControlSpec::slider(1), // drive
                 ControlSpec::slider(2), // tone
             ],
-        },
-        ControlGroup {
-            title: "EXCITER",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "EXCITER",
+            "EXCITER",
+            &[
                 ControlSpec::slider(3), // exciter_freq
             ],
-        },
-        ControlGroup {
-            title: "DYNAMIC",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "DYNAMIC",
+            "DYNAMIC",
+            &[
                 ControlSpec::slider(7), // dynamic_amount
                 ControlSpec::slider(8), // dynamic_attack_ms
                 ControlSpec::slider(9), // dynamic_release_ms
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::knob(5), // output_gain

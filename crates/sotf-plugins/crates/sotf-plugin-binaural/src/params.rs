@@ -100,14 +100,15 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::file_picker(0), // sofa_file
         ControlSpec::label(1),       // input_channels (read-only)
     ],
-    main: &[ControlGroup {
-        title: "CONTROLS",
-        controls: &[
+    main: &[ControlGroup::new(
+        "CONTROLS",
+        "CONTROLS",
+        &[
             ControlSpec::knob(2),     // externalization
             ControlSpec::knob(3),     // near_field_strength
             ControlSpec::selector(4), // crossfade_mode
         ],
-    }],
+    )],
     output: &[],
     tabs: &[TabSpec {
         name: "Reverb",

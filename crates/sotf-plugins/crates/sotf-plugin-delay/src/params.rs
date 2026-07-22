@@ -74,15 +74,16 @@ pub const PARAMS: &[ParamSpec] = &[
 
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
-    main: &[ControlGroup {
-        title: "",
-        controls: &[
+    main: &[ControlGroup::new(
+        "primary",
+        "",
+        &[
             ControlSpec::slider(0), // delay_ms
             ControlSpec::slider(1), // feedback
             ControlSpec::knob(5),   // allpass_coeff
             ControlSpec::toggle(6), // allpass_feedback
         ],
-    }],
+    )],
     output: &[ControlSpec::knob(2)], // mix
     tabs: &[TabSpec {
         name: "Modulation",

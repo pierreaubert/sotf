@@ -100,15 +100,16 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::toggle(4), // phase_coherence
         ControlSpec::toggle(7), // itu_mode
     ],
-    main: &[ControlGroup {
-        title: "CHANNEL GAINS",
-        controls: &[
+    main: &[ControlGroup::new(
+        "CHANNEL GAINS",
+        "CHANNEL GAINS",
+        &[
             ControlSpec::knob(0), // center_gain_db
             ControlSpec::knob(1), // surround_gain_db
             ControlSpec::knob(2), // height_gain_db
             ControlSpec::knob(3), // lfe_gain_db
         ],
-    }],
+    )],
     output: &[],
     tabs: &[TabSpec {
         name: "Phase",

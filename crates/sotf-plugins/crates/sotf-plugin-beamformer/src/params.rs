@@ -67,13 +67,14 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::slider(0), // num_mics
         ControlSpec::slider(1), // mic_spacing_cm
     ],
-    main: &[ControlGroup {
-        title: "",
-        controls: &[
+    main: &[ControlGroup::new(
+        "primary",
+        "",
+        &[
             ControlSpec::slider(2),   // steer_angle_deg
             ControlSpec::selector(3), // beamformer_type
         ],
-    }],
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],

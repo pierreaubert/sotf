@@ -20,3 +20,28 @@ mod render;
 mod types;
 
 pub use render::*;
+use sotf_audio_player::PluginSettings;
+use sotf_plugins::layout_solver::solve_layout;
+use sotf_plugins::plugin_layout::ColumnRole;
+
+/// Whether the generated layout currently has atomic groups in overflow.
+pub(super) fn generated_layout_has_overflow(
+    settings: &PluginSettings,
+    available_width: f32,
+) -> bool {
+    let Some(layout) = settings.layout() else {
+        return false;
+    };
+    let params = settings.param_specs();
+    let values: Vec<_> = (0..params.len())
+        .map(|index| settings.param_value(index).unwrap_or(0.0))
+        .collect();
+    let solved_columns = solve_layout(layout.column_constraints, available_width);
+    let main_width = solved_columns
+        .column_width(ColumnRole::Main)
+        .unwrap_or(available_width);
+    let mode = mode_selector_info::detect_mode_selector(layout, params);
+    !mode_selector_info::solve_main_groups(layout, &values, mode.as_ref(), main_width)
+        .1
+        .is_empty()
+}

@@ -288,32 +288,36 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::selector(27), // head_model
     ],
     main: &[
-        ControlGroup {
-            title: "BETA",
-            controls: &[
+        ControlGroup::new(
+            "BETA",
+            "BETA",
+            &[
                 ControlSpec::knob(7), // beta_base
                 ControlSpec::knob(8), // beta_low_boost
                 ControlSpec::knob(9), // beta_high_boost
             ],
-        },
-        ControlGroup {
-            title: "SHADOW",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "SHADOW",
+            "SHADOW",
+            &[
                 ControlSpec::knob(10), // shadow_cutoff
                 ControlSpec::knob(11), // shadow_slope
                 ControlSpec::knob(12), // max_gain
             ],
-        },
-        ControlGroup {
-            title: "ADVANCED",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "ADVANCED",
+            "ADVANCED",
+            &[
                 ControlSpec::toggle(13), // spectral_norm
                 ControlSpec::toggle(14), // pinna_model
             ],
-        },
-        ControlGroup {
-            title: "ROOM",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "ROOM",
+            "ROOM",
+            &[
                 ControlSpec::toggle(15),      // room_reflections
                 ControlSpec::file_picker(16), // room_ir_file
                 ControlSpec::knob(17),        // room_width
@@ -321,7 +325,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::knob(19),        // wall_absorption
                 ControlSpec::knob(20),        // reflection_beta
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::toggle(21), // bypass_xtc (diagnostic)

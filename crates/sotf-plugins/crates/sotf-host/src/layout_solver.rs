@@ -13,6 +13,7 @@
 //! 6. Determine internal adaptations (slider height, group direction, viz visibility)
 
 mod consts;
+mod group;
 mod misc;
 mod solve;
 mod solved_layout;
@@ -21,6 +22,7 @@ mod tests;
 mod types;
 
 pub use consts::*;
+pub use group::*;
 pub use solve::*;
 pub use solved_layout::*;
 pub use types::*;

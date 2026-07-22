@@ -130,24 +130,26 @@ pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::selector(13), // detection_mode
     ],
     main: &[
-        ControlGroup {
-            title: "DYNAMICS",
-            controls: &[
+        ControlGroup::new(
+            "DYNAMICS",
+            "DYNAMICS",
+            &[
                 ControlSpec::slider(0),
                 ControlSpec::slider(1),
                 ControlSpec::slider(4),
                 ControlSpec::slider(5),
             ],
-        },
-        ControlGroup {
-            title: "TIMING",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "TIMING",
+            "TIMING",
+            &[
                 ControlSpec::slider(2),
                 ControlSpec::slider(3),
                 ControlSpec::slider(7),
                 ControlSpec::knob(12), // lookahead_ms
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::meter(-30.0, 0.0),
@@ -311,34 +313,37 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::selector(16), // detection_mode
     ],
     main: &[
-        ControlGroup {
-            title: "CROSSOVERS",
-            controls: &[
+        ControlGroup::new(
+            "CROSSOVERS",
+            "CROSSOVERS",
+            &[
                 ControlSpec::knob(2), // crossover_freq_1
                 ControlSpec::knob(3), // crossover_freq_2
                 ControlSpec::knob(4), // crossover_freq_3
                 ControlSpec::knob(5), // crossover_freq_4
             ],
-        },
-        ControlGroup {
-            title: "DYNAMICS",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "DYNAMICS",
+            "DYNAMICS",
+            &[
                 ControlSpec::slider(6),  // threshold
                 ControlSpec::slider(7),  // ratio
                 ControlSpec::slider(10), // range
                 ControlSpec::slider(11), // knee
             ],
-        },
-        ControlGroup {
-            title: "TIMING",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "TIMING",
+            "TIMING",
+            &[
                 ControlSpec::slider(8),  // attack
                 ControlSpec::slider(9),  // release
                 ControlSpec::slider(13), // hold
                 ControlSpec::slider(12), // hysteresis
                 ControlSpec::knob(17),   // lookahead_ms
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::knob(14), // mix

@@ -141,49 +141,55 @@ pub const PARAMS: &[ParamSpec] = &[
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
     main: &[
-        ControlGroup {
-            title: "",
-            controls: &[
+        ControlGroup::new(
+            "mode-selector",
+            "",
+            &[
                 ControlSpec::selector(11), // mode
             ],
-        },
-        ControlGroup {
-            title: "ISO 226",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "ISO 226",
+            "ISO 226",
+            &[
                 ControlSpec::knob(12), // playback_level_db
                 ControlSpec::knob(13), // reference_level_db
             ],
-        },
-        ControlGroup {
-            title: "AUTO",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "AUTO",
+            "AUTO",
+            &[
                 ControlSpec::label(14), // playback_volume_db (engine-set, read-only)
                 ControlSpec::knob(13),  // reference_level_db (shared with ISO 226)
             ],
-        },
-        ControlGroup {
-            title: "LOW",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "LOW",
+            "LOW",
+            &[
                 ControlSpec::knob(0), // low_freq
                 ControlSpec::knob(1), // low_gain
             ],
-        },
-        ControlGroup {
-            title: "MID",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "MID",
+            "MID",
+            &[
                 ControlSpec::toggle(4), // mid_enabled
                 ControlSpec::knob(5),   // mid_freq
                 ControlSpec::knob(6),   // mid_gain
                 ControlSpec::knob(7),   // mid_q
             ],
-        },
-        ControlGroup {
-            title: "HIGH",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "HIGH",
+            "HIGH",
+            &[
                 ControlSpec::knob(2), // high_freq
                 ControlSpec::knob(3), // high_gain
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::toggle(8), // auto_gain_enabled

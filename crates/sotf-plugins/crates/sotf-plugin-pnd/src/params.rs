@@ -84,22 +84,24 @@ pub const PARAMS: &[ParamSpec] = &[
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
     main: &[
-        ControlGroup {
-            title: "CORRECTION",
-            controls: &[
+        ControlGroup::new(
+            "CORRECTION",
+            "CORRECTION",
+            &[
                 ControlSpec::knob(0),   // correction_strength
                 ControlSpec::knob(4),   // confidence_threshold
                 ControlSpec::toggle(5), // phase_vocoder
             ],
-        },
-        ControlGroup {
-            title: "ANALYSIS",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "ANALYSIS",
+            "ANALYSIS",
+            &[
                 ControlSpec::knob(1),   // analysis_window_ms
                 ControlSpec::knob(2),   // drift_smoothing
                 ControlSpec::toggle(3), // multi_channel_analysis
             ],
-        },
+        ),
     ],
     output: &[],
     tabs: &[],

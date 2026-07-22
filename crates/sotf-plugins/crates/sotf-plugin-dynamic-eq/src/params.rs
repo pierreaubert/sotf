@@ -123,16 +123,17 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::slider(0), // num_bands
         ControlSpec::toggle(6), // link_channels
     ],
-    main: &[ControlGroup {
-        title: "DYNAMICS",
-        controls: &[
+    main: &[ControlGroup::new(
+        "DYNAMICS",
+        "DYNAMICS",
+        &[
             ControlSpec::slider(1), // threshold
             ControlSpec::slider(2), // ratio
             ControlSpec::slider(3), // attack
             ControlSpec::slider(4), // release
             ControlSpec::slider(5), // knee
         ],
-    }],
+    )],
     output: &[
         ControlSpec::meter(-30.0, 0.0), // GR meter
         ControlSpec::knob(7),           // mix

@@ -553,23 +553,25 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::toggle(43),  // binaural_preview
     ],
     main: &[
-        ControlGroup {
-            title: "GAINS",
-            controls: &[
+        ControlGroup::new(
+            "GAINS",
+            "GAINS",
+            &[
                 ControlSpec::slider(1), // front_direct
                 ControlSpec::slider(2), // front_ambient
                 ControlSpec::slider(3), // rear_ambient
                 ControlSpec::slider(4), // height_gain
             ],
-        },
-        ControlGroup {
-            title: "SPATIAL",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "SPATIAL",
+            "SPATIAL",
+            &[
                 ControlSpec::slider(12), // stereo_width
                 ControlSpec::slider(13), // center_spread
                 ControlSpec::slider(14), // bandpass_hz
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::knob(34),   // safety_cap_db

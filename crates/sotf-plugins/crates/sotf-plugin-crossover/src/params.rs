@@ -45,10 +45,11 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::button_set(0, &["LR24", "LinearPhase"]),
         ControlSpec::button_set(2, &["Lowpass", "Highpass", "Both"]),
     ],
-    main: &[ControlGroup {
-        title: "CROSSOVER",
-        controls: &[ControlSpec::knob_large(1)],
-    }],
+    main: &[ControlGroup::new(
+        "CROSSOVER",
+        "CROSSOVER",
+        &[ControlSpec::knob_large(1)],
+    )],
     output: &[],
     tabs: &[TabSpec {
         name: "Linear Phase",

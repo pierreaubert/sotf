@@ -64,13 +64,14 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::knob(2), // sensitivity
     ],
-    main: &[ControlGroup {
-        title: "SHAPE",
-        controls: &[
+    main: &[ControlGroup::new(
+        "SHAPE",
+        "SHAPE",
+        &[
             ControlSpec::slider(0), // attack
             ControlSpec::slider(1), // sustain
         ],
-    }],
+    )],
     output: &[
         ControlSpec::knob(3), // output_gain
         ControlSpec::knob(4), // mix

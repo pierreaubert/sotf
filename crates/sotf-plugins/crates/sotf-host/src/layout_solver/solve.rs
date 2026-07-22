@@ -1,160 +1,188 @@
 use super::misc::tab_name_for_role;
 use super::solved_layout::SolvedLayout;
-use super::types::CollapsedTab;
-use super::types::Direction;
-use super::types::KnobSize;
-use super::types::Orientation;
-use super::types::SolvedColumn;
+use super::types::{CollapsedTab, Direction, KnobSize, Orientation, SolvedColumn};
 use crate::design_system::DesignSystem;
 use crate::plugin_layout::{ColumnConstraint, ColumnRole};
+use gpui_builder::{
+    ColumnRole as BuilderColumnRole, GroupDirection as BuilderGroupDirection,
+    KnobSize as BuilderKnobSize, PluginColumnConstraint, PluginLayoutThresholds, PluginLayoutTree,
+    plugin_adaptations,
+};
+use gpui_builder::{LayoutPreferences, solve};
 
-/// Solve the layout using the neutral design system (backward-compat wrapper).
+/// Solve the layout using the neutral design system (backward-compatible API).
+///
+/// This is now a compatibility wrapper over the generic `gpui-builder`
+/// constraint solver, preserving the existing `SolvedLayout` public shape.
 pub fn solve_layout(constraints: &[ColumnConstraint], available_width: f32) -> SolvedLayout {
     solve_layout_with_ds(constraints, available_width, &DesignSystem::neutral())
 }
 
 /// Solve the layout for the given constraints, available space, and design system.
-///
-/// Returns a `SolvedLayout` describing which columns are visible, which
-/// became tabs, and what internal adaptations to apply.
 pub fn solve_layout_with_ds(
     constraints: &[ColumnConstraint],
     available_width: f32,
     ds: &DesignSystem,
 ) -> SolvedLayout {
-    let lt = &ds.layout;
-
-    // 1. Vertical mode: all collapsible columns become tabs
-    if available_width < lt.vertical_threshold {
-        return solve_vertical(constraints, available_width, ds);
-    }
-
-    // 2. Find the Main column (never collapses)
-    let main_constraint = constraints
+    let converted: Vec<_> = constraints.iter().map(convert_constraint).collect();
+    let tree = PluginLayoutTree::from_constraints(&converted);
+    let source = tree.as_layout_node();
+    let main_min = constraints
         .iter()
-        .find(|c| c.role == ColumnRole::Main)
-        .copied();
+        .find(|constraint| constraint.role == ColumnRole::Main)
+        .map_or(300.0, |constraint| constraint.min_width);
+    let vertical = available_width < ds.layout.vertical_threshold;
+    let solve_width = if vertical {
+        available_width.min(main_min)
+    } else {
+        available_width
+    };
+    let solved = solve(
+        &source,
+        solve_width.max(0.0),
+        1.0,
+        &LayoutPreferences::default(),
+    );
+    let thresholds = PluginLayoutThresholds {
+        vertical_threshold: ds.layout.vertical_threshold,
+        group_stack_threshold: ds.layout.group_stack_threshold,
+        compact_slider_threshold: ds.layout.compact_slider_threshold,
+        hide_viz_threshold: ds.layout.hide_viz_threshold,
+        compact_knob_threshold: ds.layout.compact_knob_threshold,
+        large_knob_threshold: ds.layout.large_knob_threshold,
+        slider_height_normal: ds.layout.slider_height_normal,
+        slider_height_compact: ds.layout.slider_height_compact,
+    };
+    let adaptations = plugin_adaptations(&solved, &thresholds);
 
-    let main_min = main_constraint.map_or(300.0, |c| c.min_width);
-
-    // 3. Collect collapsible columns, sorted by priority ascending (lowest collapses first)
-    let mut collapsible: Vec<&ColumnConstraint> =
-        constraints.iter().filter(|c| c.collapsible).collect();
-    collapsible.sort_by(|a, b| {
-        a.priority
-            .partial_cmp(&b.priority)
+    let order = [
+        ColumnRole::Config,
+        ColumnRole::Diagnostic,
+        ColumnRole::Output,
+    ];
+    let mut collapsed_tabs = Vec::new();
+    let mut visible_sidebars: Vec<_> = constraints
+        .iter()
+        .filter(|constraint| constraint.role != ColumnRole::Main)
+        .filter(|constraint| {
+            solved
+                .find(role_id(constraint.role))
+                .is_some_and(|node| node.visible)
+        })
+        .collect();
+    visible_sidebars.sort_by(|a, b| {
+        b.priority
+            .partial_cmp(&a.priority)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-
-    // 4. Greedily allocate space: try to fit columns from highest priority down
-    let mut remaining = available_width - main_min;
-    let mut visible: Vec<SolvedColumn> = Vec::new();
-    let mut collapsed: Vec<CollapsedTab> = Vec::new();
-
-    // Process from highest priority to lowest (reverse order since sorted ascending)
-    for constraint in collapsible.iter().rev() {
+    let mut remaining = (available_width - main_min).max(0.0);
+    let mut allocated_sidebars = Vec::with_capacity(visible_sidebars.len());
+    for constraint in visible_sidebars {
         if remaining >= constraint.min_width {
-            let allocated = constraint.preferred_width.min(remaining);
-            remaining -= allocated;
-            visible.push(SolvedColumn {
-                role: constraint.role,
-                width: allocated,
-            });
-        } else {
-            collapsed.push(CollapsedTab {
-                role: constraint.role,
-                name: tab_name_for_role(constraint.role),
+            let width = constraint.preferred_width.min(remaining);
+            remaining -= width;
+            allocated_sidebars.push((constraint.role, width));
+        }
+    }
+
+    for role in order {
+        let id = role_id(role);
+        let Some(node) = solved.find(id) else {
+            continue;
+        };
+        if !node.visible
+            || !allocated_sidebars
+                .iter()
+                .any(|(allocated_role, _)| *allocated_role == role)
+        {
+            collapsed_tabs.push(CollapsedTab {
+                role,
+                name: tab_name_for_role(role),
             });
         }
     }
 
-    // 5. Main gets all remaining space (flex), but at least min_width
-    let main_width = (main_min + remaining).max(main_min);
-
-    // 6. Build final column order: Config (left) → Main (center) → Diagnostic → Output (right)
-    let mut columns = Vec::with_capacity(visible.len() + 1);
-    if let Some(pos) = visible.iter().position(|c| c.role == ColumnRole::Config) {
-        columns.push(visible[pos]);
+    let main_width = if vertical {
+        available_width.max(main_min)
+    } else {
+        main_min + remaining
+    };
+    let sidebar_width = |role| {
+        allocated_sidebars
+            .iter()
+            .find_map(|(candidate, width)| (*candidate == role).then_some(*width))
+    };
+    let mut columns = Vec::with_capacity(allocated_sidebars.len() + 1);
+    if let Some(width) = sidebar_width(ColumnRole::Config) {
+        columns.push(SolvedColumn {
+            role: ColumnRole::Config,
+            width,
+        });
     }
     columns.push(SolvedColumn {
         role: ColumnRole::Main,
         width: main_width,
     });
-    if let Some(pos) = visible
-        .iter()
-        .position(|c| c.role == ColumnRole::Diagnostic)
-    {
-        columns.push(visible[pos]);
-    }
-    if let Some(pos) = visible.iter().position(|c| c.role == ColumnRole::Output) {
-        columns.push(visible[pos]);
+    for role in [ColumnRole::Diagnostic, ColumnRole::Output] {
+        if let Some(width) = sidebar_width(role) {
+            columns.push(SolvedColumn { role, width });
+        }
     }
 
-    // 7. Internal adaptations — use main_width (not available_width) for decisions
-    //    about main-column content, since sidebars consume part of available_width.
-    let group_direction = if main_width < lt.group_stack_threshold {
+    let group_direction = if vertical {
         Direction::Column
     } else {
-        Direction::Row
+        match adaptations.group_direction {
+            BuilderGroupDirection::Row => Direction::Row,
+            BuilderGroupDirection::Column => Direction::Column,
+        }
     };
-
-    let slider_height = if main_width < lt.compact_slider_threshold {
-        lt.slider_height_compact
-    } else {
-        lt.slider_height_normal
-    };
-
-    let show_visualizations = main_width >= lt.hide_viz_threshold;
-
-    let knob_size = if main_width < lt.compact_knob_threshold {
-        KnobSize::Xs
-    } else if main_width >= lt.large_knob_threshold {
-        KnobSize::Md
-    } else {
-        KnobSize::Sm
+    let knob_size = match adaptations.knob_size {
+        BuilderKnobSize::Xs => KnobSize::Xs,
+        BuilderKnobSize::Sm => KnobSize::Sm,
+        BuilderKnobSize::Md => KnobSize::Md,
     };
 
     SolvedLayout {
         columns,
-        collapsed_tabs: collapsed,
-        orientation: Orientation::Horizontal,
+        collapsed_tabs,
+        orientation: if vertical {
+            Orientation::Vertical
+        } else {
+            Orientation::Horizontal
+        },
         group_direction,
-        slider_height,
-        show_visualizations,
+        slider_height: if main_width < ds.layout.compact_slider_threshold {
+            ds.layout.slider_height_compact
+        } else {
+            ds.layout.slider_height_normal
+        },
+        show_visualizations: !vertical && main_width >= ds.layout.hide_viz_threshold,
         knob_size,
     }
 }
 
-/// Vertical mode (mobile): only Main visible, everything else becomes tabs.
-fn solve_vertical(
-    constraints: &[ColumnConstraint],
-    available_width: f32,
-    ds: &DesignSystem,
-) -> SolvedLayout {
-    let main_min = constraints
-        .iter()
-        .find(|c| c.role == ColumnRole::Main)
-        .map_or(300.0, |c| c.min_width);
+fn convert_constraint(constraint: &ColumnConstraint) -> PluginColumnConstraint {
+    PluginColumnConstraint {
+        role: match constraint.role {
+            ColumnRole::Config => BuilderColumnRole::Config,
+            ColumnRole::Main => BuilderColumnRole::Main,
+            ColumnRole::Output => BuilderColumnRole::Output,
+            ColumnRole::Diagnostic => BuilderColumnRole::Diagnostic,
+        },
+        min_width: constraint.min_width,
+        preferred_width: constraint.preferred_width,
+        max_width: constraint.max_width,
+        priority: constraint.priority,
+        collapsible: constraint.collapsible,
+    }
+}
 
-    let collapsed: Vec<CollapsedTab> = constraints
-        .iter()
-        .filter(|c| c.collapsible)
-        .map(|c| CollapsedTab {
-            role: c.role,
-            name: tab_name_for_role(c.role),
-        })
-        .collect();
-
-    SolvedLayout {
-        columns: vec![SolvedColumn {
-            role: ColumnRole::Main,
-            width: available_width.max(main_min),
-        }],
-        collapsed_tabs: collapsed,
-        orientation: Orientation::Vertical,
-        group_direction: Direction::Column,
-        slider_height: ds.layout.slider_height_compact,
-        show_visualizations: false,
-        knob_size: KnobSize::Xs,
+fn role_id(role: ColumnRole) -> &'static str {
+    match role {
+        ColumnRole::Config => "config",
+        ColumnRole::Main => "main",
+        ColumnRole::Output => "output",
+        ColumnRole::Diagnostic => "diagnostic",
     }
 }

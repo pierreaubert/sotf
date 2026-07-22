@@ -105,6 +105,13 @@ pub fn render_plugin_content(
         .get(&plugin_idx)
         .copied()
         .unwrap_or(0);
+    let mut auto_overflow_open = state
+        .app
+        .plugin_ui
+        .plugin_auto_overflow_open
+        .get(&plugin_idx)
+        .copied()
+        .unwrap_or(false);
     let auto_config_width = state
         .app
         .plugin_ui
@@ -162,6 +169,22 @@ pub fn render_plugin_content(
     // borrow it.
     let chassis_theme = plugin_theme.apply_to(theme);
 
+    // A controlled overflow surface must not remain logically open after a
+    // resize or mode change makes every group visible again.
+    if auto_overflow_open
+        && settings.layout().is_some()
+        && !ui_layout_renderer::generated_layout_has_overflow(settings, available_width)
+    {
+        auto_overflow_open = false;
+        entity.update(cx, |state, _| {
+            state
+                .app
+                .plugin_ui
+                .plugin_auto_overflow_open
+                .insert(plugin_idx, false);
+        });
+    }
+
     // Check if this plugin has a registered custom view
     let registry = gpui_view_registry();
     let type_key = custom_view_registry::plugin_type_key(settings);
@@ -207,6 +230,7 @@ pub fn render_plugin_content(
             is_editing,
             selected_param,
             auto_tab,
+            auto_overflow_open,
             plugin_data.as_ref(),
             available_width,
             auto_config_width,

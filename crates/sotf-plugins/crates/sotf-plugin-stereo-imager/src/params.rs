@@ -105,31 +105,35 @@ pub const PARAMS: &[ParamSpec] = &[
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
     main: &[
-        ControlGroup {
-            title: "WIDTH",
-            controls: &[ControlSpec::knob_large(0)], // width
-        },
-        ControlGroup {
-            title: "CROSSOVER",
-            controls: &[
+        ControlGroup::new(
+            "width",
+            "WIDTH",
+            &[ControlSpec::knob_large(0)], // width
+        ),
+        ControlGroup::new(
+            "CROSSOVER",
+            "CROSSOVER",
+            &[
                 ControlSpec::knob(1), // low_mid_freq
                 ControlSpec::knob(2), // mid_high_freq
             ],
-        },
-        ControlGroup {
-            title: "BAND WIDTH",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "BAND WIDTH",
+            "BAND WIDTH",
+            &[
                 ControlSpec::knob(3), // low_width
                 ControlSpec::knob(4), // mid_width
                 ControlSpec::knob(5), // high_width
             ],
-        },
-        ControlGroup {
-            title: "OPTIONS",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "OPTIONS",
+            "OPTIONS",
+            &[
                 ControlSpec::toggle(6), // mono_bass
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::knob(7), // mix

@@ -14,7 +14,7 @@ use super::misc::extract_file_paths;
 use super::misc::visible_control_count;
 use super::mode_selector_info::detect_mode_selector;
 use super::mode_selector_info::mode_visible_groups;
-use super::mode_selector_info::partition_main_groups;
+use super::mode_selector_info::solve_main_groups;
 use super::pot::pot_size;
 use super::pot::pot_size_large;
 use super::types::LayoutTabContent;
@@ -30,7 +30,7 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_audio_kit::audio::potentiometer::PotentiometerSize;
-use gpui_ui_kit::PaneDividerTheme;
+use gpui_ui_kit::{AdaptiveOverflow, Button, ButtonSize, ButtonVariant, PaneDividerTheme};
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::layout_solver::{Direction, KnobSize, SolvedLayout, solve_layout};
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
@@ -50,6 +50,7 @@ pub fn render_from_layout(
     is_editing: bool,
     selected_param: usize,
     active_tab: usize,
+    overflow_open: bool,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
     config_width_override: Option<f32>,
@@ -91,6 +92,7 @@ pub fn render_from_layout(
         is_editing,
         selected_param,
         active_tab,
+        overflow_open,
         plugin_data,
         available_width,
         config_width_override,
@@ -141,6 +143,7 @@ pub fn render_main_controls_from_layout(
         is_editing,
         selected_param,
         0,
+        false,
         plugin_data,
         None,
         None,
@@ -291,6 +294,7 @@ fn render_solved_layout(
     is_editing: bool,
     selected_param: usize,
     active_tab: usize,
+    overflow_open: bool,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
     config_width_override: Option<f32>,
@@ -397,6 +401,7 @@ fn render_solved_layout(
         is_editing,
         selected_param,
         active_tab,
+        overflow_open,
         plugin_data,
         spider_snapshot,
         Some(text),
@@ -503,6 +508,7 @@ fn render_main_column(
     is_editing: bool,
     selected_param: usize,
     active_tab: usize,
+    overflow_open: bool,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
     text: Option<PluginCommonTranslations>,
@@ -553,7 +559,7 @@ fn render_main_column(
         }
 
         let (visible_groups, overflow_groups) = if include_tabs {
-            partition_main_groups(layout, values, solved, mode.as_ref(), main_width)
+            solve_main_groups(layout, values, mode.as_ref(), main_width)
         } else {
             (
                 mode_visible_groups(layout, values, mode.as_ref()),
@@ -588,8 +594,61 @@ fn render_main_column(
         }
         center = center.child(container);
 
+        if !overflow_groups.is_empty() {
+            let mut overflow_content = div()
+                .flex()
+                .flex_col()
+                .items_stretch()
+                .gap(d.section)
+                .p(d.card);
+            for group in &overflow_groups {
+                overflow_content = overflow_content.child(render_group(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    group,
+                    layout,
+                    params,
+                    values,
+                    file_paths,
+                    is_editing,
+                    selected_param,
+                    solved,
+                    plugin_data,
+                    theme,
+                    spider_snapshot,
+                    text,
+                ));
+            }
+
+            let overflow_entity = entity.clone();
+            let trigger = Button::new(
+                SharedString::from(format!("plugin-more-trigger-{plugin_idx}")),
+                "More",
+            )
+            .variant(ButtonVariant::Secondary)
+            .size(ButtonSize::Sm);
+            center = center.child(
+                div().w_full().flex().justify_end().child(
+                    AdaptiveOverflow::new(SharedString::from(format!("plugin-more-{plugin_idx}")))
+                        .open(overflow_open)
+                        .trigger(trigger)
+                        .content(overflow_content)
+                        .on_open_change(move |open, _window, cx| {
+                            overflow_entity.update(cx, |state, _| {
+                                state
+                                    .app
+                                    .plugin_ui
+                                    .plugin_auto_overflow_open
+                                    .insert(plugin_idx, open);
+                            });
+                        }),
+                ),
+            );
+        }
+
         let all_tabs = if include_tabs {
-            collect_all_tabs(layout, solved, &overflow_groups)
+            collect_all_tabs(layout, solved, &[])
         } else {
             Vec::new()
         };

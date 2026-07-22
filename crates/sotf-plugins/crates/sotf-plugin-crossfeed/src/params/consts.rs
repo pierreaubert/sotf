@@ -176,39 +176,44 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::toggle(2),   // enabled
     ],
     main: &[
-        ControlGroup {
-            title: "",
-            controls: &[
+        ControlGroup::new(
+            "mode-selector",
+            "",
+            &[
                 ControlSpec::button_set(0, MODE_LABELS), // mode
             ],
-        },
-        ControlGroup {
-            title: "BAUER",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "BAUER",
+            "BAUER",
+            &[
                 ControlSpec::knob(4), // bauer_fcut_hz
                 ControlSpec::knob(5), // bauer_feed_db
             ],
-        },
-        ControlGroup {
-            title: "MEIER",
-            controls: &[ControlSpec::knob(6)], // meier_level
-        },
-        ControlGroup {
-            title: "MULTIBAND",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "meier",
+            "MEIER",
+            &[ControlSpec::knob(6)], // meier_level
+        ),
+        ControlGroup::new(
+            "MULTIBAND",
+            "MULTIBAND",
+            &[
                 ControlSpec::knob(7),  // mb_low_freq_hz
                 ControlSpec::knob(8),  // mb_mid_high_freq_hz
                 ControlSpec::knob(9),  // mb_low_feed_db
                 ControlSpec::knob(10), // mb_mid_feed_db
                 ControlSpec::knob(11), // mb_high_feed_db
             ],
-        },
-        ControlGroup {
-            title: "ITD",
-            controls: &[
+        ),
+        ControlGroup::new(
+            "ITD",
+            "ITD",
+            &[
                 ControlSpec::knob(12), // itd_delay_ms
             ],
-        },
+        ),
     ],
     output: &[
         ControlSpec::knob(14),   // target_lufs
