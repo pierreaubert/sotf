@@ -1,13 +1,12 @@
 use super::types::RemoteCommand;
 use crossbeam::queue::SegQueue;
-use sotf_audio_player::Player;
+use sotf_audio_player_gpui::app::player_handle::PlayerHandle;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::OnceLock;
 
 /// Global handle to the player so C FFI callbacks can control playback.
 /// Set once during app initialization, never changes.
-pub(super) static GLOBAL_PLAYER: OnceLock<Arc<parking_lot::Mutex<Player>>> = OnceLock::new();
+pub(super) static GLOBAL_PLAYER: OnceLock<PlayerHandle> = OnceLock::new();
 
 /// Lock-free queue for remote commands enqueued by native iOS callbacks
 /// (Control Center, lock screen, document picker, QR scanner) and drained by

@@ -9,7 +9,6 @@ impl Screen {
             Screen::Home
             | Screen::HomeShelf
             | Screen::Library
-            | Screen::Streams
             | Screen::NowPlaying
             | Screen::Queue
             | Screen::Spectrum
@@ -23,6 +22,7 @@ impl Screen {
             | Screen::ListeningTest
             | Screen::Studio
             | Screen::RoomEq => ReleaseChannel::Prod,
+            Screen::Streams => ReleaseChannel::Beta,
             Screen::PluginGraph => ReleaseChannel::Alpha,
             Screen::Playlists => ReleaseChannel::Alpha,
         }

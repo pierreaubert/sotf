@@ -51,6 +51,7 @@ CLEAN=false
 ARCH=""
 SOURCE_BINARY=""
 WITH_MOBILE=false
+WITH_EXPERIMENTAL_TVOS=false
 
 DIST_DIR="$PROJECT_ROOT/dist"
 
@@ -67,6 +68,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --with-mobile)
             WITH_MOBILE=true
+            shift
+            ;;
+        --with-experimental-tvos)
+            WITH_MOBILE=true
+            WITH_EXPERIMENTAL_TVOS=true
             shift
             ;;
         --arch)
@@ -92,7 +98,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --universal    Build universal binary (Intel + Apple Silicon)"
             echo "  --arch <arch>  Architecture label for DMG name (e.g., arm64, x86_64)"
             echo "  --binary <path> Package an existing sotf-desktop binary instead of rebuilding"
-            echo "  --with-mobile  Also build iOS and tvOS device .app bundles"
+            echo "  --with-mobile  Also build the iOS device .app bundle"
+            echo "  --with-experimental-tvos  Also build the unreleased tvOS device bundle"
             echo "  --clean        Clean build directory before building"
             echo "  --help         Show this help message"
             echo ""
@@ -480,17 +487,19 @@ build_mobile_apps() {
     (cd "$(dirname "$ios_app")" && zip -r "$ios_zip" "$(basename "$ios_app")" >/dev/null)
     log_success "iOS app zipped: $ios_zip"
 
-    log_info "Building tvOS device app..."
-    just tvos-device
-    local tvos_app="$PROJECT_ROOT/crates/app-tvos/tvos/build/Release-appletvos/SotFTV.app"
-    if [ ! -d "$tvos_app" ]; then
-        log_error "tvOS app not found at $tvos_app"
-        exit 1
+    if $WITH_EXPERIMENTAL_TVOS; then
+        log_warning "Building experimental tvOS bundle; this target is not release-approved"
+        just tvos-device
+        local tvos_app="$PROJECT_ROOT/crates/app-tvos/tvos/build/Release-appletvos/SotFTV.app"
+        if [ ! -d "$tvos_app" ]; then
+            log_error "tvOS app not found at $tvos_app"
+            exit 1
+        fi
+        local tvos_zip="$DIST_DIR/sotf-tvos-${VERSION}-tvos-device.app.zip"
+        rm -f "$tvos_zip"
+        (cd "$(dirname "$tvos_app")" && zip -r "$tvos_zip" "$(basename "$tvos_app")" >/dev/null)
+        log_success "Experimental tvOS app zipped: $tvos_zip"
     fi
-    local tvos_zip="$DIST_DIR/sotf-tvos-${VERSION}-tvos-device.app.zip"
-    rm -f "$tvos_zip"
-    (cd "$(dirname "$tvos_app")" && zip -r "$tvos_zip" "$(basename "$tvos_app")" >/dev/null)
-    log_success "tvOS app zipped: $tvos_zip"
 
     log_success "Mobile apps built"
 }

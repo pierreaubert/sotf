@@ -98,6 +98,16 @@ impl PlayerHandle {
         self.enqueue_result("resume", |player| player.resume())
     }
 
+    pub fn toggle_playback(&self) -> Result<(), PlayerCommandError> {
+        self.enqueue_result("toggle_playback", |player| {
+            if player.is_playing() {
+                player.pause()
+            } else {
+                player.resume()
+            }
+        })
+    }
+
     pub fn stop(&self) -> Result<(), PlayerCommandError> {
         self.enqueue_result("stop", |player| player.stop())
     }

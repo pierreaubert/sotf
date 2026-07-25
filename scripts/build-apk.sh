@@ -3,8 +3,8 @@
 # Build an unsigned APK for the SOTF Android app.
 #
 # Usage:
-#   ./scripts/build-apk.sh
-#   ./scripts/build-apk.sh --clean
+#   ./scripts/build-apk.sh --experimental-placeholder
+#   ./scripts/build-apk.sh --experimental-placeholder --clean
 #
 # Output:
 #   dist/sotf-android-<version>.apk
@@ -32,6 +32,7 @@ JNI_LIBS_DIR="$GRADLE_DIR/app/src/main/jniLibs"
 DIST_DIR="$PROJECT_ROOT/dist"
 
 CLEAN=false
+EXPERIMENTAL_PLACEHOLDER=false
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -51,10 +52,20 @@ usage() {
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --clean)        CLEAN=true; shift ;;
+        --experimental-placeholder)
+            EXPERIMENTAL_PLACEHOLDER=true
+            shift
+            ;;
         --help|-h)      usage; exit 0 ;;
         *) log_error "Unknown option: $1"; usage; exit 1 ;;
     esac
 done
+
+if ! $EXPERIMENTAL_PLACEHOLDER; then
+    log_error "Android is a placeholder shell and is excluded from release artifacts."
+    log_error "Use --experimental-placeholder only for explicit development builds."
+    exit 2
+fi
 
 check_prerequisites() {
     log_info "Checking prerequisites..."

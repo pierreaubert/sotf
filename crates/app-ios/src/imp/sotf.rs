@@ -7,13 +7,13 @@ use super::pending::pending_queue;
 use super::remote_command::push_remote_command;
 use super::types::RemoteCommand;
 use sotf_audio_player::Player;
+use sotf_audio_player_gpui::app::player_handle::PlayerHandle;
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
 use gpui::{AppContext, WindowOptions};
 use std::ffi::{CStr, CString};
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
 use super::assets::Assets;
@@ -217,14 +217,10 @@ pub extern "C" fn sotf_ios_start() {
                     }
 
                     let layout = cx.new(|_| layout_state);
-                    #[allow(clippy::arc_with_non_send_sync)]
-                    // Player is !Send + !Sync because of internal *const pointers used
-                    // by the audio engine. The Arc<Mutex<_>> wrapper is the agreed
-                    // pattern for cross-thread access on this type.
-                    let player_arc = Arc::new(parking_lot::Mutex::new(player));
+                    let player_handle = PlayerHandle::new(player);
 
                     // Store global handle for C FFI callbacks (interruptions, remote commands)
-                    if GLOBAL_PLAYER.set(Arc::clone(&player_arc)).is_err() {
+                    if GLOBAL_PLAYER.set(player_handle.clone()).is_err() {
                         log::error!(
                             "[iOS] GLOBAL_PLAYER already set — re-entry into sotf_ios_start"
                         );
@@ -245,7 +241,7 @@ pub extern "C" fn sotf_ios_start() {
                         AppState {
                             app,
                             layout,
-                            player: player_arc,
+                            player: player_handle,
                         }
                     });
 
@@ -307,7 +303,7 @@ pub extern "C" fn sotf_ios_files_imported(paths_json: *const std::ffi::c_char) {
         if let Some(player) = GLOBAL_PLAYER.get() {
             for path in &path_bufs {
                 log::info!("[iOS]   {}", path.display());
-                let res = player.lock().queue_next(path.clone());
+                let res = player.queue_next(path.clone());
                 if let Err(e) = res {
                     log::warn!("[iOS] queue_next({}) failed: {}", path.display(), e);
                 }
@@ -364,10 +360,10 @@ pub extern "C" fn sotf_ios_audio_interrupted(began: bool) {
 
         if began {
             log::info!("[iOS] Audio interrupted — pausing");
-            let _ = player.lock().pause();
+            let _ = player.pause();
         } else {
             log::info!("[iOS] Audio interruption ended — resuming");
-            let _ = player.lock().resume();
+            let _ = player.resume();
         }
     })
 }
@@ -381,7 +377,7 @@ pub extern "C" fn sotf_ios_audio_route_changed() {
         };
 
         log::info!("[iOS] Audio route changed — pausing");
-        let _ = player.lock().pause();
+        let _ = player.pause();
     })
 }
 
@@ -393,7 +389,7 @@ pub extern "C" fn sotf_ios_remote_play() {
             return;
         };
         log::info!("[iOS] Remote: play");
-        let _ = player.lock().resume();
+        let _ = player.resume();
     })
 }
 
@@ -405,7 +401,7 @@ pub extern "C" fn sotf_ios_remote_pause() {
             return;
         };
         log::info!("[iOS] Remote: pause");
-        let _ = player.lock().pause();
+        let _ = player.pause();
     })
 }
 
@@ -417,19 +413,8 @@ pub extern "C" fn sotf_ios_remote_toggle_play_pause() {
             return;
         };
 
-        // Release the lock between is_playing() and pause()/resume() so that
-        // any re-entrant callback (e.g. route-changed reaching back through
-        // the engine state observer) does not deadlock — `parking_lot::Mutex`
-        // is not reentrant. The tiny TOCTOU window is harmless for a UI
-        // toggle.
-        let is_playing = player.lock().is_playing();
-        if is_playing {
-            log::info!("[iOS] Remote: pause");
-            let _ = player.lock().pause();
-        } else {
-            log::info!("[iOS] Remote: play");
-            let _ = player.lock().resume();
-        }
+        log::info!("[iOS] Remote: toggle playback");
+        let _ = player.toggle_playback();
     })
 }
 
@@ -465,7 +450,7 @@ pub extern "C" fn sotf_ios_remote_seek(position: f64) {
         };
 
         log::info!("[iOS] Remote: seek to {:.1}s", position);
-        let _ = player.lock().seek(position);
+        let _ = player.seek(position);
     })
 }
 

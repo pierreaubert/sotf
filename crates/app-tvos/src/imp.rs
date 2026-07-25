@@ -1,12 +1,12 @@
 use gpui::*;
 use rust_embed::RustEmbed;
 use sotf_audio_player::Player;
+use sotf_audio_player_gpui::app::player_handle::PlayerHandle;
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::ui;
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use std::sync::OnceLock;
 
@@ -16,7 +16,7 @@ unsafe extern "C" {
 }
 
 /// Global handle to the player so C FFI callbacks can control playback.
-static GLOBAL_PLAYER: OnceLock<Arc<parking_lot::Mutex<Player>>> = OnceLock::new();
+static GLOBAL_PLAYER: OnceLock<PlayerHandle> = OnceLock::new();
 
 /// Embedded assets including Lucide SVG icons and brand images
 #[derive(RustEmbed)]
@@ -96,11 +96,10 @@ pub extern "C" fn sotf_tvos_start() {
                 }
 
                 let layout = cx.new(|_| layout_state);
-                #[allow(clippy::arc_with_non_send_sync)]
-                let player_arc = Arc::new(parking_lot::Mutex::new(player));
+                let player_handle = PlayerHandle::new(player);
 
                 // Store global handle for C FFI callbacks
-                GLOBAL_PLAYER.set(Arc::clone(&player_arc)).ok();
+                GLOBAL_PLAYER.set(player_handle.clone()).ok();
 
                 let app_state = cx.new(|_cx| {
                     let mut app = temp_app;
@@ -115,7 +114,7 @@ pub extern "C" fn sotf_tvos_start() {
                     AppState {
                         app,
                         layout,
-                        player: player_arc,
+                        player: player_handle,
                     }
                 });
 
@@ -158,10 +157,10 @@ pub extern "C" fn sotf_tvos_audio_interrupted(began: bool) {
 
     if began {
         log::info!("[tvOS] Audio interrupted — pausing");
-        let _ = player.lock().pause();
+        let _ = player.pause();
     } else {
         log::info!("[tvOS] Audio interruption ended — resuming");
-        let _ = player.lock().resume();
+        let _ = player.resume();
     }
 }
 
@@ -175,7 +174,7 @@ pub extern "C" fn sotf_tvos_remote_play() {
         return;
     };
     log::info!("[tvOS] Remote: play");
-    let _ = player.lock().resume();
+    let _ = player.resume();
 }
 
 #[unsafe(no_mangle)]
@@ -184,7 +183,7 @@ pub extern "C" fn sotf_tvos_remote_pause() {
         return;
     };
     log::info!("[tvOS] Remote: pause");
-    let _ = player.lock().pause();
+    let _ = player.pause();
 }
 
 #[unsafe(no_mangle)]
@@ -197,14 +196,8 @@ pub extern "C" fn sotf_tvos_remote_toggle_play_pause() {
     // any re-entrant callback (e.g. audio interruption reaching back through
     // the engine state observer) does not deadlock — `parking_lot::Mutex` is
     // not reentrant. The tiny TOCTOU window is harmless for a UI toggle.
-    let is_playing = player.lock().is_playing();
-    if is_playing {
-        log::info!("[tvOS] Remote: pause");
-        let _ = player.lock().pause();
-    } else {
-        log::info!("[tvOS] Remote: play");
-        let _ = player.lock().resume();
-    }
+    log::info!("[tvOS] Remote: toggle playback");
+    let _ = player.toggle_playback();
 }
 
 // ============================================================================
