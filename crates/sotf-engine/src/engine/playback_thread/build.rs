@@ -1,4 +1,5 @@
 use super::super::ThreadEvent;
+use super::super::output_dither::{DitheredFromF32, TpdfDither};
 use super::apply::apply_volume_clamp;
 use super::misc::send_playback_event;
 use super::playback_state::PlaybackState;
@@ -91,7 +92,7 @@ pub(super) fn build_output_stream_int<T>(
     mut consumer: Consumer<f32>,
 ) -> Result<Stream, String>
 where
-    T: cpal::SizedSample + cpal::FromSample<f32>,
+    T: DitheredFromF32,
 {
     let state_clone = Arc::clone(&state);
     let error_state = Arc::clone(&state);
@@ -100,6 +101,7 @@ where
     // Pre-allocate scratch buffer (captured by closure, no alloc in callback).
     // 16384 samples covers typical callbacks (256–4096). Process in chunks if larger.
     let mut scratch = vec![0.0f32; 16384];
+    let mut dither = TpdfDither::new(0x706c_6179_6261_636b);
 
     let stream = device
         .build_output_stream(
@@ -120,13 +122,14 @@ where
                         capacity,
                     );
                     apply_volume_clamp(&mut scratch[..chunk_len], &state_clone);
+                    let dither_enabled = !state_clone.muted.load(Ordering::Relaxed);
 
                     // Convert f32 -> target integer type
                     for (out, &s) in data[offset..offset + chunk_len]
                         .iter_mut()
                         .zip(&scratch[..chunk_len])
                     {
-                        *out = T::from_sample(s);
+                        *out = T::from_f32_dithered(s, &mut dither, dither_enabled);
                     }
                     offset += chunk_len;
                 }
