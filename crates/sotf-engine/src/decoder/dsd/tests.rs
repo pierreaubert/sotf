@@ -1,8 +1,9 @@
 use super::consts::DFF_HEADER_LEN;
+use super::consts::DSD_DECODE_CHUNK_FRAMES;
 use super::consts::DSF_HEADER_LEN;
 use super::consts::DSF_ROOT_CHUNK_SIZE;
 use super::dff_pcm_decoder::DffPcmDecoder;
-use super::dsf_pcm_decoder::DsfPcmDecoder;
+use super::dsf_pcm_decoder::{DsfPcmDecoder, dsf_sample};
 use crate::decoder::core::{AudioDecoder, DecodedAudio};
 use crate::decoder::error::AudioDecoderError;
 use crate::decoder::formats::AudioFormat;
@@ -27,13 +28,23 @@ fn chunk_be(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
 }
 
 fn minimal_dsf(channels: u32, sample_count: u64, block_size: u32, payload: &[u8]) -> Vec<u8> {
+    minimal_dsf_with_bit_order(channels, sample_count, block_size, 1, payload)
+}
+
+fn minimal_dsf_with_bit_order(
+    channels: u32,
+    sample_count: u64,
+    block_size: u32,
+    bits_per_sample: u32,
+    payload: &[u8],
+) -> Vec<u8> {
     let mut fmt = Vec::new();
     fmt.extend_from_slice(&1u32.to_le_bytes());
     fmt.extend_from_slice(&0u32.to_le_bytes());
     fmt.extend_from_slice(&2u32.to_le_bytes());
     fmt.extend_from_slice(&channels.to_le_bytes());
     fmt.extend_from_slice(&2_822_400u32.to_le_bytes());
-    fmt.extend_from_slice(&1u32.to_le_bytes());
+    fmt.extend_from_slice(&bits_per_sample.to_le_bytes());
     fmt.extend_from_slice(&sample_count.to_le_bytes());
     fmt.extend_from_slice(&block_size.to_le_bytes());
     fmt.extend_from_slice(&0u32.to_le_bytes());
@@ -106,7 +117,8 @@ fn dsf_pcm_decoder_converts_one_bit_samples_to_pcm_frames() {
     assert_eq!(frames, 1);
     assert_eq!(dest.spec.sample_rate, 44_100);
     assert_eq!(dest.spec.channels, 2);
-    assert_eq!(dest.samples, vec![1.0, -1.0]);
+    assert!(dest.samples[0] > 0.0 && dest.samples[0] <= 1.0);
+    assert!(dest.samples[1] < 0.0 && dest.samples[1] >= -1.0);
     assert_eq!(decoder.position(), 1);
 }
 
@@ -122,7 +134,7 @@ fn dsf_pcm_decoder_seek_and_eof_are_pcm_frame_based() {
     let frames = decoder.decode_into(&mut dest).unwrap();
     assert_eq!(frames, 1);
     assert_eq!(dest.frame_position, 1);
-    assert_eq!(dest.samples, vec![1.0]);
+    assert!(dest.samples[0] > 0.0 && dest.samples[0] <= 1.0);
     assert!(decoder.is_eof());
     assert!(decoder.seek(3).is_err());
 }
@@ -160,7 +172,8 @@ fn dff_pcm_decoder_converts_uncompressed_interleaved_dsd_bytes() {
     assert_eq!(frames, 1);
     assert_eq!(dest.spec.sample_rate, 44_100);
     assert_eq!(dest.spec.channels, 2);
-    assert_eq!(dest.samples, vec![1.0, -1.0]);
+    assert!(dest.samples[0] > 0.0 && dest.samples[0] <= 1.0);
+    assert!(dest.samples[1] < 0.0 && dest.samples[1] >= -1.0);
     assert_eq!(decoder.format(), AudioFormat::DsdDff);
 }
 
@@ -196,4 +209,134 @@ fn dff_pcm_decoder_rejects_dst_compression() {
     assert!(
         matches!(err, AudioDecoderError::UnsupportedFormat(message) if message.contains("DST"))
     );
+}
+
+#[test]
+fn dsf_decoder_honors_lsb_and_msb_bit_order() {
+    let payload = vec![0x01; 64];
+    let lsb_bytes = minimal_dsf_with_bit_order(1, 512, 64, 1, &payload);
+    let msb_bytes = minimal_dsf_with_bit_order(1, 512, 64, 8, &payload);
+    let mut lsb = DsfPcmDecoder::from_bytes(lsb_bytes).unwrap();
+    let mut msb = DsfPcmDecoder::from_bytes(msb_bytes).unwrap();
+    let mut lsb_audio = DecodedAudio::new(lsb.spec().clone());
+    let mut msb_audio = DecodedAudio::new(msb.spec().clone());
+
+    lsb.decode_into(&mut lsb_audio).unwrap();
+    msb.decode_into(&mut msb_audio).unwrap();
+
+    assert!(lsb.lsb_first);
+    assert!(!msb.lsb_first);
+    assert_ne!(lsb_audio.samples, msb_audio.samples);
+
+    assert_eq!(dsf_sample(&[0x01], 1, 1, true, 0, 0, 8), 1.0);
+    assert_eq!(dsf_sample(&[0x01], 1, 1, true, 0, 1, 8), -1.0);
+    assert_eq!(dsf_sample(&[0x01], 1, 1, false, 0, 0, 8), -1.0);
+    assert_eq!(dsf_sample(&[0x01], 1, 1, false, 0, 7, 8), 1.0);
+}
+
+#[test]
+fn dsf_seek_rebuilds_filter_history() {
+    let payload: Vec<u8> = (0..1024)
+        .map(|index| (index as u8).wrapping_mul(73).wrapping_add(19))
+        .collect();
+    let bytes = minimal_dsf(1, 8192, 1024, &payload);
+    let mut sequential = DsfPcmDecoder::from_bytes(bytes.clone()).unwrap();
+    let mut all_audio = DecodedAudio::new(sequential.spec().clone());
+    sequential.decode_into(&mut all_audio).unwrap();
+
+    let mut seeked = DsfPcmDecoder::from_bytes(bytes).unwrap();
+    let mut seek_audio = DecodedAudio::new(seeked.spec().clone());
+    seeked.seek(60).unwrap();
+    seeked.decode_into(&mut seek_audio).unwrap();
+
+    assert_eq!(seek_audio.frame_position, 60);
+    assert!((seek_audio.samples[0] - all_audio.samples[60]).abs() < 1e-6);
+}
+
+#[test]
+fn dsf_filter_state_is_continuous_across_decode_chunks() {
+    let frames = DSD_DECODE_CHUNK_FRAMES + 1;
+    let payload: Vec<u8> = (0..frames * 8)
+        .map(|index| (index as u8).wrapping_mul(29).wrapping_add(7))
+        .collect();
+    let bytes = minimal_dsf(1, frames * 64, payload.len() as u32, &payload);
+    let mut chunked = DsfPcmDecoder::from_bytes(bytes.clone()).unwrap();
+    let mut first = DecodedAudio::new(chunked.spec().clone());
+    let mut second = DecodedAudio::new(chunked.spec().clone());
+    assert_eq!(
+        chunked.decode_into(&mut first).unwrap() as u64,
+        DSD_DECODE_CHUNK_FRAMES
+    );
+    assert_eq!(chunked.decode_into(&mut second).unwrap(), 1);
+
+    let mut seeked = DsfPcmDecoder::from_bytes(bytes).unwrap();
+    let mut reference = DecodedAudio::new(seeked.spec().clone());
+    seeked.seek(DSD_DECODE_CHUNK_FRAMES).unwrap();
+    seeked.decode_into(&mut reference).unwrap();
+
+    assert!((second.samples[0] - reference.samples[0]).abs() < 1e-6);
+}
+
+#[test]
+fn alternating_short_dsf_has_neutral_start_and_eof_padding() {
+    // LSB-first 0x55 is a phase-stable 50%-density stream with zero baseband.
+    let bytes = minimal_dsf(1, 64, 8, &[0x55; 8]);
+    let mut decoder = DsfPcmDecoder::from_bytes(bytes).unwrap();
+    let mut audio = DecodedAudio::new(decoder.spec().clone());
+
+    assert_eq!(decoder.decode_into(&mut audio).unwrap(), 1);
+    assert!(
+        audio.samples[0].abs() < 0.01,
+        "boundary padding injected {}",
+        audio.samples[0]
+    );
+}
+
+#[test]
+fn dsd_parsers_reject_implausible_channel_counts() {
+    let dsf_err = match DsfPcmDecoder::from_bytes(minimal_dsf(65, 64, 8, &[])) {
+        Ok(_) => panic!("implausible DSF channel count should be rejected"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(dsf_err, AudioDecoderError::UnsupportedFormat(message) if message.contains("channel count"))
+    );
+
+    let dff_err = match DffPcmDecoder::from_bytes(minimal_dff(65, &[])) {
+        Ok(_) => panic!("implausible DFF channel count should be rejected"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(dff_err, AudioDecoderError::UnsupportedFormat(message) if message.contains("channel count"))
+    );
+}
+
+#[test]
+fn dsf_rejects_truncated_declared_sample_data() {
+    let err = match DsfPcmDecoder::from_bytes(minimal_dsf(2, 1024, 128, &[0xff; 16])) {
+        Ok(_) => panic!("truncated DSF data should be rejected"),
+        Err(err) => err,
+    };
+    assert!(
+        matches!(err, AudioDecoderError::InvalidFile(message) if message.contains("truncated"))
+    );
+}
+
+#[test]
+fn dff_seek_rebuilds_filter_history() {
+    let payload: Vec<u8> = (0..1024)
+        .map(|index| (index as u8).wrapping_mul(41).wrapping_add(23))
+        .collect();
+    let bytes = minimal_dff(1, &payload);
+    let mut sequential = DffPcmDecoder::from_bytes(bytes.clone()).unwrap();
+    let mut all_audio = DecodedAudio::new(sequential.spec().clone());
+    sequential.decode_into(&mut all_audio).unwrap();
+
+    let mut seeked = DffPcmDecoder::from_bytes(bytes).unwrap();
+    let mut seek_audio = DecodedAudio::new(seeked.spec().clone());
+    seeked.seek(60).unwrap();
+    seeked.decode_into(&mut seek_audio).unwrap();
+
+    assert_eq!(seek_audio.frame_position, 60);
+    assert!((seek_audio.samples[0] - all_audio.samples[60]).abs() < 1e-6);
 }

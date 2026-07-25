@@ -1,4 +1,5 @@
 mod consts;
+mod decimator;
 mod dff_pcm_decoder;
 mod dsf_pcm_decoder;
 mod misc;

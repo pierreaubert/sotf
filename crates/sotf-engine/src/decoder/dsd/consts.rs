@@ -10,6 +10,5 @@ pub(super) const DSD_TO_PCM_DECIMATION: u64 = 64;
 
 pub(super) const DSD_DECODE_CHUNK_FRAMES: u64 = 4096;
 
-pub(super) fn pcm_sample_from_ones(ones: u32) -> f32 {
-    ((ones as f32 * 2.0) - DSD_TO_PCM_DECIMATION as f32) / DSD_TO_PCM_DECIMATION as f32
-}
+/// Defensive limit for decoded DSD channel state and scratch buffers.
+pub(super) const MAX_DSD_CHANNELS: u16 = 64;

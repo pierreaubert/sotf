@@ -3,6 +3,7 @@ use super::consts::DSD_TO_PCM_DECIMATION;
 use super::consts::DSF_FMT_CHUNK_SIZE;
 use super::consts::DSF_HEADER_LEN;
 use super::consts::DSF_ROOT_CHUNK_SIZE;
+use super::consts::MAX_DSD_CHANNELS;
 use super::misc::checked_chunk_size;
 use super::read::read_u16_be;
 use super::read::read_u32_be;
@@ -34,6 +35,7 @@ pub(super) fn parse_dsf(bytes: &[u8]) -> AudioDecoderResult<ParsedDsf> {
     let mut channels = None;
     let mut sample_count = None;
     let mut block_size_per_channel = None;
+    let mut lsb_first = None;
     let mut data = None;
 
     while offset + DSF_HEADER_LEN <= bytes.len() {
@@ -80,6 +82,7 @@ pub(super) fn parse_dsf(bytes: &[u8]) -> AudioDecoderResult<ParsedDsf> {
                         bits_per_sample
                     )));
                 }
+                lsb_first = Some(bits_per_sample == 1);
 
                 sample_rate = Some(read_u32_le(bytes, payload_start + 16)?);
                 channels = Some(u16::try_from(channel_count).map_err(|_| {
@@ -114,6 +117,8 @@ pub(super) fn parse_dsf(bytes: &[u8]) -> AudioDecoderResult<ParsedDsf> {
         .ok_or_else(|| AudioDecoderError::InvalidFile("Missing DSF sample count".into()))?;
     let block_size_per_channel = block_size_per_channel
         .ok_or_else(|| AudioDecoderError::InvalidFile("Missing DSF block size".into()))?;
+    let lsb_first =
+        lsb_first.ok_or_else(|| AudioDecoderError::InvalidFile("Missing DSF bit order".into()))?;
     let data =
         data.ok_or_else(|| AudioDecoderError::InvalidFile("Missing DSF data chunk".into()))?;
 
@@ -121,6 +126,12 @@ pub(super) fn parse_dsf(bytes: &[u8]) -> AudioDecoderResult<ParsedDsf> {
         return Err(AudioDecoderError::InvalidFile(
             "DSF file has zero channels".to_string(),
         ));
+    }
+    if channels > MAX_DSD_CHANNELS {
+        return Err(AudioDecoderError::UnsupportedFormat(format!(
+            "Unsupported DSF channel count {} (maximum {})",
+            channels, MAX_DSD_CHANNELS
+        )));
     }
     if sample_rate < DSD_TO_PCM_DECIMATION as u32 || sample_rate % DSD_TO_PCM_DECIMATION as u32 != 0
     {
@@ -134,12 +145,29 @@ pub(super) fn parse_dsf(bytes: &[u8]) -> AudioDecoderResult<ParsedDsf> {
             "DSF file has zero block size".to_string(),
         ));
     }
+    let block_size = u64::try_from(block_size_per_channel)
+        .map_err(|_| AudioDecoderError::InvalidFile("DSF block size is too large".to_string()))?;
+    let required_data_len = sample_count
+        .div_ceil(8)
+        .div_ceil(block_size)
+        .checked_mul(block_size)
+        .and_then(|bytes| bytes.checked_mul(u64::from(channels)))
+        .ok_or_else(|| AudioDecoderError::InvalidFile("DSF data size overflows".to_string()))?;
+    let actual_data_len = u64::try_from(data.len())
+        .map_err(|_| AudioDecoderError::InvalidFile("DSF data chunk is too large".to_string()))?;
+    if actual_data_len < required_data_len {
+        return Err(AudioDecoderError::InvalidFile(format!(
+            "DSF data chunk is truncated: expected at least {} bytes, found {}",
+            required_data_len, actual_data_len
+        )));
+    }
 
     Ok(ParsedDsf {
         sample_rate,
         channels,
         sample_count,
         block_size_per_channel,
+        lsb_first,
         data,
     })
 }
@@ -211,6 +239,12 @@ pub(super) fn parse_dff(bytes: &[u8]) -> AudioDecoderResult<ParsedDff> {
         return Err(AudioDecoderError::InvalidFile(
             "DFF file has zero channels".to_string(),
         ));
+    }
+    if channels > MAX_DSD_CHANNELS {
+        return Err(AudioDecoderError::UnsupportedFormat(format!(
+            "Unsupported DFF channel count {} (maximum {})",
+            channels, MAX_DSD_CHANNELS
+        )));
     }
     if sample_rate < DSD_TO_PCM_DECIMATION as u32 || sample_rate % DSD_TO_PCM_DECIMATION as u32 != 0
     {
