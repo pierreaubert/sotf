@@ -11,14 +11,11 @@ rustflags = [
   "-C", 'target-cpu=native',
   "-C", 'target-feature=+neon',
   # "-C", "link-arg=-mmacosx-version-min=25.0",
-  # cargo does not find them by default
   "-C", "link-arg=-framework",
   "-C", "link-arg=Accelerate",
   "-C", "link-arg=-L /Applications/Xcode.app/Contents/Frameworks",
-  # for hdf5
-  # "-C", "link-args=-Wl,-rpath,/opt/homebrew/Cellar/hdf5/2.0.0/lib",
   # for clang but why?
-  "-C", "link-arg=-L /opt/homebrew/Cellar/llvm/22.1.6/lib",
+  "-C", "link-arg=-L /opt/homebrew/Cellar/llvm/22.1.8/lib",
   # link with llvm or sold (commented out - using system default linker)
   # "-C", "link-arg=-fuse-ld=/opt/homebrew/opt/llvm/bin/ld64.lld",
   # "-C", "link-arg=-fuse-ld=/usr/local/bin/ld64.sold",
