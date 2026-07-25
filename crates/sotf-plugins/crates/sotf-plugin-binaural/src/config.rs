@@ -15,10 +15,6 @@ fn default_hrtf_path() -> String {
     "".to_string()
 }
 
-pub fn default_enable_optimization() -> bool {
-    true
-}
-
 fn default_externalization() -> f32 {
     0.0
 }
@@ -70,8 +66,6 @@ pub struct BinauralDecoderParams {
     #[serde(default = "default_fft_size")]
     pub fft_size: usize,
     pub input_channels: usize,
-    #[serde(default = "default_enable_optimization")]
-    pub enable_optimization: bool,
     #[serde(default = "default_externalization")]
     pub externalization: f32,
     #[serde(default = "default_near_field_strength")]

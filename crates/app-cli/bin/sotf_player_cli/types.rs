@@ -279,10 +279,6 @@ pub(super) struct BinauralArgs {
     )]
     pub(super) fft_size: usize,
 
-    /// Enable Binaural Decoder Sum-Before-IFFT optimization
-    #[arg(long = "binaural-optimization", default_value_t = true)]
-    pub(super) optimization: bool,
-
     /// Binaural Decoder Externalization (0.0-1.0)
     #[arg(long = "binaural-externalization", default_value = "0.0")]
     pub(super) externalization: f32,

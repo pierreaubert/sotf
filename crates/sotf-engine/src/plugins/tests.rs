@@ -3,23 +3,21 @@ use super::plugin_settings::PluginSettings;
 use super::plugin_type::PluginType;
 
 #[test]
-fn binaural_decoder_defaults_do_not_require_removed_ui_params() {
+fn binaural_decoder_defaults_omit_legacy_noop_params() {
     let settings = PluginSettings::default_for(&PluginType::BinauralDecoder).unwrap();
+    let mut serialized = serde_json::to_value(&settings).unwrap();
+    let variant = serialized
+        .as_object_mut()
+        .and_then(|object| object.values_mut().next())
+        .and_then(serde_json::Value::as_object_mut)
+        .unwrap();
+    assert!(variant.get("enable_optimization").is_none());
+    assert!(variant.get("headphone_eq_enabled").is_none());
 
-    match settings {
-        PluginSettings::BinauralDecoder {
-            enable_optimization,
-            headphone_eq_enabled,
-            ..
-        } => {
-            assert_eq!(
-                enable_optimization,
-                sotf_plugins::binaural_default_enable_optimization()
-            );
-            assert!(!headphone_eq_enabled);
-        }
-        _ => panic!("expected BinauralDecoder settings"),
-    }
+    variant.insert("enable_optimization".into(), serde_json::json!(false));
+    variant.insert("headphone_eq_enabled".into(), serde_json::json!(true));
+    let restored: PluginSettings = serde_json::from_value(serialized).unwrap();
+    assert!(matches!(restored, PluginSettings::BinauralDecoder { .. }));
 }
 
 /// Plain biquad serialization stays minimal — no `topology` / `lambda`

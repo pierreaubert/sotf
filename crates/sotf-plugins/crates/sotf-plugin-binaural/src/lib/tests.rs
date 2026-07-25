@@ -16,7 +16,6 @@ fn test_binaural_decoder_creation() {
         5,
         4096,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -39,7 +38,6 @@ fn test_binaural_decoder_6ch_input_produces_2ch_output() {
         input_channels,
         2048,
         None,
-        true,
         0.5,
         0.0,
         false,
@@ -62,7 +60,6 @@ fn test_process_rejects_short_buffers() {
         5,
         2048,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -88,7 +85,6 @@ fn test_crossfade_fields_initialized() {
         2,
         2048,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -117,7 +113,6 @@ fn test_crossfade_triggers_on_state_change() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -160,7 +155,6 @@ fn test_crossfade_completes() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -202,7 +196,6 @@ fn test_process_produces_output_without_hrtf() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -237,7 +230,6 @@ fn test_near_field_smoke() {
         2,
         2048,
         None,
-        true,
         0.5, // externalization
         0.8, // near_field_strength > 0
         false,
@@ -282,7 +274,6 @@ fn test_reset_clears_crossfade() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -328,7 +319,6 @@ fn test_crossfade_ms_parameter_set_get_and_affects_duration() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -422,7 +412,6 @@ fn test_head_angle_parameters_set_get() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -486,7 +475,6 @@ fn test_head_angle_parameters_listed() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -631,7 +619,6 @@ fn test_head_yaw_produces_finite_output() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -686,7 +673,6 @@ fn test_spectral_crossfade_no_tonal_shift() {
             2,
             fft_size,
             None,
-            true,
             0.0,
             0.0,
             false,
@@ -854,7 +840,6 @@ fn test_crossfade_mode_parameter_set_get() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -993,7 +978,6 @@ fn test_constructor_rejects_non_power_of_two_fft_size() {
         2,
         1000,
         None,
-        false,
         0.0,
         0.0,
         false,
@@ -1060,7 +1044,6 @@ fn test_reflection_delay_clamped_to_buffer_size() {
         2,
         1024,
         None,
-        false,
         0.0,
         0.0,
         false,
@@ -1102,15 +1085,14 @@ fn test_reflection_delay_clamped_to_buffer_size() {
     }
 }
 
-/// AL3+AL4: Dead parameters `enable_optimization` and `headphone_eq_enabled`
-/// must not appear in the public parameters() list.
+/// Legacy no-op parameters must neither reappear in the public parameter list
+/// nor prevent old presets from loading.
 #[test]
-fn test_dead_params_not_exposed_in_parameters() {
+fn test_legacy_noop_params_are_ignored() {
     let plugin = BinauralDecoderPlugin::new(
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1129,6 +1111,14 @@ fn test_dead_params_not_exposed_in_parameters() {
         !names.contains(&"headphone_eq_enabled"),
         "headphone_eq_enabled (unimplemented) must not be exposed in parameters()"
     );
+
+    let legacy: crate::params::Params = serde_json::from_value(serde_json::json!({
+        "input_channels": 2,
+        "enable_optimization": false,
+        "headphone_eq_enabled": true
+    }))
+    .unwrap();
+    assert_eq!(legacy.input_channels, 2);
 }
 
 // -------------------------------------------------------------------------
@@ -1141,7 +1131,6 @@ fn test_set_parameter_hrtf_file_empty_clears_path() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1166,7 +1155,6 @@ fn test_set_parameter_sofa_file_roundtrips_as_file_path_string() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1194,7 +1182,6 @@ fn test_set_parameter_hrtf_database_dir_empty() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1219,7 +1206,6 @@ fn test_set_parameter_head_width_cm_valid() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1243,7 +1229,6 @@ fn test_set_parameter_head_width_cm_out_of_range_ignored() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1267,7 +1252,6 @@ fn test_set_parameter_ear_height_cm_valid() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1291,7 +1275,6 @@ fn test_set_parameter_ear_height_cm_out_of_range_ignored() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1315,7 +1298,6 @@ fn test_set_parameter_late_reverb_params() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1365,7 +1347,6 @@ fn test_set_parameter_externalization() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1389,7 +1370,6 @@ fn test_set_parameter_near_field_strength() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1413,7 +1393,6 @@ fn test_set_parameter_crossfade_ms_non_float_error() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1442,7 +1421,6 @@ fn test_initialize_sets_sample_rate_and_lfe_filter() {
         5,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1463,7 +1441,6 @@ fn test_initialize_with_nonexistent_srir_file_falls_back_to_ism() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1483,7 +1460,6 @@ fn test_initialize_clamps_reflection_delays() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1515,7 +1491,6 @@ fn test_initialize_empty_hrtf_database_dir_no_crash() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,
@@ -1572,7 +1547,6 @@ fn test_head_yaw_background_update_changes_state() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,

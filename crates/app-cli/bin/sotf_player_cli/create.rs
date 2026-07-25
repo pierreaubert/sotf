@@ -164,7 +164,6 @@ pub(super) fn create_binaural_decoder_plugin_config(
         "sofa_file": sofa_path.to_string_lossy().to_string(),
         "input_channels": input_channels,
         "fft_size": args.fft_size,
-        "enable_optimization": args.optimization,
         "externalization": args.externalization,
         "near_field_strength": args.near_field,
     });

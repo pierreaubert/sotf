@@ -273,7 +273,6 @@ fn test_binaural_zero_alloc() {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,

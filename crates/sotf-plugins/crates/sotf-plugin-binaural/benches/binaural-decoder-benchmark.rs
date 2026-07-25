@@ -10,16 +10,11 @@ use std::hint::black_box;
 use std::time::Duration;
 
 /// Create a binaural decoder for benchmarking
-fn create_decoder(
-    input_channels: usize,
-    fft_size: usize,
-    optimization: bool,
-) -> BinauralDecoderPlugin {
+fn create_decoder(input_channels: usize, fft_size: usize) -> BinauralDecoderPlugin {
     BinauralDecoderPlugin::new(
         input_channels,
         fft_size,
-        None, // No SOFA file for basic benchmarks
-        optimization,
+        None,  // No SOFA file for basic benchmarks
         0.0,   // No externalization
         0.0,   // No near-field
         false, // No diffuse-field EQ (for performance benchmarking)
@@ -46,7 +41,7 @@ fn bench_process_channels(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{}ch", channels)),
             &channels,
             |b, &channels| {
-                let mut decoder = create_decoder(channels, fft_size, true);
+                let mut decoder = create_decoder(channels, fft_size);
                 decoder.initialize(sample_rate).unwrap();
 
                 let input = vec![0.5f32; block_size * channels];
@@ -85,49 +80,7 @@ fn bench_process_fft_sizes(c: &mut Criterion) {
             BenchmarkId::from_parameter(fft_size),
             &fft_size,
             |b, &fft_size| {
-                let mut decoder = create_decoder(channels, fft_size, true);
-                decoder.initialize(sample_rate).unwrap();
-
-                let input = vec![0.5f32; block_size * channels];
-                let mut output = vec![0.0f32; block_size * 2];
-                let context = ProcessContext::new(sample_rate, block_size);
-
-                b.iter(|| {
-                    decoder
-                        .process(
-                            black_box(&input),
-                            black_box(&mut output),
-                            black_box(&context),
-                        )
-                        .unwrap();
-                });
-            },
-        );
-    }
-
-    group.finish();
-}
-
-/// Benchmark optimization enabled vs disabled
-fn bench_optimization_comparison(c: &mut Criterion) {
-    let mut group = c.benchmark_group("binaural_optimization");
-    group.warm_up_time(Duration::from_secs(3)); // Warm up to stabilize SIMD and cache
-
-    let sample_rate = 48000;
-    let block_size = 512;
-    let fft_size = 2048;
-    let channels = 6; // 5.1 surround
-
-    group.throughput(Throughput::Elements((block_size * channels) as u64));
-
-    for &enabled in &[false, true] {
-        let label = if enabled { "optimized" } else { "standard" };
-
-        group.bench_with_input(
-            BenchmarkId::from_parameter(label),
-            &enabled,
-            |b, &enabled| {
-                let mut decoder = create_decoder(channels, fft_size, enabled);
+                let mut decoder = create_decoder(channels, fft_size);
                 decoder.initialize(sample_rate).unwrap();
 
                 let input = vec![0.5f32; block_size * channels];
@@ -169,7 +122,6 @@ fn bench_externalization(c: &mut Criterion) {
                     channels,
                     fft_size,
                     None,
-                    true,
                     ext_level,
                     0.0,
                     false,
@@ -218,7 +170,7 @@ fn bench_large_blocks(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{}frames", block_size)),
             &block_size,
             |b, &block_size| {
-                let mut decoder = create_decoder(channels, fft_size, true);
+                let mut decoder = create_decoder(channels, fft_size);
                 decoder.initialize(sample_rate).unwrap();
 
                 let input = vec![0.5f32; block_size * channels];
@@ -273,7 +225,7 @@ fn bench_head_tracking(c: &mut Criterion) {
     }
 
     group.bench_function("process_after_yaw_change", |b| {
-        let mut decoder = create_decoder(channels, fft_size, true);
+        let mut decoder = create_decoder(channels, fft_size);
         decoder.initialize(sample_rate).unwrap();
         decoder
             .set_parameter(
@@ -334,7 +286,7 @@ fn bench_passthrough(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{}ch", channels)),
             &channels,
             |b, &channels| {
-                let mut decoder = create_decoder(channels, fft_size, true);
+                let mut decoder = create_decoder(channels, fft_size);
                 decoder.initialize(sample_rate).unwrap();
 
                 let input = vec![0.5f32; block_size * channels];
@@ -375,7 +327,6 @@ fn bench_atmos_7_1_4(c: &mut Criterion) {
             channels,
             fft_size,
             None,
-            true,
             0.3, // Moderate externalization
             0.5, // Some near-field
             false,
@@ -408,7 +359,6 @@ criterion_group!(
     benches,
     bench_process_channels,
     bench_process_fft_sizes,
-    bench_optimization_comparison,
     bench_externalization,
     bench_large_blocks,
     bench_head_tracking,

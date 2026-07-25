@@ -55,7 +55,6 @@ Empty spacer for visual balance.
 |-------|-----------|---------------|
 | 0 | sofa_file | `sofa_file` (FilePath) |
 | 1 | input_channels | `input_channels` (Int) |
-| 2 | enable_optimization | `enable_optimization` (Bool) |
 | 3 | externalization | `externalization` (Float) |
 | 4 | near_field_strength | `near_field_strength` (Float) |
 

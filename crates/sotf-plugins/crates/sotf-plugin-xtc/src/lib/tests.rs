@@ -4,10 +4,9 @@
 use super::*;
 use crate::load::load_roomeq_recommended_filters;
 use filters::{
-    compute_beta, compute_beta_smooth, compute_geometry_cache, compute_xtc_filters,
-    compute_xtc_filters_full, head_shadowing_brown_duda, head_shadowing_complex,
-    head_shadowing_filter, head_shadowing_woodworth, sanitize_filter, soft_limit_complex_magnitude,
-    woodworth_diffraction_path,
+    compute_beta_condition_number, compute_geometry_cache, compute_xtc_filters_full,
+    head_shadowing_brown_duda, head_shadowing_complex, head_shadowing_woodworth, sanitize_filter,
+    soft_limit_complex_magnitude, woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 use rustfft::num_complex::Complex;
@@ -21,19 +20,6 @@ fn test_xtc_creation() {
     let plugin = XtcPlugin::new(params, 48000).unwrap();
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 2);
-}
-
-#[test]
-fn legacy_reference_filter_matrix_remains_finite_for_regression_comparison() {
-    let filters = compute_xtc_filters(&XtcPluginParams::default(), 48_000, 1_025);
-    for filter in [&filters.0, &filters.1, &filters.2, &filters.3] {
-        assert_eq!(filter.len(), 1_025);
-        assert!(
-            filter
-                .iter()
-                .all(|value| value.re.is_finite() && value.im.is_finite())
-        );
-    }
 }
 
 #[test]
@@ -220,41 +206,6 @@ fn test_xtc_processing() {
     // Output should be non-zero
     let sum: f32 = output.iter().map(|x| x.abs()).sum();
     assert!(sum > 0.0, "Output should not be all zeros");
-}
-
-#[test]
-fn test_head_shadowing_filter() {
-    let params = XtcPluginParams::default();
-
-    // At DC, should be 1.0 (no attenuation)
-    let g_dc = head_shadowing_filter(0.0, &params);
-    assert!((g_dc - 1.0).abs() < 0.01);
-
-    // At cutoff frequency, should be attenuated
-    let g_cutoff = head_shadowing_filter(params.head_shadow_cutoff_hz, &params);
-    assert!(g_cutoff < 1.0);
-    assert!(g_cutoff > 0.0);
-
-    // At very high frequency, should be heavily attenuated
-    let g_high = head_shadowing_filter(20000.0, &params);
-    assert!(g_high < g_cutoff);
-}
-
-#[test]
-fn test_beta_computation() {
-    let params = XtcPluginParams::default();
-
-    // Mid-range frequency: should be close to base beta
-    let beta_mid = compute_beta(1000.0, &params);
-    assert!((beta_mid - params.beta_base).abs() < params.beta_base * 0.1);
-
-    // Low frequency: should be boosted
-    let beta_low = compute_beta(100.0, &params);
-    assert!(beta_low > params.beta_base * 2.0);
-
-    // High frequency: should be boosted
-    let beta_high = compute_beta(10000.0, &params);
-    assert!(beta_high > params.beta_base * 2.0);
 }
 
 #[test]
@@ -683,35 +634,7 @@ fn test_woodworth_itd_zero_angle() {
 }
 
 /// Test smooth beta transitions
-#[test]
-fn test_smooth_beta_transitions() {
-    let params = XtcPluginParams::default();
 
-    // Test transition around 100Hz is smooth (LF boost region)
-    let beta_70 = compute_beta_smooth(70.0, &params);
-    let beta_100 = compute_beta_smooth(100.0, &params);
-    let beta_150 = compute_beta_smooth(150.0, &params);
-
-    // Should be monotonically decreasing toward mid-range
-    assert!(
-        beta_70 > beta_100,
-        "Beta should decrease from 70Hz to 100Hz"
-    );
-    assert!(
-        beta_100 > beta_150,
-        "Beta should decrease from 100Hz to 150Hz"
-    );
-
-    // Transition should be smooth (no large jumps)
-    let ratio_1 = beta_70 / beta_100;
-    let ratio_2 = beta_100 / beta_150;
-    assert!(
-        (ratio_1 - ratio_2).abs() < 2.0,
-        "Beta transition should be smooth around 100Hz"
-    );
-}
-
-/// Test that full absorption (1.0) produces zero-amplitude reflections
 #[test]
 fn test_reflection_zero_amplitude_full_absorption() {
     let mut params = XtcPluginParams::default();
@@ -1114,7 +1037,7 @@ fn test_neumann_refinement_never_increases_error() {
         let phase_contra = -2.0 * PI * freq * delta_t;
         let h_contra = Complex::new(g * phase_contra.cos(), g * phase_contra.sin());
 
-        let beta = compute_beta_smooth(freq, &params);
+        let beta = compute_beta_condition_number(h_ipsi, h_contra, freq, &params);
 
         // W1: first-order only (bypass Neumann)
         let (w1_ipsi, w1_contra) =
@@ -1952,25 +1875,6 @@ fn test_compute_xtc_filters_full_with_cache() {
     // Symmetric case should not have rl/rr
     assert!(filters.filter_rl.is_none());
     assert!(filters.filter_rr.is_none());
-}
-
-#[test]
-fn test_compute_beta_at_edges() {
-    use filters::compute_beta;
-
-    let params = XtcPluginParams::default();
-
-    // At very low frequency, beta should be boosted
-    let beta_low = compute_beta(50.0, &params);
-    assert!(beta_low > params.beta_base);
-
-    // At mid frequency, beta should be close to base
-    let beta_mid = compute_beta(1000.0, &params);
-    assert!((beta_mid - params.beta_base).abs() < params.beta_base * 0.5);
-
-    // At very high frequency, beta should be boosted
-    let beta_high = compute_beta(15000.0, &params);
-    assert!(beta_high > params.beta_base);
 }
 
 #[test]

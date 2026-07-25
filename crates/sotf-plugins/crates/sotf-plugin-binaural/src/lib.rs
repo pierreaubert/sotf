@@ -1,6 +1,4 @@
-pub use self::config::{
-    BinauralDecoderParams, default_enable_optimization as binaural_default_enable_optimization,
-};
+pub use self::config::BinauralDecoderParams;
 pub use self::error::BinauralError;
 pub use self::room::{Reflection, ReflectionHrtf, RoomModel};
 

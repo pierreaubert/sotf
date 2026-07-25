@@ -283,9 +283,7 @@ pub use plugin_aec::{AecPlugin, AecPluginParams};
 pub use plugin_band_merge::{BandMergePlugin, BandMergePluginParams};
 pub use plugin_band_split::{BandSplitPlugin, BandSplitPluginParams};
 pub use plugin_beamformer::{BeamformerPlugin, BeamformerPluginParams, BeamformerType};
-pub use plugin_binaural::{
-    BinauralDecoderParams, BinauralDecoderPlugin, RoomModel, binaural_default_enable_optimization,
-};
+pub use plugin_binaural::{BinauralDecoderParams, BinauralDecoderPlugin, RoomModel};
 pub use plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
 pub type CompressorPlugin = sotf_plugin_multiband_compressor::MultibandCompressorPlugin;
 pub type CompressorPluginParams = sotf_plugin_multiband_compressor::MultibandCompressorPluginParams;

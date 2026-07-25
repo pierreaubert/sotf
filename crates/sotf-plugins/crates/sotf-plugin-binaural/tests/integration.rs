@@ -11,7 +11,6 @@ fn default_params() -> BinauralDecoderParams {
         hrtf_file: String::new(),
         fft_size: 1024,
         input_channels: 2,
-        enable_optimization: true,
         externalization: 0.0,
         near_field_strength: 0.0,
         diffuse_field_eq: false,
@@ -36,12 +35,23 @@ fn construct_from_params_default() {
 }
 
 #[test]
+fn legacy_noop_config_fields_are_ignored() {
+    let mut value = serde_json::to_value(default_params()).unwrap();
+    let object = value.as_object_mut().unwrap();
+    object.insert("enable_optimization".into(), serde_json::json!(false));
+    object.insert("headphone_eq_enabled".into(), serde_json::json!(true));
+
+    let params: BinauralDecoderParams = serde_json::from_value(value).unwrap();
+    let plugin = BinauralDecoderPlugin::from_params(params);
+    assert_eq!(plugin.input_channels(), 2);
+}
+
+#[test]
 fn construct_new_and_trait_metadata() {
     let plugin = BinauralDecoderPlugin::new(
         6,
         2048,
         None,
-        false,
         0.3,
         0.5,
         true,

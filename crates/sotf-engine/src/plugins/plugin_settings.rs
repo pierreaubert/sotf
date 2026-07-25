@@ -1,5 +1,4 @@
 use super::default::default_ab_path_config;
-use super::default::default_binaural_enable_optimization;
 use super::default::default_channels;
 use super::default::default_de_esser_mode;
 use super::default::default_dyneq_bands;
@@ -867,8 +866,6 @@ pub enum PluginSettings {
     BinauralDecoder {
         sofa_file: String,
         input_channels: usize,
-        #[serde(default = "default_binaural_enable_optimization")]
-        enable_optimization: bool,
         #[serde(default)] // 0.0
         externalization: f64,
         #[serde(default)] // 0.0
@@ -884,8 +881,6 @@ pub enum PluginSettings {
         late_reverb_rt60: f64,
         #[serde(default = "default_binaural_late_reverb_damping")]
         late_reverb_damping: f64,
-        #[serde(default)]
-        headphone_eq_enabled: bool,
     },
     Convolution {
         ir_file: String,
@@ -1795,7 +1790,6 @@ impl PluginSettings {
                 Self::BinauralDecoder {
                     sofa_file: String::new(),
                     input_channels: 6, // Default to 5.1
-                    enable_optimization: default_binaural_enable_optimization(),
                     externalization: p(b, "externalization").default_f64(),
                     near_field_strength: p(b, "near_field_strength").default_f64(),
                     crossfade_mode: p(b, "crossfade_mode").default_usize(),
@@ -1803,7 +1797,6 @@ impl PluginSettings {
                     late_reverb_mix: p(b, "late_reverb_mix").default_f64(),
                     late_reverb_rt60: p(b, "late_reverb_rt60").default_f64(),
                     late_reverb_damping: p(b, "late_reverb_damping").default_f64(),
-                    headphone_eq_enabled: false,
                 }
             }
             PluginType::Convolution => {

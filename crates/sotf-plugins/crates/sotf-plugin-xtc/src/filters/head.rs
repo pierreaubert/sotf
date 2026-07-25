@@ -1,5 +1,3 @@
-#[cfg(test)]
-use super::super::config::XtcPluginParams;
 use super::misc::SPEED_OF_SOUND;
 use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
@@ -103,25 +101,4 @@ pub(crate) fn head_shadowing_brown_duda(freq: f32, angle_rad: f32, head_radius: 
     let phase = -w * tau; // negative phase = delay
 
     (magnitude, phase)
-}
-
-/// Head shadowing filter: low-pass filter modeling high-frequency attenuation
-/// as sound diffracts around the head
-#[cfg(test)]
-pub(crate) fn head_shadowing_filter(freq: f32, params: &XtcPluginParams) -> f32 {
-    if freq <= 0.0 {
-        return 1.0;
-    }
-
-    // Simple low-pass model: g(f) = 1 / (1 + (f / f_c)^n)
-    // where n is determined by slope
-    let f_c = params.head_shadow_cutoff_hz;
-    let slope = params.head_shadow_slope_db_per_octave;
-
-    // Convert slope to filter order (approximately)
-    let n = slope / 6.0; // 6 dB/octave ≈ 1st order
-
-    let ratio = freq / f_c;
-
-    1.0 / (1.0 + ratio.powf(n))
 }

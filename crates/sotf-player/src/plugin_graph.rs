@@ -1693,7 +1693,6 @@ impl PluginGraph {
                 PluginSettings::BinauralDecoder {
                     sofa_file,
                     input_channels,
-                    enable_optimization,
                     externalization,
                     near_field_strength,
                     crossfade_mode,
@@ -1701,12 +1700,10 @@ impl PluginGraph {
                     late_reverb_mix,
                     late_reverb_rt60,
                     late_reverb_damping,
-                    headphone_eq_enabled,
                 } if *input_channels != current_channels => {
                     updated_settings = Some(PluginSettings::BinauralDecoder {
                         sofa_file: sofa_file.clone(),
                         input_channels: current_channels,
-                        enable_optimization: *enable_optimization,
                         externalization: *externalization,
                         near_field_strength: *near_field_strength,
                         crossfade_mode: *crossfade_mode,
@@ -1714,7 +1711,6 @@ impl PluginGraph {
                         late_reverb_mix: *late_reverb_mix,
                         late_reverb_rt60: *late_reverb_rt60,
                         late_reverb_damping: *late_reverb_damping,
-                        headphone_eq_enabled: *headphone_eq_enabled,
                     });
                 }
                 PluginSettings::Matrix {

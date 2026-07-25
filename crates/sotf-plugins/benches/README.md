@@ -59,35 +59,28 @@ Tests impact of FFT size on performance (512, 1024, 2048, 4096).
 
 **Expected results:** Roughly quadratic increase in time with FFT size (O(n log n) for FFT).
 
-### 3. `binaural_optimization`
-Compares optimized vs. standard processing paths.
-
-**What it measures:** Benefit of sum-before-IFFT optimization.
-
-**Expected results:** Optimized should be ~2-3x faster for multi-channel inputs.
-
-### 4. `binaural_externalization`
+### 3. `binaural_externalization`
 Tests overhead of externalization effect at different levels (0.0, 0.5, 1.0).
 
 **What it measures:** Cost of early reflection simulation.
 
 **Expected results:** Small overhead (~5-10%) when externalization is enabled.
 
-### 5. `binaural_large_blocks`
+### 4. `binaural_large_blocks`
 Stress test with large block sizes (512, 1024, 2048, 4096 frames).
 
 **What it measures:** Throughput with realistic audio buffer sizes.
 
 **Expected results:** Higher throughput (samples/sec) with larger blocks due to amortized overhead.
 
-### 6. `binaural_passthrough`
+### 5. `binaural_passthrough`
 Tests passthrough mode (no SOFA file loaded).
 
 **What it measures:** Overhead of plugin when not actually processing.
 
 **Expected results:** Near-zero overhead for passthrough.
 
-### 7. `binaural_atmos_7_1_4`
+### 6. `binaural_atmos_7_1_4`
 Realistic workload for immersive 7.1.4 with all features enabled.
 
 **What it measures:** Real-world performance with 12-channel immersive content.

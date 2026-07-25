@@ -82,7 +82,6 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
         2,
         1024,
         None,
-        true,
         0.0,
         0.0,
         false,

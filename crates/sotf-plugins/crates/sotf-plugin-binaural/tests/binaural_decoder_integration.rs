@@ -44,7 +44,6 @@ fn test_binaural_with_minimal_sofa() {
         5,   // 5.0 surround
         512, // FFT size (must be >= block_size/2 for processing to occur)
         Some(sofa_path.clone()),
-        true, // Optimization on
         0.0,  // No externalization
         0.0,  // No near-field
         true, // diffuse_field_eq (enabled by default)
@@ -103,7 +102,6 @@ fn test_binaural_sample_rate_resampling() {
         5,
         512,
         Some(sofa_path.clone()),
-        true,
         0.0,
         0.0,
         true,
@@ -144,7 +142,6 @@ fn test_binaural_lfe_handling() {
         6,   // 5.1 surround
         512, // FFT size
         Some(sofa_path.clone()),
-        true,
         0.0,
         0.0,
         true,
@@ -201,7 +198,6 @@ fn test_binaural_externalization() {
         5,
         2048,
         Some(sofa_path.clone()),
-        true,
         0.0, // No externalization
         0.0,
         true,
@@ -217,7 +213,6 @@ fn test_binaural_externalization() {
         5,
         2048,
         Some(sofa_path.clone()),
-        true,
         0.8, // High externalization
         0.0,
         true,
@@ -263,77 +258,6 @@ fn test_binaural_externalization() {
     fs::remove_file(sofa_path).ok();
 }
 
-/// Test optimization enabled vs disabled (should produce same results)
-#[test]
-fn test_binaural_optimization_equivalence() {
-    let sofa_path = create_test_sofa_file("test_opt.sofa", 5, 256, 48000.0);
-
-    let mut decoder_standard = BinauralDecoderPlugin::new(
-        5,
-        2048,
-        Some(sofa_path.clone()),
-        false, // Standard mode
-        0.0,
-        0.0,
-        true,
-        120.0,
-        2.0,
-        0.0,
-        RoomModel::default(),
-    );
-    decoder_standard.initialize(48000).unwrap();
-
-    let mut decoder_optimized = BinauralDecoderPlugin::new(
-        5,
-        2048,
-        Some(sofa_path.clone()),
-        true, // Optimized mode
-        0.0,
-        0.0,
-        true,
-        120.0,
-        2.0,
-        0.0,
-        RoomModel::default(),
-    );
-    decoder_optimized.initialize(48000).unwrap();
-
-    let block_size = 512;
-    let input = vec![0.3f32; block_size * 5];
-    let mut output_standard = vec![0.0f32; block_size * 2];
-    let mut output_optimized = vec![0.0f32; block_size * 2];
-
-    let context = ProcessContext::new(48000, block_size);
-
-    decoder_standard
-        .process(&input, &mut output_standard, &context)
-        .unwrap();
-    decoder_optimized
-        .process(&input, &mut output_optimized, &context)
-        .unwrap();
-
-    // Outputs should be very similar (within numerical precision)
-    let max_diff = output_standard
-        .iter()
-        .zip(output_optimized.iter())
-        .map(|(a, b)| (a - b).abs())
-        .fold(0.0f32, f32::max);
-
-    println!(
-        "Max difference between standard and optimized: {:.6e}",
-        max_diff
-    );
-
-    assert!(
-        max_diff < 1e-5,
-        "Optimization changed results too much: max_diff = {}",
-        max_diff
-    );
-
-    fs::remove_file(sofa_path).ok();
-}
-
-/// Test immersive 7.1.4 configuration
 #[test]
 fn test_binaural_atmos_7_1_4() {
     let sofa_path = create_test_sofa_file("test_atmos.sofa", 12, 256, 48000.0);
@@ -342,7 +266,6 @@ fn test_binaural_atmos_7_1_4() {
         12,  // 7.1.4 Atmos
         512, // FFT size
         Some(sofa_path.clone()),
-        true,
         0.3, // Some externalization
         0.2, // Some near-field
         true,
@@ -389,7 +312,6 @@ fn test_binaural_continuous_processing() {
         5,
         512,
         Some(sofa_path.clone()),
-        true,
         0.0,
         0.0,
         true,

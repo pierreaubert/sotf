@@ -13,7 +13,6 @@ fn main() {
         input_channels,
         1024,               // fft_size
         None,               // no HRTF file (uses built-in)
-        false,              // disable optimization
         0.5,                // externalization
         0.0,                // near_field_strength
         false,              // diffuse_field_eq

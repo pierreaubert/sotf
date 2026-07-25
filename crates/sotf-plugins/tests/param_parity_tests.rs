@@ -100,7 +100,6 @@ fn all_plugins_with_specs() -> Vec<PluginWithSpec> {
                 2,
                 1024,
                 None,
-                true,
                 0.0,
                 0.0,
                 false,

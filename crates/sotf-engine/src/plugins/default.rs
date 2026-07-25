@@ -6,10 +6,6 @@ pub(super) fn default_de_esser_mode() -> String {
     de_esser_specs::MODES[1].to_string()
 }
 
-pub(super) fn default_binaural_enable_optimization() -> bool {
-    sotf_plugins::binaural_default_enable_optimization()
-}
-
 pub(super) fn default_fm_reference_level_db() -> f64 {
     -14.0
 }

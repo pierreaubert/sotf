@@ -18,7 +18,6 @@ impl PluginFuzzer for BinauralFuzzer {
             channels,
             fft_size,
             None, // hrtf_path
-            true, // enable_optimization
             externalization,
             near_field_strength,
             diffuse_field_eq,

@@ -16,14 +16,6 @@ pub(crate) struct HrtfTransferFunctions {
     pub h_rr: Vec<Complex<f32>>,
 }
 
-#[cfg(test)]
-pub(crate) type XtcFilterSet = (
-    Vec<Complex<f32>>,
-    Vec<Complex<f32>>,
-    Vec<Complex<f32>>,
-    Vec<Complex<f32>>,
-);
-
 /// Cached geometry values to avoid repeated computation in the hot loop.
 ///
 /// Optimization 3: Pre-compute all geometry-dependent values that don't change

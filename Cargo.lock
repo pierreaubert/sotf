@@ -9966,18 +9966,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sotf-android"
-version = "0.7.10"
-dependencies = [
- "android-activity",
- "android_logger",
- "gpui",
- "gpui-android",
- "gpui-ui-kit 0.9.32 (git+https://github.com/pierreaubert/gpui-toolkit?branch=feat%2Fissue-29-adaptive-overflow)",
- "log",
-]
-
-[[package]]
 name = "sotf-cast"
 version = "0.8.1"
 dependencies = [

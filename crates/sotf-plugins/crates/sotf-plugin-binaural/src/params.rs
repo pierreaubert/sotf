@@ -85,10 +85,8 @@ pub const PARAMS: &[ParamSpec] = &[
     // Index 8
     ParamSpec::float("Reverb Damping", "late_reverb_damping", 0.3, 0.0, 1.0, 0.05, "", "Room")
         .doc("High-frequency damping (0=bright, 1=dark)"),
-    // Note: enable_optimization and headphone_eq_enabled were removed from PARAMS.
-    // Both were dead parameters (no DSP implementation). Removing them prevents
-    // misleading the user. The fields remain on BinauralDecoderPlugin for serialization
-    // backward-compatibility but are no longer exposed in the UI.
+    // Legacy no-op fields are intentionally ignored by serde rather than
+    // retained in live parameter state.
 ];
 
 // ============================================================================
@@ -141,9 +139,6 @@ pub struct Params {
     // sofa_file is handled separately (FilePath — skip in param_value/set_param_value)
     #[serde(default = "d_input_channels")]
     pub input_channels: usize,
-    // enable_optimization: kept for backward-compat deserialization only; not exposed in UI.
-    #[serde(default = "d_enable_optimization")]
-    pub enable_optimization: bool,
     #[serde(default = "d_externalization")]
     pub externalization: f64,
     #[serde(default = "d_near_field_strength")]
@@ -158,9 +153,6 @@ pub struct Params {
     pub late_reverb_rt60: f64,
     #[serde(default = "d_late_reverb_damping")]
     pub late_reverb_damping: f64,
-    // headphone_eq_enabled: kept for backward-compat deserialization only; not exposed in UI.
-    #[serde(default)]
-    pub headphone_eq_enabled: bool,
 }
 
 fn d_late_reverb_mix() -> f64 {
@@ -176,10 +168,6 @@ fn d_late_reverb_damping() -> f64 {
 fn d_input_channels() -> usize {
     pk(PARAMS, "input_channels").default_usize()
 }
-// enable_optimization removed from PARAMS; keep hard-coded default for serde backward-compat.
-fn d_enable_optimization() -> bool {
-    true
-}
 fn d_externalization() -> f64 {
     pk(PARAMS, "externalization").default_f64()
 }
@@ -194,7 +182,6 @@ impl Default for Params {
     fn default() -> Self {
         Self {
             input_channels: d_input_channels(),
-            enable_optimization: d_enable_optimization(),
             externalization: d_externalization(),
             near_field_strength: d_near_field_strength(),
             crossfade_mode: d_crossfade_mode(),
@@ -202,7 +189,6 @@ impl Default for Params {
             late_reverb_mix: d_late_reverb_mix(),
             late_reverb_rt60: d_late_reverb_rt60(),
             late_reverb_damping: d_late_reverb_damping(),
-            headphone_eq_enabled: false,
         }
     }
 }

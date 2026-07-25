@@ -73,7 +73,6 @@ members = [
     "crates/sotf-server/crates/sotf-tls",
     "crates/app-ios",
     "crates/app-tvos",
-    "crates/app-android",
     "crates/sotf-docs-gen",
 ]
 exclude = [
@@ -210,7 +209,6 @@ gpui-design = { version = "0.9", git = "https://github.com/pierreaubert/gpui-too
 gpui-keybinding = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-pretext = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-ios = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
-gpui-android = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 gpui-au = { version = "0.9", git = "https://github.com/pierreaubert/gpui-toolkit", branch = "main" }
 
 # SotF
@@ -386,10 +384,6 @@ font-kit = { package = "zed-font-kit", version = "0.14.1-zed", git = "https://gi
 # TUI extensions
 
 cbindgen = "0.28"
-
-# Android platform bindings
-android-activity = { version = "0.6", features = ["native-activity"] }
-android_logger = "0.15"
 
 [workspace.lints.rust]
 ambiguous_negative_literals = "warn"

@@ -24,7 +24,6 @@ fn test_binaural_channel_normalization_no_clipping() {
         input_channels,
         fft_size,
         None,                 // No SOFA file - will skip HRTF convolution in test mode
-        true,                 // enable_optimization
         0.0,                  // externalization
         0.0,                  // near_field_strength
         false,                // diffuse_field_eq (disabled for tests without SOFA)
@@ -126,7 +125,6 @@ fn test_binaural_denormal_flushing() {
         input_channels,
         fft_size,
         None,                 // No SOFA file
-        true,                 // enable_optimization
         0.0,                  // externalization
         0.0,                  // near_field_strength
         false,                // diffuse_field_eq (disabled for tests without SOFA)
@@ -200,7 +198,6 @@ fn test_binaural_silence_after_draining_stft_tail() {
         input_channels,
         fft_size,
         None,
-        true,
         0.0,
         0.0,
         false,

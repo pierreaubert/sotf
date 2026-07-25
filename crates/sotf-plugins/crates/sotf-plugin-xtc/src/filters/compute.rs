@@ -8,8 +8,6 @@ use super::build::build_beta_lut_condition_number;
 use super::build::build_pinna_contra_lut;
 use super::build::build_pinna_ipsi_lut;
 use super::head::head_shadowing_complex;
-#[cfg(test)]
-use super::head::head_shadowing_filter;
 use super::misc::SPEED_OF_SOUND;
 use super::misc::condition_number_2x2;
 use super::misc::contralateral_shadow_angle;
@@ -21,8 +19,6 @@ use super::types::AsymmetricGeometry;
 use super::types::GeometryCache;
 use super::types::HrtfTransferFunctions;
 use super::types::SymmetricGeometry;
-#[cfg(test)]
-use super::types::XtcFilterSet;
 use super::xtc_filters::XtcFilters;
 use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
@@ -960,166 +956,7 @@ pub(crate) fn compute_beta_condition_number_full(
     apply_beta_freq_boosts(beta, freq, params)
 }
 
-/// Legacy compute_beta_smooth for backward compatibility with tests.
-#[cfg_attr(not(test), allow(dead_code))]
-/// Now implemented via condition-number computation internally but
-/// maintains the same sigmoid-based interface for the legacy test path.
-pub(crate) fn compute_beta_smooth(freq: f32, params: &XtcPluginParams) -> f32 {
-    // For backward compatibility with legacy code paths and tests,
-    // use a simplified sigmoid-based approach that approximates the
-    // condition-number behavior at band edges.
-    let base = params.beta_base;
-    let kappa_target = params.kappa_target;
-
-    // Low-frequency boost: condition number grows as wavelength >> head size
-    let low_factor = 1.0 + (kappa_target / 10.0) * sigmoid_smooth(100.0 - freq, 30.0);
-
-    // High-frequency boost: head shadowing makes inversion ill-conditioned
-    let high_factor = 1.0 + (kappa_target / 10.0) * sigmoid_smooth(freq - 12000.0, 1500.0);
-
-    base * low_factor * high_factor
-}
-
-/// Compute path length from speaker at angle theta to ear with offset
 #[inline]
 pub(crate) fn compute_path_length(distance: f32, theta: f32, ear_offset: f32) -> f32 {
     ((distance * theta.sin() + ear_offset).powi(2) + (distance * theta.cos()).powi(2)).sqrt()
-}
-
-/// Compute crosstalk cancellation filters in frequency domain (4-filter version for tests)
-#[cfg(test)]
-pub(crate) fn compute_xtc_filters(
-    params: &XtcPluginParams,
-    sample_rate: u32,
-    num_bins: usize,
-) -> XtcFilterSet {
-    let mut filter_ll = vec![Complex::new(0.0, 0.0); num_bins];
-    let mut filter_lr = vec![Complex::new(0.0, 0.0); num_bins];
-    let mut filter_rl = vec![Complex::new(0.0, 0.0); num_bins];
-    let mut filter_rr = vec![Complex::new(0.0, 0.0); num_bins];
-
-    // Constants
-    let speed_of_sound = 343.0; // m/s at 20°C
-
-    // Geometry with head tracking offsets
-    let d = params.distance_m + params.head_offset_z;
-    let theta_rad = params.speaker_angle_deg * PI / 180.0;
-    let a = params.head_radius_m;
-    let x_offset = params.head_offset_x;
-
-    // Compute path lengths (considering head offset)
-    // l_ipsi: direct path (same side)
-    // l_contra: crosstalk path (opposite side)
-    let l_ipsi = ((d * theta_rad.sin() - x_offset).powi(2) + (d * theta_rad.cos()).powi(2)).sqrt();
-
-    let l_contra =
-        ((d * theta_rad.sin() + x_offset).powi(2) + (d * theta_rad.cos()).powi(2)).sqrt() + PI * a; // Add head shadow path
-
-    // Time difference
-    let delta_t = (l_contra - l_ipsi) / speed_of_sound;
-
-    // Process each frequency bin
-    let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
-
-    for bin in 0..num_bins {
-        let freq = bin as f32 * freq_per_bin;
-
-        // Transfer function for ipsilateral path (reference = 1)
-        let h_ipsi = Complex::new(1.0, 0.0);
-
-        // Transfer function for contralateral path
-        // H_contra(f) = g(f) * e^(-j*2*pi*f*delta_t)
-        let g = head_shadowing_filter(freq, params);
-        let phase = -2.0 * PI * freq * delta_t;
-        let h_contra = Complex::new(g * phase.cos(), g * phase.sin());
-
-        // Crosstalk matrix C:
-        // C = [[h_ipsi, h_contra],
-        //      [h_contra, h_ipsi]]
-        //
-        // We want to invert C to get the cancellation filters W:
-        // W = (C^H * C + β(f) * I)^(-1) * C^H
-        //
-        // For 2x2 matrix, we can compute this directly:
-
-        // Frequency-dependent regularization
-        let beta = compute_beta(freq, params);
-
-        // C^H * C (Hermitian transpose times C)
-        // For our symmetric case:
-        // C^H * C = [[|h_ipsi|^2 + |h_contra|^2, 2*Re(h_ipsi*h_contra^*)],
-        //            [2*Re(h_ipsi*h_contra^*), |h_ipsi|^2 + |h_contra|^2]]
-
-        let h_ipsi_mag_sq = h_ipsi.norm_sqr();
-        let h_contra_mag_sq = h_contra.norm_sqr();
-        let cross_term = (h_ipsi * h_contra.conj()).re * 2.0;
-
-        let diag = h_ipsi_mag_sq + h_contra_mag_sq + beta;
-        let off_diag = cross_term;
-
-        // Determinant of (C^H * C + β*I)
-        let det = diag * diag - off_diag * off_diag;
-
-        if det.abs() < 1e-10 {
-            // Singular matrix - use identity (bypass)
-            filter_ll[bin] = Complex::new(1.0, 0.0);
-            filter_lr[bin] = Complex::new(0.0, 0.0);
-            filter_rl[bin] = Complex::new(0.0, 0.0);
-            filter_rr[bin] = Complex::new(1.0, 0.0);
-            continue;
-        }
-
-        // Inverse of (C^H * C + β*I)
-        let inv_diag = diag / det;
-        let inv_off_diag = -off_diag / det;
-
-        // W = inv(C^H * C + β*I) * C^H
-        // For our case:
-        // C^H = [[h_ipsi^*, h_contra^*],
-        //        [h_contra^*, h_ipsi^*]]
-
-        // W[0,0] = inv_diag * h_ipsi^* + inv_off_diag * h_contra^*
-        // W[0,1] = inv_off_diag * h_ipsi^* + inv_diag * h_contra^*
-        // W[1,0] = inv_off_diag * h_ipsi^* + inv_diag * h_contra^*
-        // W[1,1] = inv_diag * h_ipsi^* + inv_off_diag * h_contra^*
-
-        let h_ipsi_conj = h_ipsi.conj();
-        let h_contra_conj = h_contra.conj();
-
-        let w_ll = h_ipsi_conj * inv_diag + h_contra_conj * inv_off_diag;
-        let w_lr = h_ipsi_conj * inv_off_diag + h_contra_conj * inv_diag;
-
-        filter_ll[bin] = w_ll;
-        filter_lr[bin] = w_lr;
-        filter_rl[bin] = w_lr;
-        filter_rr[bin] = w_ll;
-    }
-
-    (filter_ll, filter_lr, filter_rl, filter_rr)
-}
-
-/// Compute frequency-dependent regularization parameter β(f) (legacy interface)
-///
-/// Now uses kappa_target-derived boost factors instead of separate low/high boost params.
-#[cfg(test)]
-pub(crate) fn compute_beta(freq: f32, params: &XtcPluginParams) -> f32 {
-    let beta_base = params.beta_base;
-    let kappa_target = params.kappa_target;
-
-    // Approximate the condition-number behavior at band edges:
-    // Low frequencies have high condition number due to small ITD phase differences
-    let low_freq_factor = if freq < 200.0 {
-        1.0 + (kappa_target / 10.0) * (1.0 - freq / 200.0)
-    } else {
-        1.0
-    };
-
-    // High frequencies have high condition number due to head shadowing ambiguity
-    let high_freq_factor = if freq > 8000.0 {
-        1.0 + (kappa_target / 10.0) * ((freq - 8000.0) / 12000.0).min(1.0)
-    } else {
-        1.0
-    };
-
-    beta_base * low_freq_factor * high_freq_factor
 }

@@ -56,7 +56,6 @@ pub fn convert_binaural_decoder(
     let PluginSettings::BinauralDecoder {
         sofa_file,
         input_channels,
-        enable_optimization,
         externalization,
         near_field_strength,
         crossfade_mode,
@@ -64,7 +63,6 @@ pub fn convert_binaural_decoder(
         late_reverb_mix,
         late_reverb_rt60,
         late_reverb_damping,
-        headphone_eq_enabled,
     } = settings
     else {
         return None;
@@ -74,7 +72,6 @@ pub fn convert_binaural_decoder(
         json!({
             "sofa_file": sofa_file,
             "input_channels": input_channels,
-            "enable_optimization": enable_optimization,
             "externalization": externalization,
             "near_field_strength": near_field_strength,
             "crossfade_mode": crossfade_mode,
@@ -82,7 +79,6 @@ pub fn convert_binaural_decoder(
             "late_reverb_mix": late_reverb_mix,
             "late_reverb_rt60": late_reverb_rt60,
             "late_reverb_damping": late_reverb_damping,
-            "headphone_eq_enabled": headphone_eq_enabled,
         }),
     ))
 }
