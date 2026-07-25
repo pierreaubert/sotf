@@ -339,6 +339,12 @@ pub struct AudioEngineState {
     /// Estimated callback sample rate from hardware consumption.
     #[serde(default)]
     pub playback_effective_sample_rate: u64,
+    /// Maximum post-volume, pre-clamp output magnitude in the latest meter window.
+    #[serde(default)]
+    pub output_peak_linear: f32,
+    /// Whether the latest meter window contained clipping or non-finite samples.
+    #[serde(default)]
+    pub output_clipping_detected: bool,
     /// Total plugin chain latency in samples (for position compensation)
     pub plugin_latency_samples: usize,
     /// Whether transport position should compensate for plugin latency.
@@ -402,6 +408,8 @@ impl Default for AudioEngineState {
             playback_frames_written: 0,
             playback_frames_dropped: 0,
             playback_effective_sample_rate: 0,
+            output_peak_linear: 0.0,
+            output_clipping_detected: false,
             plugin_latency_samples: 0,
             latency_compensation_enabled: true,
             output_access_mode: OutputAccessMode::Shared,

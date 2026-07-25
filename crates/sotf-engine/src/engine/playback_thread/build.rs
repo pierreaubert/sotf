@@ -55,9 +55,15 @@ pub(super) fn build_output_stream_f32(
         .build_output_stream(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                state_clone
+                    .output_callback_active
+                    .store(true, Ordering::Release);
                 state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
                 read_ring_buffer(&mut consumer, data, data.len(), &state_clone, capacity);
                 apply_volume_clamp(data, &state_clone);
+                state_clone
+                    .output_callback_active
+                    .store(false, Ordering::Release);
             },
             move |err| {
                 error_state
@@ -105,6 +111,9 @@ where
         .build_output_stream(
             config,
             move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+                state_clone
+                    .output_callback_active
+                    .store(true, Ordering::Release);
                 state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
                 let requested = data.len();
 
@@ -130,6 +139,9 @@ where
                     }
                     offset += chunk_len;
                 }
+                state_clone
+                    .output_callback_active
+                    .store(false, Ordering::Release);
             },
             move |err| {
                 error_state

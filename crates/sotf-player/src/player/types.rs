@@ -191,8 +191,8 @@ impl SignalPath {
                 underruns: engine_state.underruns,
                 stream_errors: engine_state.playback_stream_error_count,
                 frames_dropped: engine_state.playback_frames_dropped,
-                clipping_detected: None,
-                headroom_db: None,
+                clipping_detected: Some(engine_state.output_clipping_detected),
+                headroom_db: Some(output_headroom_db(engine_state.output_peak_linear)),
             },
         }
     }
@@ -208,6 +208,14 @@ impl SignalPath {
             || self.health.stream_errors > 0
             || self.health.frames_dropped > 0
             || self.health.clipping_detected == Some(true)
+    }
+}
+
+fn output_headroom_db(peak_linear: f32) -> f32 {
+    if peak_linear.is_finite() && peak_linear > 0.0 {
+        (-20.0 * peak_linear.log10()).min(120.0)
+    } else {
+        120.0
     }
 }
 
@@ -326,6 +334,8 @@ mod tests {
             underruns: 3,
             playback_stream_error_count: 1,
             playback_frames_dropped: 10,
+            output_peak_linear: 10.0f32.powf(-6.0 / 20.0),
+            output_clipping_detected: true,
             ..Default::default()
         };
 
@@ -335,7 +345,7 @@ mod tests {
         assert_eq!(path.health.underruns, 3);
         assert_eq!(path.health.stream_errors, 1);
         assert_eq!(path.health.frames_dropped, 10);
-        assert!(path.health.clipping_detected.is_none());
-        assert!(path.health.headroom_db.is_none());
+        assert_eq!(path.health.clipping_detected, Some(true));
+        assert!((path.health.headroom_db.unwrap() - 6.0).abs() < 1e-4);
     }
 }

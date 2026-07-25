@@ -94,6 +94,19 @@ mod tests {
         assert_eq!(s.playback_effective_sample_rate, 48_000);
         drop(s);
 
+        // PlaybackOutputMeter
+        handle_thread_event(
+            ThreadEvent::PlaybackOutputMeter {
+                peak_linear: 0.75,
+                clipping_detected: true,
+            },
+            &state,
+        );
+        let s = state.load();
+        assert_eq!(s.output_peak_linear, 0.75);
+        assert!(s.output_clipping_detected);
+        drop(s);
+
         // PlaybackDrained
         handle_thread_event(ThreadEvent::PlaybackDrained, &state);
         assert_eq!(state.load().playback_state, PlaybackState::Stopped);

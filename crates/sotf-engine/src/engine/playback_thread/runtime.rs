@@ -145,6 +145,8 @@ struct DiagnosticState {
     stream_start_time: Instant,
     last_diagnostic_log: Instant,
     diagnostic_interval: Duration,
+    last_meter_report: Instant,
+    meter_interval: Duration,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -337,6 +339,8 @@ impl PlaybackRuntime {
                 stream_start_time: Instant::now(),
                 last_diagnostic_log: Instant::now(),
                 diagnostic_interval: Duration::from_secs(5),
+                last_meter_report: Instant::now(),
+                meter_interval: Duration::from_millis(100),
             },
         })
     }
@@ -360,6 +364,7 @@ impl PlaybackRuntime {
             }
 
             self.emit_underrun_milestone();
+            self.emit_output_meter();
 
             if !self.has_minimum_ring_space() {
                 continue;
@@ -394,6 +399,8 @@ impl PlaybackRuntime {
                 self.handle_channel_update(new_channels)
             }
             PlaybackCommand::Stop => {
+                self.state.reset_output_meter();
+                self.diagnostics.last_meter_report = Instant::now();
                 request_flush(&self.state);
                 self.drain.flush_mode = FlushMode::DroppingUntilFlush;
                 self.drain.end_of_stream = false;
@@ -720,6 +727,8 @@ impl PlaybackRuntime {
         }
 
         if flush_completed(&self.state, &self.producer, self.buffer_capacity) {
+            self.state.reset_output_meter();
+            self.diagnostics.last_meter_report = Instant::now();
             self.drain.flush_mode = FlushMode::Normal;
             RuntimeDecision::Proceed
         } else {
@@ -1042,6 +1051,28 @@ impl PlaybackRuntime {
         self.diagnostics.last_diagnostic_log = Instant::now();
     }
 
+    fn emit_output_meter(&mut self) {
+        if self.diagnostics.last_meter_report.elapsed() < self.diagnostics.meter_interval {
+            return;
+        }
+
+        let peak_linear = f32::from_bits(
+            self.state
+                .output_peak_bits
+                .swap(0.0f32.to_bits(), Ordering::Relaxed),
+        );
+        let clipping_detected = self.state.clipped_sample_count.swap(0, Ordering::Relaxed) > 0;
+        send_playback_event(
+            &self.event_tx,
+            ThreadEvent::PlaybackOutputMeter {
+                peak_linear,
+                clipping_detected,
+            },
+            "playback output meter",
+        );
+        self.diagnostics.last_meter_report = Instant::now();
+    }
+
     fn handle_next_message(&mut self) -> RuntimeDecision {
         match self.message_rx.try_recv() {
             Ok(ProcessingMessage::Frame(frame)) => self.handle_frame(frame),
@@ -1109,6 +1140,8 @@ impl PlaybackRuntime {
         self.drain.drain_start = None;
         self.drain.flush_mode =
             if flush_completed(&self.state, &self.producer, self.buffer_capacity) {
+                self.state.reset_output_meter();
+                self.diagnostics.last_meter_report = Instant::now();
                 FlushMode::Normal
             } else {
                 FlushMode::WaitingForDrain

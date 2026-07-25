@@ -472,6 +472,8 @@ fn audio_engine_state_missing_optional_fields_use_defaults() {
     assert_eq!(state.playback_output_device, None);
     assert_eq!(state.playback_callback_count, 0);
     assert_eq!(state.playback_buffer_fill_percent, 0);
+    assert_eq!(state.output_peak_linear, 0.0);
+    assert!(!state.output_clipping_detected);
     assert!(state.latency_compensation_enabled);
     assert_eq!(state.output_access_mode, OutputAccessMode::Shared);
     assert!(state.plugin_build_diagnostics.is_empty());
@@ -500,6 +502,8 @@ fn audio_engine_state_serde_roundtrip() {
         playback_frames_written: 999,
         playback_frames_dropped: 1,
         playback_effective_sample_rate: 96000,
+        output_peak_linear: 0.75,
+        output_clipping_detected: true,
         plugin_latency_samples: 512,
         latency_compensation_enabled: false,
         output_access_mode: OutputAccessMode::ExclusivePreferred,

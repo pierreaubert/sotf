@@ -1,5 +1,6 @@
 use super::super::plan_output_access;
 use super::apply::apply_volume;
+use super::apply::apply_volume_clamp;
 use super::misc::fallback_output_format;
 use super::misc::initial_buffer_size;
 use super::misc::is_virtual_output_device_name;
@@ -7,6 +8,7 @@ use super::pick::pick_preferred_output_format;
 use super::playback::playback_buffer_capacity;
 use super::playback::playback_recovery_reason;
 use super::playback_state::PlaybackState;
+use super::playback_state::flush_completed;
 use super::playback_state::read_ring_buffer;
 use super::playback_state::request_flush;
 use super::runtime::minimum_ring_space_required;
@@ -22,6 +24,72 @@ fn output_access_status_for_device(
     output_device: Option<&str>,
 ) -> OutputAccessStatus {
     plan_output_access(mode, output_device).status
+}
+
+#[test]
+fn output_meter_tracks_post_volume_peak_before_clamp() {
+    let state = PlaybackState::new(16);
+    state.volume.store(2.0f32.to_bits(), Ordering::Relaxed);
+    let mut samples = [0.25, -0.6, 0.1];
+
+    apply_volume_clamp(&mut samples, &state);
+
+    assert_eq!(samples, [0.5, -1.0, 0.2]);
+    let peak = f32::from_bits(state.output_peak_bits.load(Ordering::Relaxed));
+    assert!((peak - 1.2).abs() < 1e-6);
+    assert_eq!(state.clipped_sample_count.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn output_meter_treats_non_finite_samples_as_clipping() {
+    let state = PlaybackState::new(16);
+    let mut samples = [0.5, f32::NAN];
+
+    apply_volume(&mut samples, &state);
+
+    let peak = f32::from_bits(state.output_peak_bits.load(Ordering::Relaxed));
+    assert!((peak - 0.5).abs() < 1e-6);
+    assert_eq!(state.clipped_sample_count.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn output_meter_reset_drops_partial_previous_window() {
+    let state = PlaybackState::new(16);
+    state
+        .output_peak_bits
+        .store(1.25f32.to_bits(), Ordering::Relaxed);
+    state.clipped_sample_count.store(3, Ordering::Relaxed);
+
+    state.reset_output_meter();
+
+    assert_eq!(
+        f32::from_bits(state.output_peak_bits.load(Ordering::Relaxed)),
+        0.0
+    );
+    assert_eq!(state.clipped_sample_count.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn flush_completion_waits_for_callback_before_meter_reset() {
+    let (producer, _consumer) = RingBuffer::<f32>::new(16);
+    let state = PlaybackState::new(16);
+    request_flush(&state);
+    state
+        .output_peak_bits
+        .store(1.25f32.to_bits(), Ordering::Relaxed);
+    state.clipped_sample_count.store(3, Ordering::Relaxed);
+    state.output_callback_active.store(true, Ordering::Release);
+
+    assert!(!flush_completed(&state, &producer, 16));
+    state.output_callback_active.store(false, Ordering::Release);
+    assert!(flush_completed(&state, &producer, 16));
+
+    state.reset_output_meter();
+    assert_eq!(
+        f32::from_bits(state.output_peak_bits.load(Ordering::Relaxed)),
+        0.0
+    );
+    assert_eq!(state.clipped_sample_count.load(Ordering::Relaxed), 0);
 }
 use std::time::{Duration, Instant};
 

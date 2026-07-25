@@ -488,6 +488,8 @@ fn test_position_update_ignored_when_stopped() {
 fn test_processing_warning_sets_error_without_stopping() {
     let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
         playback_state: PlaybackState::Playing,
+        output_peak_linear: 1.25,
+        output_clipping_detected: true,
         ..AudioEngineState::default()
     }));
 
@@ -568,6 +570,8 @@ fn test_handle_thread_event_updates_isolated_external_plugin_worker_statuses() {
 fn test_processing_error_stops_playback() {
     let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
         playback_state: PlaybackState::Playing,
+        output_peak_linear: 1.25,
+        output_clipping_detected: true,
         ..AudioEngineState::default()
     }));
 
@@ -579,6 +583,8 @@ fn test_processing_error_stops_playback() {
     let s = state.load();
     assert_eq!(s.playback_state, PlaybackState::Stopped);
     assert_eq!(s.last_error.as_deref(), Some("fatal error"));
+    assert_eq!(s.output_peak_linear, 0.0);
+    assert!(!s.output_clipping_detected);
 }
 
 #[test]
@@ -761,6 +767,8 @@ fn test_start_network_stream_server_updates_state_and_publishes_audio() {
 fn test_handle_thread_event_decoder_end_of_stream() {
     let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
         playback_state: PlaybackState::Playing,
+        output_peak_linear: 1.25,
+        output_clipping_detected: true,
         ..AudioEngineState::default()
     }));
 
@@ -792,6 +800,8 @@ fn test_handle_thread_event_playback_drained() {
     let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
         playback_state: PlaybackState::Playing,
         last_error: Some("previous error".to_string()),
+        output_peak_linear: 1.25,
+        output_clipping_detected: true,
         ..AudioEngineState::default()
     }));
 
@@ -800,12 +810,28 @@ fn test_handle_thread_event_playback_drained() {
     let s = state.load();
     assert_eq!(s.playback_state, PlaybackState::Stopped);
     assert!(s.last_error.is_none());
+    assert_eq!(s.output_peak_linear, 0.0);
+    assert!(!s.output_clipping_detected);
+    drop(s);
+
+    handle_thread_event(
+        ThreadEvent::PlaybackOutputMeter {
+            peak_linear: 1.5,
+            clipping_detected: true,
+        },
+        &state,
+    );
+    let s = state.load();
+    assert_eq!(s.output_peak_linear, 0.0);
+    assert!(!s.output_clipping_detected);
 }
 
 #[test]
 fn test_handle_thread_event_decoder_error() {
     let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
         playback_state: PlaybackState::Playing,
+        output_peak_linear: 1.25,
+        output_clipping_detected: true,
         ..AudioEngineState::default()
     }));
 
@@ -817,12 +843,16 @@ fn test_handle_thread_event_decoder_error() {
     let s = state.load();
     assert_eq!(s.playback_state, PlaybackState::Stopped);
     assert_eq!(s.last_error.as_deref(), Some("decode failed"));
+    assert_eq!(s.output_peak_linear, 0.0);
+    assert!(!s.output_clipping_detected);
 }
 
 #[test]
 fn test_handle_thread_event_thread_panic() {
     let state = Arc::new(ArcSwap::from_pointee(AudioEngineState {
         playback_state: PlaybackState::Playing,
+        output_peak_linear: 1.25,
+        output_clipping_detected: true,
         ..AudioEngineState::default()
     }));
 
@@ -831,6 +861,8 @@ fn test_handle_thread_event_thread_panic() {
     let s = state.load();
     assert_eq!(s.playback_state, PlaybackState::Stopped);
     assert_eq!(s.last_error.as_deref(), Some("Thread panicked: playback"));
+    assert_eq!(s.output_peak_linear, 0.0);
+    assert!(!s.output_clipping_detected);
 }
 
 #[test]

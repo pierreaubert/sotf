@@ -43,6 +43,13 @@ pub trait ThreadEventVisitor {
     ) {
     }
     fn playback_stats(&mut self, _state: &mut AudioEngineState, _stats: &PlaybackStatsSnapshot) {}
+    fn playback_output_meter(
+        &mut self,
+        _state: &mut AudioEngineState,
+        _peak_linear: f32,
+        _clipping_detected: bool,
+    ) {
+    }
     fn playback_drained(&mut self, _state: &mut AudioEngineState) {}
     fn playback_underrun(&mut self, _state: &mut AudioEngineState, _underruns: u64) {}
     fn processing_error(&mut self, _state: &mut AudioEngineState, _err: String) {}
@@ -104,6 +111,10 @@ pub fn visit<V: ThreadEventVisitor>(
                 effective_sample_rate,
             },
         ),
+        ThreadEvent::PlaybackOutputMeter {
+            peak_linear,
+            clipping_detected,
+        } => visitor.playback_output_meter(state, peak_linear, clipping_detected),
         ThreadEvent::PlaybackDrained => visitor.playback_drained(state),
         ThreadEvent::PlaybackUnderrun(underruns) => visitor.playback_underrun(state, underruns),
         ThreadEvent::ProcessingError(err) => visitor.processing_error(state, err),
@@ -124,6 +135,11 @@ pub fn visit<V: ThreadEventVisitor>(
 /// Visitor that applies event mutations to the shared [`AudioEngineState`].
 pub struct AudioEngineStateUpdater;
 
+fn reset_output_meter(state: &mut AudioEngineState) {
+    state.output_peak_linear = 0.0;
+    state.output_clipping_detected = false;
+}
+
 impl ThreadEventVisitor for AudioEngineStateUpdater {
     fn decoder_end_of_stream(&mut self, _state: &mut AudioEngineState) {
         log::debug!("[Manager Thread] Decoder end of stream (waiting for playback drain)");
@@ -142,6 +158,7 @@ impl ThreadEventVisitor for AudioEngineStateUpdater {
     fn decoder_error(&mut self, state: &mut AudioEngineState, err: String) {
         log::debug!("[Manager Thread] Decoder error: {}", err);
         state.playback_state = PlaybackState::Stopped;
+        reset_output_meter(state);
         state.last_error = Some(err);
     }
 
@@ -179,9 +196,23 @@ impl ThreadEventVisitor for AudioEngineStateUpdater {
         state.playback_effective_sample_rate = stats.effective_sample_rate;
     }
 
+    fn playback_output_meter(
+        &mut self,
+        state: &mut AudioEngineState,
+        peak_linear: f32,
+        clipping_detected: bool,
+    ) {
+        if state.playback_state == PlaybackState::Stopped {
+            return;
+        }
+        state.output_peak_linear = peak_linear;
+        state.output_clipping_detected = clipping_detected;
+    }
+
     fn playback_drained(&mut self, state: &mut AudioEngineState) {
         log::debug!("[Manager Thread] Playback drained - all audio played");
         state.playback_state = PlaybackState::Stopped;
+        reset_output_meter(state);
         state.last_error = None;
     }
 
@@ -197,6 +228,7 @@ impl ThreadEventVisitor for AudioEngineStateUpdater {
     fn processing_error(&mut self, state: &mut AudioEngineState, err: String) {
         log::debug!("[Manager Thread] Processing error: {}", err);
         state.playback_state = PlaybackState::Stopped;
+        reset_output_meter(state);
         state.last_error = Some(err);
     }
 
@@ -208,6 +240,7 @@ impl ThreadEventVisitor for AudioEngineStateUpdater {
     fn thread_panic(&mut self, state: &mut AudioEngineState, thread_name: String) {
         log::debug!("[Manager Thread] Thread panicked: {}", thread_name);
         state.playback_state = PlaybackState::Stopped;
+        reset_output_meter(state);
         state.last_error = Some(format!("Thread panicked: {}", thread_name));
     }
 

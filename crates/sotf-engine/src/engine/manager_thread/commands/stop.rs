@@ -34,6 +34,8 @@ impl ManagerCommandHandler for StopCommand {
         new_state.current_source = None;
         new_state.position = 0.0;
         new_state.seeking = false;
+        new_state.output_peak_linear = 0.0;
+        new_state.output_clipping_detected = false;
         ctx.state.store(Arc::new(new_state));
 
         ManagerResponse::Ok

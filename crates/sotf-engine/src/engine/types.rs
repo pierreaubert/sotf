@@ -267,6 +267,11 @@ pub enum ThreadEvent {
         frames_dropped: u64,
         effective_sample_rate: u64,
     },
+    /// Post-volume, pre-clamp output level for the most recent meter window.
+    PlaybackOutputMeter {
+        peak_linear: f32,
+        clipping_detected: bool,
+    },
     /// Playback thread has fully drained its ring buffer after end-of-stream
     PlaybackDrained,
     /// Playback buffer underrun count update

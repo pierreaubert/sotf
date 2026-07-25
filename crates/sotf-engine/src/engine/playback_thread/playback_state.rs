@@ -21,7 +21,13 @@ pub(super) struct PlaybackState {
     pub(super) last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
     pub(super) total_callback_samples: Arc<AtomicU64>,
     pub(super) callback_count: Arc<AtomicU64>,
+    /// True while the hardware callback may still publish samples from its current buffer.
+    pub(super) output_callback_active: Arc<AtomicBool>,
     pub(super) stream_error_count: Arc<AtomicU64>,
+    /// Maximum finite post-volume sample magnitude since the last meter report.
+    pub(super) output_peak_bits: Arc<AtomicU32>,
+    /// Number of post-volume samples above 0 dBFS or non-finite since the last report.
+    pub(super) clipped_sample_count: Arc<AtomicU64>,
 }
 
 impl PlaybackState {
@@ -35,8 +41,17 @@ impl PlaybackState {
             last_buffer_level: Arc::new(AtomicU64::new(100)),
             total_callback_samples: Arc::new(AtomicU64::new(0)),
             callback_count: Arc::new(AtomicU64::new(0)),
+            output_callback_active: Arc::new(AtomicBool::new(false)),
             stream_error_count: Arc::new(AtomicU64::new(0)),
+            output_peak_bits: Arc::new(AtomicU32::new(0.0f32.to_bits())),
+            clipped_sample_count: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    pub(super) fn reset_output_meter(&self) {
+        self.output_peak_bits
+            .store(0.0f32.to_bits(), Ordering::Relaxed);
+        self.clipped_sample_count.store(0, Ordering::Relaxed);
     }
 }
 
@@ -120,6 +135,7 @@ pub(super) fn flush_completed(
     }
 
     !state.flush_requested.load(Ordering::Relaxed)
+        && !state.output_callback_active.load(Ordering::Acquire)
 }
 
 /// Read f32 samples from the ring buffer into a scratch buffer.
