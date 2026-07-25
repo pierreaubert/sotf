@@ -1,4 +1,5 @@
 use super::super::ThreadEvent;
+use super::super::output_dither::{DitheredFromF32, TpdfDither};
 use super::apply::apply_volume_clamp;
 use super::cpal_playback_state::CpalPlaybackState;
 use super::cpal_playback_state::read_ring_buffer;
@@ -142,12 +143,13 @@ pub(super) fn build_output_stream_int<T>(
     mut consumer: Consumer<f32>,
 ) -> Result<Stream, String>
 where
-    T: cpal::SizedSample + cpal::FromSample<f32>,
+    T: DitheredFromF32,
 {
     let state_clone = Arc::clone(&state);
     let capacity = state.capacity;
     let hardware_channels = config.channels as usize;
     let mut scratch = vec![0.0f32; scratch_len(logical_channels)];
+    let mut dither = TpdfDither::new(0x6370_616c_7369_6e6b);
 
     let stream = device
         .build_output_stream(
@@ -167,18 +169,19 @@ where
                             capacity,
                         );
                         apply_volume_clamp(&mut scratch[..chunk_len], &state_clone);
+                        let dither_enabled = !state_clone.muted.load(Ordering::Relaxed);
                         for (out, &s) in data[offset..offset + chunk_len]
                             .iter_mut()
                             .zip(&scratch[..chunk_len])
                         {
-                            *out = T::from_sample(s);
+                            *out = T::from_f32_dithered(s, &mut dither, dither_enabled);
                         }
                         offset += chunk_len;
                     } else {
                         let frames = ((requested - offset) / hardware_channels)
                             .min(scratch.len() / logical_channels);
                         if frames == 0 {
-                            data[offset..].fill(T::from_sample(0.0));
+                            data[offset..].fill(T::silence());
                             break;
                         }
 
@@ -192,11 +195,14 @@ where
                             capacity,
                         );
                         apply_volume_clamp(&mut scratch[..logical_len], &state_clone);
+                        let dither_enabled = !state_clone.muted.load(Ordering::Relaxed);
                         write_logical_to_hardware_int(
                             &scratch[..logical_len],
                             &mut data[offset..offset + hardware_len],
                             logical_channels,
                             hardware_channels,
+                            &mut dither,
+                            dither_enabled,
                         );
                         offset += hardware_len;
                     }
@@ -284,17 +290,21 @@ fn write_logical_to_hardware_int<T>(
     hardware: &mut [T],
     logical_channels: usize,
     hardware_channels: usize,
+    dither: &mut TpdfDither,
+    dither_enabled: bool,
 ) where
-    T: cpal::SizedSample + cpal::FromSample<f32>,
+    T: DitheredFromF32,
 {
-    hardware.fill(T::from_sample(0.0));
+    hardware.fill(T::silence());
     let frames = (logical.len() / logical_channels).min(hardware.len() / hardware_channels);
     for frame in 0..frames {
         let logical_base = frame * logical_channels;
         let hardware_base = frame * hardware_channels;
         let copy_channels = logical_channels.min(hardware_channels);
         for channel in 0..copy_channels {
-            hardware[hardware_base + channel] = T::from_sample(logical[logical_base + channel]);
+            let sample = logical[logical_base + channel];
+            hardware[hardware_base + channel] =
+                T::from_f32_dithered(sample, dither, dither_enabled);
         }
     }
 }
