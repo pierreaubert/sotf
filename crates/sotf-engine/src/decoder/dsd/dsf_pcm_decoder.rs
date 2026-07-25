@@ -1,6 +1,6 @@
 use super::consts::DSD_DECODE_CHUNK_FRAMES;
 use super::consts::DSD_TO_PCM_DECIMATION;
-use super::consts::pcm_sample_from_ones;
+use super::decimator::{ALIGNMENT_OUTPUTS, DsdPcmDecimator, SEEK_PREROLL_FRAMES};
 use super::parse::parse_dsf;
 use crate::decoder::core::{AudioDecoder, AudioSpec, DecodedAudio};
 use crate::decoder::error::{AudioDecoderError, AudioDecoderResult};
@@ -20,7 +20,12 @@ pub struct DsfPcmDecoder {
     pub(super) channels: usize,
     pub(super) dsd_sample_count: u64,
     pub(super) block_size_per_channel: usize,
+    pub(super) lsb_first: bool,
+    pub(super) source_bit_position: u64,
     pub(super) pcm_position: u64,
+    pub(super) decimator: DsdPcmDecimator,
+    pub(super) input_scratch: Vec<f64>,
+    pub(super) pcm_scratch: Vec<f32>,
 }
 
 impl DsfPcmDecoder {
@@ -34,7 +39,8 @@ impl DsfPcmDecoder {
         let pcm_sample_rate = fmt.sample_rate / DSD_TO_PCM_DECIMATION as u32;
         let total_frames = Some(fmt.sample_count / DSD_TO_PCM_DECIMATION);
 
-        Ok(Self {
+        let channels = fmt.channels as usize;
+        let mut decoder = Self {
             spec: AudioSpec {
                 sample_rate: pcm_sample_rate,
                 channels: fmt.channels,
@@ -42,51 +48,102 @@ impl DsfPcmDecoder {
                 total_frames,
             },
             data: fmt.data,
-            channels: fmt.channels as usize,
+            channels,
             dsd_sample_count: fmt.sample_count,
             block_size_per_channel: fmt.block_size_per_channel,
+            lsb_first: fmt.lsb_first,
+            source_bit_position: 0,
             pcm_position: 0,
-        })
+            decimator: DsdPcmDecimator::new(channels),
+            input_scratch: vec![0.0; channels],
+            pcm_scratch: vec![0.0; channels],
+        };
+        decoder.prepare_position(0)?;
+        Ok(decoder)
     }
 
     pub(super) fn total_pcm_frames(&self) -> u64 {
         self.dsd_sample_count / DSD_TO_PCM_DECIMATION
     }
 
-    pub(super) fn channel_byte(&self, channel: usize, byte_index_per_channel: u64) -> u8 {
-        let Ok(byte_index_per_channel) = usize::try_from(byte_index_per_channel) else {
-            return 0;
-        };
-        let block = byte_index_per_channel / self.block_size_per_channel;
-        let in_block = byte_index_per_channel % self.block_size_per_channel;
-        let Some(block_stride) = self.block_size_per_channel.checked_mul(self.channels) else {
-            return 0;
-        };
-        let Some(block_offset) = block.checked_mul(block_stride) else {
-            return 0;
-        };
-        let Some(channel_offset) = channel.checked_mul(self.block_size_per_channel) else {
-            return 0;
-        };
-        let Some(offset) = block_offset
-            .checked_add(channel_offset)
-            .and_then(|offset| offset.checked_add(in_block))
-        else {
-            return 0;
-        };
-        self.data.get(offset).copied().unwrap_or(0)
+    fn channel_sample(&self, channel: usize, bit_position: u64) -> f64 {
+        dsf_sample(
+            &self.data,
+            self.channels,
+            self.block_size_per_channel,
+            self.lsb_first,
+            channel,
+            bit_position,
+            self.dsd_sample_count,
+        )
     }
 
-    pub(super) fn decode_sample(&self, channel: usize, pcm_frame: u64) -> f32 {
-        let first_byte = pcm_frame * (DSD_TO_PCM_DECIMATION / 8);
-        let mut ones = 0u32;
-        for byte_offset in 0..(DSD_TO_PCM_DECIMATION / 8) {
-            ones += self
-                .channel_byte(channel, first_byte + byte_offset)
-                .count_ones();
+    fn produce_frame(&mut self) {
+        loop {
+            for channel in 0..self.channels {
+                self.input_scratch[channel] =
+                    self.channel_sample(channel, self.source_bit_position);
+            }
+            self.source_bit_position = self.source_bit_position.saturating_add(1);
+            if let Some(frame) = self.decimator.push(&self.input_scratch) {
+                self.pcm_scratch.copy_from_slice(frame);
+                return;
+            }
         }
-        pcm_sample_from_ones(ones)
     }
+
+    fn prepare_position(&mut self, frame_position: u64) -> AudioDecoderResult<()> {
+        let start_frame = frame_position.saturating_sub(SEEK_PREROLL_FRAMES);
+        self.source_bit_position = start_frame
+            .checked_mul(DSD_TO_PCM_DECIMATION)
+            .ok_or_else(|| AudioDecoderError::SeekFailed("DSF seek offset overflow".into()))?;
+        self.decimator.reset();
+
+        let discard = frame_position
+            .checked_add(ALIGNMENT_OUTPUTS)
+            .and_then(|position| position.checked_sub(start_frame))
+            .ok_or_else(|| AudioDecoderError::SeekFailed("DSF seek pre-roll overflow".into()))?;
+        for _ in 0..discard {
+            self.produce_frame();
+        }
+        self.pcm_position = frame_position;
+        Ok(())
+    }
+}
+
+pub(super) fn dsf_sample(
+    data: &[u8],
+    channels: usize,
+    block_size_per_channel: usize,
+    lsb_first: bool,
+    channel: usize,
+    bit_position: u64,
+    sample_count: u64,
+) -> f64 {
+    if bit_position >= sample_count {
+        return if bit_position.is_multiple_of(2) {
+            1.0
+        } else {
+            -1.0
+        };
+    }
+    let byte_position = bit_position / 8;
+    let Ok(byte_index_per_channel) = usize::try_from(byte_position) else {
+        return 0.0;
+    };
+    let block = byte_index_per_channel / block_size_per_channel;
+    let in_block = byte_index_per_channel % block_size_per_channel;
+    let Some(offset) = block
+        .checked_mul(block_size_per_channel.saturating_mul(channels))
+        .and_then(|offset| offset.checked_add(channel.saturating_mul(block_size_per_channel)))
+        .and_then(|offset| offset.checked_add(in_block))
+    else {
+        return 0.0;
+    };
+    let byte = data.get(offset).copied().unwrap_or(0);
+    let bit = (bit_position % 8) as u32;
+    let shift = if lsb_first { bit } else { 7 - bit };
+    if byte & (1 << shift) != 0 { 1.0 } else { -1.0 }
 }
 
 impl AudioDecoder for DsfPcmDecoder {
@@ -120,11 +177,9 @@ impl AudioDecoder for DsfPcmDecoder {
 
         dest.samples.resize(sample_len, 0.0);
         for frame_offset in 0..frames {
-            let pcm_frame = self.pcm_position + frame_offset;
             let dst = frame_offset as usize * self.channels;
-            for channel in 0..self.channels {
-                dest.samples[dst + channel] = self.decode_sample(channel, pcm_frame);
-            }
+            self.produce_frame();
+            dest.samples[dst..dst + self.channels].copy_from_slice(&self.pcm_scratch);
         }
 
         self.pcm_position += frames;
@@ -139,8 +194,7 @@ impl AudioDecoder for DsfPcmDecoder {
                 self.total_pcm_frames()
             )));
         }
-        self.pcm_position = frame_position;
-        Ok(())
+        self.prepare_position(frame_position)
     }
 
     fn position(&self) -> u64 {
