@@ -4,9 +4,9 @@
 use super::*;
 use crate::load::load_roomeq_recommended_filters;
 use filters::{
-    compute_beta, compute_beta_smooth, compute_geometry_cache, compute_xtc_filters_full,
-    head_shadowing_brown_duda, head_shadowing_complex, head_shadowing_filter,
-    head_shadowing_woodworth, sanitize_filter, soft_limit_complex_magnitude,
+    compute_beta, compute_beta_smooth, compute_geometry_cache, compute_xtc_filters,
+    compute_xtc_filters_full, head_shadowing_brown_duda, head_shadowing_complex,
+    head_shadowing_filter, head_shadowing_woodworth, sanitize_filter, soft_limit_complex_magnitude,
     woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
@@ -21,6 +21,19 @@ fn test_xtc_creation() {
     let plugin = XtcPlugin::new(params, 48000).unwrap();
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 2);
+}
+
+#[test]
+fn legacy_reference_filter_matrix_remains_finite_for_regression_comparison() {
+    let filters = compute_xtc_filters(&XtcPluginParams::default(), 48_000, 1_025);
+    for filter in [&filters.0, &filters.1, &filters.2, &filters.3] {
+        assert_eq!(filter.len(), 1_025);
+        assert!(
+            filter
+                .iter()
+                .all(|value| value.re.is_finite() && value.im.is_finite())
+        );
+    }
 }
 
 #[test]

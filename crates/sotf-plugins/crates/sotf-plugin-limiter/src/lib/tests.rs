@@ -22,6 +22,45 @@ fn test_limiter_basic() {
 }
 
 #[test]
+fn threshold_smoother_operates_in_decibels() {
+    let mut plugin = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
+    plugin.initialize(48_000).unwrap();
+    assert!((plugin.threshold_db_smoother.current() + 6.0).abs() < 1e-6);
+
+    plugin
+        .parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-18.0))
+        .unwrap();
+    assert!((plugin.threshold_db_smoother.target() + 18.0).abs() < 1e-6);
+
+    let first_step_db = plugin.threshold_db_smoother.advance();
+    assert!(first_step_db < -6.0 && first_step_db > -18.0);
+    let first_step_linear = fast_pow10(first_step_db / 20.0);
+    assert!(first_step_linear > fast_pow10(-18.0 / 20.0));
+    assert!(first_step_linear < fast_pow10(-6.0 / 20.0));
+}
+
+#[test]
+fn from_params_seeds_mix_smoother_at_saved_value() {
+    let plugin = LimiterPlugin::from_params(
+        2,
+        LimiterPluginParams {
+            threshold_db: -1.0,
+            release_ms: 50.0,
+            lookahead_ms: 0.0,
+            soft: false,
+            true_peak: false,
+            isp_mode: false,
+            dual_release: false,
+            mix: 0.0,
+            feed_forward: false,
+            link_amount: 1.0,
+        },
+    );
+
+    assert_eq!(plugin.mix_smoother.current(), 0.0);
+}
+
+#[test]
 fn test_limiter_compiled_op_matches_process_in_place() {
     let sr = 48000;
     let frames = 512;

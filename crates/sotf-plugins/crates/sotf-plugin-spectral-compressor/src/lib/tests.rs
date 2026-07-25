@@ -10,25 +10,84 @@ use sotf_host::plugin::ProcessContext;
 mod misc;
 
 #[test]
-fn test_mix_zero_passthrough_during_latency_fill() {
+fn test_mix_zero_is_delayed_by_reported_latency_and_block_independent() {
     let params = SpectralCompressorPluginParams {
         mix: 0.0,
         ..Default::default()
     };
-    let mut plugin = SpectralCompressorPlugin::from_params(2, params);
-    plugin.initialize(48000).unwrap();
+    let frames = 3072;
+    let mut input = vec![0.0f32; frames * 2];
+    input[0] = 1.0;
+    input[1] = -1.0;
 
-    let frames = 128;
-    let mut buffer = vec![0.0f32; frames * 2];
-    for i in 0..frames {
-        buffer[i * 2] = i as f32 * 0.001;
-        buffer[i * 2 + 1] = -(i as f32) * 0.001;
+    let render = |chunk_frames: usize| {
+        let mut plugin = SpectralCompressorPlugin::from_params(2, params.clone());
+        plugin.initialize(48000).unwrap();
+        let mut output = input.clone();
+        for chunk in output.chunks_mut(chunk_frames * 2) {
+            let nf = chunk.len() / 2;
+            plugin
+                .process_in_place(chunk, &ProcessContext::new(48000, nf))
+                .unwrap();
+        }
+        (output, plugin.latency_samples())
+    };
+
+    let (single_block, latency) = render(frames);
+    let (small_blocks, small_latency) = render(64);
+    assert_eq!(latency, small_latency);
+    assert_eq!(single_block, small_blocks);
+
+    for frame in 0..latency {
+        assert_eq!(single_block[frame * 2], 0.0);
+        assert_eq!(single_block[frame * 2 + 1], 0.0);
     }
-    let original = buffer.clone();
-    let ctx = ProcessContext::new(48000, frames);
+    assert_eq!(single_block[latency * 2], 1.0);
+    assert_eq!(single_block[latency * 2 + 1], -1.0);
+}
 
-    plugin.process_in_place(&mut buffer, &ctx).unwrap();
-    assert_eq!(buffer, original);
+#[test]
+fn partial_mix_has_fixed_latency_across_host_block_sizes() {
+    let params = SpectralCompressorPluginParams {
+        threshold_db: 0.0,
+        ratio: 1.0,
+        knee_db: 0.0,
+        mix: 0.5,
+        ..Default::default()
+    };
+    let frames = 8192;
+    let input: Vec<f32> = (0..frames)
+        .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48_000.0).sin())
+        .collect();
+
+    let render = |chunk_frames: usize| {
+        let mut plugin = SpectralCompressorPlugin::from_params(1, params.clone());
+        plugin.initialize(48_000).unwrap();
+        let mut output = input.clone();
+        for chunk in output.chunks_mut(chunk_frames) {
+            let nf = chunk.len();
+            plugin
+                .process_in_place(chunk, &ProcessContext::new(48_000, nf))
+                .unwrap();
+        }
+        output
+    };
+
+    let large = render(frames);
+    let medium = render(1024);
+    let small = render(64);
+    let medium_diff = large
+        .iter()
+        .zip(&medium)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    let small_diff = large
+        .iter()
+        .zip(&small)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(medium_diff < 1.0e-5, "1024-frame max diff {medium_diff}");
+    assert!(small_diff < 1.0e-5, "64-frame max diff {small_diff}");
 }
 
 /// Verify that constructing a plugin with attack_ms=0 or release_ms=0 does

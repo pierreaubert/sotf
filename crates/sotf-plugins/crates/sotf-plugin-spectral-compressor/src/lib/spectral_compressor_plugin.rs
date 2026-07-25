@@ -16,6 +16,8 @@ use sotf_host::plugin::{
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
+const MAX_BLOCK_FRAMES: usize = 16_384;
+
 pub struct SpectralCompressorPlugin {
     pub(super) channels: usize,
     pub(super) sample_rate: u32,
@@ -43,6 +45,8 @@ pub struct SpectralCompressorPlugin {
 
     // STFT state
     pub(super) stft: StftState,
+    /// Stable input copy because in-place output can precede later input reads.
+    pub(super) block_input: Vec<f32>,
 
     // Smoothers
     pub(super) threshold_smoother: Smoother,
@@ -95,6 +99,7 @@ impl SpectralCompressorPlugin {
             adaptive_offset_db: 0.0,
 
             stft: StftState::new(fft_size, channels),
+            block_input: vec![0.0; MAX_BLOCK_FRAMES * channels],
 
             threshold_smoother: Smoother::new(params.threshold_db, 20.0, sample_rate),
             mix_smoother: Smoother::new(params.mix, 20.0, sample_rate),
@@ -318,10 +323,11 @@ impl SpectralCompressorPlugin {
         let hop_size = self.stft.hop_size;
         self.stft.next_add_position = (self.stft.next_add_position + hop_size) & mask;
 
-        // Zero the "fresh" positions for clean OLA
+        // Clear the full region the next IFFT can occupy; clearing only one
+        // hop leaves stale samples after the accumulator ring wraps.
         {
             let clear_start = (self.stft.next_add_position + fft_size) & mask;
-            for i in 0..hop_size {
+            for i in 0..fft_size {
                 let frame_idx = (clear_start + i) & mask;
                 for ch in 0..channels {
                     self.stft.output_accumulator[frame_idx * channels + ch] = 0.0;
@@ -330,7 +336,6 @@ impl SpectralCompressorPlugin {
         }
 
         self.stft.output_accumulator_fill += hop_size;
-        self.stft.latency_filled += hop_size;
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
@@ -618,11 +623,8 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        // Output becomes observable in the host block that completes the first
-        // FFT frame. Its exact position is therefore quantized by the host block
-        // size (`fft_size - host_block` for aligned streams). Reporting the full
-        // FFT size is block-size independent and bounds compensation error to at
-        // most one host block.
+        // The output scheduler emits exactly one FFT frame of leading silence,
+        // independent of host block partitioning.
         self.fft_size
     }
 
@@ -646,8 +648,13 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
                 buffer.len()
             ));
         }
+        if nf > MAX_BLOCK_FRAMES {
+            return Err(format!(
+                "Spectral compressor block size {nf} exceeds max {MAX_BLOCK_FRAMES} frames"
+            ));
+        }
+        self.block_input[..total].copy_from_slice(buffer);
 
-        let g_mix = self.mix_smoother.next_n(nf);
         let delta_enabled = self.delta_monitor.enabled();
 
         let mut input_pos = 0; // frame index into the caller's buffer
@@ -655,7 +662,7 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
 
         let hop_size = self.stft.hop_size;
 
-        while output_pos < nf {
+        while input_pos < nf || output_pos < nf {
             // --- Step 1: Fill input ring from caller's buffer ---
             if input_pos < nf {
                 let space_in_tail = fft_size - self.stft.input_fill;
@@ -669,7 +676,7 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
                         let src_base = (input_pos + i) * channels;
                         let dst_idx = self.stft.input_fill + i;
                         for ch in 0..channels {
-                            self.stft.input_buffers[ch][dst_idx] = buffer[src_base + ch];
+                            self.stft.input_buffers[ch][dst_idx] = self.block_input[src_base + ch];
                         }
                     }
                     self.stft.input_fill += to_copy;
@@ -688,18 +695,50 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
                 self.stft.input_fill = overlap;
             }
 
-            // --- Step 3: Drain available OLA frames into output ---
+            // --- Step 3: Emit fixed leading latency, then drain OLA output ---
+            let startup_remaining = fft_size.saturating_sub(self.stft.latency_filled);
+            let startup_frames = startup_remaining.min(nf - output_pos);
+            if startup_frames > 0 {
+                for i in 0..startup_frames {
+                    let out_base = (output_pos + i) * channels;
+                    let g_mix = self.mix_smoother.advance();
+                    for ch in 0..channels {
+                        let idx = out_base + ch;
+                        let dry_pos = self.stft.dry_delay_pos + ch;
+                        let dry = self.stft.dry_delay_buf[dry_pos];
+                        self.stft.dry_delay_buf[dry_pos] = self.block_input[idx];
+                        buffer[idx] = Self::mix_output_sample(dry, 0.0, g_mix, delta_enabled);
+                    }
+                    self.stft.dry_delay_pos += channels;
+                    if self.stft.dry_delay_pos >= self.stft.dry_delay_buf.len() {
+                        self.stft.dry_delay_pos = 0;
+                    }
+                }
+                self.stft.latency_filled += startup_frames;
+                output_pos += startup_frames;
+                if output_pos >= nf {
+                    continue;
+                }
+            }
+
             let frames_to_drain = self.stft.output_accumulator_fill.min(nf - output_pos);
             if frames_to_drain > 0 {
                 let mask = self.stft.output_accumulator_mask;
                 for i in 0..frames_to_drain {
                     let read_idx = (self.stft.output_read_position + i) & mask;
                     let out_base = (output_pos + i) * channels;
+                    let g_mix = self.mix_smoother.advance();
                     for ch in 0..channels {
                         let idx = out_base + ch;
-                        let dry = buffer[idx];
+                        let dry_pos = self.stft.dry_delay_pos + ch;
+                        let dry = self.stft.dry_delay_buf[dry_pos];
+                        self.stft.dry_delay_buf[dry_pos] = self.block_input[idx];
                         let wet = self.stft.output_accumulator[read_idx * channels + ch];
                         buffer[idx] = Self::mix_output_sample(dry, wet, g_mix, delta_enabled);
+                    }
+                    self.stft.dry_delay_pos += channels;
+                    if self.stft.dry_delay_pos >= self.stft.dry_delay_buf.len() {
+                        self.stft.dry_delay_pos = 0;
                     }
                 }
                 // Clear drained frames
@@ -717,10 +756,17 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
                 // No output ready: output silence for the wet path during initial latency fill.
                 for i in output_pos..nf {
                     let out_base = i * channels;
+                    let g_mix = self.mix_smoother.advance();
                     for ch in 0..channels {
                         let idx = out_base + ch;
-                        let dry = buffer[idx];
+                        let dry_pos = self.stft.dry_delay_pos + ch;
+                        let dry = self.stft.dry_delay_buf[dry_pos];
+                        self.stft.dry_delay_buf[dry_pos] = self.block_input[idx];
                         buffer[idx] = Self::mix_output_sample(dry, 0.0, g_mix, delta_enabled);
+                    }
+                    self.stft.dry_delay_pos += channels;
+                    if self.stft.dry_delay_pos >= self.stft.dry_delay_buf.len() {
+                        self.stft.dry_delay_pos = 0;
                     }
                 }
                 output_pos = nf;

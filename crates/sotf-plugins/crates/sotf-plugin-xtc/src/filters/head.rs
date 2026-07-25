@@ -1,3 +1,4 @@
+#[cfg(test)]
 use super::super::config::XtcPluginParams;
 use super::misc::SPEED_OF_SOUND;
 use rustfft::num_complex::Complex;
@@ -35,22 +36,6 @@ pub(crate) fn head_shadowing_woodworth(freq: f32, angle_rad: f32, head_radius: f
         // Scaled exponent aligned with validation reference data
         let exponent = (ka / 4.0).min(3.0);
         shadow_factor.powf(exponent)
-    }
-}
-
-/// Dispatch head shadowing based on the configured model.
-/// Returns magnitude-only shadow gain (0..1) for API compatibility.
-/// head_model: 0 = Woodworth, 1 = Brown-Duda
-#[allow(dead_code)]
-pub(crate) fn head_shadowing(
-    freq: f32,
-    angle_rad: f32,
-    head_radius: f32,
-    head_model: usize,
-) -> f32 {
-    match head_model {
-        1 => head_shadowing_brown_duda(freq, angle_rad, head_radius).0,
-        _ => head_shadowing_woodworth(freq, angle_rad, head_radius),
     }
 }
 
@@ -122,6 +107,7 @@ pub(crate) fn head_shadowing_brown_duda(freq: f32, angle_rad: f32, head_radius: 
 
 /// Head shadowing filter: low-pass filter modeling high-frequency attenuation
 /// as sound diffracts around the head
+#[cfg(test)]
 pub(crate) fn head_shadowing_filter(freq: f32, params: &XtcPluginParams) -> f32 {
     if freq <= 0.0 {
         return 1.0;

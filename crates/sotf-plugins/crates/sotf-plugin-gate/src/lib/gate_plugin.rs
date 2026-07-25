@@ -173,6 +173,7 @@ impl GatePlugin {
             params.release_ms,
         );
         p.mix = params.mix.clamp(0.0, 1.0);
+        p.mix_smoother.reset(p.mix);
         p.link_channels = params.link_channels;
         p.sidechain_hpf_hz = params.sidechain_hpf_hz.max(0.0);
 
@@ -215,6 +216,15 @@ impl GatePlugin {
         for buf in &mut self.lookahead_buffers {
             buf.set_delay_ms(self.lookahead_ms, self.sample_rate);
         }
+    }
+
+    #[inline]
+    pub(super) fn advance_threshold(&mut self) -> (f32, f32) {
+        let threshold_db = self.threshold_smoother.advance();
+        (
+            threshold_db,
+            fast_pow10(threshold_db / DB_CONVERSION_FACTOR),
+        )
     }
 
     pub(super) fn calculate_gate_attenuation(&self, input_db: f32, threshold: f32) -> f32 {
@@ -340,10 +350,12 @@ impl ParametricInPlacePlugin for GatePlugin {
             })?;
             // Side effects
             match idx {
-                0 => self.threshold_smoother.set_target(self.threshold_db), // threshold
-                2 | 4 => self.update_coefficients(),                        // attack or release
-                3 => self.update_hold_samples(),                            // hold
-                5 => self.mix_smoother.set_target(self.mix),                // mix
+                0 => {
+                    self.threshold_smoother.set_target(self.threshold_db);
+                } // threshold
+                2 | 4 => self.update_coefficients(), // attack or release
+                3 => self.update_hold_samples(),     // hold
+                5 => self.mix_smoother.set_target(self.mix), // mix
                 7 | 8 => self.rebuild_sidechain_hpf(), // sidechain_hpf_hz or order
                 9 => {
                     // detection_mode
@@ -420,6 +432,11 @@ impl ParametricInPlacePlugin for GatePlugin {
         let hs = self.hold_samples;
         let use_lookahead = self.lookahead_ms > 0.0;
         let use_ext_sc = self.sidechain_external;
+        let close_threshold_ratio = if self.hysteresis_db > 0.0 {
+            fast_pow10(-self.hysteresis_db / DB_CONVERSION_FACTOR)
+        } else {
+            1.0
+        };
         // When external sidechain is active, the buffer stride is channels*2
         // (audio channels followed by sidechain channels per frame).
         let stride = if use_ext_sc {
@@ -441,20 +458,11 @@ impl ParametricInPlacePlugin for GatePlugin {
             ));
         }
 
-        // Block-based smoothing: advance once per block
-        let thresh = self.threshold_smoother.next_n(num_frames);
-        let mix = self.mix_smoother.next_n(num_frames);
-
-        // Pre-compute linear thresholds to avoid fast_log10 on the hot audio path
-        let threshold_linear = fast_pow10(thresh / DB_CONVERSION_FACTOR);
-        let close_threshold_linear = if self.hysteresis_db > 0.0 {
-            fast_pow10((thresh - self.hysteresis_db) / DB_CONVERSION_FACTOR)
-        } else {
-            threshold_linear
-        };
-
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
+                let (thresh, threshold_linear) = self.advance_threshold();
+                let mix = self.mix_smoother.advance();
+                let close_threshold_linear = threshold_linear * close_threshold_ratio;
                 let frame_start = frame * stride;
                 let sc_offset = if use_ext_sc { self.channels } else { 0 };
 
@@ -511,6 +519,9 @@ impl ParametricInPlacePlugin for GatePlugin {
             }
         } else {
             for frame in 0..num_frames {
+                let (thresh, threshold_linear) = self.advance_threshold();
+                let mix = self.mix_smoother.advance();
+                let close_threshold_linear = threshold_linear * close_threshold_ratio;
                 let frame_start = frame * stride;
                 let sc_offset = if use_ext_sc { self.channels } else { 0 };
 

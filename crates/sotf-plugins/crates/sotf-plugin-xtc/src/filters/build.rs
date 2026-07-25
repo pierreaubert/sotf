@@ -1,7 +1,6 @@
 use super::super::config::XtcPluginParams;
 use super::apply::apply_beta_freq_boosts;
 use super::compute::compute_beta_condition_number_full;
-use super::compute::compute_beta_smooth;
 use super::resonance::resonance_peak_precomputed;
 use super::types::HrtfTransferFunctions;
 
@@ -94,22 +93,4 @@ pub(crate) fn build_beta_lut_condition_number(
             })
             .collect()
     }
-}
-
-/// Pre-compute beta regularization LUT for all frequency bins (legacy interface).
-///
-/// Used when Woodworth model is active. The per-bin condition number is computed
-/// inline during filter computation for better accuracy.
-#[allow(dead_code)]
-pub(crate) fn build_beta_lut(
-    num_bins: usize,
-    freq_per_bin: f32,
-    params: &XtcPluginParams,
-) -> Vec<f32> {
-    (0..num_bins)
-        .map(|bin| {
-            let freq = bin as f32 * freq_per_bin;
-            compute_beta_smooth(freq, params)
-        })
-        .collect()
 }

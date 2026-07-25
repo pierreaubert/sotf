@@ -38,6 +38,10 @@ pub(super) struct StftState {
     pub(super) next_add_position: usize,
     pub(super) output_read_position: usize,
     pub(super) latency_filled: usize,
+    /// Dry path delayed by the reported STFT latency for phase-aligned mixing.
+    pub(super) dry_delay_buf: Vec<f32>,
+    /// Interleaved frame offset into `dry_delay_buf`.
+    pub(super) dry_delay_pos: usize,
 
     // --- Temporary working buffers ---
     /// Frequency-domain scratch [num_bins]
@@ -93,6 +97,8 @@ impl StftState {
             next_add_position: 0,
             output_read_position: 0,
             latency_filled: 0,
+            dry_delay_buf: vec![0.0; fft_size * channels],
+            dry_delay_pos: 0,
             freq_scratch: vec![Complex::new(0.0, 0.0); num_bins],
             gains_scratch: vec![0.0; num_bins],
             // Phase 4A: Tonal/Transient
@@ -125,5 +131,7 @@ impl StftState {
         self.next_add_position = 0;
         self.output_read_position = 0;
         self.latency_filled = 0;
+        self.dry_delay_buf.fill(0.0);
+        self.dry_delay_pos = 0;
     }
 }

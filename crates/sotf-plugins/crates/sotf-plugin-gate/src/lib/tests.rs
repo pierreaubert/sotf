@@ -6,6 +6,23 @@ use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 
 #[test]
+fn threshold_decision_uses_the_canonical_db_smoother_trajectory() {
+    let mut plugin = GatePlugin::new(1, -60.0, 4.0, 5.0, 0.0, 50.0);
+    plugin.initialize(48_000).unwrap();
+    plugin
+        .parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Float(0.0))
+        .unwrap();
+
+    for _ in 0..512 {
+        let (threshold_db, threshold_linear) = plugin.advance_threshold();
+        let expected = math_audio_dsp::fast_math::fast_pow10(
+            threshold_db / super::consts::DB_CONVERSION_FACTOR,
+        );
+        assert!((threshold_linear - expected).abs() < 1.0e-7);
+    }
+}
+
+#[test]
 fn test_gate_basic() {
     let mut p = GatePlugin::new(1, -20.0, 100.0, 1.0, 10.0, 50.0);
     p.initialize(48000).unwrap();

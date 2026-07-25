@@ -66,6 +66,8 @@ pub struct MultibandExpanderPlugin {
     pub(super) dry_buffer: Vec<f32>,
     pub(super) threshold_smoother: Smoother,
     pub(super) mix_smoother: Smoother,
+    /// Exact per-frame global threshold/mix values for band-major processing.
+    pub(super) automation_values: Vec<[f32; 2]>,
     pub(super) xover_smoothers: Vec<LogSmoother>,
 
     /// Per-band measured auto-makeup gain trackers.
@@ -222,6 +224,7 @@ impl MultibandExpanderPlugin {
             dry_buffer: Vec::new(),
             threshold_smoother: Smoother::new(params.threshold_db, 20.0, sr),
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
+            automation_values: Vec::new(),
             xover_smoothers: xfs.iter().map(|&f| LogSmoother::new(f, 50.0, sr)).collect(),
             measured_makeups,
             level_detectors,
@@ -746,8 +749,6 @@ impl MultibandExpanderPlugin {
         let any_solo =
             (0..self.num_bands).any(|b| self.band_params.get(b).map(|p| p.solo).unwrap_or(false));
 
-        let g_mix = self.mix_smoother.next_n(nf);
-
         // Ensure dry buffer large enough
         if self.dry_buffer.len() < buffer.len() {
             self.dry_buffer.resize(buffer.len(), 0.0);
@@ -847,6 +848,7 @@ impl MultibandExpanderPlugin {
         {
             let ss = self.spectral.as_mut().unwrap();
             for i in 0..nf {
+                let g_mix = self.mix_smoother.advance();
                 for ch in 0..channels {
                     let idx = i * channels + ch;
                     // Push the raw dry sample; read back the delayed copy.
@@ -1333,6 +1335,7 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
         let stride = max_frames * self.channels;
         self.band_buffers.resize(self.num_bands * stride, 0.0);
         self.dry_buffer.resize(max_frames * self.channels, 0.0);
+        self.automation_values.resize(max_frames, [0.0; 2]);
 
         // (Re-)initialize spectral state if mode is active
         if self.processing_mode == "spectral" {
@@ -1447,8 +1450,10 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
             }
         }
 
-        let g_th = self.threshold_smoother.next_n(nf);
-        let g_mix = self.mix_smoother.next_n(nf);
+        for values in &mut self.automation_values[..nf] {
+            values[0] = self.threshold_smoother.advance();
+            values[1] = self.mix_smoother.advance();
+        }
 
         let mut any_solo = false;
         for b in 0..self.num_bands {
@@ -1487,7 +1492,7 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
                 continue;
             }
 
-            let th = bp.and_then(|p| p.threshold_db).unwrap_or(g_th);
+            let threshold_override = bp.and_then(|p| p.threshold_db);
             let rat = bp.and_then(|p| p.ratio).unwrap_or(self.ratio);
             let kn = bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db);
             let rg = bp.and_then(|p| p.range_db).unwrap_or(self.range_db);
@@ -1524,6 +1529,7 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
                 (-1.0 / (PEAK_DETECTOR_RELEASE_MS * 0.001 * self.sample_rate as f32)).exp();
 
             for frame in 0..nf {
+                let th = threshold_override.unwrap_or(self.automation_values[frame][0]);
                 // Update per-channel peak envelope followers first.
                 // Instant attack (sample-accurate), fast independent release.
                 for ch in 0..self.channels {
@@ -1640,6 +1646,7 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
         // We push the dry signal through an equal-length delay so dry and wet
         // remain time-aligned, preventing comb-filter notches when mix < 1.0.
         for frame in 0..nf {
+            let g_mix = self.automation_values[frame][1];
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
                 let mut s = 0.0f32;

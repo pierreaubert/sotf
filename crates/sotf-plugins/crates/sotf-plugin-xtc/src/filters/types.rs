@@ -16,6 +16,7 @@ pub(crate) struct HrtfTransferFunctions {
     pub h_rr: Vec<Complex<f32>>,
 }
 
+#[cfg(test)]
 pub(crate) type XtcFilterSet = (
     Vec<Complex<f32>>,
     Vec<Complex<f32>>,

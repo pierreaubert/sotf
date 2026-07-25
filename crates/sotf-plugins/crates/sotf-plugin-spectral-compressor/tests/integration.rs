@@ -153,10 +153,19 @@ fn mix_zero_passthrough() {
         .unwrap();
 
     assert!(buffer.iter().all(|s| s.is_finite()));
-    for (got, want) in buffer.iter().zip(expected.iter()) {
+    let latency = plugin.latency_samples();
+    assert!(
+        buffer[..latency * plugin.channels()]
+            .iter()
+            .all(|sample| *sample == 0.0)
+    );
+    for (got, want) in buffer[latency * plugin.channels()..]
+        .iter()
+        .zip(expected.iter())
+    {
         assert!(
             (got - want).abs() < 1e-5,
-            "mix=0 should pass the dry signal through unchanged"
+            "mix=0 should emit the dry signal at the reported latency"
         );
     }
 }

@@ -40,7 +40,9 @@ pub struct LimiterPlugin {
     pub(super) feed_forward: bool,
     pub(super) param_link_amount: ParameterId,
     pub(super) link_amount: f32,
-    pub(super) threshold_smoother: Smoother,
+    /// Threshold is smoothed in dB so equal time intervals produce equal
+    /// perceptual gain changes rather than an asymmetric linear-amplitude ramp.
+    pub(super) threshold_db_smoother: Smoother,
     pub(super) mix_smoother: Smoother,
     pub(super) envelope: f32,
     pub(super) release_coeff: f32,
@@ -101,7 +103,7 @@ impl LimiterPlugin {
             feed_forward: false,
             param_link_amount: ParameterId::from("link_amount"),
             link_amount: pk(LM, "link_amount").default_f64() as f32,
-            threshold_smoother: Smoother::new(fast_pow10(threshold_db / 20.0), 5.0, sr),
+            threshold_db_smoother: Smoother::new(threshold_db, 5.0, sr),
             mix_smoother: Smoother::new(1.0, 5.0, sr),
             envelope: 0.0,
             release_coeff: 0.0,
@@ -221,6 +223,7 @@ impl LimiterPlugin {
         p.isp_mode = params.isp_mode;
         p.dual_release = params.dual_release;
         p.mix = params.mix.clamp(0.0, 1.0);
+        p.mix_smoother.reset(p.mix);
         p.feed_forward = params.feed_forward;
         p.link_amount = params.link_amount.clamp(0.0, 1.0);
         p.rebuild_cached_parameters();
@@ -312,8 +315,7 @@ impl ParametricInPlacePlugin for LimiterPlugin {
                     .unwrap_or(pk(LM, "threshold").default_f64() as f32);
                 if val.is_finite() {
                     self.threshold_db = val;
-                    self.threshold_smoother
-                        .set_target(fast_pow10(self.threshold_db / 20.0));
+                    self.threshold_db_smoother.set_target(self.threshold_db);
                 }
             } else if id == self.param_release {
                 let val = value
@@ -369,7 +371,7 @@ impl ParametricInPlacePlugin for LimiterPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.update_coefficients();
-        self.threshold_smoother.set_time(5.0, sample_rate);
+        self.threshold_db_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
         // Resize true peak detectors if channel count changed
         self.true_peak_detectors
@@ -418,7 +420,7 @@ impl ParametricInPlacePlugin for LimiterPlugin {
 
         #[allow(clippy::needless_range_loop)]
         for frame in 0..num_frames {
-            let thresh = self.threshold_smoother.advance();
+            let thresh = fast_pow10(self.threshold_db_smoother.advance() / 20.0);
             let mix = self.mix_smoother.advance();
 
             // Detect per-channel peaks using pre-allocated scratch.

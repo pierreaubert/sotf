@@ -68,6 +68,8 @@ pub struct MultibandCompressorPlugin {
     pub(super) dry_buffer: Vec<f32>,
     pub(super) threshold_smoother: Smoother,
     pub(super) mix_smoother: Smoother,
+    /// Exact per-frame global threshold/mix values for band-major processing.
+    pub(super) automation_values: Vec<[f32; 2]>,
     pub(super) xover_smoothers: Vec<LogSmoother>,
 
     /// Per-band lookahead delay buffers (one per band, each with `channels` interleaved).
@@ -212,6 +214,7 @@ impl MultibandCompressorPlugin {
             dry_buffer: Vec::new(),
             threshold_smoother: Smoother::new(params.threshold_db, 20.0, sr),
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
+            automation_values: Vec::new(),
             xover_smoothers: xfs.iter().map(|&f| LogSmoother::new(f, 50.0, sr)).collect(),
             lookahead_buffers,
             measured_makeups,
@@ -902,6 +905,7 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         let stride = max_frames * self.channels;
         self.band_buffers.resize(self.num_bands * stride, 0.0);
         self.dry_buffer.resize(max_frames * self.channels, 0.0);
+        self.automation_values.resize(max_frames, [0.0; 2]);
         self.lookahead_frame_tmp.resize(self.channels, 0.0);
 
         Ok(())
@@ -933,6 +937,9 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let nf = context.num_frames;
+        if nf == 0 {
+            return Ok(0);
+        }
         let stride = nf * self.channels;
 
         // Real-time safety: buffers must be pre-allocated by initialize() up to 4096 frames.
@@ -987,8 +994,10 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
             }
         }
 
-        let g_th = self.threshold_smoother.next_n(nf);
-        let g_mix = self.mix_smoother.next_n(nf);
+        for values in &mut self.automation_values[..nf] {
+            values[0] = self.threshold_smoother.advance();
+            values[1] = self.mix_smoother.advance();
+        }
 
         let mut any_solo = false;
         for b in 0..self.num_bands {
@@ -1023,7 +1032,8 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
                 continue;
             }
 
-            let th = bp.and_then(|p| p.threshold_db).unwrap_or(g_th);
+            let threshold_override = bp.and_then(|p| p.threshold_db);
+            let makeup_threshold = threshold_override.unwrap_or(self.automation_values[nf - 1][0]);
             let rat = bp.and_then(|p| p.ratio).unwrap_or(self.ratio);
             let kn = bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db);
             let use_measured_makeup = bp.map(|p| p.measured_auto_makeup).unwrap_or(false);
@@ -1033,7 +1043,7 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
             } else if bp.map(|p| p.auto_makeup).unwrap_or(false) {
                 let ratio = rat.max(1.0);
                 let slope = 1.0 - 1.0 / ratio;
-                let overshoot = (-th).max(0.0) * 0.5;
+                let overshoot = (-makeup_threshold).max(0.0) * 0.5;
                 fast_pow10((overshoot * slope) / 20.0)
             } else {
                 fast_pow10(bp.map(|p| p.makeup_gain_db).unwrap_or(0.0) / 20.0)
@@ -1052,6 +1062,7 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
             };
 
             for frame in 0..nf {
+                let th = threshold_override.unwrap_or(self.automation_values[frame][0]);
                 // Detect max-of-channels level for linked detection
                 // Apply per-band sidechain tilt filter if configured
                 let has_tilt = b < self.sidechain_tilt_biquads.len();
@@ -1146,6 +1157,7 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         }
 
         for frame in 0..nf {
+            let g_mix = self.automation_values[frame][1];
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
                 let mut s = 0.0f32;

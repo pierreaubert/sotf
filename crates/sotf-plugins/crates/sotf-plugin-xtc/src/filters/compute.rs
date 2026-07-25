@@ -8,6 +8,7 @@ use super::build::build_beta_lut_condition_number;
 use super::build::build_pinna_contra_lut;
 use super::build::build_pinna_ipsi_lut;
 use super::head::head_shadowing_complex;
+#[cfg(test)]
 use super::head::head_shadowing_filter;
 use super::misc::SPEED_OF_SOUND;
 use super::misc::condition_number_2x2;
@@ -20,6 +21,7 @@ use super::types::AsymmetricGeometry;
 use super::types::GeometryCache;
 use super::types::HrtfTransferFunctions;
 use super::types::SymmetricGeometry;
+#[cfg(test)]
 use super::types::XtcFilterSet;
 use super::xtc_filters::XtcFilters;
 use rustfft::num_complex::Complex;
@@ -985,7 +987,7 @@ pub(crate) fn compute_path_length(distance: f32, theta: f32, ear_offset: f32) ->
 }
 
 /// Compute crosstalk cancellation filters in frequency domain (4-filter version for tests)
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn compute_xtc_filters(
     params: &XtcPluginParams,
     sample_rate: u32,
@@ -1099,6 +1101,7 @@ pub(crate) fn compute_xtc_filters(
 /// Compute frequency-dependent regularization parameter β(f) (legacy interface)
 ///
 /// Now uses kappa_target-derived boost factors instead of separate low/high boost params.
+#[cfg(test)]
 pub(crate) fn compute_beta(freq: f32, params: &XtcPluginParams) -> f32 {
     let beta_base = params.beta_base;
     let kappa_target = params.kappa_target;

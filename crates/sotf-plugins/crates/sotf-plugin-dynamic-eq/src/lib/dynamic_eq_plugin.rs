@@ -135,14 +135,14 @@ impl DynamicEqPlugin {
         let mut p = Self::new(channels);
         p.num_bands = params.num_bands.clamp(1, MAX_BANDS);
         p.threshold_db = params.threshold.clamp(-60.0, 0.0);
-        p.threshold_smoother.set_target(p.threshold_db);
+        p.threshold_smoother.reset(p.threshold_db);
         p.ratio = params.ratio.clamp(1.0, 20.0);
         p.attack_ms = params.attack_ms.clamp(0.1, 100.0);
         p.release_ms = params.release_ms.clamp(10.0, 1000.0);
         p.knee_db = params.knee.clamp(0.0, 20.0);
         p.link_channels = params.link_channels;
         p.mix = params.mix.clamp(0.0, 1.0);
-        p.mix_smoother.set_target(p.mix);
+        p.mix_smoother.reset(p.mix);
 
         // Apply per-band params
         for (i, band_params) in params.bands.iter().enumerate().take(MAX_BANDS) {
@@ -606,9 +606,6 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
         // Save dry signal
         self.dry_buf[..total].copy_from_slice(&buffer[..total]);
 
-        let g_threshold = self.threshold_smoother.next_n(nf);
-        let mix = self.mix_smoother.next_n(nf);
-        let dry_mix = 1.0 - mix;
         let knee = self.knee_db;
         let ratio = self.ratio;
 
@@ -616,6 +613,7 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
         let any_solo = self.bands[..self.num_bands].iter().any(|b| b.solo);
 
         for frame in 0..nf {
+            let global_threshold = self.threshold_smoother.advance();
             for band_idx in 0..self.num_bands {
                 let band = &mut self.bands[band_idx];
                 if !band.active {
@@ -625,7 +623,7 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
                     continue;
                 }
 
-                let threshold = band.get_effective_threshold(g_threshold);
+                let threshold = band.get_effective_threshold(global_threshold);
                 let band_ratio = band.get_effective_ratio(ratio);
 
                 if self.link_channels && nc > 1 {
@@ -690,8 +688,14 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
         }
 
         // Mix dry/wet
-        if (mix - 1.0).abs() > 0.001 {
-            for (sample, dry) in buffer[..total].iter_mut().zip(self.dry_buf[..total].iter()) {
+        for frame in 0..nf {
+            let mix = self.mix_smoother.advance();
+            let dry_mix = 1.0 - mix;
+            let offset = frame * nc;
+            for (sample, dry) in buffer[offset..offset + nc]
+                .iter_mut()
+                .zip(self.dry_buf[offset..offset + nc].iter())
+            {
                 *sample = *dry * dry_mix + *sample * mix;
             }
         }

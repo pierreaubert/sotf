@@ -16,6 +16,68 @@ use sotf_plugin_eq::{BiquadFilterConfig, EqFilterTopology, EqPlugin, EqPluginPar
 const SAMPLE_RATE: u32 = 48_000;
 const FRAMES: usize = 64;
 
+fn measured_sine_gain_db(filter_type: &str, shelf_hz: f64, test_hz: f32, gain_db: f64) -> f32 {
+    let params = EqPluginParams {
+        filters: vec![BiquadFilterConfig {
+            filter_type: filter_type.to_string(),
+            freq: shelf_hz,
+            q: 1.0,
+            db_gain: gain_db,
+            order: 2,
+            topology: EqFilterTopology::Biquad,
+            lambda: None,
+            kautz_sections: Vec::new(),
+        }],
+        channel_filters: None,
+        auto_gain: AutoGainParams::default(),
+    };
+    let mut plugin = EqPlugin::from_params(1, SAMPLE_RATE, params).unwrap();
+    plugin.plugin_initialize(SAMPLE_RATE).unwrap();
+    let frames = SAMPLE_RATE as usize;
+    let input: Vec<f32> = (0..frames)
+        .map(|frame| {
+            (2.0 * std::f32::consts::PI * test_hz * frame as f32 / SAMPLE_RATE as f32).sin() * 0.1
+        })
+        .collect();
+    let mut output = vec![0.0; frames];
+    plugin
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(SAMPLE_RATE, frames),
+        )
+        .unwrap();
+    let settled = frames / 2;
+    let input_rms = (input[settled..]
+        .iter()
+        .map(|sample| sample * sample)
+        .sum::<f32>()
+        / (frames - settled) as f32)
+        .sqrt();
+    let output_rms = (output[settled..]
+        .iter()
+        .map(|sample| sample * sample)
+        .sum::<f32>()
+        / (frames - settled) as f32)
+        .sqrt();
+    20.0 * (output_rms / input_rms).log10()
+}
+
+#[test]
+fn orfanidis_shelves_match_passband_and_stopband_targets() {
+    for gain_db in [-6.0, 6.0] {
+        let low_passband = measured_sine_gain_db("lowshelf_orf", 500.0, 40.0, gain_db);
+        let low_stopband = measured_sine_gain_db("lowshelf_orf", 500.0, 8_000.0, gain_db);
+        assert!((low_passband - gain_db as f32).abs() < 0.35);
+        assert!(low_stopband.abs() < 0.15);
+
+        let high_stopband = measured_sine_gain_db("highshelf_orf", 5_000.0, 200.0, gain_db);
+        let high_passband = measured_sine_gain_db("highshelf_orf", 5_000.0, 18_000.0, gain_db);
+        assert!(high_stopband.abs() < 0.15);
+        assert!((high_passband - gain_db as f32).abs() < 0.35);
+    }
+}
+
 // ----------------------------------------------------------------------------
 // Instantiation and metadata
 // ----------------------------------------------------------------------------

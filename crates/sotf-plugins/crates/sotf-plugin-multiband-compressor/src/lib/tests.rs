@@ -869,6 +869,38 @@ fn test_set_parameter_mix_and_threshold_update_smoothers() {
 }
 
 #[test]
+fn automation_values_are_independent_of_host_block_partitioning() {
+    fn render(chunks: &[usize]) -> Vec<[f32; 2]> {
+        let mut plugin = MultibandCompressorPlugin::new(1);
+        plugin.initialize(48_000).unwrap();
+        plugin
+            .set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-30.0))
+            .unwrap();
+        plugin
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.25))
+            .unwrap();
+
+        let mut values = Vec::new();
+        for &nf in chunks {
+            let mut buffer = vec![0.0; nf];
+            plugin
+                .process_in_place(&mut buffer, &ProcessContext::new(48_000, nf))
+                .unwrap();
+            values.extend_from_slice(&plugin.automation_values[..nf]);
+        }
+        values
+    }
+
+    let one_block = render(&[1024]);
+    let small_blocks = render(&[64; 16]);
+    assert_eq!(one_block.len(), small_blocks.len());
+    for (a, b) in one_block.iter().zip(&small_blocks) {
+        assert!((a[0] - b[0]).abs() < 1.0e-6);
+        assert!((a[1] - b[1]).abs() < 1.0e-6);
+    }
+}
+
+#[test]
 fn test_initial_threshold_automation_seeds_smoother_current_value() {
     let mut p = MultibandCompressorPlugin::new(1);
     p.initialize(48000).unwrap();
