@@ -115,6 +115,14 @@ impl MidiTrack {
         self.chain.build()
     }
 
+    pub(crate) fn reset_processing_state(&mut self) {
+        self.instrument.reset();
+        self.chain.reset();
+        self.event_buf.clear();
+        self.instrument_buf.fill(0.0);
+        self.chain_output.fill(0.0);
+    }
+
     /// Output channels of this track (from the instrument).
     pub fn output_channels(&self) -> usize {
         self.instrument.output_channels()

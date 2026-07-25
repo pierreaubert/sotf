@@ -22,6 +22,7 @@ pub use decoder::core::AudioSpec;
 pub use decoder::stream::{StreamEvent, StreamPosition, StreamState};
 
 pub mod manager;
+pub mod offline_renderer;
 pub use manager::{
     AudioEngineManager, AudioFileInfo, StreamingCommand, StreamingEvent, StreamingState,
     clear_verified_rate_cache, select_output_sample_rate,
@@ -57,12 +58,12 @@ pub use engine::{
 };
 mod types;
 pub use types::{
-    AudioEngineState, AudioFrame, AudioSource, DsdOutputMode, DsdOutputStatus,
-    EngineConfig, EngineOversamplingPolicy, IsolatedExternalPluginSandboxBackend,
+    AudioEngineState, AudioFrame, AudioSource, DsdOutputMode, DsdOutputStatus, EngineConfig,
+    EngineOversamplingPolicy, IsolatedExternalPluginSandboxBackend,
     IsolatedExternalPluginSandboxStatus, IsolatedExternalPluginWorkerEvent,
     IsolatedExternalPluginWorkerStatus, LatencyCompensationMode, NetworkEndpointConfig,
     NetworkEndpointMode, NetworkEndpointStatus, OutputAccessMode, OutputAccessStatus,
-    PlaybackState, PLUGIN_BUILD_DIAGNOSTIC_PREFIX, PluginBuildDiagnostic, PluginBuildTarget,
+    PLUGIN_BUILD_DIAGNOSTIC_PREFIX, PlaybackState, PluginBuildDiagnostic, PluginBuildTarget,
     PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig, ServiceId,
     SinkConfig, SinkOpenResult, SinkType, StreamMetadata,
 };

@@ -1,4 +1,3 @@
-
 pub(super) struct TimelineRenderStateGuard<'a> {
     pub(super) timeline: &'a mut crate::timeline::Timeline,
     pub(super) saved_loop: Option<(u64, u64)>,
@@ -22,4 +21,3 @@ impl Drop for TimelineRenderStateGuard<'_> {
         self.timeline.transport.loop_range = self.saved_loop.take();
     }
 }
-

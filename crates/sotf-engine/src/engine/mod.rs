@@ -28,7 +28,7 @@ pub use network_endpoint::{NetworkEndpointBackend, NetworkEndpointPlan, plan_net
 mod output_access;
 pub use output_access::{OutputAccessBackend, OutputAccessPlan, plan_output_access};
 
-mod output_dither;
+pub(crate) mod output_dither;
 
 #[cfg(not(target_os = "ios"))]
 mod cpal_sink;

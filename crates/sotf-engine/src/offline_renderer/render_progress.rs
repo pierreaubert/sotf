@@ -1,4 +1,3 @@
-
 /// Progress information passed to the callback during rendering.
 #[derive(Debug, Clone)]
 pub struct RenderProgress {
@@ -15,4 +14,3 @@ impl RenderProgress {
             .map(|t| (self.frames_processed as f32 / t.max(1) as f32) * 100.0)
     }
 }
-

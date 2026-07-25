@@ -8,6 +8,63 @@ use super::transport::Transport;
 use crate::engine::PluginConfig;
 use sotf_plugins::DawHost;
 
+struct PathDelay {
+    samples: Vec<f32>,
+    write_frame: usize,
+    delay_frames: usize,
+    channels: usize,
+    active: bool,
+    #[cfg(test)]
+    clear_calls: usize,
+}
+
+impl PathDelay {
+    fn new(delay_frames: usize, channels: usize) -> Self {
+        Self {
+            samples: vec![0.0; delay_frames.saturating_mul(channels)],
+            write_frame: 0,
+            delay_frames,
+            channels,
+            active: false,
+            #[cfg(test)]
+            clear_calls: 0,
+        }
+    }
+
+    fn process(&mut self, block: &mut [f32]) {
+        self.active = true;
+        if self.delay_frames == 0 || self.channels == 0 {
+            return;
+        }
+        for frame in block.chunks_exact_mut(self.channels) {
+            let base = self.write_frame * self.channels;
+            for (channel, sample) in frame.iter_mut().enumerate() {
+                std::mem::swap(sample, &mut self.samples[base + channel]);
+            }
+            self.write_frame += 1;
+            if self.write_frame == self.delay_frames {
+                self.write_frame = 0;
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.samples.fill(0.0);
+        self.write_frame = 0;
+        #[cfg(test)]
+        {
+            self.clear_calls += 1;
+        }
+    }
+
+    fn deactivate(&mut self) {
+        if self.active {
+            self.clear();
+            self.active = false;
+        }
+    }
+}
+
 /// A multi-track audio timeline with global transport and master plugin chain.
 ///
 /// Processing flow:
@@ -37,6 +94,10 @@ pub struct Timeline {
     track_buf: Vec<f32>,
     /// Pre-allocated mix buffer (sum of all tracks)
     mix_buf: Vec<f32>,
+    /// Per-path delays align all track chains before summing.
+    audio_path_delays: Vec<PathDelay>,
+    midi_path_delays: Vec<PathDelay>,
+    maximum_track_latency: usize,
 }
 
 impl Timeline {
@@ -52,6 +113,9 @@ impl Timeline {
             frame_size,
             track_buf: vec![0.0; buf_size],
             mix_buf: vec![0.0; buf_size],
+            audio_path_delays: Vec::new(),
+            midi_path_delays: Vec::new(),
+            maximum_track_latency: 0,
         }
     }
 
@@ -79,7 +143,49 @@ impl Timeline {
             midi_track.build()?;
         }
         self.master_chain.build()?;
+        self.maximum_track_latency = self
+            .tracks
+            .iter()
+            .map(|track| track.chain.total_latency_samples())
+            .chain(
+                self.midi_tracks
+                    .iter()
+                    .map(|track| track.chain.total_latency_samples()),
+            )
+            .max()
+            .unwrap_or(0);
+        self.audio_path_delays = self
+            .tracks
+            .iter()
+            .map(|track| {
+                PathDelay::new(
+                    self.maximum_track_latency
+                        .saturating_sub(track.chain.total_latency_samples()),
+                    track.channels,
+                )
+            })
+            .collect();
+        self.midi_path_delays = self
+            .midi_tracks
+            .iter()
+            .map(|track| {
+                PathDelay::new(
+                    self.maximum_track_latency
+                        .saturating_sub(track.chain.total_latency_samples()),
+                    track.output_channels(),
+                )
+            })
+            .collect();
         Ok(())
+    }
+
+    /// Maximum active track latency plus the master-chain latency.
+    ///
+    /// Offline renderers use this to remove leading processing delay and drain
+    /// the corresponding delayed program material after the timeline ends.
+    pub fn output_latency_samples(&self) -> usize {
+        self.maximum_track_latency
+            .saturating_add(self.master_chain.total_latency_samples())
     }
 
     /// Process one block of audio from the timeline.
@@ -106,6 +212,12 @@ impl Timeline {
         let out_len = total.min(output.len());
 
         if !has_active_audio && !has_active_midi && self.master_chain.plugin_count() == 0 {
+            for delay in &mut self.audio_path_delays {
+                delay.deactivate();
+            }
+            for delay in &mut self.midi_path_delays {
+                delay.deactivate();
+            }
             output[..out_len].fill(0.0);
             self.transport.advance(nf);
             return Ok(nf);
@@ -121,12 +233,19 @@ impl Timeline {
         self.mix_buf[..total].fill(0.0);
 
         // Render audio tracks
-        for track in &mut self.tracks {
+        for (track_index, track) in self.tracks.iter_mut().enumerate() {
             if track.muted || (any_solo && !track.solo) {
+                if let Some(delay) = self.audio_path_delays.get_mut(track_index) {
+                    delay.deactivate();
+                }
                 continue;
             }
             self.track_buf[..total].fill(0.0);
             track.render_block(pos, nf, &mut self.track_buf[..total])?;
+            if let Some(delay) = self.audio_path_delays.get_mut(track_index) {
+                let track_samples = nf.saturating_mul(track.channels).min(self.track_buf.len());
+                delay.process(&mut self.track_buf[..track_samples]);
+            }
             mix_with_channel_adapt(
                 &self.track_buf,
                 track.channels,
@@ -138,12 +257,21 @@ impl Timeline {
 
         // Render MIDI tracks
         let sr = self.transport.sample_rate;
-        for midi_track in &mut self.midi_tracks {
+        for (track_index, midi_track) in self.midi_tracks.iter_mut().enumerate() {
             if midi_track.muted || (any_solo && !midi_track.solo) {
+                if let Some(delay) = self.midi_path_delays.get_mut(track_index) {
+                    delay.deactivate();
+                }
                 continue;
             }
             self.track_buf[..total].fill(0.0);
             midi_track.render_block(pos, nf, sr, &mut self.track_buf[..total])?;
+            if let Some(delay) = self.midi_path_delays.get_mut(track_index) {
+                let track_samples = nf
+                    .saturating_mul(midi_track.output_channels())
+                    .min(self.track_buf.len());
+                delay.process(&mut self.track_buf[..track_samples]);
+            }
             mix_with_channel_adapt(
                 &self.track_buf,
                 midi_track.output_channels(),
@@ -172,6 +300,18 @@ impl Timeline {
         self.transport.seek(position_samples);
         for track in &mut self.tracks {
             track.reset_decoders();
+        }
+        for track in &mut self.midi_tracks {
+            track.reset_processing_state();
+        }
+        self.master_chain.reset();
+        for delay in &mut self.audio_path_delays {
+            delay.clear();
+            delay.active = false;
+        }
+        for delay in &mut self.midi_path_delays {
+            delay.clear();
+            delay.active = false;
         }
     }
 
@@ -247,5 +387,50 @@ fn mix_with_channel_adapt(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PathDelay, Timeline};
+    use crate::timeline::track::Track;
+
+    #[test]
+    fn inactive_path_delay_clears_only_on_transition() {
+        let mut delay = PathDelay::new(4_096, 8);
+        let mut block = vec![1.0; 64 * 8];
+        delay.process(&mut block);
+        delay.deactivate();
+        assert_eq!(delay.clear_calls, 1);
+
+        for _ in 0..128 {
+            delay.deactivate();
+        }
+        assert_eq!(delay.clear_calls, 1);
+    }
+
+    #[test]
+    fn all_inactive_fast_path_clears_stale_track_delay_once() {
+        let mut timeline = Timeline::new(1, 48_000, 8);
+        timeline.add_track(Track::new("muted", 1, 48_000));
+        timeline.audio_path_delays = vec![PathDelay::new(4, 1)];
+        timeline.audio_path_delays[0].process(&mut [1.0]);
+        timeline.tracks[0].muted = true;
+        timeline.transport.play();
+
+        let mut output = vec![1.0; 8];
+        timeline.process(&mut output).unwrap();
+        assert_eq!(output, vec![0.0; 8]);
+        assert!(!timeline.audio_path_delays[0].active);
+        assert!(
+            timeline.audio_path_delays[0]
+                .samples
+                .iter()
+                .all(|&sample| sample == 0.0)
+        );
+        assert_eq!(timeline.audio_path_delays[0].clear_calls, 1);
+
+        timeline.process(&mut output).unwrap();
+        assert_eq!(timeline.audio_path_delays[0].clear_calls, 1);
     }
 }

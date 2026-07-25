@@ -1,10 +1,10 @@
 /// Allocation-free triangular-PDF dither for the final float-to-integer boundary.
-pub(super) struct TpdfDither {
+pub(crate) struct TpdfDither {
     state: u64,
 }
 
 impl TpdfDither {
-    pub(super) fn new(seed: u64) -> Self {
+    pub(crate) fn new(seed: u64) -> Self {
         Self {
             state: if seed == 0 {
                 0x9e37_79b9_7f4a_7c15
@@ -29,6 +29,22 @@ impl TpdfDither {
     #[inline(always)]
     fn noise_lsb(&mut self) -> f64 {
         self.uniform() - self.uniform()
+    }
+
+    /// Quantize normalized floating-point audio to a signed PCM word with
+    /// round-to-nearest TPDF dither and saturating rails.
+    pub(crate) fn quantize_signed(&mut self, sample: f32, bits: u16) -> i32 {
+        debug_assert!((2..=32).contains(&bits));
+        let scale = 2.0f64.powi(i32::from(bits) - 1);
+        let normalized = if sample.is_nan() {
+            0.0
+        } else {
+            sample.clamp(-1.0, 1.0)
+        };
+        let quantized = (f64::from(normalized) * scale + self.noise_lsb()).round();
+        let minimum = -scale;
+        let maximum = scale - 1.0;
+        quantized.clamp(minimum, maximum) as i32
     }
 }
 
@@ -115,6 +131,27 @@ mod tests {
         }
 
         assert!((sum / samples as f64).abs() < 0.01);
+    }
+
+    #[test]
+    fn signed_pcm_quantizer_supports_16_and_24_bit_outputs() {
+        for bits in [16, 24] {
+            let mut dither = TpdfDither::new(u64::from(bits));
+            let scale = 1i32 << (bits - 1);
+            let mut below = false;
+            let mut above = false;
+            for _ in 0..4096 {
+                let value = dither.quantize_signed(0.0, bits);
+                below |= value < 0;
+                above |= value > 0;
+                assert!((-scale..scale).contains(&value));
+            }
+            assert!(below && above);
+            assert_eq!(dither.quantize_signed(1.0, bits), scale - 1);
+            assert!(
+                matches!(dither.quantize_signed(-1.0, bits), v if v == -scale || v == -scale + 1)
+            );
+        }
     }
 
     macro_rules! conversion_tests {

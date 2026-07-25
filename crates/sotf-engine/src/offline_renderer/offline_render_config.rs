@@ -1,7 +1,7 @@
-use crate::decoder::source::AudioSource;
-use crate :: engine :: { PluginConfig } ;
-use std :: path :: { PathBuf } ;
 use super::types::OutputFormat;
+use crate::decoder::source::AudioSource;
+use crate::engine::PluginConfig;
+use std::path::PathBuf;
 
 /// Configuration for offline rendering.
 #[derive(Debug, Clone)]
@@ -34,4 +34,3 @@ impl OfflineRenderConfig {
         }
     }
 }
-
