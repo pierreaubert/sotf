@@ -6,6 +6,7 @@ use super::generate::generate_output_filenames_stereo;
 use super::generate::generate_signal;
 use super::misc::parse_channel_list;
 use super::misc::prepare_signal;
+use super::probe::gen_schroeder_narrowband_probe;
 #[cfg(not(target_os = "ios"))]
 use super::record::record_and_analyze;
 #[cfg(not(target_os = "ios"))]
@@ -27,6 +28,61 @@ use std::str::FromStr;
 use tempfile::tempdir;
 
 mod misc;
+
+#[test]
+fn schroeder_probe_has_release_grade_crest_factor() {
+    for sample_rate in [44_100, 48_000, 96_000] {
+        for duration_ms in [15.0_f32, 20.0, 125.0, 137.3, 1_000.0] {
+            let frames = (duration_ms * sample_rate as f32 / 1_000.0).round() as usize;
+            let signal =
+                gen_schroeder_narrowband_probe(frames, sample_rate, 0.5, 800.0, 2_000.0).unwrap();
+            let peak = signal
+                .iter()
+                .map(|sample| sample.abs())
+                .fold(0.0_f32, f32::max);
+            let rms = (signal.iter().map(|sample| sample * sample).sum::<f32>()
+                / signal.len() as f32)
+                .sqrt();
+            let crest_factor = peak / rms;
+
+            assert!((peak - 0.5).abs() < 1e-4);
+            assert!(
+                crest_factor <= 2.0,
+                "{sample_rate} Hz, {duration_ms} ms probe crest factor \
+                 {crest_factor:.3} exceeds 6.02 dB"
+            );
+        }
+    }
+}
+
+#[test]
+fn schroeder_probe_rejects_too_few_tones_and_invalid_amplitude() {
+    assert!(gen_schroeder_narrowband_probe(96, 48_000, 0.5, 800.0, 2_000.0).is_err());
+    assert!(gen_schroeder_narrowband_probe(48_000, 48_000, f32::NAN, 800.0, 2_000.0).is_err());
+
+    let bounded = gen_schroeder_narrowband_probe(48_000, 48_000, 10.0, 800.0, 2_000.0).unwrap();
+    let peak = bounded
+        .iter()
+        .map(|sample| sample.abs())
+        .fold(0.0_f32, f32::max);
+    assert!((peak - 1.0).abs() < 1e-4);
+}
+
+#[cfg(not(target_os = "ios"))]
+#[test]
+fn schroeder_probe_cross_rate_reference_resamples_exact_playback_signal() {
+    for duration_ms in [125.0_f32, 137.3] {
+        let playback_frames = (duration_ms * 48_000.0 / 1_000.0).round() as usize;
+        let playback =
+            gen_schroeder_narrowband_probe(playback_frames, 48_000, 0.5, 800.0, 2_000.0).unwrap();
+        let analysis = resample_reference_signal(&playback, 48_000, 44_100).unwrap();
+        let expected = (playback.len() as f64 * 44_100.0 / 48_000.0).ceil() as usize;
+
+        assert_eq!(analysis.len(), expected);
+        assert!(analysis.iter().all(|sample| sample.is_finite()));
+        assert!(analysis.iter().any(|sample| sample.abs() > 0.1));
+    }
+}
 
 #[cfg(not(target_os = "ios"))]
 #[test]

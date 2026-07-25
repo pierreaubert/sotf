@@ -1,14 +1,89 @@
 use super::consts::DEFAULT_AUXILIARY_SIGNAL_LEVEL_DB;
-use super::consts::PROBE_SEED;
 use super::measurement::measurement_amplitude_from_level_db;
+#[cfg(not(target_os = "ios"))]
+use super::record::resample_reference_signal;
 use super::types::CancelFlag;
 use super::types::ProbeDelayChannelResult;
 use super::types::ProbeDelayResults;
 use super::types::pick_direct_arrival_from_envelope;
 #[cfg(not(target_os = "ios"))]
 use super::types::play_per_channel_and_record_mono;
-use crate::signals::*;
 use hound::{SampleFormat, WavSpec, WavWriter};
+use math_audio_dsp::stft::RealFftProcessor;
+use rustfft::num_complex::Complex;
+use std::f32::consts::PI;
+
+const MIN_PROBE_TONES: usize = 16;
+
+/// Generate a periodic, band-limited multisine with Schroeder phases.
+///
+/// Equal-amplitude contiguous FFT bins and the quadratic phase progression
+/// keep the probe crest factor bounded, preserving more RMS energy at a given
+/// peak level than a random-phase multisine. Periodic construction also avoids
+/// introducing a discontinuity at the analysis window boundary.
+pub(super) fn gen_schroeder_narrowband_probe(
+    n_frames: usize,
+    sample_rate: u32,
+    amplitude: f32,
+    lo_hz: f32,
+    hi_hz: f32,
+) -> Result<Vec<f32>, String> {
+    if n_frames == 0 {
+        return Ok(Vec::new());
+    }
+    if sample_rate == 0
+        || !amplitude.is_finite()
+        || !lo_hz.is_finite()
+        || !hi_hz.is_finite()
+        || lo_hz < 0.0
+        || hi_hz <= lo_hz
+    {
+        return Err("probe parameters must be finite and define a valid band".to_string());
+    }
+
+    let mut fft = RealFftProcessor::new_bidirectional(n_frames);
+    let bin_hz = sample_rate as f32 / n_frames as f32;
+    let first_bin = (lo_hz.max(0.0) / bin_hz).ceil() as usize;
+    let last_real_bin = if n_frames.is_multiple_of(2) {
+        fft.spectrum_size.saturating_sub(2)
+    } else {
+        fft.spectrum_size.saturating_sub(1)
+    };
+    let last_bin = ((hi_hz.max(0.0) / bin_hz).floor() as usize).min(last_real_bin);
+    if first_bin > last_bin {
+        return Err("probe band contains no usable FFT bins".to_string());
+    }
+
+    let tone_count = last_bin - first_bin + 1;
+    if tone_count < MIN_PROBE_TONES {
+        return Err(format!(
+            "probe duration is too short for robust delay detection: \
+             {tone_count} tones, need at least {MIN_PROBE_TONES}"
+        ));
+    }
+    let tone_count_f32 = tone_count as f32;
+    for (tone_index, bin) in (first_bin..=last_bin).enumerate() {
+        let k = tone_index as f32;
+        let phase = -PI * k * (k - 1.0) / tone_count_f32;
+        fft.freq_buffer[bin] = Complex::from_polar(1.0, phase);
+    }
+    fft.inverse();
+
+    let peak = fft.time_buffer[..n_frames]
+        .iter()
+        .map(|sample| sample.abs())
+        .fold(0.0_f32, f32::max);
+    let bounded_amplitude = amplitude.clamp(0.0, 1.0);
+    let scale = if peak > 1e-10 {
+        bounded_amplitude / peak
+    } else {
+        0.0
+    };
+    Ok(fft.time_buffer[..n_frames]
+        .iter()
+        .map(|sample| sample * scale)
+        .collect())
+}
 
 /// Run delay probing across all output channels in a single recording pass.
 ///
@@ -167,17 +242,14 @@ fn probe_channel_delays_core(
 
     // Generate the narrowband probe (800-2000Hz per Johnston recommendation)
     // at the requested playback sample rate. If cpal negotiates a different
-    // input rate the probe is regenerated for analysis below.
+    // input rate the exact playback waveform is resampled for analysis below.
     let probe_samples = (probe_duration_ms / 1000.0 * sample_rate as f32) as usize;
-    let amplitude = measurement_amplitude_from_level_db(signal_level_db);
-    let probe = gen_narrowband_probe(
-        probe_samples,
-        sample_rate,
-        amplitude,
-        PROBE_SEED,
-        800.0,
-        2000.0,
-    );
+    if !signal_level_db.is_finite() {
+        return Err("probe signal level must be finite".to_string());
+    }
+    let amplitude = measurement_amplitude_from_level_db(signal_level_db).clamp(0.0, 1.0);
+    let probe =
+        gen_schroeder_narrowband_probe(probe_samples, sample_rate, amplitude, 800.0, 2000.0)?;
 
     log::info!(
         "[probe_channel_delays] Generated narrowband probe: {} samples ({:.1}ms), 800-2000Hz, level={:.1}dBFS",
@@ -202,26 +274,20 @@ fn probe_channel_delays_core(
         cancel,
     )?;
 
-    // If the mic rate differs from the playback rate, regenerate the
-    // probe at the mic rate so cross-correlation sits on the same
-    // sample grid as the recording.
+    // If the mic rate differs from the playback rate, resample the exact
+    // playback waveform. Regenerating from duration can change an edge bin
+    // after frame-count rounding, which changes every Schroeder phase and
+    // destroys the matched-filter reference.
     let analysis_probe = if capture.input_sr == sample_rate {
         probe
     } else {
         log::warn!(
             "[probe_channel_delays] Input SR ({}) differs from playback SR ({}); \
-             regenerating probe at input rate for correct cross-correlation",
+             resampling exact probe for correct cross-correlation",
             capture.input_sr,
             sample_rate
         );
-        gen_narrowband_probe(
-            capture.analysis_signal_samples,
-            capture.input_sr,
-            amplitude,
-            PROBE_SEED,
-            800.0,
-            2000.0,
-        )
+        resample_reference_signal(&probe, sample_rate, capture.input_sr)?
     };
 
     // --- Per-channel analysis via cross-correlation ---
