@@ -16,6 +16,7 @@ pub mod playlists;
 pub mod plugins;
 pub mod queue;
 pub mod search;
+pub mod tools;
 
 pub mod conf;
 pub mod conf_directories;
@@ -61,6 +62,7 @@ use plugins::{
 };
 use queue::handle_queue_keys;
 use search::handle_search_mode;
+use tools::handle_tools_keys;
 
 pub enum AppEvent {
     Tick,
@@ -191,14 +193,15 @@ pub(super) fn dispatch_shared_command(
     match command {
         SharedCommand::Quit => {
             app.leave_ear_training();
+            app.leave_ab_testing();
             app.should_quit = true;
             None
         }
         SharedCommand::ExitApplication => {
-            if app.current_screen == Screen::EarTraining {
-                app.switch_screen(Screen::Library);
-            } else {
-                app.should_quit = true;
+            match app.current_screen {
+                Screen::EarTraining | Screen::AbTesting => app.switch_screen(Screen::Tools),
+                Screen::Tools => app.switch_screen(Screen::Library),
+                _ => app.should_quit = true,
             }
             None
         }
@@ -209,9 +212,9 @@ pub(super) fn dispatch_shared_command(
                 Screen::Queue => Screen::Playlists,
                 Screen::Playlists => Screen::Plugins,
                 Screen::Plugins => Screen::Devices,
-                Screen::Devices => Screen::Configure,
-                Screen::Configure => Screen::EarTraining,
-                Screen::EarTraining => Screen::Library,
+                Screen::Devices => Screen::Tools,
+                Screen::Tools | Screen::EarTraining | Screen::AbTesting => Screen::Configure,
+                Screen::Configure => Screen::Library,
             };
             app.switch_screen(screen);
             app.input_mode = if screen == Screen::Configure {
@@ -228,7 +231,7 @@ pub(super) fn dispatch_shared_command(
                 KeyCode::Char('P') => (Screen::Plugins, InputMode::Normal),
                 KeyCode::Char('O') => (Screen::Devices, InputMode::Normal),
                 KeyCode::Char('Y') => (Screen::Playlists, InputMode::Normal),
-                KeyCode::Char('E') => (Screen::EarTraining, InputMode::Normal),
+                KeyCode::Char('T') => (Screen::Tools, InputMode::Normal),
                 KeyCode::Char('C') | KeyCode::Char('N') => {
                     (Screen::Configure, InputMode::Configure)
                 }
@@ -376,7 +379,9 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         Screen::Playlists => playlists::handle_playlists_keys(app, key),
         Screen::Plugins => handle_plugins_keys(app, key),
         Screen::Devices => handle_devices_keys(app, key),
+        Screen::Tools => handle_tools_keys(app, key),
         Screen::EarTraining => handle_ear_training_keys(app, key),
+        Screen::AbTesting => tools::handle_ab_testing_keys(app, key),
         Screen::Configure => conf::handle_tab_bar_keys(app, key),
     }
 }

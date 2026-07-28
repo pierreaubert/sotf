@@ -2013,6 +2013,9 @@ mod localization_render_tests {
                 Screen::Playlists,
                 Screen::Plugins,
                 Screen::Devices,
+                Screen::Tools,
+                Screen::EarTraining,
+                Screen::AbTesting,
                 Screen::Configure,
             ] {
                 app.current_screen = screen;

@@ -11,7 +11,7 @@ pub(crate) fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
         (Screen::Playlists, 'Y'),
         (Screen::Plugins, 'P'),
         (Screen::Devices, 'O'),
-        (Screen::EarTraining, 'E'),
+        (Screen::Tools, 'T'),
         (Screen::Configure, 'C'),
     ];
 
@@ -20,7 +20,9 @@ pub(crate) fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
 
     for (screen, hotkey) in &screens {
         let label = text.screen_name(*screen);
-        let is_active = *screen == app.current_screen;
+        let is_active = *screen == app.current_screen
+            || (*screen == Screen::Tools
+                && matches!(app.current_screen, Screen::EarTraining | Screen::AbTesting));
 
         // Box with screen label
         let style = if is_active {

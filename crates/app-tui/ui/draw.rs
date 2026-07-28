@@ -118,7 +118,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             Screen::Playlists => draw_playlists_screen(f, main_chunks[0], app),
             Screen::Plugins => draw_plugins_screen(f, main_chunks[0], app),
             Screen::Devices => draw_devices_screen(f, main_chunks[0], app),
+            Screen::Tools => draw_tools_screen(f, main_chunks[0], app),
             Screen::EarTraining => draw_ear_training_screen(f, main_chunks[0], app),
+            Screen::AbTesting => draw_ab_testing_screen(f, main_chunks[0], app),
             Screen::Configure => draw_configure_screen(f, main_chunks[0], app),
         }
     }

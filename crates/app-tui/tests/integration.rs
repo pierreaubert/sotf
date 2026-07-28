@@ -103,7 +103,11 @@ fn tab_cycles_screens_and_configure_sub_screens() {
         assert_eq!(app.current_screen, expected_screen);
     }
 
-    // Devices -> Configure
+    // Devices -> Tools -> Configure
+    send_keys(&mut app, &[KeyCode::Tab]);
+    assert_eq!(app.current_screen, Screen::Tools);
+    assert_eq!(app.input_mode, InputMode::Normal);
+
     send_keys(&mut app, &[KeyCode::Tab]);
     assert_eq!(app.current_screen, Screen::Configure);
     assert_eq!(app.input_mode, InputMode::Configure);

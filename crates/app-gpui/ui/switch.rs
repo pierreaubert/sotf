@@ -14,6 +14,7 @@ impl PlayerView {
                 && screen != Screen::ListeningTest;
             if leaving_ear_training {
                 use crate::components::plugins::editing::PluginEditingManager;
+                let _ = state.app.plugin_state.leave_ab_test_runtime();
                 let owned_node = state
                     .app
                     .plugin_state
@@ -50,8 +51,8 @@ impl PlayerView {
     }
 
     fn switch_to_plugins(&mut self, _: &SwitchToPlugins, _: &mut Window, cx: &mut Context<Self>) {
+        self.switch_screen_with_trigger(Screen::Settings, "SwitchToPlugins", cx);
         self.state.update(cx, |state, _cx| {
-            state.app.set_screen(Screen::Settings, "SwitchToPlugins");
             state.app.ui_state.active_settings_tab = crate::app::SettingsTab::Misc;
         });
         cx.notify();
@@ -89,8 +90,8 @@ impl PlayerView {
     }
 
     fn switch_to_devices(&mut self, _: &SwitchToDevices, _: &mut Window, cx: &mut Context<Self>) {
+        self.switch_screen_with_trigger(Screen::Settings, "SwitchToDevices", cx);
         self.state.update(cx, |state, _cx| {
-            state.app.set_screen(Screen::Settings, "SwitchToDevices");
             state.app.ui_state.active_settings_tab = crate::app::SettingsTab::AudioDevice;
         });
         cx.notify();
@@ -102,10 +103,8 @@ impl PlayerView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.switch_screen_with_trigger(Screen::Settings, "SwitchToDirectories", cx);
         self.state.update(cx, |state, _cx| {
-            state
-                .app
-                .set_screen(Screen::Settings, "SwitchToDirectories");
             state.app.ui_state.active_settings_tab = crate::app::SettingsTab::Library;
         });
         cx.notify();

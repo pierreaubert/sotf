@@ -200,6 +200,9 @@ impl App {
         if self.current_screen == Screen::EarTraining && screen != Screen::EarTraining {
             self.leave_ear_training();
         }
+        if self.current_screen == Screen::AbTesting && screen != Screen::AbTesting {
+            self.leave_ab_testing();
+        }
         self.current_screen = screen;
     }
 

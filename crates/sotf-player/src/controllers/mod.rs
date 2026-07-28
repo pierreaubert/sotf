@@ -5,6 +5,7 @@
 //! and only manage UI-specific state.
 
 pub mod ab_compare_path;
+pub mod ab_test_controller;
 pub mod ab_test_execution;
 pub mod ab_test_session;
 pub mod library;
@@ -15,6 +16,7 @@ pub mod plugin_param_map;
 pub mod queue;
 pub mod scan;
 
+pub use ab_test_controller::{AbTestController, AbTestPhase, AbTestView};
 pub use ab_test_execution::{
     LevelMatchPreparation, LevelMatchPreparationRequest, load_ab_test_session, media_file_identity,
     prepare_level_match, save_ab_test_session, verify_media_segment,

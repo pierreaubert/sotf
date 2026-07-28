@@ -155,7 +155,8 @@ pub use ear_training::{
 
 // Re-export controllers
 pub use controllers::{
-    LibraryController, PlaybackController, PlaylistController, PluginController,
-    PluginUpdateEffect, QueueController, QueuePlaybackEffect, ScanController, get_param_count,
+    AbTestController, AbTestError, AbTestPhase, AbTestSession, AbTestView, LibraryController,
+    PlaybackController, PlaylistController, PluginController, PluginUpdateEffect, QueueController,
+    QueuePlaybackEffect, ScanController, TrialAnswer, TrialCue, TrialMode, get_param_count,
     param_index_to_engine_param,
 };

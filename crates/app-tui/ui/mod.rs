@@ -25,6 +25,7 @@ pub(crate) use draw_servers::*;
 pub(crate) use draw_spinorama::*;
 pub(crate) use draw_status_bar::*;
 pub(crate) use draw_title::*;
+pub(crate) use draw_tools::*;
 pub(crate) use draw_transport::*;
 pub(crate) use draw_volume::*;
 pub(crate) use ratatui::{
@@ -35,7 +36,7 @@ pub(crate) use ratatui::{
     text::{Line, Span},
     widgets::{
         Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, GraphType, List, ListItem,
-        ListState, Paragraph, Row, Table, Wrap,
+        ListState, Paragraph, Row, Table, Tabs, Wrap,
     },
 };
 pub(crate) use sotf_audio_player::{
@@ -69,6 +70,7 @@ mod draw_servers;
 mod draw_spinorama;
 mod draw_status_bar;
 mod draw_title;
+mod draw_tools;
 mod draw_transport;
 mod draw_volume;
 pub(crate) mod keybinding_catalog;

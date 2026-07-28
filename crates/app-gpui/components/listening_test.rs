@@ -317,27 +317,27 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.listening_test.clone();
         let listening = state.app.plugin_state.listening_test_state.clone();
-        let has_session = listening.session.is_some();
+        let has_session = listening.ab_test.session().is_some();
         let trial_ready = listening
-            .session
-            .as_ref()
+            .ab_test
+            .session()
             .is_some_and(|session| session.setup.level_match.within_tolerance());
         let paths_ready = listening.path_a.is_some() && listening.path_b.is_some();
         let pending_mode = listening
-            .session
-            .as_ref()
+            .ab_test
+            .session()
             .and_then(|session| session.pending_mode());
         let trial_count = listening
-            .session
-            .as_ref()
+            .ab_test
+            .session()
             .map_or(0, |session| session.trials.len());
         let score = listening
-            .session
-            .as_ref()
+            .ab_test
+            .session()
             .map(|session| session.abx_score());
         let level_text = translations.setup.level.clone();
         let level_match = listening.level_match_config;
-        let prepared_evidence = listening.session.as_ref().map(|session| {
+        let prepared_evidence = listening.ab_test.session().map(|session| {
             let measurement = &session.setup.level_match;
             let confidence = if measurement.within_tolerance() {
                 level_text.within_tolerance
@@ -585,7 +585,7 @@ impl PlayerView {
                                                         .listening_test_state;
                                                     listening.segment_start_ms =
                                                         (value.max(0.0) * 1_000.0).round() as u64;
-                                                    listening.session = None;
+                                                    let _ = listening.ab_test.clear_session();
                                                 });
                                             }),
                                     )
@@ -631,7 +631,7 @@ impl PlayerView {
                                                         .listening_test_state;
                                                     listening.level_match_config.window_ms =
                                                         (value.max(0.001) * 1_000.0).round() as u64;
-                                                    listening.session = None;
+                                                    let _ = listening.ab_test.clear_session();
                                                 });
                                             }),
                                     )
@@ -661,7 +661,7 @@ impl PlayerView {
                                                         .listening_test_state;
                                                     listening.level_match_config.tolerance_db =
                                                         value.max(0.0);
-                                                    listening.session = None;
+                                                    let _ = listening.ab_test.clear_session();
                                                 });
                                             }),
                                     )
@@ -692,7 +692,7 @@ impl PlayerView {
                                                     listening
                                                         .level_match_config
                                                         .max_correction_db = value.max(0.0);
-                                                    listening.session = None;
+                                                    let _ = listening.ab_test.clear_session();
                                                 });
                                             }),
                                     )
@@ -1882,7 +1882,7 @@ impl PlayerView {
                 .collect();
             *config = PathConfig::Graph { nodes, edges };
             clear_listening_canvas(listening, target);
-            listening.session = None;
+            let _ = listening.ab_test.clear_session();
             listening.status = localized.graph_converted.into();
         });
         cx.notify();
@@ -1954,7 +1954,7 @@ impl PlayerView {
                 }
             }
             listening.graph_add_menu_target = None;
-            listening.session = None;
+            let _ = listening.ab_test.clear_session();
             listening.status = localized.processor_added.into();
         });
         cx.notify();
@@ -1988,7 +1988,7 @@ impl PlayerView {
                 }
                 _ => return,
             }
-            listening.session = None;
+            let _ = listening.ab_test.clear_session();
             listening.status = processor_removed.into();
         });
         cx.notify();
@@ -2019,7 +2019,7 @@ impl PlayerView {
             }
             let plugin = plugins.remove(from);
             plugins.insert(to, plugin);
-            listening.session = None;
+            let _ = listening.ab_test.clear_session();
             listening.status = rack_reordered.into();
         });
         cx.notify();
@@ -2168,7 +2168,7 @@ impl PlayerView {
                         .level_match_config
                         .window_ms
                         .max(metric.minimum_window_ms().max(1));
-                    listening.session = None;
+                    let _ = listening.ab_test.clear_session();
                 });
                 cx.notify();
             }))
@@ -2179,7 +2179,7 @@ impl PlayerView {
             let start_ms = (state.app.playback.position_secs.max(0.0) * 1_000.0).round() as u64;
             let listening = &mut state.app.plugin_state.listening_test_state;
             listening.segment_start_ms = start_ms;
-            listening.session = None;
+            let _ = listening.ab_test.clear_session();
         });
         cx.notify();
     }
@@ -2191,8 +2191,8 @@ impl PlayerView {
                 .app
                 .plugin_state
                 .listening_test_state
-                .session
-                .as_ref()
+                .ab_test
+                .session()
                 .map(|session| {
                     (
                         session.setup.media.clone(),
@@ -2303,7 +2303,7 @@ impl PlayerView {
                         }
                     }
                     clear_listening_canvas(listening, target);
-                    listening.session = None;
+                    let _ = listening.ab_test.clear_session();
                     listening.status = captured.into();
                 }
                 Err(error) => listening.status = error,
@@ -2328,13 +2328,11 @@ impl PlayerView {
                 .listening_test
                 .status
                 .trial_started;
+            let result = state.app.plugin_state.start_ab_test_trial(mode);
             let listening = &mut state.app.plugin_state.listening_test_state;
-            let Some(session) = listening.session.as_mut() else {
-                listening.status = load_or_prepare.into();
-                return;
-            };
-            match session.start_trial(mode) {
+            match result {
                 Ok(index) => listening.status = format!("{trial_started} · #{}", index + 1),
+                Err(AbTestError::InvalidSetup) => listening.status = load_or_prepare.into(),
                 Err(error) => listening.status = error.to_string(),
             }
         });
@@ -2432,8 +2430,13 @@ impl PlayerView {
                 match result {
                     Ok((session, preparation)) => {
                         let correction = preparation.measurement.correction_b_db;
-                        listening.session = Some(session);
-                        listening.status = format!("{prepared_label}: {correction:+.2} dB.");
+                        match listening.ab_test.replace_session(session) {
+                            Ok(()) => {
+                                listening.status =
+                                    format!("{prepared_label}: {correction:+.2} dB.");
+                            }
+                            Err(error) => listening.status = error.to_string(),
+                        }
                     }
                     Err(error) => listening.status = error.to_string(),
                 }
@@ -2452,51 +2455,11 @@ impl PlayerView {
                 .listening_test
                 .status
                 .clone();
-            let runtime = state
+            let result = state
                 .app
                 .plugin_state
-                .listening_test_state
-                .session
-                .as_ref()
-                .ok_or_else(|| localized.no_session.to_owned())
-                .and_then(|session| {
-                    session
-                        .runtime_config_for_pending_cue(cue)
-                        .map_err(|error| error.to_string())
-                });
-            let result = runtime.and_then(|runtime| {
-                let plugin_idx = state
-                    .app
-                    .plugin_state
-                    .graph
-                    .plugins_linear()
-                    .and_then(|plugins| {
-                        plugins
-                            .iter()
-                            .position(|node| node.plugin.plugin_type() == PluginType::ABCompare)
-                    })
-                    .ok_or_else(|| localized.add_ab_plugin.to_owned())?;
-                let path_a = serde_json::to_string(&runtime.path_a).map_err(|e| e.to_string())?;
-                let path_b = serde_json::to_string(&runtime.path_b).map_err(|e| e.to_string())?;
-                state.app.set_plugin_param_string(plugin_idx, 9, path_a)?;
-                state.app.set_plugin_param_string(plugin_idx, 10, path_b)?;
-                state
-                    .app
-                    .set_plugin_param(plugin_idx, 0, f64::from(runtime.mix));
-                state.app.set_plugin_param(plugin_idx, 1, 1.0);
-                state
-                    .app
-                    .set_plugin_param(plugin_idx, 2, f64::from(runtime.selected_path));
-                state.app.set_plugin_param(plugin_idx, 4, 0.0);
-                state
-                    .app
-                    .set_plugin_param(plugin_idx, 6, f64::from(runtime.max_auto_gain_db));
-                state.app.set_plugin_param(plugin_idx, 7, 0.0);
-                state
-                    .app
-                    .set_plugin_param(plugin_idx, 8, f64::from(runtime.mix_transition_ms));
-                Ok(())
-            });
+                .activate_ab_test_cue(cue)
+                .map_err(|error| error.to_string());
             state.app.plugin_state.listening_test_state.status = match result {
                 Ok(()) => localized.cue_active.into(),
                 Err(error) => error,
@@ -2514,15 +2477,17 @@ impl PlayerView {
                 .listening_test
                 .status
                 .answer_committed;
-            let listening = &mut state.app.plugin_state.listening_test_state;
-            let Some(session) = listening.session.as_mut() else {
-                return;
+            let (confidence, notes) = {
+                let listening = &state.app.plugin_state.listening_test_state;
+                (listening.confidence, listening.notes.clone())
             };
-            match session.commit_trial(
-                answer,
-                Some(listening.confidence),
-                Some(listening.notes.clone()),
-            ) {
+            let result =
+                state
+                    .app
+                    .plugin_state
+                    .commit_ab_test_answer(answer, Some(confidence), Some(notes));
+            let listening = &mut state.app.plugin_state.listening_test_state;
+            match result {
                 Ok(_) => {
                     listening.notes.clear();
                     listening.status = answer_committed.into();
@@ -2587,7 +2552,7 @@ impl PlayerView {
                             }
                         }
                         clear_listening_canvas(listening, target);
-                        listening.session = None;
+                        let _ = listening.ab_test.clear_session();
                         listening.status = path_loaded.into();
                     }
                     Err(error) => listening.status = error,
@@ -2615,8 +2580,9 @@ impl PlayerView {
             .app
             .plugin_state
             .listening_test_state
-            .session
-            .clone();
+            .ab_test
+            .session()
+            .cloned();
         cx.spawn(async move |_, cx| {
             let file = if load {
                 rfd::AsyncFileDialog::new()
@@ -2659,8 +2625,10 @@ impl PlayerView {
                         listening.path_b_canvas = None;
                         listening.level_match_config = session.setup.level_match.config();
                         listening.segment_start_ms = session.setup.media.start_ms;
-                        listening.session = Some(session);
-                        listening.status = localized.session_loaded.into();
+                        match listening.ab_test.replace_session(session) {
+                            Ok(()) => listening.status = localized.session_loaded.into(),
+                            Err(error) => listening.status = error.to_string(),
+                        }
                     }
                     Ok(None) => listening.status = localized.session_saved.into(),
                     Err(error) => listening.status = error.to_string(),
@@ -2673,6 +2641,12 @@ impl PlayerView {
 
     fn set_ear_training_surface(&mut self, surface: EarTrainingSurface, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _| {
+            if state.app.plugin_state.listening_test_state.surface
+                == EarTrainingSurface::BlindComparison
+                && surface != EarTrainingSurface::BlindComparison
+            {
+                let _ = state.app.plugin_state.leave_ab_test_runtime();
+            }
             state.app.plugin_state.listening_test_state.surface = surface;
         });
         cx.notify();
@@ -3306,8 +3280,8 @@ impl PlayerView {
             .app
             .plugin_state
             .listening_test_state
-            .session
-            .as_ref()
+            .ab_test
+            .session()
             .and_then(|session| session.pending_mode());
         if let Some(cue) = listening_cue_for_position(mode, position) {
             self.activate_listening_cue(cue, cx);
@@ -3351,8 +3325,8 @@ impl PlayerView {
             .app
             .plugin_state
             .listening_test_state
-            .session
-            .as_ref()
+            .ab_test
+            .session()
             .and_then(|session| session.pending_mode());
         if let Some(answer) = listening_answer_for_position(mode, position) {
             self.commit_listening_answer(answer, cx);
@@ -3603,7 +3577,7 @@ fn sync_listening_path_from_workflow(
             destination_offset: connection.to_port,
         });
     }
-    listening.session = None;
+    let _ = listening.ab_test.clear_session();
     listening.status = graph_updated.into();
 }
 
@@ -3640,7 +3614,7 @@ fn update_listening_node_parameters(
         return;
     };
     node.parameters = parameters;
-    listening.session = None;
+    let _ = listening.ab_test.clear_session();
     listening.status = localized.params_updated.into();
 }
 
@@ -3686,6 +3660,6 @@ fn update_listening_rack_parameters(
         }
         _ => return,
     }
-    listening.session = None;
+    let _ = listening.ab_test.clear_session();
     listening.status = localized.rack_updated.into();
 }

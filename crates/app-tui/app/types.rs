@@ -8,6 +8,7 @@ pub use sotf_audio_player::library::ChannelFilter;
 pub use sotf_audio_player::library::LibrarySortOrder;
 pub use sotf_audio_player::{ChannelGroup, ChannelInfo};
 
+mod ab_testing_tui_state;
 mod consts;
 mod ear_training_tui_state;
 mod federation_edit_state;
@@ -24,6 +25,7 @@ mod servers_tui_state;
 mod spinorama_eq_tui_state;
 mod spinorama_step;
 
+pub use ab_testing_tui_state::*;
 pub use consts::*;
 pub use ear_training_tui_state::*;
 pub use federation_edit_state::*;
@@ -48,8 +50,18 @@ pub enum Screen {
     Playlists,
     Plugins,
     Devices,
+    Tools,
     EarTraining,
+    AbTesting,
     Configure,
+}
+
+/// Tools available from the top-level Tools screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tool {
+    #[default]
+    EarTraining,
+    AbTesting,
 }
 
 /// A discovered Cast device (Chromecast or AirPlay) on the local network.

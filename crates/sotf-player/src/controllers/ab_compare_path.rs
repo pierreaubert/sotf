@@ -74,6 +74,17 @@ pub fn path_config_from_plugin_graph(
 
     validate_implicit_io_boundaries(graph)?;
 
+    if graph
+        .nodes
+        .values()
+        .any(|node| node.plugin.plugin_type() == sotf_audio::plugins::PluginType::ABCompare)
+    {
+        return Err(
+            "A/B paths cannot contain an A/B Compare plugin; capture the source graph before entering the test runtime"
+                .into(),
+        );
+    }
+
     if let Some(order) = graph.linear_order()
         && order
             .windows(2)
@@ -482,6 +493,22 @@ mod tests {
         assert_eq!(plugins.len(), 2);
         assert_eq!(plugins[0].plugin_type, "gain");
         assert_eq!(plugins[1].plugin_type, "eq");
+    }
+
+    #[test]
+    fn linear_graph_rejects_nested_ab_compare() {
+        let mut graph = PluginGraph::new();
+        let input = graph.add_special_node(SpecialNodeType::Input, NodePosition::new(0.0, 0.0), 2);
+        let compare = graph
+            .add_plugin_node(&PluginType::ABCompare, NodePosition::new(1.0, 0.0))
+            .unwrap();
+        let output =
+            graph.add_special_node(SpecialNodeType::Output, NodePosition::new(2.0, 0.0), 2);
+        connect_identity(&mut graph, input, compare);
+        connect_identity(&mut graph, compare, output);
+
+        let error = path_config_from_plugin_graph(&graph, 48_000.0).unwrap_err();
+        assert!(error.contains("cannot contain an A/B Compare plugin"));
     }
 
     #[test]

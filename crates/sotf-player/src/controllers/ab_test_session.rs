@@ -433,7 +433,7 @@ impl AbTestSession {
     }
 
     /// Resolve a playback cue without exposing the concealed assignment in UI state.
-    pub fn path_for_pending_cue(&self, cue: TrialCue) -> Result<PathSelection, AbTestError> {
+    pub(crate) fn path_for_pending_cue(&self, cue: TrialCue) -> Result<PathSelection, AbTestError> {
         let pending = self.pending.as_ref().ok_or(AbTestError::NoPendingTrial)?;
         route_for_assignment(pending.assignment, cue)
     }
@@ -449,6 +449,14 @@ impl AbTestSession {
     ) -> Result<ABComparePluginParams, AbTestError> {
         let selected = self.path_for_pending_cue(cue)?;
         self.setup.runtime_config(selected)
+    }
+
+    /// Build the static A/B Compare configuration installed before a trial.
+    ///
+    /// Cue activation subsequently changes only `selected_path`, avoiding
+    /// control-thread destruction and reconstruction of both hosted paths.
+    pub fn runtime_setup_config(&self) -> Result<ABComparePluginParams, AbTestError> {
+        self.setup.runtime_config(PathSelection::A)
     }
 
     pub fn commit_trial(
@@ -587,6 +595,12 @@ pub enum AbTestError {
     UnsupportedSchema(u32),
     #[error("trial record failed reproducibility validation")]
     InvalidTrialRecord,
+    #[error("A/B test runtime is already active")]
+    RuntimeAlreadyActive,
+    #[error("A/B test runtime is not active")]
+    RuntimeNotActive,
+    #[error("failed to build or update A/B test runtime graph: {0}")]
+    RuntimeGraph(String),
     #[error("failed to serialize a chain snapshot: {0}")]
     Serialization(String),
 }

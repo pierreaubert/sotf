@@ -182,10 +182,12 @@ mod tests {
     #[test]
     fn global_hotkey_and_escape_enter_and_leave_trainer() {
         let mut app = make_app();
-        super::super::handle_key_event(&mut app, key(KeyCode::Char('E')));
+        super::super::handle_key_event(&mut app, key(KeyCode::Char('T')));
+        assert_eq!(app.current_screen, Screen::Tools);
+        super::super::handle_key_event(&mut app, key(KeyCode::Enter));
         assert_eq!(app.current_screen, Screen::EarTraining);
         super::super::handle_key_event(&mut app, key(KeyCode::Esc));
-        assert_eq!(app.current_screen, Screen::Library);
+        assert_eq!(app.current_screen, Screen::Tools);
         assert!(!app.should_quit);
     }
 

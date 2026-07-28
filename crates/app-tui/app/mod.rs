@@ -1,5 +1,6 @@
 //! TUI application state management and related types
 
+mod app_ab_testing;
 pub(crate) mod app_autocomplete;
 mod app_ear_training;
 mod app_image;
@@ -19,14 +20,14 @@ mod types;
 pub use app_impl::{App, FederationScanResult};
 pub use parameters::{TuiEditablePlugin, TuiParamDescriptor, TuiParamSpec, TuiParamType};
 pub use types::{
-    ArtistNode, CastDeviceInfo, ChannelConflictChoice, ChannelFilter, ChannelGroup, ChannelInfo,
-    ConfigureSubScreen, EarTrainingTab, EarTrainingTuiState, FederationEditState, FederationMode,
-    FederationTuiState, FilePickerMode, FilePickerOrigin, HEADPHONE_TARGET_PRESETS,
-    HeadphoneEqStep, HeadphoneEqTuiState, InputMode, LibrarySortOrder, LibraryViewMode,
-    MatrixEditMode, MetadataEditorFields, MetadataEditorScope, MetadataEditorState,
-    PendingParameterUpdate, PlaylistMode, QueueEntry, QueueItem, RecordingTuiState, ReplayGainMode,
-    RoomEqTuiState, Screen, ServerSection, ServersTuiState, SpinUpdateSubStep, SpinoramaEqTuiState,
-    SpinoramaStep, TreeItem,
+    AbTestingStep, AbTestingTuiState, ArtistNode, CastDeviceInfo, ChannelConflictChoice,
+    ChannelFilter, ChannelGroup, ChannelInfo, ConfigureSubScreen, EarTrainingTab,
+    EarTrainingTuiState, FederationEditState, FederationMode, FederationTuiState, FilePickerMode,
+    FilePickerOrigin, HEADPHONE_TARGET_PRESETS, HeadphoneEqStep, HeadphoneEqTuiState, InputMode,
+    LibrarySortOrder, LibraryViewMode, MatrixEditMode, MetadataEditorFields, MetadataEditorScope,
+    MetadataEditorState, PendingParameterUpdate, PlaylistMode, QueueEntry, QueueItem,
+    RecordingTuiState, ReplayGainMode, RoomEqTuiState, Screen, ServerSection, ServersTuiState,
+    SpinUpdateSubStep, SpinoramaEqTuiState, SpinoramaStep, Tool, TreeItem,
 };
 // Allow access to types submodule for full detail (SOURCE_TYPE_NAMES, etc.)
 pub(crate) use types::{

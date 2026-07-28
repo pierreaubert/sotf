@@ -10,8 +10,9 @@ use crate::components::plugins::theme::RackThemeState;
 use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
 use sotf_audio_player::{
-    ConnectionDrag, EarTrainingCourse, EarTrainingProgress, EqTrainingConfig, EqTrainingSession,
-    GraphNodeId, GraphSelection, NodeDrag, PluginController, PluginSettings,
+    AbTestController, AbTestError, ConnectionDrag, EarTrainingCourse, EarTrainingProgress,
+    EqTrainingConfig, EqTrainingSession, GraphNodeId, GraphSelection, NodeDrag, PluginController,
+    PluginSettings, PluginUpdateEffect, TrialAnswer, TrialCue, TrialMode,
 };
 use sotf_audio_player_midi::MidiMappingEngine;
 use std::collections::HashMap;
@@ -258,7 +259,7 @@ pub struct ListeningTestState {
     pub path_b: Option<sotf_audio_player::controllers::ab_compare_path::PathConfig>,
     pub path_a_label: String,
     pub path_b_label: String,
-    pub session: Option<sotf_audio_player::controllers::ab_test_session::AbTestSession>,
+    pub ab_test: AbTestController,
     pub trial_mode: sotf_audio_player::controllers::ab_test_session::TrialMode,
     pub level_match_config: sotf_audio_player::controllers::ab_test_session::LevelMatchConfig,
     pub segment_start_ms: u64,
@@ -296,7 +297,7 @@ impl Default for ListeningTestState {
             path_b: None,
             path_a_label: "Path A".into(),
             path_b_label: "Path B".into(),
-            session: None,
+            ab_test: AbTestController::default(),
             trial_mode: sotf_audio_player::controllers::ab_test_session::TrialMode::Abx,
             level_match_config:
                 sotf_audio_player::controllers::ab_test_session::LevelMatchConfig::default(),
@@ -407,6 +408,64 @@ impl DerefMut for PluginState {
 }
 
 impl PluginState {
+    fn record_ab_test_effect(&mut self, effect: PluginUpdateEffect) {
+        self.update_state.pending_plugin_update = match effect {
+            PluginUpdateEffect::None => None,
+            PluginUpdateEffect::Structural => Some(PluginUpdateType::Structural),
+            PluginUpdateEffect::Parameter {
+                plugin_index,
+                param_index,
+            } => Some(PluginUpdateType::Parameter {
+                plugin_index,
+                param_index,
+            }),
+            PluginUpdateEffect::ParameterByNodeId {
+                node_id,
+                param_index,
+            } => Some(PluginUpdateType::ParameterByNodeId {
+                node_id,
+                param_index,
+            }),
+        };
+    }
+
+    pub fn start_ab_test_trial(&mut self, mode: TrialMode) -> Result<u32, AbTestError> {
+        if !self.listening_test_state.ab_test.view().runtime_active {
+            let mut controller = std::mem::take(&mut self.listening_test_state.ab_test);
+            let effect = controller.enter_runtime(&mut self.ctrl.graph);
+            self.listening_test_state.ab_test = controller;
+            self.record_ab_test_effect(effect?);
+        }
+        self.listening_test_state.ab_test.start_trial(mode)
+    }
+
+    pub fn activate_ab_test_cue(&mut self, cue: TrialCue) -> Result<(), AbTestError> {
+        let mut controller = std::mem::take(&mut self.listening_test_state.ab_test);
+        let effect = controller.activate_cue(&mut self.ctrl.graph, cue);
+        self.listening_test_state.ab_test = controller;
+        self.record_ab_test_effect(effect?);
+        Ok(())
+    }
+
+    pub fn commit_ab_test_answer(
+        &mut self,
+        answer: TrialAnswer,
+        confidence: Option<u8>,
+        notes: Option<String>,
+    ) -> Result<(), AbTestError> {
+        self.listening_test_state
+            .ab_test
+            .commit_trial(answer, confidence, notes)
+    }
+
+    pub fn leave_ab_test_runtime(&mut self) -> Result<(), AbTestError> {
+        let mut controller = std::mem::take(&mut self.listening_test_state.ab_test);
+        let effect = controller.leave_runtime(&mut self.ctrl.graph);
+        self.listening_test_state.ab_test = controller;
+        self.record_ab_test_effect(effect?);
+        Ok(())
+    }
+
     /// Whether the rack view can represent the current plugin graph.
     /// Returns false when the topology is non-linear (parallel branches,
     /// merges) — in that case the user must use the graph view.

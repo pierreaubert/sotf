@@ -161,6 +161,13 @@ fn uppercase_o_goes_to_devices() {
 }
 
 #[test]
+fn uppercase_t_goes_to_tools() {
+    let mut app = app_on_library();
+    send_keys(&mut app, &[KeyCode::Char('T')]);
+    assert_eq!(app.current_screen, Screen::Tools);
+}
+
+#[test]
 fn uppercase_n_goes_to_configure() {
     let mut app = app_on_library();
     send_keys(&mut app, &[KeyCode::Char('N')]);
@@ -188,6 +195,9 @@ fn tab_cycles_through_all_screens() {
     // Tab from Devices enters Configure but with configure owning Tab
     // Actually, from Devices the normal Tab handler runs:
     // Devices → Configure
+    send_keys(&mut app, &[KeyCode::Tab]);
+    assert_eq!(app.current_screen, Screen::Tools);
+
     send_keys(&mut app, &[KeyCode::Tab]);
     assert_eq!(app.current_screen, Screen::Configure);
 }
@@ -845,6 +855,10 @@ fn sequence_tab_through_all_screens() {
         assert_eq!(app.current_screen, expected_screen);
         assert_eq!(app.input_mode, InputMode::Normal);
     }
+
+    send_keys(&mut app, &[KeyCode::Tab]);
+    assert_eq!(app.current_screen, Screen::Tools);
+    assert_eq!(app.input_mode, InputMode::Normal);
 
     send_keys(&mut app, &[KeyCode::Tab]);
     assert_eq!(app.current_screen, Screen::Configure);

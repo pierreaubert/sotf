@@ -297,8 +297,8 @@ const ALWAYS_KEYBINDINGS: &[TuiKeybindingHelp] = &[binding(
 
 const SHARED_ROOT_KEYBINDINGS: &[TuiKeybindingHelp] = &[
     binding(
-        "L/Q/P/O/C/Y/N/E",
-        "  Jump to Library/Queue/Plugins/Devices/Configure/Playlists/Ear Training",
+        "L/Q/P/O/C/Y/N/T",
+        "  Jump to Library/Queue/Plugins/Devices/Configure/Playlists/Tools",
         None,
         &[TuiKeyContext::SharedRoot],
         &[
@@ -309,7 +309,7 @@ const SHARED_ROOT_KEYBINDINGS: &[TuiKeybindingHelp] = &[
             KeyChord::plain(KeyCode::Char('C')),
             KeyChord::plain(KeyCode::Char('Y')),
             KeyChord::plain(KeyCode::Char('N')),
-            KeyChord::plain(KeyCode::Char('E')),
+            KeyChord::plain(KeyCode::Char('T')),
         ],
         TuiCommand::Shared(SharedCommand::SwitchScreen),
     ),
@@ -1389,6 +1389,7 @@ pub(super) fn keybindings_for_screen(screen: Screen) -> &'static [TuiKeybindingH
         Screen::Plugins => PLUGIN_KEYBINDINGS,
         Screen::Playlists => PLAYLIST_KEYBINDINGS,
         Screen::Devices => DEVICE_KEYBINDINGS,
+        Screen::Tools | Screen::AbTesting => &[],
         Screen::EarTraining => EAR_TRAINING_KEYBINDINGS,
     }
 }
