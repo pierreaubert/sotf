@@ -141,6 +141,8 @@ pub(super) fn routed_bass_output() -> DspChainOutput {
         loss_type: None,
         iterations: 1,
         timestamp: "test".to_string(),
+        mixed_phase_per_channel: None,
+        optimizer_evidence: None,
         inter_channel_deviation: None,
         epa_per_channel: None,
         epa_multichannel: None,

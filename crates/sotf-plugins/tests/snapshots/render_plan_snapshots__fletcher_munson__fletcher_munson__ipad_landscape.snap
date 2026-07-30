@@ -20,9 +20,20 @@ expression: plan
     "output"
   ],
   "columns_collapsed": [],
+  "visible_group_ids": [
+    "mode-selector",
+    "ISO 226",
+    "AUTO",
+    "LOW",
+    "MID"
+  ],
+  "overflow_group_ids": [
+    "HIGH"
+  ],
   "config_controls": [],
   "main_groups": [
     {
+      "id": "mode-selector",
       "title": "",
       "controls": [
         {
@@ -39,6 +50,7 @@ expression: plan
       ]
     },
     {
+      "id": "ISO 226",
       "title": "ISO 226",
       "controls": [
         {
@@ -66,6 +78,7 @@ expression: plan
       ]
     },
     {
+      "id": "AUTO",
       "title": "AUTO",
       "controls": [
         {
@@ -93,6 +106,7 @@ expression: plan
       ]
     },
     {
+      "id": "LOW",
       "title": "LOW",
       "controls": [
         {
@@ -120,6 +134,7 @@ expression: plan
       ]
     },
     {
+      "id": "MID",
       "title": "MID",
       "controls": [
         {
@@ -169,6 +184,7 @@ expression: plan
       ]
     },
     {
+      "id": "HIGH",
       "title": "HIGH",
       "controls": [
         {

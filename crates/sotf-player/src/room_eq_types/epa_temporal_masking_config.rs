@@ -70,19 +70,23 @@ impl EpaTemporalMaskingConfig {
             || (self.post_mask_ms - d.post_mask_ms).abs() > f64::EPSILON
     }
 
-    /// Build a backend `TemporalMaskingConfig`, leaving non-UI knobs at the
+    /// Build a room-model `TemporalMaskingConfig`, leaving non-UI knobs at the
     /// autoeq defaults. Spread-init keeps any future backend fields at their
     /// `Default::default()` without forcing this layer to track them.
-    pub fn to_backend(&self) -> autoeq::loss::epa::score::TemporalMaskingConfig {
-        autoeq::loss::epa::score::TemporalMaskingConfig {
+    pub fn to_backend(&self) -> autoeq::roomeq_model::TemporalMaskingConfig {
+        autoeq::roomeq_model::TemporalMaskingConfig {
             enabled: self.enabled,
             weight: self.weight,
-            profile: self.profile.into(),
+            profile: match self.profile {
+                EpaTemporalProfile::Transient => autoeq::roomeq_model::TemporalMaskingProfile::Transient,
+                EpaTemporalProfile::Mixed => autoeq::roomeq_model::TemporalMaskingProfile::Mixed,
+                EpaTemporalProfile::Sustained => autoeq::roomeq_model::TemporalMaskingProfile::Sustained,
+            },
             ir_enabled: self.ir_enabled,
             ir_weight: self.ir_weight,
             pre_mask_ms: self.pre_mask_ms,
             post_mask_ms: self.post_mask_ms,
-            ..autoeq::loss::epa::score::TemporalMaskingConfig::default()
+            ..autoeq::roomeq_model::TemporalMaskingConfig::default()
         }
     }
 }

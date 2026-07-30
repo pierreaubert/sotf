@@ -21,9 +21,14 @@ expression: plan
   "columns_collapsed": [
     "output"
   ],
+  "visible_group_ids": [
+    "primary"
+  ],
+  "overflow_group_ids": [],
   "config_controls": [],
   "main_groups": [
     {
+      "id": "primary",
       "title": "",
       "controls": [
         {

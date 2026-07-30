@@ -21,6 +21,13 @@ expression: plan
     "output"
   ],
   "columns_collapsed": [],
+  "visible_group_ids": [
+    "BETA",
+    "SHADOW",
+    "ADVANCED",
+    "ROOM"
+  ],
+  "overflow_group_ids": [],
   "config_controls": [
     {
       "param_index": 0,
@@ -69,6 +76,7 @@ expression: plan
   ],
   "main_groups": [
     {
+      "id": "BETA",
       "title": "BETA",
       "controls": [
         {
@@ -107,6 +115,7 @@ expression: plan
       ]
     },
     {
+      "id": "SHADOW",
       "title": "SHADOW",
       "controls": [
         {
@@ -145,6 +154,7 @@ expression: plan
       ]
     },
     {
+      "id": "ADVANCED",
       "title": "ADVANCED",
       "controls": [
         {
@@ -172,6 +182,7 @@ expression: plan
       ]
     },
     {
+      "id": "ROOM",
       "title": "ROOM",
       "controls": [
         {

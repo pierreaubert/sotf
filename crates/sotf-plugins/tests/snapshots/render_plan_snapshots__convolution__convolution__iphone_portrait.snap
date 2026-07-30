@@ -1,6 +1,5 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
-assertion_line: 57
 expression: plan
 ---
 {
@@ -23,6 +22,8 @@ expression: plan
     "config",
     "output"
   ],
+  "visible_group_ids": [],
+  "overflow_group_ids": [],
   "config_controls": [
     {
       "param_index": 0,

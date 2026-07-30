@@ -186,7 +186,7 @@ math-optimisation = { git = "https://github.com/pierreaubert/math-audio", versio
 math-dsp = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
 math-rir = { git = "https://github.com/pierreaubert/math-audio", version = "0.5" }
 sofa-reader = { git = "https://github.com/pierreaubert/sofa-reader", version = "0.1.6" }
-autoeq = { git = "https://github.com/pierreaubert/autoeq", version = ">=0.4.51" }
+autoeq = { git = "https://github.com/pierreaubert/autoeq", version=">=0.5.54" }
 
 # using git version
 symphonia-codec-dsd = { git = "https://github.com/pierreaubert/symphonia-add-ons", version = "0.1.0" }

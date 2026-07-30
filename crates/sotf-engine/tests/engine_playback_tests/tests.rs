@@ -1,3 +1,4 @@
+use serial_test::serial;
 use sotf_audio::engine::{
     AudioFrame, OutputAccessMode, PlaybackCommand, PlaybackThread, ProcessingMessage, ThreadEvent,
 };
@@ -6,6 +7,7 @@ use std::time::Duration;
 
 #[sotf_test::requires_hardware]
 #[test]
+#[serial]
 fn test_playback_thread_creation() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
@@ -34,6 +36,7 @@ fn test_playback_thread_creation() {
 
 #[sotf_test::requires_hardware]
 #[test]
+#[serial]
 fn test_playback_send_commands() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
@@ -69,6 +72,7 @@ fn test_playback_send_commands() {
 }
 
 #[test]
+#[serial]
 fn test_playback_volume_commands() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
@@ -99,6 +103,7 @@ fn test_playback_volume_commands() {
 
 #[sotf_test::requires_hardware]
 #[test]
+#[serial]
 fn test_playback_shutdown() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
@@ -128,6 +133,7 @@ fn test_playback_shutdown() {
 }
 
 #[test]
+#[serial]
 fn test_playback_receives_frames() {
     super::common::skip_without_device!();
     let (message_tx, message_rx) = channel();
@@ -150,7 +156,10 @@ fn test_playback_receives_frames() {
     // Send some audio frames
     let frame = AudioFrame::silent(512, 2, 48000);
 
-    for _ in 0..10 {
+    // The playback-ready handshake means callbacks are already active here.
+    // Queue more than the 200 ms observation window instead of relying on
+    // startup silence still being present in the ring buffer.
+    for _ in 0..24 {
         message_tx
             .send(ProcessingMessage::Frame(frame.clone()))
             .ok();
@@ -165,7 +174,7 @@ fn test_playback_receives_frames() {
         .filter(|e| matches!(e, ThreadEvent::PlaybackUnderrun(_)))
         .count();
 
-    // With 10 frames queued, should not underrun immediately
+    // With more than 200 ms queued, should not underrun immediately.
     assert_eq!(underruns, 0, "Should not underrun with buffered frames");
 }
 
@@ -173,6 +182,7 @@ fn test_playback_receives_frames() {
 /// because virtual devices don't have real-time timing constraints and may not
 /// trigger underrun events the same way real hardware does.
 #[test]
+#[serial]
 #[ignore = "Underrun detection requires real audio hardware with timing constraints"]
 fn test_playback_detects_underrun() {
     super::common::skip_without_device!();
@@ -220,6 +230,7 @@ fn test_playback_detects_underrun() {
 }
 
 #[test]
+#[serial]
 fn test_playback_handles_eos() {
     super::common::skip_without_device!();
     let (message_tx, message_rx) = channel();
@@ -253,6 +264,7 @@ fn test_playback_handles_eos() {
 }
 
 #[test]
+#[serial]
 fn test_playback_handles_flush() {
     super::common::skip_without_device!();
     let (message_tx, message_rx) = channel();
@@ -293,6 +305,7 @@ fn test_playback_handles_flush() {
 }
 
 #[test]
+#[serial]
 fn test_playback_channel_update() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
@@ -322,6 +335,7 @@ fn test_playback_channel_update() {
 }
 
 #[test]
+#[serial]
 fn test_playback_rapid_volume_changes() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
@@ -352,6 +366,7 @@ fn test_playback_rapid_volume_changes() {
 }
 
 #[test]
+#[serial]
 fn test_playback_rapid_mute_toggle() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
@@ -383,6 +398,7 @@ fn test_playback_rapid_mute_toggle() {
 }
 
 #[test]
+#[serial]
 fn test_playback_mixed_commands() {
     super::common::skip_without_device!();
     let (message_tx, message_rx) = channel();
@@ -424,6 +440,7 @@ fn test_playback_mixed_commands() {
 
 #[sotf_test::requires_hardware]
 #[test]
+#[serial]
 fn test_playback_different_sample_rates() {
     super::common::skip_without_device!();
     // Ensure BlackHole is available before running tests
@@ -469,6 +486,7 @@ fn test_playback_different_sample_rates() {
 }
 
 #[test]
+#[serial]
 fn test_playback_different_channel_counts() {
     super::common::skip_without_device!();
     // Ensure BlackHole is available before running tests
@@ -514,6 +532,7 @@ fn test_playback_different_channel_counts() {
 }
 
 #[test]
+#[serial]
 fn test_playback_drop_cleanup() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();

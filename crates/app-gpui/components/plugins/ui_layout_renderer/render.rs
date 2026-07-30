@@ -624,7 +624,7 @@ fn render_main_column(
             let overflow_entity = entity.clone();
             let trigger = Button::new(
                 SharedString::from(format!("plugin-more-trigger-{plugin_idx}")),
-                "More",
+                text.map_or("More", |translations| translations.more),
             )
             .variant(ButtonVariant::Secondary)
             .size(ButtonSize::Sm);

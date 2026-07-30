@@ -49,8 +49,9 @@ pub(super) fn run_playback_thread(
     recycle_tx: SyncSender<Vec<f32>>,
     allow_virtual_output: bool,
     output_access: OutputAccessMode,
+    startup_tx: SyncSender<Result<(), String>>,
 ) -> Result<(), String> {
-    let mut runtime = PlaybackRuntime::new(PlaybackRuntimeParams {
+    let mut runtime = match PlaybackRuntime::new(PlaybackRuntimeParams {
         message_rx,
         command_rx,
         event_tx,
@@ -62,7 +63,16 @@ pub(super) fn run_playback_thread(
         recycle_tx,
         allow_virtual_output,
         output_access,
-    })?;
+    }) {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            startup_tx.send(Err(err.clone())).ok();
+            return Err(err);
+        }
+    };
+    if startup_tx.send(Ok(())).is_err() {
+        return Ok(());
+    }
     runtime.run()
 }
 
@@ -978,6 +988,10 @@ impl PlaybackRuntime {
 
     fn emit_underrun_milestone(&mut self) {
         let current_underruns = self.state.underrun_count.load(Ordering::Relaxed);
+        if self.accounting.frames_received == 0 {
+            self.recovery.last_reported_underruns = current_underruns;
+            return;
+        }
         if should_emit_underrun_milestone(
             self.drain.end_of_stream,
             current_underruns,
@@ -1090,6 +1104,7 @@ impl PlaybackRuntime {
             return RuntimeDecision::Continue;
         }
 
+        let first_frame = self.accounting.frames_received == 0;
         self.accounting.frames_received += 1;
 
         match write_frame_to_ring(
@@ -1102,6 +1117,10 @@ impl PlaybackRuntime {
             FrameWriteOutcome::Written { samples } => {
                 self.accounting.frames_written += 1;
                 self.accounting.total_samples_written += samples as u64;
+                if first_frame {
+                    self.state.underrun_count.store(0, Ordering::Relaxed);
+                    self.recovery.last_reported_underruns = 0;
+                }
             }
             FrameWriteOutcome::Dropped => {
                 self.accounting.frames_dropped += 1;

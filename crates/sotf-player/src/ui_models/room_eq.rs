@@ -935,6 +935,7 @@ impl RoomEqScreenModel {
             crossovers: Some(crossovers),
             target_curve: None,
             optimizer,
+            provenance: Default::default(),
             recording_config: None,
             ctc,
             cea2034_cache: None,

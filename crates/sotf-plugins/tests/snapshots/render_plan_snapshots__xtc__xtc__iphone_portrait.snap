@@ -1,6 +1,5 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
-assertion_line: 80
 expression: plan
 ---
 {
@@ -22,6 +21,14 @@ expression: plan
   "columns_collapsed": [
     "config",
     "output"
+  ],
+  "visible_group_ids": [
+    "BETA",
+    "SHADOW"
+  ],
+  "overflow_group_ids": [
+    "ADVANCED",
+    "ROOM"
   ],
   "config_controls": [
     {
@@ -71,6 +78,7 @@ expression: plan
   ],
   "main_groups": [
     {
+      "id": "BETA",
       "title": "BETA",
       "controls": [
         {
@@ -109,6 +117,7 @@ expression: plan
       ]
     },
     {
+      "id": "SHADOW",
       "title": "SHADOW",
       "controls": [
         {
@@ -147,6 +156,7 @@ expression: plan
       ]
     },
     {
+      "id": "ADVANCED",
       "title": "ADVANCED",
       "controls": [
         {
@@ -174,6 +184,7 @@ expression: plan
       ]
     },
     {
+      "id": "ROOM",
       "title": "ROOM",
       "controls": [
         {

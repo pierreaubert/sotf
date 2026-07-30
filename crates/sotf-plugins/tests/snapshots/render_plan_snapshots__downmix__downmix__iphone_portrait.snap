@@ -1,6 +1,5 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
-assertion_line: 62
 expression: plan
 ---
 {
@@ -22,6 +21,10 @@ expression: plan
   "columns_collapsed": [
     "config"
   ],
+  "visible_group_ids": [
+    "CHANNEL GAINS"
+  ],
+  "overflow_group_ids": [],
   "config_controls": [
     {
       "param_index": 4,
@@ -48,6 +51,7 @@ expression: plan
   ],
   "main_groups": [
     {
+      "id": "CHANNEL GAINS",
       "title": "CHANNEL GAINS",
       "controls": [
         {

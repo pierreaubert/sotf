@@ -21,6 +21,12 @@ expression: plan
     "output"
   ],
   "columns_collapsed": [],
+  "visible_group_ids": [
+    "DYNAMICS"
+  ],
+  "overflow_group_ids": [
+    "TIMING"
+  ],
   "config_controls": [
     {
       "param_index": 6,
@@ -80,6 +86,7 @@ expression: plan
   ],
   "main_groups": [
     {
+      "id": "DYNAMICS",
       "title": "DYNAMICS",
       "controls": [
         {
@@ -140,6 +147,7 @@ expression: plan
       ]
     },
     {
+      "id": "TIMING",
       "title": "TIMING",
       "controls": [
         {

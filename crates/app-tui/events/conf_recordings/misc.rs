@@ -582,6 +582,7 @@ pub(crate) fn save_recordings(app: &mut App) {
         crossovers,
         target_curve: None,
         optimizer: OptimizerConfig::default(),
+        provenance: Default::default(),
         recording_config: Some(configuration),
         ctc,
         cea2034_cache: None,

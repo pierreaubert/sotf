@@ -20,6 +20,14 @@ expression: plan
     "main"
   ],
   "columns_collapsed": [],
+  "visible_group_ids": [
+    "REDUCTION",
+    "TIMING",
+    "SPECTRAL SUB"
+  ],
+  "overflow_group_ids": [
+    "NOISE PROFILE"
+  ],
   "config_controls": [
     {
       "param_index": 5,
@@ -35,6 +43,7 @@ expression: plan
   ],
   "main_groups": [
     {
+      "id": "REDUCTION",
       "title": "REDUCTION",
       "controls": [
         {
@@ -84,6 +93,7 @@ expression: plan
       ]
     },
     {
+      "id": "TIMING",
       "title": "TIMING",
       "controls": [
         {
@@ -111,6 +121,7 @@ expression: plan
       ]
     },
     {
+      "id": "SPECTRAL SUB",
       "title": "SPECTRAL SUB",
       "controls": [
         {
@@ -149,6 +160,7 @@ expression: plan
       ]
     },
     {
+      "id": "NOISE PROFILE",
       "title": "NOISE PROFILE",
       "controls": [
         {

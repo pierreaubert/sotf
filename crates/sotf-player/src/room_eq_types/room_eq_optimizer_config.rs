@@ -428,6 +428,7 @@ impl RoomEqOptimizerConfig {
             phase: self.fir.phase.clone(),
             correct_excess_phase: self.fir.correct_excess_phase,
             phase_smoothing: self.fir.phase_smoothing,
+            max_boost_db: None,
             pre_ringing: self
                 .fir
                 .pre_ringing
@@ -712,9 +713,9 @@ impl RoomEqOptimizerConfig {
             // `EpaConfig::default()` (which also includes
             // `flatness_band_weights`, etc.) is the right baseline.
             epa_config: if self.epa_temporal_masking.differs_from_default() {
-                Some(autoeq::loss::epa::score::EpaConfig {
+                Some(autoeq::roomeq_model::EpaConfig {
                     temporal_masking: self.epa_temporal_masking.to_backend(),
-                    ..autoeq::loss::epa::score::EpaConfig::default()
+                    ..autoeq::roomeq_model::EpaConfig::default()
                 })
             } else {
                 None

@@ -1,6 +1,5 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
-assertion_line: 70
 expression: plan
 ---
 {
@@ -22,6 +21,12 @@ expression: plan
   "columns_collapsed": [
     "config",
     "output"
+  ],
+  "visible_group_ids": [
+    "DYNAMICS"
+  ],
+  "overflow_group_ids": [
+    "TIMING"
   ],
   "config_controls": [
     {
@@ -82,6 +87,7 @@ expression: plan
   ],
   "main_groups": [
     {
+      "id": "DYNAMICS",
       "title": "DYNAMICS",
       "controls": [
         {
@@ -142,6 +148,7 @@ expression: plan
       ]
     },
     {
+      "id": "TIMING",
       "title": "TIMING",
       "controls": [
         {

@@ -21,6 +21,12 @@ expression: plan
     "output"
   ],
   "columns_collapsed": [],
+  "visible_group_ids": [
+    "GAINS"
+  ],
+  "overflow_group_ids": [
+    "SPATIAL"
+  ],
   "config_controls": [
     {
       "param_index": 0,
@@ -47,6 +53,7 @@ expression: plan
   ],
   "main_groups": [
     {
+      "id": "GAINS",
       "title": "GAINS",
       "controls": [
         {
@@ -96,6 +103,7 @@ expression: plan
       ]
     },
     {
+      "id": "SPATIAL",
       "title": "SPATIAL",
       "controls": [
         {

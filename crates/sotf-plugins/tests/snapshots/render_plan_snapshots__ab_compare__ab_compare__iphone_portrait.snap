@@ -1,6 +1,5 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
-assertion_line: 46
 expression: plan
 ---
 {
@@ -20,9 +19,17 @@ expression: plan
     "main"
   ],
   "columns_collapsed": [],
+  "visible_group_ids": [
+    "A/B MIX"
+  ],
+  "overflow_group_ids": [
+    "PHASE",
+    "AUTO GAIN"
+  ],
   "config_controls": [],
   "main_groups": [
     {
+      "id": "A/B MIX",
       "title": "A/B MIX",
       "controls": [
         {
@@ -94,6 +101,7 @@ expression: plan
       ]
     },
     {
+      "id": "PHASE",
       "title": "PHASE",
       "controls": [
         {
@@ -121,6 +129,7 @@ expression: plan
       ]
     },
     {
+      "id": "AUTO GAIN",
       "title": "AUTO GAIN",
       "controls": [
         {

@@ -21,6 +21,8 @@ expression: plan
     "output"
   ],
   "columns_collapsed": [],
+  "visible_group_ids": [],
+  "overflow_group_ids": [],
   "config_controls": [
     {
       "param_index": 0,

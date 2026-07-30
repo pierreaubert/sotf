@@ -20,6 +20,10 @@ expression: plan
     "main"
   ],
   "columns_collapsed": [],
+  "visible_group_ids": [
+    "primary"
+  ],
+  "overflow_group_ids": [],
   "config_controls": [
     {
       "param_index": 0,
@@ -35,6 +39,7 @@ expression: plan
   ],
   "main_groups": [
     {
+      "id": "primary",
       "title": "",
       "controls": [
         {

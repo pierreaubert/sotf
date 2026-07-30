@@ -59,6 +59,7 @@ impl PlaybackThread {
         output_access: OutputAccessMode,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
+        let (startup_tx, startup_rx) = std::sync::mpsc::sync_channel(1);
 
         let thread_handle = std::thread::Builder::new()
             .name("playback".to_string())
@@ -76,6 +77,7 @@ impl PlaybackThread {
                     recycle_tx,
                     allow_virtual_output,
                     output_access,
+                    startup_tx,
                 ) {
                     log::debug!("[Playback Thread] Error: {}", e);
                     send_playback_event(
@@ -87,10 +89,24 @@ impl PlaybackThread {
             })
             .map_err(|e| format!("Failed to spawn playback thread: {}", e))?;
 
-        Ok(Self {
-            command_tx,
-            thread_handle: Some(thread_handle),
-        })
+        match startup_rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            Ok(Ok(())) => Ok(Self {
+                command_tx,
+                thread_handle: Some(thread_handle),
+            }),
+            Ok(Err(err)) => {
+                let _ = thread_handle.join();
+                Err(err)
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = thread_handle.join();
+                Err("Playback thread exited during startup".to_string())
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                drop(command_tx);
+                Err("Playback thread startup timed out after 10s".to_string())
+            }
+        }
     }
 
     /// Send a command to the playback thread

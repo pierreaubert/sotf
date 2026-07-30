@@ -20,6 +20,15 @@ expression: plan
     "output"
   ],
   "columns_collapsed": [],
+  "visible_group_ids": [
+    "mode-selector",
+    "BAUER",
+    "meier"
+  ],
+  "overflow_group_ids": [
+    "MULTIBAND",
+    "ITD"
+  ],
   "config_controls": [
     {
       "param_index": 1,
@@ -46,6 +55,7 @@ expression: plan
   ],
   "main_groups": [
     {
+      "id": "mode-selector",
       "title": "",
       "controls": [
         {
@@ -62,6 +72,7 @@ expression: plan
       ]
     },
     {
+      "id": "BAUER",
       "title": "BAUER",
       "controls": [
         {
@@ -89,6 +100,7 @@ expression: plan
       ]
     },
     {
+      "id": "meier",
       "title": "MEIER",
       "controls": [
         {
@@ -105,6 +117,7 @@ expression: plan
       ]
     },
     {
+      "id": "MULTIBAND",
       "title": "MULTIBAND",
       "controls": [
         {
@@ -165,6 +178,7 @@ expression: plan
       ]
     },
     {
+      "id": "ITD",
       "title": "ITD",
       "controls": [
         {

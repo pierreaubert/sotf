@@ -26,6 +26,8 @@ fn test_channel_mute_loopback_verification() {
     for name in device_names {
         if let Some(out) = find_device(name, false)
             && let Some(in_) = find_device(name, true)
+            && out.1.channels() == 2
+            && in_.1.channels() == 2
         {
             output_setup = Some(out);
             input_setup = Some(in_);
@@ -35,7 +37,7 @@ fn test_channel_mute_loopback_verification() {
     }
 
     if output_setup.is_none() || input_setup.is_none() {
-        println!("SKIPPING test: virtual audio device not found.");
+        println!("SKIPPING test: stereo virtual loopback device not found.");
         return;
     }
 
@@ -216,6 +218,8 @@ fn test_channel_solo_loopback_verification() {
     for name in device_names {
         if let Some(out) = find_device(name, false)
             && let Some(in_) = find_device(name, true)
+            && out.1.channels() == 2
+            && in_.1.channels() == 2
         {
             output_setup = Some(out);
             input_setup = Some(in_);
@@ -225,7 +229,7 @@ fn test_channel_solo_loopback_verification() {
     }
 
     if output_setup.is_none() || input_setup.is_none() {
-        println!("SKIPPING test: virtual audio device not found.");
+        println!("SKIPPING test: stereo virtual loopback device not found.");
         return;
     }
 

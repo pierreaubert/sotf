@@ -306,10 +306,8 @@ impl Track {
             // fresh contiguous span; exact forward playback manages its
             // retained packet tail below.
             let exact_forward = work.source_step == 1.0 && work.source_start.fract() == 0.0;
-            if !exact_forward {
-                if let Some(decoder) = self.decoders.get_mut(&work.region_idx) {
-                    decoder.direct_cache_frames = 0;
-                }
+            if !exact_forward && let Some(decoder) = self.decoders.get_mut(&work.region_idx) {
+                decoder.direct_cache_frames = 0;
             }
             if !self.decoders.contains_key(&work.region_idx) {
                 return Err(format!(
@@ -337,7 +335,7 @@ impl Track {
             // Preserve the allocation-free common path for ordinary forward
             // playback. Fractional/reverse reads use the span buffer below.
             if exact_forward {
-                self.render_exact_forward(&work, total_samples)?;
+                self.render_exact_forward(work, total_samples)?;
                 continue;
             }
 
