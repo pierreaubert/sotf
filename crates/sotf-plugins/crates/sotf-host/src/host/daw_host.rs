@@ -1834,10 +1834,6 @@ impl DawHost {
         block_start_sample: u64,
     ) -> Result<usize, String> {
         let input_channels = plan.input_channels;
-        let linear_gain_regions = self.compiled_linear_gain_regions(plan);
-        let static_gains = (0..plan.ops.len())
-            .map(|idx| self.compiled_op_static_gain(plan, idx))
-            .collect::<Vec<_>>();
         let mut guard = BufferGuard::take(&mut self.process_buffers);
         let bufs = guard.get_mut();
 
@@ -1849,10 +1845,13 @@ impl DawHost {
         let mut idx = 0;
         while idx < plan.ops.len() {
             if active_gain_region.is_none() {
-                active_gain_region = linear_gain_regions[idx];
+                active_gain_region =
+                    Self::compiled_linear_gain_region(plan, idx, &self.plugins, &self.bypassed);
             }
 
-            if active_gain_region.is_some() && static_gains[idx].is_some() {
+            if active_gain_region.is_some()
+                && Self::compiled_op_static_gain(plan, idx, &self.plugins, &self.bypassed).is_some()
+            {
                 idx += 1;
                 if let Some((region_end, gain)) = active_gain_region
                     && idx == region_end
@@ -2022,16 +2021,11 @@ impl DawHost {
         Ok(current_frames)
     }
 
-    fn compiled_linear_gain_regions(&self, plan: &CompiledLinearPlan) -> Vec<Option<(usize, f32)>> {
-        (0..plan.ops.len())
-            .map(|start| self.compiled_linear_gain_region(plan, start))
-            .collect()
-    }
-
     fn compiled_linear_gain_region(
-        &self,
         plan: &CompiledLinearPlan,
         start: usize,
+        plugins: &[Option<Box<dyn Plugin>>],
+        bypassed: &[bool],
     ) -> Option<(usize, f32)> {
         let first = plan.ops.get(start)?;
         if first.barrier.is_some()
@@ -2059,7 +2053,7 @@ impl DawHost {
             {
                 break;
             }
-            if let Some(op_gain) = self.compiled_op_static_gain(plan, end) {
+            if let Some(op_gain) = Self::compiled_op_static_gain(plan, end, plugins, bypassed) {
                 saw_static_gain = true;
                 gain *= op_gain;
             } else if op.kind == CompiledOpKind::ApplyGain {
@@ -2070,16 +2064,21 @@ impl DawHost {
         (saw_static_gain && end > start).then_some((end, gain))
     }
 
-    fn compiled_op_static_gain(&self, plan: &CompiledLinearPlan, idx: usize) -> Option<f32> {
+    fn compiled_op_static_gain(
+        plan: &CompiledLinearPlan,
+        idx: usize,
+        plugins: &[Option<Box<dyn Plugin>>],
+        bypassed: &[bool],
+    ) -> Option<f32> {
         let op = plan.ops.get(idx)?;
         if op.kind != CompiledOpKind::ApplyGain {
             return None;
         }
         let nid = op.node_id;
-        if self.bypassed.get(nid).copied().unwrap_or(false) {
+        if bypassed.get(nid).copied().unwrap_or(false) {
             return Some(1.0);
         }
-        self.plugins
+        plugins
             .get(nid)
             .and_then(|plugin| plugin.as_ref())
             .and_then(|plugin| plugin.compile_metadata().static_gain)
