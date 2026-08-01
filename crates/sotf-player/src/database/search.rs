@@ -53,18 +53,55 @@ impl MusicDatabase {
 
         // Rebuild from tracks and albums tables
         // Include track_path so filenames are searchable (for files with no metadata tags)
-        self.conn.execute(
-            "INSERT INTO library_fts(artist, album_title, track_title, track_path, album_id)
-             SELECT
-                COALESCE(t.album_artist, t.artist, 'Unknown Artist'),
-                a.title,
-                t.title,
-                t.path,
-                t.album_id
-             FROM tracks t
-             JOIN albums a ON t.album_id = a.id",
-            [],
-        )?;
+        let has_channel_label = self
+            .conn
+            .prepare("SELECT channel_label FROM library_fts LIMIT 0")
+            .is_ok();
+        if has_channel_label {
+            self.conn.execute(
+                "INSERT INTO library_fts(
+                    artist, album_title, track_title, track_path, channel_label, album_id
+                )
+                 SELECT
+                    COALESCE(t.album_artist, t.artist, 'Unknown Artist'),
+                    a.title,
+                    t.title,
+                    t.path,
+                    CASE
+                        WHEN t.channels IS NULL THEN ''
+                        ELSE CAST(t.channels AS TEXT) || ' ' || CASE t.channels
+                            WHEN 1 THEN '1.0 Mono'
+                            WHEN 2 THEN '2.0 Stereo'
+                            WHEN 4 THEN '4.0'
+                            WHEN 5 THEN '5.0'
+                            WHEN 6 THEN '5.1'
+                            WHEN 8 THEN '7.1'
+                            WHEN 10 THEN '10ch (5.1.4/7.1.2)'
+                            WHEN 12 THEN '12ch (7.1.4)'
+                            WHEN 14 THEN '14ch (9.1.4)'
+                            WHEN 16 THEN '16ch (9.1.6)'
+                            ELSE CAST(t.channels AS TEXT) || 'ch'
+                        END
+                    END,
+                    t.album_id
+                 FROM tracks t
+                 JOIN albums a ON t.album_id = a.id",
+                [],
+            )?;
+        } else {
+            self.conn.execute(
+                "INSERT INTO library_fts(artist, album_title, track_title, track_path, album_id)
+                 SELECT
+                    COALESCE(t.album_artist, t.artist, 'Unknown Artist'),
+                    a.title,
+                    t.title,
+                    t.path,
+                    t.album_id
+                 FROM tracks t
+                 JOIN albums a ON t.album_id = a.id",
+                [],
+            )?;
+        }
 
         log::debug!("FTS index synchronized with database");
         Ok(())

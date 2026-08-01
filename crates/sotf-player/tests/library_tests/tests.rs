@@ -424,6 +424,35 @@ fn test_search_library_integration() {
 }
 
 #[test]
+fn test_search_library_fts_includes_channel_labels() {
+    let (_temp_dir, db_path) = super::fixtures::temp_database();
+    let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();
+
+    db.save_albums(&[sotf_audio_player::Album {
+        title: "Immersive Test Album".to_string(),
+        tracks: vec![sotf_audio_player::Track {
+            path: fixtures::get_demo_file("rock.wav"),
+            title: Some("Ten Channel Track".to_string()),
+            channels: Some(10),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }])
+    .expect("Failed to save album");
+
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+    library
+        .load_from_database()
+        .expect("Failed to load from database");
+
+    for query in ["10", "10ch", "5.1.4"] {
+        let results = library.search_albums(query);
+        assert_eq!(results.len(), 1, "channel query {query:?} should match");
+        assert_eq!(results[0].title, "Immersive Test Album");
+    }
+}
+
+#[test]
 fn test_search_library_supplements_non_empty_fts_results() {
     let (_temp_dir, db_path) = super::fixtures::temp_database();
     let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();

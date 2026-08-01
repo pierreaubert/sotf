@@ -1,7 +1,7 @@
 use super::misc::DEFAULT_ITEMS_PER_PAGE;
 use crate::{
     Album, ChannelFilter, LibrarySortOrder, MetadataController, MetadataEditPreview, MetadataError,
-    MetadataImportCandidate, MetadataPatch, MetadataTarget, MusicLibrary, group_and_merge_albums,
+    MetadataImportCandidate, MetadataPatch, MetadataTarget, MusicLibrary,
 };
 use std::path::PathBuf;
 
@@ -161,27 +161,12 @@ impl LibraryController {
 
     /// Recompute the filtered and sorted albums cache.
     pub(super) fn recompute_cache(&mut self) {
-        let mut albums: Vec<&Album> = if self.search_query.is_empty() {
-            self.library.albums.iter().collect()
-        } else {
-            self.library.search_albums(&self.search_query)
-        };
-
-        // Apply channel filter
-        albums.retain(|album| self.matches_channel_filter(album));
-
-        // Apply favorites filter
-        if self.show_favorites_only {
-            albums.retain(|album| album.is_favorite);
-        }
-
-        // Merge duplicate albums (multi-disc, different editions, etc.)
-        let mut merged_albums: Vec<Album> = group_and_merge_albums(albums);
-
-        // Apply sort (on owned albums)
-        merged_albums.sort_by(|a, b| self.sort_cmp(a, b));
-
-        self.cached_albums = merged_albums;
+        self.cached_albums = self.library.get_filtered_albums(
+            &self.search_query,
+            self.sort_order,
+            self.filter,
+            self.show_favorites_only,
+        );
         self.cache_dirty = false;
         // Rebuilt cached_albums → any selection-cache snapshot keyed off the
         // old indices is stale.
@@ -337,85 +322,6 @@ impl LibraryController {
             }
         }
         self.cached_selection_indices = Some(indices);
-    }
-
-    /// Check if album matches current channel filter.
-    pub(super) fn matches_channel_filter(&self, album: &Album) -> bool {
-        match self.filter {
-            ChannelFilter::All => true,
-            ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
-            ChannelFilter::Stereo => album.uniform_channel_count() == Some(2),
-            ChannelFilter::Surround => {
-                matches!(album.uniform_channel_count(), Some(5) | Some(6))
-            }
-            ChannelFilter::Surround71 => album.uniform_channel_count() == Some(8),
-            ChannelFilter::SurroundPlus => album.uniform_channel_count().is_some_and(|ch| ch > 8),
-            ChannelFilter::Mixed => album.uniform_channel_count().is_none(),
-            ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
-        }
-    }
-
-    /// Compare two albums according to current sort order.
-    pub(super) fn sort_cmp(&self, a: &Album, b: &Album) -> std::cmp::Ordering {
-        match self.sort_order {
-            LibrarySortOrder::Year => b
-                .year
-                .cmp(&a.year)
-                .then_with(|| a.artist().cmp(&b.artist()))
-                .then_with(|| a.title.cmp(&b.title)),
-            LibrarySortOrder::Genre => {
-                let genre_a = a
-                    .tracks
-                    .first()
-                    .and_then(|t| t.genre.as_ref())
-                    .map(|s| s.to_lowercase());
-                let genre_b = b
-                    .tracks
-                    .first()
-                    .and_then(|t| t.genre.as_ref())
-                    .map(|s| s.to_lowercase());
-                genre_a
-                    .cmp(&genre_b)
-                    .then_with(|| a.artist().cmp(&b.artist()))
-                    .then_with(|| a.title.cmp(&b.title))
-            }
-            LibrarySortOrder::Artist => a
-                .artist()
-                .cmp(&b.artist())
-                .then_with(|| a.year.cmp(&b.year).reverse())
-                .then_with(|| a.title.cmp(&b.title)),
-            LibrarySortOrder::Album => a.title.cmp(&b.title),
-            LibrarySortOrder::Tracks => b
-                .tracks
-                .len()
-                .cmp(&a.tracks.len())
-                .then_with(|| a.artist().cmp(&b.artist()))
-                .then_with(|| a.title.cmp(&b.title)),
-            LibrarySortOrder::Composer => {
-                let composer_a = a
-                    .tracks
-                    .first()
-                    .and_then(|t| t.composer.as_ref())
-                    .map(|s| s.to_lowercase());
-                let composer_b = b
-                    .tracks
-                    .first()
-                    .and_then(|t| t.composer.as_ref())
-                    .map(|s| s.to_lowercase());
-                composer_a
-                    .cmp(&composer_b)
-                    .then_with(|| a.artist().cmp(&b.artist()))
-                    .then_with(|| a.title.cmp(&b.title))
-            }
-            LibrarySortOrder::Popularity => {
-                let pop_a: usize = a.tracks.iter().map(|t| t.play_count).sum();
-                let pop_b: usize = b.tracks.iter().map(|t| t.play_count).sum();
-                pop_b
-                    .cmp(&pop_a)
-                    .then_with(|| a.artist().cmp(&b.artist()))
-                    .then_with(|| a.title.cmp(&b.title))
-            }
-        }
     }
 
     /// Set sort order, clear selection filters, and reset selection.

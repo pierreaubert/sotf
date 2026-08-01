@@ -1296,5 +1296,144 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
             },
         },
     );
+
+    // Migration 23: Index channel labels for library search.
+    migrations.insert(
+        23,
+        Migration {
+            description: "Add channel labels to the FTS search index",
+            apply: |db| {
+                // Recreate the FTS table so existing databases receive the new
+                // searchable field. The track path remains indexed for filename
+                // and parent-directory searches.
+                db.conn.execute("DROP TABLE IF EXISTS library_fts", [])?;
+                db.conn.execute("DROP TRIGGER IF EXISTS tracks_ai", [])?;
+                db.conn.execute("DROP TRIGGER IF EXISTS tracks_ad", [])?;
+                db.conn.execute("DROP TRIGGER IF EXISTS tracks_au", [])?;
+                db.conn.execute("DROP TRIGGER IF EXISTS albums_au", [])?;
+
+                db.conn.execute(
+                    "CREATE VIRTUAL TABLE library_fts USING fts5(
+                        artist,
+                        album_title,
+                        track_title,
+                        track_path,
+                        channel_label,
+                        album_id UNINDEXED
+                    )",
+                    [],
+                )?;
+
+                db.conn.execute(
+                    "CREATE TRIGGER tracks_ai AFTER INSERT ON tracks BEGIN
+                        INSERT INTO library_fts(
+                            artist, album_title, track_title, track_path, channel_label, album_id
+                        )
+                        SELECT
+                            COALESCE(new.album_artist, new.artist, 'Unknown Artist'),
+                            a.title,
+                            new.title,
+                            new.path,
+                            CASE
+                                WHEN new.channels IS NULL THEN ''
+                                ELSE CAST(new.channels AS TEXT) || ' ' || CASE new.channels
+                                    WHEN 1 THEN '1.0 Mono'
+                                    WHEN 2 THEN '2.0 Stereo'
+                                    WHEN 4 THEN '4.0'
+                                    WHEN 5 THEN '5.0'
+                                    WHEN 6 THEN '5.1'
+                                    WHEN 8 THEN '7.1'
+                                    WHEN 10 THEN '10ch (5.1.4/7.1.2)'
+                                    WHEN 12 THEN '12ch (7.1.4)'
+                                    WHEN 14 THEN '14ch (9.1.4)'
+                                    WHEN 16 THEN '16ch (9.1.6)'
+                                    ELSE CAST(new.channels AS TEXT) || 'ch'
+                                END
+                            END,
+                            new.album_id
+                        FROM albums a WHERE a.id = new.album_id;
+                    END",
+                    [],
+                )?;
+
+                db.conn.execute(
+                    "CREATE TRIGGER tracks_ad AFTER DELETE ON tracks BEGIN
+                        DELETE FROM library_fts WHERE track_path = old.path;
+                    END",
+                    [],
+                )?;
+
+                db.conn.execute(
+                    "CREATE TRIGGER tracks_au AFTER UPDATE ON tracks BEGIN
+                        DELETE FROM library_fts WHERE track_path = old.path;
+                        INSERT INTO library_fts(
+                            artist, album_title, track_title, track_path, channel_label, album_id
+                        )
+                        SELECT
+                            COALESCE(new.album_artist, new.artist, 'Unknown Artist'),
+                            a.title,
+                            new.title,
+                            new.path,
+                            CASE
+                                WHEN new.channels IS NULL THEN ''
+                                ELSE CAST(new.channels AS TEXT) || ' ' || CASE new.channels
+                                    WHEN 1 THEN '1.0 Mono'
+                                    WHEN 2 THEN '2.0 Stereo'
+                                    WHEN 4 THEN '4.0'
+                                    WHEN 5 THEN '5.0'
+                                    WHEN 6 THEN '5.1'
+                                    WHEN 8 THEN '7.1'
+                                    WHEN 10 THEN '10ch (5.1.4/7.1.2)'
+                                    WHEN 12 THEN '12ch (7.1.4)'
+                                    WHEN 14 THEN '14ch (9.1.4)'
+                                    WHEN 16 THEN '16ch (9.1.6)'
+                                    ELSE CAST(new.channels AS TEXT) || 'ch'
+                                END
+                            END,
+                            new.album_id
+                        FROM albums a WHERE a.id = new.album_id;
+                    END",
+                    [],
+                )?;
+
+                db.conn.execute(
+                    "CREATE TRIGGER albums_au AFTER UPDATE ON albums BEGIN
+                        DELETE FROM library_fts WHERE album_id = old.id;
+                        INSERT INTO library_fts(
+                            artist, album_title, track_title, track_path, channel_label, album_id
+                        )
+                        SELECT
+                            COALESCE(t.album_artist, t.artist, 'Unknown Artist'),
+                            new.title,
+                            t.title,
+                            t.path,
+                            CASE
+                                WHEN t.channels IS NULL THEN ''
+                                ELSE CAST(t.channels AS TEXT) || ' ' || CASE t.channels
+                                    WHEN 1 THEN '1.0 Mono'
+                                    WHEN 2 THEN '2.0 Stereo'
+                                    WHEN 4 THEN '4.0'
+                                    WHEN 5 THEN '5.0'
+                                    WHEN 6 THEN '5.1'
+                                    WHEN 8 THEN '7.1'
+                                    WHEN 10 THEN '10ch (5.1.4/7.1.2)'
+                                    WHEN 12 THEN '12ch (7.1.4)'
+                                    WHEN 14 THEN '14ch (9.1.4)'
+                                    WHEN 16 THEN '16ch (9.1.6)'
+                                    ELSE CAST(t.channels AS TEXT) || 'ch'
+                                END
+                            END,
+                            t.album_id
+                        FROM tracks t WHERE t.album_id = new.id;
+                    END",
+                    [],
+                )?;
+
+                db.sync_fts_index()?;
+                log::info!("Added channel labels to the FTS search index");
+                Ok(())
+            },
+        },
+    );
     migrations
 }

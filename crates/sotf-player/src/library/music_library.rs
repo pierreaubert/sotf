@@ -390,21 +390,16 @@ impl MusicLibrary {
                 });
             }
             LibrarySortOrder::Genre => {
-                merged_albums.sort_by(|a, b| {
-                    let genre_a = a
-                        .tracks
-                        .first()
-                        .and_then(|t| t.genre.as_ref())
-                        .map(|s| s.to_lowercase());
-                    let genre_b = b
-                        .tracks
-                        .first()
-                        .and_then(|t| t.genre.as_ref())
-                        .map(|s| s.to_lowercase());
-                    genre_a
-                        .cmp(&genre_b)
-                        .then_with(|| a.artist().cmp(&b.artist()))
-                        .then_with(|| a.title.cmp(&b.title))
+                merged_albums.sort_by_cached_key(|album| {
+                    (
+                        album
+                            .tracks
+                            .first()
+                            .and_then(|track| track.genre.as_ref())
+                            .map(|genre| genre.to_lowercase()),
+                        album.artist().to_string(),
+                        album.title.clone(),
+                    )
                 });
             }
             LibrarySortOrder::Artist => {
@@ -428,30 +423,25 @@ impl MusicLibrary {
                 });
             }
             LibrarySortOrder::Composer => {
-                merged_albums.sort_by(|a, b| {
-                    let composer_a = a
-                        .tracks
-                        .first()
-                        .and_then(|t| t.composer.as_ref())
-                        .map(|s| s.to_lowercase());
-                    let composer_b = b
-                        .tracks
-                        .first()
-                        .and_then(|t| t.composer.as_ref())
-                        .map(|s| s.to_lowercase());
-                    composer_a
-                        .cmp(&composer_b)
-                        .then_with(|| a.artist().cmp(&b.artist()))
-                        .then_with(|| a.title.cmp(&b.title))
+                merged_albums.sort_by_cached_key(|album| {
+                    (
+                        album
+                            .tracks
+                            .first()
+                            .and_then(|track| track.composer.as_ref())
+                            .map(|composer| composer.to_lowercase()),
+                        album.artist().to_string(),
+                        album.title.clone(),
+                    )
                 });
             }
             LibrarySortOrder::Popularity => {
-                merged_albums.sort_by(|a, b| {
-                    // Sort by play count descending
-                    b.play_count
-                        .cmp(&a.play_count)
-                        .then_with(|| a.artist().cmp(&b.artist()))
-                        .then_with(|| a.title.cmp(&b.title))
+                merged_albums.sort_by_cached_key(|album| {
+                    (
+                        std::cmp::Reverse(album.play_count),
+                        album.artist().to_string(),
+                        album.title.clone(),
+                    )
                 });
             }
         }
@@ -1124,21 +1114,12 @@ impl MusicLibrary {
         }
 
         let mut results = Vec::new();
-        let mut result_ids = HashSet::new();
+        let mut indexed_ids = HashSet::new();
 
         // Use FTS5 search if database is available
         if let Some(db) = &self.db {
             if let Ok(album_ids) = db.search_library(query) {
-                for album_id in album_ids {
-                    if !result_ids.insert(album_id) {
-                        continue;
-                    }
-
-                    if let Some(album) = self.albums.iter().find(|album| album.id == Some(album_id))
-                    {
-                        results.push(album);
-                    }
-                }
+                indexed_ids.extend(album_ids);
             }
         }
 
@@ -1149,22 +1130,12 @@ impl MusicLibrary {
         // 3. Search query matches something not indexed or FTS is too strict (e.g. substring)
         let query_lower = query.to_lowercase();
         for album in &self.albums {
-            if !Self::album_matches_search_query(album, &query_lower) {
+            let indexed_match = album
+                .id
+                .is_some_and(|album_id| indexed_ids.contains(&album_id));
+            if !indexed_match && !Self::album_matches_search_query(album, &query_lower) {
                 continue;
             }
-
-            if let Some(id) = album.id {
-                if result_ids.contains(&id) {
-                    continue;
-                }
-                result_ids.insert(id);
-            } else if results
-                .iter()
-                .any(|existing| std::ptr::eq::<Album>(*existing, album))
-            {
-                continue;
-            }
-
             results.push(album);
         }
 
