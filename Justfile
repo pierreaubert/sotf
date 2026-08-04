@@ -70,6 +70,47 @@ itest:
 [group('test')]
 atest: test-negative test-proptest ntest itest
 
+# Fast deterministic unit tier. Keep hardware-backed tests out of this recipe.
+
+[group('test')]
+test-unit-core:
+	cargo test -p sotf-testkit
+	cargo test -p sotf-engine --no-default-features --lib
+	cargo test -p sotf-player --lib
+	cargo test -p sotf-plugins --lib --features qa
+
+# Decoder and manager integration tests. Tests that require a virtual device
+# skip through the shared testkit helper when the device is unavailable.
+
+[group('test')]
+test-integration-engine:
+	cargo test -p sotf-engine --no-default-features --test decoder_integration_tests
+	cargo test -p sotf-engine --no-default-features --test engine_manager_tests
+	cargo test -p sotf-engine --no-default-features --test engine_types_tests
+
+[group('test')]
+test-integration-player:
+	cargo test -p sotf-player --test error_handling_tests
+	cargo test -p sotf-player --test plugin_chain_tests
+	cargo test -p sotf-player --test library_tests
+
+# Device-selection helpers are deterministic and do not enumerate hardware.
+# Platform smoke tests remain in systemwide-lab/portability.
+
+[group('test')]
+test-device-fakes:
+	cargo test -p sotf-engine --lib devices::tests
+
+[group('test')]
+test-realtime-safety:
+	cargo test -p sotf-plugins --test realtime_allocation_tests
+	cargo test -p sotf-plugins --test rt_safety_tests
+	cargo test -p sotf-engine --test engine_allocation_tests
+	cargo test -p sotf-engine --test playback_runtime_allocation_tests
+
+[group('test')]
+test-pr: test-unit-core test-integration-engine test-integration-player test-device-fakes test-realtime-safety
+
 # Run the isolated macOS systemwide-audio lab. This does not install or touch
 # the CoreAudio HAL bundle; subprocess tests use temporary Unix sockets and
 # the deterministic lab driver.
@@ -101,7 +142,17 @@ coverage-html:
 # Prints a text summary to stdout (fastest coverage recipe).
 [group('coverage')]
 coverage-summary:
-	cargo llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --summary
+	cargo llvm-cov --workspace --lib --bins --tests --examples {{test_features}} --text --summary-only
+
+# Core coverage report used by the coverage ratchet. Thresholds are applied
+# after the baseline is recorded; this command intentionally only reports.
+
+[group('coverage')]
+coverage-core:
+	mkdir -p target/coverage
+	cargo llvm-cov --package sotf-engine --no-default-features --lib --tests --json --summary-only --fail-under-lines 55 --output-path target/coverage/sotf-engine.json
+	cargo llvm-cov --package sotf-player --lib --tests --json --summary-only --output-path target/coverage/sotf-player.json
+	cargo llvm-cov --package sotf-plugins --lib --tests --features qa --json --summary-only --output-path target/coverage/sotf-plugins.json
 
 # Removes stale coverage artifacts.
 [group('coverage')]
@@ -115,6 +166,22 @@ coverage-clean:
 [group('lint')]
 lint:
 	cargo clippy --all {{test_features}} -- -D warnings
+
+# Short release-mode realtime smoke gate. For a historical comparison use
+# `just perf-regression baseline.csv candidate.csv`.
+
+[group('bench')]
+perf-smoke:
+	mkdir -p target/perf
+	cargo run --release -p sotf-plugins --bin daw-scale-stress -- --chain mixed --mode serial --tracks 16 --plugins 4 --blocks 256 --warmup-blocks 64 > target/perf/daw-smoke.csv
+	./scripts/daw-perf-gate.sh target/perf/daw-smoke.csv
+
+[group('bench')]
+perf-regression baseline candidate tolerance='0.05':
+	./scripts/perf-regression-gate.sh {{baseline}} {{candidate}} {{tolerance}}
+
+[group('test')]
+test-nightly: ntest itest test-proptest coverage-core perf-smoke
 
 # ----------------------------------------------------------------------
 # RUN

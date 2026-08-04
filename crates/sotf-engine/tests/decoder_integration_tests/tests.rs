@@ -1,5 +1,7 @@
 use sotf_audio::AudioSpec;
-use sotf_audio::decoder::{DecodedAudio, create_decoder, probe_file};
+use sotf_audio::decoder::{AudioDecoder, DecodedAudio, create_decoder, probe_file};
+use sotf_testkit::assertions::{assert_audio_range, assert_finite_audio, assert_frame_aligned};
+use sotf_testkit::audio::temp_sine_wav;
 use std::path::Path;
 
 #[test]
@@ -128,4 +130,32 @@ fn test_create_decoder_invalid_file() {
 
     let result = create_decoder(temp_file.path());
     assert!(result.is_err());
+}
+
+#[test]
+fn test_decoder_reuses_destination_without_stale_or_non_finite_samples() {
+    let (wav_file, _) = temp_sine_wav(0.05, 48_000, 2, 440.0).unwrap();
+    let mut decoder = create_decoder(wav_file.path()).unwrap();
+    let spec = decoder.spec().clone();
+    let mut destination = DecodedAudio::new(spec.clone());
+    let mut decoded_frames = 0usize;
+
+    for _ in 0..32 {
+        destination
+            .samples
+            .resize(spec.channels as usize * 4096, f32::NAN);
+        let frames = decoder.decode_into(&mut destination).unwrap();
+        if frames == 0 {
+            break;
+        }
+
+        assert_eq!(destination.frame_count(), frames);
+        assert_frame_aligned(&destination.samples, spec.channels as usize);
+        assert_finite_audio(&destination.samples);
+        assert_audio_range(&destination.samples, 1e-6);
+        decoded_frames += frames;
+    }
+
+    assert_eq!(decoded_frames, spec.total_frames.unwrap() as usize);
+    assert!(decoder.is_eof());
 }

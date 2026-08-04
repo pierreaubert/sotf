@@ -1,0 +1,94 @@
+name: Testing tiers
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  deterministic:
+    name: Deterministic tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install audio build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+      - name: Install just
+        run: cargo install just --locked
+      - name: Run unit tier
+        run: just test-unit-core
+      - name: Run decoder and manager integration tier
+        run: just test-integration-engine
+      - name: Run player integration tier
+        run: just test-integration-player
+      - name: Run deterministic device tests
+        run: just test-device-fakes
+      - name: Run realtime safety tests
+        run: just test-realtime-safety
+
+  performance-smoke:
+    name: Realtime performance smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install audio build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+      - name: Install just
+        run: cargo install just --locked
+      - name: Run release performance gate
+        run: just perf-smoke
+      - name: Upload performance sample
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-smoke-${{ github.sha }}
+          path: target/perf/daw-smoke.csv
+          if-no-files-found: error
+
+  nightly:
+    name: Nightly broad validation
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Install audio build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+      - name: Install test tools
+        run: |
+          cargo install just --locked
+          cargo install cargo-nextest --locked
+          cargo install cargo-llvm-cov --locked
+      - name: Run broad tests
+        run: just ntest
+      - name: Run high-case property tests
+        run: just test-proptest
+      - name: Run integration test tier
+        run: just itest
+      - name: Generate core coverage
+        run: just coverage-core
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-coverage-${{ github.sha }}
+          path: target/coverage/*.json
+          if-no-files-found: error
