@@ -576,7 +576,7 @@ fn render_fir_temporal_masking_summary(
     text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> AnyElement {
-    let mut rows: Vec<(String, autoeq::loss::epa::score::TemporalIrMaskingMetrics)> = Vec::new();
+    let mut rows: Vec<(String, autoeq::roomeq_model::TemporalIrMaskingMetrics)> = Vec::new();
 
     for (name, chain) in dsp_output.channels.iter() {
         if let Some(metrics) = chain.fir_temporal_masking.as_ref() {

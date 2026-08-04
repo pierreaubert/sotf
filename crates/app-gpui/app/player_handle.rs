@@ -1,7 +1,9 @@
 use sotf_audio::decoder::AudioSource;
-use sotf_audio::engine::{PluginConfig, PluginGraphConfig};
-use sotf_audio_player::Player;
+use sotf_audio::engine::{AudioEngineState, PluginConfig, PluginGraphConfig};
+use sotf_audio_player::{LoudnessData, PlaybackState, Player, SignalPath, SpectrumData};
+use sotf_plugins::CompressorData;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
 type PlayerCommand = Box<dyn FnOnce(&mut Player) + Send + 'static>;
@@ -29,24 +31,99 @@ impl std::fmt::Display for PlayerCommandError {
 
 impl std::error::Error for PlayerCommandError {}
 
+/// The engine reads needed by one UI refresh.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PlayerSnapshotRequest {
+    pub input_monitor_idx: Option<usize>,
+    pub output_monitor_idx: Option<usize>,
+    pub spectrum_idx: Option<usize>,
+    pub compressor_idx: Option<usize>,
+    pub include_external_diagnostics: bool,
+}
+
+/// Immutable state published by the player actor.
+///
+/// The snapshot is built on the actor thread. Consumers only ever clone its
+/// `Arc`, so the UI never locks or calls into `Player`/the audio engine.
+#[derive(Debug)]
+pub struct PlayerSnapshot {
+    pub sequence: u64,
+    pub position_secs: f64,
+    pub is_playing: bool,
+    pub sample_rate: Option<u32>,
+    pub signal_path: SignalPath,
+    pub input_loudness_info: Option<Arc<LoudnessData>>,
+    pub loudness_info: Option<Arc<LoudnessData>>,
+    pub spectrum_info: Option<Arc<SpectrumData>>,
+    pub compressor_info: Option<Arc<CompressorData>>,
+    pub external_engine_state: Option<AudioEngineState>,
+}
+
+/// A snapshot plus events consumed exactly once by the UI.
+pub struct PlayerSnapshotRead {
+    pub snapshot: Arc<PlayerSnapshot>,
+    pub playback_state: PlaybackState,
+}
+
+#[derive(Default)]
+struct PendingPlaybackEvents {
+    last_error: Option<String>,
+    engine_restarted: bool,
+    engine_fatal: bool,
+    track_ended: bool,
+    gapless_transition: Option<AudioSource>,
+    stream_metadata: Option<sotf_audio::engine::StreamMetadata>,
+}
+
+impl PendingPlaybackEvents {
+    fn merge(&mut self, playback_state: PlaybackState) {
+        if playback_state.last_error.is_some() {
+            self.last_error = playback_state.last_error;
+        }
+        self.engine_restarted |= playback_state.engine_restarted;
+        self.engine_fatal |= playback_state.engine_fatal;
+        self.track_ended |= playback_state.track_ended;
+        if playback_state.gapless_transition.is_some() {
+            self.gapless_transition = playback_state.gapless_transition;
+        }
+        if playback_state.stream_metadata.is_some() {
+            self.stream_metadata = playback_state.stream_metadata;
+        }
+    }
+
+    fn take(&mut self, snapshot: &PlayerSnapshot) -> PlaybackState {
+        PlaybackState {
+            position_secs: snapshot.position_secs,
+            is_playing: snapshot.is_playing,
+            sample_rate: snapshot.sample_rate,
+            last_error: self.last_error.take(),
+            engine_restarted: std::mem::take(&mut self.engine_restarted),
+            engine_fatal: std::mem::take(&mut self.engine_fatal),
+            track_ended: std::mem::take(&mut self.track_ended),
+            gapless_transition: self.gapless_transition.take(),
+            stream_metadata: self.stream_metadata.take(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct PlayerHandle {
-    player: Arc<parking_lot::Mutex<Player>>,
     sender: mpsc::Sender<PlayerCommand>,
     failures: Arc<parking_lot::Mutex<Vec<PlayerCommandFailure>>>,
+    latest_snapshot: Arc<parking_lot::RwLock<Option<Arc<PlayerSnapshot>>>>,
+    pending_events: Arc<parking_lot::Mutex<PendingPlaybackEvents>>,
+    snapshot_requested: Arc<AtomicBool>,
 }
 
 impl PlayerHandle {
     pub fn new(player: Player) -> Self {
-        let player = Arc::new(parking_lot::Mutex::new(player));
         let (sender, receiver) = mpsc::channel::<PlayerCommand>();
-        let worker_player = Arc::clone(&player);
 
         if let Err(error) = std::thread::Builder::new()
             .name("sotf-gpui-player-command".to_string())
             .spawn(move || {
+                let mut player = player;
                 while let Ok(command) = receiver.recv() {
-                    let mut player = worker_player.lock();
                     command(&mut player);
                 }
             })
@@ -55,19 +132,87 @@ impl PlayerHandle {
         }
 
         Self {
-            player,
             sender,
             failures: Arc::new(parking_lot::Mutex::new(Vec::new())),
+            latest_snapshot: Arc::new(parking_lot::RwLock::new(None)),
+            pending_events: Arc::new(parking_lot::Mutex::new(PendingPlaybackEvents::default())),
+            snapshot_requested: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    pub fn try_with_player<R>(&self, f: impl FnOnce(&mut Player) -> R) -> Option<R> {
-        self.player.try_lock().map(|mut player| f(&mut player))
+    /// Queue a coalesced actor request to refresh the immutable UI snapshot.
+    ///
+    /// At most one snapshot request can be queued at a time. This prevents a
+    /// slow engine call from allowing the 60 Hz UI timer to grow an unbounded
+    /// backlog behind it.
+    pub fn request_snapshot(
+        &self,
+        request: PlayerSnapshotRequest,
+    ) -> Result<(), PlayerCommandError> {
+        if self.snapshot_requested.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+
+        let latest_snapshot = Arc::clone(&self.latest_snapshot);
+        let pending_events = Arc::clone(&self.pending_events);
+        let snapshot_requested = Arc::clone(&self.snapshot_requested);
+        let result = self.sender.send(Box::new(move |player| {
+            let external_engine_state = request
+                .include_external_diagnostics
+                .then(|| player.get_engine_state());
+            let playback_state = player.get_playback_state();
+            let position_secs = playback_state.position_secs;
+            let is_playing = playback_state.is_playing;
+            let sample_rate = playback_state.sample_rate;
+            pending_events.lock().merge(playback_state);
+
+            let snapshot = PlayerSnapshot {
+                sequence: latest_snapshot
+                    .read()
+                    .as_ref()
+                    .map_or(0, |snapshot| snapshot.sequence.wrapping_add(1)),
+                position_secs,
+                is_playing,
+                sample_rate,
+                signal_path: player.signal_path(),
+                input_loudness_info: request
+                    .input_monitor_idx
+                    .and_then(|idx| player.get_cached_plugin_data(idx))
+                    .and_then(|data| Arc::downcast::<LoudnessData>(data).ok()),
+                loudness_info: request
+                    .output_monitor_idx
+                    .and_then(|idx| player.get_cached_plugin_data(idx))
+                    .and_then(|data| Arc::downcast::<LoudnessData>(data).ok()),
+                spectrum_info: request
+                    .spectrum_idx
+                    .and_then(|idx| player.get_cached_plugin_data(idx))
+                    .and_then(|data| Arc::downcast::<SpectrumData>(data).ok()),
+                compressor_info: request
+                    .compressor_idx
+                    .and_then(|idx| player.get_cached_plugin_data(idx))
+                    .and_then(|data| Arc::downcast::<CompressorData>(data).ok()),
+                external_engine_state,
+            };
+            *latest_snapshot.write() = Some(Arc::new(snapshot));
+            snapshot_requested.store(false, Ordering::Release);
+        }));
+
+        if result.is_err() {
+            self.snapshot_requested.store(false, Ordering::Release);
+        }
+        result.map_err(|_| PlayerCommandError {
+            label: "request_snapshot",
+        })
     }
 
-    pub fn with_player_blocking<R>(&self, f: impl FnOnce(&mut Player) -> R) -> R {
-        let mut player = self.player.lock();
-        f(&mut player)
+    /// Read the latest actor-published state without touching the player.
+    pub fn read_snapshot(&self) -> Option<PlayerSnapshotRead> {
+        let snapshot = self.latest_snapshot.read().clone()?;
+        let playback_state = self.pending_events.lock().take(&snapshot);
+        Some(PlayerSnapshotRead {
+            snapshot,
+            playback_state,
+        })
     }
 
     pub fn drain_failures(&self) -> Vec<PlayerCommandFailure> {

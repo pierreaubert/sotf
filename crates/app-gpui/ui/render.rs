@@ -1009,7 +1009,11 @@ impl PlayerView {
                                 .flex()
                                 .items_center()
                                 .gap(d.grid)
-                                .child(Icon::new(IconName::Cog).xs().color(theme.text_muted))
+                                .child(
+                                    Icon::new(IconName::Cog)
+                                        .size(IconSize::Sm)
+                                        .color(theme.text_muted),
+                                )
                                 .child(
                                     div()
                                         .text_size(d.text_xs)
@@ -1027,7 +1031,7 @@ impl PlayerView {
                                     let theme = theme.clone();
                                     move |s| s.text_color(theme.text_primary)
                                 })
-                                .child(Icon::new(IconName::Settings).xs())
+                                .child(Icon::new(IconName::Settings).size(IconSize::Sm))
                                 .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
                                     window.dispatch_action(Box::new(OpenConfig), cx);
                                     state_entity.update(cx, |state, _cx| {

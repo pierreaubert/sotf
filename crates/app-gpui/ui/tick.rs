@@ -141,9 +141,9 @@ impl PlayerView {
 
     /// Sync playback position, duration, and analyzer data from the audio engine.
     ///
-    /// Locks the player, reads the engine's `PlaybackState`, copies
-    /// position/duration into app state, reads cached analyzer plugin data,
-    /// and updates visible level meters after dropping the player lock.
+    /// Queues an actor snapshot request, reads the latest immutable snapshot,
+    /// copies position/duration into app state, and updates visible level
+    /// meters without touching the player or audio engine on the UI thread.
     ///
     /// Screen-gated: compressor downcast and level-meter recomputation are
     /// skipped when the current screen does not show them. Spectrum read
@@ -206,47 +206,19 @@ impl PlayerView {
             )
         };
 
-        let Some((
-            playback_state,
-            signal_path,
-            input_loudness_info,
-            loudness_info,
-            spectrum_info,
-            compressor_info,
-            external_diagnostics,
-        )) = state.player.try_with_player(|player| {
-            let external_diagnostics = include_external_diagnostics.then(|| {
-                let engine_state = player.get_engine_state();
-                (
-                    engine_state.plugin_build_diagnostics,
-                    engine_state.isolated_external_plugin_worker_statuses,
-                )
-            });
-            (
-                player.get_playback_state(),
-                player.signal_path(),
-                input_monitor_idx
-                    .and_then(|idx| player.get_cached_plugin_data(idx))
-                    .and_then(|d| {
-                        std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok()
-                    }),
-                output_monitor_idx
-                    .and_then(|idx| player.get_cached_plugin_data(idx))
-                    .and_then(|d| {
-                        std::sync::Arc::downcast::<sotf_audio_player::LoudnessData>(d).ok()
-                    }),
-                spectrum_idx
-                    .and_then(|idx| player.get_cached_plugin_data(idx))
-                    .and_then(|d| {
-                        std::sync::Arc::downcast::<sotf_audio_player::SpectrumData>(d).ok()
-                    }),
-                compressor_idx
-                    .and_then(|i| player.get_cached_plugin_data(i))
-                    .and_then(|d| std::sync::Arc::downcast::<sotf_plugins::CompressorData>(d).ok()),
-                external_diagnostics,
-            )
-        })
-        else {
+        if let Err(error) = state.player.request_snapshot(
+            crate::app::player_handle::PlayerSnapshotRequest {
+                input_monitor_idx,
+                output_monitor_idx,
+                spectrum_idx,
+                compressor_idx,
+                include_external_diagnostics,
+            },
+        ) {
+            log::debug!("Player snapshot request failed: {error}");
+        }
+
+        let Some(snapshot_read) = state.player.read_snapshot() else {
             return (
                 sotf_audio_player::PlaybackState {
                     position_secs: state.app.playback.position_secs,
@@ -263,11 +235,14 @@ impl PlayerView {
             );
         };
 
-        if let Some((build_diagnostics, worker_statuses)) = external_diagnostics {
-            state
-                .app
-                .plugin_state
-                .sync_external_plugin_engine_diagnostics(build_diagnostics, worker_statuses);
+        let snapshot = snapshot_read.snapshot;
+        let playback_state = snapshot_read.playback_state;
+
+        if let Some(engine_state) = snapshot.external_engine_state.as_ref() {
+            state.app.plugin_state.sync_external_plugin_engine_diagnostics(
+                engine_state.plugin_build_diagnostics.clone(),
+                engine_state.isolated_external_plugin_worker_statuses.clone(),
+            );
         } else if poll_external_diagnostics && !include_external_diagnostics {
             state
                 .app
@@ -275,18 +250,18 @@ impl PlayerView {
                 .sync_external_plugin_engine_diagnostics(Vec::new(), Vec::new());
         }
 
-        state.app.playback.signal_path = Some(signal_path);
+        state.app.playback.signal_path = Some(snapshot.signal_path.clone());
         state.app.playback.is_playing = playback_state.is_playing;
         state.app.playback.position_secs = playback_state.position_secs;
         state.app.playback.duration_secs = state.app.get_current_track_duration();
 
-        state.app.playback.input_loudness_info = input_loudness_info;
-        state.app.playback.loudness_info = loudness_info;
+        state.app.playback.input_loudness_info = snapshot.input_loudness_info.clone();
+        state.app.playback.loudness_info = snapshot.loudness_info.clone();
         if include_spectrum {
-            state.app.playback.spectrum_info = spectrum_info;
+            state.app.playback.spectrum_info = snapshot.spectrum_info.clone();
         }
         if include_compressor {
-            state.app.playback.compressor_info = compressor_info;
+            state.app.playback.compressor_info = snapshot.compressor_info.clone();
         } else {
             state.app.playback.compressor_info = None;
         }

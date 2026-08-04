@@ -201,6 +201,7 @@ fn make_bare_backend_config() -> autoeq::roomeq::OptimizerConfig {
         population: 50,
         peq_model: "pk".to_string(),
         seed: None,
+        parallel_threads: None,
         refine: true,
         local_algo: "cobyla".to_string(),
         bo_initial_samples: None,

@@ -93,9 +93,12 @@ impl RenderOnce for AlbumCard {
             })
             .unwrap_or((DEFAULT_MIN_FONT_SIZE_PX, fallback_rem_px));
         let text_sizes = AlbumCardTextSizes::from_design(d, typography.0, typography.1);
+        let album_art_corner_radius_ratio = (d.r_lg.to_f64() as f32
+            / (ALBUM_CARD_WIDTH_REMS * fallback_rem_px.max(1.0)))
+        .clamp(0.0, 0.25);
 
         match self.mode {
-            AlbumCardMode::Grid => self.render_grid(d, text_sizes),
+            AlbumCardMode::Grid => self.render_grid(d, text_sizes, album_art_corner_radius_ratio),
             AlbumCardMode::List => self.render_list(d, text_sizes),
             AlbumCardMode::Compact => self.render_compact(d, text_sizes),
         }
@@ -233,24 +236,41 @@ impl AlbumCard {
             )
     }
 
-    fn render_grid(self, d: Ds, text_sizes: AlbumCardTextSizes) -> AnyElement {
+    fn render_grid(
+        self,
+        d: Ds,
+        text_sizes: AlbumCardTextSizes,
+        album_art_corner_radius_ratio: f32,
+    ) -> AnyElement {
         // Card and thumbnail share the same width (card is sized by its thumbnail)
         let size_rems = ALBUM_CARD_WIDTH_REMS;
         let theme = self.theme;
         let album = self.album;
         let index = self.index;
         let state = self.state;
+        let selection_inset = rems(-d.gap.0);
 
         div()
             .id(("album-card", index))
             .w(rems(size_rems))
+            .relative()
             .rounded(d.r_lg)
             .cursor_pointer()
+            // Keep the selection frame outside the content box so it cannot
+            // clip or cover the artwork, title, or metadata.
             .when(self.is_selected, |el| {
-                // Glow effect for selected state
-                let mut bg = theme.accent;
-                bg.a = 0.1;
-                el.shadow_md().border_1().border_color(theme.accent).bg(bg)
+                el.child(
+                    div()
+                        .absolute()
+                        .top(selection_inset)
+                        .right(selection_inset)
+                        .bottom(selection_inset)
+                        .left(selection_inset)
+                        .rounded(d.r_lg)
+                        .border_1()
+                        .border_color(theme.accent)
+                        .shadow_md(),
+                )
             })
             // No background for unselected cards (transparent)
             .hover(|style| style.bg(theme.surface_hover))
@@ -259,23 +279,27 @@ impl AlbumCard {
                     .flex()
                     .flex_col()
                     .items_center()
+                    .w_full()
                     // Album art thumbnail or placeholder (scales with rem)
                     .child(
                         div()
-                            .w(rems(size_rems))
+                            .w_full()
                             .h(rems(size_rems))
-                            .rounded(d.r_md)
+                            .rounded(d.r_lg)
                             .overflow_hidden()
                             .flex()
                             .items_center()
                             .justify_center()
                             .child(
                                 if let Some(ref thumbnail_bytes) = album.album_art_thumbnail {
-                                    img(image_from_jpeg_bytes(thumbnail_bytes))
-                                        .w(rems(size_rems))
-                                        .h(rems(size_rems))
-                                        .object_fit(ObjectFit::Cover)
-                                        .into_any_element()
+                                    img(image_from_jpeg_bytes(
+                                        thumbnail_bytes,
+                                        album_art_corner_radius_ratio,
+                                    ))
+                                    .w_full()
+                                    .h(rems(size_rems))
+                                    .object_fit(ObjectFit::Cover)
+                                    .into_any_element()
                                 } else {
                                     div()
                                         .text_3xl()

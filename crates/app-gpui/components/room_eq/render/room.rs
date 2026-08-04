@@ -398,7 +398,7 @@ fn room_eq_report_pass_color(label: &str) -> u32 {
 }
 
 fn room_eq_report_epa_score_from_score(
-    score: &autoeq::loss::epa::score::EpaScore,
+    score: &autoeq::roomeq_model::EpaScore,
 ) -> RoomEqReportEpaScore {
     RoomEqReportEpaScore {
         preference: score.preference,

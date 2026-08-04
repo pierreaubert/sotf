@@ -357,14 +357,22 @@ impl PlayerView {
                     } else {
                         StackJustify::Center
                     })
-                    .align(StackAlign::Center)
+                    // Stretch the center column to the fixed footer height. The
+                    // child itself must not use percentage height: that can
+                    // exceed this footer's fixed height once padding is added.
+                    .align(StackAlign::Stretch)
                     // Left section: Track info text (hidden on narrow screens)
                     .when(show_track_info, |el| {
-                        el.child(self.render_footer_track_info(
-                            &translations,
-                            window_width_rems,
-                            cx,
-                        ))
+                        el.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .child(self.render_footer_track_info(
+                                    &translations,
+                                    window_width_rems,
+                                    cx,
+                                )),
+                        )
                     })
                     // Center section: Transport + waveform
                     .child(self.render_footer_center(show_waveform, cx))
@@ -791,16 +799,19 @@ impl PlayerView {
 
         let bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
         let bounds_ref_clone = bounds_ref.clone();
+        let signal_path_top = rems(d.section_xl.0 + d.gap.0);
 
         div()
             .flex()
             .flex_col()
             .items_center()
-            .gap(d.gap)
+            .relative()
+            .gap(d.grid)
             .pt(d.gap_md)
             .pb(d.gap_md)
             .justify_between()
             .flex_1()
+            .min_h_0()
             .max_w(rems(37.5))
             // Row 1: [time] [<< < ▶ > >>] [time] — timestamps at far edges
             .child(
@@ -1066,6 +1077,10 @@ impl PlayerView {
                 el.child(
                     div()
                         .id("footer-signal-path")
+                        .absolute()
+                        .top(signal_path_top)
+                        .left_0()
+                        .right_0()
                         .flex()
                         .items_center()
                         .justify_center()

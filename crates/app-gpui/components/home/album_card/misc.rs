@@ -12,15 +12,17 @@ const JPEG_MAGIC: &[u8; 3] = b"\xff\xd8\xff";
 struct AlbumArtImageCacheKey {
     len: usize,
     hash: u64,
+    corner_radius_ratio_bits: u32,
 }
 
 impl AlbumArtImageCacheKey {
-    fn from_bytes(bytes: &[u8]) -> Self {
+    fn from_bytes(bytes: &[u8], corner_radius_ratio: f32) -> Self {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         bytes.hash(&mut hasher);
         Self {
             len: bytes.len(),
             hash: hasher.finish(),
+            corner_radius_ratio_bits: corner_radius_ratio.to_bits(),
         }
     }
 }
@@ -68,30 +70,27 @@ std::thread_local! {
 ///
 /// Thumbnails are stored as PNG in the database for optimal rendering.
 /// This function handles both PNG (new format) and JPEG (legacy format) for backward compatibility.
-pub(super) fn image_from_jpeg_bytes(bytes: &[u8]) -> Arc<Image> {
-    let key = AlbumArtImageCacheKey::from_bytes(bytes);
+pub(super) fn image_from_jpeg_bytes(bytes: &[u8], corner_radius_ratio: f32) -> Arc<Image> {
+    let key = AlbumArtImageCacheKey::from_bytes(bytes, corner_radius_ratio);
     ALBUM_ART_IMAGE_CACHE.with(|cache| {
         cache
             .borrow_mut()
-            .get_or_insert_with(key, || decode_album_art_image(bytes))
+            .get_or_insert_with(key, || decode_album_art_image(bytes, corner_radius_ratio))
     })
 }
 
-fn decode_album_art_image(bytes: &[u8]) -> Arc<Image> {
-    use image::ImageFormat as ExternalImageFormat;
-
-    if bytes.starts_with(PNG_MAGIC) {
-        return Arc::new(Image::from_bytes(ImageFormat::Png, bytes.to_vec()));
-    }
-
-    if bytes.starts_with(JPEG_MAGIC)
-        && let Ok(img) = image::load_from_memory_with_format(bytes, ExternalImageFormat::Jpeg)
+fn decode_album_art_image(bytes: &[u8], corner_radius_ratio: f32) -> Arc<Image> {
+    if (bytes.starts_with(PNG_MAGIC) || bytes.starts_with(JPEG_MAGIC))
+        && let Ok(image) = image::load_from_memory(bytes)
     {
+        let mut rgba = image.to_rgba8();
+        apply_album_art_corner_mask(&mut rgba, corner_radius_ratio);
+
         let mut png_bytes = Vec::new();
-        if img
+        if rgba
             .write_to(
                 &mut std::io::Cursor::new(&mut png_bytes),
-                ExternalImageFormat::Png,
+                image::ImageFormat::Png,
             )
             .is_ok()
         {
@@ -101,6 +100,37 @@ fn decode_album_art_image(bytes: &[u8]) -> Arc<Image> {
 
     // Last resort: pass through as-is
     Arc::new(Image::from_bytes(ImageFormat::Png, bytes.to_vec()))
+}
+
+/// Apply the rounded album-art corners in the pixels themselves. GPUI's
+/// current image overflow path does not reliably clip decoded image content,
+/// so a transparent alpha mask keeps the artwork rounded independently of the
+/// toolkit's clipping implementation.
+fn apply_album_art_corner_mask(image: &mut image::RgbaImage, corner_radius_ratio: f32) {
+    let radius = ((image.width().min(image.height()) as f32) * corner_radius_ratio)
+        .round()
+        .max(1.0) as i32;
+    let radius_f = radius as f32;
+    let center = radius_f - 0.5;
+    let width = image.width() as i32;
+    let height = image.height() as i32;
+
+    for y in 0..radius {
+        for x in 0..radius {
+            if (x as f32 - center).powi(2) + (y as f32 - center).powi(2) <= radius_f.powi(2) {
+                continue;
+            }
+
+            for (pixel_x, pixel_y) in [
+                (x, y),
+                (width - 1 - x, y),
+                (x, height - 1 - y),
+                (width - 1 - x, height - 1 - y),
+            ] {
+                image.get_pixel_mut(pixel_x as u32, pixel_y as u32).0[3] = 0;
+            }
+        }
+    }
 }
 
 pub(super) fn text_size_at_least(size: Rems, min_font_size_px: f32, effective_rem_px: f32) -> Rems {

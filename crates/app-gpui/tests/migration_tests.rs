@@ -95,6 +95,7 @@ fn test_room_config_roundtrip() {
         crossovers: None,
         target_curve: None,
         optimizer: OptimizerConfig::default(),
+        provenance: Default::default(),
         recording_config: Some(RecordingConfiguration {
             playback_device_name: Some("Test Device".to_string()),
             signal_type: Some("Sweep".to_string()),
