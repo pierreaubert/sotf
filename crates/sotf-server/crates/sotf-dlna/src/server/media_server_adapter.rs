@@ -16,6 +16,13 @@ pub trait MediaServerAdapter: Send + Sync + 'static {
     /// Total number of albums.
     fn album_count(&self) -> u32;
 
+    /// Monotonic ContentDirectory update identifier used for GENA events.
+    /// Adapters that do not have a library version can keep the default value;
+    /// subscribers still receive the required initial event.
+    fn content_directory_update_id(&self) -> u32 {
+        1
+    }
+
     /// Resolve a `/media/{id}` URL to a filesystem path and MIME type.
     ///
     /// Returning `None` means the adapter cannot map ids to files — the

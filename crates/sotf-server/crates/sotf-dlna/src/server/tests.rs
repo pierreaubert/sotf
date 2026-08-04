@@ -6,6 +6,7 @@ use super::types::MediaAlbum;
 use super::types::MediaSource;
 use super::types::MediaTrack;
 use crate::device::DlnaDevice;
+use crate::gena::GenaRegistry;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -134,6 +135,14 @@ async fn server_http_raw(
     adapter: Arc<dyn MediaServerAdapter>,
     request: &str,
 ) -> Result<Vec<u8>, String> {
+    server_http_raw_with_events(adapter, request, GenaRegistry::new()).await
+}
+
+async fn server_http_raw_with_events(
+    adapter: Arc<dyn MediaServerAdapter>,
+    request: &str,
+    events: GenaRegistry,
+) -> Result<Vec<u8>, String> {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let device = DlnaDevice::new_server("SOTF DLNA Test", addr.port());
@@ -141,7 +150,7 @@ async fn server_http_raw(
 
     let task = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        handle_server_request(stream, &device, &base_url, &adapter).await
+        handle_server_request(stream, &device, &base_url, &adapter, &events).await
     });
 
     let mut client = TcpStream::connect(addr).await.unwrap();
@@ -164,6 +173,14 @@ fn split_http_response(response: &[u8]) -> (String, Vec<u8>) {
     let headers = String::from_utf8(response[..separator].to_vec()).unwrap();
     let body = response[(separator + 4)..].to_vec();
     (headers, body)
+}
+
+fn response_header(headers: &str, name: &str) -> Option<String> {
+    headers.lines().find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        key.eq_ignore_ascii_case(name)
+            .then(|| value.trim().to_string())
+    })
 }
 
 fn test_media_path() -> PathBuf {
@@ -253,6 +270,144 @@ async fn http_server_serves_description_content_directory_and_media_ranges() {
     assert_eq!(body, b"2345");
 
     let _ = tokio::fs::remove_file(path).await;
+}
+
+#[tokio::test]
+async fn http_server_exposes_scpd_and_gena_lifecycle() {
+    let adapter: Arc<dyn MediaServerAdapter> = Arc::new(HttpStub {
+        media_path: test_media_path(),
+    });
+
+    for (path, expected_action) in [
+        ("/ContentDirectory/scpd.xml", "Browse"),
+        ("/ConnectionManager/scpd.xml", "GetProtocolInfo"),
+    ] {
+        let response = server_http_round_trip(
+            Arc::clone(&adapter),
+            &format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"),
+        )
+        .await;
+        let (headers, body) = split_http_response(&response);
+        assert!(headers.starts_with("HTTP/1.1 200 OK"), "got: {headers}");
+        let body = String::from_utf8(body).unwrap();
+        assert!(body.contains("<scpd"), "got: {body}");
+        assert!(
+            body.contains(&format!("<name>{expected_action}</name>")),
+            "got: {body}"
+        );
+    }
+
+    let callback_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let callback_addr = callback_listener.local_addr().unwrap();
+    let notifications = tokio::spawn(async move {
+        let mut requests = Vec::new();
+        for _ in 0..2 {
+            let (mut stream, _) = callback_listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            stream.read_to_end(&mut request).await.unwrap();
+            requests.push(request);
+        }
+        requests
+    });
+
+    let events = GenaRegistry::new();
+    let subscribe = format!(
+        "SUBSCRIBE /ContentDirectory/event HTTP/1.1\r\n\
+         HOST: 127.0.0.1\r\n\
+         CALLBACK: <http://{callback_addr}/events>\r\n\
+         NT: upnp:event\r\n\
+         TIMEOUT: Second-60\r\n\
+         \r\n"
+    );
+    let response = server_http_raw_with_events(Arc::clone(&adapter), &subscribe, events.clone())
+        .await
+        .unwrap();
+    let (headers, body) = split_http_response(&response);
+    assert!(headers.starts_with("HTTP/1.1 200 OK"), "got: {headers}");
+    assert!(body.is_empty());
+    assert_eq!(
+        response_header(&headers, "TIMEOUT").as_deref(),
+        Some("Second-60")
+    );
+    let sid = response_header(&headers, "SID").expect("new subscription must return SID");
+    // The registry is shared with the request handler, so a library update
+    // reaches the same subscriber without another HTTP control request.
+    events.notify(
+        "/ContentDirectory/event",
+        super::handle::content_directory_event_body(2),
+    );
+    let notifications = notifications.await.unwrap();
+    assert_eq!(notifications.len(), 2);
+    let first_notify = String::from_utf8(notifications[0].clone()).unwrap();
+    assert!(
+        first_notify.starts_with("NOTIFY /events HTTP/1.1"),
+        "{first_notify}"
+    );
+    assert!(
+        first_notify.contains(&format!("SID: {sid}")),
+        "{first_notify}"
+    );
+    assert!(first_notify.contains("SEQ: 0"), "{first_notify}");
+    assert!(
+        first_notify.contains("<SystemUpdateID>1</SystemUpdateID>"),
+        "{first_notify}"
+    );
+    let second_notify = String::from_utf8(notifications[1].clone()).unwrap();
+    assert!(second_notify.contains("SEQ: 1"), "{second_notify}");
+    assert!(
+        second_notify.contains("<SystemUpdateID>2</SystemUpdateID>"),
+        "{second_notify}"
+    );
+
+    let wrong_service_renewal = format!(
+        "SUBSCRIBE /ConnectionManager/event HTTP/1.1\r\n\
+         HOST: 127.0.0.1\r\n\
+         SID: {sid}\r\n\
+         TIMEOUT: Second-90\r\n\
+         \r\n"
+    );
+    let response =
+        server_http_raw_with_events(Arc::clone(&adapter), &wrong_service_renewal, events.clone())
+            .await
+            .unwrap();
+    let (headers, _) = split_http_response(&response);
+    assert!(
+        headers.starts_with("HTTP/1.1 412 Precondition Failed"),
+        "got: {headers}"
+    );
+
+    let renewal = format!(
+        "SUBSCRIBE /ContentDirectory/event HTTP/1.1\r\n\
+         HOST: 127.0.0.1\r\n\
+         SID: {sid}\r\n\
+         TIMEOUT: Second-90\r\n\
+         \r\n"
+    );
+    let response = server_http_raw_with_events(Arc::clone(&adapter), &renewal, events.clone())
+        .await
+        .unwrap();
+    let (headers, _) = split_http_response(&response);
+    assert!(headers.starts_with("HTTP/1.1 200 OK"), "got: {headers}");
+    assert_eq!(
+        response_header(&headers, "SID").as_deref(),
+        Some(sid.as_str())
+    );
+    assert_eq!(
+        response_header(&headers, "TIMEOUT").as_deref(),
+        Some("Second-90")
+    );
+
+    let unsubscribe = format!(
+        "UNSUBSCRIBE /ContentDirectory/event HTTP/1.1\r\n\
+         HOST: 127.0.0.1\r\n\
+         SID: {sid}\r\n\
+         \r\n"
+    );
+    let response = server_http_raw_with_events(adapter, &unsubscribe, events)
+        .await
+        .unwrap();
+    let (headers, _) = split_http_response(&response);
+    assert!(headers.starts_with("HTTP/1.1 200 OK"), "got: {headers}");
 }
 
 /// Review requirement: `Search` must honour `RequestedCount` on the

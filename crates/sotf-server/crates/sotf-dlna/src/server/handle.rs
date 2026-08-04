@@ -1,4 +1,5 @@
 use super::http::http_response;
+use super::http::http_response_with_headers;
 use super::http::http_soap_fault;
 use super::http::http_soap_response;
 use super::media_server_adapter::MediaServerAdapter;
@@ -8,7 +9,9 @@ use super::misc::parse_range_header;
 use super::misc::stream_file_range;
 use crate::device::DlnaDevice;
 use crate::didl::{self, DidlContainer, DidlItem};
+use crate::gena::{GenaRegistry, event_property_set};
 use crate::http_io;
+use crate::scpd::scpd_for_path;
 use crate::xml;
 use std::sync::Arc;
 use tokio::io::{AsyncWriteExt, BufReader};
@@ -18,6 +21,7 @@ pub(super) async fn handle_server_request(
     device: &DlnaDevice,
     base_url: &str,
     adapter: &Arc<dyn MediaServerAdapter>,
+    events: &GenaRegistry,
 ) -> Result<(), String> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -58,18 +62,27 @@ pub(super) async fn handle_server_request(
                 .map(|(_, value)| value.as_str());
             handle_media(&mut writer, method, path, range, adapter).await?;
         }
-        // GENA event + SCPD endpoints are NOT implemented in this
-        // bug-fix pass. Return 501 so controllers can distinguish
-        // "device wrong" from "feature missing" (review §4).
-        ("SUBSCRIBE" | "UNSUBSCRIBE", p) if p.ends_with("/event") => {
-            let response = http_response(501, "text/plain", "GENA eventing not implemented");
+        ("SUBSCRIBE", path) if server_event_body(path, adapter).is_some() => {
+            let event = server_event_body(path, adapter).unwrap();
+            let result = events.subscribe(path, &req.headers, event);
+            let response =
+                http_response_with_headers(result.status, "text/plain", &result.headers, "");
             writer
                 .write_all(response.as_bytes())
                 .await
                 .map_err(|e| e.to_string())?;
         }
-        ("GET", p) if p.ends_with("/scpd.xml") => {
-            let response = http_response(501, "text/plain", "SCPD endpoints not implemented");
+        ("UNSUBSCRIBE", path) if server_event_body(path, adapter).is_some() => {
+            let result = events.unsubscribe(path, &req.headers);
+            let response =
+                http_response_with_headers(result.status, "text/plain", &result.headers, "");
+            writer
+                .write_all(response.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        ("GET", path) if let Some(scpd) = scpd_for_path(path) => {
+            let response = http_response(200, "text/xml; charset=\"utf-8\"", scpd);
             writer
                 .write_all(response.as_bytes())
                 .await
@@ -84,6 +97,30 @@ pub(super) async fn handle_server_request(
         }
     }
     Ok(())
+}
+
+pub(super) fn content_directory_event_body(update_id: u32) -> String {
+    event_property_set(&[
+        ("SystemUpdateID", update_id.to_string()),
+        ("ContainerUpdateIDs", "0,0".to_string()),
+    ])
+}
+
+fn server_event_body(path: &str, adapter: &Arc<dyn MediaServerAdapter>) -> Option<String> {
+    match path {
+        "/ContentDirectory/event" => Some(content_directory_event_body(
+            adapter.content_directory_update_id(),
+        )),
+        "/ConnectionManager/event" => Some(event_property_set(&[
+            ("SourceProtocolInfo", server_protocol_info().to_string()),
+            ("SinkProtocolInfo", String::new()),
+        ])),
+        _ => None,
+    }
+}
+
+fn server_protocol_info() -> &'static str {
+    "http-get:*:audio/flac:*,http-get:*:audio/mpeg:*,http-get:*:audio/wav:*,http-get:*:audio/ogg:*,http-get:*:audio/aac:*"
 }
 
 pub(super) fn compute_body_len(file_len: u64, start: u64, end: u64) -> u64 {

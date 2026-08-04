@@ -7,7 +7,9 @@
 // SOTF player operations via the RendererAdapter trait.
 
 use crate::device::DlnaDevice;
+use crate::gena::{GenaRegistry, event_property_set};
 use crate::http_io;
+use crate::scpd::scpd_for_path;
 use crate::ssdp;
 use crate::xml;
 use std::net::Ipv4Addr;
@@ -68,11 +70,16 @@ pub trait RendererAdapter: Send + Sync + 'static {
 pub struct DlnaRenderer {
     device: DlnaDevice,
     adapter: Arc<dyn RendererAdapter>,
+    events: GenaRegistry,
 }
 
 impl DlnaRenderer {
     pub fn new(device: DlnaDevice, adapter: Arc<dyn RendererAdapter>) -> Self {
-        Self { device, adapter }
+        Self {
+            device,
+            adapter,
+            events: GenaRegistry::new(),
+        }
     }
 
     /// Run the renderer (HTTP control server + SSDP announcements).
@@ -94,6 +101,44 @@ impl DlnaRenderer {
         tokio::spawn(async move {
             if let Err(e) = ssdp::listen_and_respond(ssdp_device, local_ip, ssdp_cancel).await {
                 log::warn!("[DLNA Renderer] SSDP error: {}", e);
+            }
+        });
+
+        let event_adapter = Arc::clone(&self.adapter);
+        let event_registry = self.events.clone();
+        let event_cancel = cancel.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+            let mut last_avtransport = avtransport_event_body(&event_adapter);
+            let mut last_rendering_control = rendering_control_event_body(&event_adapter);
+            let mut cancel_rx = event_cancel;
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        let avtransport = avtransport_event_body(&event_adapter);
+                        if event_registry.has_subscribers("/AVTransport/event")
+                            && avtransport != last_avtransport
+                        {
+                            last_avtransport = avtransport.clone();
+                            event_registry.notify("/AVTransport/event", avtransport);
+                        }
+                        let rendering_control = rendering_control_event_body(&event_adapter);
+                        if event_registry.has_subscribers("/RenderingControl/event")
+                            && rendering_control != last_rendering_control
+                        {
+                            last_rendering_control = rendering_control.clone();
+                            event_registry.notify(
+                                "/RenderingControl/event",
+                                rendering_control,
+                            );
+                        }
+                    }
+                    changed = cancel_rx.changed() => {
+                        if changed.is_err() || *cancel_rx.borrow() {
+                            break;
+                        }
+                    }
+                }
             }
         });
 
@@ -128,9 +173,18 @@ impl DlnaRenderer {
                         Ok((stream, _peer)) => {
                             let adapter = Arc::clone(&self.adapter);
                             let device = self.device.clone();
+                            let events = self.events.clone();
                             let base_url = format!("http://{}:{}", local_ip, device.http_port);
                             tokio::spawn(async move {
-                                if let Err(e) = handle_http_request(stream, &device, &base_url, &adapter).await {
+                                if let Err(e) = handle_http_request(
+                                    stream,
+                                    &device,
+                                    &base_url,
+                                    &adapter,
+                                    &events,
+                                )
+                                .await
+                                {
                                     log::debug!("[DLNA Renderer] HTTP error: {}", e);
                                 }
                             });
@@ -157,6 +211,7 @@ async fn handle_http_request(
     device: &DlnaDevice,
     base_url: &str,
     adapter: &Arc<dyn RendererAdapter>,
+    events: &GenaRegistry,
 ) -> Result<(), String> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -184,16 +239,17 @@ async fn handle_http_request(
             handle_rendering_control_action(&body_str, adapter)
         }
         ("POST", "/ConnectionManager/control") => handle_connection_manager_action(&body_str),
-        // GENA event endpoints (SUBSCRIBE/UNSUBSCRIBE) + SCPD endpoints
-        // are intentionally NOT implemented in this bug-fix pass — the
-        // task scope explicitly skips them. Return 501 so strict
-        // controllers can distinguish "device wrong" from "feature
-        // missing" (review §4).
-        ("SUBSCRIBE" | "UNSUBSCRIBE", p) if p.ends_with("/event") => {
-            http_response(501, "text/plain", "GENA eventing not implemented")
+        ("SUBSCRIBE", path) if renderer_event_body(path, adapter).is_some() => {
+            let event = renderer_event_body(path, adapter).unwrap();
+            let result = events.subscribe(path, &req.headers, event);
+            http_response_with_headers(result.status, "text/plain", &result.headers, "")
         }
-        ("GET", p) if p.ends_with("/scpd.xml") => {
-            http_response(501, "text/plain", "SCPD endpoints not implemented")
+        ("UNSUBSCRIBE", path) if renderer_event_body(path, adapter).is_some() => {
+            let result = events.unsubscribe(path, &req.headers);
+            http_response_with_headers(result.status, "text/plain", &result.headers, "")
+        }
+        ("GET", path) if let Some(scpd) = scpd_for_path(path) => {
+            http_response(200, "text/xml; charset=\"utf-8\"", scpd)
         }
         _ => http_response(404, "text/plain", "Not Found"),
     };
@@ -204,6 +260,39 @@ async fn handle_http_request(
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+fn renderer_event_body(path: &str, adapter: &Arc<dyn RendererAdapter>) -> Option<String> {
+    match path {
+        "/AVTransport/event" => Some(avtransport_event_body(adapter)),
+        "/RenderingControl/event" => Some(rendering_control_event_body(adapter)),
+        "/ConnectionManager/event" => Some(event_property_set(&[
+            ("SourceProtocolInfo", String::new()),
+            ("SinkProtocolInfo", renderer_protocol_info().to_string()),
+        ])),
+        _ => None,
+    }
+}
+
+fn avtransport_event_body(adapter: &Arc<dyn RendererAdapter>) -> String {
+    let status = adapter.status();
+    event_property_set(&[
+        ("TransportState", status.state.as_str().to_string()),
+        ("TransportStatus", "OK".to_string()),
+        ("CurrentTrackURI", status.current_uri.unwrap_or_default()),
+    ])
+}
+
+fn rendering_control_event_body(adapter: &Arc<dyn RendererAdapter>) -> String {
+    let status = adapter.status();
+    event_property_set(&[
+        ("Volume", status.volume.to_string()),
+        ("Mute", if status.muted { "1" } else { "0" }.to_string()),
+    ])
+}
+
+fn renderer_protocol_info() -> &'static str {
+    "http-get:*:audio/flac:*,http-get:*:audio/mpeg:*,http-get:*:audio/mp4:*,http-get:*:audio/ogg:*,http-get:*:audio/wav:*,http-get:*:audio/aiff:*,http-get:*:audio/aac:*,http-get:*:audio/x-flac:*"
 }
 
 fn handle_avtransport_action(body: &str, adapter: &Arc<dyn RendererAdapter>) -> String {
@@ -395,25 +484,41 @@ fn handle_connection_manager_action(body: &str) -> String {
 }
 
 fn http_response(status: u16, content_type: &str, body: &str) -> String {
+    http_response_with_headers(status, content_type, &[], body)
+}
+
+fn http_response_with_headers(
+    status: u16,
+    content_type: &str,
+    extra_headers: &[(String, String)],
+    body: &str,
+) -> String {
     let status_text = match status {
         200 => "OK",
         400 => "Bad Request",
         404 => "Not Found",
+        412 => "Precondition Failed",
         500 => "Internal Server Error",
         501 => "Not Implemented",
+        503 => "Service Unavailable",
         _ => "Unknown",
     };
+    let extra_headers = extra_headers
+        .iter()
+        .map(|(name, value)| format!("{}: {}\r\n", name, value))
+        .collect::<String>();
     format!(
         "HTTP/1.1 {} {}\r\n\
          Content-Type: {}\r\n\
          Content-Length: {}\r\n\
-         Connection: close\r\n\
+         {}Connection: close\r\n\
          \r\n\
          {}",
         status,
         status_text,
         content_type,
         body.len(),
+        extra_headers,
         body,
     )
 }

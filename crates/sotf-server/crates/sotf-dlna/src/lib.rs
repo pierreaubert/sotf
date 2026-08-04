@@ -1,8 +1,10 @@
 mod device;
 mod didl;
 mod discovery;
+mod gena;
 mod http_io;
 mod renderer;
+mod scpd;
 mod server;
 mod ssdp;
 mod xml;
