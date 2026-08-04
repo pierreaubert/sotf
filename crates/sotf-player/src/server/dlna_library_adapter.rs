@@ -102,6 +102,13 @@ impl MediaServerAdapter for DlnaLibraryAdapter {
         library.albums.len() as u32
     }
 
+    fn content_directory_update_id(&self) -> u32 {
+        self.state
+            .library_version
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .min(u32::MAX as u64) as u32
+    }
+
     fn media_path(&self, track_id: &str) -> Option<sotf_dlna::MediaSource> {
         let library = self.state.library.lock();
         for album in &library.albums {

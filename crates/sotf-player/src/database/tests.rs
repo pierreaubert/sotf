@@ -39,10 +39,10 @@ fn test_backup_existing_database_creates_backup_file() {
 }
 
 #[test]
-fn test_prune_old_backups_limits_to_three_per_day() {
+fn test_prune_old_backups_keeps_at_least_three_versions() {
     let test_dir = fresh_config_test_dir("test_prune");
 
-    // Create 5 backups for the same day
+    // Create 5 backups with identical sizes and no age buckets.
     let ts = [
         "20250101-010000",
         "20250101-020000",
@@ -71,6 +71,46 @@ fn test_prune_old_backups_limits_to_three_per_day() {
     assert_eq!(remaining.len(), 3);
 
     // Cleanup
+    std::fs::remove_dir_all(&test_dir).ok();
+}
+
+#[test]
+fn test_prune_old_backups_keeps_previous_weekly_and_monthly_distinct_sizes() {
+    let test_dir = fresh_config_test_dir("test_prune_retention_slots");
+
+    let backups = [
+        ("20250201-010000", b"old".as_slice()),
+        ("20250301-010000", b"monthly".as_slice()),
+        ("20250324-010000", b"week-size".as_slice()),
+        ("20250331-010000", b"latest".as_slice()),
+        // Same size as the newest backup; this should be removed instead of
+        // creating a fourth retained version.
+        ("20250331-020000", b"other".as_slice()),
+    ];
+
+    for (timestamp, contents) in backups {
+        std::fs::write(test_dir.join(format!("music-{timestamp}.sqlite")), contents).unwrap();
+    }
+
+    prune_old_backups(&test_dir).unwrap();
+
+    let mut remaining: Vec<_> = std::fs::read_dir(&test_dir)
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().into_string().unwrap())
+        .filter(|name| name.starts_with("music-") && name.ends_with(".sqlite"))
+        .collect();
+    remaining.sort();
+
+    assert_eq!(
+        remaining,
+        vec![
+            "music-20250301-010000.sqlite",
+            "music-20250324-010000.sqlite",
+            "music-20250331-020000.sqlite",
+        ]
+    );
+
     std::fs::remove_dir_all(&test_dir).ok();
 }
 

@@ -16,6 +16,8 @@
 )]
 
 pub mod audio;
+pub mod assertions;
+pub mod control;
 pub mod db;
 
 #[cfg(feature = "engine")]

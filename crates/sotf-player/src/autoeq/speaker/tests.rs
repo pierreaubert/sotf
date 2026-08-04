@@ -14,6 +14,8 @@ use super::types::MeasurementInput;
 use super::types::OptimizationStage;
 use super::types::PreviewCurves;
 use super::types::SpeakerConfigTypeExt;
+use std::io::Write;
+use tempfile::NamedTempFile;
 
 // ============================================================================
 // Configuration Type Tests
@@ -264,6 +266,33 @@ fn test_speaker_opt_result_from_autoeq() {
         corrected_curve: vec![85.0, 85.0, 85.0],
         individual_filter_responses: vec![],
     };
+    let mut measurement_file = NamedTempFile::new().expect("create measurement fixture");
+    writeln!(measurement_file, "frequency,spl\n20,80\n100,85\n1000,90")
+        .expect("write measurement fixture");
+    let measurement_path = measurement_file.path().to_path_buf();
+    let measurement = autoeq::read::read_record_from_csv(&measurement_path)
+        .expect("load measurement fixture");
+    let lineage = autoeq::OptimizationLineage {
+        input: measurement.clone(),
+        normalized_input: measurement.clone(),
+        corrected_output: measurement,
+    };
+    let optimization_run = autoeq::optim::run_descriptor::OptimizationRunDescriptor {
+        schema: "autoeq.optimization-run".to_string(),
+        schema_version: 1,
+        objective: "test".to_string(),
+        parameter_bounds: vec![],
+        constraints: vec![],
+        seed: None,
+        backend: "test".to_string(),
+        backend_version: "test".to_string(),
+        stopping_reason: "test".to_string(),
+        platform: autoeq::optim::run_descriptor::OptimizerExecutionPlatform {
+            operating_system: std::env::consts::OS.to_string(),
+            architecture: std::env::consts::ARCH.to_string(),
+            compiler: "test".to_string(),
+        },
+    };
     let autoeq_result = autoeq::SpeakerOptResult {
         biquads: vec![],
         curves,
@@ -271,6 +300,8 @@ fn test_speaker_opt_result_from_autoeq() {
         history: vec![(0, 1.0), (100, 0.1)],
         initial_loss: 1.0,
         final_loss: 0.1,
+        optimization_run,
+        lineage,
     };
     let result = SpeakerOptimizationResult::from(autoeq_result);
     assert_eq!(result.frequencies.len(), 3);

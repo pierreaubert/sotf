@@ -1,4 +1,5 @@
-use chrono::{Datelike, Local, NaiveDateTime};
+use chrono::{Duration, Local, NaiveDateTime};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -56,6 +57,9 @@ pub fn backup_existing_database<P: AsRef<Path>>(
         if let Ok(backup_hash) = sha256_of_file(&latest_backup) {
             if current_hash == backup_hash {
                 log::debug!("Database unchanged since last backup, skipping");
+                if let Err(e) = prune_old_backups(&dir) {
+                    log::warn!("Failed to prune old database backups: {}", e);
+                }
                 return Ok(());
             }
         }
@@ -120,15 +124,20 @@ pub(super) fn parse_backup_timestamp(path: &Path) -> Option<NaiveDateTime> {
 }
 
 /// Apply retention policy to backup files in the given directory:
-/// - Keep up to 3 backups per day
-/// - Then keep up to 1 per ISO week
-/// - Then keep up to 1 per month
+/// - Keep the newest backup (the previous database version).
+/// - Keep the newest distinct-size backup at least 7 days old.
+/// - Keep the newest distinct-size backup at least 30 days old.
+/// - Fill any missing slots with newer distinct-size backups, then keep at
+///   least 3 files when fewer than 3 distinct sizes are available.
+///
+/// This keeps the backup directory bounded at three files in normal use while
+/// retaining useful short-, medium-, and long-term recovery points. File size
+/// is deliberately used for deduplication because the database can contain
+/// equivalent snapshots with different metadata or SQLite page layout.
 ///
 /// # Security
 /// Only deletes backup files within the config directory.
 pub(super) fn prune_old_backups(dir: &Path) -> std::io::Result<()> {
-    use std::collections::HashMap;
-
     // Security validation: ensure we're operating within config directory
     if crate::security::validate_write_path(dir).is_err() {
         return Err(std::io::Error::new(
@@ -137,7 +146,7 @@ pub(super) fn prune_old_backups(dir: &Path) -> std::io::Result<()> {
         ));
     }
 
-    let mut backups: Vec<(PathBuf, NaiveDateTime)> = Vec::new();
+    let mut backups: Vec<(PathBuf, NaiveDateTime, u64)> = Vec::new();
 
     for entry in std::fs::read_dir(dir)? {
         let entry = match entry {
@@ -149,49 +158,70 @@ pub(super) fn prune_old_backups(dir: &Path) -> std::io::Result<()> {
             continue;
         }
         if let Some(dt) = parse_backup_timestamp(&path) {
-            backups.push((path, dt));
+            let size = match entry.metadata() {
+                Ok(metadata) => metadata.len(),
+                Err(_) => continue,
+            };
+            backups.push((path, dt, size));
         }
     }
 
-    // Newest first so that recent backups are preferred
-    backups.sort_by_key(|(_, dt)| *dt);
-    backups.reverse();
+    // Newest first so that recent backups are preferred. The newest timestamp
+    // is also a stable reference for tests and for pruning after a clock
+    // adjustment.
+    backups.sort_by_key(|(_, timestamp, _)| std::cmp::Reverse(*timestamp));
 
-    let mut per_day: HashMap<(i32, u32, u32), usize> = HashMap::new();
-    let mut per_week: HashMap<(i32, u32), usize> = HashMap::new();
-    let mut per_month: HashMap<(i32, u32), usize> = HashMap::new();
-    let mut to_delete: Vec<PathBuf> = Vec::new();
+    let Some((_, newest_timestamp, newest_size)) = backups.first() else {
+        return Ok(());
+    };
 
-    for (path, dt) in backups {
-        let date = dt.date();
-        let day_key = (date.year(), date.month(), date.day());
-        let week = date.iso_week();
-        let week_key = (week.year(), week.week());
-        let month_key = (date.year(), date.month());
+    let mut keep_indices = HashSet::new();
+    let mut keep_sizes = HashSet::new();
+    keep_indices.insert(0);
+    keep_sizes.insert(*newest_size);
 
-        if per_day.get(&day_key).copied().unwrap_or(0) < 3 {
-            *per_day.entry(day_key).or_insert(0) += 1;
-            // Also count this backup towards week and month quotas
-            *per_week.entry(week_key).or_insert(0) += 1;
-            *per_month.entry(month_key).or_insert(0) += 1;
-            continue;
-        }
-
-        if per_week.get(&week_key).copied().unwrap_or(0) < 1 {
-            *per_week.entry(week_key).or_insert(0) += 1;
-            *per_month.entry(month_key).or_insert(0) += 1;
-            continue;
-        }
-
-        if per_month.get(&month_key).copied().unwrap_or(0) < 1 {
-            *per_month.entry(month_key).or_insert(0) += 1;
-            continue;
-        }
-
-        to_delete.push(path);
+    let weekly_cutoff = *newest_timestamp - Duration::days(7);
+    if let Some(index) = backups
+        .iter()
+        .position(|(_, timestamp, size)| *timestamp <= weekly_cutoff && !keep_sizes.contains(size))
+    {
+        keep_indices.insert(index);
+        keep_sizes.insert(backups[index].2);
     }
 
-    for path in to_delete {
+    let monthly_cutoff = *newest_timestamp - Duration::days(30);
+    if let Some(index) = backups
+        .iter()
+        .position(|(_, timestamp, size)| *timestamp <= monthly_cutoff && !keep_sizes.contains(size))
+    {
+        keep_indices.insert(index);
+        keep_sizes.insert(backups[index].2);
+    }
+
+    // If the requested age buckets do not exist yet, retain recent distinct
+    // versions until the normal three-file floor is reached.
+    for (index, (_, _, size)) in backups.iter().enumerate() {
+        if keep_indices.len() >= 3 {
+            break;
+        }
+        if keep_sizes.insert(*size) {
+            keep_indices.insert(index);
+        }
+    }
+
+    // A database can legitimately produce several snapshots with the same
+    // byte length. Never prune below three files solely because of that.
+    for index in 0..backups.len() {
+        if keep_indices.len() >= 3 {
+            break;
+        }
+        keep_indices.insert(index);
+    }
+
+    for (index, (path, _, _)) in backups.into_iter().enumerate() {
+        if keep_indices.contains(&index) {
+            continue;
+        }
         // Security validation for each file before deletion
         if crate::security::validate_write_path(&path).is_ok() {
             let _ = std::fs::remove_file(path);
