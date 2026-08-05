@@ -128,12 +128,15 @@ pub fn render_plugin_content(
     // Resolve the active plugin chassis theme — cascade of rack default
     // and per-plugin override. Bound here so `&plugin_theme` references in
     // both render paths remain valid for the rest of the function.
-    let plugin_theme = state
-        .app
-        .plugin_state
-        .rack_theme_state
-        .resolved_id(plugin_idx)
-        .theme();
+    let plugin_theme = plugin_theme_id_for_app_theme(
+        state
+            .app
+            .plugin_state
+            .rack_theme_state
+            .resolved_id(plugin_idx),
+        theme,
+    )
+    .theme();
 
     // Compute available width for the plugin content area.
     let available_width = {

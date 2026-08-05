@@ -11,6 +11,7 @@
 
 use crate::theme::Theme;
 use gpui::{Rgba, SharedString};
+use gpui_themes::ThemeAppearance;
 use std::collections::HashMap;
 
 mod misc;
@@ -24,6 +25,24 @@ pub use rack_theme_state::*;
 
 use misc::lighten;
 use misc::with_alpha;
+
+/// Resolve the plugin theme that should be rendered for the current app theme.
+///
+/// The persisted rack/per-plugin choice remains unchanged. Light app themes
+/// always use Studio Cream. Dark app themes use Graphite unless the user has
+/// explicitly selected Brutalist.
+pub fn plugin_theme_id_for_app_theme(
+    selected_theme_id: PluginThemeId,
+    app_theme: &Theme,
+) -> PluginThemeId {
+    match app_theme.appearance() {
+        ThemeAppearance::Light => PluginThemeId::StudioCream,
+        ThemeAppearance::Dark if selected_theme_id == PluginThemeId::Brutalist => {
+            PluginThemeId::Brutalist
+        }
+        ThemeAppearance::Dark => PluginThemeId::Graphite,
+    }
+}
 
 /// The full visual theme for a plugin chassis.
 #[derive(Debug, Clone)]

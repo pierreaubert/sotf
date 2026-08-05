@@ -23,4 +23,6 @@ pub mod plugin_theme;
 pub mod studio_cream;
 
 pub use meter::{LufsConfig, MeterTheme, TruePeakConfig};
-pub use plugin_theme::{PluginTheme, PluginThemeId, RackThemeState, resolve_plugin_theme};
+pub use plugin_theme::{
+    PluginTheme, PluginThemeId, RackThemeState, plugin_theme_id_for_app_theme, resolve_plugin_theme,
+};

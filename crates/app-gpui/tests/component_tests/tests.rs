@@ -24,6 +24,9 @@ use sotf_audio_player_gpui::components::plugins::common::{
 use sotf_audio_player_gpui::components::plugins::custom_view_registry::{
     GpuiViewRegistry, plugin_type_key,
 };
+use sotf_audio_player_gpui::components::plugins::theme::{
+    PluginThemeId, plugin_theme_id_for_app_theme,
+};
 use sotf_audio_player_gpui::components::wizard_continue_label;
 use sotf_audio_player_gpui::components::{settings_tab_icon_name, settings_tab_label};
 use sotf_audio_player_gpui::i18n::{
@@ -977,6 +980,34 @@ fn test_theme_contrast_validation_rejects_unreadable_text() {
 
     let error = theme.validate_accessibility().unwrap_err();
     assert!(error.contains("text_primary/background"));
+}
+
+#[test]
+fn test_light_app_theme_always_uses_studio_cream_for_plugins() {
+    let app_theme = Theme::from_id(ThemeId::Light);
+    for selected in PluginThemeId::all() {
+        assert_eq!(
+            plugin_theme_id_for_app_theme(*selected, &app_theme),
+            PluginThemeId::StudioCream
+        );
+    }
+}
+
+#[test]
+fn test_dark_app_theme_uses_graphite_unless_brutalist_is_selected() {
+    let app_theme = Theme::from_id(ThemeId::Dark);
+    assert_eq!(
+        plugin_theme_id_for_app_theme(PluginThemeId::Graphite, &app_theme),
+        PluginThemeId::Graphite
+    );
+    assert_eq!(
+        plugin_theme_id_for_app_theme(PluginThemeId::StudioCream, &app_theme),
+        PluginThemeId::Graphite
+    );
+    assert_eq!(
+        plugin_theme_id_for_app_theme(PluginThemeId::Brutalist, &app_theme),
+        PluginThemeId::Brutalist
+    );
 }
 
 #[test]

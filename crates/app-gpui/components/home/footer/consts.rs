@@ -769,7 +769,7 @@ impl PlayerView {
             None
         };
 
-        let text_muted = theme.text_muted;
+        let foreground_text = theme.text_primary;
         let progress_bar_bg = theme.feedback.progress_bar_bg;
         let progress_bar_fill = theme.feedback.progress_bar_fill;
 
@@ -813,6 +813,47 @@ impl PlayerView {
             .flex_1()
             .min_h_0()
             .max_w(rems(37.5))
+            // Paint the centered waveform first so transport controls and
+            // signal-path text remain the foreground layer.
+            .when(show_waveform && !is_hal_mode, |el| {
+                el.child(
+                    div()
+                        .id("waveform-bar")
+                        .absolute()
+                        .inset_0()
+                        .flex()
+                        .items_center()
+                        .opacity(0.5)
+                        .cursor_pointer()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                                if let Some(bounds) = *bounds_ref_clone.borrow() {
+                                    let x = event.position.x - bounds.origin.x;
+                                    let width = bounds.size.width;
+                                    let ratio = (x / width).clamp(0.0, 1.0);
+
+                                    view.state.update(cx, |state, _cx| {
+                                        let new_pos =
+                                            state.app.playback.duration_secs * ratio as f64;
+                                        state.app.playback.position_secs = new_pos;
+                                        if let Err(e) = state.player.seek(new_pos) {
+                                            log::error!("Failed to seek from waveform: {}", e);
+                                        }
+                                    });
+                                    cx.notify();
+                                }
+                            }),
+                        )
+                        .child(div().w_full().h(rems(2.0)).child(WaveformElement::new(
+                            waveform.clone(),
+                            progress,
+                            progress_bar_fill,
+                            progress_bar_bg,
+                            bounds_ref,
+                        ))),
+                )
+            })
             // Row 1: [time] [<< < ▶ > >>] [time] — timestamps at far edges
             .child(
                 div()
@@ -824,7 +865,7 @@ impl PlayerView {
                         el.child(
                             div()
                                 .text_size(d.text_xs)
-                                .text_color(text_muted)
+                                .text_color(foreground_text)
                                 .min_w(rems(2.5))
                                 .child(position_str.clone()),
                         )
@@ -1011,7 +1052,7 @@ impl PlayerView {
                         el.child(
                             div()
                                 .text_size(d.text_xs)
-                                .text_color(text_muted)
+                                .text_color(foreground_text)
                                 .min_w(rems(2.5))
                                 .flex()
                                 .justify_end()
@@ -1019,43 +1060,6 @@ impl PlayerView {
                         )
                     }),
             )
-            // Row 2: Waveform spanning full width
-            .when(show_waveform && !is_hal_mode, |el| {
-                el.child(
-                    div()
-                        .id("waveform-bar")
-                        .w_full()
-                        .h(rems(2.0))
-                        .cursor_pointer()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
-                                if let Some(bounds) = *bounds_ref_clone.borrow() {
-                                    let x = event.position.x - bounds.origin.x;
-                                    let width = bounds.size.width;
-                                    let ratio = (x / width).clamp(0.0, 1.0);
-
-                                    view.state.update(cx, |state, _cx| {
-                                        let new_pos =
-                                            state.app.playback.duration_secs * ratio as f64;
-                                        state.app.playback.position_secs = new_pos;
-                                        if let Err(e) = state.player.seek(new_pos) {
-                                            log::error!("Failed to seek from waveform: {}", e);
-                                        }
-                                    });
-                                    cx.notify();
-                                }
-                            }),
-                        )
-                        .child(WaveformElement::new(
-                            waveform.clone(),
-                            progress,
-                            progress_bar_fill,
-                            progress_bar_bg,
-                            bounds_ref,
-                        )),
-                )
-            })
             // When waveform is hidden, show compact time display below transport (not in HAL mode)
             .when(!show_waveform && !is_hal_mode, |el| {
                 el.child(
@@ -1066,7 +1070,7 @@ impl PlayerView {
                         .gap(d.grid)
                         .mt(d.gap)
                         .text_size(d.text_xs)
-                        .text_color(text_muted)
+                        .text_color(foreground_text)
                         .child(position_str)
                         .child("/")
                         .child(duration_str),
@@ -1086,7 +1090,7 @@ impl PlayerView {
                         .justify_center()
                         .gap(d.grid)
                         .text_size(d.text_xs)
-                        .text_color(text_muted)
+                        .text_color(foreground_text)
                         .child(signal_path_source.clone())
                         .child("→")
                         .child(signal_path_output.clone())

@@ -15,7 +15,7 @@ use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::level_meters::LevelMeterManager;
-use crate::components::plugins::theme::PluginThemeId;
+use crate::components::plugins::theme::{PluginThemeId, plugin_theme_id_for_app_theme};
 use crate::components::themed_tooltip as make_tooltip;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -1879,13 +1879,16 @@ impl PlayerView {
                     } else {
                         state.app.layout.output_meter_width.min(max_meter_width)
                     };
-                    let plugin_bg = state
-                        .app
-                        .plugin_state
-                        .rack_theme_state
-                        .resolved_id(selected_idx)
-                        .theme()
-                        .chassis_bg_top;
+                    let plugin_bg = plugin_theme_id_for_app_theme(
+                        state
+                            .app
+                            .plugin_state
+                            .rack_theme_state
+                            .resolved_id(selected_idx),
+                        &theme,
+                    )
+                    .theme()
+                    .chassis_bg_top;
 
                     // Create state clones for divider callbacks
                     let state_for_output_toggle = self.state.clone();
@@ -2013,13 +2016,16 @@ impl PlayerView {
                                     // Resolve the chassis theme once for the
                                     // Simple/Controller branches so all four
                                     // views share the same theming.
-                                    let chassis = app_st
-                                        .app
-                                        .plugin_state
-                                        .rack_theme_state
-                                        .resolved_id(selected_idx)
-                                        .theme()
-                                        .apply_to(&theme);
+                                    let chassis = plugin_theme_id_for_app_theme(
+                                        app_st
+                                            .app
+                                            .plugin_state
+                                            .rack_theme_state
+                                            .resolved_id(selected_idx),
+                                        &theme,
+                                    )
+                                    .theme()
+                                    .apply_to(&theme);
 
                                             match &plugin_ui_view {
                                                 PluginUiView::Simple => {
@@ -2223,12 +2229,15 @@ impl PlayerView {
                     .plugin_state
                     .rack_theme_state
                     .resolved_id(selected_idx),
-                state
-                    .app
-                    .plugin_state
-                    .rack_theme_state
-                    .resolved_id(selected_idx)
-                    .theme(),
+                plugin_theme_id_for_app_theme(
+                    state
+                        .app
+                        .plugin_state
+                        .rack_theme_state
+                        .resolved_id(selected_idx),
+                    &state.app.ui_state.theme,
+                )
+                .theme(),
             )
         };
 

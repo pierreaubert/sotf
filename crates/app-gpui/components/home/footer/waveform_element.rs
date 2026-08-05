@@ -109,10 +109,7 @@ impl Element for WaveformElement {
 
         let progress_bar_idx = (self.progress * WAVEFORM_NUM_BARS as f32) as usize;
 
-        // intentional: paint-space baseline nudge aligning bar midpoint with
-        // label baseline in the waveform row (matches the integer pixel grid
-        // used by WAVEFORM_MAX_HEIGHT_PX above).
-        let center_y = bounds.origin.y + bounds.size.height / 2.0 + px(6.0);
+        let center_y = bounds.origin.y + bounds.size.height / 2.0;
 
         for (idx, amplitude) in samples.iter().enumerate() {
             let height_ratio = *amplitude as f32 / 255.0;
