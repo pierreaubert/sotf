@@ -1,6 +1,8 @@
 use crate::app::i18n::CastTranslations;
+use crate::app::state::plugin::EarTrainingSurface;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
+use crate::components::listening_test::activate_listening_surface;
 
 #[derive(Debug)]
 pub(crate) struct PendingGeometrySave {
@@ -819,6 +821,7 @@ impl PlayerView {
             cast_devices,
             selected_cast_device,
             cast_discovery_running,
+            listening_surface,
         ) = {
             let state = self.state.read(cx);
             (
@@ -833,6 +836,7 @@ impl PlayerView {
                 state.app.audio_device_state.cast_devices.clone(),
                 state.app.audio_device_state.selected_cast_device,
                 state.app.audio_device_state.cast_discovery_running,
+                state.app.plugin_state.listening_test_state.surface,
             )
         };
 
@@ -852,6 +856,7 @@ impl PlayerView {
             .w(rail_width)
             .h_full()
             .min_h_0()
+            .overflow_y_scroll()
             .bg(theme.surface)
             .border_r_1()
             .border_color(theme.border)
@@ -981,6 +986,33 @@ impl PlayerView {
                     &d,
                 ))
             })
+            .when(
+                release_channel.allows(Screen::ListeningTest.maturity()),
+                |el| {
+                    el.child(self.render_sidebar_listening_item(
+                        "nav-learning",
+                        translations.screen_listening_test,
+                        IconName::Brain,
+                        EarTrainingSurface::EqBands,
+                        current_screen == Screen::ListeningTest
+                            && listening_surface != EarTrainingSurface::BlindComparison,
+                        collapsed,
+                        &theme,
+                        &d,
+                    ))
+                    .child(self.render_sidebar_listening_item(
+                        "nav-ab-compare",
+                        translations.listening_test.eq.mode_blind,
+                        IconName::Shuffle,
+                        EarTrainingSurface::BlindComparison,
+                        current_screen == Screen::ListeningTest
+                            && listening_surface == EarTrainingSurface::BlindComparison,
+                        collapsed,
+                        &theme,
+                        &d,
+                    ))
+                },
+            )
             .child(div().flex_1())
             .child(self.render_sidebar_separator(&theme))
             .when(collapsed, |el| {
@@ -1150,6 +1182,33 @@ impl PlayerView {
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                 state_entity.update(cx, |state, _cx| {
                     state.app.set_screen(screen, "SidebarNav");
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                });
+                cx.notify(state_entity_id);
+            })
+            .into_any_element()
+    }
+
+    fn render_sidebar_listening_item(
+        &self,
+        id: &'static str,
+        label: &str,
+        icon: IconName,
+        surface: EarTrainingSurface,
+        selected: bool,
+        collapsed: bool,
+        theme: &crate::theme::Theme,
+        d: &Ds,
+    ) -> AnyElement {
+        let label = label.to_string();
+        let state_entity = self.state.clone();
+        let state_entity_id = state_entity.entity_id();
+
+        self.render_sidebar_item_base(id, &label, icon, selected, collapsed, theme, d)
+            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                state_entity.update(cx, |state, _cx| {
+                    activate_listening_surface(&mut state.app, surface);
+                    state.app.set_screen(Screen::ListeningTest, "SidebarNav");
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                 });
                 cx.notify(state_entity_id);

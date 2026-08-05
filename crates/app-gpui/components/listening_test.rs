@@ -1,5 +1,6 @@
 //! Embedded, reproducible chain-level A/B and ABX listening tests.
 
+use crate::app::App;
 use crate::app::actions::{
     EarTrainingNextQuestion, EarTrainingPlayFiltered, EarTrainingPlayOriginal,
     EarTrainingSelectNextBand, EarTrainingSelectPreviousBand, EarTrainingShowBlindComparison,
@@ -56,13 +57,21 @@ enum EqConfigField {
 impl PlayerView {
     pub(crate) fn render_listening_test_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let (theme, eq_text, surface) = {
+        let (theme, translations, surface) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
-                state.app.ui_state.translations.listening_test.eq.clone(),
+                state.app.ui_state.translations.clone(),
                 state.app.plugin_state.listening_test_state.surface,
             )
+        };
+        let listening_text = &translations.listening_test;
+        let eq_text = &listening_text.eq;
+        let is_learning = surface != EarTrainingSurface::BlindComparison;
+        let (title, subtitle) = if is_learning {
+            (translations.screen_listening_test, eq_text.suite_subtitle)
+        } else {
+            (eq_text.mode_blind, eq_text.suite_subtitle)
         };
 
         let body = match surface {
@@ -86,64 +95,125 @@ impl PlayerView {
                     .border_color(theme.border)
                     .bg(theme.surface)
                     .flex()
-                    .items_center()
+                    .flex_col()
                     .gap(d.gap)
                     .child(
-                        Button::new("ear-training-eq-mode", eq_text.mode_eq)
-                            .size(ButtonSize::Sm)
-                            .variant(if surface == EarTrainingSurface::EqBands {
-                                ButtonVariant::Primary
-                            } else {
-                                ButtonVariant::Secondary
-                            })
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(|view, _, _, cx| {
-                                view.set_ear_training_surface(EarTrainingSurface::EqBands, cx);
-                            })),
+                        div()
+                            .w_full()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .justify_between()
+                            .gap(d.gap)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(d.grid)
+                                    .child(Text::section_header(title))
+                                    .child(Text::caption(subtitle).color(theme.text_secondary)),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_wrap()
+                                    .gap(d.grid)
+                                    .child(
+                                        Button::new(
+                                            "ear-training-learning-app",
+                                            translations.screen_listening_test,
+                                        )
+                                        .size(ButtonSize::Sm)
+                                        .variant(if is_learning {
+                                            ButtonVariant::Primary
+                                        } else {
+                                            ButtonVariant::Secondary
+                                        })
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(
+                                            cx.listener(|view, _, _, cx| {
+                                                view.set_ear_training_surface(
+                                                    EarTrainingSurface::EqBands,
+                                                    cx,
+                                                );
+                                            }),
+                                        ),
+                                    )
+                                    .child(
+                                        Button::new("ear-training-ab-app", eq_text.mode_blind)
+                                            .size(ButtonSize::Sm)
+                                            .variant(if is_learning {
+                                                ButtonVariant::Secondary
+                                            } else {
+                                                ButtonVariant::Primary
+                                            })
+                                            .theme(theme.to_button_theme())
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                                view.set_ear_training_surface(
+                                                    EarTrainingSurface::BlindComparison,
+                                                    cx,
+                                                );
+                                            })),
+                                    ),
+                            ),
                     )
-                    .child(
-                        Button::new("ear-training-courses", eq_text.courses)
-                            .size(ButtonSize::Sm)
-                            .variant(if surface == EarTrainingSurface::Courses {
-                                ButtonVariant::Primary
-                            } else {
-                                ButtonVariant::Secondary
-                            })
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(|view, _, _, cx| {
-                                view.set_ear_training_surface(EarTrainingSurface::Courses, cx)
-                            })),
-                    )
-                    .child(
-                        Button::new("ear-training-progress", eq_text.progress)
-                            .size(ButtonSize::Sm)
-                            .variant(if surface == EarTrainingSurface::Progress {
-                                ButtonVariant::Primary
-                            } else {
-                                ButtonVariant::Secondary
-                            })
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(|view, _, _, cx| {
-                                view.set_ear_training_surface(EarTrainingSurface::Progress, cx)
-                            })),
-                    )
-                    .child(
-                        Button::new("ear-training-blind-mode", eq_text.mode_blind)
-                            .size(ButtonSize::Sm)
-                            .variant(if surface == EarTrainingSurface::BlindComparison {
-                                ButtonVariant::Primary
-                            } else {
-                                ButtonVariant::Secondary
-                            })
-                            .theme(theme.to_button_theme())
-                            .on_click_event(cx.listener(|view, _, _, cx| {
-                                view.set_ear_training_surface(
-                                    EarTrainingSurface::BlindComparison,
-                                    cx,
-                                );
-                            })),
-                    )
-                    .child(Text::caption(eq_text.suite_subtitle).color(theme.text_secondary)),
+                    .when(is_learning, |header| {
+                        header.child(
+                            div()
+                                .id("ear-training-learning-navigation")
+                                .flex()
+                                .flex_wrap()
+                                .gap(d.grid)
+                                .child(
+                                    Button::new("ear-training-eq-mode", eq_text.title)
+                                        .size(ButtonSize::Sm)
+                                        .variant(if surface == EarTrainingSurface::EqBands {
+                                            ButtonVariant::Primary
+                                        } else {
+                                            ButtonVariant::Secondary
+                                        })
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(cx.listener(|view, _, _, cx| {
+                                            view.set_ear_training_surface(
+                                                EarTrainingSurface::EqBands,
+                                                cx,
+                                            );
+                                        })),
+                                )
+                                .child(
+                                    Button::new("ear-training-courses", eq_text.courses)
+                                        .size(ButtonSize::Sm)
+                                        .variant(if surface == EarTrainingSurface::Courses {
+                                            ButtonVariant::Primary
+                                        } else {
+                                            ButtonVariant::Secondary
+                                        })
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(cx.listener(|view, _, _, cx| {
+                                            view.set_ear_training_surface(
+                                                EarTrainingSurface::Courses,
+                                                cx,
+                                            )
+                                        })),
+                                )
+                                .child(
+                                    Button::new("ear-training-progress", eq_text.progress)
+                                        .size(ButtonSize::Sm)
+                                        .variant(if surface == EarTrainingSurface::Progress {
+                                            ButtonVariant::Primary
+                                        } else {
+                                            ButtonVariant::Secondary
+                                        })
+                                        .theme(theme.to_button_theme())
+                                        .on_click_event(cx.listener(|view, _, _, cx| {
+                                            view.set_ear_training_surface(
+                                                EarTrainingSurface::Progress,
+                                                cx,
+                                            )
+                                        })),
+                                ),
+                        )
+                    }),
             )
             .child(div().flex_1().min_h_0().child(body))
     }
@@ -411,6 +481,36 @@ impl PlayerView {
                 )
                 .into_any_element()
         });
+        let setup_step =
+            |id: &'static str, number: usize, label: &'static str, complete: bool, active: bool| {
+                div()
+                    .id(id)
+                    .flex_1()
+                    .min_w(rems(12.0))
+                    .p(d.pad_y)
+                    .rounded(d.r_sm)
+                    .border_1()
+                    .border_color(if active { theme.accent } else { theme.border })
+                    .bg(if active {
+                        theme.accent_muted
+                    } else {
+                        theme.background_secondary
+                    })
+                    .child(
+                        Text::label(if complete {
+                            format!("✓ {label}")
+                        } else {
+                            format!("{number}. {label}")
+                        })
+                        .color(if active {
+                            theme.text_primary
+                        } else if complete {
+                            theme.success
+                        } else {
+                            theme.text_secondary
+                        }),
+                    )
+            };
         div()
             .id("listening-test-screen")
             .size_full()
@@ -423,8 +523,10 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .justify_between()
+                    .gap(d.gap)
                     .child(
                         div()
                             .flex()
@@ -443,6 +545,7 @@ impl PlayerView {
                     .child(
                         div()
                             .flex()
+                            .flex_wrap()
                             .gap(d.gap)
                             .child(self.listening_test_file_button(
                                 "listening-load-session",
@@ -462,7 +565,36 @@ impl PlayerView {
             )
             .child(
                 div()
+                    .id("listening-setup-steps")
                     .flex()
+                    .flex_wrap()
+                    .gap(d.grid)
+                    .child(setup_step(
+                        "listening-step-paths",
+                        1,
+                        translations.status.select_paths,
+                        paths_ready,
+                        !paths_ready,
+                    ))
+                    .child(setup_step(
+                        "listening-step-level-match",
+                        2,
+                        translations.setup.level_title,
+                        trial_ready,
+                        paths_ready && !trial_ready,
+                    ))
+                    .child(setup_step(
+                        "listening-step-trials",
+                        3,
+                        translations.trial.title,
+                        trial_count > 0,
+                        trial_ready,
+                    )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
                     .gap(d.section)
                     .child(self.render_listening_path_card(
                         ListeningPathTarget::A,
@@ -1389,6 +1521,7 @@ impl PlayerView {
         };
         div()
             .flex_1()
+            .min_w(rems(20.0))
             .p(d.pad_x)
             .rounded(d.r_md)
             .border_1()
@@ -2641,13 +2774,7 @@ impl PlayerView {
 
     fn set_ear_training_surface(&mut self, surface: EarTrainingSurface, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _| {
-            if state.app.plugin_state.listening_test_state.surface
-                == EarTrainingSurface::BlindComparison
-                && surface != EarTrainingSurface::BlindComparison
-            {
-                let _ = state.app.plugin_state.leave_ab_test_runtime();
-            }
-            state.app.plugin_state.listening_test_state.surface = surface;
+            activate_listening_surface(&mut state.app, surface);
         });
         cx.notify();
     }
@@ -3350,6 +3477,15 @@ impl PlayerView {
     ) {
         self.commit_listening_answer_position(1, cx);
     }
+}
+
+pub(crate) fn activate_listening_surface(app: &mut App, surface: EarTrainingSurface) {
+    if app.plugin_state.listening_test_state.surface == EarTrainingSurface::BlindComparison
+        && surface != EarTrainingSurface::BlindComparison
+    {
+        let _ = app.plugin_state.leave_ab_test_runtime();
+    }
+    app.plugin_state.listening_test_state.surface = surface;
 }
 
 fn format_frequency(frequency_hz: f64) -> String {
