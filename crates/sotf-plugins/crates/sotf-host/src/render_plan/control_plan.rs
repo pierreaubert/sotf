@@ -4,14 +4,22 @@ use super::types::ControlPlan;
 use crate::param_specs::ParamSpec;
 use crate::plugin_layout::ControlSpec;
 
-pub(super) fn controls_to_plans(specs: &[ControlSpec], params: &[ParamSpec]) -> Vec<ControlPlan> {
+pub(super) fn controls_to_plans(
+    specs: &[ControlSpec],
+    params: &[ParamSpec],
+    values: &[f64],
+) -> Vec<ControlPlan> {
     specs
         .iter()
-        .map(|spec| control_to_plan(spec, params))
+        .map(|spec| control_to_plan(spec, params, values))
         .collect()
 }
 
-pub(super) fn control_to_plan(spec: &ControlSpec, params: &[ParamSpec]) -> ControlPlan {
+pub(super) fn control_to_plan(
+    spec: &ControlSpec,
+    params: &[ParamSpec],
+    values: &[f64],
+) -> ControlPlan {
     let (param_name, unit, range) = if spec.param_index < params.len() {
         let p = &params[spec.param_index];
         (p.name.to_string(), p.unit.to_string(), param_range(p))
@@ -27,5 +35,6 @@ pub(super) fn control_to_plan(spec: &ControlSpec, params: &[ParamSpec]) -> Contr
         unit,
         range,
         read_only: spec.read_only,
+        enabled: spec.is_enabled(values),
     }
 }

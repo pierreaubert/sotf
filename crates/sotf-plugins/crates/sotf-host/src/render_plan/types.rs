@@ -48,6 +48,7 @@ pub struct ControlPlan {
     pub unit: String,
     pub range: Option<(f64, f64)>,
     pub read_only: bool,
+    pub enabled: bool,
 }
 
 /// A named group of controls.
@@ -81,18 +82,22 @@ pub struct DynamicSectionPlan {
     pub template_controls: Vec<ControlPlan>,
 }
 
-pub(super) fn group_to_plan(group: &ControlGroup, params: &[ParamSpec]) -> GroupPlan {
+pub(super) fn group_to_plan(
+    group: &ControlGroup,
+    params: &[ParamSpec],
+    values: &[f64],
+) -> GroupPlan {
     GroupPlan {
         id: group.id.to_string(),
         title: group.title.to_string(),
-        controls: controls_to_plans(group.controls, params),
+        controls: controls_to_plans(group.controls, params, values),
     }
 }
 
-pub(super) fn tab_to_plan(tab: &TabSpec, params: &[ParamSpec]) -> TabPlan {
+pub(super) fn tab_to_plan(tab: &TabSpec, params: &[ParamSpec], values: &[f64]) -> TabPlan {
     TabPlan {
         name: tab.name.to_string(),
-        controls: controls_to_plans(tab.controls, params),
+        controls: controls_to_plans(tab.controls, params, values),
     }
 }
 
@@ -113,11 +118,12 @@ pub(super) fn viz_to_plan(viz: &VizSlot) -> VizPlan {
 pub(super) fn dynamic_section_to_plan(
     ds: &DynamicSection,
     params: &[ParamSpec],
+    values: &[f64],
 ) -> DynamicSectionPlan {
     DynamicSectionPlan {
         instance_name: ds.instance_name.to_string(),
         count_range: ds.count_range,
         has_global_defaults: ds.has_global_defaults,
-        template_controls: controls_to_plans(ds.template_controls, params),
+        template_controls: controls_to_plans(ds.template_controls, params, values),
     }
 }

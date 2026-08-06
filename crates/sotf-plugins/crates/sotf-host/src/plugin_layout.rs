@@ -115,6 +115,55 @@ pub enum ControlType {
     FilePicker,
 }
 
+/// A value-based UI condition evaluated against the plugin's parameter values.
+///
+/// Conditions are deliberately limited to boolean and choice equality so the
+/// layout remains deterministic and portable across GPUI, SwiftUI, and other
+/// hosts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamCondition {
+    Bool {
+        param_index: usize,
+        expected: bool,
+    },
+    Choice {
+        param_index: usize,
+        expected_index: usize,
+    },
+}
+
+impl ParamCondition {
+    pub const fn bool(param_index: usize, expected: bool) -> Self {
+        Self::Bool {
+            param_index,
+            expected,
+        }
+    }
+
+    pub const fn choice(param_index: usize, expected_index: usize) -> Self {
+        Self::Choice {
+            param_index,
+            expected_index,
+        }
+    }
+
+    pub const fn param_index(self) -> usize {
+        match self {
+            Self::Bool { param_index, .. } | Self::Choice { param_index, .. } => param_index,
+        }
+    }
+
+    pub fn matches(self, values: &[f64]) -> bool {
+        let Some(value) = values.get(self.param_index()) else {
+            return false;
+        };
+        match self {
+            Self::Bool { expected, .. } => (*value > 0.5) == expected,
+            Self::Choice { expected_index, .. } => *value as usize == expected_index,
+        }
+    }
+}
+
 /// Specification for a single control in the layout.
 #[derive(Debug, Clone, Copy)]
 pub struct ControlSpec {
@@ -130,6 +179,8 @@ pub struct ControlSpec {
     /// `validate_coverage` still counts it as referenced, so PARAMS-vs-LAYOUT
     /// audits keep passing.
     pub hidden: bool,
+    /// Optional condition controlling whether the control accepts input.
+    pub enabled_when: Option<ParamCondition>,
 }
 
 impl ControlSpec {
@@ -139,6 +190,7 @@ impl ControlSpec {
             control_type: ControlType::Knob,
             read_only: false,
             hidden: false,
+            enabled_when: None,
         }
     }
 
@@ -148,6 +200,7 @@ impl ControlSpec {
             control_type: ControlType::KnobLarge,
             read_only: false,
             hidden: false,
+            enabled_when: None,
         }
     }
 
@@ -157,6 +210,7 @@ impl ControlSpec {
             control_type: ControlType::VerticalSlider,
             read_only: false,
             hidden: false,
+            enabled_when: None,
         }
     }
 
@@ -166,6 +220,7 @@ impl ControlSpec {
             control_type: ControlType::Toggle,
             read_only: false,
             hidden: false,
+            enabled_when: None,
         }
     }
 
@@ -175,6 +230,7 @@ impl ControlSpec {
             control_type: ControlType::Selector,
             read_only: false,
             hidden: false,
+            enabled_when: None,
         }
     }
 
@@ -184,6 +240,7 @@ impl ControlSpec {
             control_type: ControlType::Selector,
             read_only: false,
             hidden: false,
+            enabled_when: None,
         }
     }
 
@@ -194,6 +251,7 @@ impl ControlSpec {
             control_type: ControlType::BarMeter { min_db, max_db },
             read_only: true,
             hidden: false,
+            enabled_when: None,
         }
     }
 
@@ -203,6 +261,7 @@ impl ControlSpec {
             control_type: ControlType::Label,
             read_only: true,
             hidden: false,
+            enabled_when: None,
         }
     }
 
@@ -212,6 +271,7 @@ impl ControlSpec {
             control_type: ControlType::FilePicker,
             read_only: false,
             hidden: false,
+            enabled_when: None,
         }
     }
 
@@ -221,6 +281,7 @@ impl ControlSpec {
             control_type: ControlType::ButtonSet { labels },
             read_only: false,
             hidden: false,
+            enabled_when: None,
         }
     }
 
@@ -231,6 +292,19 @@ impl ControlSpec {
     pub const fn hide(mut self) -> Self {
         self.hidden = true;
         self
+    }
+
+    /// Disable this control unless the referenced parameter condition matches.
+    pub const fn enabled_when(mut self, condition: ParamCondition) -> Self {
+        self.enabled_when = Some(condition);
+        self
+    }
+
+    pub fn is_enabled(&self, values: &[f64]) -> bool {
+        !self.read_only
+            && self
+                .enabled_when
+                .is_none_or(|condition| condition.matches(values))
     }
 }
 
@@ -249,6 +323,8 @@ pub struct ControlGroup {
     pub controls: &'static [ControlSpec],
     /// Optional responsive layout overrides.
     pub layout: GroupLayoutHints,
+    /// Optional condition controlling whether this group is rendered.
+    pub visible_when: Option<ParamCondition>,
 }
 
 /// Whether a control group may move into the responsive overflow surface.
@@ -323,6 +399,7 @@ impl ControlGroup {
             title,
             controls,
             layout: GroupLayoutHints::inferred(),
+            visible_when: None,
         }
     }
 
@@ -330,6 +407,17 @@ impl ControlGroup {
     pub const fn with_layout(mut self, layout: GroupLayoutHints) -> Self {
         self.layout = layout;
         self
+    }
+
+    /// Render this group only when the referenced parameter condition matches.
+    pub const fn visible_when(mut self, condition: ParamCondition) -> Self {
+        self.visible_when = Some(condition);
+        self
+    }
+
+    pub fn is_visible(&self, values: &[f64]) -> bool {
+        self.visible_when
+            .is_none_or(|condition| condition.matches(values))
     }
 }
 
@@ -461,10 +549,24 @@ impl PluginLayout {
                     continue; // meters don't reference params
                 }
                 check(c.param_index, section, errors);
+                if let Some(condition) = c.enabled_when {
+                    check(
+                        condition.param_index(),
+                        &format!("{section}/enabled_when"),
+                        errors,
+                    );
+                }
             }
         };
         check_controls(self.config, "config", &mut errors);
         for group in self.main {
+            if let Some(condition) = group.visible_when {
+                check(
+                    condition.param_index(),
+                    &format!("main/{}/visible_when", group.title),
+                    &mut errors,
+                );
+            }
             check_controls(
                 group.controls,
                 &format!("main/{}", group.title),

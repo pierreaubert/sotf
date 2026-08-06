@@ -1,8 +1,8 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::actions::{OpenAbConfigFile, OpenIrFile, OpenSofaFile};
 use super::super::common::{
-    render_knob_sized, render_section_title, render_toggle, render_transfer_curve_with_level,
-    render_vertical_slider_with_ticks,
+    render_knob_sized_enabled, render_section_title, render_toggle_enabled,
+    render_transfer_curve_with_level, render_vertical_slider_with_ticks_enabled,
 };
 use super::super::level_meters::render_gr_meter;
 use super::auto::auto_side_max_width;
@@ -545,6 +545,7 @@ fn render_main_column(
                     false,
                     is_editing,
                     selected_param,
+                    true,
                     theme,
                 );
                 center = center.child(
@@ -914,8 +915,9 @@ fn render_control(
     theme: &Theme,
 ) -> AnyElement {
     let idx = spec.param_index;
+    let interactive = spec.is_enabled(values);
 
-    match spec.control_type {
+    let control = match spec.control_type {
         ControlType::Knob => {
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
@@ -928,6 +930,7 @@ fn render_control(
                     is_editing,
                     selected_param,
                     pot_size(knob_size),
+                    interactive,
                     theme,
                 )
             } else {
@@ -946,6 +949,7 @@ fn render_control(
                     is_editing,
                     selected_param,
                     pot_size_large(knob_size),
+                    interactive,
                     theme,
                 )
             } else {
@@ -964,6 +968,7 @@ fn render_control(
                     is_editing,
                     selected_param,
                     knob_size,
+                    interactive,
                     theme,
                 )
             } else {
@@ -983,6 +988,7 @@ fn render_control(
                     is_editing,
                     selected_param,
                     knob_size,
+                    interactive,
                     theme,
                 )
             } else {
@@ -1003,6 +1009,7 @@ fn render_control(
                     true,
                     is_editing,
                     selected_param,
+                    interactive,
                     theme,
                 )
             } else {
@@ -1021,6 +1028,7 @@ fn render_control(
                     value,
                     is_editing,
                     selected_param,
+                    interactive,
                     theme,
                 )
             } else {
@@ -1041,12 +1049,22 @@ fn render_control(
         ControlType::FilePicker => {
             if let Some(param) = params.get(idx) {
                 let path = file_paths.get(&idx).map(|s| s.as_str());
-                render_file_picker(d, plugin_idx, idx, param, path, theme)
+                render_file_picker(d, plugin_idx, idx, param, path, interactive, theme)
             } else {
                 div().into_any_element()
             }
         }
-    }
+    };
+    let engine_key = params
+        .get(idx)
+        .map(|param| param.engine_key)
+        .unwrap_or("meter");
+    div()
+        .id(SharedString::from(format!(
+            "plugin-control-{plugin_idx}-{engine_key}"
+        )))
+        .child(control)
+        .into_any_element()
 }
 
 /// Render a param as a knob (rotary potentiometer).
@@ -1059,6 +1077,7 @@ fn render_param_as_knob(
     is_editing: bool,
     selected_param: usize,
     size: PotentiometerSize,
+    interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
     match param.param_type {
@@ -1066,7 +1085,7 @@ fn render_param_as_knob(
             let display_min = min * param.display_scale;
             let display_max = max * param.display_scale;
             let display_val = value * param.display_scale;
-            render_knob_sized(
+            render_knob_sized_enabled(
                 entity,
                 plugin_idx,
                 param.name,
@@ -1079,11 +1098,12 @@ fn render_param_as_knob(
                 is_editing,
                 None,
                 size,
+                interactive,
                 theme,
             )
             .into_any_element()
         }
-        ParamType::Int { min, max, .. } => render_knob_sized(
+        ParamType::Int { min, max, .. } => render_knob_sized_enabled(
             entity,
             plugin_idx,
             param.name,
@@ -1096,6 +1116,7 @@ fn render_param_as_knob(
             is_editing,
             None,
             size,
+            interactive,
             theme,
         )
         .into_any_element(),
@@ -1109,6 +1130,7 @@ fn render_param_as_knob(
                 value,
                 is_editing,
                 selected_param,
+                interactive,
                 theme,
             )
         }
@@ -1125,6 +1147,7 @@ fn render_param_as_slider(
     is_editing: bool,
     selected_param: usize,
     knob_size: KnobSize,
+    interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
     match param.param_type {
@@ -1132,7 +1155,7 @@ fn render_param_as_slider(
             let display_min = min * param.display_scale;
             let display_max = max * param.display_scale;
             let display_val = value * param.display_scale;
-            render_vertical_slider_with_ticks(
+            render_vertical_slider_with_ticks_enabled(
                 entity,
                 plugin_idx,
                 param.name,
@@ -1145,11 +1168,12 @@ fn render_param_as_slider(
                 is_editing,
                 None,
                 180.0,
+                interactive,
                 theme,
             )
             .into_any_element()
         }
-        ParamType::Int { min, max, .. } => render_vertical_slider_with_ticks(
+        ParamType::Int { min, max, .. } => render_vertical_slider_with_ticks_enabled(
             entity,
             plugin_idx,
             param.name,
@@ -1162,6 +1186,7 @@ fn render_param_as_slider(
             is_editing,
             None,
             180.0,
+            interactive,
             theme,
         )
         .into_any_element(),
@@ -1174,6 +1199,7 @@ fn render_param_as_slider(
             is_editing,
             selected_param,
             pot_size(knob_size),
+            interactive,
             theme,
         ),
     }
@@ -1190,6 +1216,7 @@ fn render_param_as_toggle(
     is_editing: bool,
     selected_param: usize,
     knob_size: KnobSize,
+    interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
     match param.param_type {
@@ -1211,6 +1238,7 @@ fn render_param_as_toggle(
                 true,
                 is_editing,
                 selected_param,
+                interactive,
                 theme,
             )
             .into_any_element()
@@ -1226,6 +1254,7 @@ fn render_param_as_toggle(
             true,
             is_editing,
             selected_param,
+            interactive,
             theme,
         )
         .into_any_element(),
@@ -1240,6 +1269,7 @@ fn render_param_as_toggle(
                 is_editing,
                 selected_param,
                 pot_size(knob_size),
+                interactive,
                 theme,
             )
         }
@@ -1255,6 +1285,7 @@ fn render_param_as_inline_toggle(
     value: f64,
     is_editing: bool,
     selected_param: usize,
+    interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
     match param.param_type {
@@ -1270,11 +1301,12 @@ fn render_param_as_inline_toggle(
             } else {
                 param.name.to_string()
             };
-            render_toggle(
+            render_toggle_enabled(
                 entity,
                 plugin_idx,
                 &label,
                 is_on,
+                interactive,
                 idx,
                 selected_param,
                 is_editing,
@@ -1284,11 +1316,12 @@ fn render_param_as_inline_toggle(
         }
         ParamType::Choice { labels, .. } => {
             let label = labels.get(value as usize).copied().unwrap_or("?");
-            render_toggle(
+            render_toggle_enabled(
                 entity,
                 plugin_idx,
                 &format!("{}: {}", param.name, label),
                 true,
+                interactive,
                 idx,
                 selected_param,
                 is_editing,
@@ -1313,6 +1346,7 @@ fn render_param_as_selector(
     value: f64,
     is_editing: bool,
     selected_param: usize,
+    interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
     match param.param_type {
@@ -1327,6 +1361,7 @@ fn render_param_as_selector(
             true,
             is_editing,
             selected_param,
+            interactive,
             theme,
         ),
         // Non-choice params: fall back to toggle
@@ -1340,6 +1375,7 @@ fn render_param_as_selector(
             is_editing,
             selected_param,
             KnobSize::Sm,
+            interactive,
             theme,
         ),
     }
@@ -1357,6 +1393,7 @@ fn render_param_as_button_set(
     show_label: bool,
     is_editing: bool,
     selected_param: usize,
+    interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
     let current = value as usize;
@@ -1375,33 +1412,35 @@ fn render_param_as_button_set(
         let btn_idx = idx;
         let btn_plugin_idx = plugin_idx;
         let btn_val = i;
-        choices = choices.child(
-            div()
-                .text_size(d.text_xs)
-                .px(d.pad_y)
-                .py(d.pad_y_half)
-                .rounded(d.r_sm)
-                .cursor_pointer()
-                .id(SharedString::from(format!(
-                    "btn-set-{plugin_idx}-{idx}-{i}"
-                )))
-                .when(is_active, |d| {
-                    d.bg(theme.accent).text_color(theme.text_on_accent)
-                })
-                .when(!is_active, |d| {
-                    d.bg(theme.background_secondary)
-                        .text_color(theme.text_secondary)
-                })
-                .hover(|d| d.opacity(0.8))
-                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                    btn_entity.update(cx, |state, _| {
-                        state
-                            .app
-                            .set_plugin_param(btn_plugin_idx, btn_idx, btn_val as f64);
-                    });
-                })
-                .child(label.to_string()),
-        );
+        let choice = div()
+            .text_size(d.text_xs)
+            .px(d.pad_y)
+            .py(d.pad_y_half)
+            .rounded(d.r_sm)
+            .when(interactive, |el| el.cursor_pointer())
+            .id(SharedString::from(format!(
+                "btn-set-{plugin_idx}-{idx}-{i}"
+            )))
+            .when(is_active, |d| {
+                d.bg(theme.accent).text_color(theme.text_on_accent)
+            })
+            .when(!is_active, |d| {
+                d.bg(theme.background_secondary)
+                    .text_color(theme.text_secondary)
+            })
+            .when(interactive, |el| {
+                el.hover(|d| d.opacity(0.8))
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        btn_entity.update(cx, |state, _| {
+                            state
+                                .app
+                                .set_plugin_param(btn_plugin_idx, btn_idx, btn_val as f64);
+                        });
+                    })
+            })
+            .when(!interactive, |el| el.opacity(0.45))
+            .child(label.to_string());
+        choices = choices.child(choice);
     }
 
     if show_label {
@@ -1514,6 +1553,7 @@ fn render_file_picker(
     idx: usize,
     param: &ParamSpec,
     file_path: Option<&str>,
+    interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
     let has_file = file_path.is_some_and(|p| !p.is_empty());
@@ -1569,31 +1609,34 @@ fn render_file_picker(
                 .id(SharedString::from(format!(
                     "load-file-btn-{plugin_idx}-{idx}"
                 )))
-                .cursor_pointer()
-                .hover(|s| s.bg(theme.surface_hover))
-                .on_click(move |_, _, cx| match file_picker_open_target(engine_key) {
-                    Some(FilePickerOpenTarget::Sofa) => {
-                        cx.dispatch_action(&OpenSofaFile {
-                            plugin_idx,
-                            param_idx: idx,
-                        });
-                    }
-                    Some(FilePickerOpenTarget::Ir) => {
-                        cx.dispatch_action(&OpenIrFile {
-                            plugin_idx,
-                            param_idx: idx,
-                        });
-                    }
-                    Some(FilePickerOpenTarget::AbConfig(path_id)) => {
-                        cx.dispatch_action(&OpenAbConfigFile {
-                            plugin_idx,
-                            path_id: path_id.to_string(),
-                        });
-                    }
-                    None => {
-                        log::warn!("No file open action for engine_key: {}", engine_key);
-                    }
+                .when(interactive, |el| {
+                    el.cursor_pointer()
+                        .hover(|s| s.bg(theme.surface_hover))
+                        .on_click(move |_, _, cx| match file_picker_open_target(engine_key) {
+                            Some(FilePickerOpenTarget::Sofa) => {
+                                cx.dispatch_action(&OpenSofaFile {
+                                    plugin_idx,
+                                    param_idx: idx,
+                                });
+                            }
+                            Some(FilePickerOpenTarget::Ir) => {
+                                cx.dispatch_action(&OpenIrFile {
+                                    plugin_idx,
+                                    param_idx: idx,
+                                });
+                            }
+                            Some(FilePickerOpenTarget::AbConfig(path_id)) => {
+                                cx.dispatch_action(&OpenAbConfigFile {
+                                    plugin_idx,
+                                    path_id: path_id.to_string(),
+                                });
+                            }
+                            None => {
+                                log::warn!("No file open action for engine_key: {}", engine_key);
+                            }
+                        })
                 })
+                .when(!interactive, |el| el.opacity(0.45))
                 .child("⤓"),
         )
         .into_any_element()

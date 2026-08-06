@@ -21,7 +21,14 @@ pub(super) fn mode_visible_groups(
             continue;
         }
 
-        if let Some(info) = mode {
+        if !group.is_visible(values) {
+            continue;
+        }
+
+        // Explicit conditions supersede the legacy title/choice-label convention.
+        if group.visible_when.is_none()
+            && let Some(info) = mode
+        {
             let title_upper = group.title.to_uppercase();
             let is_exclusive = info
                 .labels
@@ -95,4 +102,38 @@ pub(super) fn detect_mode_selector(
         });
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static LABELS: [&str; 2] = ["A", "B"];
+    static MODE_CONTROLS: [ControlSpec; 1] = [ControlSpec::button_set(0, &LABELS)];
+    static A_CONTROLS: [ControlSpec; 1] = [ControlSpec::knob(1)];
+    static GROUPS: [ControlGroup; 2] = [
+        ControlGroup::new("mode", "", &MODE_CONTROLS),
+        ControlGroup::new("a", "A", &A_CONTROLS).visible_when(ParamCondition::choice(0, 1)),
+    ];
+    static LAYOUT: PluginLayout = PluginLayout {
+        config: &[],
+        main: &GROUPS,
+        output: &[],
+        tabs: &[],
+        visualizations: &[],
+        column_constraints: &[],
+        dynamic_sections: &[],
+    };
+
+    #[test]
+    fn explicit_group_condition_supersedes_legacy_title_matching() {
+        let info = ModeSelectorInfo {
+            main_idx: 0,
+            param_idx: 0,
+            labels: &LABELS,
+        };
+        let groups = mode_visible_groups(&LAYOUT, &[1.0, 0.0], Some(&info));
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].id, "a");
+    }
 }

@@ -43,9 +43,33 @@ pub fn build_render_plan_from_layout(
     available_width: f32,
     ds: &DesignSystem,
 ) -> PluginRenderPlan {
+    let values: Vec<_> = params.iter().map(ParamSpec::default_f64).collect();
+    build_render_plan_from_layout_with_values(
+        plugin_type,
+        params,
+        layout,
+        &values,
+        available_width,
+        ds,
+    )
+}
+
+/// Build a render plan using the supplied current parameter values.
+pub fn build_render_plan_from_layout_with_values(
+    plugin_type: &str,
+    params: &[ParamSpec],
+    layout: &PluginLayout,
+    values: &[f64],
+    available_width: f32,
+    ds: &DesignSystem,
+) -> PluginRenderPlan {
     let solved =
         layout_solver::solve_layout_with_ds(layout.column_constraints, available_width, ds);
-    let group_refs: Vec<_> = layout.main.iter().collect();
+    let group_refs: Vec<_> = layout
+        .main
+        .iter()
+        .filter(|group| group.is_visible(values))
+        .collect();
     let main_width = solved
         .column_width(crate::plugin_layout::ColumnRole::Main)
         .unwrap_or(available_width);
@@ -89,19 +113,22 @@ pub fn build_render_plan_from_layout(
             .collapsed_slots()
             .map(|slot| slot.id.to_string())
             .collect(),
-        config_controls: controls_to_plans(layout.config, params),
-        main_groups: layout
-            .main
+        config_controls: controls_to_plans(layout.config, params, values),
+        main_groups: group_refs
             .iter()
-            .map(|g| group_to_plan(g, params))
+            .map(|g| group_to_plan(g, params, values))
             .collect(),
-        output_controls: controls_to_plans(layout.output, params),
-        tabs: layout.tabs.iter().map(|t| tab_to_plan(t, params)).collect(),
+        output_controls: controls_to_plans(layout.output, params, values),
+        tabs: layout
+            .tabs
+            .iter()
+            .map(|t| tab_to_plan(t, params, values))
+            .collect(),
         viz_slots: layout.visualizations.iter().map(viz_to_plan).collect(),
         dynamic_sections: layout
             .dynamic_sections
             .iter()
-            .map(|ds| dynamic_section_to_plan(ds, params))
+            .map(|ds| dynamic_section_to_plan(ds, params, values))
             .collect(),
     }
 }
@@ -113,7 +140,8 @@ mod tests {
     use crate::layout_solver::SLIDER_HEIGHT_COMPACT;
     use crate::param_specs::{ParamCategory, ParamType, UpdateMode};
     use crate::plugin_layout::{
-        ColumnConstraint, ControlGroup, ControlSpec, DynamicSection, VizPosition, VizSlot,
+        ColumnConstraint, ControlGroup, ControlSpec, DynamicSection, ParamCondition, VizPosition,
+        VizSlot,
     };
 
     // Static test data to satisfy 'static lifetime requirements of PluginLayout.
@@ -355,5 +383,90 @@ mod tests {
         assert_eq!(meter.param_name, "(meter)");
         assert_eq!(meter.control_type, "bar_meter(-60..0)");
         assert!(meter.read_only);
+    }
+
+    static CONDITIONAL_PRIMARY_CONTROLS: [ControlSpec; 1] =
+        [ControlSpec::knob(0).enabled_when(ParamCondition::bool(1, true))];
+    static CONDITIONAL_EXTRA_CONTROLS: [ControlSpec; 1] = [ControlSpec::knob(1)];
+    static CONDITIONAL_GROUPS: [ControlGroup; 2] = [
+        ControlGroup::new("primary", "PRIMARY", &CONDITIONAL_PRIMARY_CONTROLS),
+        ControlGroup::new("extra", "EXTRA", &CONDITIONAL_EXTRA_CONTROLS)
+            .visible_when(ParamCondition::bool(1, true)),
+    ];
+    static CONDITIONAL_LAYOUT: PluginLayout = PluginLayout {
+        config: &[],
+        main: &CONDITIONAL_GROUPS,
+        output: &[],
+        tabs: &[],
+        visualizations: &[],
+        column_constraints: &VIZ_LAYOUT_CONSTRAINTS,
+        dynamic_sections: &[],
+    };
+
+    #[test]
+    fn param_condition_matches_bool_and_choice_values() {
+        let values = [0.0, 1.0, 2.0];
+        assert!(ParamCondition::bool(0, false).matches(&values));
+        assert!(ParamCondition::bool(1, true).matches(&values));
+        assert!(ParamCondition::choice(2, 2).matches(&values));
+        assert!(!ParamCondition::choice(2, 1).matches(&values));
+        assert!(!ParamCondition::bool(99, true).matches(&values));
+    }
+
+    #[test]
+    fn render_plan_applies_control_and_group_conditions() {
+        let disabled = build_render_plan_from_layout_with_values(
+            "conditional",
+            &TEST_PARAMS,
+            &CONDITIONAL_LAYOUT,
+            &[0.0, 0.0],
+            1000.0,
+            &DesignSystem::neutral(),
+        );
+        assert_eq!(disabled.main_groups.len(), 1);
+        assert!(!disabled.main_groups[0].controls[0].enabled);
+
+        let enabled = build_render_plan_from_layout_with_values(
+            "conditional",
+            &TEST_PARAMS,
+            &CONDITIONAL_LAYOUT,
+            &[0.0, 1.0],
+            1000.0,
+            &DesignSystem::neutral(),
+        );
+        assert_eq!(enabled.main_groups.len(), 2);
+        assert!(enabled.main_groups[0].controls[0].enabled);
+    }
+
+    static INVALID_CONDITION_CONTROLS: [ControlSpec; 1] =
+        [ControlSpec::knob(0).enabled_when(ParamCondition::bool(5, true))];
+    static INVALID_CONDITION_GROUPS: [ControlGroup; 1] =
+        [
+            ControlGroup::new("invalid", "INVALID", &INVALID_CONDITION_CONTROLS)
+                .visible_when(ParamCondition::choice(6, 0)),
+        ];
+    static INVALID_CONDITION_LAYOUT: PluginLayout = PluginLayout {
+        config: &[],
+        main: &INVALID_CONDITION_GROUPS,
+        output: &[],
+        tabs: &[],
+        visualizations: &[],
+        column_constraints: &VIZ_LAYOUT_CONSTRAINTS,
+        dynamic_sections: &[],
+    };
+
+    #[test]
+    fn layout_validation_rejects_invalid_condition_indices() {
+        let errors = INVALID_CONDITION_LAYOUT.validate(TEST_PARAMS.len(), "conditional");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("visible_when") && error.contains("6"))
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("enabled_when") && error.contains("5"))
+        );
     }
 }

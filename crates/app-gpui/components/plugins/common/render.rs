@@ -376,10 +376,37 @@ pub fn render_toggle(
     is_editing: bool,
     theme: &Theme,
 ) -> impl IntoElement {
+    render_toggle_enabled(
+        entity,
+        plugin_idx,
+        label,
+        enabled,
+        true,
+        idx,
+        selected_param,
+        is_editing,
+        theme,
+    )
+}
+
+/// Render a toggle whose interaction can be disabled by layout metadata.
+#[allow(clippy::too_many_arguments)]
+pub fn render_toggle_enabled(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    checked: bool,
+    interactive: bool,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    theme: &Theme,
+) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
 
     Toggle::new(("toggle", plugin_idx * 1000 + idx))
-        .checked(enabled)
+        .checked(checked)
+        .disabled(!interactive)
         .label(label.to_string())
         .style(ToggleStyle::Segmented)
         .selected(is_selected)
@@ -588,6 +615,42 @@ pub fn render_vertical_slider_with_ticks(
     height: f32,
     theme: &Theme,
 ) -> impl IntoElement {
+    render_vertical_slider_with_ticks_enabled(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        height,
+        true,
+        theme,
+    )
+}
+
+/// Render a ticked slider whose interaction can be disabled by layout metadata.
+#[allow(clippy::too_many_arguments)]
+pub fn render_vertical_slider_with_ticks_enabled(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    shortcut_key: Option<char>,
+    height: f32,
+    interactive: bool,
+    theme: &Theme,
+) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
     let control_range = sanitize_audio_control_range(label, value, min, max);
     let value = control_range.value;
@@ -604,6 +667,7 @@ pub fn render_vertical_slider_with_ticks(
         .with_ticks()
         .size(VerticalSliderSize::Md)
         .selected(is_selected)
+        .disabled(!interactive)
         .theme(theme_to_vertical_slider_theme(theme))
         .design_tokens(theme.layout.design_tokens.clone())
         .on_change({
@@ -967,7 +1031,41 @@ pub fn render_knob(
     shortcut_key: Option<char>,
     theme: &Theme,
 ) -> impl IntoElement {
-    render_knob_sized(
+    render_knob_enabled(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        true,
+        theme,
+    )
+}
+
+/// Render a standard-size knob with an explicit interaction state.
+#[allow(clippy::too_many_arguments)]
+pub fn render_knob_enabled(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    shortcut_key: Option<char>,
+    interactive: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    render_knob_sized_enabled(
         entity,
         plugin_idx,
         label,
@@ -980,6 +1078,7 @@ pub fn render_knob(
         is_editing,
         shortcut_key,
         PotentiometerSize::Sm,
+        interactive,
         theme,
     )
 }
@@ -998,6 +1097,42 @@ pub fn render_knob_sized(
     is_editing: bool,
     shortcut_key: Option<char>,
     size: PotentiometerSize,
+    theme: &Theme,
+) -> impl IntoElement {
+    render_knob_sized_enabled(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        size,
+        true,
+        theme,
+    )
+}
+
+/// Render a potentiometer whose interaction can be disabled by layout metadata.
+#[allow(clippy::too_many_arguments)]
+pub fn render_knob_sized_enabled(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    shortcut_key: Option<char>,
+    size: PotentiometerSize,
+    interactive: bool,
     theme: &Theme,
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
@@ -1027,6 +1162,7 @@ pub fn render_knob_sized(
         .size(size)
         .scale(scale)
         .selected(is_selected)
+        .disabled(!interactive)
         .theme(theme.to_potentiometer_theme())
         .design_tokens(theme.layout.design_tokens.clone())
         .on_change({
