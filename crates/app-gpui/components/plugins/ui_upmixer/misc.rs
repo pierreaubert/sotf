@@ -54,14 +54,4 @@ pub(super) mod param_idx {
 }
 
 /// Configuration menu items
-pub(super) const CONFIG_ITEMS: [&str; 9] = [
-    "LFE & Bass",
-    "Dialogue",
-    "Ambient",
-    "Height",
-    "HR Direct",
-    "Decorrelation",
-    "Analysis",
-    "Diagnostic",
-    "Spatial",
-];
+pub(super) const CONFIG_ITEMS: [&str; 4] = ["Bass & Output", "Spatial", "Analysis", "Diagnostics"];

@@ -4,7 +4,7 @@ use crate::{BiquadFilterType, EQFilter, PluginSettings};
 pub fn get_param_count(settings: &PluginSettings) -> usize {
     match settings {
         PluginSettings::EQ { filters, .. } => filters.len() * 4,
-        PluginSettings::LinearPhaseEq { filters, .. } => filters.len() * 4,
+        PluginSettings::LinearPhaseEq { filters, .. } => filters.len() * 5,
         PluginSettings::DynamicEq { num_bands, .. } => 8 + (*num_bands as usize).clamp(1, 8) * 7,
         _ => settings.param_specs().len(),
     }

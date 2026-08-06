@@ -24,7 +24,7 @@ use super::get::get_channel_name;
 use super::get::get_filter_type_index;
 use super::misc::drag_delta_to_q_change;
 use super::types::{EqCompactLayout, EqRenderState, EqViewMode};
-use crate::app::AppState;
+use crate::app::{AppState, ToastMessage};
 use crate::components::design::Ds;
 use crate::components::graphs::common::rgba_to_u32;
 use crate::components::plugins::editing::PluginEditingManager;
@@ -355,6 +355,8 @@ pub(crate) fn render_eq_channel_toolbar(
             },
         ))
         .when(per_channel_mode, |row| {
+            let copy_from_global = entity.clone();
+            let copy_to_all = entity.clone();
             row.child(
                 div()
                     .flex()
@@ -377,6 +379,45 @@ pub(crate) fn render_eq_channel_toolbar(
                         )
                     })),
             )
+            .child(render_eq_mode_button(
+                d,
+                "Copy All → Selected",
+                false,
+                theme,
+                move |_, _, cx| {
+                    copy_from_global.update(cx, |state, cx| {
+                        if let Err(error) = state.app.copy_eq_global_to_selected(plugin_idx) {
+                            state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                        }
+                        cx.notify();
+                    });
+                },
+            ))
+            .child(render_eq_mode_button(
+                d,
+                "Copy Selected → All",
+                false,
+                theme,
+                move |_, _, cx| {
+                    copy_to_all.update(cx, |state, cx| {
+                        let key = (plugin_idx, selected_channel);
+                        if state.app.plugin_state.preset_state.confirm_eq_copy_to_all == Some(key) {
+                            state.app.plugin_state.preset_state.confirm_eq_copy_to_all = None;
+                            if let Err(error) = state.app.copy_eq_selected_to_all(plugin_idx) {
+                                state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                            }
+                        } else {
+                            state.app.plugin_state.clear_confirmations();
+                            state.app.plugin_state.preset_state.confirm_eq_copy_to_all = Some(key);
+                            state.app.ui_state.toast_message = Some(ToastMessage::warning(
+                                "Click Copy Selected → All again to replace every channel"
+                                    .to_string(),
+                            ));
+                        }
+                        cx.notify();
+                    });
+                },
+            ))
         })
         .into_any_element()
 }
@@ -393,6 +434,8 @@ fn render_eq_channel_segment(
 ) -> AnyElement {
     let all_entity = entity.clone();
     let per_entity = entity.clone();
+    let copy_from_global = entity.clone();
+    let copy_to_all = entity.clone();
 
     div()
         .flex()
@@ -439,6 +482,44 @@ fn render_eq_channel_segment(
                     },
                 )
             }))
+            .child(render_eq_mode_button(
+                d,
+                "Copy All → Selected",
+                false,
+                theme,
+                move |_, _, cx| {
+                    copy_from_global.update(cx, |state, cx| {
+                        if let Err(error) = state.app.copy_eq_global_to_selected(plugin_idx) {
+                            state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                        }
+                        cx.notify();
+                    });
+                },
+            ))
+            .child(render_eq_mode_button(
+                d,
+                "Copy Selected → All",
+                false,
+                theme,
+                move |_, _, cx| {
+                    copy_to_all.update(cx, |state, cx| {
+                        let key = (plugin_idx, selected_channel);
+                        if state.app.plugin_state.preset_state.confirm_eq_copy_to_all == Some(key) {
+                            state.app.plugin_state.preset_state.confirm_eq_copy_to_all = None;
+                            if let Err(error) = state.app.copy_eq_selected_to_all(plugin_idx) {
+                                state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                            }
+                        } else {
+                            state.app.plugin_state.clear_confirmations();
+                            state.app.plugin_state.preset_state.confirm_eq_copy_to_all = Some(key);
+                            state.app.ui_state.toast_message = Some(ToastMessage::warning(
+                                "Click Copy Selected → All again to replace every channel",
+                            ));
+                        }
+                        cx.notify();
+                    });
+                },
+            ))
         })
         .into_any_element()
 }

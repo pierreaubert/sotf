@@ -1,11 +1,199 @@
 pub use super::super::plugin_param_map::param_index_to_engine_param;
 use super::adjust::adjust_plugin_param;
 use super::misc::get_param_count;
+use super::set::set_eq_param_value_for_target;
 use super::set::set_plugin_param_value;
+use super::types::EqEditTarget;
 use super::types::PluginUpdateEffect;
 use crate::plugin_graph::PluginGraph;
 use crate::{BiquadFilterType, ChannelConflict, EQFilter, Plugin, PluginSettings, PluginType};
 use std::path::Path;
+
+fn eq_filters_mut(
+    settings: &mut PluginSettings,
+    target: EqEditTarget,
+) -> Option<&mut Vec<EQFilter>> {
+    let PluginSettings::EQ {
+        filters,
+        channel_filters,
+        ..
+    } = settings
+    else {
+        return None;
+    };
+    match target {
+        EqEditTarget::Global => Some(filters),
+        EqEditTarget::Channel(channel) => channel_filters.as_mut()?.get_mut(channel),
+    }
+}
+
+fn eq_band_mut(
+    settings: &mut PluginSettings,
+    target: EqEditTarget,
+    band_idx: usize,
+) -> Option<&mut EQFilter> {
+    eq_filters_mut(settings, target)?.get_mut(band_idx)
+}
+
+fn default_eq_param_value(param_idx: usize) -> Option<f64> {
+    let defaults = PluginSettings::default_for(&PluginType::EQ).ok()?;
+    let PluginSettings::EQ { filters, .. } = defaults else {
+        return None;
+    };
+    let filter = filters.get(param_idx / 4).or_else(|| filters.first())?;
+    match param_idx % 4 {
+        0 => Some(filter.frequency),
+        1 => Some(filter.q),
+        2 => Some(filter.gain_db),
+        3 => Some(0.0), // The default EQ filter type is Peak, index zero.
+        _ => None,
+    }
+}
+
+fn add_eq_band_to(settings: &mut PluginSettings, target: EqEditTarget) -> Result<(), String> {
+    let filters = eq_filters_mut(settings, target)
+        .ok_or_else(|| "Selected EQ edit target is unavailable".to_string())?;
+    filters.push(EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0));
+    Ok(())
+}
+
+fn remove_eq_band_from(
+    settings: &mut PluginSettings,
+    target: EqEditTarget,
+    band_idx: usize,
+) -> Result<(), String> {
+    let filters = eq_filters_mut(settings, target)
+        .ok_or_else(|| "Selected EQ edit target is unavailable".to_string())?;
+    if band_idx >= filters.len() {
+        return Err("Invalid band index".to_string());
+    }
+    filters.remove(band_idx);
+    Ok(())
+}
+
+fn copy_eq_global_to_channel_in_settings(
+    settings: &mut PluginSettings,
+    channel: usize,
+) -> Result<(), String> {
+    let PluginSettings::EQ {
+        filters,
+        channel_filters,
+        ..
+    } = settings
+    else {
+        return Err("Selected plugin is not an EQ".to_string());
+    };
+    let target = channel_filters
+        .as_mut()
+        .and_then(|channels| channels.get_mut(channel))
+        .ok_or_else(|| "Selected EQ channel is unavailable".to_string())?;
+    *target = filters.clone();
+    Ok(())
+}
+
+fn copy_eq_channel_to_all_in_settings(
+    settings: &mut PluginSettings,
+    channel: usize,
+) -> Result<(), String> {
+    let PluginSettings::EQ {
+        channel_filters, ..
+    } = settings
+    else {
+        return Err("Selected plugin is not an EQ".to_string());
+    };
+    let channels = channel_filters
+        .as_mut()
+        .ok_or_else(|| "Per-channel EQ is not enabled".to_string())?;
+    let source = channels
+        .get(channel)
+        .cloned()
+        .ok_or_else(|| "Selected EQ channel is unavailable".to_string())?;
+    for filters in channels {
+        *filters = source.clone();
+    }
+    Ok(())
+}
+
+fn cycle_eq_topology_in_settings(
+    settings: &mut PluginSettings,
+    target: EqEditTarget,
+    band_idx: usize,
+) -> PluginUpdateEffect {
+    use sotf_audio::plugins::eq::EqFilterTopology;
+
+    let Some(filter) = eq_band_mut(settings, target, band_idx) else {
+        return PluginUpdateEffect::None;
+    };
+    filter.topology = match filter.topology {
+        EqFilterTopology::Biquad => EqFilterTopology::WarpedBiquad,
+        EqFilterTopology::WarpedBiquad => EqFilterTopology::KautzFilter,
+        EqFilterTopology::KautzFilter => EqFilterTopology::Biquad,
+    };
+    PluginUpdateEffect::Structural
+}
+
+fn cycle_eq_lambda_in_settings(
+    settings: &mut PluginSettings,
+    target: EqEditTarget,
+    band_idx: usize,
+) -> PluginUpdateEffect {
+    use sotf_audio::plugins::eq::EqFilterTopology;
+    const PRESETS: &[f64] = &[0.4, 0.6, 0.8];
+
+    let Some(filter) = eq_band_mut(settings, target, band_idx) else {
+        return PluginUpdateEffect::None;
+    };
+    if !matches!(filter.topology, EqFilterTopology::WarpedBiquad) {
+        return PluginUpdateEffect::None;
+    }
+    filter.lambda = match filter.lambda {
+        None => Some(PRESETS[0]),
+        Some(value) => PRESETS
+            .iter()
+            .copied()
+            .find(|preset| *preset > value + 1e-9),
+    };
+    PluginUpdateEffect::Structural
+}
+
+fn add_eq_kautz_section_in_settings(
+    settings: &mut PluginSettings,
+    target: EqEditTarget,
+    band_idx: usize,
+    pole_freq: f64,
+    q: f64,
+    gain: f64,
+) -> PluginUpdateEffect {
+    use sotf_audio::plugins::eq::{EqFilterTopology, KautzSectionConfig};
+    let Some(filter) = eq_band_mut(settings, target, band_idx) else {
+        return PluginUpdateEffect::None;
+    };
+    if !matches!(filter.topology, EqFilterTopology::KautzFilter) {
+        return PluginUpdateEffect::None;
+    }
+    filter
+        .kautz_sections
+        .push(KautzSectionConfig { pole_freq, q, gain });
+    PluginUpdateEffect::Structural
+}
+
+fn pop_eq_kautz_section_in_settings(
+    settings: &mut PluginSettings,
+    target: EqEditTarget,
+    band_idx: usize,
+) -> PluginUpdateEffect {
+    use sotf_audio::plugins::eq::EqFilterTopology;
+    let Some(filter) = eq_band_mut(settings, target, band_idx) else {
+        return PluginUpdateEffect::None;
+    };
+    if matches!(filter.topology, EqFilterTopology::KautzFilter)
+        && filter.kautz_sections.pop().is_some()
+    {
+        PluginUpdateEffect::Structural
+    } else {
+        PluginUpdateEffect::None
+    }
+}
 
 /// Plugin controller owning shared state for plugin editing.
 ///
@@ -260,6 +448,66 @@ impl PluginController {
         }
     }
 
+    /// Set a dynamic EQ-band parameter on the explicitly selected filter set.
+    pub fn set_eq_param(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        param_idx: usize,
+        value: f64,
+    ) -> PluginUpdateEffect {
+        let updated = self.graph.get_plugin_mut(plugin_idx).is_some_and(|plugin| {
+            set_eq_param_value_for_target(&mut plugin.settings, target, param_idx, value)
+        });
+        if updated {
+            self.determine_update_effect(Some(plugin_idx), param_idx, false)
+        } else {
+            PluginUpdateEffect::None
+        }
+    }
+
+    /// Node-ID variant of [`Self::set_eq_param`] for graph editing.
+    pub fn set_eq_param_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        param_idx: usize,
+        value: f64,
+    ) -> PluginUpdateEffect {
+        let updated = self.graph.nodes.get_mut(&node_id).is_some_and(|node| {
+            set_eq_param_value_for_target(&mut node.plugin.settings, target, param_idx, value)
+        });
+        if updated {
+            self.determine_update_effect_by_node_id(node_id, param_idx, false)
+        } else {
+            PluginUpdateEffect::None
+        }
+    }
+
+    pub fn reset_eq_param(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        param_idx: usize,
+    ) -> PluginUpdateEffect {
+        let Some(value) = default_eq_param_value(param_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        self.set_eq_param(plugin_idx, target, param_idx, value)
+    }
+
+    pub fn reset_eq_param_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        param_idx: usize,
+    ) -> PluginUpdateEffect {
+        let Some(value) = default_eq_param_value(param_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        self.set_eq_param_by_node_id(node_id, target, param_idx, value)
+    }
+
     /// Cycle the topology of an EQ filter band through Biquad → Warped → Kautz.
     ///
     /// Returns `Structural` so the engine rebuilds the EQ instance with the new
@@ -326,6 +574,31 @@ impl PluginController {
         } else {
             PluginUpdateEffect::None
         }
+    }
+
+    /// Cycle topology on only the filter set being edited.
+    pub fn cycle_eq_filter_topology_for_target(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> PluginUpdateEffect {
+        let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        cycle_eq_topology_in_settings(&mut plugin.settings, target, band_idx)
+    }
+
+    pub fn cycle_eq_filter_topology_for_target_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> PluginUpdateEffect {
+        let Some(node) = self.graph.nodes.get_mut(&node_id) else {
+            return PluginUpdateEffect::None;
+        };
+        cycle_eq_topology_in_settings(&mut node.plugin.settings, target, band_idx)
     }
 
     /// Cycle the lambda (warping coefficient) for a warped-biquad EQ band.
@@ -407,6 +680,30 @@ impl PluginController {
         }
     }
 
+    pub fn cycle_eq_filter_lambda_for_target(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> PluginUpdateEffect {
+        let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        cycle_eq_lambda_in_settings(&mut plugin.settings, target, band_idx)
+    }
+
+    pub fn cycle_eq_filter_lambda_for_target_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> PluginUpdateEffect {
+        let Some(node) = self.graph.nodes.get_mut(&node_id) else {
+            return PluginUpdateEffect::None;
+        };
+        cycle_eq_lambda_in_settings(&mut node.plugin.settings, target, band_idx)
+    }
+
     /// Append a Kautz pole section to an EQ band. Only takes effect when the
     /// band's topology is `KautzFilter`; otherwise returns `None`.
     pub fn add_eq_kautz_section(
@@ -458,6 +755,45 @@ impl PluginController {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_eq_kautz_section_for_target(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        band_idx: usize,
+        pole_freq: f64,
+        q: f64,
+        gain: f64,
+    ) -> PluginUpdateEffect {
+        let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        add_eq_kautz_section_in_settings(&mut plugin.settings, target, band_idx, pole_freq, q, gain)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_eq_kautz_section_for_target_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        band_idx: usize,
+        pole_freq: f64,
+        q: f64,
+        gain: f64,
+    ) -> PluginUpdateEffect {
+        let Some(node) = self.graph.nodes.get_mut(&node_id) else {
+            return PluginUpdateEffect::None;
+        };
+        add_eq_kautz_section_in_settings(
+            &mut node.plugin.settings,
+            target,
+            band_idx,
+            pole_freq,
+            q,
+            gain,
+        )
+    }
+
     /// Remove the last Kautz pole section from an EQ band. No-op when the
     /// band's topology isn't `KautzFilter` or the section list is empty.
     pub fn pop_eq_kautz_section(
@@ -502,6 +838,30 @@ impl PluginController {
         } else {
             PluginUpdateEffect::None
         }
+    }
+
+    pub fn pop_eq_kautz_section_for_target(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> PluginUpdateEffect {
+        let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        pop_eq_kautz_section_in_settings(&mut plugin.settings, target, band_idx)
+    }
+
+    pub fn pop_eq_kautz_section_for_target_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> PluginUpdateEffect {
+        let Some(node) = self.graph.nodes.get_mut(&node_id) else {
+            return PluginUpdateEffect::None;
+        };
+        pop_eq_kautz_section_in_settings(&mut node.plugin.settings, target, band_idx)
     }
 
     /// Set a parameter value for a plugin identified by its graph node ID.
@@ -881,6 +1241,33 @@ impl PluginController {
     }
 
     /// Add a new EQ band to the currently editing EQ or LinearPhaseEq plugin.
+    pub fn add_eq_band_for_target(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+    ) -> Result<PluginUpdateEffect, String> {
+        let plugin = self
+            .graph
+            .get_plugin_mut(plugin_idx)
+            .ok_or_else(|| "Plugin not found".to_string())?;
+        add_eq_band_to(&mut plugin.settings, target)?;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    pub fn add_eq_band_for_target_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Plugin node not found".to_string())?;
+        add_eq_band_to(&mut node.plugin.settings, target)?;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
     pub fn add_eq_band(&mut self) -> Result<PluginUpdateEffect, String> {
         let plugin = self
             .get_editing_plugin_mut()
@@ -915,6 +1302,35 @@ impl PluginController {
     }
 
     /// Remove an EQ band from the currently editing EQ or LinearPhaseEq plugin.
+    pub fn remove_eq_band_for_target(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let plugin = self
+            .graph
+            .get_plugin_mut(plugin_idx)
+            .ok_or_else(|| "Plugin not found".to_string())?;
+        remove_eq_band_from(&mut plugin.settings, target, band_idx)?;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    pub fn remove_eq_band_for_target_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Plugin node not found".to_string())?;
+        remove_eq_band_from(&mut node.plugin.settings, target, band_idx)?;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
     pub fn remove_eq_band(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
         let plugin = self
             .get_editing_plugin_mut()
@@ -954,6 +1370,39 @@ impl PluginController {
     }
 
     /// Toggle mute state for an EQ or LinearPhaseEq band.
+    pub fn toggle_eq_band_mute_for_target(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let plugin = self
+            .graph
+            .get_plugin_mut(plugin_idx)
+            .ok_or_else(|| "Plugin not found".to_string())?;
+        let band = eq_band_mut(&mut plugin.settings, target, band_idx)
+            .ok_or_else(|| "Invalid band index or EQ edit target".to_string())?;
+        band.muted = !band.muted;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    pub fn toggle_eq_band_mute_for_target_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Plugin node not found".to_string())?;
+        let band = eq_band_mut(&mut node.plugin.settings, target, band_idx)
+            .ok_or_else(|| "Invalid band index or EQ edit target".to_string())?;
+        band.muted = !band.muted;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
     pub fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
         let plugin = self
             .get_editing_plugin_mut()
@@ -993,6 +1442,39 @@ impl PluginController {
     }
 
     /// Toggle solo state for an EQ or LinearPhaseEq band.
+    pub fn toggle_eq_band_solo_for_target(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let plugin = self
+            .graph
+            .get_plugin_mut(plugin_idx)
+            .ok_or_else(|| "Plugin not found".to_string())?;
+        let band = eq_band_mut(&mut plugin.settings, target, band_idx)
+            .ok_or_else(|| "Invalid band index or EQ edit target".to_string())?;
+        band.solo = !band.solo;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    pub fn toggle_eq_band_solo_for_target_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        band_idx: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Plugin node not found".to_string())?;
+        let band = eq_band_mut(&mut node.plugin.settings, target, band_idx)
+            .ok_or_else(|| "Invalid band index or EQ edit target".to_string())?;
+        band.solo = !band.solo;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
     pub fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
         let plugin = self
             .get_editing_plugin_mut()
@@ -1060,6 +1542,62 @@ impl PluginController {
             }
         }
         PluginUpdateEffect::None
+    }
+
+    /// Replace one channel's bands with the global EQ bands.
+    pub fn copy_eq_global_to_channel(
+        &mut self,
+        plugin_idx: usize,
+        channel: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let plugin = self
+            .graph
+            .get_plugin_mut(plugin_idx)
+            .ok_or_else(|| "Plugin not found".to_string())?;
+        copy_eq_global_to_channel_in_settings(&mut plugin.settings, channel)?;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    pub fn copy_eq_global_to_channel_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        channel: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Plugin node not found".to_string())?;
+        copy_eq_global_to_channel_in_settings(&mut node.plugin.settings, channel)?;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    /// Replace every channel's bands with the selected channel's bands.
+    pub fn copy_eq_channel_to_all(
+        &mut self,
+        plugin_idx: usize,
+        channel: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let plugin = self
+            .graph
+            .get_plugin_mut(plugin_idx)
+            .ok_or_else(|| "Plugin not found".to_string())?;
+        copy_eq_channel_to_all_in_settings(&mut plugin.settings, channel)?;
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    pub fn copy_eq_channel_to_all_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        channel: usize,
+    ) -> Result<PluginUpdateEffect, String> {
+        let node = self
+            .graph
+            .nodes
+            .get_mut(&node_id)
+            .ok_or_else(|| "Plugin node not found".to_string())?;
+        copy_eq_channel_to_all_in_settings(&mut node.plugin.settings, channel)?;
+        Ok(PluginUpdateEffect::Structural)
     }
 
     // ========================================================================

@@ -1,5 +1,5 @@
 use super::plugin_controller::PluginController;
-use super::types::PluginUpdateEffect;
+use super::types::{EqEditTarget, PluginUpdateEffect};
 use crate::plugin_graph::PluginGraph;
 use crate::{PluginSettings, PluginType};
 
@@ -132,6 +132,103 @@ fn make_linear_eq() -> (PluginController, usize) {
     let _ = ctrl.add_plugin(&PluginType::EQ);
     let idx = ctrl.selected_plugin_index;
     (ctrl, idx)
+}
+
+#[test]
+fn per_channel_eq_target_isolated_and_copy_actions_are_explicit() {
+    let (mut ctrl, idx) = make_linear_eq();
+    ctrl.set_eq_per_channel_mode(idx, true);
+
+    let original_global = match &ctrl.graph.get_plugin(idx).unwrap().settings {
+        PluginSettings::EQ { filters, .. } => filters[0].frequency,
+        _ => unreachable!(),
+    };
+    let effect = ctrl.set_eq_param(idx, EqEditTarget::Channel(0), 0, 2_500.0);
+    assert!(matches!(effect, PluginUpdateEffect::Structural));
+
+    let plugin = ctrl.graph.get_plugin(idx).unwrap();
+    let PluginSettings::EQ {
+        filters,
+        channel_filters,
+        ..
+    } = &plugin.settings
+    else {
+        unreachable!()
+    };
+    let channels = channel_filters.as_ref().unwrap();
+    assert_eq!(filters[0].frequency, original_global);
+    assert_eq!(channels[0][0].frequency, 2_500.0);
+    assert_eq!(channels[1][0].frequency, original_global);
+
+    ctrl.copy_eq_channel_to_all(idx, 0).unwrap();
+    let PluginSettings::EQ {
+        channel_filters, ..
+    } = &ctrl.graph.get_plugin(idx).unwrap().settings
+    else {
+        unreachable!()
+    };
+    assert!(
+        channel_filters
+            .as_ref()
+            .unwrap()
+            .iter()
+            .all(|channel| channel[0].frequency == 2_500.0)
+    );
+
+    ctrl.copy_eq_global_to_channel(idx, 0).unwrap();
+    let PluginSettings::EQ {
+        channel_filters, ..
+    } = &ctrl.graph.get_plugin(idx).unwrap().settings
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        channel_filters.as_ref().unwrap()[0][0].frequency,
+        original_global
+    );
+}
+
+#[test]
+fn per_channel_eq_topology_edit_does_not_touch_global_or_siblings() {
+    use sotf_audio::plugins::eq::EqFilterTopology;
+    let (mut ctrl, idx) = make_linear_eq();
+    ctrl.set_eq_per_channel_mode(idx, true);
+    ctrl.cycle_eq_filter_topology_for_target(idx, EqEditTarget::Channel(0), 0);
+
+    let PluginSettings::EQ {
+        filters,
+        channel_filters,
+        ..
+    } = &ctrl.graph.get_plugin(idx).unwrap().settings
+    else {
+        unreachable!()
+    };
+    let channels = channel_filters.as_ref().unwrap();
+    assert_eq!(filters[0].topology, EqFilterTopology::Biquad);
+    assert_eq!(channels[0][0].topology, EqFilterTopology::WarpedBiquad);
+    assert_eq!(channels[1][0].topology, EqFilterTopology::Biquad);
+}
+
+#[test]
+fn per_channel_eq_reset_uses_dynamic_band_defaults() {
+    let (mut ctrl, idx) = make_linear_eq();
+    ctrl.set_eq_per_channel_mode(idx, true);
+    ctrl.set_eq_param(idx, EqEditTarget::Channel(0), 0, 2_500.0);
+
+    let effect = ctrl.reset_eq_param(idx, EqEditTarget::Channel(0), 0);
+    assert!(matches!(effect, PluginUpdateEffect::Structural));
+
+    let PluginSettings::EQ {
+        filters,
+        channel_filters,
+        ..
+    } = &ctrl.graph.get_plugin(idx).unwrap().settings
+    else {
+        unreachable!()
+    };
+    let channels = channel_filters.as_ref().unwrap();
+    assert_eq!(channels[0][0].frequency, filters[0].frequency);
+    assert_eq!(channels[1][0].frequency, filters[0].frequency);
 }
 
 fn topology_at(

@@ -1,5 +1,6 @@
 use super::misc::apply_structural_side_effects;
 use super::misc::eq_band_types;
+use super::types::EqEditTarget;
 use crate::{EQFilter, PluginSettings};
 
 pub(super) fn set_eq_band_field_for_plugin(
@@ -33,6 +34,35 @@ pub(super) fn set_eq_band_field_for_plugin(
         }
         _ => false,
     }
+}
+
+pub(super) fn set_eq_param_value_for_target(
+    settings: &mut PluginSettings,
+    target: EqEditTarget,
+    param_idx: usize,
+    value: f64,
+) -> bool {
+    let PluginSettings::EQ {
+        filters,
+        channel_filters,
+        ..
+    } = settings
+    else {
+        return false;
+    };
+    let target_filters = match target {
+        EqEditTarget::Global => filters,
+        EqEditTarget::Channel(channel) => {
+            let Some(filters) = channel_filters
+                .as_mut()
+                .and_then(|channels| channels.get_mut(channel))
+            else {
+                return false;
+            };
+            filters
+        }
+    };
+    set_eq_band_field_for_plugin(param_idx / 4, param_idx % 4, target_filters, value, true)
 }
 
 fn set_fir_eq_band_field_for_plugin(

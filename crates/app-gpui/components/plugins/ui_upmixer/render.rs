@@ -1,5 +1,5 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
-use super::super::common::render_knob;
+use super::super::common::{render_knob, render_knob_enabled};
 use super::misc::CONFIG_ITEMS;
 use super::misc::param_idx;
 use super::types::UpmixerRenderState;
@@ -26,16 +26,11 @@ static UPMIXER_CONFIG_SPECS: std::sync::OnceLock<Vec<UpmixerConfigSpec>> =
 fn upmixer_config_specs() -> &'static [UpmixerConfigSpec] {
     UPMIXER_CONFIG_SPECS
         .get_or_init(|| {
-            const IDS: [&str; 9] = [
-                "cfg-lfe",
-                "cfg-dialogue",
-                "cfg-ambient",
-                "cfg-height",
-                "cfg-hr-direct",
-                "cfg-decorr",
-                "cfg-analysis",
-                "cfg-diagnostic",
+            const IDS: [&str; 4] = [
+                "cfg-bass-output",
                 "cfg-spatial",
+                "cfg-analysis",
+                "cfg-diagnostics",
             ];
             CONFIG_ITEMS
                 .iter()
@@ -44,7 +39,7 @@ fn upmixer_config_specs() -> &'static [UpmixerConfigSpec] {
                 .map(|(i, (label, id))| UpmixerConfigSpec {
                     label,
                     id,
-                    config_idx: i + 1,
+                    config_idx: i + 10,
                 })
                 .collect()
         })
@@ -428,10 +423,10 @@ fn render_narrow_area(
 }
 
 fn focused_config_index(selected_config: usize) -> usize {
-    if (1..=CONFIG_ITEMS.len()).contains(&selected_config) {
+    if (10..10 + CONFIG_ITEMS.len()).contains(&selected_config) {
         selected_config
     } else {
-        1
+        10
     }
 }
 
@@ -445,6 +440,92 @@ fn render_compact_config_content(
     theme: &Theme,
 ) -> AnyElement {
     match selected_config {
+        10 => div()
+            .flex()
+            .flex_col()
+            .gap(d.section)
+            .child(render_compact_config_content(
+                d,
+                entity.clone(),
+                plugin_idx,
+                1,
+                state,
+                text,
+                theme,
+            ))
+            .child(render_compact_lane_group(
+                d,
+                "Output",
+                vec![
+                    compact_lane(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        state,
+                        "Safety",
+                        state.safety_cap_db,
+                        "safety_cap_db",
+                        param_idx::SAFETY_CAP_DB,
+                        "dB",
+                        theme,
+                    ),
+                    render_compact_toggle_row(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        text.label("Auto Gain"),
+                        state.auto_gain_enabled,
+                        param_idx::AUTO_GAIN_ENABLED,
+                        theme,
+                    ),
+                    compact_lane_enabled(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        state,
+                        "Auto Max",
+                        state.auto_gain_max_db,
+                        "auto_gain_max_db",
+                        param_idx::AUTO_GAIN_MAX_DB,
+                        "dB",
+                        state.auto_gain_enabled,
+                        theme,
+                    ),
+                    compact_lane_enabled(
+                        d,
+                        entity,
+                        plugin_idx,
+                        state,
+                        "Smooth",
+                        state.auto_gain_smoothing_ms,
+                        "auto_gain_smoothing_ms",
+                        param_idx::AUTO_GAIN_SMOOTHING_MS,
+                        "ms",
+                        state.auto_gain_enabled,
+                        theme,
+                    ),
+                ],
+                theme,
+            ))
+            .into_any_element(),
+        11 => div()
+            .flex()
+            .flex_col()
+            .gap(d.section)
+            .children([2usize, 3, 4, 5, 6, 9].map(|section| {
+                render_compact_config_content(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    section,
+                    state,
+                    text,
+                    theme,
+                )
+            }))
+            .into_any_element(),
+        12 => render_compact_config_content(d, entity, plugin_idx, 7, state, text, theme),
+        13 => render_compact_config_content(d, entity, plugin_idx, 8, state, text, theme),
         1 => render_compact_lane_group(
             d,
             "LFE & Bass",
@@ -475,18 +556,6 @@ fn render_compact_config_content(
                     entity.clone(),
                     plugin_idx,
                     state,
-                    "LFE Gain",
-                    state.lfe_gain,
-                    "lfe_gain",
-                    param_idx::LFE_GAIN,
-                    "x",
-                    theme,
-                ),
-                compact_lane(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    state,
                     "Bandpass",
                     state.bandpass_hz,
                     "bandpass_hz",
@@ -494,7 +563,7 @@ fn render_compact_config_content(
                     "Hz",
                     theme,
                 ),
-                compact_lane(
+                compact_lane_enabled(
                     d,
                     entity.clone(),
                     plugin_idx,
@@ -504,9 +573,10 @@ fn render_compact_config_content(
                     "subharmonic_gain",
                     param_idx::SUBHARMONIC_GAIN,
                     "x",
+                    state.enable_subharmonic_synth,
                     theme,
                 ),
-                compact_lane(
+                compact_lane_enabled(
                     d,
                     entity.clone(),
                     plugin_idx,
@@ -516,9 +586,10 @@ fn render_compact_config_content(
                     "subharmonic_freq_hz",
                     param_idx::SUBHARMONIC_FREQ_HZ,
                     "Hz",
+                    state.enable_subharmonic_synth,
                     theme,
                 ),
-                compact_lane(
+                compact_lane_enabled(
                     d,
                     entity.clone(),
                     plugin_idx,
@@ -528,9 +599,10 @@ fn render_compact_config_content(
                     "subharmonic_attack_ms",
                     param_idx::SUBHARMONIC_ATTACK_MS,
                     "ms",
+                    state.enable_subharmonic_synth,
                     theme,
                 ),
-                compact_lane(
+                compact_lane_enabled(
                     d,
                     entity,
                     plugin_idx,
@@ -540,6 +612,7 @@ fn render_compact_config_content(
                     "subharmonic_release_ms",
                     param_idx::SUBHARMONIC_RELEASE_MS,
                     "ms",
+                    state.enable_subharmonic_synth,
                     theme,
                 ),
             ],
@@ -647,6 +720,18 @@ fn render_compact_config_content(
                     entity.clone(),
                     plugin_idx,
                     state,
+                    "Bleed",
+                    state.surround_direct_bleed,
+                    "surround_direct_bleed",
+                    param_idx::SURROUND_DIRECT_BLEED,
+                    "",
+                    theme,
+                ),
+                compact_lane(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    state,
                     "Rear Amb",
                     state.rear_ambient_boost,
                     "rear_ambient_boost",
@@ -664,18 +749,6 @@ fn render_compact_config_content(
                     "rear_late_reflection",
                     param_idx::REAR_LATE_REFLECTION,
                     "",
-                    theme,
-                ),
-                compact_lane(
-                    d,
-                    entity,
-                    plugin_idx,
-                    state,
-                    "Safety",
-                    state.safety_cap_db,
-                    "safety_cap_db",
-                    param_idx::SAFETY_CAP_DB,
-                    "dB",
                     theme,
                 ),
             ],
@@ -751,7 +824,7 @@ fn render_compact_config_content(
                     param_idx::ENABLE_HR_DIRECT,
                     theme,
                 ),
-                compact_lane(
+                compact_lane_enabled(
                     d,
                     entity,
                     plugin_idx,
@@ -761,6 +834,7 @@ fn render_compact_config_content(
                     "hr_sharpen",
                     param_idx::HR_SHARPEN,
                     "",
+                    state.enable_hr_direct,
                     theme,
                 ),
             ],
@@ -783,7 +857,7 @@ fn render_compact_config_content(
                     "",
                     theme,
                 ),
-                compact_lane(
+                compact_lane_enabled(
                     d,
                     entity.clone(),
                     plugin_idx,
@@ -793,9 +867,10 @@ fn render_compact_config_content(
                     "decorrelation_lfo_rate_hz",
                     param_idx::DECORRELATION_LFO_RATE_HZ,
                     "Hz",
+                    state.decorrelation_mode == 1,
                     theme,
                 ),
-                compact_lane(
+                compact_lane_enabled(
                     d,
                     entity.clone(),
                     plugin_idx,
@@ -805,9 +880,10 @@ fn render_compact_config_content(
                     "velvet_noise_duration_ms",
                     param_idx::VELVET_NOISE_DURATION_MS,
                     "ms",
+                    state.decorrelation_mode == 0,
                     theme,
                 ),
-                compact_lane(
+                compact_lane_enabled(
                     d,
                     entity,
                     plugin_idx,
@@ -817,6 +893,7 @@ fn render_compact_config_content(
                     "velvet_noise_density",
                     param_idx::VELVET_NOISE_DENSITY,
                     "",
+                    state.decorrelation_mode == 0,
                     theme,
                 ),
             ],
@@ -848,7 +925,7 @@ fn render_compact_config_content(
                     "",
                     theme,
                 ),
-                compact_lane(
+                compact_lane_enabled(
                     d,
                     entity.clone(),
                     plugin_idx,
@@ -858,30 +935,7 @@ fn render_compact_config_content(
                     "multi_source_threshold",
                     param_idx::MULTI_SOURCE_THRESHOLD,
                     "",
-                    theme,
-                ),
-                compact_lane(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    state,
-                    "Auto Max",
-                    state.auto_gain_max_db,
-                    "auto_gain_max_db",
-                    param_idx::AUTO_GAIN_MAX_DB,
-                    "dB",
-                    theme,
-                ),
-                compact_lane(
-                    d,
-                    entity,
-                    plugin_idx,
-                    state,
-                    "Smooth",
-                    state.auto_gain_smoothing_ms,
-                    "auto_gain_smoothing_ms",
-                    param_idx::AUTO_GAIN_SMOOTHING_MS,
-                    "ms",
+                    state.multi_source_extraction,
                     theme,
                 ),
             ],
@@ -946,15 +1000,6 @@ fn render_compact_config_content(
                     param_idx::BINAURAL_PREVIEW,
                     theme,
                 ),
-                render_compact_toggle_row(
-                    d,
-                    entity,
-                    plugin_idx,
-                    text.label("Auto Gain"),
-                    state.auto_gain_enabled,
-                    param_idx::AUTO_GAIN_ENABLED,
-                    theme,
-                ),
             ],
             theme,
         )
@@ -985,7 +1030,26 @@ fn compact_lane(
     unit: &'static str,
     theme: &Theme,
 ) -> AnyElement {
-    render_control_lane(
+    compact_lane_enabled(
+        d, entity, plugin_idx, state, label, value, param_key, param_idx, unit, true, theme,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compact_lane_enabled(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    label: &'static str,
+    value: f64,
+    param_key: &'static str,
+    param_idx: usize,
+    unit: &'static str,
+    interactive: bool,
+    theme: &Theme,
+) -> AnyElement {
+    render_control_lane_enabled(
         d,
         entity,
         plugin_idx,
@@ -999,6 +1063,7 @@ fn compact_lane(
             selected_param: state.selected_param,
             is_editing: state.is_editing,
         },
+        interactive,
         theme,
     )
 }
@@ -1267,44 +1332,12 @@ fn render_primary_control_strip(
                     entity.clone(),
                     plugin_idx,
                     ControlLaneSpec {
-                        label: "Top",
-                        value: state.height_gain,
-                        min: pk(UP, "height_gain").min_f64(),
-                        max: pk(UP, "height_gain").max_f64(),
-                        unit: "x",
-                        param_idx: param_idx::HEIGHT_GAIN,
-                        selected_param: state.selected_param,
-                        is_editing: state.is_editing,
-                    },
-                    theme,
-                ),
-                render_control_lane(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    ControlLaneSpec {
                         label: "LFE",
                         value: state.lfe_gain,
                         min: pk(UP, "lfe_gain").min_f64(),
                         max: pk(UP, "lfe_gain").max_f64(),
                         unit: "x",
                         param_idx: param_idx::LFE_GAIN,
-                        selected_param: state.selected_param,
-                        is_editing: state.is_editing,
-                    },
-                    theme,
-                ),
-                render_control_lane(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    ControlLaneSpec {
-                        label: "Safety",
-                        value: state.safety_cap_db,
-                        min: pk(UP, "safety_cap_db").min_f64(),
-                        max: pk(UP, "safety_cap_db").max_f64(),
-                        unit: "dB",
-                        param_idx: param_idx::SAFETY_CAP_DB,
                         selected_param: state.selected_param,
                         is_editing: state.is_editing,
                     },
@@ -1344,38 +1377,6 @@ fn render_primary_control_strip(
                         max: pk(UP, "center_spread").max_f64(),
                         unit: "",
                         param_idx: param_idx::CENTER_SPREAD,
-                        selected_param: state.selected_param,
-                        is_editing: state.is_editing,
-                    },
-                    theme,
-                ),
-                render_control_lane(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    ControlLaneSpec {
-                        label: "Bleed",
-                        value: state.surround_direct_bleed,
-                        min: pk(UP, "surround_direct_bleed").min_f64(),
-                        max: pk(UP, "surround_direct_bleed").max_f64(),
-                        unit: "",
-                        param_idx: param_idx::SURROUND_DIRECT_BLEED,
-                        selected_param: state.selected_param,
-                        is_editing: state.is_editing,
-                    },
-                    theme,
-                ),
-                render_control_lane(
-                    d,
-                    entity,
-                    plugin_idx,
-                    ControlLaneSpec {
-                        label: "Reflect",
-                        value: state.rear_late_reflection,
-                        min: pk(UP, "rear_late_reflection").min_f64(),
-                        max: pk(UP, "rear_late_reflection").max_f64(),
-                        unit: "",
-                        param_idx: param_idx::REAR_LATE_REFLECTION,
                         selected_param: state.selected_param,
                         is_editing: state.is_editing,
                     },
@@ -1464,6 +1465,17 @@ fn render_control_lane(
     spec: ControlLaneSpec,
     theme: &Theme,
 ) -> AnyElement {
+    render_control_lane_enabled(d, entity, plugin_idx, spec, true, theme)
+}
+
+fn render_control_lane_enabled(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    spec: ControlLaneSpec,
+    interactive: bool,
+    theme: &Theme,
+) -> AnyElement {
     let is_selected = spec.selected_param == spec.param_idx && spec.is_editing;
     let range = sanitize_control_lane_range(&spec);
     let value = range.value;
@@ -1489,6 +1501,7 @@ fn render_control_lane(
         } else {
             theme.border
         })
+        .when(!interactive, |el| el.opacity(0.45))
         .child(
             div()
                 .min_w(rems(3.8))
@@ -1504,6 +1517,7 @@ fn render_control_lane(
                 .width(slider_width)
                 .size(SliderSize::Sm)
                 .theme(theme.to_slider_theme())
+                .disabled(!interactive)
                 .aria_label(format!("{} {}", spec.label, value_label))
                 .on_drag_start({
                     let entity = entity.clone();
@@ -1638,6 +1652,74 @@ fn render_config_content(
     theme: &Theme,
 ) -> AnyElement {
     match selected_config {
+        10 => div()
+            .flex()
+            .flex_col()
+            .gap(d.section)
+            .child(render_config_lfe(
+                d,
+                entity.clone(),
+                plugin_idx,
+                state,
+                text,
+                theme,
+            ))
+            .child(render_config_output(
+                d, entity, plugin_idx, state, text, theme,
+            ))
+            .into_any_element(),
+        11 => div()
+            .flex()
+            .flex_col()
+            .gap(d.section)
+            .child(render_config_dialogue(
+                d,
+                entity.clone(),
+                plugin_idx,
+                state,
+                text,
+                theme,
+            ))
+            .child(render_config_ambient(
+                d,
+                entity.clone(),
+                plugin_idx,
+                state,
+                text,
+                theme,
+            ))
+            .child(render_config_height(
+                d,
+                entity.clone(),
+                plugin_idx,
+                state,
+                text,
+                theme,
+            ))
+            .child(render_config_hr_direct(
+                d,
+                entity.clone(),
+                plugin_idx,
+                state,
+                text,
+                theme,
+            ))
+            .child(render_config_decorrelation(
+                d,
+                entity.clone(),
+                plugin_idx,
+                state,
+                text,
+                theme,
+            ))
+            .child(render_config_spatial(
+                d, entity, plugin_idx, state, text, theme,
+            ))
+            .into_any_element(),
+        12 => render_config_analysis(d, entity, plugin_idx, state, text, theme).into_any_element(),
+        13 => {
+            render_config_diagnostic(d, entity, plugin_idx, state, text, theme).into_any_element()
+        }
         1 => render_config_lfe(d, entity, plugin_idx, state, text, theme).into_any_element(),
         2 => render_config_dialogue(d, entity, plugin_idx, state, text, theme).into_any_element(),
         3 => render_config_ambient(d, entity, plugin_idx, state, text, theme).into_any_element(),
@@ -1727,20 +1809,6 @@ fn render_config_lfe(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    text.label("LFE Gain"),
-                    state.lfe_gain,
-                    pk(UP, "lfe_gain").min_f64(),
-                    pk(UP, "lfe_gain").max_f64(),
-                    "x",
-                    param_idx::LFE_GAIN,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
                     text.label("Bandpass"),
                     state.bandpass_hz,
                     pk(UP, "bandpass_hz").min_f64(),
@@ -1761,7 +1829,7 @@ fn render_config_lfe(
                         .flex()
                         .gap(d.gap_md)
                         .when(!subharm_enabled, |el| el.opacity(0.3))
-                        .child(render_knob(
+                        .child(render_knob_enabled(
                             entity.clone(),
                             plugin_idx,
                             text.label("Gain"),
@@ -1773,9 +1841,10 @@ fn render_config_lfe(
                             state.selected_param,
                             state.is_editing,
                             None,
+                            subharm_enabled,
                             theme,
                         ))
-                        .child(render_knob(
+                        .child(render_knob_enabled(
                             entity.clone(),
                             plugin_idx,
                             text.label("Freq"),
@@ -1787,9 +1856,10 @@ fn render_config_lfe(
                             state.selected_param,
                             state.is_editing,
                             None,
+                            subharm_enabled,
                             theme,
                         ))
-                        .child(render_knob(
+                        .child(render_knob_enabled(
                             entity.clone(),
                             plugin_idx,
                             text.label("Attack"),
@@ -1801,9 +1871,10 @@ fn render_config_lfe(
                             state.selected_param,
                             state.is_editing,
                             None,
+                            subharm_enabled,
                             theme,
                         ))
-                        .child(render_knob(
+                        .child(render_knob_enabled(
                             entity.clone(),
                             plugin_idx,
                             text.label("Release"),
@@ -1815,9 +1886,83 @@ fn render_config_lfe(
                             state.selected_param,
                             state.is_editing,
                             None,
+                            subharm_enabled,
                             theme,
                         )),
                 )
+                .build(),
+        )
+        .build()
+}
+
+/// Dialogue configuration row
+fn render_config_output(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header(d, text.label("Output"), theme))
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    text.label("Safety"),
+                    state.safety_cap_db,
+                    pk(UP, "safety_cap_db").min_f64(),
+                    pk(UP, "safety_cap_db").max_f64(),
+                    "dB",
+                    param_idx::SAFETY_CAP_DB,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_diag_toggle(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Auto Gain",
+                    state.auto_gain_enabled,
+                    param_idx::AUTO_GAIN_ENABLED,
+                    theme,
+                ))
+                .child(render_knob_enabled(
+                    entity.clone(),
+                    plugin_idx,
+                    text.label("AG Max"),
+                    state.auto_gain_max_db,
+                    pk(UP, "auto_gain_max_db").min_f64(),
+                    pk(UP, "auto_gain_max_db").max_f64(),
+                    "dB",
+                    param_idx::AUTO_GAIN_MAX_DB,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    state.auto_gain_enabled,
+                    theme,
+                ))
+                .child(render_knob_enabled(
+                    entity,
+                    plugin_idx,
+                    text.label("AG Smooth"),
+                    state.auto_gain_smoothing_ms,
+                    pk(UP, "auto_gain_smoothing_ms").min_f64(),
+                    pk(UP, "auto_gain_smoothing_ms").max_f64(),
+                    "ms",
+                    param_idx::AUTO_GAIN_SMOOTHING_MS,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    state.auto_gain_enabled,
+                    theme,
+                ))
                 .build(),
         )
         .build()
@@ -1962,6 +2107,20 @@ fn render_config_ambient(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
+                    text.label("Bleed"),
+                    state.surround_direct_bleed,
+                    pk(UP, "surround_direct_bleed").min_f64(),
+                    pk(UP, "surround_direct_bleed").max_f64(),
+                    "",
+                    param_idx::SURROUND_DIRECT_BLEED,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
                     text.label("Rear Boost"),
                     state.rear_ambient_boost,
                     pk(UP, "rear_ambient_boost").min_f64(),
@@ -1976,12 +2135,12 @@ fn render_config_ambient(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
-                    text.label("Safety"),
-                    state.safety_cap_db,
-                    pk(UP, "safety_cap_db").min_f64(),
-                    pk(UP, "safety_cap_db").max_f64(),
-                    "dB",
-                    param_idx::SAFETY_CAP_DB,
+                    text.label("Reflection"),
+                    state.rear_late_reflection,
+                    pk(UP, "rear_late_reflection").min_f64(),
+                    pk(UP, "rear_late_reflection").max_f64(),
+                    "",
+                    param_idx::REAR_LATE_REFLECTION,
                     state.selected_param,
                     state.is_editing,
                     None,
@@ -2097,7 +2256,7 @@ fn render_config_hr_direct(
                 .child(
                     div()
                         .when(!state.enable_hr_direct, |d| d.opacity(0.3))
-                        .child(render_knob(
+                        .child(render_knob_enabled(
                             entity.clone(),
                             plugin_idx,
                             text.label("Sharpen"),
@@ -2109,6 +2268,7 @@ fn render_config_hr_direct(
                             state.selected_param,
                             state.is_editing,
                             None,
+                            state.enable_hr_direct,
                             theme,
                         )),
                 )
@@ -2344,7 +2504,7 @@ fn render_config_analysis(
                 .child(
                     div()
                         .when(!state.multi_source_extraction, |d| d.opacity(0.3))
-                        .child(render_knob(
+                        .child(render_knob_enabled(
                             entity.clone(),
                             plugin_idx,
                             text.label("Threshold"),
@@ -2356,53 +2516,7 @@ fn render_config_analysis(
                             state.selected_param,
                             state.is_editing,
                             None,
-                            theme,
-                        )),
-                )
-                // Separator
-                .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
-                .child(render_diag_toggle(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    "Auto Gain",
-                    state.auto_gain_enabled,
-                    param_idx::AUTO_GAIN_ENABLED,
-                    theme,
-                ))
-                .child(
-                    div()
-                        .when(!state.auto_gain_enabled, |d| d.opacity(0.3))
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            text.label("AG Max"),
-                            state.auto_gain_max_db,
-                            pk(UP, "auto_gain_max_db").min_f64(),
-                            pk(UP, "auto_gain_max_db").max_f64(),
-                            "dB",
-                            param_idx::AUTO_GAIN_MAX_DB,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        )),
-                )
-                .child(
-                    div()
-                        .when(!state.auto_gain_enabled, |d| d.opacity(0.3))
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            text.label("AG Smooth"),
-                            state.auto_gain_smoothing_ms,
-                            pk(UP, "auto_gain_smoothing_ms").min_f64(),
-                            pk(UP, "auto_gain_smoothing_ms").max_f64(),
-                            "ms",
-                            param_idx::AUTO_GAIN_SMOOTHING_MS,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
+                            state.multi_source_extraction,
                             theme,
                         )),
                 )

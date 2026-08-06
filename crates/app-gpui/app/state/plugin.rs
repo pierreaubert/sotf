@@ -377,6 +377,8 @@ pub struct PluginPresetState {
     /// Pending confirmation for destructive actions
     pub confirm_remove_plugin: Option<usize>, // Some(plugin_idx) awaiting confirmation
     pub confirm_delete_preset: Option<(usize, String)>, // Some((plugin_idx, preset_name)) awaiting confirmation
+    /// Two-click confirmation for replacing every per-channel EQ curve.
+    pub confirm_eq_copy_to_all: Option<(usize, usize)>, // (plugin_idx, source_channel)
 }
 
 /// GPUI-specific state for chain-level bypass, auto-gain and solo.
@@ -646,6 +648,7 @@ impl PluginState {
     pub fn clear_confirmations(&mut self) {
         self.preset_state.confirm_remove_plugin = None;
         self.preset_state.confirm_delete_preset = None;
+        self.preset_state.confirm_eq_copy_to_all = None;
     }
 
     /// Sync the parsed A/B path state from the engine-side JSON config strings.

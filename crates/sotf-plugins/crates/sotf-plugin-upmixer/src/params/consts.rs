@@ -560,7 +560,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::slider(1), // front_direct
                 ControlSpec::slider(2), // front_ambient
                 ControlSpec::slider(3), // rear_ambient
-                ControlSpec::slider(4), // height_gain
+                ControlSpec::slider(5), // lfe_gain
             ],
         ),
         ControlGroup::new(
@@ -569,66 +569,51 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             &[
                 ControlSpec::slider(12), // stereo_width
                 ControlSpec::slider(13), // center_spread
-                ControlSpec::slider(14), // bandpass_hz
             ],
         ),
     ],
     output: &[
         ControlSpec::knob(34),   // safety_cap_db
         ControlSpec::toggle(44), // auto_gain_enabled
-        ControlSpec::knob(45),   // auto_gain_max_db
-        ControlSpec::knob(46),   // auto_gain_smoothing_ms
+        ControlSpec::knob(45).enabled_when(ParamCondition::bool(44, true)), // auto_gain_max_db
+        ControlSpec::knob(46).enabled_when(ParamCondition::bool(44, true)), // auto_gain_smoothing_ms
     ],
     tabs: &[
         TabSpec {
-            name: "LFE & Bass",
+            name: "Bass & Output",
             controls: &[
-                ControlSpec::knob(5),   // lfe_gain
                 ControlSpec::knob(6),   // lfe_cutoff_hz
+                ControlSpec::knob(14),  // bandpass_hz
                 ControlSpec::toggle(7), // subharmonic_synth
-                ControlSpec::knob(8),   // sub_gain
-                ControlSpec::knob(9),   // sub_freq
-                ControlSpec::knob(10),  // sub_attack
-                ControlSpec::knob(11),  // sub_release
+                ControlSpec::knob(8).enabled_when(ParamCondition::bool(7, true)), // sub_gain
+                ControlSpec::knob(9).enabled_when(ParamCondition::bool(7, true)), // sub_freq
+                ControlSpec::knob(10).enabled_when(ParamCondition::bool(7, true)), // sub_attack
+                ControlSpec::knob(11).enabled_when(ParamCondition::bool(7, true)), // sub_release
             ],
         },
         TabSpec {
-            name: "Dialogue",
+            name: "Spatial",
             controls: &[
-                ControlSpec::knob(28), // dialogue_weight
-                ControlSpec::knob(29), // voice_freq_min
-                ControlSpec::knob(30), // voice_freq_max
-                ControlSpec::knob(31), // centroid_weight
-                ControlSpec::knob(32), // variance_weight
-                ControlSpec::knob(33), // coherence_weight
-            ],
-        },
-        TabSpec {
-            name: "Ambient",
-            controls: &[
-                ControlSpec::knob(25), // surround_direct_bleed
-                ControlSpec::knob(26), // rear_ambient_boost
-                ControlSpec::knob(27), // rear_late_reflection
-            ],
-        },
-        TabSpec {
-            name: "Height",
-            controls: &[
-                ControlSpec::knob(22), // height_hf_cap
-                ControlSpec::knob(23), // height_transient_reduction
-                ControlSpec::knob(24), // height_direct_leak
-            ],
-        },
-        TabSpec {
-            name: "Enhancement",
-            controls: &[
-                ControlSpec::toggle(15),   // hr_direct
-                ControlSpec::knob(16),     // hr_sharpen
-                ControlSpec::knob(17),     // ambient_boost
+                ControlSpec::knob(28),   // dialogue_weight
+                ControlSpec::knob(29),   // voice_freq_min
+                ControlSpec::knob(30),   // voice_freq_max
+                ControlSpec::knob(31),   // centroid_weight
+                ControlSpec::knob(32),   // variance_weight
+                ControlSpec::knob(33),   // coherence_weight
+                ControlSpec::knob(25),   // surround_direct_bleed
+                ControlSpec::knob(26),   // rear_ambient_boost
+                ControlSpec::knob(27),   // rear_late_reflection
+                ControlSpec::knob(4),    // height_gain
+                ControlSpec::knob(22),   // height_hf_cap
+                ControlSpec::knob(23),   // height_transient_reduction
+                ControlSpec::knob(24),   // height_direct_leak
+                ControlSpec::toggle(15), // hr_direct
+                ControlSpec::knob(16).enabled_when(ParamCondition::bool(15, true)), // hr_sharpen
+                ControlSpec::knob(17),   // ambient_boost
                 ControlSpec::selector(18), // decor_mode
-                ControlSpec::knob(19),     // decor_lfo_rate
-                ControlSpec::knob(20),     // velvet_duration
-                ControlSpec::knob(21),     // velvet_density
+                ControlSpec::knob(19).enabled_when(ParamCondition::choice(18, 1)), // decor_lfo_rate
+                ControlSpec::knob(20).enabled_when(ParamCondition::choice(18, 0)), // velvet_duration
+                ControlSpec::knob(21).enabled_when(ParamCondition::choice(18, 0)), // velvet_density
             ],
         },
         TabSpec {
@@ -637,7 +622,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::toggle(35),   // low_latency
                 ControlSpec::selector(36), // frequency_resolution
                 ControlSpec::toggle(41),   // multi_source_extraction
-                ControlSpec::knob(42),     // multi_source_threshold
+                ControlSpec::knob(42).enabled_when(ParamCondition::bool(41, true)), // threshold
             ],
         },
         TabSpec {

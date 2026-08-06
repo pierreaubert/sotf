@@ -133,6 +133,12 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Datos locales borrados ({} pistas eliminadas)"
     ),
     message!(
+        "Click Copy Selected → All again to replace every channel",
+        "Cliquez à nouveau sur Copier la sélection → Tous pour remplacer chaque canal",
+        "Klicken Sie erneut auf Auswahl kopieren → Alle, um jeden Kanal zu ersetzen",
+        "Vuelva a pulsar Copiar selección → Todos para reemplazar todos los canales"
+    ),
+    message!(
         "Copied {} JSON",
         "{} copié au format JSON",
         "{} als JSON kopiert",

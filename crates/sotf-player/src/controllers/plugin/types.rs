@@ -1,3 +1,13 @@
+/// Selects which EQ filter collection an editing operation mutates.
+///
+/// This is an editor concern only: parameter indices and serialized plugin
+/// settings remain unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EqEditTarget {
+    Global,
+    Channel(usize),
+}
+
 /// Effect returned by plugin mutations, telling the UI what kind of engine update is needed.
 #[derive(Debug, Clone)]
 pub enum PluginUpdateEffect {
