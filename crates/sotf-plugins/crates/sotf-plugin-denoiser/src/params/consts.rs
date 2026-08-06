@@ -295,7 +295,10 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         },
         TabSpec {
             name: "Formant",
-            controls: &[ControlSpec::toggle(23), ControlSpec::knob(24)],
+            controls: &[
+                ControlSpec::toggle(23),
+                ControlSpec::knob(24).enabled_when(ParamCondition::bool(23, true)),
+            ],
         },
         TabSpec {
             name: "Advanced",
@@ -303,7 +306,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::toggle(25),
                 ControlSpec::toggle(26),
                 ControlSpec::toggle(27),
-                ControlSpec::knob(28),
+                ControlSpec::knob(28).enabled_when(ParamCondition::bool(27, true)),
             ],
         },
     ],

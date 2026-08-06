@@ -37,6 +37,49 @@ fn assert_layout_invariants<P: PluginParamDef>() {
         "[{plugin_type}] layout coverage errors:\n{}",
         coverage_errors.join("\n")
     );
+
+    // 6. A parameter has at most one enabled control in any rendered viewport.
+    assert_one_interactive_control_per_viewport(plugin_type, layout, params);
+}
+
+fn assert_one_interactive_control_per_viewport(
+    plugin_type: &str,
+    layout: &PluginLayout,
+    params: &[ParamSpec],
+) {
+    let values: Vec<_> = params.iter().map(ParamSpec::default_f64).collect();
+    let mut base = Vec::new();
+    base.extend(layout.config.iter());
+    for group in layout.main.iter().filter(|group| group.is_visible(&values)) {
+        base.extend(group.controls.iter());
+    }
+    base.extend(layout.output.iter());
+
+    let assert_unique = |surface: &str, controls: &[&ControlSpec]| {
+        let mut seen = std::collections::HashSet::new();
+        for spec in controls
+            .iter()
+            .copied()
+            .filter(|spec| spec.param_index != usize::MAX && spec.is_enabled(&values))
+        {
+            assert!(
+                seen.insert(spec.param_index),
+                "[{plugin_type}] {surface} renders more than one interactive control for param index {} ({})",
+                spec.param_index,
+                params[spec.param_index].engine_key,
+            );
+        }
+    };
+
+    if layout.tabs.is_empty() {
+        assert_unique("viewport", &base);
+    } else {
+        for tab in layout.tabs {
+            let mut viewport = base.clone();
+            viewport.extend(tab.controls.iter());
+            assert_unique(&format!("viewport/tab/{}", tab.name), &viewport);
+        }
+    }
 }
 
 fn all_controls(layout: &PluginLayout) -> Vec<(&'static str, &ControlSpec)> {

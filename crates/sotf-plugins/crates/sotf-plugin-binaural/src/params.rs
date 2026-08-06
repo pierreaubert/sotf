@@ -112,9 +112,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         name: "Reverb",
         controls: &[
             ControlSpec::toggle(5), // late_reverb_enabled
-            ControlSpec::knob(6),   // late_reverb_mix
-            ControlSpec::knob(7),   // late_reverb_rt60
-            ControlSpec::knob(8),   // late_reverb_damping
+            ControlSpec::knob(6).enabled_when(ParamCondition::bool(5, true)), // mix
+            ControlSpec::knob(7).enabled_when(ParamCondition::bool(5, true)), // rt60
+            ControlSpec::knob(8).enabled_when(ParamCondition::bool(5, true)), // damping
         ],
     }],
     visualizations: &[],

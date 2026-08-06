@@ -105,6 +105,20 @@ impl TestScenario for AllPluginsScenario {
             // And maybe that we can select it (view it).
             page.select_plugin(plugin_index);
             page.run_until_parked();
+            let numeric_parameter_count = page.numeric_parameter_count(plugin_index);
+            let exercised_parameter = page.exercise_first_numeric_parameter(plugin_index);
+            assert!(
+                numeric_parameter_count == 0 || exercised_parameter.is_some(),
+                "{plugin_type:?} declares editable parameters but none round-trip through its UI handler"
+            );
+            if plugin_type == PluginType::Upmixer {
+                for param_idx in [1usize, 2, 3, 5, 12, 13] {
+                    assert!(
+                        page.round_trip_parameter(plugin_index, param_idx),
+                        "Upmixer primary parameter {param_idx} must round-trip through the UI handler"
+                    );
+                }
+            }
 
             // Remove
             page.remove_plugin(plugin_index);
@@ -162,7 +176,7 @@ impl TestScenario for AllPluginsScenario {
 
 #[gpui::test]
 async fn test_all_plugins(cx: &mut TestAppContext) {
-    for (width, height) in [(700.0, 900.0), (1600.0, 1000.0)] {
+    for (width, height) in [(700.0, 900.0), (1050.0, 900.0), (1600.0, 1000.0)] {
         let runner = E2ERunner::new(AllPluginsScenario::new(width, height));
         runner.run(cx).await.unwrap();
     }

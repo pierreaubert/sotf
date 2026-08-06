@@ -318,12 +318,12 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             "ROOM",
             "ROOM",
             &[
-                ControlSpec::toggle(15),      // room_reflections
-                ControlSpec::file_picker(16), // room_ir_file
-                ControlSpec::knob(17),        // room_width
-                ControlSpec::knob(18),        // room_depth
-                ControlSpec::knob(19),        // wall_absorption
-                ControlSpec::knob(20),        // reflection_beta
+                ControlSpec::toggle(15), // room_reflections
+                ControlSpec::file_picker(16).enabled_when(ParamCondition::bool(15, true)),
+                ControlSpec::knob(17).enabled_when(ParamCondition::bool(15, true)),
+                ControlSpec::knob(18).enabled_when(ParamCondition::bool(15, true)),
+                ControlSpec::knob(19).enabled_when(ParamCondition::bool(15, true)),
+                ControlSpec::knob(20).enabled_when(ParamCondition::bool(15, true)),
             ],
         ),
     ],
@@ -332,8 +332,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::toggle(22), // bypass_spectral_norm (diagnostic)
         ControlSpec::toggle(23), // bypass_neumann (diagnostic)
         ControlSpec::toggle(24), // auto_gain
-        ControlSpec::knob(25),   // ag_max
-        ControlSpec::knob(26),   // ag_smoothing
+        ControlSpec::knob(25).enabled_when(ParamCondition::bool(24, true)),
+        ControlSpec::knob(26).enabled_when(ParamCondition::bool(24, true)),
     ],
     tabs: &[TabSpec {
         name: "Head Tracking",

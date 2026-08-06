@@ -4,6 +4,29 @@ use gpui::*;
 use sotf_audio::plugins::{PluginSettings, PluginType};
 use sotf_audio_player_gpui::components::plugins::editing::PluginEditingManager;
 
+fn controller_param_value(settings: &PluginSettings, param_idx: usize) -> Option<f64> {
+    if let PluginSettings::EQ { filters, .. } = settings {
+        let filter = filters.get(param_idx / 4)?;
+        return match param_idx % 4 {
+            0 => Some(filter.frequency),
+            1 => Some(filter.q),
+            2 => Some(filter.gain_db),
+            _ => None,
+        };
+    }
+    if let PluginSettings::LinearPhaseEq { filters, .. } = settings {
+        let filter = filters.get(param_idx / 5)?;
+        return match param_idx % 5 {
+            1 => Some(filter.frequency),
+            2 => Some(filter.q),
+            3 => Some(filter.gain_db),
+            4 => Some((!filter.muted) as u8 as f64),
+            _ => None,
+        };
+    }
+    settings.param_value(param_idx)
+}
+
 pub struct PluginRackPage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,
 }
@@ -129,7 +152,149 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     pub fn select_plugin(&mut self, index: usize) {
         self.driver.update_app(move |app, _cx| {
             app.plugin_state.selected_plugin_index = index;
+            app.plugin_state.editing_plugin_index = Some(index);
         });
+    }
+
+    /// Exercise the same App-level parameter mutation path used by rendered controls.
+    /// Returns the parameter index whose round-trip was verified.
+    pub fn exercise_first_numeric_parameter(&mut self, index: usize) -> Option<usize> {
+        let matrix_before = self.driver.read_app(move |app| {
+            let plugin = app.plugin_state.graph.get_plugin(index)?;
+            match &plugin.settings {
+                PluginSettings::Matrix { matrix, .. } => matrix.first().copied(),
+                _ => None,
+            }
+        });
+        if let Some(before) = matrix_before {
+            let requested = if before.abs() < f32::EPSILON {
+                1.0
+            } else {
+                0.0
+            };
+            self.driver.update_app(move |app, _cx| {
+                if let Some(plugin) = app.plugin_state.graph.get_plugin_mut(index)
+                    && let PluginSettings::Matrix { matrix, .. } = &mut plugin.settings
+                    && let Some(value) = matrix.first_mut()
+                {
+                    *value = requested;
+                    app.plugin_state.update_state.pending_plugin_update =
+                        Some(sotf_audio_player_gpui::app::types::PluginUpdateType::Structural);
+                }
+            });
+            let after = self.driver.read_app(move |app| {
+                let plugin = app.plugin_state.graph.get_plugin(index)?;
+                match &plugin.settings {
+                    PluginSettings::Matrix { matrix, .. } => matrix.first().copied(),
+                    _ => None,
+                }
+            });
+            self.driver.update_app(move |app, _cx| {
+                if let Some(plugin) = app.plugin_state.graph.get_plugin_mut(index)
+                    && let PluginSettings::Matrix { matrix, .. } = &mut plugin.settings
+                    && let Some(value) = matrix.first_mut()
+                {
+                    *value = before;
+                    app.plugin_state.update_state.pending_plugin_update =
+                        Some(sotf_audio_player_gpui::app::types::PluginUpdateType::Structural);
+                }
+            });
+            return after
+                .is_some_and(|after| (after - before).abs() > f32::EPSILON)
+                .then_some(0);
+        }
+
+        let candidates = self.driver.read_app(move |app| {
+            let plugin = app.plugin_state.graph.get_plugin(index)?;
+            let count = sotf_audio_player::get_param_count(&plugin.settings);
+            let specs = plugin.settings.param_specs();
+            Some(
+                (0..count)
+                    .filter_map(|param_idx| {
+                        let before = controller_param_value(&plugin.settings, param_idx)?;
+                        let requested = specs.get(param_idx).map_or_else(
+                            || {
+                                if before.abs() < f64::EPSILON {
+                                    1.0
+                                } else {
+                                    0.0
+                                }
+                            },
+                            |spec| {
+                                let min = spec.min_f64();
+                                let max = spec.max_f64();
+                                if (before - min).abs() < f64::EPSILON {
+                                    max
+                                } else {
+                                    min
+                                }
+                            },
+                        );
+                        Some((param_idx, before, requested))
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })?;
+
+        for (param_idx, before, requested) in candidates {
+            self.driver.update_app(move |app, _cx| {
+                app.set_plugin_param(index, param_idx, requested);
+            });
+            let after = self.driver.read_app(move |app| {
+                app.plugin_state
+                    .graph
+                    .get_plugin(index)
+                    .and_then(|plugin| controller_param_value(&plugin.settings, param_idx))
+            });
+            if after.is_some_and(|after| (after - before).abs() > f64::EPSILON) {
+                self.driver.update_app(move |app, _cx| {
+                    app.set_plugin_param(index, param_idx, before);
+                });
+                return Some(param_idx);
+            }
+        }
+        None
+    }
+
+    pub fn numeric_parameter_count(&mut self, index: usize) -> usize {
+        self.driver.read_app(move |app| {
+            app.plugin_state
+                .graph
+                .get_plugin(index)
+                .map(|plugin| sotf_audio_player::get_param_count(&plugin.settings))
+                .unwrap_or_default()
+        })
+    }
+
+    pub fn round_trip_parameter(&mut self, index: usize, param_idx: usize) -> bool {
+        let before = self.driver.read_app(move |app| {
+            app.plugin_state
+                .graph
+                .get_plugin(index)
+                .and_then(|plugin| controller_param_value(&plugin.settings, param_idx))
+        });
+        let Some(before) = before else {
+            return false;
+        };
+        let requested = if before.abs() < f64::EPSILON {
+            1.0
+        } else {
+            0.0
+        };
+        self.driver.update_app(move |app, _cx| {
+            app.set_plugin_param(index, param_idx, requested);
+        });
+        let changed = self.driver.read_app(move |app| {
+            app.plugin_state
+                .graph
+                .get_plugin(index)
+                .and_then(|plugin| controller_param_value(&plugin.settings, param_idx))
+                .is_some_and(|after| (after - before).abs() > f64::EPSILON)
+        });
+        self.driver.update_app(move |app, _cx| {
+            app.set_plugin_param(index, param_idx, before);
+        });
+        changed
     }
     pub fn get_matrix_channels(&mut self, index: usize) -> (usize, usize) {
         self.driver.read_app(move |app| {

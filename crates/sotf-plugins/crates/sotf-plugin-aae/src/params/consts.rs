@@ -237,8 +237,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::slider(7),  // dry_level
         ControlSpec::knob(18),   // safety_limit_db
         ControlSpec::toggle(19), // auto_gain_enabled
-        ControlSpec::knob(20),   // auto_gain_max_db
-        ControlSpec::knob(21),   // auto_gain_smoothing_ms
+        ControlSpec::knob(20).enabled_when(ParamCondition::bool(19, true)),
+        ControlSpec::knob(21).enabled_when(ParamCondition::bool(19, true)),
     ],
     tabs: &[
         TabSpec {
@@ -260,7 +260,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             name: "Intelligence",
             controls: &[
                 ControlSpec::toggle(16), // content_aware
-                ControlSpec::knob(17),   // dialogue_attenuation_db
+                ControlSpec::knob(17).enabled_when(ParamCondition::bool(16, true)),
             ],
         },
         TabSpec {

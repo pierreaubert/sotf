@@ -136,10 +136,10 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             "AUTO GAIN",
             "AUTO GAIN",
             &[
-                ControlSpec::toggle(4),   // auto_gain
-                ControlSpec::selector(5), // loudness_type
-                ControlSpec::knob(6),     // max_auto_gain
-                ControlSpec::knob(7),     // gain_smoothing
+                ControlSpec::toggle(4), // auto_gain
+                ControlSpec::selector(5).enabled_when(ParamCondition::bool(4, true)),
+                ControlSpec::knob(6).enabled_when(ParamCondition::bool(4, true)),
+                ControlSpec::knob(7).enabled_when(ParamCondition::bool(4, true)),
             ],
         ),
     ],

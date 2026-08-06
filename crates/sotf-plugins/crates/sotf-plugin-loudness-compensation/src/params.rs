@@ -155,7 +155,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::knob(12), // playback_level_db
                 ControlSpec::knob(13), // reference_level_db
             ],
-        ),
+        )
+        .visible_when(ParamCondition::choice(11, 1)),
         ControlGroup::new(
             "AUTO",
             "AUTO",
@@ -163,7 +164,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::label(14), // playback_volume_db (engine-set, read-only)
                 ControlSpec::knob(13),  // reference_level_db (shared with ISO 226)
             ],
-        ),
+        )
+        .visible_when(ParamCondition::choice(11, 2)),
         ControlGroup::new(
             "LOW",
             "LOW",
@@ -171,17 +173,19 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::knob(0), // low_freq
                 ControlSpec::knob(1), // low_gain
             ],
-        ),
+        )
+        .visible_when(ParamCondition::choice(11, 0)),
         ControlGroup::new(
             "MID",
             "MID",
             &[
                 ControlSpec::toggle(4), // mid_enabled
-                ControlSpec::knob(5),   // mid_freq
-                ControlSpec::knob(6),   // mid_gain
-                ControlSpec::knob(7),   // mid_q
+                ControlSpec::knob(5).enabled_when(ParamCondition::bool(4, true)), // mid_freq
+                ControlSpec::knob(6).enabled_when(ParamCondition::bool(4, true)), // mid_gain
+                ControlSpec::knob(7).enabled_when(ParamCondition::bool(4, true)), // mid_q
             ],
-        ),
+        )
+        .visible_when(ParamCondition::choice(11, 0)),
         ControlGroup::new(
             "HIGH",
             "HIGH",
@@ -189,12 +193,13 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::knob(2), // high_freq
                 ControlSpec::knob(3), // high_gain
             ],
-        ),
+        )
+        .visible_when(ParamCondition::choice(11, 0)),
     ],
     output: &[
         ControlSpec::toggle(8), // auto_gain_enabled
-        ControlSpec::knob(9),   // auto_gain_max_db
-        ControlSpec::knob(10),  // auto_gain_smoothing_ms
+        ControlSpec::knob(9).enabled_when(ParamCondition::bool(8, true)), // auto_gain_max_db
+        ControlSpec::knob(10).enabled_when(ParamCondition::bool(8, true)), // auto_gain_smoothing_ms
     ],
     tabs: &[],
     visualizations: &[],

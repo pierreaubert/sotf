@@ -190,12 +190,14 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::knob(4), // bauer_fcut_hz
                 ControlSpec::knob(5), // bauer_feed_db
             ],
-        ),
+        )
+        .visible_when(ParamCondition::choice(0, 1)),
         ControlGroup::new(
             "meier",
             "MEIER",
             &[ControlSpec::knob(6)], // meier_level
-        ),
+        )
+        .visible_when(ParamCondition::choice(0, 2)),
         ControlGroup::new(
             "MULTIBAND",
             "MULTIBAND",
@@ -206,7 +208,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::knob(10), // mb_mid_feed_db
                 ControlSpec::knob(11), // mb_high_feed_db
             ],
-        ),
+        )
+        .visible_when(ParamCondition::choice(0, 3)),
         ControlGroup::new(
             "ITD",
             "ITD",
@@ -216,11 +219,11 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ),
     ],
     output: &[
-        ControlSpec::knob(14),   // target_lufs
-        ControlSpec::toggle(13), // autogain_enabled
-        ControlSpec::knob(15),   // max_gain
-        ControlSpec::knob(3),    // mix
-        ControlSpec::knob(16),   // smoothing
+        ControlSpec::knob(14).enabled_when(ParamCondition::bool(13, true)), // target_lufs
+        ControlSpec::toggle(13),                                            // autogain_enabled
+        ControlSpec::knob(15).enabled_when(ParamCondition::bool(13, true)), // max_gain
+        ControlSpec::knob(3),                                               // mix
+        ControlSpec::knob(16).enabled_when(ParamCondition::bool(13, true)), // smoothing
     ],
     tabs: &[],
     visualizations: &[],
