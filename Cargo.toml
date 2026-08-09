@@ -125,7 +125,7 @@ futures = "0.3"
 
 # CLI and system
 base64 = "0.22"
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 byteorder = "1.5"
 coreaudio-rs = "0.13"
 core-foundation-sys = "0.8"
