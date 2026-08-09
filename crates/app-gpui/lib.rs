@@ -147,5 +147,5 @@ pub use components::plugins::ui_eq::{
     GPUI_PX_MARGIN_TOP, MAX_FREQ, MIN_FREQ, Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH, SAMPLE_RATE,
     calculate_band_response, calculate_plot_width, calculate_plot_width_without_legend,
     calculate_response_at_freq, drag_delta_to_q_change, freq_to_x, gain_to_y,
-    get_filter_type_index, q_to_bar_width, x_to_freq, y_to_gain,
+    get_filter_type_index, nudge_eq_band_values, q_to_bar_width, x_to_freq, y_to_gain,
 };

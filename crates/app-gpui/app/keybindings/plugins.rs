@@ -73,3 +73,22 @@ pub(super) fn plugin_control_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("5", actions::SelectBand5, Some("plugin-control")),
     ]
 }
+
+/// Arrow-key editing for the focused EQ chart. This context is registered
+/// after the generic plugin-control bindings so chart focus owns the arrows.
+pub(super) fn eq_chart_bindings() -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("left", actions::EqChartNudgeLeft, Some("EqChart")),
+        KeyBinding::new("right", actions::EqChartNudgeRight, Some("EqChart")),
+        KeyBinding::new("up", actions::EqChartNudgeUp, Some("EqChart")),
+        KeyBinding::new("down", actions::EqChartNudgeDown, Some("EqChart")),
+        KeyBinding::new("shift-left", actions::EqChartNudgeLeftFine, Some("EqChart")),
+        KeyBinding::new(
+            "shift-right",
+            actions::EqChartNudgeRightFine,
+            Some("EqChart"),
+        ),
+        KeyBinding::new("shift-up", actions::EqChartNudgeUpFine, Some("EqChart")),
+        KeyBinding::new("shift-down", actions::EqChartNudgeDownFine, Some("EqChart")),
+    ]
+}

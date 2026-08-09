@@ -65,8 +65,6 @@ pub enum DividerType {
     InputMeter,
     OutputMeter,
     RackDetail,
-    PluginAutoConfig { plugin_idx: usize },
-    PluginAutoOutput { plugin_idx: usize },
 }
 
 /// State for tracking divider drag operations

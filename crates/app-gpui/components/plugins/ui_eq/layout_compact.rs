@@ -35,6 +35,7 @@ pub(crate) fn render_eq_bottom_strip(
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let d = Ds::from_cx(cx);
+    let chart_focus_handle = cx.entity().read(cx).eq_chart_focus_handle.clone();
     let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let config_open = entity
         .read(cx)
@@ -81,14 +82,15 @@ pub(crate) fn render_eq_bottom_strip(
         ));
     }
 
-    let graph_width = (state.available_width - 104.0).max(360.0);
+    let graph_width = (state.available_width - 104.0 * state.layout_scale).max(360.0);
+    let graph_height = (COMPACT_GRAPH_HEIGHT + 24.0) * state.layout_scale;
     root = root.child(
         div()
             .id("eq-medium-workbench")
             .flex()
             .items_stretch()
             .gap(d.gap)
-            .min_h(px(COMPACT_GRAPH_HEIGHT + 24.0))
+            .min_h(px(graph_height))
             .child(render_medium_band_rail(
                 &d,
                 entity.clone(),
@@ -97,22 +99,20 @@ pub(crate) fn render_eq_bottom_strip(
                 selected_band_idx,
                 theme,
             ))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .h(px(COMPACT_GRAPH_HEIGHT + 24.0))
-                    .child(render_eq_visualization_sized(
-                        entity.clone(),
-                        plugin_idx,
-                        display_filters,
-                        Some(selected_band_idx),
-                        indexing,
-                        theme,
-                        graph_width,
-                        COMPACT_GRAPH_HEIGHT + 24.0,
-                    )),
-            ),
+            .child(div().flex_1().min_w_0().h(px(graph_height)).child(
+                render_eq_visualization_sized(
+                    entity.clone(),
+                    plugin_idx,
+                    display_filters,
+                    Some(selected_band_idx),
+                    indexing,
+                    theme,
+                    graph_width,
+                    graph_height,
+                    state.layout_scale,
+                    chart_focus_handle,
+                ),
+            )),
     );
 
     root = root.child(render_eq_property_strip(
@@ -144,6 +144,7 @@ pub(crate) fn render_eq_inspector(
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let d = Ds::from_cx(cx);
+    let chart_focus_handle = cx.entity().read(cx).eq_chart_focus_handle.clone();
     let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let config_open = entity
         .read(cx)
@@ -189,22 +190,22 @@ pub(crate) fn render_eq_inspector(
         ));
     }
 
+    let graph_height = COMPACT_GRAPH_HEIGHT * state.layout_scale;
     root = root
-        .child(
-            div()
-                .id("eq-narrow-graph")
-                .h(px(COMPACT_GRAPH_HEIGHT))
-                .child(render_eq_visualization_sized(
-                    entity.clone(),
-                    plugin_idx,
-                    display_filters,
-                    Some(selected_band_idx),
-                    indexing,
-                    theme,
-                    state.available_width.max(320.0),
-                    COMPACT_GRAPH_HEIGHT,
-                )),
-        )
+        .child(div().id("eq-narrow-graph").h(px(graph_height)).child(
+            render_eq_visualization_sized(
+                entity.clone(),
+                plugin_idx,
+                display_filters,
+                Some(selected_band_idx),
+                indexing,
+                theme,
+                state.available_width.max(320.0),
+                graph_height,
+                state.layout_scale,
+                chart_focus_handle,
+            ),
+        ))
         .child(render_eq_property_strip(
             &d,
             entity.clone(),

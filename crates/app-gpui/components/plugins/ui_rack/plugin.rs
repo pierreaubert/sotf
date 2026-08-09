@@ -154,8 +154,6 @@ impl PlayerView {
                                     });
                                 }
                             }
-                            DividerType::PluginAutoConfig { .. }
-                            | DividerType::PluginAutoOutput { .. } => {}
                         }
                     });
                     cx.notify();
@@ -179,16 +177,15 @@ impl PlayerView {
                     });
                 }),
             )
-            // Contextual hint banner (dismissible). The first-visit hint
-            // for the rack itself was removed by request — it lived above
-            // the signal chain and got in the way of every session, not
-            // just the first. Per-action hints (e.g. FirstPluginAdded)
-            // still fire here.
+            // Contextual hint banner (dismissible and persisted as seen).
+            // The Studio first-visit variant surfaces the otherwise hidden
+            // rack keyboard model once; per-action hints reuse the same strip.
             .when_some(
                 current_hint.filter(|h| {
                     matches!(
                         h.hint_id,
-                        crate::components::dialogs::tutorial::HintId::FirstPluginAdded
+                        crate::components::dialogs::tutorial::HintId::StudioFirstVisit
+                            | crate::components::dialogs::tutorial::HintId::FirstPluginAdded
                     )
                 }),
                 |el, hint| {
@@ -1013,9 +1010,11 @@ impl PlayerView {
                                                     .flex()
                                                     .items_center()
                                                     .justify_center()
-                                                    .text_size(rems(2.5))
-                                                    .text_color(color)
-                                                    .child(icon),
+                                                    .child(
+                                                        Icon::new(icon)
+                                                            .size(IconSize::Xxl)
+                                                            .color(color),
+                                                    ),
                                             )
                                             .when(!is_permanent, |el| {
                                                 el.child(
@@ -1324,9 +1323,11 @@ impl PlayerView {
                                                 .flex()
                                                 .items_center()
                                                 .justify_center()
-                                                .text_size(rems(2.5))
-                                                .text_color(color)
-                                                .child(icon),
+                                                .child(
+                                                    Icon::new(icon)
+                                                        .size(IconSize::Xxl)
+                                                        .color(color),
+                                                ),
                                         ),
                                 )
                         },
@@ -1791,7 +1792,7 @@ impl PlayerView {
                                 .flex()
                                 .items_center()
                                 .gap(d.grid)
-                                .child(icon)
+                                .child(Icon::new(icon).size(IconSize::Sm).color(color))
                                 .child(name),
                         )
                         .child(
@@ -2314,16 +2315,26 @@ impl PlayerView {
         let selected_skin_value = plugin_theme_select_value(plugin_theme_id).to_string();
 
         let live_plugin_data = self.state.read(cx).app.playback.rack_plugin_data.clone();
-        let layout_scale = {
+        let (layout_scale, window_width) = {
             let state = self.state.read(cx);
-            crate::ui::compute_combined_scale(
+            (
+                crate::ui::compute_combined_scale(
+                    state.app.ui_state.window_width,
+                    state.app.ui_state.window_height,
+                    state.app.ui_state.font_scale,
+                    state.app.ui_state.min_font_size_px,
+                    state.app.ui_state.max_font_size_px,
+                ),
                 state.app.ui_state.window_width,
-                state.app.ui_state.window_height,
-                state.app.ui_state.font_scale,
-                state.app.ui_state.min_font_size_px,
-                state.app.ui_state.max_font_size_px,
             )
         };
+        let config_content_width =
+            super::super::ui_layout_renderer::config_controls_preferred_width(
+                &plugin.settings,
+                layout_scale,
+            );
+        let overlay_width = (config_content_width + 32.0 * layout_scale)
+            .min((window_width - 32.0 * layout_scale).max(1.0));
         let generated_config = super::super::ui_layout_renderer::render_config_controls_from_layout(
             &d,
             self.state.clone(),
@@ -2331,7 +2342,7 @@ impl PlayerView {
             &plugin.settings,
             editing_idx.is_some(),
             param_selection,
-            220.0,
+            config_content_width,
             layout_scale,
             live_plugin_data.as_ref(),
             &theme,
@@ -2343,8 +2354,7 @@ impl PlayerView {
             .absolute()
             .top(rems(2.5))
             .right(d.pad_y)
-            .w_full()
-            .max_w(rems(18.0))
+            .w(px(overlay_width))
             .max_h(rems(30.0))
             .overflow_y_scroll()
             .occlude()

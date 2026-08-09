@@ -6,6 +6,29 @@ use sotf_plugins::speaker_config::{
     MeterGroupSpec, get_meter_groups, get_meter_groups_by_channels, make_fallback_channel,
 };
 
+const PEAK_HOLD_DECAY_RATE: f64 = 0.95;
+const PEAK_HOLD_DECAY_THRESHOLD: f64 = 0.0001;
+
+fn update_peak_hold_values(held: &mut Vec<f64>, current: &[f64], reduce_motion: bool) {
+    held.resize(current.len(), 0.0);
+
+    if reduce_motion {
+        held.copy_from_slice(current);
+        return;
+    }
+
+    for (held_peak, &current_peak) in held.iter_mut().zip(current) {
+        if current_peak > *held_peak {
+            *held_peak = current_peak;
+        } else {
+            *held_peak *= PEAK_HOLD_DECAY_RATE;
+            if *held_peak < PEAK_HOLD_DECAY_THRESHOLD {
+                *held_peak = 0.0;
+            }
+        }
+    }
+}
+
 pub trait LevelMeterManager {
     fn update_level_meter_groups(&mut self);
     fn update_level_meter_peak_hold(&mut self);
@@ -200,9 +223,6 @@ impl LevelMeterManager for AppState {
     /// Update peak hold values for level meters
     /// Peak hold captures the maximum value and decays over time
     fn update_level_meter_peak_hold(&mut self) {
-        const PEAK_HOLD_DECAY_RATE: f64 = 0.95; // Per-frame decay (multiply by this each frame)
-        const PEAK_HOLD_DECAY_THRESHOLD: f64 = 0.0001; // Below this, set to 0
-
         let now = std::time::Instant::now();
 
         // Get current channel peaks from loudness data (zero-copy slice reference)
@@ -213,26 +233,11 @@ impl LevelMeterManager for AppState {
             .map(|l| l.channel_peaks.as_slice())
             .unwrap_or(&[]);
 
-        // Resize peak hold array if needed
-        if self.level_meters.peak_hold.len() != current_peaks.len() {
-            self.level_meters.peak_hold.resize(current_peaks.len(), 0.0);
-        }
-
-        // Update each channel's peak hold
-        for (i, &current_peak) in current_peaks.iter().enumerate() {
-            // If current peak is higher than held peak, update immediately
-            if current_peak > self.level_meters.peak_hold[i] {
-                self.level_meters.peak_hold[i] = current_peak;
-            } else {
-                // Apply decay to held peak
-                self.level_meters.peak_hold[i] *= PEAK_HOLD_DECAY_RATE;
-
-                // Clamp to zero if below threshold
-                if self.level_meters.peak_hold[i] < PEAK_HOLD_DECAY_THRESHOLD {
-                    self.level_meters.peak_hold[i] = 0.0;
-                }
-            }
-        }
+        update_peak_hold_values(
+            &mut self.level_meters.peak_hold,
+            current_peaks,
+            self.ui_state.reduce_motion,
+        );
 
         self.level_meters.peak_hold_last_update = Some(now);
     }
@@ -421,5 +426,25 @@ impl LevelMeterManager for AppState {
             2 => self.toggle_level_meter_dim(),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::update_peak_hold_values;
+
+    #[test]
+    fn peak_hold_snaps_to_current_values_when_motion_is_reduced() {
+        let mut held = vec![0.9, 0.1, 0.4];
+        update_peak_hold_values(&mut held, &[0.2, 0.8], true);
+        assert_eq!(held, vec![0.2, 0.8]);
+    }
+
+    #[test]
+    fn peak_hold_retains_and_decays_peaks_when_motion_is_enabled() {
+        let mut held = vec![0.8, 0.2];
+        update_peak_hold_values(&mut held, &[0.1, 0.7], false);
+        assert!((held[0] - 0.76).abs() < f64::EPSILON);
+        assert_eq!(held[1], 0.7);
     }
 }

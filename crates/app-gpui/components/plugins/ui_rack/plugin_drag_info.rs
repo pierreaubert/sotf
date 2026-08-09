@@ -1,5 +1,6 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName, IconSize};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -10,7 +11,7 @@ pub struct PluginDragInfo {
     pub source_index: usize,
     pub name: String,
     pub color: Rgba,
-    pub icon: &'static str,
+    pub icon: IconName,
     pub surface: Rgba,
     pub text_on_accent: Rgba,
 }
@@ -54,9 +55,7 @@ impl Render for PluginDragInfo {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(d.text_lg)
-                            .text_color(self.color)
-                            .child(self.icon),
+                            .child(Icon::new(self.icon).size(IconSize::Xxl).color(self.color)),
                     ),
             )
     }

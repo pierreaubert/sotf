@@ -159,10 +159,8 @@ pub fn render_simple_plugin_view(
         )
         .column(
             Column::new("name", "Parameter")
-                // Table columns currently accept Pixels only. Keep the baseline
-                // width here; the cell content itself uses rem-scaled type.
-                // intentional: Table columns currently accept Pixels only.
-                .width(px(220.0))
+                // A flexible column follows the table's available width and
+                // avoids pinning zoomed parameter names to a pixel baseline.
                 .sortable(false)
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, row_idx, _, _| {

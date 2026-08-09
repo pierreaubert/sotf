@@ -8,8 +8,9 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Accordion, AccordionItem, AccordionMode, Button, ButtonSize, CollapseDirection, PaneDivider,
-    PaneDividerTheme, StackSpacing, Text, TextSize, VStack,
+    Accordion, AccordionItem, AccordionMode, Button, ButtonSet, ButtonSetOption, ButtonSetSize,
+    ButtonSize, CollapseDirection, PaneDivider, PaneDividerTheme, StackSpacing, Text, TextSize,
+    VStack,
 };
 use sotf_audio_player::Track;
 use std::collections::BTreeMap;
@@ -90,8 +91,7 @@ impl PlayerView {
                     if window_width > 0.0 {
                         let mouse_x: f32 = event.position.x.into();
                         let dx = mouse_x - anchor_pos;
-                        let new_ratio =
-                            (anchor_meters_ratio - dx / window_width).clamp(0.10, 0.60);
+                        let new_ratio = (anchor_meters_ratio - dx / window_width).clamp(0.10, 0.60);
                         view.state.update(cx, |state, cx| {
                             state.layout.update(cx, |layout, _| {
                                 layout.meters_panel_ratio = new_ratio;
@@ -136,7 +136,7 @@ impl PlayerView {
             // Separator (Queue <-> Right meters)
             .child({
                 PaneDivider::vertical("meters-divider", CollapseDirection::Right)
-                            .label(meter_text.meters)
+                    .label(meter_text.meters)
                     .collapsed(meters_collapsed)
                     .theme(divider_theme.clone())
                     .on_toggle({
@@ -191,77 +191,29 @@ impl PlayerView {
                                     .border_b_1()
                                     .border_color(theme.border)
                                     .child(
-                                        div()
-                                            .flex()
-                                            .rounded(d.r_md)
-                                            .bg(theme.background)
-                                            .border_1()
-                                            .border_color(theme.border)
-                                            .overflow_hidden()
-                                            // LUFS button
-                                            .child(
-                                                div()
-                                                    .id("meter-toggle-lufs")
-                                                    .px(d.pad_x)
-                                                    .py(d.pad_y_half)
-                                                    .text_size(d.text_xs)
-                                                    .font_weight(FontWeight::MEDIUM)
-                                                    .cursor_pointer()
-                                                    .when(meter_display_mode == MeterDisplayMode::Lufs, |el| {
-                                                        el.bg(theme.accent).text_color(theme.text_on_accent)
-                                                    })
-                                                    .when(meter_display_mode != MeterDisplayMode::Lufs, |el| {
-                                                        el.text_color(theme.text_secondary)
-                                                            .hover(|s| s.bg(theme.surface_hover))
-                                                    })
-                                                    .on_mouse_up(
-                                                        MouseButton::Left,
-                                                        cx.listener({
-                                                            let state = state_entity.clone();
-                                                            move |_view, _: &MouseUpEvent, _window, cx| {
-                                                                state.update(cx, |state, _| {
-                                                                    state.app.level_meters.display_mode =
-                                                                        MeterDisplayMode::Lufs;
-                                                                });
-                                                                cx.notify();
-                                                            }
-                                                        }),
-                                                    )
-                                        .child(meter_text.lufs),
-                                            )
-                                            // Levels button
-                                            .child(
-                                                div()
-                                                    .id("meter-toggle-levels")
-                                                    .px(d.pad_x)
-                                                    .py(d.pad_y_half)
-                                                    .text_size(d.text_xs)
-                                                    .font_weight(FontWeight::MEDIUM)
-                                                    .cursor_pointer()
-                                                    .when(meter_display_mode == MeterDisplayMode::Levels, |el| {
-                                                        el.bg(theme.accent).text_color(theme.text_on_accent)
-                                                    })
-                                                    .when(meter_display_mode != MeterDisplayMode::Levels, |el| {
-                                                        el.text_color(theme.text_secondary)
-                                                            .hover(|s| s.bg(theme.surface_hover))
-                                                    })
-                                                    .on_mouse_up(
-                                                        MouseButton::Left,
-                                                        cx.listener({
-                                                            let state = state_entity.clone();
-                                                            move |_view, _: &MouseUpEvent, _window, cx| {
-                                                                state.update(cx, |state, _| {
-                                                                    state.app.level_meters.display_mode =
-                                                                        MeterDisplayMode::Levels;
-                                                                    // Ensure meter groups are initialized
-                                                                    state.app.update_level_meter_groups();
-                                                                });
-                                                                cx.notify();
-                                                            }
-                                                        }),
-                                                    )
-                                        .child(meter_text.meters),
-                                            ),
+                                        ButtonSet::new("meter-display-mode")
+                                            .options(vec![
+                                                ButtonSetOption::new("lufs", meter_text.lufs),
+                                                ButtonSetOption::new("levels", meter_text.meters),
+                                            ])
+                                            .selected(match meter_display_mode {
+                                                MeterDisplayMode::Lufs => "lufs",
+                                                MeterDisplayMode::Levels => "levels",
+                                            })
+                                            .size(ButtonSetSize::Sm)
+                                            .theme(theme.to_button_set_theme())
+                                            .on_change(move |value, _window, cx| {
+                                                state_entity.update(cx, |state, cx| {
+                                                    let mode = if value.as_ref() == "levels" {
+                                                        state.app.update_level_meter_groups();
+                                                        MeterDisplayMode::Levels
+                                                    } else {
+                                                        MeterDisplayMode::Lufs
+                                                    };
+                                                    state.app.level_meters.display_mode = mode;
+                                                    cx.notify();
+                                                });
+                                            }),
                                     ),
                             )
                         })
@@ -289,7 +241,7 @@ impl PlayerView {
                                             "lufs-levels-divider",
                                             CollapseDirection::Down,
                                         )
-                            .label(meter_text.level_meters)
+                                        .label(meter_text.level_meters)
                                         .collapsed(level_meters_collapsed)
                                         .theme(divider_theme.clone())
                                         .on_toggle({
@@ -299,7 +251,8 @@ impl PlayerView {
                                                     state.layout.update(cx, |layout, _| {
                                                         layout.lufs_panel_ratio =
                                                             if collapsed { 0.95 } else { 0.35 };
-                                                        if let Err(e) = state.app.save_config(layout)
+                                                        if let Err(e) =
+                                                            state.app.save_config(layout)
                                                         {
                                                             log::debug!("Config save failed: {e}");
                                                         }

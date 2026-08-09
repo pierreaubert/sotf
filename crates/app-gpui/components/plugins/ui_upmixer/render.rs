@@ -11,7 +11,10 @@ use crate::components::plugins::theme::PluginTheme;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, Slider, SliderSize, StackSpacing, Toggle, ToggleStyle, VStack};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, HStack, Slider, SliderSize, StackSpacing, Toggle,
+    ToggleStyle, VStack,
+};
 use sotf_plugins::param_specs::{ParamCategory, find_by_key as pk, upmixer::PARAMS as UP};
 
 struct UpmixerConfigSpec {
@@ -149,55 +152,29 @@ impl UpmixerLayout {
     }
 }
 
-/// Render an underline tab button
+/// Render a focusable tab-style button using the toolkit's keyboard and focus behavior.
 fn render_tab_button(
-    d: &Ds,
+    _d: &Ds,
     id: &'static str,
     label: &str,
     is_active: bool,
     theme: &Theme,
-) -> Stateful<Div> {
-    div()
-        .id(id)
-        .flex_none()
-        .cursor_pointer()
-        .px(d.card)
-        // intentional: asymmetric underline-tab padding — 4/6 pair is visually tuned
-        .pb(px(6.0))
-        .pt(px(4.0))
-        .text_size(d.text_xs)
-        .text_center()
-        .whitespace_nowrap()
-        .font_weight(if is_active {
-            FontWeight::BOLD
+) -> Button {
+    Button::new(id, label.to_string())
+        .size(ButtonSize::Sm)
+        .variant(if is_active {
+            ButtonVariant::Primary
         } else {
-            FontWeight::NORMAL
+            ButtonVariant::Ghost
         })
-        .text_color(if is_active {
-            theme.accent
-        } else {
-            theme.text_muted
-        })
-        // Active underline
-        .border_b_2()
-        .border_color(if is_active {
-            theme.accent
-        } else {
-            gpui::Rgba {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 0.0,
-            }
-        })
-        .hover(|s| {
-            s.text_color(theme.text_primary).border_color(if is_active {
-                theme.accent
-            } else {
-                theme.text_muted
-            })
-        })
-        .child(label.to_string())
+        .selected(is_active)
+        .aria_label(label.to_string())
+        .theme(theme.to_button_theme())
+}
+
+fn select_upmixer_param(state: &mut AppState, plugin_idx: usize, param_idx: usize) {
+    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+    state.app.plugin_state.plugin_param_selection = param_idx;
 }
 
 /// Render the tab bar below the main blocks
@@ -223,7 +200,7 @@ fn render_tab_bar(
             let is_active = selected_config == config_idx;
             let entity = entity.clone();
             render_tab_button(d, spec.id, spec.label, is_active, theme).on_click(
-                move |_, _window, cx| {
+                move |_window, cx| {
                     entity.update(cx, |state, cx| {
                         state.app.plugin_ui.upmixer_tab =
                             if allow_toggle_off && state.app.plugin_ui.upmixer_tab == config_idx {
@@ -1121,6 +1098,7 @@ fn render_compact_toggle_row(
                 .aria_label(label)
                 .on_change(move |new_value, _, cx| {
                     entity.update(cx, |state, _| {
+                        select_upmixer_param(state, plugin_idx, param_idx);
                         state.app.set_plugin_param(
                             plugin_idx,
                             param_idx,
@@ -1534,6 +1512,7 @@ fn render_control_lane_enabled(
                     let entity = entity.clone();
                     move |new_value, _, cx| {
                         entity.update(cx, |state, _| {
+                            select_upmixer_param(state, plugin_idx, spec.param_idx);
                             state.app.set_plugin_param(
                                 plugin_idx,
                                 spec.param_idx,
@@ -1544,6 +1523,7 @@ fn render_control_lane_enabled(
                 })
                 .on_reset(move |_, cx| {
                     entity.update(cx, |state, _| {
+                        select_upmixer_param(state, plugin_idx, spec.param_idx);
                         state.app.reset_plugin_param(plugin_idx, spec.param_idx);
                     });
                 }),
@@ -1609,8 +1589,9 @@ fn render_speaker_config_selector(
                         is_active,
                         theme,
                     )
-                    .on_click(move |_, _, cx| {
+                    .on_click(move |_, cx| {
                         entity.update(cx, |state, _| {
+                            select_upmixer_param(state, plugin_idx, param_idx::SPEAKER_CONFIG);
                             state.app.set_plugin_param(
                                 plugin_idx,
                                 param_idx::SPEAKER_CONFIG,
@@ -1779,6 +1760,11 @@ fn render_config_lfe(
                             let entity = entity.clone();
                             move |new_value, _, cx| {
                                 entity.update(cx, |state, _| {
+                                    select_upmixer_param(
+                                        state,
+                                        plugin_idx,
+                                        param_idx::ENABLE_SUBHARMONIC_SYNTH,
+                                    );
                                     state.app.set_plugin_param(
                                         plugin_idx,
                                         param_idx::ENABLE_SUBHARMONIC_SYNTH,
@@ -2256,6 +2242,11 @@ fn render_config_hr_direct(
                             let entity = entity.clone();
                             move |new_value, _, cx| {
                                 entity.update(cx, |state, _| {
+                                    select_upmixer_param(
+                                        state,
+                                        plugin_idx,
+                                        param_idx::ENABLE_HR_DIRECT,
+                                    );
                                     state.app.set_plugin_param(
                                         plugin_idx,
                                         param_idx::ENABLE_HR_DIRECT,
@@ -2342,8 +2333,13 @@ fn render_config_decorrelation(
                             is_active,
                             theme,
                         )
-                        .on_click(move |_, _window, cx| {
+                        .on_click(move |_window, cx| {
                             entity.update(cx, |state, _| {
+                                select_upmixer_param(
+                                    state,
+                                    plugin_idx,
+                                    param_idx::DECORRELATION_MODE,
+                                );
                                 state.app.set_plugin_param(
                                     plugin_idx,
                                     param_idx::DECORRELATION_MODE,
@@ -2442,6 +2438,11 @@ fn render_config_analysis(
                             let entity = entity.clone();
                             move |new_value, _, cx| {
                                 entity.update(cx, |state, _| {
+                                    select_upmixer_param(
+                                        state,
+                                        plugin_idx,
+                                        param_idx::MULTI_SOURCE_EXTRACTION,
+                                    );
                                     state.app.set_plugin_param(
                                         plugin_idx,
                                         param_idx::MULTI_SOURCE_EXTRACTION,
@@ -2502,8 +2503,13 @@ fn render_config_analysis(
                                 is_active,
                                 theme,
                             )
-                            .on_click(move |_, _window, cx| {
+                            .on_click(move |_window, cx| {
                                 entity.update(cx, |state, _| {
+                                    select_upmixer_param(
+                                        state,
+                                        plugin_idx,
+                                        param_idx::FREQUENCY_RESOLUTION,
+                                    );
                                     state.app.set_plugin_param(
                                         plugin_idx,
                                         param_idx::FREQUENCY_RESOLUTION,
@@ -2608,6 +2614,7 @@ fn render_diag_toggle(
                 .on_change({
                     move |new_value, _, cx| {
                         entity.update(cx, |state, _| {
+                            select_upmixer_param(state, plugin_idx, param_id);
                             state.app.set_plugin_param(
                                 plugin_idx,
                                 param_id,

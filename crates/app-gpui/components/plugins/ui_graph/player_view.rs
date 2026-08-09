@@ -22,7 +22,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::workflow::{Position, WorkflowCanvas, WorkflowNodeData};
-use sotf_audio_player::{PluginSettings, PluginType};
+use sotf_audio_player::PluginSettings;
 
 impl PlayerView {
     /// Ensure the WorkflowCanvas entity exists, creating it if needed
@@ -506,86 +506,16 @@ impl PlayerView {
     /// Render the sidebar palette with plugin types (draggable)
     pub(super) fn render_graph_palette(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
-        let graph_text =
-            PluginGraphTranslations::for_language(self.state.read(cx).app.ui_state.language);
-
-        // Plugin categories
-        let plugin_categories = vec![
+        let (theme, language, release_channel) = {
+            let state = self.state.read(cx);
             (
-                "EQ",
-                vec![
-                    (PluginType::EQ, "Parametric"),
-                    (PluginType::LinearPhaseEq, "FIR EQ"),
-                    (PluginType::DynamicEq, "Dynamic EQ"),
-                ],
-            ),
-            (
-                "Dynamics",
-                vec![
-                    (PluginType::Gain, "Gain"),
-                    (PluginType::Compressor, "Comp"),
-                    (PluginType::Limiter, "Limiter"),
-                    (PluginType::Gate, "Gate"),
-                    (PluginType::Expander, "Expander"),
-                    (PluginType::DeEsser, "De-Esser"),
-                    (PluginType::TransientShaper, "Transient"),
-                    (PluginType::SpectralCompressor, "Spectral C."),
-                    (PluginType::MultibandCompressor, "Multiband C."),
-                    (PluginType::MultibandExpander, "Multiband E."),
-                ],
-            ),
-            (
-                "Color",
-                vec![
-                    (PluginType::Saturation, "Saturation"),
-                    (PluginType::Crossfeed, "Crossfeed"),
-                ],
-            ),
-            (
-                "Spatial",
-                vec![
-                    (PluginType::Upmixer, "Upmix"),
-                    (PluginType::AAE, "AAE Reverb"),
-                    (PluginType::Downmix, "Downmix"),
-                    (PluginType::MonoToStereo, "Mono->2.0"),
-                    (PluginType::BinauralDecoder, "Binaural"),
-                    (PluginType::Convolution, "Convo"),
-                    (PluginType::XTC, "XTC"),
-                    (PluginType::StereoImager, "Stereo Img"),
-                    (PluginType::Delay, "Delay"),
-                ],
-            ),
-            (
-                "Monitor",
-                vec![
-                    (PluginType::LoudnessCompensation, "Loud Comp"),
-                    (PluginType::FletcherMunson, "F-Munson"),
-                    (PluginType::LoudnessMonitor, "LUFS"),
-                    (PluginType::SpectrumAnalyzer, "Spectrum"),
-                    (PluginType::ChannelMuteSolo, "M/S"),
-                ],
-            ),
-            (
-                "Denoising",
-                vec![
-                    (PluginType::Denoiser, "Denoise"),
-                    (PluginType::Declick, "Declick"),
-                    (PluginType::HissReducer, "Hiss"),
-                    (PluginType::SpeechDenoiser, "Speech"),
-                    (PluginType::Aec, "AEC"),
-                    (PluginType::Pnd, "PND"),
-                ],
-            ),
-            (
-                "Utility",
-                vec![
-                    (PluginType::Matrix, "Matrix"),
-                    (PluginType::ABCompare, "A/B"),
-                    (PluginType::Crossover, "Crossover"),
-                ],
-            ),
-        ];
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.language,
+                state.app.ui_state.release_channel,
+            )
+        };
+        let graph_text = PluginGraphTranslations::for_language(language);
+        let plugin_categories = sotf_audio_player::plugin_categories::CATEGORIES;
 
         div()
             .id("graph-palette")
@@ -607,45 +537,57 @@ impl PlayerView {
                     .child(graph_text.nodes.plugins),
             )
             // Plugin categories
-            .children(plugin_categories.into_iter().map(|(category, plugins)| {
+            .children(plugin_categories.iter().filter_map(|category| {
+                let plugins = category
+                    .plugins
+                    .iter()
+                    .filter(|plugin_type| release_channel.allows(plugin_type.maturity()))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if plugins.is_empty() {
+                    return None;
+                }
                 let theme = theme.clone();
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(d.grid)
-                    .px(d.pad_y)
-                    .mb(d.gap)
-                    .child(
-                        div()
-                            .text_size(d.text_xs)
-                            .text_color(theme.text_muted)
-                            .child(category),
-                    )
-                    .children(plugins.into_iter().map(|(plugin_type, label)| {
-                        let color = plugin_color(&plugin_type, &theme);
-                        let drag_data = PaletteDragData {
-                            item_type: PaletteItemType::Plugin(plugin_type.clone()),
-                            label: label.to_string(),
-                            color,
-                            text_on_accent: theme.text_on_accent,
-                        };
-                        div()
-                            .id(SharedString::from(format!("palette-{:?}", plugin_type)))
-                            .px(d.pad_y)
-                            .py(d.pad_y_half)
-                            .rounded(d.r_md)
-                            .bg(theme.background)
-                            .border_l_2()
-                            .border_color(color)
-                            .text_size(d.text_xs)
-                            .text_color(theme.text_secondary)
-                            .cursor_grab()
-                            .hover(|s| s.bg(theme.background_secondary))
-                            .on_drag(drag_data, |info, _pos, _window, cx| {
-                                cx.new(|_| info.clone())
-                            })
-                            .child(label)
-                    }))
+                Some(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(d.grid)
+                        .px(d.pad_y)
+                        .mb(d.gap)
+                        .child(
+                            div()
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_muted)
+                                .child(category.name),
+                        )
+                        .children(plugins.into_iter().map(|plugin_type| {
+                            let label = plugin_type.name();
+                            let color = plugin_color(&plugin_type, &theme);
+                            let drag_data = PaletteDragData {
+                                item_type: PaletteItemType::Plugin(plugin_type.clone()),
+                                label: label.to_string(),
+                                color,
+                                text_on_accent: theme.text_on_accent,
+                            };
+                            div()
+                                .id(SharedString::from(format!("palette-{:?}", plugin_type)))
+                                .px(d.pad_y)
+                                .py(d.pad_y_half)
+                                .rounded(d.r_md)
+                                .bg(theme.background)
+                                .border_l_2()
+                                .border_color(color)
+                                .text_size(d.text_xs)
+                                .text_color(theme.text_secondary)
+                                .cursor_grab()
+                                .hover(|s| s.bg(theme.background_secondary))
+                                .on_drag(drag_data, |info, _pos, _window, cx| {
+                                    cx.new(|_| info.clone())
+                                })
+                                .child(label)
+                        })),
+                )
             }))
     }
 }

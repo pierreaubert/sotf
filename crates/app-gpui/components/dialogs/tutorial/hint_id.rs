@@ -33,7 +33,7 @@ impl HintId {
     pub fn message(&self) -> &'static str {
         match self {
             HintId::StudioFirstVisit => {
-                "Click the + button to add audio plugins. Drag to reorder, click to edit parameters."
+                "Rack shortcuts: arrow keys select · Cmd/Ctrl+↑/↓ reorder · Enter toggles · Delete removes · +/- adjusts · Shift+1…0 quick-adds."
             }
             HintId::FirstPluginAdded => {
                 "Click a plugin card to edit its parameters. Use = / - keys to adjust values."

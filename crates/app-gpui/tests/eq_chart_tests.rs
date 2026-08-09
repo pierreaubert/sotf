@@ -7,7 +7,7 @@ use sotf_audio_player_gpui::{
     GPUI_PX_MARGIN_TOP, MAX_FREQ, MIN_FREQ, Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH,
     calculate_band_response, calculate_plot_width, calculate_plot_width_without_legend,
     calculate_response_at_freq, drag_delta_to_q_change, freq_to_x, gain_to_y,
-    get_filter_type_index, q_to_bar_width, x_to_freq, y_to_gain,
+    get_filter_type_index, nudge_eq_band_values, q_to_bar_width, x_to_freq, y_to_gain,
 };
 use sotf_plugins::param_specs::{eq::BAND_TEMPLATE as EQ, find_by_key as pk};
 
@@ -171,6 +171,20 @@ fn test_q_to_bar_width() {
         width_at_mid_q,
         mid_width
     );
+}
+
+#[test]
+fn keyboard_nudge_is_logarithmic_and_supports_fine_adjustment() {
+    let (right, unchanged_gain) = nudge_eq_band_values(1_000.0, 0.0, 1, 0, false);
+    let (fine_right, _) = nudge_eq_band_values(1_000.0, 0.0, 1, 0, true);
+    assert!((right - 1_000.0 * 2.0_f64.powf(1.0 / 48.0)).abs() < 1.0e-9);
+    assert!(fine_right > 1_000.0 && fine_right < right);
+    assert_eq!(unchanged_gain, 0.0);
+
+    let (_, up) = nudge_eq_band_values(1_000.0, 0.0, 0, 1, false);
+    let (_, fine_down) = nudge_eq_band_values(1_000.0, 0.0, 0, -1, true);
+    assert!((up - 0.1).abs() < f64::EPSILON);
+    assert!((fine_down + 0.025).abs() < f64::EPSILON);
 }
 
 #[test]

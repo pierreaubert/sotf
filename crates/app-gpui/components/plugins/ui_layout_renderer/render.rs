@@ -5,9 +5,6 @@ use super::super::common::{
     render_transfer_curve_with_level, render_vertical_slider_with_ticks_enabled,
 };
 use super::super::level_meters::render_gr_meter;
-use super::auto::auto_side_max_width;
-use super::auto::auto_tab_divider;
-use super::misc::AUTO_COLUMN_MIN_MAIN_WIDTH;
 use super::misc::AUTO_COLUMN_MIN_SIDE_WIDTH;
 use super::misc::control_column_width;
 use super::misc::extract_file_paths;
@@ -32,7 +29,7 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_audio_kit::audio::potentiometer::PotentiometerSize;
-use gpui_ui_kit::{AdaptiveOverflow, Button, ButtonSize, ButtonVariant, PaneDividerTheme};
+use gpui_ui_kit::{AdaptiveOverflow, Button, ButtonSize, ButtonVariant};
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::layout_solver::{Direction, KnobSize, SolvedLayout, solve_layout_scaled};
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
@@ -56,8 +53,6 @@ pub fn render_from_layout(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
     layout_scale: f32,
-    config_width_override: Option<f32>,
-    output_width_override: Option<f32>,
     text: PluginCommonTranslations,
     theme: &Theme,
     plugin_theme: &PluginTheme,
@@ -99,8 +94,6 @@ pub fn render_from_layout(
         plugin_data,
         available_width,
         layout_scale,
-        config_width_override,
-        output_width_override,
         text,
         &chassis_theme,
         spider_snapshot.as_ref(),
@@ -234,6 +227,40 @@ pub fn render_config_controls_from_layout(
     Some(content.into_any_element())
 }
 
+/// Preferred width for the generated setup popover, derived from the controls
+/// it will actually contain. File paths and long choice rows receive more room;
+/// compact numeric/toggle layouts stay narrow.
+pub fn config_controls_preferred_width(settings: &PluginSettings, layout_scale: f32) -> f32 {
+    let Some(layout) = settings.layout() else {
+        return 220.0 * layout_scale;
+    };
+    let params = settings.param_specs();
+    let controls = layout.config.iter().chain(layout.output.iter());
+    let mut preferred = layout
+        .column_constraints
+        .iter()
+        .filter(|constraint| matches!(constraint.role, ColumnRole::Config | ColumnRole::Output))
+        .map(|constraint| constraint.preferred_width)
+        .fold(0.0_f32, f32::max);
+
+    for control in controls.filter(|control| !control.hidden) {
+        let Some(param) = params.get(control.param_index) else {
+            continue;
+        };
+        let control_width = match &param.param_type {
+            ParamType::FilePath => 360.0,
+            ParamType::Choice { labels, .. } => {
+                let label_width: usize = labels.iter().map(|label| label.chars().count() + 3).sum();
+                40.0 + label_width as f32 * 7.0
+            }
+            _ => 120.0 + param.name.chars().count() as f32 * 7.0,
+        };
+        preferred = preferred.max(control_width);
+    }
+
+    preferred.clamp(220.0, 420.0) * layout_scale
+}
+
 /// Render explicit bottom tabs from a plugin's declarative layout.
 ///
 /// Custom plugin views use this for layout-declared supplemental controls
@@ -313,8 +340,6 @@ fn render_solved_layout(
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
     layout_scale: f32,
-    config_width_override: Option<f32>,
-    output_width_override: Option<f32>,
     text: PluginCommonTranslations,
     theme: &Theme,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
@@ -326,107 +351,36 @@ fn render_solved_layout(
         .size_full()
         .bg(theme.background);
 
-    let _config_width_override = config_width_override;
-    let _output_width_override = output_width_override;
     let main_width = solved
         .column_width(ColumnRole::Main)
         .unwrap_or(available_width);
 
-    let row_entity = entity.clone();
-    let mut row = div()
+    let row = div()
         .flex()
         .items_start()
         .justify_center()
         .w_full()
-        .on_mouse_move(move |event, _window, cx| {
-            let mouse_x: f32 = event.position.x.into();
-            row_entity.update(cx, |state, _| {
-                let Some(drag) = state.app.layout.dragging_divider.clone() else {
-                    return;
-                };
-                match drag.divider_type {
-                    crate::app::state::DividerType::PluginAutoConfig { plugin_idx: idx }
-                        if idx == plugin_idx =>
-                    {
-                        let current_output = state
-                            .app
-                            .plugin_ui
-                            .plugin_auto_output_width
-                            .get(&plugin_idx)
-                            .copied()
-                            .unwrap_or(0.0);
-                        let max_width = auto_side_max_width(available_width, current_output, 0.0);
-                        let new_width = (drag.start_width + mouse_x - drag.start_x)
-                            .clamp(AUTO_COLUMN_MIN_SIDE_WIDTH, max_width);
-                        state
-                            .app
-                            .plugin_ui
-                            .plugin_auto_config_width
-                            .insert(plugin_idx, new_width);
-                    }
-                    crate::app::state::DividerType::PluginAutoOutput { plugin_idx: idx }
-                        if idx == plugin_idx =>
-                    {
-                        let current_config = state
-                            .app
-                            .plugin_ui
-                            .plugin_auto_config_width
-                            .get(&plugin_idx)
-                            .copied()
-                            .unwrap_or(0.0);
-                        let max_width = auto_side_max_width(available_width, current_config, 0.0);
-                        let new_width = (drag.start_width - (mouse_x - drag.start_x))
-                            .clamp(AUTO_COLUMN_MIN_SIDE_WIDTH, max_width);
-                        state
-                            .app
-                            .plugin_ui
-                            .plugin_auto_output_width
-                            .insert(plugin_idx, new_width);
-                    }
-                    _ => {}
-                }
-            });
-        })
-        .on_mouse_up(MouseButton::Left, {
-            let entity = entity.clone();
-            move |_event, _window, cx| {
-                entity.update(cx, |state, _| {
-                    if matches!(
-                        state.app.layout.dragging_divider.as_ref().map(|drag| drag.divider_type),
-                        Some(crate::app::state::DividerType::PluginAutoConfig { plugin_idx: idx })
-                            if idx == plugin_idx
-                    ) || matches!(
-                        state.app.layout.dragging_divider.as_ref().map(|drag| drag.divider_type),
-                        Some(crate::app::state::DividerType::PluginAutoOutput { plugin_idx: idx })
-                            if idx == plugin_idx
-                    ) {
-                        state.app.layout.dragging_divider = None;
-                    }
-                });
-            }
-        });
-
-    row = row.child(render_main_column(
-        d,
-        entity.clone(),
-        plugin_idx,
-        layout,
-        params,
-        values,
-        file_paths,
-        solved,
-        main_width,
-        is_editing,
-        selected_param,
-        active_tab,
-        overflow_open,
-        plugin_data,
-        layout_scale,
-        spider_snapshot,
-        Some(text),
-        theme,
-        true,
-    ));
+        .child(render_main_column(
+            d,
+            entity.clone(),
+            plugin_idx,
+            layout,
+            params,
+            values,
+            file_paths,
+            solved,
+            main_width,
+            is_editing,
+            selected_param,
+            active_tab,
+            overflow_open,
+            plugin_data,
+            layout_scale,
+            spider_snapshot,
+            Some(text),
+            theme,
+            true,
+        ));
 
     root = root.child(row);
 
@@ -687,22 +641,6 @@ fn render_main_column(
 
         if !all_tabs.is_empty() {
             let clamped_tab = active_tab.min(all_tabs.len().saturating_sub(1));
-            let tab_divider_theme = PaneDividerTheme {
-                background: theme.background,
-                background_hover: theme.surface_hover,
-                background_collapsed: theme.surface,
-                foreground: theme.text_muted,
-                foreground_hover: theme.text_secondary,
-                border: theme.border,
-                tint: Rgba {
-                    a: 0.42,
-                    ..theme.accent
-                },
-                tint_hover: theme.accent,
-            };
-
-            center = center.child(auto_tab_divider(plugin_idx, tab_divider_theme));
-
             // Tab bar (underline style)
             let mut tab_bar = div()
                 .flex()
@@ -823,7 +761,7 @@ fn render_group(
     let stack_controls = solved.group_direction == Direction::Column;
     let compact_width = solved
         .column_width(ColumnRole::Main)
-        .unwrap_or(AUTO_COLUMN_MIN_MAIN_WIDTH);
+        .unwrap_or_else(|| control_column_width(solved.knob_size) * 2.0);
 
     let mut col = div().flex().flex_col().gap(d.gap).flex_none();
     if !group.title.is_empty() {

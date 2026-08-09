@@ -14,12 +14,41 @@ pub(super) const Q_HANDLE_RADIUS: f32 = 5.0;
 
 pub(super) const Q_BAR_HEIGHT: f32 = 3.0;
 
+#[derive(Clone, Copy)]
+pub(super) struct EqChartGeometry {
+    pub control_point_radius: f32,
+    pub q_handle_radius: f32,
+    pub q_bar_height: f32,
+    pub q_bar_min_width: f32,
+    pub q_bar_max_width: f32,
+}
+
+impl EqChartGeometry {
+    pub fn scaled(scale: f32) -> Self {
+        let scale = if scale.is_finite() {
+            scale.clamp(0.5, 3.0)
+        } else {
+            1.0
+        };
+        Self {
+            control_point_radius: CONTROL_POINT_RADIUS * scale,
+            q_handle_radius: Q_HANDLE_RADIUS * scale,
+            q_bar_height: Q_BAR_HEIGHT * scale,
+            q_bar_min_width: Q_BAR_MIN_WIDTH * scale,
+            q_bar_max_width: Q_BAR_MAX_WIDTH * scale,
+        }
+    }
+
+    pub fn q_bar_width(self, q: f64) -> f32 {
+        let t = ((q - pk(EQ, "q").min_f64()) / (pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64()))
+            .clamp(0.0, 1.0) as f32;
+        self.q_bar_max_width - t * (self.q_bar_max_width - self.q_bar_min_width)
+    }
+}
+
 /// Convert Q value to bar width (inverse: higher Q = narrower bar)
 pub fn q_to_bar_width(q: f64) -> f32 {
-    let t = ((q - pk(EQ, "q").min_f64()) / (pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64()))
-        .clamp(0.0, 1.0) as f32;
-    // Inverse mapping: pk(EQ, "q").min_f64() -> max width, pk(EQ, "q").max_f64() -> min width
-    Q_BAR_MAX_WIDTH - t * (Q_BAR_MAX_WIDTH - Q_BAR_MIN_WIDTH)
+    EqChartGeometry::scaled(1.0).q_bar_width(q)
 }
 
 /// Magnitude (dB) for a single filter at `freq`, branching on the band's
@@ -114,6 +143,24 @@ pub const MIN_FREQ: f64 = sotf_plugins::AUDIBLE_MIN_FREQ;
 pub const MAX_FREQ: f64 = sotf_plugins::AUDIBLE_MAX_FREQ;
 
 pub(super) const CONTROL_POINT_RADIUS: f32 = 8.0;
+
+/// Apply one keyboard nudge to an EQ point. Horizontal movement is logarithmic
+/// (one 48th-octave, or one 192nd-octave with Shift); vertical movement is in dB.
+pub fn nudge_eq_band_values(
+    frequency: f64,
+    gain_db: f64,
+    frequency_direction: i8,
+    gain_direction: i8,
+    fine: bool,
+) -> (f64, f64) {
+    let steps_per_octave = if fine { 192.0 } else { 48.0 };
+    let gain_step = if fine { 0.025 } else { 0.1 };
+    let frequency = (frequency * 2.0_f64.powf(frequency_direction as f64 / steps_per_octave))
+        .clamp(MIN_FREQ, MAX_FREQ);
+    let gain_db = (gain_db + gain_direction as f64 * gain_step)
+        .clamp(pk(EQ, "gain").min_f64(), pk(EQ, "gain").max_f64());
+    (frequency, gain_db)
+}
 
 /// Convert frequency (Hz) to x pixel position
 pub fn freq_to_x(freq: f64, plot_width: f32) -> f32 {

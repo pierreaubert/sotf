@@ -135,18 +135,6 @@ pub fn render_plugin_content(
         .get(&plugin_idx)
         .copied()
         .unwrap_or(false);
-    let auto_config_width = state
-        .app
-        .plugin_ui
-        .plugin_auto_config_width
-        .get(&plugin_idx)
-        .copied();
-    let auto_output_width = state
-        .app
-        .plugin_ui
-        .plugin_auto_output_width
-        .get(&plugin_idx)
-        .copied();
 
     // Resolve the active plugin chassis theme — cascade of rack default
     // and per-plugin override. Bound here so `&plugin_theme` references in
@@ -279,8 +267,6 @@ pub fn render_plugin_content(
             plugin_data.as_ref(),
             available_width,
             combined_scale,
-            auto_config_width,
-            auto_output_width,
             text,
             theme,
             &plugin_theme,

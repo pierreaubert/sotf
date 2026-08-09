@@ -7,6 +7,7 @@
 //! - Elevated background panel for plugin content
 
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName, IconSize};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -62,67 +63,59 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
     }
 }
 
-/// Get the icon string for a plugin type.
+/// Get the icon for a plugin type.
 ///
 /// For LoudnessMonitor, pass `is_input_mon` / `is_output_mon` to pick a
 /// directional arrow; otherwise the generic monitor icon is used.
-pub fn plugin_icon(
-    plugin_type: &PluginType,
-    is_input_mon: bool,
-    is_output_mon: bool,
-) -> &'static str {
+pub fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool) -> IconName {
     match plugin_type {
-        PluginType::EQ => "≈",
-        PluginType::Gain => "▲",
-        PluginType::AAE => "♬",
-        PluginType::Upmixer => "◈",
-        PluginType::Compressor => "◉",
-        PluginType::Limiter => "█",
-        PluginType::Gate => "⊡",
-        PluginType::Expander => "⊟",
-        PluginType::MultibandCompressor => "◎",
-        PluginType::MultibandExpander => "◇",
-        PluginType::LoudnessCompensation => "♫",
-        PluginType::FletcherMunson => "\u{1f3a7}", // headphones emoji
-        PluginType::BinauralDecoder => "◎",
-        PluginType::Convolution => "∿",
+        PluginType::EQ | PluginType::DynamicEq | PluginType::LinearPhaseEq => {
+            IconName::SlidersHorizontal
+        }
+        PluginType::Gain | PluginType::LoudnessCompensation => IconName::Volume2,
+        PluginType::AAE | PluginType::Convolution | PluginType::Delay => IconName::Repeat,
+        PluginType::Upmixer
+        | PluginType::Matrix
+        | PluginType::Crossover
+        | PluginType::BandSplit
+        | PluginType::BandMerge
+        | PluginType::Downmix
+        | PluginType::StereoImager
+        | PluginType::AmbisonicsDecoder => IconName::Speaker,
+        PluginType::Compressor
+        | PluginType::Limiter
+        | PluginType::Gate
+        | PluginType::Expander
+        | PluginType::MultibandCompressor
+        | PluginType::MultibandExpander
+        | PluginType::DeEsser
+        | PluginType::TransientShaper
+        | PluginType::SpectralCompressor => IconName::AudioWaveform,
+        PluginType::FletcherMunson
+        | PluginType::BinauralDecoder
+        | PluginType::XTC
+        | PluginType::Crossfeed => IconName::Headphones,
         PluginType::LoudnessMonitor => {
             if is_input_mon {
-                "◁"
+                IconName::ChevronLeft
             } else if is_output_mon {
-                "▷"
+                IconName::ChevronRight
             } else {
-                "◐"
+                IconName::Volume2
             }
         }
-        PluginType::SpectrumAnalyzer => "▓",
-        PluginType::ChannelMuteSolo => "◧",
-        PluginType::Matrix => "⊞",
-        PluginType::XTC => "⊗",
-        PluginType::Denoiser => "◌",
-        PluginType::Declick => "✂",
-        PluginType::HissReducer => "ψ",
-        PluginType::SpeechDenoiser => "◔",
-        PluginType::Pnd => "♪",
-        PluginType::ABCompare => "⇄",
-        PluginType::Crossover => "XO",
-        PluginType::BandSplit => "⊥",
-        PluginType::BandMerge => "⊤",
-        PluginType::Downmix => "▼",
-        PluginType::MonoToStereo => "⊕",
-        PluginType::Crossfeed => "⊞",
-        PluginType::Delay => "⏱",
-        PluginType::Aec => "⊘",
-        PluginType::Beamformer => "⊙",
-        PluginType::AmbisonicsDecoder => "🌐",
-        PluginType::StereoImager => "↔",
-        PluginType::DeEsser => "S",
-        PluginType::TransientShaper => "⚡",
-        PluginType::Saturation => "♨",
-        PluginType::DynamicEq => "D",
-        PluginType::LinearPhaseEq => "FIR",
-        PluginType::SpectralCompressor => "SC",
-        PluginType::External => "EXT",
+        PluginType::SpectrumAnalyzer => IconName::AudioWaveform,
+        PluginType::ChannelMuteSolo | PluginType::MonoToStereo => IconName::SlidersHorizontal,
+        PluginType::Denoiser
+        | PluginType::Declick
+        | PluginType::HissReducer
+        | PluginType::SpeechDenoiser
+        | PluginType::Pnd
+        | PluginType::Aec
+        | PluginType::Beamformer => IconName::Brain,
+        PluginType::ABCompare => IconName::Repeat,
+        PluginType::Saturation => IconName::AudioWaveform,
+        PluginType::External => IconName::Plug,
     }
 }
 
@@ -256,12 +249,7 @@ pub fn render_plugin_shell(
                         .min_w_0()
                         .items_center()
                         .gap(d.gap)
-                        .child(
-                            div()
-                                .text_size(d.text_base)
-                                .text_color(accent)
-                                .child(icon.to_string()),
-                        )
+                        .child(Icon::new(icon).size(IconSize::Sm).color(accent))
                         .child(
                             div()
                                 .flex()

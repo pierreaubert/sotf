@@ -23,7 +23,7 @@ use common::{common_bindings, plugin_rack_bindings};
 use emacs::emacs_bindings;
 use listening_test::listening_test_bindings;
 use plugin_graph::plugin_graph_bindings;
-use plugins::plugin_control_bindings;
+use plugins::{eq_chart_bindings, plugin_control_bindings};
 use vim::vim_bindings;
 use volume::volume_control_bindings;
 use vscode::vscode_bindings;
@@ -125,6 +125,7 @@ pub fn get_keybindings(preset: KeymapPreset) -> Vec<KeyBinding> {
 
     // Plugin control context bindings (active when a plugin parameter control is focused)
     bindings.extend(plugin_control_bindings());
+    bindings.extend(eq_chart_bindings());
     bindings.extend(listening_test_bindings());
 
     bindings

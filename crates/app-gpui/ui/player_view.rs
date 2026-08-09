@@ -43,6 +43,7 @@ pub struct PlayerView {
     pub focus_handle: FocusHandle,
     pub(crate) command_palette: Option<CommandPaletteState>,
     pub(crate) volume_focus_handle: FocusHandle,
+    pub(crate) eq_chart_focus_handle: FocusHandle,
     pub(super) last_saved_window_bounds: Option<Bounds<Pixels>>,
     /// Scroll handle for library grid view
     pub(crate) grid_scroll_handle: ScrollHandle,
@@ -92,6 +93,7 @@ impl PlayerView {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
         let volume_focus_handle = cx.focus_handle();
+        let eq_chart_focus_handle = cx.focus_handle();
 
         // Initialize OS media controls (MPRIS on Linux, MediaPlayer on macOS/Windows)
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
@@ -286,6 +288,7 @@ impl PlayerView {
             focus_handle,
             command_palette: None,
             volume_focus_handle,
+            eq_chart_focus_handle,
             last_saved_window_bounds: None,
             grid_scroll_handle: ScrollHandle::new(),
             needs_initial_focus: true,

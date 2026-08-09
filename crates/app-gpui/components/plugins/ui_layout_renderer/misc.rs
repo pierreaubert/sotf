@@ -6,8 +6,6 @@ use std::collections::HashMap;
 
 pub(super) const AUTO_COLUMN_MIN_SIDE_WIDTH: f32 = 180.0;
 
-pub(super) const AUTO_COLUMN_MIN_MAIN_WIDTH: f32 = 260.0;
-
 pub(super) fn control_column_width(knob_size: KnobSize) -> f32 {
     match knob_size {
         KnobSize::Xs => 130.0,

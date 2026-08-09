@@ -110,8 +110,6 @@ pub struct PluginUiState {
     pub show_add_plugin_menu: bool,
     pub plugin_auto_tab: std::collections::HashMap<usize, usize>,
     pub plugin_auto_overflow_open: std::collections::HashMap<usize, bool>,
-    pub plugin_auto_config_width: std::collections::HashMap<usize, f32>,
-    pub plugin_auto_output_width: std::collections::HashMap<usize, f32>,
 }
 
 pub struct PlaylistState {
@@ -266,8 +264,6 @@ impl App {
                 show_add_plugin_menu: false,
                 plugin_auto_tab: std::collections::HashMap::new(),
                 plugin_auto_overflow_open: std::collections::HashMap::new(),
-                plugin_auto_config_width: std::collections::HashMap::new(),
-                plugin_auto_output_width: std::collections::HashMap::new(),
             },
             playlist: PlaylistState {
                 controller: sotf_audio_player::PlaylistController::new(),
