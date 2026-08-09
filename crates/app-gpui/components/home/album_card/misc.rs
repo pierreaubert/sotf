@@ -1,3 +1,4 @@
+use crate::album_art_mask::prepare_album_art_image;
 use gpui::*;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
@@ -83,8 +84,7 @@ fn decode_album_art_image(bytes: &[u8], corner_radius_ratio: f32) -> Arc<Image> 
     if (bytes.starts_with(PNG_MAGIC) || bytes.starts_with(JPEG_MAGIC))
         && let Ok(image) = image::load_from_memory(bytes)
     {
-        let mut rgba = image.to_rgba8();
-        apply_album_art_corner_mask(&mut rgba, corner_radius_ratio);
+        let rgba = prepare_album_art_image(image, corner_radius_ratio);
 
         let mut png_bytes = Vec::new();
         if rgba
@@ -100,37 +100,6 @@ fn decode_album_art_image(bytes: &[u8], corner_radius_ratio: f32) -> Arc<Image> 
 
     // Last resort: pass through as-is
     Arc::new(Image::from_bytes(ImageFormat::Png, bytes.to_vec()))
-}
-
-/// Apply the rounded album-art corners in the pixels themselves. GPUI's
-/// current image overflow path does not reliably clip decoded image content,
-/// so a transparent alpha mask keeps the artwork rounded independently of the
-/// toolkit's clipping implementation.
-fn apply_album_art_corner_mask(image: &mut image::RgbaImage, corner_radius_ratio: f32) {
-    let radius = ((image.width().min(image.height()) as f32) * corner_radius_ratio)
-        .round()
-        .max(1.0) as i32;
-    let radius_f = radius as f32;
-    let center = radius_f - 0.5;
-    let width = image.width() as i32;
-    let height = image.height() as i32;
-
-    for y in 0..radius {
-        for x in 0..radius {
-            if (x as f32 - center).powi(2) + (y as f32 - center).powi(2) <= radius_f.powi(2) {
-                continue;
-            }
-
-            for (pixel_x, pixel_y) in [
-                (x, y),
-                (width - 1 - x, y),
-                (x, height - 1 - y),
-                (width - 1 - x, height - 1 - y),
-            ] {
-                image.get_pixel_mut(pixel_x as u32, pixel_y as u32).0[3] = 0;
-            }
-        }
-    }
 }
 
 pub(super) fn text_size_at_least(size: Rems, min_font_size_px: f32, effective_rem_px: f32) -> Rems {
