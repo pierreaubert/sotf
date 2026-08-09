@@ -10196,7 +10196,7 @@ dependencies = [
  "crossterm",
  "driver-hal",
  "env_logger",
- "glam 0.30.10",
+ "glam 0.33.2",
  "gpui",
  "gpui-audio-kit",
  "gpui-builder 0.9.6 (git+https://github.com/pierreaubert/gpui-toolkit?branch=feat%2Fissue-29-adaptive-overflow)",

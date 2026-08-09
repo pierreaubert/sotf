@@ -336,7 +336,7 @@ syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
 
 # Graphics and visualization
 bytemuck = { version = "1.14", features = ["derive"] }
-glam = "0.30"
+glam = "0.33"
 pollster = "0.4"
 image = "0.25"
 fontdue = "0.9"
