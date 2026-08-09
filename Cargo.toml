@@ -143,7 +143,7 @@ log = "0.4.28"
 memmap2 = "0.9"
 mimalloc = { version = "0.1" }
 notify = { version = "8.2" }
-libloading = { version = "0.8" }
+libloading = { version = "0.9" }
 rand_chacha = "0.10"
 num_cpus = "1.17"
 regex = "1.12"
