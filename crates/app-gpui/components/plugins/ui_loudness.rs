@@ -11,6 +11,7 @@ use gpui::*;
 pub fn render_loudness_monitor_plugin(
     d: &Ds,
     loudness: Option<std::sync::Arc<sotf_audio_player::LoudnessData>>,
+    layout_scale: f32,
     _plugin_idx: usize,
     _is_editing: bool,
     text: LevelMeterTranslations,
@@ -19,6 +20,7 @@ pub fn render_loudness_monitor_plugin(
     div().child(render_lufs_with_true_peak(
         d,
         loudness.as_deref(),
+        layout_scale,
         text,
         theme,
     ))

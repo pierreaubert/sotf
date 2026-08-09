@@ -79,6 +79,8 @@ pub fn typography_rems_from_rules(typography: &TypographyRules) -> TypographyRem
 /// ```
 #[derive(Clone, Copy)]
 pub struct Ds {
+    /// Half-grid unit (~2px) — hairline spacing that still follows zoom.
+    pub half_grid: Rems,
     /// Grid unit (~4px) — smallest spacing increment. Scales with font zoom.
     pub grid: Rems,
     /// Control horizontal padding (~12px). Scales with font zoom.
@@ -127,6 +129,7 @@ impl Ds {
         let ds = cx.design();
         let to_rems = |px_value: f32| rems(px_value / BASE_REM_PX);
         Self {
+            half_grid: to_rems(ds.spacing.grid_unit * 0.5),
             grid: to_rems(ds.spacing.grid_unit),
             pad_x: to_rems(ds.spacing.control_padding_x),
             pad_y: to_rems(ds.spacing.control_padding_y),
@@ -147,6 +150,7 @@ impl Ds {
 
     fn from_typography_rems(typography: TypographyRems) -> Self {
         Self {
+            half_grid: rems(0.0),
             grid: rems(0.0),
             pad_x: rems(0.0),
             pad_y: rems(0.0),

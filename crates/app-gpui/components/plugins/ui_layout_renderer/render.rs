@@ -16,7 +16,6 @@ use super::pot::pot_size_large;
 use super::types::LayoutTabContent;
 use super::types::collect_all_tabs;
 use crate::app::AppState;
-use crate::app::constants::spacing;
 use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
@@ -663,7 +662,7 @@ fn render_main_column(
                         .px(d.card)
                         // intentional: asymmetric 6px bottom / 4px top for tab underline spacing
                         .pb(rems(0.375))
-                        .pt(spacing::SM)
+                        .pt(d.grid)
                         .cursor_pointer()
                         .id(SharedString::from(format!("layout-tab-{plugin_idx}-{i}")))
                         .font_weight(if is_active {

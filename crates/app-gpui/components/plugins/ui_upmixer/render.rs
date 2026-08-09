@@ -326,7 +326,7 @@ fn render_medium_area(
                         )),
                 ),
         )
-        .child(render_upmixer_summary_strip(d, state, theme))
+        .child(render_upmixer_summary_strip(d, state, text, theme))
 }
 
 /// Render the narrow main area: stacked field and immediately reachable primary lanes.
@@ -397,7 +397,7 @@ fn render_narrow_area(
                     theme,
                 )),
         )
-        .child(render_upmixer_summary_strip(d, state, theme))
+        .child(render_upmixer_summary_strip(d, state, text, theme))
 }
 
 fn focused_config_index(selected_config: usize) -> usize {
@@ -1141,6 +1141,7 @@ fn render_upmixer_header(
 fn render_upmixer_summary_strip(
     d: &Ds,
     state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
     div()
@@ -1155,43 +1156,43 @@ fn render_upmixer_summary_strip(
         .rounded(d.r_md)
         .child(render_summary_chip(
             d,
-            "Out",
+            text.upmixer_summary.output,
             state.speaker_config.to_string(),
             theme,
         ))
         .child(render_summary_chip(
             d,
-            "Width",
+            text.upmixer_summary.width,
             format_compact_value(state.stereo_width, ""),
             theme,
         ))
         .child(render_summary_chip(
             d,
-            "Center",
+            text.upmixer_summary.center,
             format_compact_value(state.center_spread, ""),
             theme,
         ))
         .child(render_summary_chip(
             d,
-            "Rear",
+            text.upmixer_summary.rear,
             format_compact_value(state.gain_rear_ambient, "x"),
             theme,
         ))
         .child(render_summary_chip(
             d,
-            "Top",
+            text.upmixer_summary.height,
             format_compact_value(state.height_gain, "x"),
             theme,
         ))
         .child(render_summary_chip(
             d,
-            "LFE",
+            text.upmixer_summary.lfe,
             format_compact_value(state.lfe_gain, "x"),
             theme,
         ))
         .child(render_summary_chip(
             d,
-            "Cap",
+            text.upmixer_summary.cap,
             format_compact_value(state.safety_cap_db, "dB"),
             theme,
         ))

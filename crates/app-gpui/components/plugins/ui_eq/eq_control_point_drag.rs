@@ -1,4 +1,4 @@
-use crate::app::constants::spacing;
+use crate::components::design::Ds;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -21,14 +21,15 @@ pub(crate) struct EqControlPointDrag {
 }
 
 impl Render for EqControlPointDrag {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let d = Ds::from_cx(cx);
         let rgba_color = gpui::rgba(self.color * 256 + 0xFF);
         div()
             .w(px(self.radius * 3.0))
             .h(px(self.radius * 3.0))
             .rounded_full()
             .bg(rgba_color)
-            .border(spacing::XS)
+            .border(d.half_grid)
             .border_color(self.border_color)
             .shadow_lg()
     }

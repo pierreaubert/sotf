@@ -6,7 +6,7 @@ Three checks run together:
 1. Hardcoded pixel sizes — fails when a raw numeric `px(...)` /
    `gpui::px(...)` call appears in GPUI component or UI code outside
    the design-token source-of-truth files. Migrate to a `Ds` token
-   (`d.pad_x`, `spacing::MD`, ...) or mark `// intentional: <reason>`.
+   (`d.pad_x`, `d.grid`, ...) or mark `// intentional: <reason>`.
 
 2. Manual `Text::new(..)` builder chains that have a semantic constructor.
    E.g. `Text::new(x).size(Xs).muted(true)` should be `Text::caption(x)`,
@@ -17,7 +17,7 @@ Three checks run together:
 3. Hardcoded UI colors and raw rem spacing in app UI code. Colors belong in
    `Theme` / `ThemeFeedback` / `ThemePluginPalette` and should be consumed via
    `theme.*` or helpers such as `Theme::with_opacity(...)`; spacing belongs in
-   `Ds` or `spacing::*`.
+   `Ds`.
 
 Both checks share the same exception system: an `// intentional: <reason>`
 comment on the same line or within 8 lines above (not crossing a blank
@@ -476,8 +476,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(
             "Fix by either:\n"
-            "  - migrating to a design token (Ds::from_cx + d.pad_x/d.gap/d.r_md/d.text_sm, "
-            "or spacing::X / radius::X from app/constants.rs)\n"
+            "  - migrating to a design token "
+            "(Ds::from_cx + d.pad_x/d.gap/d.r_md/d.text_sm)\n"
             "  - or adding a `// intentional: [reason]` comment on the same line or within "
             f"{LOOKBACK_LINES} lines above (not crossing a blank line).",
             file=sys.stderr,
@@ -513,8 +513,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(
             "Fix by either:\n"
-            "  - replacing gap/padding/margin rems(...) with Ds tokens (d.grid/d.gap/d.pad_x/...) "
-            "or spacing::* from app/constants.rs\n"
+            "  - replacing gap/padding/margin rems(...) with Ds tokens "
+            "(d.grid/d.gap/d.pad_x/...)\n"
             "  - or adding a `// intentional: [reason]` comment on the same line or within "
             f"{LOOKBACK_LINES} lines above (not crossing a blank line).",
             file=sys.stderr,

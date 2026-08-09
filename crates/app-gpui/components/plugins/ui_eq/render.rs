@@ -285,17 +285,14 @@ fn render_band_frequency_guide(
     color: Rgba,
     selected: bool,
     chart_height: f32,
+    geometry: EqChartGeometry,
     theme: &Theme,
 ) -> Vec<AnyElement> {
-    const LABEL_WIDTH: f32 = 56.0;
-    const LABEL_TOP: f32 = 2.0;
-    const GUIDE_TOP: f32 = 24.0;
-    const DASH_HEIGHT: f32 = 4.0;
-    const DASH_GAP: f32 = 4.0;
-
     let label = format_eq_frequency_label(freq);
-    let guide_height = chart_height - CHART_BOTTOM_MARGIN - GUIDE_TOP;
-    let dash_count = (guide_height / (DASH_HEIGHT + DASH_GAP)).floor().max(1.0) as usize;
+    let guide_height = chart_height - CHART_BOTTOM_MARGIN - geometry.guide_top;
+    let dash_count = (guide_height / (geometry.guide_dash_height + geometry.guide_dash_gap))
+        .floor()
+        .max(1.0) as usize;
     let guide_color = Rgba {
         a: if selected { 0.6 } else { 0.35 },
         ..color
@@ -307,15 +304,15 @@ fn render_band_frequency_guide(
 
     let label = div()
         .absolute()
-        .left(px(x - LABEL_WIDTH / 2.0))
-        .top(px(LABEL_TOP))
-        .w(px(LABEL_WIDTH))
+        .left(px(x - geometry.guide_label_width / 2.0))
+        .top(px(geometry.guide_label_top))
+        .w(px(geometry.guide_label_width))
         .text_center()
-        .px(px(3.0))
-        .py(px(1.0))
-        .rounded(px(4.0))
+        .px(px(geometry.guide_label_padding_x))
+        .py(px(geometry.guide_label_padding_y))
+        .rounded(px(geometry.guide_label_radius))
         .bg(label_bg)
-        .text_size(px(10.0))
+        .text_size(px(geometry.guide_label_text_size))
         .font_weight(if selected {
             FontWeight::BOLD
         } else {
@@ -328,16 +325,16 @@ fn render_band_frequency_guide(
     let guide = div()
         .absolute()
         .left(px(x))
-        .top(px(GUIDE_TOP))
+        .top(px(geometry.guide_top))
         .w(px(1.0))
         .h(px(guide_height))
         .flex()
         .flex_col()
-        .gap(px(DASH_GAP))
+        .gap(px(geometry.guide_dash_gap))
         .children((0..dash_count).map(move |_| {
             div()
                 .w(px(1.0))
-                .h(px(DASH_HEIGHT))
+                .h(px(geometry.guide_dash_height))
                 .bg(guide_color)
                 .into_any_element()
         }))
@@ -1112,6 +1109,7 @@ pub(crate) fn render_eq_visualization_sized(
             rgba_color,
             is_selected,
             chart_height,
+            geometry,
             theme,
         ));
 

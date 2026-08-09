@@ -2,10 +2,98 @@ use crate::app::AppState;
 use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
+use crate::multiband_presets::{
+    crossover_preset_from_key, crossover_preset_key, matching_crossover_preset, preset_frequencies,
+};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{NumberInput, NumberInputSize};
+use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize};
+
+pub(crate) fn render_crossover_preset_editor(
+    d: &Ds,
+    id: &'static str,
+    compact_detail_id: &'static str,
+    preset_label: &'static str,
+    preset_option_labels: [&'static str; 4],
+    compact: bool,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    crossovers: [f64; 4],
+    theme: &Theme,
+) -> impl IntoElement {
+    // Custom is derived from the crossover values rather than an action: a
+    // named button applies a profile, while any manual edit updates this status.
+    let inferred = matching_crossover_preset(crossovers);
+    let selected = crossover_preset_key(inferred).unwrap_or("");
+    let status = usize::try_from(inferred)
+        .ok()
+        .and_then(|index| preset_option_labels.get(index))
+        .copied()
+        .unwrap_or(preset_option_labels[0]);
+    let make_button_set = |set_id: &'static str, presets: &[i32]| {
+        let options = presets
+            .iter()
+            .filter_map(|&preset| {
+                let key = crossover_preset_key(preset)?;
+                let label = preset_option_labels.get(usize::try_from(preset).ok()?)?;
+                Some(ButtonSetOption::new(key, *label))
+            })
+            .collect();
+        let entity = entity.clone();
+
+        ButtonSet::new(set_id)
+            .options(options)
+            .selected(selected)
+            .size(ButtonSetSize::Sm)
+            .theme(theme.to_button_set_theme())
+            .on_change(move |value, _window, cx| {
+                let Some(preset) = crossover_preset_from_key(value.as_ref()) else {
+                    return;
+                };
+                entity.update(cx, |state, cx| {
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    state.app.set_plugin_param(plugin_idx, 1, preset as f64);
+                    if let Some(frequencies) = preset_frequencies(preset) {
+                        for (offset, frequency) in frequencies.into_iter().enumerate() {
+                            state
+                                .app
+                                .set_plugin_param(plugin_idx, 2 + offset, frequency);
+                        }
+                    }
+                    cx.notify();
+                });
+            })
+    };
+
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.grid)
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(d.gap)
+                .text_size(d.text_xs)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_muted)
+                .child(preset_label)
+                .child(status),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.grid)
+                .when(compact, |this| {
+                    this.child(make_button_set(id, &[1, 2]))
+                        .child(make_button_set(compact_detail_id, &[3]))
+                })
+                .when(!compact, |this| this.child(make_button_set(id, &[1, 2, 3]))),
+        )
+}
 
 pub(crate) fn render_band_count_editor(
     d: &Ds,

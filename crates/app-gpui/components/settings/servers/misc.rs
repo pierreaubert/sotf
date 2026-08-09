@@ -1,4 +1,3 @@
-use crate::app::constants::spacing;
 use crate::app::i18n::ServerSettingsTranslations;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
@@ -934,7 +933,7 @@ impl PlayerView {
                                 row.child(
                                     div()
                                         .px(d.pad_y)
-                                        .py(spacing::XS)
+                                        .py(d.half_grid)
                                         .rounded(d.r_sm)
                                         .bg(theme.accent)
                                         .text_size(d.text_xs)

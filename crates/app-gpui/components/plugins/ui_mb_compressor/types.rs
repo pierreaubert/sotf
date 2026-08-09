@@ -11,7 +11,9 @@ use gpui::prelude::*;
 use gpui::*;
 use sotf_plugins::param_specs::{find_by_key as pk, multiband_compressor::GLOBAL_PARAMS as MC};
 
-use super::super::ui_multiband_common::{band_tab_label, render_band_count_editor};
+use super::super::ui_multiband_common::{
+    band_tab_label, render_band_count_editor, render_crossover_preset_editor,
+};
 
 /// State for rendering the Multiband Compressor plugin
 pub struct MbCompressorRenderState {
@@ -69,6 +71,23 @@ pub fn render_mb_compressor_plugin(
         .flex_shrink_0()
         .gap(d.gap_md)
         .child(render_section_title(d, text.label("GLOBAL"), theme))
+        .child(render_crossover_preset_editor(
+            d,
+            "mb-crossover-preset",
+            "mb-crossover-preset-detail",
+            text.label("Preset"),
+            text.multiband_presets.labels(),
+            compact,
+            entity.clone(),
+            plugin_idx,
+            [
+                state.crossover_freq_1,
+                state.crossover_freq_2,
+                state.crossover_freq_3,
+                state.crossover_freq_4,
+            ],
+            theme,
+        ))
         .child(render_band_count_editor(
             d,
             "mb-bands",
@@ -145,8 +164,6 @@ pub fn render_mb_compressor_plugin(
     }
 
     // Global params
-    // crossover_preset is not rendered: the DSP currently stores the value
-    // without applying a frequency profile, so exposing it would be misleading.
     global_col = global_col
         .child(render_knob(
             entity.clone(),

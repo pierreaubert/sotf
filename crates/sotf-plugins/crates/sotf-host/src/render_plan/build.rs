@@ -137,7 +137,6 @@ pub fn build_render_plan_from_layout_with_values(
 mod tests {
     use super::*;
 
-    use crate::layout_solver::SLIDER_HEIGHT_COMPACT;
     use crate::param_specs::{ParamCategory, ParamType, UpdateMode};
     use crate::plugin_layout::{
         ColumnConstraint, ControlGroup, ControlSpec, DynamicSection, ParamCondition, VizPosition,
@@ -236,7 +235,10 @@ mod tests {
 
         assert_eq!(plan.orientation, "vertical");
         assert_eq!(plan.knob_size, "xs");
-        assert_eq!(plan.slider_height, SLIDER_HEIGHT_COMPACT);
+        assert_eq!(
+            plan.slider_height,
+            DesignSystem::neutral().layout.slider_height_compact
+        );
         assert!(!plan.show_visualizations);
         assert!(plan.columns_collapsed.contains(&"output".to_string()));
     }

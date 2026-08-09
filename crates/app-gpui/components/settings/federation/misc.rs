@@ -1,4 +1,3 @@
-use crate::app::constants::spacing;
 use crate::app::federation::test_federation_connection;
 use crate::app::i18n::FederationTranslations;
 use crate::components::design::Ds;
@@ -204,7 +203,7 @@ impl PlayerView {
                     .child(
                         div()
                             .px(d.pad_y)
-                            .py(spacing::XS)
+                            .py(d.half_grid)
                             .bg(theme.background)
                             .rounded(d.r_sm)
                             .text_size(d.text_xs)

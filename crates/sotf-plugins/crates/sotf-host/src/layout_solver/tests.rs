@@ -1,9 +1,7 @@
-use super::consts::GROUP_STACK_THRESHOLD;
-use super::consts::SLIDER_HEIGHT_COMPACT;
-use super::consts::SLIDER_HEIGHT_NORMAL;
 use super::solve::{solve_layout, solve_layout_scaled};
 use super::types::Direction;
 use super::types::Orientation;
+use crate::design_system::DesignSystem;
 use crate::plugin_layout::{ColumnConstraint, ColumnRole};
 
 /// Standard 3-column constraints (Config | Main | Output) like Compressor.
@@ -35,7 +33,10 @@ fn test_wide_all_columns_visible() {
     assert!(solved.is_visible(ColumnRole::Main));
     assert!(solved.is_visible(ColumnRole::Output));
     assert!(solved.collapsed_tabs.is_empty());
-    assert_eq!(solved.slider_height, SLIDER_HEIGHT_NORMAL);
+    assert_eq!(
+        solved.slider_height,
+        DesignSystem::neutral().layout.slider_height_normal
+    );
     assert!(solved.show_visualizations);
 }
 
@@ -85,7 +86,10 @@ fn test_very_narrow_vertical_mode() {
     assert_eq!(solved.columns.len(), 1);
     assert_eq!(solved.columns[0].role, ColumnRole::Main);
     assert_eq!(solved.group_direction, Direction::Column);
-    assert_eq!(solved.slider_height, SLIDER_HEIGHT_COMPACT);
+    assert_eq!(
+        solved.slider_height,
+        DesignSystem::neutral().layout.slider_height_compact
+    );
     assert!(!solved.show_visualizations);
     // Both Config and Output should be collapsed
     assert!(solved.is_collapsed(ColumnRole::Config));
@@ -136,11 +140,17 @@ fn test_compact_slider_height() {
     let constraints = compressor_constraints();
     // main_width = 650 - 120 - 100 = 430 < 700 → compact
     let solved = solve_layout(&constraints, 650.0);
-    assert_eq!(solved.slider_height, SLIDER_HEIGHT_COMPACT);
+    assert_eq!(
+        solved.slider_height,
+        DesignSystem::neutral().layout.slider_height_compact
+    );
 
     // main_width = 920 - 120 - 100 = 700 → normal
     let solved_wide = solve_layout(&constraints, 920.0);
-    assert_eq!(solved_wide.slider_height, SLIDER_HEIGHT_NORMAL);
+    assert_eq!(
+        solved_wide.slider_height,
+        DesignSystem::neutral().layout.slider_height_normal
+    );
 }
 
 #[test]
@@ -202,15 +212,16 @@ fn test_viz_hidden_when_narrow() {
 
 #[test]
 fn test_group_direction_based_on_main_width_not_available() {
-    // available_width=600 (>500 GROUP_STACK_THRESHOLD), but sidebars eat 220px:
+    // available_width=600, but sidebars eat 220px, leaving less than the
+    // design system's group-stack threshold:
     // Config(100) + Output(120) = 220, so main_width = 600 - 220 = 380.
     // Groups should NOT be Row since main column only has 380px.
     let constraints = compressor_constraints();
     let solved = solve_layout(&constraints, 600.0);
     let main_width = solved.column_width(ColumnRole::Main).unwrap();
     assert!(
-        main_width < GROUP_STACK_THRESHOLD,
-        "main_width={main_width} should be < {GROUP_STACK_THRESHOLD}"
+        main_width < DesignSystem::neutral().layout.group_stack_threshold,
+        "main_width={main_width} should be below the group-stack threshold"
     );
     assert_eq!(
         solved.group_direction,
@@ -221,7 +232,7 @@ fn test_group_direction_based_on_main_width_not_available() {
 
 #[test]
 fn test_group_direction_row_when_main_has_enough_space() {
-    // When main column has >= GROUP_STACK_THRESHOLD, groups should be side-by-side.
+    // At or above the design system's group-stack threshold, groups are side-by-side.
     // No sidebars → all space goes to main.
     let constraints = vec![ColumnConstraint::main(300.0)];
     let solved = solve_layout(&constraints, 800.0);
@@ -231,7 +242,7 @@ fn test_group_direction_row_when_main_has_enough_space() {
     let constraints = compressor_constraints();
     let solved = solve_layout(&constraints, 1200.0);
     let main_width = solved.column_width(ColumnRole::Main).unwrap();
-    assert!(main_width >= GROUP_STACK_THRESHOLD);
+    assert!(main_width >= DesignSystem::neutral().layout.group_stack_threshold);
     assert_eq!(solved.group_direction, Direction::Row);
 }
 

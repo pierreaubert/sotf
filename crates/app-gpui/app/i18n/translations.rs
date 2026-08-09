@@ -4576,6 +4576,31 @@ impl PlaybackApplyTranslations {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct MultibandPresetTranslations {
+    custom: &'static str,
+    balanced: &'static str,
+    wide_mids: &'static str,
+    high_detail: &'static str,
+}
+
+impl MultibandPresetTranslations {
+    pub const fn labels(self) -> [&'static str; 4] {
+        [self.custom, self.balanced, self.wide_mids, self.high_detail]
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct UpmixerSummaryTranslations {
+    pub output: &'static str,
+    pub width: &'static str,
+    pub center: &'static str,
+    pub rear: &'static str,
+    pub height: &'static str,
+    pub lfe: &'static str,
+    pub cap: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct PluginCommonTranslations {
     language: Language,
     pub global: &'static str,
@@ -4600,6 +4625,8 @@ pub struct PluginCommonTranslations {
     pub spatial_no_layout: &'static str,
     pub spatial_waiting_data: &'static str,
     pub spatial_waiting_correlation: &'static str,
+    pub upmixer_summary: UpmixerSummaryTranslations,
+    pub multiband_presets: MultibandPresetTranslations,
 }
 
 impl PluginCommonTranslations {
@@ -4629,6 +4656,21 @@ impl PluginCommonTranslations {
                 spatial_no_layout: "No speaker layout available",
                 spatial_waiting_data: "Waiting for analyzer data",
                 spatial_waiting_correlation: "Waiting for correlation data",
+                upmixer_summary: UpmixerSummaryTranslations {
+                    output: "Out",
+                    width: "Width",
+                    center: "Center",
+                    rear: "Rear",
+                    height: "Top",
+                    lfe: "LFE",
+                    cap: "Cap",
+                },
+                multiband_presets: MultibandPresetTranslations {
+                    custom: "Custom",
+                    balanced: "Balanced",
+                    wide_mids: "Wide Mids",
+                    high_detail: "High Detail",
+                },
             },
             Language::French => Self {
                 language,
@@ -4654,6 +4696,21 @@ impl PluginCommonTranslations {
                 spatial_no_layout: "Aucune disposition d’enceintes disponible",
                 spatial_waiting_data: "En attente des données de l’analyseur",
                 spatial_waiting_correlation: "En attente des données de corrélation",
+                upmixer_summary: UpmixerSummaryTranslations {
+                    output: "Sortie",
+                    width: "Largeur",
+                    center: "Centre",
+                    rear: "Arrière",
+                    height: "Hauteur",
+                    lfe: "LFE",
+                    cap: "Limite",
+                },
+                multiband_presets: MultibandPresetTranslations {
+                    custom: "Personnalisé",
+                    balanced: "Équilibré",
+                    wide_mids: "Médiums larges",
+                    high_detail: "Détails aigus",
+                },
             },
             Language::German => Self {
                 language,
@@ -4679,6 +4736,21 @@ impl PluginCommonTranslations {
                 spatial_no_layout: "Kein Lautsprecherlayout verfügbar",
                 spatial_waiting_data: "Warten auf Analysedaten",
                 spatial_waiting_correlation: "Warten auf Korrelationsdaten",
+                upmixer_summary: UpmixerSummaryTranslations {
+                    output: "Ausgang",
+                    width: "Breite",
+                    center: "Mitte",
+                    rear: "Hinten",
+                    height: "Höhe",
+                    lfe: "LFE",
+                    cap: "Grenze",
+                },
+                multiband_presets: MultibandPresetTranslations {
+                    custom: "Benutzerdefiniert",
+                    balanced: "Ausgewogen",
+                    wide_mids: "Breite Mitten",
+                    high_detail: "Hohe Detailtreue",
+                },
             },
             Language::Spanish => Self {
                 language,
@@ -4704,6 +4776,21 @@ impl PluginCommonTranslations {
                 spatial_no_layout: "No hay una disposición de altavoces disponible",
                 spatial_waiting_data: "Esperando datos del analizador",
                 spatial_waiting_correlation: "Esperando datos de correlación",
+                upmixer_summary: UpmixerSummaryTranslations {
+                    output: "Salida",
+                    width: "Anchura",
+                    center: "Centro",
+                    rear: "Traseros",
+                    height: "Altura",
+                    lfe: "LFE",
+                    cap: "Límite",
+                },
+                multiband_presets: MultibandPresetTranslations {
+                    custom: "Personalizado",
+                    balanced: "Equilibrado",
+                    wide_mids: "Medios amplios",
+                    high_detail: "Detalle alto",
+                },
             },
         }
     }

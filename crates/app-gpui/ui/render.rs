@@ -938,7 +938,7 @@ impl PlayerView {
                 &theme,
                 &d,
             ))
-            .child(self.render_sidebar_separator(&theme))
+            .child(self.render_sidebar_separator(&d, &theme))
             .child(self.render_sidebar_group_label("Tools", collapsed, &theme, &d))
             .when(release_channel.allows(Screen::Recording.maturity()), |el| {
                 el.child(self.render_sidebar_screen_item(
@@ -1019,7 +1019,7 @@ impl PlayerView {
                 },
             )
             .child(div().flex_1())
-            .child(self.render_sidebar_separator(&theme))
+            .child(self.render_sidebar_separator(&d, &theme))
             .when(collapsed, |el| {
                 el.child(self.render_sidebar_screen_item(
                     "nav-preferences-collapsed",
@@ -1135,11 +1135,11 @@ impl PlayerView {
             .into_any_element()
     }
 
-    fn render_sidebar_separator(&self, theme: &crate::theme::Theme) -> AnyElement {
+    fn render_sidebar_separator(&self, d: &Ds, theme: &crate::theme::Theme) -> AnyElement {
         div()
             .h(px(1.0))
-            .mx(crate::app::constants::spacing::SM)
-            .my(crate::app::constants::spacing::SM)
+            .mx(d.grid)
+            .my(d.grid)
             .bg(theme.border)
             .into_any_element()
     }

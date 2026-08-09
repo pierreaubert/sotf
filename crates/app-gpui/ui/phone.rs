@@ -235,7 +235,7 @@ impl PlayerView {
             .flex_col()
             .items_center()
             .justify_center()
-            .gap(crate::app::constants::spacing::XS)
+            .gap(d.half_grid)
             .min_w(rems(3.5))
             .min_h(rems(3.5))
             .rounded(d.r_md)
@@ -2879,7 +2879,7 @@ impl PlayerView {
                     .p(d.card)
                     .flex()
                     .items_end()
-                    .gap(crate::app::constants::spacing::XS)
+                    .gap(d.half_grid)
                     .children((0..48).map(|i| {
                         let norm = i as f64 / 47.0;
                         let freq = 20.0_f64 * (1000.0_f64).powf(norm);

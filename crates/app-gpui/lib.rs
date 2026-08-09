@@ -16,6 +16,7 @@ compile_error!(
 pub mod asset_cache;
 pub mod eq_layout;
 pub mod level_meter_render;
+mod multiband_presets;
 pub mod plugin_file_picker;
 pub mod queue_render;
 

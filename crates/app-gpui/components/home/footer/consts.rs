@@ -1,5 +1,4 @@
 use super::waveform_element::WaveformElement;
-use crate::app::constants::spacing;
 use crate::app::i18n::FooterTranslations;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
@@ -39,7 +38,7 @@ pub(super) fn waveform_bar_x_and_width(
     bar_count: usize,
 ) -> (Pixels, Pixels) {
     if bar_count == 0 {
-        return (spacing::NONE, spacing::NONE);
+        return (Pixels::default(), Pixels::default());
     }
 
     let slot_width = bounds_width / bar_count as f32;
@@ -49,7 +48,7 @@ pub(super) fn waveform_bar_x_and_width(
     } else {
         slot_width * (idx + 1) as f32
     };
-    let available_width = (right - x).max(spacing::NONE);
+    let available_width = (right - x).max(Pixels::default());
     let gap = px(WAVEFORM_BAR_GAP_PX).min(available_width * 0.25);
     let width = if idx + 1 == bar_count {
         available_width
@@ -87,8 +86,8 @@ mod tests {
 
         for idx in 0..WAVEFORM_NUM_BARS {
             let (x, width) = waveform_bar_x_and_width(bounds_width, idx, WAVEFORM_NUM_BARS);
-            assert!(x >= spacing::NONE);
-            assert!(width >= spacing::NONE);
+            assert!(x >= Pixels::default());
+            assert!(width >= Pixels::default());
             assert!(x + width <= bounds_width);
         }
     }
@@ -146,6 +145,7 @@ impl PlayerView {
                         state.app.scan.progress_eta_secs,
                         &state.app.scan.progress_phase,
                     ),
+                    &d,
                     &theme,
                 ))
             })
@@ -169,7 +169,7 @@ impl PlayerView {
                     } else {
                         (Some(0.0), "pending".to_string())
                     };
-                row.child(self.render_scan_status_item("ReplayGain", progress, detail, &theme))
+                row.child(self.render_scan_status_item("ReplayGain", progress, detail, &d, &theme))
             })
             .when(any_active, |row| {
                 let mgr = &state.app.scan.ctrl.waveform_manager;
@@ -186,7 +186,7 @@ impl PlayerView {
                     } else {
                         (Some(0.0), "pending".to_string())
                     };
-                row.child(self.render_scan_status_item("Wave", progress, detail, &theme))
+                row.child(self.render_scan_status_item("Wave", progress, detail, &d, &theme))
             })
             .when(any_active, |row| {
                 let mgr = &state.app.scan.ctrl.bliss_manager;
@@ -203,7 +203,7 @@ impl PlayerView {
                     } else {
                         (Some(0.0), "pending".to_string())
                     };
-                row.child(self.render_scan_status_item("Bliss", progress, detail, &theme))
+                row.child(self.render_scan_status_item("Bliss", progress, detail, &d, &theme))
             })
             .child(div().flex_1())
             .child(
@@ -226,6 +226,7 @@ impl PlayerView {
         label: &'static str,
         progress: Option<f32>,
         detail: String,
+        d: &Ds,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
         let progress = progress.map(|p| p.clamp(0.0, 1.0));
@@ -234,7 +235,7 @@ impl PlayerView {
         div()
             .flex()
             .items_center()
-            .gap(spacing::SM)
+            .gap(d.grid)
             .child(
                 div()
                     .text_size(rems(0.72))

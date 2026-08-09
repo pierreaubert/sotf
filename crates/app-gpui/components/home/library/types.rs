@@ -1,5 +1,4 @@
 use super::misc::BREAKPOINT_NARROW_LAYOUT_REMS;
-use crate::app::constants::spacing;
 use crate::app::i18n::PhoneTranslations;
 use crate::components::design::Ds;
 use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
@@ -288,7 +287,7 @@ impl PlayerView {
                                                 div()
                                                     .flex()
                                                     .flex_col()
-                                                    .gap(spacing::XS)
+                                                    .gap(d.half_grid)
                                                     .child(
                                                         div()
                                                             .text_xs()

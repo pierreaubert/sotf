@@ -21,6 +21,15 @@ pub(super) struct EqChartGeometry {
     pub q_bar_height: f32,
     pub q_bar_min_width: f32,
     pub q_bar_max_width: f32,
+    pub guide_label_width: f32,
+    pub guide_label_top: f32,
+    pub guide_top: f32,
+    pub guide_dash_height: f32,
+    pub guide_dash_gap: f32,
+    pub guide_label_padding_x: f32,
+    pub guide_label_padding_y: f32,
+    pub guide_label_radius: f32,
+    pub guide_label_text_size: f32,
 }
 
 impl EqChartGeometry {
@@ -36,6 +45,15 @@ impl EqChartGeometry {
             q_bar_height: Q_BAR_HEIGHT * scale,
             q_bar_min_width: Q_BAR_MIN_WIDTH * scale,
             q_bar_max_width: Q_BAR_MAX_WIDTH * scale,
+            guide_label_width: 56.0 * scale,
+            guide_label_top: 2.0 * scale,
+            guide_top: 24.0 * scale,
+            guide_dash_height: 4.0 * scale,
+            guide_dash_gap: 4.0 * scale,
+            guide_label_padding_x: 3.0 * scale,
+            guide_label_padding_y: 1.0 * scale,
+            guide_label_radius: 4.0 * scale,
+            guide_label_text_size: 10.0 * scale,
         }
     }
 

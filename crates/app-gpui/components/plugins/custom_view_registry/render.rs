@@ -607,6 +607,7 @@ pub(super) fn render_loudness(
     super::super::render_loudness_monitor_plugin(
         &d,
         ctx.loudness.clone(),
+        ctx.layout_scale,
         ctx.plugin_idx,
         ctx.is_editing,
         text,

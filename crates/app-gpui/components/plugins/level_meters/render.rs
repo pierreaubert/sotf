@@ -4,7 +4,6 @@ use super::level_meter_manager::LevelMeterManager;
 use super::misc::peak_spread_db;
 use super::misc::should_use_peak_spread;
 use crate::app::ChannelGroup;
-use crate::app::constants::spacing;
 use crate::app::i18n::LevelMeterTranslations;
 use crate::components::design::Ds;
 use crate::level_meter_render::{
@@ -18,6 +17,8 @@ use gpui_audio_kit::{
     TickConfig, db_to_position, render_horizontal_meter_bar, render_horizontal_meter_bar_with,
     render_tick_row,
 };
+
+const FALLBACK_TRUE_PEAKS: [f64; 2] = [-60.0, -60.0];
 
 /// Render a horizontal gain reduction meter
 /// Uses render_gradient_meter for consistent styling
@@ -228,6 +229,7 @@ pub fn render_gradient_meter(
 pub fn render_lufs_with_true_peak(
     d: &Ds,
     loudness: Option<&sotf_audio_player::LoudnessData>,
+    layout_scale: f32,
     text: LevelMeterTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
@@ -235,14 +237,16 @@ pub fn render_lufs_with_true_peak(
         integrated_lufs,
         shortterm_lufs,
         momentary_lufs,
-        true_peak_left,
-        true_peak_right,
+        true_peaks,
         stereo_width,
         peak_spread,
         channel_count,
     ) = if let Some(l) = loudness {
-        let tp_left = l.true_peaks_dbtp.first().copied().unwrap_or(-60.0);
-        let tp_right = l.true_peaks_dbtp.get(1).copied().unwrap_or(tp_left);
+        let true_peaks: &[f64] = if l.true_peaks_dbtp.is_empty() {
+            &FALLBACK_TRUE_PEAKS
+        } else {
+            l.true_peaks_dbtp.as_slice()
+        };
         // Stereo width derived from correlation: +1 = mono (0), 0 = uncorrelated (0.5), -1 = out of phase (1)
         let width = l
             .correlation_lr
@@ -254,17 +258,24 @@ pub fn render_lufs_with_true_peak(
             l.integrated_lufs,
             l.shortterm_lufs,
             l.momentary_lufs,
-            tp_left,
-            tp_right,
+            true_peaks,
             width,
             peak_spread,
             channel_count,
         )
     } else {
-        (-60.0, -60.0, -60.0, -60.0, -60.0, 0.5, 0.0, 0)
+        (
+            -60.0,
+            -60.0,
+            -60.0,
+            FALLBACK_TRUE_PEAKS.as_slice(),
+            0.5,
+            0.0,
+            0,
+        )
     };
 
-    let meter_theme = MeterTheme::from_theme(theme);
+    let meter_theme = MeterTheme::from_theme(theme, layout_scale);
 
     div()
         .flex()
@@ -294,22 +305,15 @@ pub fn render_lufs_with_true_peak(
                         .mb(d.grid)
                         .child(text.true_peak),
                 )
-                // Left channel bar (uses same scale as ticks)
-                .child(PlayerView::render_meter_bar(
-                    d,
-                    "L",
-                    true_peak_left,
-                    &tick_config,
-                    &meter_theme,
-                ))
-                // Right channel bar (uses same scale as ticks)
-                .child(PlayerView::render_meter_bar(
-                    d,
-                    "R",
-                    true_peak_right,
-                    &tick_config,
-                    &meter_theme,
-                ))
+                .children(true_peaks.iter().enumerate().map(|(index, true_peak)| {
+                    PlayerView::render_meter_bar(
+                        d,
+                        sotf_audio_player::get_channel_label(index, true_peaks.len()),
+                        *true_peak,
+                        &tick_config,
+                        &meter_theme,
+                    )
+                }))
                 // Tick marks (aligned with bar using same flex layout)
                 .child(render_tick_row(
                     &tick_config,
@@ -365,7 +369,7 @@ pub fn render_lufs_with_true_peak(
                 // Integrated LUFS (uses same scale as ticks)
                 .child(PlayerView::render_meter_bar(
                     d,
-                    "I",
+                    "I".to_string(),
                     integrated_lufs,
                     &tick_config,
                     &meter_theme,
@@ -373,7 +377,7 @@ pub fn render_lufs_with_true_peak(
                 // Short-term LUFS (uses same scale as ticks)
                 .child(PlayerView::render_meter_bar(
                     d,
-                    "S",
+                    "S".to_string(),
                     shortterm_lufs,
                     &tick_config,
                     &meter_theme,
@@ -381,7 +385,7 @@ pub fn render_lufs_with_true_peak(
                 // Momentary LUFS (uses same scale as ticks)
                 .child(PlayerView::render_meter_bar(
                     d,
-                    "M",
+                    "M".to_string(),
                     momentary_lufs,
                     &tick_config,
                     &meter_theme,
@@ -583,7 +587,7 @@ impl PlayerView {
                                     .map(|s| s.into())
                                     .unwrap_or_else(|| format!("{}", db));
                                 let label = div()
-                                    .text_size(rems(0.5625))
+                                    .text_size(d.text_xs)
                                     .text_color(text_muted)
                                     .mt(label_offset)
                                     .child(label_text);
@@ -630,22 +634,22 @@ impl PlayerView {
                     .opacity(0.0) // Invisible, just for spacing
                     .child(
                         div()
-                            .px(spacing::XS)
-                            .py(spacing::XS)
+                            .px(d.half_grid)
+                            .py(d.half_grid)
                             .text_size(text_xs)
                             .child("M"),
                     )
                     .child(
                         div()
-                            .px(spacing::XS)
-                            .py(spacing::XS)
+                            .px(d.half_grid)
+                            .py(d.half_grid)
                             .text_size(text_xs)
                             .child("S"),
                     )
                     .child(
                         div()
-                            .px(spacing::XS)
-                            .py(spacing::XS)
+                            .px(d.half_grid)
+                            .py(d.half_grid)
                             .text_size(text_xs)
                             .child("D"),
                     ),
@@ -776,8 +780,8 @@ impl PlayerView {
         let theme_c = theme.clone();
         div()
             .id((button_type, group_idx))
-            .px(spacing::XS)
-            .py(spacing::XS)
+            .px(d.half_grid)
+            .py(d.half_grid)
             .rounded(d.r_sm)
             .text_size(d.text_xs)
             .cursor_pointer()
@@ -912,13 +916,14 @@ impl PlayerView {
     /// Uses the TickConfig's scale for bar fill to match tick mark positions
     pub fn render_meter_bar(
         d: &Ds,
-        label: &str,
+        label: String,
         value: f64,
         tick_config: &TickConfig,
         meter_theme: &MeterTheme,
     ) -> impl IntoElement {
-        let horizontal_theme = meter_theme.to_horizontal_meter_theme(d.text_xs, spacing::SM);
-        render_horizontal_meter_bar(label.to_string(), value, tick_config, horizontal_theme)
+        let horizontal_theme =
+            meter_theme.to_horizontal_meter_theme(d.text_xs, px(meter_theme.horizontal_gap));
+        render_horizontal_meter_bar(label, value, tick_config, horizontal_theme)
     }
 
     /// Render stereo width bar (0 = mono, 1 = wide)
@@ -929,7 +934,8 @@ impl PlayerView {
         tick_config: &TickConfig,
         meter_theme: &MeterTheme,
     ) -> impl IntoElement {
-        let horizontal_theme = meter_theme.to_horizontal_meter_theme(d.text_xs, spacing::SM);
+        let horizontal_theme =
+            meter_theme.to_horizontal_meter_theme(d.text_xs, px(meter_theme.horizontal_gap));
         let ratio = tick_config.value_to_position(width);
         render_horizontal_meter_bar_with(
             "W",
@@ -947,7 +953,8 @@ impl PlayerView {
         tick_config: &TickConfig,
         meter_theme: &MeterTheme,
     ) -> impl IntoElement {
-        let horizontal_theme = meter_theme.to_horizontal_meter_theme(d.text_xs, spacing::SM);
+        let horizontal_theme =
+            meter_theme.to_horizontal_meter_theme(d.text_xs, px(meter_theme.horizontal_gap));
         let ratio = tick_config.value_to_position(spread_db);
         render_horizontal_meter_bar_with(
             "D",
@@ -963,22 +970,30 @@ impl PlayerView {
         &self,
         d: &Ds,
         loudness: Option<&sotf_audio_player::LoudnessData>,
+        layout_scale: f32,
         text: LevelMeterTranslations,
         theme: &Theme,
     ) -> impl IntoElement {
         // Call the standalone function
-        render_lufs_with_true_peak(d, loudness, text, theme)
+        render_lufs_with_true_peak(d, loudness, layout_scale, text, theme)
     }
 
     /// Render separate LUFS panel
     pub fn render_lufs_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let text = LevelMeterTranslations::for_language(self.state.read(cx).app.ui_state.language);
-        let (theme, loudness) = {
+        let (theme, loudness, layout_scale) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
                 state.app.playback.loudness_info.clone(),
+                crate::ui::compute_combined_scale(
+                    state.app.ui_state.window_width,
+                    state.app.ui_state.window_height,
+                    state.app.ui_state.font_scale,
+                    state.app.ui_state.min_font_size_px,
+                    state.app.ui_state.max_font_size_px,
+                ),
             )
         };
         // No `.items_center()` here: cross-axis alignment defaults to
@@ -993,6 +1008,12 @@ impl PlayerView {
             .w_full()
             .p(d.card)
             .bg(theme.background)
-            .child(self.render_lufs_with_true_peak(&d, loudness.as_deref(), text, &theme))
+            .child(self.render_lufs_with_true_peak(
+                &d,
+                loudness.as_deref(),
+                layout_scale,
+                text,
+                &theme,
+            ))
     }
 }

@@ -32,6 +32,8 @@ pub struct MeterTheme {
     pub label_width: f32,
     /// Value display width
     pub value_width: f32,
+    /// Gap between horizontal meter label, bar, and value.
+    pub horizontal_gap: f32,
 
     /// Warning threshold position (0.0 to 1.0)
     pub warning_threshold: f32,
@@ -46,7 +48,12 @@ pub struct MeterTheme {
 impl MeterTheme {
     /// Create meter theme from the current app theme.
     /// Always use this instead of constructing manually — ensures theme consistency.
-    pub fn from_theme(theme: &crate::theme::Theme) -> Self {
+    pub fn from_theme(theme: &crate::theme::Theme, layout_scale: f32) -> Self {
+        let layout_scale = if layout_scale.is_finite() && layout_scale > 0.0 {
+            layout_scale
+        } else {
+            1.0
+        };
         Self {
             color_normal: theme.feedback.meter_normal,
             color_warning: theme.feedback.meter_warning,
@@ -56,11 +63,12 @@ impl MeterTheme {
             color_border: theme.border,
             color_text: theme.text_secondary,
             color_text_muted: theme.text_muted,
-            bar_height: 20.0,
+            bar_height: 20.0 * layout_scale,
             border_radius: theme.layout.design_tokens.meter_corner_radius.max(0.0),
             border_width: 1.0,
-            label_width: 32.0,        // Reduced from 80px to make bars 60% longer
-            value_width: 50.0,        // Value display width
+            label_width: 32.0 * layout_scale,
+            value_width: 50.0 * layout_scale,
+            horizontal_gap: 4.0 * layout_scale,
             warning_threshold: 0.75,  // 75% of range
             critical_threshold: 0.90, // 90% of range
             use_gradient: theme.layout.design_tokens.meter_use_gradient,

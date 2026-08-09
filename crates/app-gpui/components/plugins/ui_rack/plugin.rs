@@ -6,7 +6,6 @@ use super::super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_
 use super::plugin_drag_info::PluginDragInfo;
 use super::short::short_name;
 use super::short::short_name_with_permanent;
-use crate::app::constants::spacing;
 use crate::app::i18n::{PluginCommonTranslations, PluginRackTranslations};
 use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
@@ -629,7 +628,7 @@ impl PlayerView {
                                         .items_center()
                                         .justify_between()
                                         .py(d.pad_y_half)
-                                        .px(spacing::SM)
+                                        .px(d.grid)
                                         .gap(d.grid)
                                         .h_full()
                                         .border_r_1()
@@ -801,7 +800,7 @@ impl PlayerView {
                                         right_panel
                                             .bg(theme_p.surface)
                                             .px(d.grid)
-                                            .py(spacing::XS)
+                                            .py(d.half_grid)
                                             // intentional: 1px divider between preset items
                                             .gap(px(1.0))
                                             .children(preset_list.iter().enumerate().map(
@@ -813,7 +812,7 @@ impl PlayerView {
                                                         .id(("preset-item", pi))
                                                         .flex()
                                                         .items_center()
-                                                        .gap(spacing::XS)
+                                                        .gap(d.half_grid)
                                                         .px(d.grid)
                                                         // intentional: 1px compact preset-item inset — do not scale
                                                         .py(px(1.0))
@@ -856,7 +855,7 @@ impl PlayerView {
                                                             let name_confirm = name.clone();
                                                             div()
                                                                 .id(("preset-del", pi))
-                                                                .text_size(rems(0.5))
+                                                                .text_size(d.text_xs)
                                                                 .cursor_pointer()
                                                                 .when(confirming_del, |d| d.text_color(theme_i.error).font_weight(FontWeight::BOLD))
                                                                 .when(!confirming_del, |d| d.text_color(theme_i.text_muted).hover(|s| s.text_color(theme_i.error)))
@@ -899,8 +898,8 @@ impl PlayerView {
                                                     div()
                                                         .flex()
                                                         .items_center()
-                                                        .gap(spacing::XS)
-                                                        .mt(spacing::XS)
+                                                        .gap(d.half_grid)
+                                                        .mt(d.half_grid)
                                                         .child({
                                                             let state_for_text = self.state.clone();
                                                             div()
@@ -922,7 +921,7 @@ impl PlayerView {
                                                             div()
                                                                 .id(("preset-confirm", idx))
                                                                 .px(d.grid)
-                                                                .py(spacing::XS)
+                                                                .py(d.half_grid)
                                                                 .rounded(d.r_sm)
                                                                 .cursor_pointer()
                                                                 .text_size(d.text_xs)
@@ -967,8 +966,8 @@ impl PlayerView {
                                                         .items_center()
                                                         .justify_center()
                                                         .px(d.grid)
-                                                        .py(spacing::XS)
-                                                        .mt(spacing::XS)
+                                                        .py(d.half_grid)
+                                                        .mt(d.half_grid)
                                                         .rounded(d.r_sm)
                                                         .cursor_pointer()
                                                         .text_size(d.text_xs)
@@ -1025,7 +1024,7 @@ impl PlayerView {
                                                         .flex()
                                                         .justify_end()
                                                         .px(d.grid)
-                                                        .pb(spacing::XS)
+                                                        .pb(d.half_grid)
                                                         .text_color(theme_c.text_muted)
                                                         .child(
                                                             Icon::new(IconName::GripVertical)
@@ -1217,7 +1216,7 @@ impl PlayerView {
                                         .flex()
                                         .flex_col()
                                         .items_center()
-                                        .gap(spacing::XS)
+                                        .gap(d.half_grid)
                                         // intentional: 3px asymmetric inset to fit permanent tail module — do not scale
                                         .p(px(3.0))
                                         .border_r_1()
@@ -1591,7 +1590,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .gap(spacing::NONE)
+                    .gap(px(0.0))
                     .flex_1()
                     // Legend on left side if requested
                     .when(legend_on_left, |el| {
@@ -1604,7 +1603,7 @@ impl PlayerView {
                             // intentional: pixel-exact meter divider — do not scale
                             .gap(px(1.0))
                             .flex_1()
-                            .p(spacing::XS)
+                            .p(d.half_grid)
                             .bg(theme_c.background_secondary)
                             .children(channel_data.into_iter().map(
                                 |(fill_ratio, yellow_threshold, red_threshold, name)| {
@@ -1641,7 +1640,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
-            .p(spacing::XS)
+            .p(d.half_grid)
             // Ticks area (matches meter_bar flex_1)
             .child(
                 div()
@@ -1667,7 +1666,7 @@ impl PlayerView {
                         };
 
                         let label = div()
-                            .text_size(rems(0.5625))
+                            .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .mt(label_offset)
                             .child(format!("{}", db));
@@ -2759,7 +2758,7 @@ impl PlayerView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .py(spacing::SM)
+                .py(d.grid)
                 .cursor_pointer()
                 .text_size(d.text_xs)
                 .font_weight(FontWeight::SEMIBOLD)
@@ -2776,7 +2775,7 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .gap(spacing::XS)
+            .gap(d.half_grid)
             .p(d.pad_y)
             .bg(theme.background_secondary)
             .border_l_1()
@@ -2786,7 +2785,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .gap(spacing::XS)
+                    .gap(d.half_grid)
                     .child(
                         make_button(
                             "chain-bypass",
@@ -2835,7 +2834,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .gap(spacing::XS)
+                    .gap(d.half_grid)
                     .child(
                         make_button(
                             "chain-mono",

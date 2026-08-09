@@ -43,8 +43,8 @@ cargo run --bin sotf-desktop --release
 ## Design-token drift guard
 
 Spacing, text size, corner radius, and icon size must flow through the design
-system (`components/design.rs` → `Ds::from_cx(cx)`, or `spacing::*`/`radius::*`
-in `app/constants.rs`). This keeps fonts, icons, and layout scaling together
+system (`components/design.rs` → `Ds::from_cx(cx)`). This keeps fonts, icons,
+and layout scaling together
 when the user invokes the font-zoom actions.
 
 `scripts/check-design-tokens.py` fails CI when raw `px(N.0)` appears in
