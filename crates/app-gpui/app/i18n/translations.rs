@@ -5165,7 +5165,22 @@ impl PluginCommonTranslations {
         translations
             .iter()
             .find_map(|(source, translation)| (*source == label).then_some(*translation))
-            .unwrap_or_else(|| panic!("missing localized plugin label: {label}"))
+            .unwrap_or(label)
+    }
+
+    #[doc(hidden)]
+    pub fn has_localized_label(self, label: &str) -> bool {
+        let translations = match self.language {
+            Language::English => return true,
+            Language::French => FRENCH_PLUGIN_LABELS,
+            Language::German => GERMAN_PLUGIN_LABELS,
+            Language::Spanish => SPANISH_PLUGIN_LABELS,
+        };
+
+        translations
+            .iter()
+            .find_map(|(source, translation)| (*source == label).then_some(*translation))
+            .is_some_and(|translation| !translation.trim().is_empty())
     }
 }
 
@@ -5237,17 +5252,20 @@ const FRENCH_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("AG Smooth", "Lissage du gain auto"),
     ("Amb Boost", "Renfort d’ambiance"),
     ("Bandpass", "Passe-bande"),
+    ("Bleed", "Fuite"),
     ("Boost", "Renfort"),
     ("Centroid", "Centroïde"),
     ("Coherence", "Cohérence"),
     ("Density", "Densité"),
     ("Dir Leak", "Fuite directionnelle"),
     ("Duration", "Durée"),
+    ("Top Gain", "Gain hauteur"),
     ("HF Cap", "Limite des aigus"),
     ("LFE Cut", "Coupure LFE"),
     ("LFE Gain", "Gain LFE"),
     ("LFO Rate", "Vitesse du LFO"),
     ("Rear Boost", "Renfort arrière"),
+    ("Reflection", "Réflexion"),
     ("Safety", "Sécurité"),
     ("Sharpen", "Accentuation"),
     ("Threshold", "Seuil"),
@@ -5326,17 +5344,20 @@ const GERMAN_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("AG Smooth", "Auto-Gain-Glättung"),
     ("Amb Boost", "Ambiente-Anhebung"),
     ("Bandpass", "Bandpass"),
+    ("Bleed", "Übersprechen"),
     ("Boost", "Anhebung"),
     ("Centroid", "Zentroid"),
     ("Coherence", "Kohärenz"),
     ("Density", "Dichte"),
     ("Dir Leak", "Richtungsleck"),
     ("Duration", "Dauer"),
+    ("Top Gain", "Höhenkanal-Pegel"),
     ("HF Cap", "Höhenbegrenzung"),
     ("LFE Cut", "LFE-Trennung"),
     ("LFE Gain", "LFE-Pegel"),
     ("LFO Rate", "LFO-Rate"),
     ("Rear Boost", "Rückkanal-Anhebung"),
+    ("Reflection", "Reflexion"),
     ("Safety", "Sicherheit"),
     ("Sharpen", "Schärfung"),
     ("Threshold", "Schwelle"),
@@ -5415,17 +5436,20 @@ const SPANISH_PLUGIN_LABELS: &[(&str, &str)] = &[
     ("AG Smooth", "Suavizado de ganancia aut."),
     ("Amb Boost", "Refuerzo de ambiente"),
     ("Bandpass", "Paso de banda"),
+    ("Bleed", "Fuga"),
     ("Boost", "Refuerzo"),
     ("Centroid", "Centroide"),
     ("Coherence", "Coherencia"),
     ("Density", "Densidad"),
     ("Dir Leak", "Fuga direccional"),
     ("Duration", "Duración"),
+    ("Top Gain", "Ganancia de altura"),
     ("HF Cap", "Límite de agudos"),
     ("LFE Cut", "Corte LFE"),
     ("LFE Gain", "Ganancia LFE"),
     ("LFO Rate", "Velocidad LFO"),
     ("Rear Boost", "Refuerzo trasero"),
+    ("Reflection", "Reflexión"),
     ("Safety", "Seguridad"),
     ("Sharpen", "Realce"),
     ("Threshold", "Umbral"),

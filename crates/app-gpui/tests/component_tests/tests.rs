@@ -50,6 +50,27 @@ use sotf_plugins::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use syn::visit::Visit;
+
+#[derive(Default)]
+struct TextLabelVisitor {
+    labels: BTreeSet<String>,
+}
+
+impl<'ast> Visit<'ast> for TextLabelVisitor {
+    fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+        if call.method == "label"
+            && let syn::Expr::Path(receiver) = call.receiver.as_ref()
+            && receiver.path.is_ident("text")
+            && let Some(syn::Expr::Lit(argument)) = call.args.first()
+            && let syn::Lit::Str(label) = &argument.lit
+        {
+            self.labels.insert(label.value());
+        }
+
+        syn::visit::visit_expr_method_call(self, call);
+    }
+}
 
 fn app_source(relative: &str) -> String {
     std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(relative))
@@ -2750,6 +2771,7 @@ fn plugin_rack_copy_is_complete_and_visible_literals_are_extracted() {
                 "AG Smooth",
                 "Amb Boost",
                 "Bandpass",
+                "Bleed",
                 "Boost",
                 "Centroid",
                 "Coherence",
@@ -2761,9 +2783,11 @@ fn plugin_rack_copy_is_complete_and_visible_literals_are_extracted() {
                 "LFE Gain",
                 "LFO Rate",
                 "Rear Boost",
+                "Reflection",
                 "Safety",
                 "Sharpen",
                 "Threshold",
+                "Top Gain",
                 "Trans Red",
                 "Variance",
                 "Voice Hi",
@@ -2771,7 +2795,7 @@ fn plugin_rack_copy_is_complete_and_visible_literals_are_extracted() {
                 "Weight",
             ]
             .iter()
-            .all(|label| !common.label(label).trim().is_empty()),
+            .all(|label| common.has_localized_label(label)),
             "plugin labels are incomplete for {}",
             language.code()
         );
@@ -2801,6 +2825,40 @@ fn plugin_rack_copy_is_complete_and_visible_literals_are_extracted() {
             "Plugin Rack contains untranslated visible text via {literal_surface}"
         );
     }
+}
+
+#[test]
+fn every_upmixer_plugin_label_literal_has_a_translation() {
+    use sotf_audio_player_gpui::i18n::PluginCommonTranslations;
+
+    let source = app_source("components/plugins/ui_upmixer/render.rs");
+    let file = syn::parse_file(&source).expect("upmixer source should parse as Rust");
+    let mut visitor = TextLabelVisitor::default();
+    visitor.visit_file(&file);
+    let labels = visitor.labels;
+
+    assert!(
+        !labels.is_empty(),
+        "upmixer should contain localized labels"
+    );
+    let missing_by_language = Language::all()
+        .iter()
+        .copied()
+        .filter(|language| *language != Language::English)
+        .filter_map(|language| {
+            let common = PluginCommonTranslations::for_language(language);
+            let missing = labels
+                .iter()
+                .filter(|label| !common.has_localized_label(label))
+                .cloned()
+                .collect::<Vec<_>>();
+            (!missing.is_empty()).then_some((language.code(), missing))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        missing_by_language.is_empty(),
+        "missing upmixer plugin labels: {missing_by_language:?}"
+    );
 }
 
 #[test]

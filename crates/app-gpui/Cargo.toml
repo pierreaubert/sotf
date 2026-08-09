@@ -186,6 +186,7 @@ sotf-player = { workspace = true, features = ["testing"] }
 sotf-tui = { path = "../app-tui", default-features = false }
 sotf-testkit = { workspace = true }
 proptest = { workspace = true }
+syn = { workspace = true, features = ["visit"] }
 
 [[test]]
 name = "e2e"
