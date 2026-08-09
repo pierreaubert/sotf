@@ -217,7 +217,21 @@ pub fn solve_control_groups<'a>(
     groups: &[&'a ControlGroup],
     available_width: f32,
 ) -> Result<SolvedControlGroups<'a>, GroupLayoutError> {
+    solve_control_groups_scaled(groups, available_width, 1.0)
+}
+
+/// Solve atomic control-group visibility at the host's effective UI scale.
+pub fn solve_control_groups_scaled<'a>(
+    groups: &[&'a ControlGroup],
+    available_width: f32,
+    scale: f32,
+) -> Result<SolvedControlGroups<'a>, GroupLayoutError> {
     validate_control_groups(groups)?;
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
 
     let children = cached_declaration(groups);
     let root = ContainerNode::new(
@@ -237,7 +251,7 @@ pub fn solve_control_groups<'a>(
             .or_insert_with(|| SolvedTree::with_capacity(children.len() + 1));
         solve_tree_into(
             &root,
-            available_width.max(0.0),
+            (available_width / scale).max(0.0),
             1.0,
             &LayoutPreferences::default(),
             solved,
@@ -347,5 +361,29 @@ mod tests {
         assert!(validate_control_groups(&[&FIRST, &EMPTY_LABEL]).is_err());
         assert!(validate_control_groups(&[&BAD_WIDTH]).is_err());
         assert!(validate_control_groups(&[&FIRST, &FIRST]).is_err());
+    }
+
+    #[test]
+    fn scaled_group_solver_preserves_logical_overflow() {
+        let groups = [&FIRST, &SECOND];
+        let baseline = solve_control_groups_scaled(&groups, 140.0, 1.0).unwrap();
+        let baseline = ["first", "second"].map(|id| baseline.find(id).unwrap().visible());
+        let zoomed = solve_control_groups_scaled(&groups, 210.0, 1.5).unwrap();
+        let zoomed = ["first", "second"].map(|id| zoomed.find(id).unwrap().visible());
+
+        assert_eq!(zoomed, baseline);
+    }
+
+    #[test]
+    fn invalid_group_scale_falls_back_to_baseline() {
+        let groups = [&FIRST, &SECOND];
+        let baseline = solve_control_groups(&groups, 140.0).unwrap();
+
+        for scale in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert_eq!(
+                solve_control_groups_scaled(&groups, 140.0, scale).unwrap(),
+                baseline
+            );
+        }
     }
 }

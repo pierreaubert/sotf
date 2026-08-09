@@ -466,6 +466,7 @@ impl PlayerView {
         let scale = unsafe { sotf_ios_take_dynamic_type_scale() };
         if scale > 0.0 {
             state.app.ui_state.font_scale = scale.clamp(0.5, 2.0);
+            recalculate_pagination_for_state(state, true);
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::info(
                 "Updated text size from iOS Dynamic Type.",
             ));
@@ -780,6 +781,7 @@ impl PlayerView {
                 log::error!("Failed to save config: {}", e);
             }
         });
+        self.recalculate_pagination(cx, true);
         cx.notify();
     }
 
@@ -797,6 +799,7 @@ impl PlayerView {
                 log::error!("Failed to save config: {}", e);
             }
         });
+        self.recalculate_pagination(cx, true);
         cx.notify();
     }
 
@@ -813,6 +816,7 @@ impl PlayerView {
                 log::error!("Failed to save config: {}", e);
             }
         });
+        self.recalculate_pagination(cx, true);
         cx.notify();
     }
 
@@ -1020,6 +1024,9 @@ impl PlayerView {
         let was_search =
             self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Search;
         self.state.update(cx, |state, _cx| {
+            if state.app.ui_state.input_mode == crate::app::InputMode::EditingPluginNode {
+                state.app.plugin_state.graph_state.clear_editing_context();
+            }
             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
             state.app.clear_library_search();
             state.app.input_state.directory_input.clear();
@@ -1921,36 +1928,8 @@ impl PlayerView {
     /// Recalculate library pagination based on current layout.
     /// Uses the responsive scale to compute card sizes that match rem-based rendering.
     pub(crate) fn recalculate_pagination(&self, cx: &mut Context<Self>, force_reset: bool) {
-        let (window_width, window_height, font_scale, min_font_px, max_font_px) = {
-            let state = self.state.read(cx);
-            (
-                state.app.ui_state.window_width,
-                state.app.ui_state.window_height,
-                state.app.ui_state.font_scale,
-                state.app.ui_state.min_font_size_px,
-                state.app.ui_state.max_font_size_px,
-            )
-        };
-
-        let (columns, rows) = estimate_grid_dimensions(
-            window_width,
-            window_height,
-            font_scale,
-            min_font_px,
-            max_font_px,
-        );
-
         self.state.update(cx, |state, _cx| {
-            let app = &mut state.app;
-            app.library_state.library_columns = columns;
-
-            // Initial load: 3 screens worth of items
-            let new_items_per_page = columns * rows * 3;
-
-            // Only update if we are initializing, resizing significantly, or forcing reset
-            if force_reset || app.library_state.items_per_page < new_items_per_page {
-                app.library_state.items_per_page = new_items_per_page;
-            }
+            recalculate_pagination_for_state(state, force_reset);
         });
     }
 
@@ -1966,5 +1945,26 @@ impl PlayerView {
                     (app.library_state.items_per_page + more).min(total);
             }
         });
+    }
+}
+
+/// Recalculate grid pagination after any state-owned scale change, including
+/// settings controls that do not have a `PlayerView` handle.
+pub(crate) fn recalculate_pagination_for_state(
+    state: &mut crate::app::AppState,
+    force_reset: bool,
+) {
+    let app = &mut state.app;
+    let (columns, rows) = estimate_grid_dimensions(
+        app.ui_state.window_width,
+        app.ui_state.window_height,
+        app.ui_state.font_scale,
+        app.ui_state.min_font_size_px,
+        app.ui_state.max_font_size_px,
+    );
+    app.library_state.library_columns = columns;
+    let new_items_per_page = columns * rows * 3;
+    if force_reset || app.library_state.items_per_page < new_items_per_page {
+        app.library_state.items_per_page = new_items_per_page;
     }
 }

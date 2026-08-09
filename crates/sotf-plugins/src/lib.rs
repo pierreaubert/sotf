@@ -322,7 +322,8 @@ pub use plugin_multiband_compressor::{
     BandCompressorParams, MultibandCompressorPlugin, MultibandCompressorPluginParams,
 };
 pub use plugin_multiband_expander::{
-    BandExpanderParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
+    BandExpanderParams, MultibandExpanderData, MultibandExpanderPlugin,
+    MultibandExpanderPluginParams,
 };
 pub use plugin_pnd::{PndPlugin, PndPluginParams};
 pub use plugin_resampler::ResamplerPlugin;

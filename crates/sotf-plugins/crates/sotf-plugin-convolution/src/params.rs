@@ -45,12 +45,17 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[ControlSpec::file_picker(0)], // ir_file
-    main: &[],                              // IR waveform placeholder (future viz)
-    output: &[
-        ControlSpec::knob(1), // mix
-        ControlSpec::knob(2), // gain_db
-    ],
+    config: &[],
+    main: &[ControlGroup::new(
+        "CONVOLUTION",
+        "CONVOLUTION",
+        &[
+            ControlSpec::file_picker(0), // ir_file
+            ControlSpec::knob(1),        // mix
+            ControlSpec::knob(2),        // gain_db
+        ],
+    )],
+    output: &[],
     tabs: &[TabSpec {
         name: "Advanced",
         controls: &[
@@ -60,11 +65,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ],
     }],
     visualizations: &[],
-    column_constraints: &[
-        ColumnConstraint::config(180.0, 0.5),
-        ColumnConstraint::main(200.0),
-        ColumnConstraint::output(120.0, 0.6),
-    ],
+    column_constraints: &[ColumnConstraint::main(200.0)],
     dynamic_sections: &[],
 };
 

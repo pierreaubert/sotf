@@ -57,7 +57,6 @@ fn mark_graph_changed(state: &mut crate::app::AppState) {
         .update_channel_dependent_plugins();
     state.app.plugin_state.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
     state.app.plugin_state.update_state.plugin_graph_modified = true;
-    state.app.plugin_state.graph_state.workflow_canvas = None;
 }
 
 macro_rules! graph_action_handler {
@@ -69,6 +68,19 @@ macro_rules! graph_action_handler {
 }
 
 impl PlayerView {
+    /// Rebuild after keyboard graph edits so stale canvas history cannot apply
+    /// commands to a graph that was replaced outside the canvas command model.
+    fn refresh_workflow_canvas(&self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _| {
+            if matches!(
+                state.app.plugin_state.update_state.pending_plugin_update,
+                Some(PluginUpdateType::Structural)
+            ) {
+                state.app.plugin_state.graph_state.workflow_canvas = None;
+            }
+        });
+    }
+
     fn dispatch_plugin_graph_key(&self, key_spec: &str, cx: &mut Context<Self>) {
         let Ok(keystroke) = Keystroke::parse(key_spec) else {
             return;
@@ -244,6 +256,7 @@ impl PlayerView {
                     state.app.ui_state.toast_message =
                         Some(ToastMessage::success(text.plugin_added));
                 });
+                self.refresh_workflow_canvas(cx);
                 cx.notify();
                 true
             }
@@ -319,6 +332,7 @@ impl PlayerView {
                     }
                     mark_graph_changed(state);
                 });
+                self.refresh_workflow_canvas(cx);
                 cx.notify();
                 true
             }
@@ -380,6 +394,7 @@ impl PlayerView {
                         state.app.plugin_state.graph_state.keyboard_target_port = 0;
                     }
                 });
+                self.refresh_workflow_canvas(cx);
                 cx.notify();
                 true
             }
@@ -416,6 +431,7 @@ impl PlayerView {
                             Some(ToastMessage::success(text.disconnected));
                     }
                 });
+                self.refresh_workflow_canvas(cx);
                 cx.notify();
                 true
             }
@@ -457,6 +473,7 @@ impl PlayerView {
                     state.app.ui_state.toast_message =
                         Some(ToastMessage::success(text.node_removed));
                 });
+                self.refresh_workflow_canvas(cx);
                 cx.notify();
                 true
             }
@@ -498,6 +515,7 @@ impl PlayerView {
                     }
                     mark_graph_changed(state);
                 });
+                self.refresh_workflow_canvas(cx);
                 cx.notify();
                 true
             }

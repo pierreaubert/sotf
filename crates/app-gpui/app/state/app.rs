@@ -257,7 +257,8 @@ impl App {
             },
             plugin_ui: PluginUiState {
                 upmixer_config_open: false,
-                upmixer_tab: 1,
+                // Upmixer configuration tabs use the 10..=13 namespace.
+                upmixer_tab: 10,
                 spatial_spider:
                     crate::components::plugins::spatial_spider::SpatialSpiderUiState::default(),
                 spectrum_tilt_select_open: false,

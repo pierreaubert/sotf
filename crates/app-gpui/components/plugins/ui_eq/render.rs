@@ -386,8 +386,21 @@ pub(crate) fn render_eq_channel_toolbar(
                 theme,
                 move |_, _, cx| {
                     copy_from_global.update(cx, |state, cx| {
-                        if let Err(error) = state.app.copy_eq_global_to_selected(plugin_idx) {
-                            state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                        let key = (plugin_idx, selected_channel);
+                        if state.app.plugin_state.preset_state.confirm_eq_copy_from_all == Some(key)
+                        {
+                            state.app.plugin_state.preset_state.confirm_eq_copy_from_all = None;
+                            if let Err(error) = state.app.copy_eq_global_to_selected(plugin_idx) {
+                                state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                            }
+                        } else {
+                            state.app.plugin_state.clear_confirmations();
+                            state.app.plugin_state.preset_state.confirm_eq_copy_from_all =
+                                Some(key);
+                            state.app.ui_state.toast_message = Some(ToastMessage::warning(
+                                "Click Copy All → Selected again to replace this channel"
+                                    .to_string(),
+                            ));
                         }
                         cx.notify();
                     });
@@ -489,8 +502,20 @@ fn render_eq_channel_segment(
                 theme,
                 move |_, _, cx| {
                     copy_from_global.update(cx, |state, cx| {
-                        if let Err(error) = state.app.copy_eq_global_to_selected(plugin_idx) {
-                            state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                        let key = (plugin_idx, selected_channel);
+                        if state.app.plugin_state.preset_state.confirm_eq_copy_from_all == Some(key)
+                        {
+                            state.app.plugin_state.preset_state.confirm_eq_copy_from_all = None;
+                            if let Err(error) = state.app.copy_eq_global_to_selected(plugin_idx) {
+                                state.app.ui_state.toast_message = Some(ToastMessage::error(error));
+                            }
+                        } else {
+                            state.app.plugin_state.clear_confirmations();
+                            state.app.plugin_state.preset_state.confirm_eq_copy_from_all =
+                                Some(key);
+                            state.app.ui_state.toast_message = Some(ToastMessage::warning(
+                                "Click Copy All → Selected again to replace this channel",
+                            ));
                         }
                         cx.notify();
                     });
@@ -989,7 +1014,7 @@ pub(crate) fn render_eq_visualization_sized(
         let is_soloed = filter.solo;
         let any_soloed = filters.iter().any(|f| f.solo);
         let effective_muted = is_muted || (any_soloed && !is_soloed);
-        let opacity = if is_selected { 1.0 } else { 0.5 };
+        let opacity = if is_selected { 1.0 } else { 0.7 };
         let stroke = if is_selected { 2.0 } else { 1.5 };
         let opacity = if effective_muted { 0.2 } else { opacity };
 
@@ -1070,7 +1095,7 @@ pub(crate) fn render_eq_visualization_sized(
             .h(px(Q_BAR_HEIGHT))
             .bg(rgba_color)
             .rounded(px(Q_BAR_HEIGHT / 2.0))
-            .opacity(if is_selected { 0.8 } else { 0.5 })
+            .opacity(if is_selected { 0.8 } else { 0.7 })
             .into_any_element();
 
         control_points.push(q_bar);
@@ -1499,7 +1524,7 @@ pub fn render_eq_plugin(
         });
     let display_filters = preview_filters.as_deref().unwrap_or(display_filters);
 
-    let layout = EqCompactLayout::from_width(state.available_width);
+    let layout = EqCompactLayout::from_width(state.available_width / state.layout_scale.max(0.01));
 
     // Compute selected param for editing mode
     let highlight_band_idx = if state.is_editing {
@@ -1546,493 +1571,7 @@ pub fn render_eq_plugin(
     } else {
         state.per_channel_mode
     };
-    let _legacy_controls_section = if layout == EqCompactLayout::Current {
-        div()
-            .flex()
-            .flex_col()
-            .items_center() // Center band selector and knob box
-            .gap(ds.section)
-            .w_full()
-            // Channel Mode Toggle and Channel Selector — hidden in linear-phase mode
-            .when(!is_lp_mode, |container| {
-                container.child({
-                    let entity_clone = entity.clone();
-                    let entity_clone2 = entity.clone();
-                    let accent = theme.accent;
-                    let text_on_accent = theme.text_on_accent;
-                    let text_secondary = theme.text_secondary;
-                    let bg_secondary = theme.background_secondary;
-                    let surface_hover = theme.surface_hover;
-                    let border = theme.border;
 
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .gap(ds.section)
-                        .p(ds.pad_y)
-                        .bg(theme.surface)
-                        .rounded(ds.r_lg)
-                        // Mode toggle buttons
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(ds.grid)
-                                // All Channels button
-                                .child({
-                                    let is_selected = !per_channel_mode;
-                                    div()
-                                        .id("eq-mode-all")
-                                        .px(ds.pad_x)
-                                        .py(ds.pad_y_half)
-                                        .text_size(ds.text_sm)
-                                        .rounded(ds.r_md)
-                                        .cursor_pointer()
-                                        .when(is_selected, |d| {
-                                            d.bg(accent)
-                                                .text_color(text_on_accent)
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                        })
-                                        .when(!is_selected, |d| {
-                                            d.bg(bg_secondary)
-                                                .text_color(text_secondary)
-                                                .hover(move |s| s.bg(surface_hover))
-                                        })
-                                        .on_mouse_down(MouseButton::Left, {
-                                            let entity = entity_clone.clone();
-                                            move |_event, _window, cx| {
-                                                entity.update(cx, |state, cx| {
-                                                    state
-                                                        .app
-                                                        .set_eq_per_channel_mode(plugin_idx, false);
-                                                    cx.notify();
-                                                });
-                                            }
-                                        })
-                                        .child(text.all_channels)
-                                })
-                                // Per Channel button
-                                .child({
-                                    let is_selected = per_channel_mode;
-                                    div()
-                                        .id("eq-mode-per-channel")
-                                        .px(ds.pad_x)
-                                        .py(ds.pad_y_half)
-                                        .text_size(ds.text_sm)
-                                        .rounded(ds.r_md)
-                                        .cursor_pointer()
-                                        .when(is_selected, |d| {
-                                            d.bg(accent)
-                                                .text_color(text_on_accent)
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                        })
-                                        .when(!is_selected, |d| {
-                                            d.bg(bg_secondary)
-                                                .text_color(text_secondary)
-                                                .hover(move |s| s.bg(surface_hover))
-                                        })
-                                        .on_mouse_down(MouseButton::Left, {
-                                            let entity = entity_clone2.clone();
-                                            move |_event, _window, cx| {
-                                                entity.update(cx, |state, cx| {
-                                                    state
-                                                        .app
-                                                        .set_eq_per_channel_mode(plugin_idx, true);
-                                                    cx.notify();
-                                                });
-                                            }
-                                        })
-                                        .child(text.per_channel)
-                                }),
-                        )
-                        // Channel selector (only shown in per-channel mode)
-                        .when(per_channel_mode, |d| {
-                            d.child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(ds.grid)
-                                    .border(px(1.0))
-                                    .border_color(border)
-                                    .rounded(ds.r_md)
-                                    .px(ds.pad_y)
-                                    .children((0..channels).map(|ch| {
-                                        let entity = entity.clone();
-                                        let is_selected = ch == selected_eq_channel;
-                                        let ch_name = get_channel_name(ch, channels);
-                                        div()
-                                            .id(("eq-channel", ch))
-                                            .px(ds.pad_y)
-                                            .py(ds.pad_y_half)
-                                            .text_size(ds.text_sm)
-                                            .rounded(ds.r_sm)
-                                            .cursor_pointer()
-                                            .when(is_selected, |d| {
-                                                d.bg(accent)
-                                                    .text_color(text_on_accent)
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                            })
-                                            .when(!is_selected, |d| {
-                                                d.bg(bg_secondary)
-                                                    .text_color(text_secondary)
-                                                    .hover(move |s| s.bg(surface_hover))
-                                            })
-                                            .on_mouse_down(
-                                                MouseButton::Left,
-                                                move |_event, _window, cx| {
-                                                    entity.update(cx, |state, _| {
-                                                        state
-                                                            .app
-                                                            .plugin_state
-                                                            .selected_eq_channel = ch;
-                                                    });
-                                                },
-                                            )
-                                            .child(ch_name)
-                                    })),
-                            )
-                        })
-                })
-            })
-            // Band selector tabs (custom rendering to avoid context issues)
-            .child({
-                let mut tabs_container = div()
-                    .flex()
-                    .items_center()
-                    .justify_center() // Center tabs
-                    .gap(ds.gap)
-                    .p(ds.grid)
-                    .bg(theme.surface)
-                    .rounded(ds.r_lg);
-
-                // Build each band tab manually
-                for band_idx in 0..num_bands {
-                    let is_selected = band_idx == selected_band_idx;
-                    let filter = display_filters.get(band_idx);
-                    let is_muted = filter.map(|f| f.muted).unwrap_or(false);
-                    let is_soloed = filter.map(|f| f.solo).unwrap_or(false);
-                    let filter_short_name =
-                        filter.map(|f| f.filter_type.short_name()).unwrap_or("PK");
-                    let entity_clone = entity.clone();
-                    let accent = theme.accent;
-                    let text_on_accent = theme.text_on_accent;
-                    let text_secondary = theme.text_secondary;
-                    let text_muted_color = theme.text_muted;
-                    let text_primary = theme.text_primary;
-                    let bg_secondary = theme.background_secondary;
-                    let surface_hover = theme.surface_hover;
-                    let error = theme.error;
-                    let success = theme.success;
-                    let border = theme.border;
-
-                    let focus_handle = cx.focus_handle();
-
-                    let tab = div()
-                        .id(("eq-band", band_idx))
-                        .track_focus(&focus_handle)
-                        .key_context("plugin-control")
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .gap(ds.grid)
-                        .px(ds.pad_x)
-                        .py(ds.pad_y)
-                        .text_size(ds.text_sm)
-                        .rounded(ds.r_md)
-                        .cursor_pointer()
-                        .when(is_selected, |d: Stateful<Div>| {
-                            d.bg(accent)
-                                .text_color(text_on_accent)
-                                .font_weight(FontWeight::SEMIBOLD)
-                        })
-                        .when(!is_selected, |d: Stateful<Div>| {
-                            d.bg(bg_secondary)
-                                .text_color(text_secondary)
-                                .hover(move |s: StyleRefinement| s.bg(surface_hover))
-                        })
-                        .when(is_muted, |d: Stateful<Div>| d.opacity(0.5))
-                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                            entity_clone.update(cx, |state, _| {
-                                state.app.plugin_state.selected_eq_band = band_idx;
-                                // Also set editing plugin index so keybindings work
-                                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                            });
-                        })
-                        // Band number with filter type short code (e.g., "#1 PK")
-                        .child(div().child(format!("#{} {}", band_idx + 1, filter_short_name)))
-                        // Mute and Solo buttons row
-                        .child(
-                            div()
-                                .flex()
-                                .gap(ds.grid)
-                                // Mute button (small circle)
-                                .child({
-                                    let entity_clone2 = entity.clone();
-                                    div()
-                                        .w(px(18.0))
-                                        .h(px(18.0))
-                                        .rounded_full()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .bg(if is_muted { error } else { bg_secondary })
-                                        .border(px(1.0))
-                                        .border_color(if is_muted { error } else { border })
-                                        .text_size(ds.text_xs)
-                                        .font_weight(FontWeight::BOLD)
-                                        .cursor_pointer()
-                                        .when(is_muted, |d| d.text_color(text_primary))
-                                        .when(!is_muted, |d| d.text_color(text_muted_color))
-                                        .hover(move |s| {
-                                            s.bg(if is_muted { error } else { surface_hover })
-                                        })
-                                        .on_mouse_down(MouseButton::Left, {
-                                            move |_event, _window, cx| {
-                                                cx.stop_propagation();
-                                                entity_clone2.update(cx, |state, cx| {
-                                                    state.app.plugin_state.editing_plugin_index =
-                                                        Some(plugin_idx);
-                                                    if let Err(e) =
-                                                        state.app.toggle_eq_band_mute(band_idx)
-                                                    {
-                                                        log::warn!(
-                                                            "Failed to toggle EQ band mute: {}",
-                                                            e
-                                                        );
-                                                    }
-                                                    cx.notify();
-                                                });
-                                            }
-                                        })
-                                        .child("M")
-                                })
-                                // Solo button (small circle)
-                                .child({
-                                    let entity_clone3 = entity.clone();
-                                    div()
-                                        .w(px(18.0))
-                                        .h(px(18.0))
-                                        .rounded_full()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .bg(if is_soloed { success } else { bg_secondary })
-                                        .border(px(1.0))
-                                        .border_color(if is_soloed { success } else { border })
-                                        .text_size(ds.text_xs)
-                                        .font_weight(FontWeight::BOLD)
-                                        .cursor_pointer()
-                                        .when(is_soloed, |d| d.text_color(text_primary))
-                                        .when(!is_soloed, |d| d.text_color(text_muted_color))
-                                        .hover(move |s| {
-                                            s.bg(if is_soloed { success } else { surface_hover })
-                                        })
-                                        .on_mouse_down(MouseButton::Left, {
-                                            move |_event, _window, cx| {
-                                                cx.stop_propagation();
-                                                entity_clone3.update(cx, |state, cx| {
-                                                    state.app.plugin_state.editing_plugin_index =
-                                                        Some(plugin_idx);
-                                                    if let Err(e) =
-                                                        state.app.toggle_eq_band_solo(band_idx)
-                                                    {
-                                                        log::warn!(
-                                                            "Failed to toggle EQ band solo: {}",
-                                                            e
-                                                        );
-                                                    }
-                                                    cx.notify();
-                                                });
-                                            }
-                                        })
-                                        .child("S")
-                                }),
-                        );
-
-                    tabs_container = tabs_container.child(tab);
-                }
-
-                tabs_container
-                    // Add band button
-                    .child({
-                        let entity_clone = entity.clone();
-                        div()
-                            .id("eq-add-band")
-                            .focusable()
-                            .key_context("plugin-control")
-                            .px(ds.pad_x)
-                            .py_1p5()
-                            .text_size(ds.text_sm)
-                            .font_weight(FontWeight::BOLD)
-                            .rounded(ds.r_sm)
-                            .cursor_pointer()
-                            .bg(theme.success)
-                            .text_color(theme.text_on_accent)
-                            .hover(|s: StyleRefinement| s.opacity(0.8))
-                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                                entity_clone.update(cx, |state, cx| {
-                                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                                    if let Err(e) = state.app.add_eq_band() {
-                                        log::warn!("Failed to add EQ band: {}", e);
-                                    }
-                                    cx.notify();
-                                });
-                            })
-                            .child("+")
-                    })
-            })
-            // MIDI page indicator (shown when controller connected)
-            .when(
-                state.midi_overlay.is_some_and(|o| o.has_controller()),
-                |d| {
-                    let Some(overlay) = state.midi_overlay else {
-                        return d;
-                    };
-                    d.child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .gap(ds.gap)
-                            .children(overlay.controller_name.as_ref().map(|name| {
-                                div()
-                                    .text_size(ds.text_xs)
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(theme.text_secondary)
-                                    .child(name.clone())
-                            }))
-                            .child(render_midi_page_indicator(
-                                &ds,
-                                overlay.current_page,
-                                overlay.total_pages,
-                                theme,
-                            )),
-                    )
-                },
-            )
-            // Selected band controls
-            .when(selected_filter.is_some(), |d| {
-                let Some(filter) = selected_filter else {
-                    return d;
-                };
-                let base_param_idx = selected_band_idx * indexing.stride;
-                let midi_overlay = state.midi_overlay;
-
-                d.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(ds.gap)
-                        .p(ds.pad_x)
-                        .bg(theme.background_secondary)
-                        .rounded(ds.r_md)
-                        // Filter type selector + topology controls
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap(ds.grid)
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(ds.grid)
-                                        .child(
-                                            div()
-                                                .text_size(ds.text_xs)
-                                                .text_color(theme.text_muted)
-                                                .child(text.type_label),
-                                        )
-                                        .when(!is_lp_mode, |row| {
-                                            row.child(render_standard_eq_algorithm_pill(
-                                                &ds,
-                                                state.topology,
-                                                theme,
-                                            ))
-                                        }),
-                                )
-                                .child(render_filter_type_selector(
-                                    &ds,
-                                    entity.clone(),
-                                    plugin_idx,
-                                    &filter.filter_type,
-                                    selected_band_idx,
-                                    base_param_idx + indexing.filter_type,
-                                    None,
-                                    theme,
-                                )),
-                        )
-                        // Knobs row with MIDI badges
-                        .child(
-                            div()
-                                .flex()
-                                .gap(ds.section_lg)
-                                .justify_center()
-                                .child(render_eq_knob_with_midi(
-                                    &ds,
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Freq",
-                                    filter.frequency,
-                                    pk(EQ, "freq").min_f64(),
-                                    pk(EQ, "freq").max_f64(),
-                                    "Hz",
-                                    base_param_idx + indexing.frequency,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    midi_overlay,
-                                    theme,
-                                ))
-                                .child(render_eq_knob_with_midi(
-                                    &ds,
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Q",
-                                    filter.q,
-                                    pk(EQ, "q").min_f64(),
-                                    pk(EQ, "q").max_f64(),
-                                    "",
-                                    base_param_idx + indexing.q,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    midi_overlay,
-                                    theme,
-                                ))
-                                .child(render_eq_knob_with_midi(
-                                    &ds,
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Gain",
-                                    filter.gain_db,
-                                    pk(EQ, "gain").min_f64(),
-                                    pk(EQ, "gain").max_f64(),
-                                    "dB",
-                                    base_param_idx + indexing.gain,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    midi_overlay,
-                                    theme,
-                                ))
-                                .children(indexing.active.map(|active_local_idx| {
-                                    render_eq_active_toggle(
-                                        &ds,
-                                        entity.clone(),
-                                        plugin_idx,
-                                        filter,
-                                        base_param_idx + active_local_idx,
-                                        state.selected_param,
-                                        state.is_editing,
-                                        text,
-                                        theme,
-                                    )
-                                })),
-                        ),
-                )
-            })
-    } else {
-        div()
-    };
     let controls_section = if layout == EqCompactLayout::Current {
         render_eq_property_strip(
             &ds,
@@ -2049,6 +1588,40 @@ pub fn render_eq_plugin(
     } else {
         div().into_any_element()
     };
+    let wide_band_strip = (layout == EqCompactLayout::Current).then(|| {
+        super::layout_compact::render_narrow_band_strip(
+            &ds,
+            entity.clone(),
+            plugin_idx,
+            display_filters,
+            selected_band_idx,
+            theme,
+        )
+        .into_any_element()
+    });
+    let midi_status = state.midi_overlay.and_then(|overlay| {
+        overlay.has_controller().then(|| {
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap(ds.gap)
+                .children(overlay.controller_name.as_ref().map(|name| {
+                    div()
+                        .text_size(ds.text_xs)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_secondary)
+                        .child(name.clone())
+                }))
+                .child(render_midi_page_indicator(
+                    &ds,
+                    overlay.current_page,
+                    overlay.total_pages,
+                    theme,
+                ))
+                .into_any_element()
+        })
+    });
 
     // Optional linear-phase info header — shown only for the LP variant.
     let fir_summary = match &state.mode {
@@ -2208,6 +1781,8 @@ pub fn render_eq_plugin(
             .gap(ds.section_xl)
             .children(eq_header)
             .children(lp_header)
+            .children(midi_status)
+            .children(wide_band_strip)
             .child(graph_section)
             .children(lp_analysis)
             .child(controls_section)
@@ -2322,18 +1897,6 @@ fn render_lp_analysis_card(
         )
 }
 
-fn render_standard_eq_algorithm_pill(d: &Ds, topology: f64, theme: &Theme) -> impl IntoElement {
-    div()
-        .px(d.pad_y)
-        .py(d.pad_y_half)
-        .text_size(d.text_xs)
-        .font_weight(FontWeight::SEMIBOLD)
-        .rounded(d.r_sm)
-        .bg(theme.background_secondary)
-        .text_color(theme.text_secondary)
-        .child(if topology > 0.5 { "SVF" } else { "Biquad" })
-}
-
 fn eq_band_topology_label(topology: EqFilterTopology) -> &'static str {
     match topology {
         EqFilterTopology::Biquad => "Biquad",
@@ -2396,23 +1959,9 @@ fn render_eq_band_topology_selector(
                         }
                         entity.update(cx, |state, cx| {
                             state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                            for _ in 0..3 {
-                                let current = state
-                                    .app
-                                    .plugin_state
-                                    .graph
-                                    .get_plugin(plugin_idx)
-                                    .and_then(|plugin| match &plugin.settings {
-                                        PluginSettings::EQ { filters, .. } => {
-                                            filters.get(band_idx).map(|filter| filter.topology)
-                                        }
-                                        _ => None,
-                                    });
-                                if current == Some(candidate) {
-                                    break;
-                                }
-                                state.app.cycle_eq_filter_topology(plugin_idx, band_idx);
-                            }
+                            state
+                                .app
+                                .set_eq_filter_topology(plugin_idx, band_idx, candidate);
                             cx.notify();
                         });
                     })

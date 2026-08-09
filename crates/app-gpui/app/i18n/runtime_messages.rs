@@ -139,6 +139,12 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Vuelva a pulsar Copiar selección → Todos para reemplazar todos los canales"
     ),
     message!(
+        "Click Copy All → Selected again to replace this channel",
+        "Cliquez à nouveau sur Copier tous → Sélection pour remplacer ce canal",
+        "Klicken Sie erneut auf Alle kopieren → Auswahl, um diesen Kanal zu ersetzen",
+        "Vuelva a pulsar Copiar todo → Selección para reemplazar este canal"
+    ),
+    message!(
         "Copied {} JSON",
         "{} copié au format JSON",
         "{} als JSON kopiert",
@@ -173,6 +179,12 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Moteur redémarré, reprise de la lecture",
         "Engine neu gestartet, Wiedergabe wird fortgesetzt",
         "Motor reiniciado; se reanuda la reproducción"
+    ),
+    message!(
+        "Level monitors must remain at a chain boundary",
+        "Les moniteurs de niveau doivent rester à une extrémité de la chaîne",
+        "Pegelmonitore müssen am Anfang oder Ende der Kette bleiben",
+        "Los monitores de nivel deben permanecer en un extremo de la cadena"
     ),
     message!(
         "Enter a MusicBrainz search query",

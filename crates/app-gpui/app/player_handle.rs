@@ -38,6 +38,8 @@ pub struct PlayerSnapshotRequest {
     pub output_monitor_idx: Option<usize>,
     pub spectrum_idx: Option<usize>,
     pub compressor_idx: Option<usize>,
+    /// Currently visible rack plugin, used by generic live visualizations.
+    pub rack_plugin_idx: Option<usize>,
     pub include_external_diagnostics: bool,
 }
 
@@ -45,7 +47,6 @@ pub struct PlayerSnapshotRequest {
 ///
 /// The snapshot is built on the actor thread. Consumers only ever clone its
 /// `Arc`, so the UI never locks or calls into `Player`/the audio engine.
-#[derive(Debug)]
 pub struct PlayerSnapshot {
     pub sequence: u64,
     pub position_secs: f64,
@@ -56,6 +57,7 @@ pub struct PlayerSnapshot {
     pub loudness_info: Option<Arc<LoudnessData>>,
     pub spectrum_info: Option<Arc<SpectrumData>>,
     pub compressor_info: Option<Arc<CompressorData>>,
+    pub rack_plugin_data: Option<(usize, Arc<dyn std::any::Any + Send + Sync>)>,
     pub external_engine_state: Option<AudioEngineState>,
 }
 
@@ -191,6 +193,9 @@ impl PlayerHandle {
                     .compressor_idx
                     .and_then(|idx| player.get_cached_plugin_data(idx))
                     .and_then(|data| Arc::downcast::<CompressorData>(data).ok()),
+                rack_plugin_data: request
+                    .rack_plugin_idx
+                    .and_then(|idx| player.get_cached_plugin_data(idx).map(|data| (idx, data))),
                 external_engine_state,
             };
             *latest_snapshot.write() = Some(Arc::new(snapshot));

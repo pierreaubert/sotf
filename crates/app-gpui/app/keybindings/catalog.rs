@@ -209,6 +209,7 @@ fn documentation_specs() -> Vec<DocumentationSpec> {
         documentation!(Plugins, "Move plugin up", actions::MovePluginUp),
         documentation!(Plugins, "Move plugin down", actions::MovePluginDown),
         documentation!(Plugins, "Toggle on/off", actions::TogglePlugin),
+        documentation!(Plugins, "Switch A/B comparison path", actions::ToggleABPath),
         documentation!(
             Plugins,
             "Quick add plugins",
@@ -492,6 +493,7 @@ fn screen_documentation_specs(screen: Screen) -> Vec<DocumentationSpec> {
                 actions::SelectPrev,
             ),
             documentation!(Plugins, "Toggle on/off", actions::TogglePlugin),
+            documentation!(Plugins, "Switch A/B comparison path", actions::ToggleABPath),
             documentation!(
                 Plugins,
                 "Move up/down",

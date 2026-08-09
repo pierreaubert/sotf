@@ -1,4 +1,3 @@
-use super::build::build_menu_items;
 use super::build::build_workflow_graph;
 use super::consts::NODE_TYPE_INPUT_DEVICE;
 use super::consts::NODE_TYPE_OUTPUT_DEVICE;
@@ -39,15 +38,7 @@ impl PlayerView {
 
         if !has_canvas {
             // Build workflow graph from plugin graph, or create a default graph
-            let (
-                plugin_graph,
-                output_device_name,
-                output_channels,
-                theme,
-                input_devices,
-                output_devices,
-                language,
-            ) = {
+            let (plugin_graph, output_device_name, output_channels, theme, language) = {
                 let state = self.state.read(cx);
                 let output_device_name = state
                     .app
@@ -69,8 +60,6 @@ impl PlayerView {
                     output_device_name,
                     output_channels,
                     state.app.ui_state.theme.clone(),
-                    state.app.audio_device_state.input_devices.clone(),
-                    state.app.audio_device_state.output_devices.clone(),
                     state.app.ui_state.language,
                 )
             };
@@ -84,7 +73,6 @@ impl PlayerView {
 
             // Set theme and menu items
             let workflow_theme = create_workflow_theme(&theme);
-            let menu_items = build_menu_items(&input_devices, &output_devices, graph_text);
 
             // Clone state for the callback
             let state_for_dblclick = self.state.clone();
@@ -96,7 +84,10 @@ impl PlayerView {
 
             canvas.update(cx, |canvas, _cx| {
                 canvas.set_theme(workflow_theme);
-                canvas.set_menu_items(menu_items);
+                // Plugin creation is provided by the typed palette. The
+                // toolkit's generic canvas menu cannot construct PluginGraph
+                // nodes and would otherwise create phantom "Node" entries.
+                canvas.set_menu_items(Vec::new());
 
                 // Set double-click callback to open node editor modal.
                 // We defer the body because this callback runs while the
@@ -294,20 +285,10 @@ impl PlayerView {
                         }
                     }
                 }
-                PaletteItemType::Player => None, // Player nodes are special, not plugin nodes
             };
 
             // Create node based on item type
             let node = match &data.item_type {
-                PaletteItemType::Player => {
-                    WorkflowNodeData::new("Player", Position::new(100.0, 200.0))
-                        .with_ports(0, 2) // Output only: stereo
-                        .with_size(160.0, 80.0)
-                        .with_user_data(serde_json::json!({
-                            "node_type": NODE_TYPE_PLAYER,
-                            "channels": 2,
-                        }))
-                }
                 PaletteItemType::Plugin(plugin_type) => {
                     let (inputs, outputs) = plugin_channel_counts(plugin_type);
                     let (max_in, max_out) = plugin_max_ports(plugin_type);
@@ -529,9 +510,6 @@ impl PlayerView {
         let graph_text =
             PluginGraphTranslations::for_language(self.state.read(cx).app.ui_state.language);
 
-        // Input sources
-        let input_items = vec![("Player", PaletteItemType::Player, theme.success)];
-
         // Plugin categories
         let plugin_categories = vec![
             (
@@ -553,6 +531,8 @@ impl PlayerView {
                     (PluginType::DeEsser, "De-Esser"),
                     (PluginType::TransientShaper, "Transient"),
                     (PluginType::SpectralCompressor, "Spectral C."),
+                    (PluginType::MultibandCompressor, "Multiband C."),
+                    (PluginType::MultibandExpander, "Multiband E."),
                 ],
             ),
             (
@@ -616,48 +596,6 @@ impl PlayerView {
             .border_color(theme.border)
             .py(d.pad_y)
             .overflow_y_scroll()
-            // Input sources section
-            .child(
-                div()
-                    .px(d.pad_y)
-                    .pb(d.pad_y)
-                    .text_size(d.text_xs)
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(theme.text_muted)
-                    .child(graph_text.nodes.input),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(d.grid)
-                    .px(d.pad_y)
-                    .mb(d.gap_md)
-                    .children(input_items.into_iter().map(|(label, item_type, color)| {
-                        let drag_data = PaletteDragData {
-                            item_type,
-                            label: label.to_string(),
-                            color,
-                            text_on_accent: theme.text_on_accent,
-                        };
-                        div()
-                            .id(SharedString::from(format!("palette-{}", label)))
-                            .px(d.pad_y)
-                            .py(d.pad_y_half)
-                            .rounded(d.r_md)
-                            .bg(theme.background)
-                            .border_l_2()
-                            .border_color(color)
-                            .text_size(d.text_xs)
-                            .text_color(theme.text_secondary)
-                            .cursor_grab()
-                            .hover(|s| s.bg(theme.background_secondary))
-                            .on_drag(drag_data, |info, _pos, _window, cx| {
-                                cx.new(|_| info.clone())
-                            })
-                            .child(label)
-                    })),
-            )
             // Plugins section header
             .child(
                 div()
@@ -809,16 +747,8 @@ impl PlayerView {
             .items_center()
             .justify_center()
             .bg(theme.feedback.overlay_bg)
-            .on_mouse_down(MouseButton::Left, {
-                let state = state_for_close.clone();
-                move |_, _, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                        state.app.plugin_state.graph_state.editing_plugin_node = None;
-                        state.app.plugin_state.graph_state.editing_graph_node_uuid = None;
-                    });
-                }
-            })
+            // Closing is explicit: a backdrop click must not discard an
+            // in-progress NumberInput edit.
             .child(
                 div()
                     .id("plugin-node-modal")
@@ -859,34 +789,6 @@ impl PlayerView {
                                     .flex()
                                     .items_center()
                                     .gap(d.gap)
-                                    // Load button
-                                    .child(
-                                        div()
-                                            .id("modal-load")
-                                            .px(d.pad_x)
-                                            .py(d.pad_y_half)
-                                            .rounded(d.r_md)
-                                            .bg(theme.surface)
-                                            .text_size(d.text_sm)
-                                            .text_color(theme.text_secondary)
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(theme.surface_hover))
-                                            .child(graph_text.nodes.load),
-                                    )
-                                    // Save button
-                                    .child(
-                                        div()
-                                            .id("modal-save")
-                                            .px(d.pad_x)
-                                            .py(d.pad_y_half)
-                                            .rounded(d.r_md)
-                                            .bg(theme.surface)
-                                            .text_size(d.text_sm)
-                                            .text_color(theme.text_secondary)
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(theme.surface_hover))
-                                            .child(graph_text.nodes.save),
-                                    )
                                     // Close button
                                     .child({
                                         let state = state_for_close.clone();

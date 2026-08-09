@@ -54,6 +54,7 @@ pub(super) fn plugin_control_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("=", actions::IncrementPluginParam, Some("plugin-control")),
         KeyBinding::new("-", actions::DecrementPluginParam, Some("plugin-control")),
         KeyBinding::new("_", actions::DecrementPluginParam, Some("plugin-control")),
+        KeyBinding::new("a", actions::ToggleABPath, Some("ABCompare")),
         // EQ band navigation (next/prev)
         KeyBinding::new("tab", actions::SelectNextEqBand, Some("plugin-control")),
         KeyBinding::new(

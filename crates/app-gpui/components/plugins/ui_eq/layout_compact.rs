@@ -264,7 +264,7 @@ fn render_medium_band_rail(
     rail.child(render_add_band_button(d, entity, plugin_idx, theme))
 }
 
-fn render_narrow_band_strip(
+pub(crate) fn render_narrow_band_strip(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,

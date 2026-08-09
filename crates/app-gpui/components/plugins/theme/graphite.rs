@@ -31,8 +31,8 @@ pub fn theme() -> PluginTheme {
         ink_hi: rgba(0xece8df, 1.0),
         ink: rgba(0xc8c3b8, 1.0),
         ink_mid: rgba(0x8a857a, 1.0),
-        ink_low: rgba(0x5a564f, 1.0),
-        ink_faint: rgba(0x3a3833, 1.0),
+        ink_low: rgba(0xa09a8e, 1.0),
+        ink_faint: rgba(0x8a857a, 1.0),
 
         // Accent — calibrated amber
         accent: rgba(0xe5a93d, 1.0),

@@ -211,9 +211,13 @@ impl Render for PlayerView {
 
         // Apply combined font scale (user preference × responsive auto-scale) to rem size.
         // All rem-based sizes (text, padding, gaps) scale automatically.
-        let responsive_scale = compute_responsive_scale(window_width, window_height);
-        let (scale_min, scale_max) = combined_scale_bounds(min_font_size_px, max_font_size_px);
-        let combined_scale = (font_scale * responsive_scale).clamp(scale_min, scale_max);
+        let combined_scale = compute_combined_scale(
+            window_width,
+            window_height,
+            font_scale,
+            min_font_size_px,
+            max_font_size_px,
+        );
         window.set_rem_size(px(16.0 * combined_scale));
 
         let platform_style = crate::app::PlatformStyle::for_window(
@@ -405,6 +409,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::on_ab_path_remove_plugin))
             .on_action(cx.listener(Self::on_ab_path_move_plugin))
             .on_action(cx.listener(Self::on_ab_path_toggle_add_menu))
+            .on_action(cx.listener(Self::toggle_ab_path))
             // Plugin parameter actions
             .on_action(cx.listener(Self::on_update_plugin_param))
             .on_action(cx.listener(Self::on_select_plugin_param))

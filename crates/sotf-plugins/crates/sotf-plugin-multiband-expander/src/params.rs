@@ -150,13 +150,18 @@ pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::knob(12), // lookahead_ms
             ],
         ),
+        ControlGroup::new(
+            "OUTPUT",
+            "OUTPUT",
+            &[
+                ControlSpec::meter(-30.0, 0.0),
+                ControlSpec::toggle(9),
+                ControlSpec::toggle(14),
+                ControlSpec::knob(8),
+            ],
+        ),
     ],
-    output: &[
-        ControlSpec::meter(-30.0, 0.0),
-        ControlSpec::toggle(9),
-        ControlSpec::toggle(14), // measured_auto_makeup
-        ControlSpec::knob(8),
-    ],
+    output: &[],
     tabs: &[TabSpec {
         name: "Advanced",
         controls: &[ControlSpec::knob(6)],
@@ -167,7 +172,6 @@ pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
     column_constraints: &[
         ColumnConstraint::config(100.0, 0.5),
         ColumnConstraint::main(300.0),
-        ColumnConstraint::output(120.0, 0.6),
     ],
     dynamic_sections: &[],
 };

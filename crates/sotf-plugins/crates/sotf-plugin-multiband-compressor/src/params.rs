@@ -174,14 +174,19 @@ pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::toggle(13),
             ],
         ),
+        ControlGroup::new(
+            "OUTPUT",
+            "OUTPUT",
+            &[
+                ControlSpec::meter(-30.0, 0.0),
+                ControlSpec::toggle(7),
+                ControlSpec::toggle(14),
+                ControlSpec::knob(5),
+                ControlSpec::knob(6),
+            ],
+        ),
     ],
-    output: &[
-        ControlSpec::meter(-30.0, 0.0),
-        ControlSpec::toggle(7),
-        ControlSpec::toggle(14),
-        ControlSpec::knob(5),
-        ControlSpec::knob(6),
-    ],
+    output: &[],
     tabs: &[],
     visualizations: &[VizSlot::TransferCurve {
         position: VizPosition::BelowGroup("DYNAMICS"),
@@ -189,7 +194,6 @@ pub const SINGLE_BAND_LAYOUT: PluginLayout = PluginLayout {
     column_constraints: &[
         ColumnConstraint::config(100.0, 0.5),
         ColumnConstraint::main(300.0),
-        ColumnConstraint::output(120.0, 0.6),
     ],
     dynamic_sections: &[],
 };

@@ -173,6 +173,25 @@ fn each_preset_resolves_to_a_distinct_theme() {
 }
 
 #[test]
+fn editorial_chassis_caption_inks_meet_wcag_text_contrast() {
+    use crate::theme::accessible::{WCAG_AA_TEXT_CONTRAST, contrast_ratio};
+
+    for theme in [
+        PluginThemeId::Graphite.theme(),
+        PluginThemeId::StudioCream.theme(),
+    ] {
+        assert!(
+            contrast_ratio(theme.ink_low, theme.panel_bg) >= WCAG_AA_TEXT_CONTRAST,
+            "ink_low must remain readable on the chassis panel"
+        );
+        assert!(
+            contrast_ratio(theme.ink_faint, theme.panel_bg) >= WCAG_AA_TEXT_CONTRAST,
+            "ink_faint must remain readable on the chassis panel"
+        );
+    }
+}
+
+#[test]
 fn resolve_uses_override_when_present() {
     let mut overrides = HashMap::new();
     overrides.insert(1, PluginThemeId::Brutalist);

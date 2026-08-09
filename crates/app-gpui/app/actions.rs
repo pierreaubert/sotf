@@ -173,6 +173,7 @@ actions!(
         DecrementPluginParamSmall,
         // Plugin view mode
         ToggleSimpleView,
+        ToggleABPath,
         // Font size actions
         IncreaseFontSize,
         DecreaseFontSize,

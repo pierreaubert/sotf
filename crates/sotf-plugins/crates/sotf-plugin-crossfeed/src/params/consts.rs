@@ -173,9 +173,16 @@ pub const PARAMS: &[ParamSpec] = &[
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::selector(1), // crossfeed_preset
-        ControlSpec::toggle(2),   // enabled
     ],
     main: &[
+        ControlGroup::new(
+            "PRIMARY",
+            "PRIMARY",
+            &[
+                ControlSpec::toggle(2), // enabled
+                ControlSpec::knob(3),   // mix
+            ],
+        ),
         ControlGroup::new(
             "mode-selector",
             "",
@@ -222,7 +229,6 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::knob(14).enabled_when(ParamCondition::bool(13, true)), // target_lufs
         ControlSpec::toggle(13),                                            // autogain_enabled
         ControlSpec::knob(15).enabled_when(ParamCondition::bool(13, true)), // max_gain
-        ControlSpec::knob(3),                                               // mix
         ControlSpec::knob(16).enabled_when(ParamCondition::bool(13, true)), // smoothing
     ],
     tabs: &[],

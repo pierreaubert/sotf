@@ -6,7 +6,7 @@ use super::types::SolvedColumn;
 use crate::plugin_layout::ColumnRole;
 
 /// Complete solver output describing the resolved layout.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SolvedLayout {
     /// Columns to render as visible (ordered left → right).
     pub columns: Vec<SolvedColumn>,

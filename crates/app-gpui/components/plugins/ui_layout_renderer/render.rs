@@ -23,8 +23,10 @@ use crate::app::AppState;
 use crate::app::constants::spacing;
 use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::theme::PluginTheme;
+use crate::components::themed_tooltip;
 use crate::plugin_file_picker::{FilePickerOpenTarget, file_picker_open_target};
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -32,7 +34,7 @@ use gpui::*;
 use gpui_audio_kit::audio::potentiometer::PotentiometerSize;
 use gpui_ui_kit::{AdaptiveOverflow, Button, ButtonSize, ButtonVariant, PaneDividerTheme};
 use sotf_audio_player::PluginSettings;
-use sotf_plugins::layout_solver::{Direction, KnobSize, SolvedLayout, solve_layout};
+use sotf_plugins::layout_solver::{Direction, KnobSize, SolvedLayout, solve_layout_scaled};
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
 use sotf_plugins::plugin_layout::*;
 use std::collections::HashMap;
@@ -53,6 +55,7 @@ pub fn render_from_layout(
     overflow_open: bool,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
+    layout_scale: f32,
     config_width_override: Option<f32>,
     output_width_override: Option<f32>,
     text: PluginCommonTranslations,
@@ -72,7 +75,7 @@ pub fn render_from_layout(
     let file_paths = extract_file_paths(params, settings);
 
     // Run the constraint solver
-    let solved = solve_layout(layout.column_constraints, available_width);
+    let solved = solve_layout_scaled(layout.column_constraints, available_width, layout_scale);
 
     // Overlay the chassis theme onto the global app theme so every helper
     // that takes `&Theme` (section title, knob, toggle, panel, ...) picks up
@@ -95,6 +98,7 @@ pub fn render_from_layout(
         overflow_open,
         plugin_data,
         available_width,
+        layout_scale,
         config_width_override,
         output_width_override,
         text,
@@ -117,6 +121,7 @@ pub fn render_main_controls_from_layout(
     selected_param: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
+    layout_scale: f32,
     theme: &Theme,
 ) -> AnyElement {
     let Some(layout) = settings.layout() else {
@@ -127,8 +132,10 @@ pub fn render_main_controls_from_layout(
         .map(|i| settings.param_value(i).unwrap_or(0.0))
         .collect();
     let file_paths = extract_file_paths(params, settings);
-    let solved = solve_layout(layout.column_constraints, available_width);
-    let main_width = available_width.max(AUTO_COLUMN_MIN_MAIN_WIDTH);
+    let solved = solve_layout_scaled(layout.column_constraints, available_width, layout_scale);
+    let main_width = solved
+        .column_width(ColumnRole::Main)
+        .unwrap_or(available_width);
 
     render_main_column(
         d,
@@ -145,6 +152,7 @@ pub fn render_main_controls_from_layout(
         0,
         false,
         plugin_data,
+        layout_scale,
         None,
         None,
         theme,
@@ -165,6 +173,8 @@ pub fn render_config_controls_from_layout(
     is_editing: bool,
     selected_param: usize,
     available_width: f32,
+    layout_scale: f32,
+    plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     theme: &Theme,
     plugin_theme: &PluginTheme,
 ) -> Option<AnyElement> {
@@ -178,7 +188,7 @@ pub fn render_config_controls_from_layout(
         .map(|i| settings.param_value(i).unwrap_or(0.0))
         .collect();
     let file_paths = extract_file_paths(params, settings);
-    let solved = solve_layout(layout.column_constraints, available_width);
+    let solved = solve_layout_scaled(layout.column_constraints, available_width, layout_scale);
     let chassis_theme = plugin_theme.apply_to(theme);
 
     let mut content = div().flex().flex_col().gap(d.section);
@@ -194,8 +204,10 @@ pub fn render_config_controls_from_layout(
             &file_paths,
             is_editing,
             selected_param,
+            plugin_data,
             available_width.max(AUTO_COLUMN_MIN_SIDE_WIDTH),
             solved.knob_size,
+            solved.slider_height,
             &chassis_theme,
         ));
     }
@@ -211,8 +223,10 @@ pub fn render_config_controls_from_layout(
             &file_paths,
             is_editing,
             selected_param,
+            plugin_data,
             available_width.max(AUTO_COLUMN_MIN_SIDE_WIDTH),
             solved.knob_size,
+            solved.slider_height,
             &chassis_theme,
         ));
     }
@@ -234,6 +248,7 @@ pub fn render_tabs_from_layout(
     selected_param: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
+    layout_scale: f32,
     theme: &Theme,
 ) -> AnyElement {
     let Some(layout) = settings.layout() else {
@@ -248,7 +263,7 @@ pub fn render_tabs_from_layout(
         .map(|i| settings.param_value(i).unwrap_or(0.0))
         .collect();
     let file_paths = extract_file_paths(params, settings);
-    let solved = solve_layout(layout.column_constraints, available_width);
+    let solved = solve_layout_scaled(layout.column_constraints, available_width, layout_scale);
 
     let mut container = div().flex().flex_col().gap(d.gap);
     for tab in collect_all_tabs(layout, &solved, &[]) {
@@ -297,6 +312,7 @@ fn render_solved_layout(
     overflow_open: bool,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     available_width: f32,
+    layout_scale: f32,
     config_width_override: Option<f32>,
     output_width_override: Option<f32>,
     text: PluginCommonTranslations,
@@ -312,7 +328,9 @@ fn render_solved_layout(
 
     let _config_width_override = config_width_override;
     let _output_width_override = output_width_override;
-    let main_width = available_width.max(AUTO_COLUMN_MIN_MAIN_WIDTH);
+    let main_width = solved
+        .column_width(ColumnRole::Main)
+        .unwrap_or(available_width);
 
     let row_entity = entity.clone();
     let mut row = div()
@@ -403,6 +421,7 @@ fn render_solved_layout(
         active_tab,
         overflow_open,
         plugin_data,
+        layout_scale,
         spider_snapshot,
         Some(text),
         theme,
@@ -465,8 +484,10 @@ fn render_config_column(
     file_paths: &HashMap<usize, String>,
     is_editing: bool,
     selected_param: usize,
+    plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     width: f32,
     knob_size: KnobSize,
+    slider_height: f32,
     theme: &Theme,
 ) -> impl IntoElement {
     let mut col = div().flex().flex_col().gap(d.gap).w(px(width)).flex_none();
@@ -485,8 +506,9 @@ fn render_config_column(
             file_paths,
             is_editing,
             selected_param,
-            None,
+            plugin_data,
             knob_size,
+            slider_height,
             theme,
         ));
     }
@@ -510,6 +532,7 @@ fn render_main_column(
     active_tab: usize,
     overflow_open: bool,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    layout_scale: f32,
     spider_snapshot: Option<&crate::components::plugins::spatial_spider::SpatialSpiderSnapshot>,
     text: Option<PluginCommonTranslations>,
     theme: &Theme,
@@ -560,7 +583,7 @@ fn render_main_column(
         }
 
         let (visible_groups, overflow_groups) = if include_tabs {
-            solve_main_groups(layout, values, mode.as_ref(), main_width)
+            solve_main_groups(layout, values, mode.as_ref(), main_width, layout_scale)
         } else {
             (
                 mode_visible_groups(layout, values, mode.as_ref()),
@@ -596,6 +619,10 @@ fn render_main_column(
         center = center.child(container);
 
         if !overflow_groups.is_empty() {
+            let overflow_count: usize = overflow_groups
+                .iter()
+                .map(|group| visible_control_count(group))
+                .sum();
             let mut overflow_content = div()
                 .flex()
                 .flex_col()
@@ -623,9 +650,13 @@ fn render_main_column(
             }
 
             let overflow_entity = entity.clone();
+            let more_label = format!(
+                "{} ({overflow_count})",
+                text.map_or("More", |translations| translations.more)
+            );
             let trigger = Button::new(
                 SharedString::from(format!("plugin-more-trigger-{plugin_idx}")),
-                text.map_or("More", |translations| translations.more),
+                more_label,
             )
             .variant(ButtonVariant::Secondary)
             .size(ButtonSize::Sm);
@@ -823,6 +854,7 @@ fn render_group(
                 selected_param,
                 plugin_data,
                 solved.knob_size,
+                solved.slider_height,
                 theme,
             ));
         }
@@ -853,6 +885,7 @@ fn render_group(
                 selected_param,
                 plugin_data,
                 solved.knob_size,
+                solved.slider_height,
                 theme,
             ));
         }
@@ -912,6 +945,7 @@ fn render_control(
     selected_param: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     knob_size: KnobSize,
+    slider_height: f32,
     theme: &Theme,
 ) -> AnyElement {
     let idx = spec.param_index;
@@ -968,6 +1002,7 @@ fn render_control(
                     is_editing,
                     selected_param,
                     knob_size,
+                    slider_height,
                     interactive,
                     theme,
                 )
@@ -1147,6 +1182,7 @@ fn render_param_as_slider(
     is_editing: bool,
     selected_param: usize,
     knob_size: KnobSize,
+    slider_height: f32,
     interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
@@ -1167,7 +1203,7 @@ fn render_param_as_slider(
                 selected_param,
                 is_editing,
                 None,
-                180.0,
+                slider_height,
                 interactive,
                 theme,
             )
@@ -1185,7 +1221,7 @@ fn render_param_as_slider(
             selected_param,
             is_editing,
             None,
-            180.0,
+            slider_height,
             interactive,
             theme,
         )
@@ -1414,6 +1450,11 @@ fn render_param_as_button_set(
         let btn_val = i;
         let choice = div()
             .text_size(d.text_xs)
+            .min_w(rems(2.0))
+            .min_h(rems(2.0))
+            .flex()
+            .items_center()
+            .justify_center()
             .px(d.pad_y)
             .py(d.pad_y_half)
             .rounded(d.r_sm)
@@ -1475,8 +1516,8 @@ fn render_param_as_button_set(
 fn render_bar_meter(
     d: &Ds,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
-    _min_db: f64,
-    max_db: f64,
+    min_db: f64,
+    _max_db: f64,
     theme: &Theme,
 ) -> AnyElement {
     // Extract gain reduction from plugin data (different types have different fields)
@@ -1498,6 +1539,12 @@ fn render_bar_meter(
                     .copied()
                     .reduce(f32::max)
                     .map(|v| v as f64)
+            } else if let Some(ed) = d.downcast_ref::<sotf_plugins::MultibandExpanderData>() {
+                ed.attenuation_db
+                    .iter()
+                    .copied()
+                    .reduce(f32::max)
+                    .map(|v| v as f64)
             } else if let Some(dd) = d.downcast_ref::<sotf_plugins::DeEsserData>() {
                 dd.gain_reduction_db
                     .iter()
@@ -1510,7 +1557,7 @@ fn render_bar_meter(
         })
         .unwrap_or(0.0);
 
-    render_gr_meter(d, gr_db, max_db, theme).into_any_element()
+    render_gr_meter(d, gr_db, min_db, theme).into_any_element()
 }
 
 /// Render a read-only label for a param value.
@@ -1559,7 +1606,7 @@ fn render_file_picker(
     let has_file = file_path.is_some_and(|p| !p.is_empty());
     let display_name = file_path
         .filter(|p| !p.is_empty())
-        .and_then(|p| p.rsplit('/').next())
+        .and_then(|p| p.rsplit(['/', '\\']).next())
         .unwrap_or("None");
     let text_color = if has_file {
         theme.text_primary
@@ -1593,14 +1640,16 @@ fn render_file_picker(
                         .text_color(text_color)
                         .overflow_hidden()
                         .text_ellipsis()
-                        .max_w(px(120.0)) // intentional: fixed label column max-width
+                        .max_w(rems(7.5))
                         .child(display_name.to_string()),
                 ),
         )
         .child(
             div()
-                .px(d.pad_y)
-                .py(d.pad_y_half)
+                .size(rems(2.0))
+                .flex()
+                .items_center()
+                .justify_center()
                 .rounded(d.r_md)
                 .bg(theme.surface)
                 .border_1()
@@ -1637,7 +1686,15 @@ fn render_file_picker(
                         })
                 })
                 .when(!interactive, |el| el.opacity(0.45))
-                .child("⤓"),
+                .child(
+                    Icon::new(IconName::Folder)
+                        .small()
+                        .color(theme.text_secondary),
+                )
+                .tooltip({
+                    let theme = theme.clone();
+                    move |_window, cx| themed_tooltip("Choose file", &theme, cx)
+                }),
         )
         .into_any_element()
 }
@@ -1674,15 +1731,11 @@ fn render_transfer_curve_for_layout(
     // Extract input level from plugin data for operating point indicator
     let input_level_db: Option<f64> = plugin_data.and_then(|d| {
         if let Some(cd) = d.downcast_ref::<sotf_plugins::CompressorData>() {
-            cd.gain_reduction_db
+            cd.band_levels_db
                 .iter()
                 .copied()
                 .reduce(f32::max)
-                .map(|gr| {
-                    // Estimate input level from GR: input ≈ threshold - GR
-                    // (rough approximation for visualization)
-                    threshold_db - gr as f64
-                })
+                .map(|level| level as f64)
         } else if let Some(ld) = d.downcast_ref::<sotf_plugins::LimiterData>() {
             Some(ld.peak_db as f64)
         } else if let Some(gd) = d.downcast_ref::<sotf_plugins::GateData>() {
@@ -1746,6 +1799,7 @@ fn render_layout_tab_content(
                     selected_param,
                     plugin_data,
                     solved.knob_size,
+                    solved.slider_height,
                     theme,
                 ));
             }

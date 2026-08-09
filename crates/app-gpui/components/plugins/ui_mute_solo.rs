@@ -44,13 +44,9 @@ pub fn render_mute_solo_plugin(
 ) -> impl IntoElement {
     let channel_count = state.channel_states.len();
 
-    let channel_names: Vec<&str> = match channel_count {
-        1 => vec![text.label("Mono")],
-        2 => vec![text.label("Left"), text.label("Right")],
-        6 => vec!["FL", "FR", "C", "LFE", "RL", "RR"],
-        8 => vec!["FL", "FR", "C", "LFE", "RL", "RR", "SL", "SR"],
-        _ => (0..channel_count).map(|_| text.label("Ch")).collect(),
-    };
+    let channel_names = (0..channel_count)
+        .map(|index| sotf_audio_player::get_channel_label(index, channel_count))
+        .collect::<Vec<_>>();
 
     // === LEFT COLUMN: Setup ===
     let setup_col = div()
@@ -113,16 +109,10 @@ pub fn render_mute_solo_plugin(
         .child(render_section_title(d, text.label("CHANNELS"), theme))
         .child(div().flex().gap(d.gap_md).flex_wrap().children(
             state.channel_states.iter().enumerate().map(|(i, s)| {
-                let name = channel_names
-                    .get(i)
-                    .copied()
-                    .unwrap_or_else(|| text.label("Ch"));
+                let name = channel_names.get(i).map(String::as_str).unwrap_or("Ch");
                 let is_muted = s.muted;
                 let is_soloed = s.soloed;
                 let is_dimmed = s.dimmed;
-                let is_active =
-                    !is_muted && (!state.channel_states.iter().any(|st| st.soloed) || is_soloed);
-
                 div()
                     .flex()
                     .flex_col()
@@ -147,33 +137,11 @@ pub fn render_mute_solo_plugin(
                             .text_color(theme.text_primary)
                             .child(name.to_string()),
                     )
-                    // Level meter
-                    .child(
-                        div()
-                            .w(px(16.0))
-                            .h(px(60.0))
-                            .bg(theme.background)
-                            .rounded(d.r_sm)
-                            .flex()
-                            .flex_col()
-                            .justify_end()
-                            .overflow_hidden()
-                            .child(
-                                div()
-                                    .w_full()
-                                    .h(relative(if is_active { 0.6 } else { 0.0 }))
-                                    .bg(if is_active {
-                                        theme.success
-                                    } else {
-                                        theme.surface
-                                    }),
-                            ),
-                    )
                     // Mute button
                     .child(
                         div()
-                            .w(px(24.0))
-                            .h(px(20.0))
+                            .w(rems(1.75))
+                            .h(rems(1.5))
                             .rounded(d.r_sm)
                             .bg(if is_muted {
                                 theme.error
@@ -205,8 +173,8 @@ pub fn render_mute_solo_plugin(
                     // Solo button
                     .child(
                         div()
-                            .w(px(24.0))
-                            .h(px(20.0))
+                            .w(rems(1.75))
+                            .h(rems(1.5))
                             .rounded(d.r_sm)
                             .bg(if is_soloed {
                                 theme.warning
@@ -225,7 +193,7 @@ pub fn render_mute_solo_plugin(
                             .text_size(d.text_xs)
                             .font_weight(FontWeight::BOLD)
                             .text_color(if is_soloed {
-                                theme.background
+                                theme.text_on_accent
                             } else {
                                 theme.text_muted
                             })
@@ -242,8 +210,8 @@ pub fn render_mute_solo_plugin(
                     // Dim button
                     .child(
                         div()
-                            .w(px(24.0))
-                            .h(px(20.0))
+                            .w(rems(1.75))
+                            .h(rems(1.5))
                             .rounded(d.r_sm)
                             .bg(if is_dimmed {
                                 theme.accent

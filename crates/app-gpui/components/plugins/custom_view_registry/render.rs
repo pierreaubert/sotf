@@ -44,6 +44,7 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
                 tdf2: *tdf2,
                 topology: *topology,
                 available_width: ctx.available_width,
+                layout_scale: ctx.layout_scale,
             },
             ctx.theme,
             cx,
@@ -206,6 +207,7 @@ pub(super) fn render_dynamic_eq(
         ctx.selected_param,
         ctx.selected_band_idx,
         ctx.plugin_data.clone(),
+        ctx.available_width,
         ctx.theme,
         cx,
     )
@@ -278,6 +280,7 @@ pub(super) fn render_linear_phase_eq(
                 tdf2: false,
                 topology: 0.0,
                 available_width: ctx.available_width,
+                layout_scale: ctx.layout_scale,
             },
             ctx.theme,
             cx,
@@ -322,6 +325,17 @@ pub(super) fn render_spectrum(
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,
                 data: ctx.plugin_data.as_ref().and_then(|d| d.downcast_ref()),
+                chart_height: {
+                    let state = ctx.entity.read(cx);
+                    200.0
+                        * crate::ui::compute_combined_scale(
+                            state.app.ui_state.window_width,
+                            state.app.ui_state.window_height,
+                            state.app.ui_state.font_scale,
+                            state.app.ui_state.min_font_size_px,
+                            state.app.ui_state.max_font_size_px,
+                        )
+                },
             },
             text,
             ctx.theme,
@@ -486,6 +500,7 @@ pub(super) fn render_upmixer(
                 spatial_spider,
             },
             ctx.available_width,
+            ctx.layout_scale,
             text,
             ctx.theme,
             ctx.plugin_theme,
@@ -545,6 +560,7 @@ pub(super) fn render_matrix(
         matrix,
         channel_states,
     } = ctx.settings
+        && let Some(plugin_instance_id) = ctx.plugin_instance_id
     {
         let speaker_config = ctx.plugin_graph.speaker_config_at_index(ctx.plugin_idx);
         super::super::render_matrix_plugin(
@@ -552,6 +568,7 @@ pub(super) fn render_matrix(
             ctx.entity.clone(),
             ctx.plugin_idx,
             ui_matrix::MatrixRenderState {
+                plugin_instance_id,
                 input_channels: *input_channels,
                 output_channels: *output_channels,
                 matrix,
@@ -559,7 +576,15 @@ pub(super) fn render_matrix(
                 speaker_config,
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,
-                selected_cell: None,
+                selected_cell: ctx
+                    .entity
+                    .read(cx)
+                    .app
+                    .plugin_state
+                    .matrix_selected_cell
+                    .and_then(|(selected_plugin_id, input, output)| {
+                        (plugin_instance_id == selected_plugin_id).then_some((input, output))
+                    }),
             },
             ctx.theme,
         )
@@ -678,6 +703,8 @@ pub(super) fn render_mb_compressor(
                 selected_param: ctx.selected_param,
                 selected_band_idx,
             },
+            ctx.available_width,
+            ctx.layout_scale,
             text,
             ctx.theme,
         )
@@ -783,6 +810,7 @@ pub(super) fn render_mb_expander(
                 selected_band_idx,
             },
             ctx.available_width,
+            ctx.layout_scale,
             text,
             ctx.theme,
         )

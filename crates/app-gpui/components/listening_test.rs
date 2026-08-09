@@ -181,7 +181,7 @@ impl PlayerView {
                                         })),
                                 )
                                 .child(
-                                    Button::new("ear-training-courses", eq_text.courses)
+                                    Button::new("ear-training-courses", eq_text.learning.courses)
                                         .size(ButtonSize::Sm)
                                         .variant(if surface == EarTrainingSurface::Courses {
                                             ButtonVariant::Primary
@@ -197,7 +197,7 @@ impl PlayerView {
                                         })),
                                 )
                                 .child(
-                                    Button::new("ear-training-progress", eq_text.progress)
+                                    Button::new("ear-training-progress", eq_text.learning.progress)
                                         .size(ButtonSize::Sm)
                                         .variant(if surface == EarTrainingSurface::Progress {
                                             ButtonVariant::Primary
@@ -251,13 +251,16 @@ impl PlayerView {
                     )))
                     .child(Text::caption(format!("{completed} sessions completed")))
                     .child(
-                        Button::new(("ear-course-start", course as usize), eq_text.start_course)
-                            .size(ButtonSize::Sm)
-                            .variant(ButtonVariant::Primary)
-                            .theme(theme.to_button_theme())
-                            .on_click_event(
-                                cx.listener(move |view, _, _, cx| view.start_eq_course(course, cx)),
-                            ),
+                        Button::new(
+                            ("ear-course-start", course as usize),
+                            eq_text.learning.start_course,
+                        )
+                        .size(ButtonSize::Sm)
+                        .variant(ButtonVariant::Primary)
+                        .theme(theme.to_button_theme())
+                        .on_click_event(
+                            cx.listener(move |view, _, _, cx| view.start_eq_course(course, cx)),
+                        ),
                     ),
             );
         }
@@ -269,8 +272,8 @@ impl PlayerView {
             .flex()
             .flex_col()
             .gap(d.section)
-            .child(Text::section_header(eq_text.guided_courses))
-            .child(Text::caption(eq_text.guided_courses_subtitle))
+            .child(Text::section_header(eq_text.learning.guided_courses))
+            .child(Text::caption(eq_text.learning.guided_courses_subtitle))
             .child(courses)
             .into_any_element()
     }
@@ -306,7 +309,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .gap(d.section)
-            .child(Text::section_header(eq_text.training_progress))
+            .child(Text::section_header(eq_text.learning.training_progress))
             .child(
                 div()
                     .flex()
@@ -359,7 +362,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap)
-                    .child(Text::section_header(eq_text.coach_recommendation))
+                    .child(Text::section_header(eq_text.learning.coach_recommendation))
                     .child(Text::body(progress.recommendation())),
             )
             .child(
@@ -372,7 +375,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap(d.gap)
-                    .child(Text::section_header(eq_text.recent_sessions))
+                    .child(Text::section_header(eq_text.learning.recent_sessions))
                     .child(recent),
             )
             .into_any_element()
@@ -1019,7 +1022,7 @@ impl PlayerView {
                 } else {
                     format!(
                         "{}: {} at {:+.0} dB, Q {:.1}",
-                        eq_text.answer,
+                        eq_text.learning.answer,
                         format_frequency(result.question.center_frequency_hz),
                         result.question.signed_gain_db(),
                         result.question.q
@@ -1162,7 +1165,7 @@ impl PlayerView {
                                     view.start_eq_training_session(cx);
                                 })),
                             )
-                            .child(Text::caption(eq_text.audition_path_hint)),
+                            .child(Text::caption(eq_text.learning.audition_path_hint)),
                     )
                     .child(
                         div()
@@ -1308,7 +1311,7 @@ impl PlayerView {
                     .flex_wrap()
                     .gap(d.grid)
                     .child(
-                        Button::new("eq-source-add", eq_text.add_current)
+                        Button::new("eq-source-add", eq_text.learning.add_current)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
                             .theme(theme.to_button_theme())
@@ -1317,7 +1320,7 @@ impl PlayerView {
                             ),
                     )
                     .child(
-                        Button::new("eq-source-prev", eq_text.previous)
+                        Button::new("eq-source-prev", eq_text.learning.previous)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
                             .theme(theme.to_button_theme())
@@ -1335,7 +1338,7 @@ impl PlayerView {
                             ),
                     )
                     .child(
-                        Button::new("eq-loop-start", eq_text.set_loop_start)
+                        Button::new("eq-loop-start", eq_text.learning.set_loop_start)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
                             .theme(theme.to_button_theme())
@@ -1344,7 +1347,7 @@ impl PlayerView {
                             ),
                     )
                     .child(
-                        Button::new("eq-loop-end", eq_text.set_loop_end)
+                        Button::new("eq-loop-end", eq_text.learning.set_loop_end)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
                             .theme(theme.to_button_theme())
@@ -1353,7 +1356,7 @@ impl PlayerView {
                             ),
                     )
                     .child(
-                        Button::new("eq-loop-toggle", eq_text.toggle_loop)
+                        Button::new("eq-loop-toggle", eq_text.learning.toggle_loop)
                             .size(ButtonSize::Sm)
                             .variant(ButtonVariant::Secondary)
                             .theme(theme.to_button_theme())
@@ -3151,7 +3154,7 @@ impl PlayerView {
                     Ok(result) if result.correct => format!("{}.", eq_text.correct),
                     Ok(result) => format!(
                         "{}: {}.",
-                        eq_text.answer,
+                        eq_text.learning.answer,
                         format_frequency(result.question.center_frequency_hz)
                     ),
                     Err(error) => error.to_string(),

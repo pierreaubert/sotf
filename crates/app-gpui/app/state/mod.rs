@@ -26,8 +26,8 @@ pub use playback::PlaybackState;
 pub use playback_events::{PlaybackEvent, PlaybackEventStore, TrackChangeTrigger};
 pub use plugin::{
     EXTERNAL_PLUGIN_SCAN_PAGE_SIZE, EqDragPreview, ExternalPluginRuntimeSummary,
-    ExternalPluginScanCounts, ExternalPluginUiState, ExternalPluginWorkerHealth, PluginState,
-    PluginViewMode, external_plugin_error_key, external_plugin_worker_health,
+    ExternalPluginScanCounts, ExternalPluginUiState, ExternalPluginWorkerHealth, PluginGraphState,
+    PluginState, PluginViewMode, external_plugin_error_key, external_plugin_worker_health,
 };
 pub use shared::SharedState;
 pub use ui::UIState;

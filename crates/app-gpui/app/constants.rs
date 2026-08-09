@@ -90,9 +90,6 @@ pub mod ui {
     /// Default window Y position
     pub const DEFAULT_WINDOW_Y: f32 = 100.0;
 
-    /// Minimum window height for expanded layout mode
-    pub const EXPANDED_LAYOUT_MIN_HEIGHT: f32 = 800.0;
-
     /// Input meter default width in pixels
     pub const INPUT_METER_DEFAULT_WIDTH: f32 = 80.0;
 

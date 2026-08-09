@@ -10,7 +10,7 @@ use gpui_audio_kit::{
     SpectrumAxisTheme, SpectrumColors, SpectrumElement, render_spectrum_db_axis,
     render_spectrum_frequency_axis,
 };
-use gpui_ui_kit::{Select, SelectOption, SelectSize};
+use gpui_ui_kit::{Select, SelectOption, SelectSize, Toggle, ToggleStyle};
 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
 use super::common::render_knob;
@@ -69,6 +69,7 @@ pub struct SpectrumRenderState<'a> {
     pub is_editing: bool,
     pub selected_param: usize,
     pub data: Option<&'a SpectrumData>,
+    pub chart_height: f32,
 }
 
 /// Render the Spectrum Analyzer plugin
@@ -108,7 +109,7 @@ pub fn render_spectrum_analyzer_plugin(
                 .child(
                     div()
                         .flex_1()
-                        .h(px(200.0))
+                        .h(px(state.chart_height))
                         .bg(theme.surface)
                         .rounded(d.r_lg)
                         .border_1()
@@ -121,7 +122,7 @@ pub fn render_spectrum_analyzer_plugin(
                             let magnitudes: Arc<[f32]> =
                                 Arc::from(data.magnitudes.as_ref().as_slice());
                             SpectrumElement::new(magnitudes)
-                                .height(px(200.0))
+                                .height(px(state.chart_height))
                                 .frequency_range(state.min_freq, state.max_freq)
                                 .smoothing(state.smoothing)
                                 .colors(spectrum_colors_from_theme(
@@ -226,20 +227,21 @@ pub fn render_spectrum_analyzer_plugin(
                         .child(text.tilt),
                 )
                 .child(
-                    div().w(px(100.0)).child(
+                    div().w(rems(8.5)).child(
                         Select::new("tilt-correction-select")
                             .options(vec![
                                 SelectOption::new("none".to_string(), text.none),
                                 SelectOption::new("3db".to_string(), "+3dB/oct"),
                                 SelectOption::new("6db".to_string(), "+6dB/oct"),
                                 SelectOption::new("pink".to_string(), "Pink (+3dB/oct)"),
+                                SelectOption::new("custom".to_string(), text.custom).disabled(true),
                             ])
                             .selected(match state.tilt_correction {
                                 SpectralTiltCorrection::None => "none".to_string(),
                                 SpectralTiltCorrection::ThreeDbPerOctave => "3db".to_string(),
                                 SpectralTiltCorrection::SixDbPerOctave => "6db".to_string(),
                                 SpectralTiltCorrection::Pink => "pink".to_string(),
-                                SpectralTiltCorrection::Custom(_) => "none".to_string(),
+                                SpectralTiltCorrection::Custom(_) => "custom".to_string(),
                             })
                             .is_open(state.tilt_select_open)
                             .size(SelectSize::Xs)
@@ -288,7 +290,7 @@ pub fn render_spectrum_analyzer_plugin(
                         .child(text.reference),
                 )
                 .child(
-                    div().w(px(100.0)).child(
+                    div().w(rems(8.5)).child(
                         Select::new("tilt-reference-select")
                             .options(vec![
                                 SelectOption::new("standard".to_string(), text.standard),
@@ -358,6 +360,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let text = SpectrumTranslations::for_language(state.app.ui_state.language);
+        let spectrum_state = self.state.clone();
         let phone_hold = state.app.ui_state.phone_spectrum_hold;
         let phone_hold_magnitudes = state.app.ui_state.phone_spectrum_hold_magnitudes.clone();
         let phone_smoothing = if state.app.ui_state.phone_spectrum_smoothed {
@@ -365,6 +368,15 @@ impl PlayerView {
         } else {
             0.3
         };
+        let combined_scale = crate::ui::compute_combined_scale(
+            state.app.ui_state.window_width,
+            state.app.ui_state.window_height,
+            state.app.ui_state.font_scale,
+            state.app.ui_state.min_font_size_px,
+            state.app.ui_state.max_font_size_px,
+        );
+        let chart_height =
+            (state.app.ui_state.window_height - 160.0 * combined_scale).max(200.0 * combined_scale);
 
         let content = if let Some(info) = &state.app.playback.spectrum_info {
             // Convert magnitudes to Arc for the GPU element
@@ -390,7 +402,7 @@ impl PlayerView {
                         .child(
                             div().flex_1().child(
                                 SpectrumElement::new(magnitudes)
-                                    .height(px(256.0))
+                                    .height(px(chart_height))
                                     .frequency_range(20.0, 20000.0)
                                     .smoothing(phone_smoothing)
                                     .colors(spectrum_colors_from_theme(
@@ -430,10 +442,40 @@ impl PlayerView {
             .p(d.card)
             .child(
                 div()
-                    .text_size(d.text_lg)
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .flex()
+                    .items_center()
+                    .justify_between()
                     .mb(d.section)
-                    .child(text.analyzer),
+                    .child(
+                        div()
+                            .text_size(d.text_lg)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(text.analyzer),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(d.grid)
+                            .child(
+                                Toggle::new("spectrum-screen-smoothing")
+                                    .checked(state.app.ui_state.phone_spectrum_smoothed)
+                                    .style(ToggleStyle::Segmented)
+                                    .theme(theme.to_toggle_theme())
+                                    .aria_label(text.smoothing)
+                                    .on_change(move |smoothed, _, cx| {
+                                        spectrum_state.update(cx, |state, _| {
+                                            state.app.ui_state.phone_spectrum_smoothed = smoothed;
+                                        });
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .text_size(d.text_xs)
+                                    .text_color(theme.text_secondary)
+                                    .child(text.smoothing),
+                            ),
+                    ),
             )
             .child(content)
     }

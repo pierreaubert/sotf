@@ -11,5 +11,7 @@ mod misc;
 mod render;
 mod types;
 
+#[doc(hidden)]
+pub use misc::{checked_matrix_cell_index, matrix_settings_mut_by_instance_id};
 pub use render::*;
 pub use types::*;

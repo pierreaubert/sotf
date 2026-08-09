@@ -9,7 +9,7 @@
 //! Cascade rule: each plugin instance resolves to the rack's theme by
 //! default, but a per-instance override (keyed by plugin index) replaces it.
 
-use crate::theme::Theme;
+use crate::theme::{Theme, ThemeId};
 use gpui::{Rgba, SharedString};
 use gpui_themes::ThemeAppearance;
 use std::collections::HashMap;
@@ -34,7 +34,11 @@ use misc::with_alpha;
 pub fn plugin_theme_id_for_app_theme(
     selected_theme_id: PluginThemeId,
     app_theme: &Theme,
+    app_theme_id: ThemeId,
 ) -> PluginThemeId {
+    if app_theme_id.accessibility_palette() != gpui_themes::AccessibilityPalette::Standard {
+        return PluginThemeId::Brutalist;
+    }
     match app_theme.appearance() {
         ThemeAppearance::Light => PluginThemeId::StudioCream,
         ThemeAppearance::Dark if selected_theme_id == PluginThemeId::Brutalist => {

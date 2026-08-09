@@ -78,7 +78,15 @@ pub fn render_controller_view(
     if let Some(h) = header {
         root = root.child(h);
     }
-    root.child(grid).child(legend).into_any_element()
+    root.child(
+        div()
+            .id("controller-grid-scroll")
+            .w_full()
+            .overflow_x_scroll()
+            .child(grid),
+    )
+    .child(legend)
+    .into_any_element()
 }
 
 fn render_page_indicator(
@@ -278,6 +286,7 @@ fn render_cell(
             }),
             // Button on a discrete param.
             (Some(b), false, PhysicalControlKind::Button) => render_button_widget(
+                d,
                 ctrl,
                 b,
                 params,
@@ -340,6 +349,11 @@ fn render_cell(
         .flex_col()
         .items_center()
         .gap(d.gap)
+        .opacity(if binding.is_none() && !is_reserved {
+            0.5
+        } else {
+            1.0
+        })
         // Header row: param name + thin underline rule sitting flush below.
         .child(
             div()
@@ -462,6 +476,7 @@ fn render_compact_fader(
 
 #[allow(clippy::too_many_arguments)]
 fn render_button_widget(
+    d: &Ds,
     _ctrl: &PhysicalControl,
     binding: &ControlBinding,
     params: &[ParamSpec],
@@ -508,7 +523,8 @@ fn render_button_widget(
             let cur = (value as usize).min(count - 1);
             let next = (cur + 1) % count;
             let label_for_cell = labels.get(cur).copied().unwrap_or_default().to_string();
-            let display = label_for_cell.clone();
+            let next_label = labels.get(next).copied().unwrap_or_default();
+            let display = format!("{} → {}", label_for_cell, next_label);
             let element = div()
                 .id(("hw-choice-btn", plugin_index * 1000 + binding.param_index))
                 .w(px(BUTTON_SIZE * 1.6))
@@ -520,7 +536,7 @@ fn render_button_widget(
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(10.0))
+                .text_size(d.text_xs)
                 .text_color(theme.text_primary)
                 .child(display)
                 .on_mouse_down(MouseButton::Left, {
@@ -555,7 +571,7 @@ fn render_button_widget(
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(10.0))
+                .text_size(d.text_xs)
                 .text_color(theme.text_primary)
                 .child(format!("{cur}"))
                 .on_mouse_down(MouseButton::Left, {

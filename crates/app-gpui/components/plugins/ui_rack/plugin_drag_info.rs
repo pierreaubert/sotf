@@ -20,8 +20,8 @@ impl Render for PluginDragInfo {
         let d = Ds::from_cx(cx);
         // Drag preview — matches the Ozone-style card
         div()
-            .w(rems(7.0))
-            .h(rems(4.0))
+            .w(rems(8.0))
+            .h(rems(6.5))
             .flex()
             .flex_row()
             .rounded(d.r_md)

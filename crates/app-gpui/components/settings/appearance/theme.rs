@@ -220,6 +220,9 @@ impl PlayerView {
                                         let scale = ((val as f32) / 100.0).clamp(0.5, 2.0);
                                         state_entity.update(cx, |state, cx| {
                                             state.app.ui_state.font_scale = scale;
+                                            crate::ui::recalculate_pagination_for_state(
+                                                state, true,
+                                            );
                                             let layout = state.layout.read(cx);
                                             if let Err(error) = state.app.save_config(layout) {
                                                 log::error!("Failed to save config: {error}");

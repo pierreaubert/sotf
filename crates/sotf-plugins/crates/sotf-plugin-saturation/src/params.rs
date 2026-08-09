@@ -118,7 +118,6 @@ pub const PARAMS: &[ParamSpec] = &[
 ///             7=dynamic_amount, 8=dynamic_attack_ms, 9=dynamic_release_ms, 10=dc_blocker, 11=use_adaa
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
-        ControlSpec::selector(0), // mode
         ControlSpec::selector(4), // oversampling
         ControlSpec::toggle(10),  // dc_blocker
         ControlSpec::toggle(11),  // use_adaa
@@ -128,8 +127,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             "SATURATION",
             "SATURATION",
             &[
-                ControlSpec::slider(1), // drive
-                ControlSpec::slider(2), // tone
+                ControlSpec::selector(0), // mode
+                ControlSpec::slider(1),   // drive
+                ControlSpec::slider(2),   // tone
             ],
         ),
         ControlGroup::new(
@@ -148,17 +148,21 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::slider(9), // dynamic_release_ms
             ],
         ),
+        ControlGroup::new(
+            "OUTPUT",
+            "OUTPUT",
+            &[
+                ControlSpec::knob(5), // output_gain
+                ControlSpec::knob(6), // mix
+            ],
+        ),
     ],
-    output: &[
-        ControlSpec::knob(5), // output_gain
-        ControlSpec::knob(6), // mix
-    ],
+    output: &[],
     tabs: &[],
     visualizations: &[],
     column_constraints: &[
         ColumnConstraint::config(100.0, 0.5),
         ColumnConstraint::main(300.0),
-        ColumnConstraint::output(120.0, 0.6),
     ],
     dynamic_sections: &[],
 };

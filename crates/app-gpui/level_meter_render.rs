@@ -23,6 +23,7 @@ pub struct ChannelMeterData {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupMeterData {
     pub group_idx: usize,
+    pub is_selected: bool,
     pub muted: bool,
     pub soloed: bool,
     pub dimmed: bool,

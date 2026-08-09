@@ -281,13 +281,18 @@ pub const HEAD_MODELS: &[&str] = &["Woodworth", "Brown-Duda"];
 /// 21=bypass_xtc, 22=bypass_spectral_norm, 23=bypass_neumann,
 /// 24=auto_gain, 25=ag_max, 26=ag_smoothing, 27=head_model
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[
-        ControlSpec::knob(0),      // distance_m
-        ControlSpec::knob(1),      // speaker_angle_deg
-        ControlSpec::knob(2),      // head_radius_m
-        ControlSpec::selector(27), // head_model
-    ],
+    config: &[],
     main: &[
+        ControlGroup::new(
+            "GEOMETRY",
+            "GEOMETRY",
+            &[
+                ControlSpec::knob(0),      // distance_m
+                ControlSpec::knob(1),      // speaker_angle_deg
+                ControlSpec::knob(2),      // head_radius_m
+                ControlSpec::selector(27), // head_model
+            ],
+        ),
         ControlGroup::new(
             "BETA",
             "BETA",
@@ -346,7 +351,6 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     }],
     visualizations: &[],
     column_constraints: &[
-        ColumnConstraint::config(120.0, 0.5),
         ColumnConstraint::main(300.0),
         ColumnConstraint::output(130.0, 0.6),
     ],

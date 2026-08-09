@@ -74,6 +74,13 @@ impl Default for SpatialSpiderUiState {
     }
 }
 
+impl SpatialSpiderUiState {
+    #[cfg(feature = "gpu-3d")]
+    pub fn reset_camera(&mut self) {
+        *self.camera_3d.borrow_mut() = Lines3DState::new(3.5, 20.0, 20.0);
+    }
+}
+
 impl std::fmt::Debug for SpatialSpiderUiState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SpatialSpiderUiState")

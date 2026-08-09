@@ -19,6 +19,21 @@ pub fn compute_responsive_scale(window_width: f32, window_height: f32) -> f32 {
     width_scale.min(height_scale).clamp(0.55, 2.5)
 }
 
+/// Effective scale used by rem-based UI geometry after responsive scaling,
+/// user zoom, and configured font-size bounds are applied.
+pub fn compute_combined_scale(
+    window_width: f32,
+    window_height: f32,
+    font_scale: f32,
+    min_font_size_px: Option<f32>,
+    max_font_size_px: Option<f32>,
+) -> f32 {
+    let responsive_scale = compute_responsive_scale(window_width, window_height);
+    let (scale_min, scale_max) =
+        super::consts::combined_scale_bounds(min_font_size_px, max_font_size_px);
+    (font_scale * responsive_scale).clamp(scale_min, scale_max)
+}
+
 pub fn responsive_scale_reference_size(window_width: f32, window_height: f32) -> (f32, f32) {
     if is_phone_sized_window(window_width, window_height) {
         if window_width >= window_height {

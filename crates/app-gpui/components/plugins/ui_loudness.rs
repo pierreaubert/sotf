@@ -1,6 +1,5 @@
 //! Loudness Monitor Plugin UI Component
 
-use super::common::ParamSectionStyle;
 use super::level_meters::render_lufs_with_true_peak;
 use crate::app::i18n::LevelMeterTranslations;
 use crate::components::design::Ds;
@@ -17,21 +16,10 @@ pub fn render_loudness_monitor_plugin(
     text: LevelMeterTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(d.section)
-        .child(render_lufs_with_true_peak(
-            d,
-            loudness.as_deref(),
-            text,
-            theme,
-        ))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.gap)
-                .param_section_base(d, theme),
-        )
+    div().child(render_lufs_with_true_peak(
+        d,
+        loudness.as_deref(),
+        text,
+        theme,
+    ))
 }

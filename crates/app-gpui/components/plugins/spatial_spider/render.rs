@@ -59,7 +59,7 @@ pub fn render_spatial_spider_panel(
     let cfg_opt = resolve_speaker_config(snapshot, speaker_config_id);
     let header =
         render_spatial_spider_controls(d, entity, plugin_idx, snapshot, cfg_opt, text, theme);
-    let body = render_spatial_spider_graph(d, snapshot, cfg_opt, theme);
+    let body = render_spatial_spider_graph(d, snapshot, cfg_opt, text, theme);
 
     VStack::new()
         .spacing(StackSpacing::Sm)
@@ -102,6 +102,7 @@ pub fn render_spatial_spider_graph(
     d: &Ds,
     snapshot: &SpatialSpiderSnapshot,
     cfg_opt: Option<&'static SpeakerConfig>,
+    text: PluginCommonTranslations,
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     build_body(
@@ -111,6 +112,7 @@ pub fn render_spatial_spider_graph(
         snapshot.ui.view_mode,
         snapshot.ui.spider_mode,
         snapshot.ui.correlation_ref_channel,
+        text,
         theme,
     )
 }

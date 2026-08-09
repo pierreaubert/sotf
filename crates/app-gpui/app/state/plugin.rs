@@ -26,7 +26,8 @@ pub struct PluginState {
     pub update_state: PluginUpdateState,
 
     /// GPUI-specific: selected cell in the routing matrix UI.
-    pub matrix_selected_cell: Option<(usize, usize)>,
+    /// Selected matrix route: (stable plugin instance ID, input, output).
+    pub matrix_selected_cell: Option<(usize, usize, usize)>,
 
     /// GPUI-specific: graph/workflow view state.
     pub graph_state: PluginGraphState,
@@ -222,6 +223,13 @@ pub struct PluginGraphState {
     pub editing_graph_node_uuid: Option<sotf_audio_player::GraphNodeId>,
 }
 
+impl PluginGraphState {
+    pub fn clear_editing_context(&mut self) {
+        self.editing_plugin_node = None;
+        self.editing_graph_node_uuid = None;
+    }
+}
+
 /// GPUI-specific transient state for the A/B Compare plugin UI.
 #[derive(Debug, Clone, Default)]
 pub struct AbCompareState {
@@ -379,6 +387,8 @@ pub struct PluginPresetState {
     pub confirm_delete_preset: Option<(usize, String)>, // Some((plugin_idx, preset_name)) awaiting confirmation
     /// Two-click confirmation for replacing every per-channel EQ curve.
     pub confirm_eq_copy_to_all: Option<(usize, usize)>, // (plugin_idx, source_channel)
+    /// Two-click confirmation for replacing the selected channel from global EQ.
+    pub confirm_eq_copy_from_all: Option<(usize, usize)>, // (plugin_idx, target_channel)
 }
 
 /// GPUI-specific state for chain-level bypass, auto-gain and solo.
@@ -649,6 +659,7 @@ impl PluginState {
         self.preset_state.confirm_remove_plugin = None;
         self.preset_state.confirm_delete_preset = None;
         self.preset_state.confirm_eq_copy_to_all = None;
+        self.preset_state.confirm_eq_copy_from_all = None;
     }
 
     /// Sync the parsed A/B path state from the engine-side JSON config strings.

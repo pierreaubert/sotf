@@ -6,12 +6,16 @@ use super::super::common::{
 use super::misc::SLIDER_HEIGHT;
 use super::misc::TRANSFER_CURVE_SIZE;
 use crate::app::AppState;
+use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{NumberInput, NumberInputSize};
 use sotf_plugins::param_specs::{find_by_key as pk, multiband_expander::GLOBAL_PARAMS as ME};
+
+use super::super::ui_multiband_common::{band_tab_label, render_crossover_preset};
 
 /// State for rendering the Multiband Expander plugin
 pub struct MbExpanderRenderState {
@@ -49,10 +53,11 @@ pub fn render_mb_expander_plugin(
     plugin_idx: usize,
     state: MbExpanderRenderState,
     available_width: f32,
+    layout_scale: f32,
     text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
-    let compact = available_width < 720.0;
+    let compact = available_width / layout_scale.max(0.01) < 720.0;
     let get_param_idx = |base_idx: usize| -> usize {
         if state.selected_band_idx > 0 {
             state.selected_band_idx * 100 + base_idx
@@ -62,26 +67,44 @@ pub fn render_mb_expander_plugin(
     };
 
     // === LEFT COLUMN: Global ===
+    let bands_entity = entity.clone();
     let mut global_col = div()
         .flex()
         .flex_col()
         .flex_shrink_0()
         .gap(d.gap_md)
         .child(render_section_title(d, text.label("GLOBAL"), theme))
-        .child(render_knob(
-            entity.clone(),
-            plugin_idx,
-            text.label("Bands"),
-            state.num_bands as f64,
-            pk(ME, "num_bands").min_f64(),
-            pk(ME, "num_bands").max_f64(),
-            "",
-            0,
-            state.selected_param,
-            state.is_editing,
-            Some('b'),
-            theme,
-        ))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(d.grid)
+                .child(
+                    div()
+                        .text_size(d.text_xs)
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_secondary)
+                        .child(text.bands),
+                )
+                .child(
+                    NumberInput::new("mb-expander-bands")
+                        .value(state.num_bands as f64)
+                        .min(pk(ME, "num_bands").min_f64())
+                        .max(pk(ME, "num_bands").max_f64())
+                        .step(1.0)
+                        .decimals(0)
+                        .size(NumberInputSize::Xs)
+                        .width(80.0)
+                        .aria_label(text.bands)
+                        .on_change(move |value, _window, cx| {
+                            bands_entity.update(cx, |state, _| {
+                                state.app.set_plugin_param(plugin_idx, 0, value);
+                                state.app.plugin_state.update_state.pending_plugin_update =
+                                    Some(PluginUpdateType::Structural);
+                            });
+                        }),
+                ),
+        )
         .child(render_knob(
             entity.clone(),
             plugin_idx,
@@ -146,20 +169,14 @@ pub fn render_mb_expander_plugin(
         ));
     }
 
-    // Missing global params
+    // Global params
     global_col = global_col
-        .child(render_knob(
+        .child(render_section_title(d, text.label("Preset"), theme))
+        .child(render_crossover_preset(
+            "mb-expander-preset",
             entity.clone(),
             plugin_idx,
-            text.label("Preset"),
-            state.crossover_preset as f64,
-            pk(ME, "crossover_preset").min_f64(),
-            pk(ME, "crossover_preset").max_f64(),
-            "",
-            1,
-            state.selected_param,
-            state.is_editing,
-            Some('p'),
+            state.crossover_preset,
             theme,
         ))
         .child(render_detection_mode_selector(
@@ -197,11 +214,16 @@ pub fn render_mb_expander_plugin(
         .border_color(theme.border)
         .children((0..=state.num_bands).map(|i| {
             let is_selected = state.selected_band_idx == i;
-            let label = if i == 0 {
-                "Global".to_string()
-            } else {
-                format!("{}", i)
-            };
+            let label = band_tab_label(
+                i,
+                state.num_bands,
+                [
+                    state.crossover_freq_1,
+                    state.crossover_freq_2,
+                    state.crossover_freq_3,
+                    state.crossover_freq_4,
+                ],
+            );
             div()
                 .px(d.card)
                 // intentional: asymmetric underline-tab padding — 4/6 pair is visually tuned
@@ -562,7 +584,7 @@ fn render_detection_mode_selector(
         .flex_col()
         .items_stretch()
         .gap(d.grid)
-        .w(px(130.0))
+        .w(rems(8.125))
         .rounded(d.r_md)
         .when(selected_param == param_idx && is_editing, |el| {
             el.border_1().border_color(theme.accent)

@@ -112,81 +112,6 @@ pub fn render_gr_meter(
         )
 }
 
-/// Render a vertical peak meter with ceiling indicator
-pub fn render_peak_meter(d: &Ds, peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl IntoElement {
-    let min_db = -60.0;
-    let normalized = ((peak_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;
-    let ceiling_normalized = ((ceiling_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;
-
-    // Color based on level
-    let color = if peak_db > ceiling_db - 3.0 {
-        theme.feedback.meter_clip // Red - clipping or near ceiling
-    } else if peak_db > -12.0 {
-        theme.feedback.meter_warning // Yellow - moderate
-    } else {
-        theme.feedback.meter_normal // Green - safe
-    };
-
-    div()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap(d.grid)
-        // Label
-        .child(
-            div()
-                .text_size(d.text_xs)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.text_secondary)
-                .child("dBFS"),
-        )
-        // Meter
-        .child(
-            div()
-                .w(rems(1.25))
-                .h(rems(5.0))
-                .bg(theme.background)
-                .rounded(d.r_md)
-                .border_1()
-                .border_color(theme.border)
-                .relative()
-                .overflow_hidden()
-                // Level bar
-                .child(
-                    div()
-                        .absolute()
-                        .bottom_0()
-                        .left_0()
-                        .right_0()
-                        .h(relative(normalized))
-                        .bg(color),
-                )
-                // Ceiling marker
-                .child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .right_0()
-                        .bottom(relative(ceiling_normalized))
-                        // intentional: 2px ceiling marker line — visual indicator, not spacing
-                        .h(px(2.0))
-                        .bg(theme.feedback.meter_clip),
-                ),
-        )
-        // Value
-        .child(
-            div()
-                .text_size(d.text_xs)
-                .font_weight(FontWeight::BOLD)
-                .text_color(color)
-                .child(if peak_db <= min_db {
-                    "-∞".to_string()
-                } else {
-                    format!("{:.1}", peak_db)
-                }),
-        )
-}
-
 /// Render a meter with gradient coloring (green, yellow at top, red at clip)
 /// Optional peak_ratio shows a peak hold indicator line
 pub fn render_gradient_meter(
@@ -471,7 +396,7 @@ pub fn render_lufs_with_true_peak(
                 .child(
                     div()
                         .flex()
-                        .gap(spacing::SM)
+                        .gap(d.grid)
                         // Label spacer
                         .child(div().w(px(meter_theme.label_width)))
                         // Legend area (flex-1, justify_between for labels)
@@ -522,7 +447,7 @@ pub fn render_lufs_with_true_peak(
                     .child(
                         div()
                             .flex()
-                            .gap(spacing::SM)
+                            .gap(d.grid)
                             .child(div().w(px(meter_theme.label_width)))
                             .child(
                                 div()
@@ -539,7 +464,7 @@ pub fn render_lufs_with_true_peak(
                             .child(div().w(px(meter_theme.value_width))),
                     )
                     .into_any_element()
-            } else {
+            } else if channel_count >= 2 {
                 let tick_config = TickConfig::stereo_width();
 
                 div()
@@ -568,7 +493,7 @@ pub fn render_lufs_with_true_peak(
                     .child(
                         div()
                             .flex()
-                            .gap(spacing::SM)
+                            .gap(d.grid)
                             .child(div().w(px(meter_theme.label_width)))
                             .child(
                                 div()
@@ -583,6 +508,12 @@ pub fn render_lufs_with_true_peak(
                             )
                             .child(div().w(px(meter_theme.value_width))),
                     )
+                    .into_any_element()
+            } else {
+                div()
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_muted)
+                    .child(text.stereo_width_unavailable)
                     .into_any_element()
             }
         })
@@ -727,7 +658,7 @@ impl PlayerView {
         &self,
         group: &ChannelGroup,
         group_idx: usize,
-        _is_selected: bool,
+        is_selected: bool,
         loudness: Option<&sotf_audio_player::LoudnessData>,
         peak_hold: &[f64],
         theme: &Theme,
@@ -739,6 +670,7 @@ impl PlayerView {
             group.muted,
             group.soloed,
             group.dimmed,
+            is_selected,
             channel_data,
             theme,
             cx,
@@ -754,6 +686,7 @@ impl PlayerView {
         muted: bool,
         soloed: bool,
         dimmed: bool,
+        is_selected: bool,
         channel_data: Vec<ChannelMeterData>,
         theme: &Theme,
         cx: &mut Context<Self>,
@@ -766,7 +699,13 @@ impl PlayerView {
             .h_full()
             .min_h(rems(17.5))
             .p_0p5()
-            // Removed rounded_md and selection background logic
+            .rounded(d.r_sm)
+            .border_1()
+            .border_color(if is_selected {
+                theme.accent
+            } else {
+                background_secondary
+            })
             .bg(background_secondary)
             // Channel meters
             .child(div().flex().gap_px().flex_1().min_h(rems(12.5)).children(
@@ -899,6 +838,7 @@ impl PlayerView {
                 .enumerate()
                 .map(|(group_idx, group)| GroupMeterData {
                     group_idx,
+                    is_selected: group_idx == state.app.level_meters.selected_group,
                     muted: group.muted,
                     soloed: group.soloed,
                     dimmed: group.dimmed,
@@ -941,6 +881,7 @@ impl PlayerView {
                             group_data.muted,
                             group_data.soloed,
                             group_data.dimmed,
+                            group_data.is_selected,
                             group_data.channels,
                             &theme,
                             cx,

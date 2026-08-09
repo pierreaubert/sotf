@@ -11,12 +11,14 @@
 use super::common::render_section_title;
 use super::editing::PluginEditingManager;
 use crate::app::AppState;
+use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Column, NumberInput, NumberInputSize, SelectionMode, Table, TableTheme, Toggle, ToggleSize,
+    Button, ButtonSize, ButtonVariant, Column, NumberInput, NumberInputSize, SelectionMode, Table,
+    TableTheme, Toggle, ToggleSize,
 };
 use sotf_audio_player::PluginSettings;
 use sotf_audio_player::ui_params::{TuiEditablePlugin, TuiParamType};
@@ -52,6 +54,7 @@ pub fn render_simple_plugin_view(
     selected_param: usize,
     theme: &Theme,
     midi_overlay: Option<&MidiOverlay>,
+    text: PluginCommonTranslations,
 ) -> impl IntoElement {
     let descriptors = settings.get_descriptors();
     let params = settings.get_params();
@@ -73,10 +76,7 @@ pub fn render_simple_plugin_view(
         };
 
         let value_f64 = param.value.parse::<f64>().unwrap_or(0.0);
-        let bool_value = matches!(
-            param.value.to_lowercase().as_str(),
-            "true" | "on" | "yes" | "1"
-        );
+        let bool_value = settings.param_value(i).is_some_and(|value| value > 0.5);
 
         let midi_assignment = midi_overlay.and_then(|o| o.assignments.get(&i).cloned());
         let is_learn_target = midi_overlay
@@ -146,7 +146,6 @@ pub fn render_simple_plugin_view(
 
         // Track which rows are selected for conditional styling in cell_render
         let selected_in_group_for_name = selected_in_group.clone();
-        let selected_in_group_for_value = selected_in_group.clone();
         let theme_for_name = theme.clone();
 
         let entity_for_value = entity.clone();
@@ -160,7 +159,10 @@ pub fn render_simple_plugin_view(
         )
         .column(
             Column::new("name", "Parameter")
-                .width(px(220.0)) // intentional: fixed plugin-control layout width
+                // Table columns currently accept Pixels only. Keep the baseline
+                // width here; the cell content itself uses rem-scaled type.
+                // intentional: Table columns currently accept Pixels only.
+                .width(px(220.0))
                 .sortable(false)
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, row_idx, _, _| {
@@ -201,137 +203,124 @@ pub fn render_simple_plugin_view(
             Column::new("value", "Value")
                 .sortable(false)
                 .resizable(false)
-                .cell_render(move |row: &ParamRow, row_idx, _, _| {
-                    let is_sel = selected_in_group_for_value.contains(&row_idx);
+                .cell_render(move |row: &ParamRow, _row_idx, _, _| match row.param_type {
+                    TuiParamType::Float { min, max, step } => {
+                        let dec = if step < 0.01 {
+                            3
+                        } else if step < 0.1 {
+                            2
+                        } else if step < 1.0 {
+                            1
+                        } else {
+                            0
+                        };
 
-                    match row.param_type {
-                        TuiParamType::Float { min, max, step } if is_sel => {
-                            let dec = if step < 0.01 {
-                                3
-                            } else if step < 0.1 {
-                                2
-                            } else if step < 1.0 {
-                                1
-                            } else {
-                                0
-                            };
+                        let param_idx = row.global_param_idx;
+                        let entity_clone = entity_for_value.clone();
 
-                            let param_idx = row.global_param_idx;
-                            let entity_clone = entity_for_value.clone();
-
-                            let mut input = NumberInput::new(SharedString::from(format!(
-                                "simple-param-{}-{}",
-                                plugin_idx, param_idx
-                            )))
-                            .value(row.value_f64)
-                            .min(min)
-                            .max(max)
-                            .step(step)
-                            .decimals(dec)
-                            .size(NumberInputSize::Xs)
-                            .on_change(move |value, _window, cx| {
-                                entity_clone.update(cx, |state, cx| {
-                                    state.app.set_plugin_param(plugin_idx, param_idx, value);
-                                    cx.notify();
-                                });
+                        let mut input = NumberInput::new(SharedString::from(format!(
+                            "simple-param-{}-{}",
+                            plugin_idx, param_idx
+                        )))
+                        .value(row.value_f64)
+                        .min(min)
+                        .max(max)
+                        .step(step)
+                        .decimals(dec)
+                        .size(NumberInputSize::Xs)
+                        .on_change(move |value, _window, cx| {
+                            entity_clone.update(cx, |state, cx| {
+                                state.app.set_plugin_param(plugin_idx, param_idx, value);
+                                cx.notify();
                             });
+                        });
 
-                            if !row.unit.is_empty() {
-                                input = input.unit(row.unit.clone());
-                            }
-
-                            input.into_any_element()
+                        if !row.unit.is_empty() {
+                            input = input.unit(row.unit.clone());
                         }
-                        TuiParamType::Int { min, max, step } if is_sel => {
-                            let param_idx = row.global_param_idx;
-                            let entity_clone = entity_for_value.clone();
 
-                            let mut input = NumberInput::new(SharedString::from(format!(
-                                "simple-param-{}-{}",
-                                plugin_idx, param_idx
-                            )))
-                            .value(row.value_f64)
-                            .min(min as f64)
-                            .max(max as f64)
-                            .step(step as f64)
-                            .decimals(0)
-                            .size(NumberInputSize::Xs)
-                            .on_change(move |value, _window, cx| {
-                                entity_clone.update(cx, |state, cx| {
-                                    state.app.set_plugin_param(plugin_idx, param_idx, value);
-                                    cx.notify();
-                                });
+                        input.into_any_element()
+                    }
+                    TuiParamType::Int { min, max, step } => {
+                        let param_idx = row.global_param_idx;
+                        let entity_clone = entity_for_value.clone();
+
+                        let mut input = NumberInput::new(SharedString::from(format!(
+                            "simple-param-{}-{}",
+                            plugin_idx, param_idx
+                        )))
+                        .value(row.value_f64)
+                        .min(min as f64)
+                        .max(max as f64)
+                        .step(step as f64)
+                        .decimals(0)
+                        .size(NumberInputSize::Xs)
+                        .on_change(move |value, _window, cx| {
+                            entity_clone.update(cx, |state, cx| {
+                                state.app.set_plugin_param(plugin_idx, param_idx, value);
+                                cx.notify();
                             });
+                        });
 
-                            if !row.unit.is_empty() {
-                                input = input.unit(row.unit.clone());
-                            }
-
-                            input.into_any_element()
+                        if !row.unit.is_empty() {
+                            input = input.unit(row.unit.clone());
                         }
-                        TuiParamType::Bool if is_sel => {
-                            let param_idx = row.global_param_idx;
-                            let entity_clone = entity_for_value.clone();
 
-                            Toggle::new(SharedString::from(format!(
-                                "simple-toggle-{}-{}",
-                                plugin_idx, param_idx
-                            )))
-                            .checked(row.bool_value)
-                            .size(ToggleSize::Sm)
-                            .on_change(move |checked, _window, cx| {
-                                entity_clone.update(cx, |state, cx| {
-                                    state.app.set_plugin_param(
-                                        plugin_idx,
-                                        param_idx,
-                                        if checked { 1.0 } else { 0.0 },
-                                    );
+                        input.into_any_element()
+                    }
+                    TuiParamType::Bool => {
+                        let param_idx = row.global_param_idx;
+                        let entity_clone = entity_for_value.clone();
+
+                        Toggle::new(SharedString::from(format!(
+                            "simple-toggle-{}-{}",
+                            plugin_idx, param_idx
+                        )))
+                        .checked(row.bool_value)
+                        .size(ToggleSize::Sm)
+                        .on_change(move |checked, _window, cx| {
+                            entity_clone.update(cx, |state, cx| {
+                                state.app.set_plugin_param(
+                                    plugin_idx,
+                                    param_idx,
+                                    if checked { 1.0 } else { 0.0 },
+                                );
+                                cx.notify();
+                            });
+                        })
+                        .into_any_element()
+                    }
+                    TuiParamType::Choice { .. } => {
+                        let param_idx = row.global_param_idx;
+                        let entity_prev = entity_for_value.clone();
+                        let entity_next = entity_for_value.clone();
+
+                        render_choice_buttons(
+                            ds_for_value,
+                            &row.value_str,
+                            accent,
+                            move |_window, cx| {
+                                entity_prev.update(cx, |state, cx| {
+                                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                                    state.app.plugin_state.plugin_param_selection = param_idx;
+                                    state.app.adjust_selected_param(-1.0);
                                     cx.notify();
                                 });
-                            })
-                            .into_any_element()
-                        }
-                        TuiParamType::Choice { .. } if is_sel => {
-                            let param_idx = row.global_param_idx;
-                            let entity_prev = entity_for_value.clone();
-                            let entity_next = entity_for_value.clone();
-
-                            render_choice_buttons(
-                                ds_for_value,
-                                &row.value_str,
-                                accent,
-                                move |_window, cx| {
-                                    entity_prev.update(cx, |state, cx| {
-                                        state.app.adjust_selected_param(-1.0);
-                                        cx.notify();
-                                    });
-                                },
-                                move |_window, cx| {
-                                    entity_next.update(cx, |state, cx| {
-                                        state.app.adjust_selected_param(1.0);
-                                        cx.notify();
-                                    });
-                                },
-                                plugin_idx,
-                                param_idx,
-                            )
-                            .into_any_element()
-                        }
-                        _ => {
-                            // Static text for non-selected rows
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(ds_for_value.gap)
-                                .child(
-                                    div()
-                                        .text_size(ds_for_value.text_sm)
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .text_color(if is_sel { accent } else { text_primary })
-                                        .child(row.value_str.clone()),
-                                )
-                                .into_any_element()
-                        }
+                            },
+                            move |_window, cx| {
+                                entity_next.update(cx, |state, cx| {
+                                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                                    state.app.plugin_state.plugin_param_selection = param_idx;
+                                    state.app.adjust_selected_param(1.0);
+                                    cx.notify();
+                                });
+                            },
+                            plugin_idx,
+                            param_idx,
+                            text.previous_value,
+                            text.next_value,
+                        )
+                        .into_any_element()
                     }
                 }),
         )
@@ -376,22 +365,22 @@ fn render_choice_buttons(
     on_next: impl Fn(&mut Window, &mut App) + 'static,
     plugin_idx: usize,
     param_idx: usize,
-) -> Div {
+    previous_label: &'static str,
+    next_label: &'static str,
+) -> impl IntoElement {
     div()
         .flex()
         .items_center()
         .gap(d.grid)
         .child(
-            div()
-                .id(SharedString::from(format!(
-                    "choice-prev-{}-{}",
-                    plugin_idx, param_idx
-                )))
-                .text_size(d.text_sm)
-                .text_color(accent)
-                .cursor_pointer()
-                .on_click(move |_, window, cx| on_prev(window, cx))
-                .child("<"),
+            Button::new(
+                SharedString::from(format!("choice-prev-{}-{}", plugin_idx, param_idx)),
+                previous_label,
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ButtonSize::Xs)
+            .aria_label(previous_label)
+            .on_click_event(move |_, window, cx| on_prev(window, cx)),
         )
         .child(
             div()
@@ -402,15 +391,13 @@ fn render_choice_buttons(
                 .child(value_str.to_string()),
         )
         .child(
-            div()
-                .id(SharedString::from(format!(
-                    "choice-next-{}-{}",
-                    plugin_idx, param_idx
-                )))
-                .text_size(d.text_sm)
-                .text_color(accent)
-                .cursor_pointer()
-                .on_click(move |_, window, cx| on_next(window, cx))
-                .child(">"),
+            Button::new(
+                SharedString::from(format!("choice-next-{}-{}", plugin_idx, param_idx)),
+                next_label,
+            )
+            .variant(ButtonVariant::Ghost)
+            .size(ButtonSize::Xs)
+            .aria_label(next_label)
+            .on_click_event(move |_, window, cx| on_next(window, cx)),
         )
 }

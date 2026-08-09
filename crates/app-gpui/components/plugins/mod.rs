@@ -25,6 +25,7 @@ mod ui_loudness;
 mod ui_matrix;
 mod ui_mb_compressor;
 mod ui_mb_expander;
+mod ui_multiband_common;
 mod ui_mute_solo;
 pub mod ui_plugin_shell;
 mod ui_rack;
@@ -39,9 +40,7 @@ pub use gpui_audio_kit::{
     LevelMeterElement, MeterColors, ScaleType, TickConfig, db_to_position, render_tick_row,
 };
 use level_meters::LevelMeterManager;
-pub use level_meters::{
-    render_gr_meter, render_gradient_meter, render_lufs_with_true_peak, render_peak_meter,
-};
+pub use level_meters::{render_gr_meter, render_gradient_meter, render_lufs_with_true_peak};
 pub use sotf_audio_player_midi::mapping::MidiOverlay;
 pub use theme::*;
 
@@ -51,6 +50,8 @@ pub use ui_dynamic_eq::render_dynamic_eq_plugin;
 pub use ui_eq::render_eq_plugin;
 pub use ui_loudness::render_loudness_monitor_plugin;
 pub use ui_matrix::render_matrix_plugin;
+#[doc(hidden)]
+pub use ui_matrix::{checked_matrix_cell_index, matrix_settings_mut_by_instance_id};
 pub use ui_mb_compressor::render_mb_compressor_plugin;
 pub use ui_mb_expander::render_mb_expander_plugin;
 pub use ui_mute_solo::render_mute_solo_plugin;
@@ -72,6 +73,22 @@ use std::sync::OnceLock;
 fn gpui_view_registry() -> &'static GpuiViewRegistry {
     static GPUI_VIEW_REGISTRY: OnceLock<GpuiViewRegistry> = OnceLock::new();
     GPUI_VIEW_REGISTRY.get_or_init(GpuiViewRegistry::new)
+}
+
+#[doc(hidden)]
+pub fn plugin_instance_id_for_render(
+    input_mode: crate::app::InputMode,
+    editing_node_id: Option<sotf_audio_player::GraphNodeId>,
+    plugin_graph: &PluginGraph,
+    plugin_idx: usize,
+) -> Option<usize> {
+    if input_mode == crate::app::InputMode::EditingPluginNode {
+        editing_node_id
+            .and_then(|node_id| plugin_graph.nodes.get(&node_id))
+            .map(|node| node.plugin.id)
+    } else {
+        plugin_graph.get_plugin(plugin_idx).map(|plugin| plugin.id)
+    }
 }
 
 /// Render plugin-specific content based on plugin type.
@@ -98,6 +115,12 @@ pub fn render_plugin_content(
     let d = Ds::from_cx(cx);
     let state = entity.read(cx);
     let text = PluginCommonTranslations::for_language(state.app.ui_state.language);
+    let plugin_instance_id = plugin_instance_id_for_render(
+        state.app.ui_state.input_mode,
+        state.app.plugin_state.graph_state.editing_graph_node_uuid,
+        plugin_graph,
+        plugin_idx,
+    );
     let auto_tab = state
         .app
         .plugin_ui
@@ -135,20 +158,29 @@ pub fn render_plugin_content(
             .rack_theme_state
             .resolved_id(plugin_idx),
         theme,
+        state.app.ui_state.theme_id,
     )
     .theme();
 
+    let window_width = state.app.ui_state.window_width;
+    let combined_scale = crate::ui::compute_combined_scale(
+        window_width,
+        state.app.ui_state.window_height,
+        state.app.ui_state.font_scale,
+        state.app.ui_state.min_font_size_px,
+        state.app.ui_state.max_font_size_px,
+    );
+
     // Compute available width for the plugin content area.
     let available_width = {
-        let window_width = state.app.ui_state.window_width;
         let is_standalone = state.app.ui_state.current_screen == crate::app::Screen::Studio;
         let content_width = if is_standalone {
             let nav_width = if state.app.ui_state.primary_nav_collapsed {
-                60.0
+                60.0 * combined_scale
             } else {
-                192.0
+                192.0 * combined_scale
             };
-            (window_width - nav_width).max(300.0)
+            (window_width - nav_width).max(0.0)
         } else {
             let layout_state = state.layout.read(cx);
             let rack_ratio = if layout_state.rack_panel_collapsed {
@@ -163,7 +195,11 @@ pub fn render_plugin_content(
         } else {
             state.app.layout.output_meter_width
         };
-        (content_width - output_meter_width - 44.0).max(300.0)
+        // Header/shell chrome is 2.75rem at the 16px baseline. Never
+        // advertise more width than physically remains: narrow/zoomed views
+        // must select their compact layouts instead of clipping a phantom
+        // 300px minimum.
+        (content_width - output_meter_width - 44.0 * combined_scale).max(1.0)
     };
 
     // Overlay the chassis theme onto the global app theme so custom views
@@ -176,7 +212,11 @@ pub fn render_plugin_content(
     // resize or mode change makes every group visible again.
     if auto_overflow_open
         && settings.layout().is_some()
-        && !ui_layout_renderer::generated_layout_has_overflow(settings, available_width)
+        && !ui_layout_renderer::generated_layout_has_overflow(
+            settings,
+            available_width,
+            combined_scale,
+        )
     {
         auto_overflow_open = false;
         entity.update(cx, |state, _| {
@@ -196,8 +236,10 @@ pub fn render_plugin_content(
         let ctx = CustomViewRenderContext {
             entity: entity.clone(),
             plugin_idx,
+            plugin_instance_id,
             settings,
             available_width,
+            layout_scale: combined_scale,
             is_editing,
             selected_param,
             selected_band_idx,
@@ -236,6 +278,7 @@ pub fn render_plugin_content(
             auto_overflow_open,
             plugin_data.as_ref(),
             available_width,
+            combined_scale,
             auto_config_width,
             auto_output_width,
             text,
@@ -259,6 +302,8 @@ pub fn render_plugin_content(
                 entity,
                 plugin_idx,
                 &plugin.plugin_type(),
+                plugin_graph.is_input_monitor(plugin_idx),
+                plugin_graph.is_output_monitor(plugin_idx),
                 plugin.enabled,
                 text,
                 &chassis_theme,
@@ -279,6 +324,8 @@ pub(crate) fn render_app_plugin_shell(
     entity: Entity<AppState>,
     plugin_idx: usize,
     plugin_type: &sotf_audio_player::PluginType,
+    is_input_monitor: bool,
+    is_output_monitor: bool,
     enabled: bool,
     text: PluginCommonTranslations,
     theme: &Theme,
@@ -289,6 +336,8 @@ pub(crate) fn render_app_plugin_shell(
         d,
         plugin_idx,
         plugin_type,
+        is_input_monitor,
+        is_output_monitor,
         enabled,
         text,
         theme,

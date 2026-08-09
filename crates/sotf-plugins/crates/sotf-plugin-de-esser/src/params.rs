@@ -97,17 +97,18 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::slider(5), // release
             ],
         ),
+        ControlGroup::new(
+            "output",
+            "OUTPUT",
+            &[ControlSpec::meter(-30.0, 0.0), ControlSpec::knob(7)],
+        ),
     ],
-    output: &[
-        ControlSpec::meter(-30.0, 0.0), // GR meter
-        ControlSpec::knob(7),           // mix
-    ],
+    output: &[],
     tabs: &[],
     visualizations: &[],
     column_constraints: &[
         ColumnConstraint::config(100.0, 0.5),
         ColumnConstraint::main(300.0),
-        ColumnConstraint::output(120.0, 0.6),
     ],
     dynamic_sections: &[],
 };

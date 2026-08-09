@@ -11,8 +11,11 @@ use std::sync::Arc;
 pub struct CustomViewRenderContext<'a> {
     pub entity: Entity<AppState>,
     pub plugin_idx: usize,
+    /// Stable engine/plugin instance identity, including nonlinear graph nodes.
+    pub plugin_instance_id: Option<usize>,
     pub settings: &'a PluginSettings,
     pub available_width: f32,
+    pub layout_scale: f32,
     pub is_editing: bool,
     pub selected_param: usize,
     pub selected_band_idx: usize,

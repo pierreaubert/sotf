@@ -166,21 +166,28 @@ impl PlayerView {
         let should_update_spectrum = frame_count.is_multiple_of(2);
         let include_spectrum = should_update_spectrum
             && (state.app.layout.spectrum_visible || current_screen == Screen::Spectrum);
-        let include_rack_data = screen_shows_rack_data(current_screen, layout_mode);
+        let structural_update_pending = matches!(
+            state
+                .app
+                .plugin_state
+                .update_state
+                .pending_plugin_update,
+            Some(crate::app::types::PluginUpdateType::Structural)
+        );
+        // Engine indices describe the pre-update graph until the structural
+        // update has been applied. Suppress live plugin data during that gap
+        // so an index reused by a reordered node cannot display stale data.
+        let include_rack_data =
+            screen_shows_rack_data(current_screen, layout_mode) && !structural_update_pending;
         let include_compressor = include_rack_data;
         let include_level_meters = include_rack_data;
-        let can_update_autogain = state
-            .app
-            .plugin_state
-            .update_state
-            .pending_plugin_update
-            .is_none();
+        let can_update_autogain = !structural_update_pending;
         let poll_external_diagnostics = frame_count.is_multiple_of(10);
         let include_external_diagnostics =
             poll_external_diagnostics && state.app.plugin_state.has_external_plugins();
 
         let was_playing = state.app.playback.is_playing;
-        let (input_monitor_idx, output_monitor_idx, spectrum_idx, compressor_idx) = {
+        let (input_monitor_idx, output_monitor_idx, spectrum_idx, compressor_idx, rack_plugin_idx) = {
             let graph = &state.app.plugin_state.graph;
             let compressor_idx = if include_compressor {
                 match *compressor_idx_cache {
@@ -203,6 +210,13 @@ impl PlayerView {
                     None
                 },
                 compressor_idx,
+                if include_rack_data {
+                    graph.get_engine_index_by_linear_position(
+                        state.app.plugin_state.selected_plugin_index,
+                    )
+                } else {
+                    None
+                },
             )
         };
 
@@ -212,6 +226,7 @@ impl PlayerView {
                 output_monitor_idx,
                 spectrum_idx,
                 compressor_idx,
+                rack_plugin_idx,
                 include_external_diagnostics,
             },
         ) {
@@ -265,6 +280,18 @@ impl PlayerView {
         } else {
             state.app.playback.compressor_info = None;
         }
+        state.app.playback.rack_plugin_data = if include_rack_data {
+            match (rack_plugin_idx, snapshot.rack_plugin_data.as_ref()) {
+                (Some(requested_idx), Some((snapshot_idx, data)))
+                    if requested_idx == *snapshot_idx =>
+                {
+                    Some(data.clone())
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
 
         if can_update_autogain
             && let Some((engine_index, next_gain_db)) =

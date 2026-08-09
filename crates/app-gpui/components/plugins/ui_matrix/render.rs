@@ -7,9 +7,9 @@ use super::consts::MAX_DB;
 use super::consts::MIN_DB;
 use super::consts::MSD_BTN_SIZE;
 use super::consts::MSD_COL_WIDTH;
-use super::misc::cell_index;
 use super::misc::compute_output_groups;
 use super::misc::format_gain_db;
+use super::misc::{cell_index, checked_matrix_cell_index, matrix_settings_mut_by_instance_id};
 use super::types::MatrixRenderState;
 use super::types::MsdAction;
 use crate::app::AppState;
@@ -18,7 +18,7 @@ use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
+use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize};
 use sotf_audio_player::{
     apply_matrix_preset, available_matrix_presets, db_to_linear, detect_matrix_preset,
     get_channel_label_from_config,
@@ -36,32 +36,138 @@ pub fn render_matrix_plugin(
         detect_matrix_preset(state.input_channels, state.output_channels, state.matrix);
 
     div()
+        .w_full()
+        .min_w_0()
         .flex()
         .flex_col()
         .gap(d.section)
         // Preset buttons
         .child(render_preset_buttons(
             entity.clone(),
-            plugin_idx,
+            state.plugin_instance_id,
             state.input_channels,
             state.output_channels,
             preset_name,
             theme,
         ))
-        // Matrix grid
-        .child(render_matrix_grid(
+        .children(render_selected_cell_editor(
             d,
             entity.clone(),
-            plugin_idx,
             &state,
             theme,
         ))
+        // Matrix grid
+        .child(
+            div()
+                .id("matrix-grid-scroll")
+                .w_full()
+                .min_w_0()
+                .overflow_x_scroll()
+                .child(render_matrix_grid(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    &state,
+                    theme,
+                )),
+        )
+}
+
+fn render_selected_cell_editor(
+    d: &Ds,
+    entity: Entity<AppState>,
+    state: &MatrixRenderState,
+    theme: &Theme,
+) -> Option<AnyElement> {
+    let plugin_instance_id = state.plugin_instance_id;
+    let (input_idx, output_idx) = state.selected_cell?;
+    let matrix_idx = checked_matrix_cell_index(
+        input_idx,
+        output_idx,
+        state.input_channels,
+        state.output_channels,
+        state.matrix.len(),
+    )?;
+    let gain = *state.matrix.get(matrix_idx)?;
+    let current_db = if gain.abs() < 0.001 {
+        MIN_DB
+    } else {
+        20.0 * gain.abs().log10()
+    };
+    let polarity = if gain < 0.0 { -1.0 } else { 1.0 };
+    let input_label = get_channel_label_from_config(
+        input_idx,
+        state.input_channels,
+        state.speaker_config.as_deref(),
+    );
+    let output_label = get_channel_label_from_config(
+        output_idx,
+        state.output_channels,
+        state.speaker_config.as_deref(),
+    );
+
+    Some(
+        div()
+            .flex()
+            .items_center()
+            .gap(d.gap)
+            .child(
+                div()
+                    .text_size(d.text_xs)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_secondary)
+                    .child(format!("{output_label} ← {input_label}")),
+            )
+            .child(
+                NumberInput::new("matrix-selected-gain")
+                    .value(current_db as f64)
+                    .min(MIN_DB as f64)
+                    .max(MAX_DB as f64)
+                    .step(0.1)
+                    .decimals(1)
+                    .unit("dB")
+                    .size(NumberInputSize::Xs)
+                    .width(96.0)
+                    .aria_label(format!("{output_label} ← {input_label}"))
+                    .on_change(move |value, _window, cx| {
+                        entity.update(cx, |state, _| {
+                            if state.app.plugin_state.matrix_selected_cell
+                                != Some((plugin_instance_id, input_idx, output_idx))
+                            {
+                                return;
+                            }
+                            if let Some(settings) = matrix_settings_mut_by_instance_id(
+                                &mut state.app.plugin_state.graph,
+                                plugin_instance_id,
+                            ) && let sotf_audio_player::PluginSettings::Matrix {
+                                input_channels,
+                                output_channels,
+                                matrix,
+                                ..
+                            } = settings
+                                && let Some(index) = checked_matrix_cell_index(
+                                    input_idx,
+                                    output_idx,
+                                    *input_channels,
+                                    *output_channels,
+                                    matrix.len(),
+                                )
+                            {
+                                matrix[index] = polarity * db_to_linear(value as f32);
+                                state.app.plugin_state.update_state.pending_plugin_update =
+                                    Some(PluginUpdateType::Structural);
+                            }
+                        });
+                    }),
+            )
+            .into_any_element(),
+    )
 }
 
 /// Render preset buttons using ButtonSet
 fn render_preset_buttons(
     entity: Entity<AppState>,
-    plugin_idx: usize,
+    plugin_instance_id: usize,
     input_channels: usize,
     output_channels: usize,
     current_preset: &str,
@@ -87,15 +193,17 @@ fn render_preset_buttons(
         .on_change(move |value, _window, cx| {
             let preset_name = value.to_string();
             entity.update(cx, |state, _| {
-                if let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx)
-                    && let sotf_audio_player::PluginSettings::Matrix {
-                        input_channels: in_ch,
-                        output_channels: out_ch,
-                        ref mut matrix,
-                        ..
-                    } = plugin.settings
+                if let Some(settings) = matrix_settings_mut_by_instance_id(
+                    &mut state.app.plugin_state.graph,
+                    plugin_instance_id,
+                ) && let sotf_audio_player::PluginSettings::Matrix {
+                    input_channels: in_ch,
+                    output_channels: out_ch,
+                    matrix,
+                    ..
+                } = settings
                 {
-                    apply_matrix_preset(in_ch, out_ch, matrix, &preset_name);
+                    apply_matrix_preset(*in_ch, *out_ch, matrix, &preset_name);
                     state.app.plugin_state.update_state.pending_plugin_update =
                         Some(PluginUpdateType::Structural);
                 }
@@ -230,6 +338,7 @@ fn render_msd_sidebar(
                     theme.error,
                     theme,
                     plugin_idx,
+                    state.plugin_instance_id,
                     entity.clone(),
                     channels.clone(),
                     output_channels,
@@ -242,6 +351,7 @@ fn render_msd_sidebar(
                     theme.warning,
                     theme,
                     plugin_idx,
+                    state.plugin_instance_id,
                     entity.clone(),
                     channels.clone(),
                     output_channels,
@@ -254,6 +364,7 @@ fn render_msd_sidebar(
                     theme.info,
                     theme,
                     plugin_idx,
+                    state.plugin_instance_id,
                     entity.clone(),
                     channels.clone(),
                     output_channels,
@@ -292,6 +403,7 @@ fn render_msd_button(
     active_color: Rgba,
     theme: &Theme,
     plugin_idx: usize,
+    plugin_instance_id: usize,
     entity: Entity<AppState>,
     channels: Vec<usize>,
     output_channels: usize,
@@ -307,8 +419,9 @@ fn render_msd_button(
             )
             .into(),
         ))
-        .w(px(MSD_BTN_SIZE))
-        .h(px(18.0))
+        .min_w(rems(1.5))
+        .min_h(rems(1.5))
+        .w(px(MSD_BTN_SIZE.max(24.0)))
         .rounded(d.r_sm)
         .cursor_pointer()
         .bg(if is_active {
@@ -342,15 +455,17 @@ fn render_msd_button(
         .child(label)
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             entity.update(cx, |state, _| {
-                if let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx)
-                    && let sotf_audio_player::PluginSettings::Matrix {
-                        ref mut channel_states,
-                        output_channels: out_ch,
-                        ..
-                    } = plugin.settings
+                if let Some(settings) = matrix_settings_mut_by_instance_id(
+                    &mut state.app.plugin_state.graph,
+                    plugin_instance_id,
+                ) && let sotf_audio_player::PluginSettings::Matrix {
+                    channel_states,
+                    output_channels: out_ch,
+                    ..
+                } = settings
                 {
                     // Resize channel_states if needed
-                    let target_len = out_ch.max(output_channels);
+                    let target_len = (*out_ch).max(output_channels);
                     while channel_states.len() < target_len {
                         channel_states.push(sotf_plugins::ChannelState::default());
                     }
@@ -414,6 +529,7 @@ fn render_matrix_row(
                 d,
                 entity.clone(),
                 plugin_idx,
+                state.plugin_instance_id,
                 in_idx,
                 output_idx,
                 state.input_channels,
@@ -429,6 +545,7 @@ fn render_matrix_cell(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
+    plugin_instance_id: usize,
     input_idx: usize,
     output_idx: usize,
     input_count: usize,
@@ -507,18 +624,25 @@ fn render_matrix_cell(
             entity_click.update(cx, |state, _| {
                 if event.click_count >= 2 {
                     // Double-click to reset cell to 0 and clear M/S/D for that output channel
-                    if let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx)
-                        && let sotf_audio_player::PluginSettings::Matrix {
-                            input_channels,
-                            ref mut matrix,
-                            ref mut channel_states,
-                            ..
-                        } = plugin.settings
+                    if let Some(settings) = matrix_settings_mut_by_instance_id(
+                        &mut state.app.plugin_state.graph,
+                        plugin_instance_id,
+                    ) && let sotf_audio_player::PluginSettings::Matrix {
+                        input_channels,
+                        output_channels,
+                        matrix,
+                        channel_states,
+                        ..
+                    } = settings
+                        && let Some(idx) = checked_matrix_cell_index(
+                            input_idx,
+                            output_idx,
+                            *input_channels,
+                            *output_channels,
+                            matrix.len(),
+                        )
                     {
-                        let idx = cell_index(input_idx, output_idx, input_channels);
-                        if idx < matrix.len() {
-                            matrix[idx] = 0.0;
-                        }
+                        matrix[idx] = 0.0;
                         if output_idx < channel_states.len() {
                             channel_states[output_idx] = sotf_plugins::ChannelState::default();
                         }
@@ -526,67 +650,61 @@ fn render_matrix_cell(
                             Some(PluginUpdateType::Structural);
                     }
                 } else {
-                    // Single click: select and toggle between 0 and 1
-                    state.app.plugin_state.matrix_selected_cell = Some((input_idx, output_idx));
+                    // Single click only selects the cell. Gain changes remain
+                    // available through the keyboard parameter controls and
+                    // the scroll wheel, so an accidental click cannot destroy
+                    // a carefully trimmed value.
+                    state.app.plugin_state.matrix_selected_cell =
+                        Some((plugin_instance_id, input_idx, output_idx));
                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                     state.app.plugin_state.plugin_param_selection = param_idx;
-
-                    // Toggle gain
-                    if let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx)
-                        && let sotf_audio_player::PluginSettings::Matrix {
-                            input_channels,
-                            ref mut matrix,
-                            ..
-                        } = plugin.settings
-                    {
-                        let idx = cell_index(input_idx, output_idx, input_channels);
-                        if idx < matrix.len() {
-                            // Toggle: if > 0.5, set to 0; otherwise set to 1
-                            matrix[idx] = if matrix[idx] > 0.5 { 0.0 } else { 1.0 };
-                            state.app.plugin_state.update_state.pending_plugin_update =
-                                Some(PluginUpdateType::Structural);
-                        }
-                    }
                 }
             });
         })
         // Scroll to adjust value (preserving sign for negative gains)
         .on_scroll_wheel(move |event, _, cx| {
             entity_scroll.update(cx, |state, _| {
-                if let Some(plugin) = state.app.plugin_state.graph.get_plugin_mut(plugin_idx)
-                    && let sotf_audio_player::PluginSettings::Matrix {
-                        input_channels,
-                        ref mut matrix,
-                        ..
-                    } = plugin.settings
+                if let Some(settings) = matrix_settings_mut_by_instance_id(
+                    &mut state.app.plugin_state.graph,
+                    plugin_instance_id,
+                ) && let sotf_audio_player::PluginSettings::Matrix {
+                    input_channels,
+                    output_channels,
+                    matrix,
+                    ..
+                } = settings
+                    && let Some(idx) = checked_matrix_cell_index(
+                        input_idx,
+                        output_idx,
+                        *input_channels,
+                        *output_channels,
+                        matrix.len(),
+                    )
                 {
-                    let idx = cell_index(input_idx, output_idx, input_channels);
-                    if idx < matrix.len() {
-                        // Get scroll direction (up = increase, down = decrease)
-                        let delta: f32 = match event.delta {
-                            gpui::ScrollDelta::Lines(lines) => lines.y * DB_STEP,
-                            gpui::ScrollDelta::Pixels(pixels) => {
-                                let y_px: f32 = pixels.y.into();
-                                y_px / 20.0 * DB_STEP // 20 pixels per dB step
-                            }
-                        };
-
-                        if delta.abs() > 0.01 {
-                            let current_val = matrix[idx];
-                            let sign = if current_val < 0.0 { -1.0 } else { 1.0 };
-                            let abs_val = current_val.abs();
-
-                            let current_db = if abs_val < 0.001 {
-                                MIN_DB
-                            } else {
-                                20.0 * abs_val.log10()
-                            };
-                            let new_db = (current_db + delta).clamp(MIN_DB, MAX_DB);
-                            // Preserve sign, apply new magnitude
-                            matrix[idx] = sign * db_to_linear(new_db);
-                            state.app.plugin_state.update_state.pending_plugin_update =
-                                Some(PluginUpdateType::Structural);
+                    // Get scroll direction (up = increase, down = decrease)
+                    let delta: f32 = match event.delta {
+                        gpui::ScrollDelta::Lines(lines) => lines.y * DB_STEP,
+                        gpui::ScrollDelta::Pixels(pixels) => {
+                            let y_px: f32 = pixels.y.into();
+                            y_px / 20.0 * DB_STEP // 20 pixels per dB step
                         }
+                    };
+
+                    if delta.abs() > 0.01 {
+                        let current_val = matrix[idx];
+                        let sign = if current_val < 0.0 { -1.0 } else { 1.0 };
+                        let abs_val = current_val.abs();
+
+                        let current_db = if abs_val < 0.001 {
+                            MIN_DB
+                        } else {
+                            20.0 * abs_val.log10()
+                        };
+                        let new_db = (current_db + delta).clamp(MIN_DB, MAX_DB);
+                        // Preserve sign, apply new magnitude
+                        matrix[idx] = sign * db_to_linear(new_db);
+                        state.app.plugin_state.update_state.pending_plugin_update =
+                            Some(PluginUpdateType::Structural);
                     }
                 }
             });

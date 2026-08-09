@@ -132,6 +132,22 @@ fn cycle_eq_topology_in_settings(
     PluginUpdateEffect::Structural
 }
 
+fn set_eq_topology_in_settings(
+    settings: &mut PluginSettings,
+    target: EqEditTarget,
+    band_idx: usize,
+    topology: sotf_audio::plugins::eq::EqFilterTopology,
+) -> PluginUpdateEffect {
+    let Some(filter) = eq_band_mut(settings, target, band_idx) else {
+        return PluginUpdateEffect::None;
+    };
+    if filter.topology == topology {
+        return PluginUpdateEffect::None;
+    }
+    filter.topology = topology;
+    PluginUpdateEffect::Structural
+}
+
 fn cycle_eq_lambda_in_settings(
     settings: &mut PluginSettings,
     target: EqEditTarget,
@@ -589,6 +605,19 @@ impl PluginController {
         cycle_eq_topology_in_settings(&mut plugin.settings, target, band_idx)
     }
 
+    pub fn set_eq_filter_topology_for_target(
+        &mut self,
+        plugin_idx: usize,
+        target: EqEditTarget,
+        band_idx: usize,
+        topology: sotf_audio::plugins::eq::EqFilterTopology,
+    ) -> PluginUpdateEffect {
+        let Some(plugin) = self.graph.get_plugin_mut(plugin_idx) else {
+            return PluginUpdateEffect::None;
+        };
+        set_eq_topology_in_settings(&mut plugin.settings, target, band_idx, topology)
+    }
+
     pub fn cycle_eq_filter_topology_for_target_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -599,6 +628,19 @@ impl PluginController {
             return PluginUpdateEffect::None;
         };
         cycle_eq_topology_in_settings(&mut node.plugin.settings, target, band_idx)
+    }
+
+    pub fn set_eq_filter_topology_for_target_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        target: EqEditTarget,
+        band_idx: usize,
+        topology: sotf_audio::plugins::eq::EqFilterTopology,
+    ) -> PluginUpdateEffect {
+        let Some(node) = self.graph.nodes.get_mut(&node_id) else {
+            return PluginUpdateEffect::None;
+        };
+        set_eq_topology_in_settings(&mut node.plugin.settings, target, band_idx, topology)
     }
 
     /// Cycle the lambda (warping coefficient) for a warped-biquad EQ band.

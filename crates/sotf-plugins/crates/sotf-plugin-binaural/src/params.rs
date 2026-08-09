@@ -94,17 +94,15 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[
-        ControlSpec::file_picker(0), // sofa_file
-        ControlSpec::label(1),       // input_channels (read-only)
-    ],
+    config: &[ControlSpec::label(1)], // input_channels (read-only)
     main: &[ControlGroup::new(
         "CONTROLS",
         "CONTROLS",
         &[
-            ControlSpec::knob(2),     // externalization
-            ControlSpec::knob(3),     // near_field_strength
-            ControlSpec::selector(4), // crossfade_mode
+            ControlSpec::file_picker(0), // sofa_file
+            ControlSpec::knob(2),        // externalization
+            ControlSpec::knob(3),        // near_field_strength
+            ControlSpec::selector(4),    // crossfade_mode
         ],
     )],
     output: &[],

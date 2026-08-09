@@ -25,6 +25,7 @@ pub fn render_dynamic_eq_plugin(
     selected_param: usize,
     selected_band_idx: usize,
     plugin_data: Option<Arc<dyn Any + Send + Sync>>,
+    _available_width: f32,
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
@@ -266,6 +267,7 @@ fn render_band_tabs(
 ) -> impl IntoElement {
     let mut row = div()
         .flex()
+        .flex_wrap()
         .items_center()
         .justify_center()
         .gap(d.gap)
@@ -321,6 +323,24 @@ fn render_band_tabs(
                     div()
                         .text_size(d.text_xs)
                         .child(format!("{gain_reduction:.1} dB GR")),
+                )
+                .child(
+                    div()
+                        .w(rems(4.0))
+                        .h(rems(0.25))
+                        .rounded_full()
+                        .overflow_hidden()
+                        .bg(theme.background)
+                        .child(
+                            div()
+                                .h_full()
+                                .w(relative((gain_reduction.abs() / 24.0).clamp(0.0, 1.0)))
+                                .bg(if is_selected {
+                                    theme.text_on_accent
+                                } else {
+                                    theme.accent
+                                }),
+                        ),
                 ),
         );
     }

@@ -18,12 +18,42 @@ pub fn solve_layout(constraints: &[ColumnConstraint], available_width: f32) -> S
     solve_layout_with_ds(constraints, available_width, &DesignSystem::neutral())
 }
 
+/// Solve the layout with dimensions scaled to the host's effective UI scale.
+pub fn solve_layout_scaled(
+    constraints: &[ColumnConstraint],
+    available_width: f32,
+    scale: f32,
+) -> SolvedLayout {
+    solve_layout_with_ds_and_scale(
+        constraints,
+        available_width,
+        &DesignSystem::neutral(),
+        scale,
+    )
+}
+
 /// Solve the layout for the given constraints, available space, and design system.
 pub fn solve_layout_with_ds(
     constraints: &[ColumnConstraint],
     available_width: f32,
     ds: &DesignSystem,
 ) -> SolvedLayout {
+    solve_layout_with_ds_and_scale(constraints, available_width, ds, 1.0)
+}
+
+/// Solve the layout for a design system at the host's effective UI scale.
+pub fn solve_layout_with_ds_and_scale(
+    constraints: &[ColumnConstraint],
+    available_width: f32,
+    ds: &DesignSystem,
+    scale: f32,
+) -> SolvedLayout {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    let logical_width = available_width / scale;
     let converted: Vec<_> = constraints.iter().map(convert_constraint).collect();
     let tree = PluginLayoutTree::from_constraints(&converted);
     let source = tree.as_layout_node();
@@ -31,11 +61,11 @@ pub fn solve_layout_with_ds(
         .iter()
         .find(|constraint| constraint.role == ColumnRole::Main)
         .map_or(300.0, |constraint| constraint.min_width);
-    let vertical = available_width < ds.layout.vertical_threshold;
+    let vertical = logical_width < ds.layout.vertical_threshold;
     let solve_width = if vertical {
-        available_width.min(main_min)
+        logical_width.min(main_min)
     } else {
-        available_width
+        logical_width
     };
     let solved = solve(
         &source,
@@ -75,7 +105,7 @@ pub fn solve_layout_with_ds(
             .partial_cmp(&a.priority)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    let mut remaining = (available_width - main_min).max(0.0);
+    let mut remaining = (logical_width - main_min).max(0.0);
     let mut allocated_sidebars = Vec::with_capacity(visible_sidebars.len());
     for constraint in visible_sidebars {
         if remaining >= constraint.min_width {
@@ -103,7 +133,7 @@ pub fn solve_layout_with_ds(
     }
 
     let main_width = if vertical {
-        available_width.max(main_min)
+        logical_width.max(main_min)
     } else {
         main_min + remaining
     };
@@ -116,16 +146,19 @@ pub fn solve_layout_with_ds(
     if let Some(width) = sidebar_width(ColumnRole::Config) {
         columns.push(SolvedColumn {
             role: ColumnRole::Config,
-            width,
+            width: width * scale,
         });
     }
     columns.push(SolvedColumn {
         role: ColumnRole::Main,
-        width: main_width,
+        width: main_width * scale,
     });
     for role in [ColumnRole::Diagnostic, ColumnRole::Output] {
         if let Some(width) = sidebar_width(role) {
-            columns.push(SolvedColumn { role, width });
+            columns.push(SolvedColumn {
+                role,
+                width: width * scale,
+            });
         }
     }
 
@@ -153,9 +186,9 @@ pub fn solve_layout_with_ds(
         },
         group_direction,
         slider_height: if main_width < ds.layout.compact_slider_threshold {
-            ds.layout.slider_height_compact
+            ds.layout.slider_height_compact * scale
         } else {
-            ds.layout.slider_height_normal
+            ds.layout.slider_height_normal * scale
         },
         show_visualizations: !vertical && main_width >= ds.layout.hide_viz_threshold,
         knob_size,

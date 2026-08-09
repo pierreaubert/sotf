@@ -38,6 +38,27 @@ pub(crate) fn plugin_description(
     text.description(plugin_type)
 }
 
+fn output_meter_width_bounds(state: &crate::app::AppState) -> (f32, f32) {
+    let (_, output_channels) = state.app.plugin_state.graph.compute_channel_flow();
+    let num_output_groups = state.app.level_meters.groups.len();
+    let scale = crate::ui::compute_combined_scale(
+        state.app.ui_state.window_width,
+        state.app.ui_state.window_height,
+        state.app.ui_state.font_scale,
+        state.app.ui_state.min_font_size_px,
+        state.app.ui_state.max_font_size_px,
+    );
+    let meter_bar_width = 16.0 * scale;
+    let bar_gap = 1.0;
+    let group_padding = 4.0 * scale;
+    let legend_width = 16.0 * scale;
+    let input_width = 2.0 * meter_bar_width + bar_gap + group_padding;
+    let output_width = output_channels as f32 * (meter_bar_width + bar_gap)
+        + num_output_groups as f32 * group_padding;
+    let minimum = input_width + legend_width + output_width + 8.0 * scale;
+    (minimum, minimum * 2.0)
+}
+
 fn plugin_theme_select_value(theme: PluginThemeId) -> &'static str {
     match theme {
         PluginThemeId::Graphite => "graphite",
@@ -114,10 +135,11 @@ impl PlayerView {
                             }
                             DividerType::OutputMeter => {
                                 // Dragging left increases output meter width
-                                // Allow expanding to fit all channels — no fixed upper bound
                                 let mouse_x: f32 = event.position.x.into();
                                 let delta_x = mouse_x - drag.start_x;
-                                let new_width = (drag.start_width - delta_x).max(60.0);
+                                let (minimum, maximum) = output_meter_width_bounds(state);
+                                let new_width =
+                                    (drag.start_width - delta_x).clamp(minimum, maximum);
                                 state.app.layout.output_meter_width = new_width;
                             }
                             DividerType::RackDetail => {
@@ -524,7 +546,10 @@ impl PlayerView {
                                 // Drag-over feedback
                                 .drag_over::<PluginDragInfo>({
                                     move |style, _, _, _| {
-                                        style.bg(drop_highlight).border_color(drop_border)
+                                        style
+                                            .bg(drop_highlight)
+                                            .border_color(drop_border)
+                                            .border_l_4()
                                     }
                                 })
                                 // Drop to reorder
@@ -543,11 +568,17 @@ impl PlayerView {
                                                     .map(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor))
                                                     .unwrap_or(false);
                                                 if source_is_monitor && target != 0 && target != chain_len - 1 {
+                                                    state.app.ui_state.toast_message = Some(
+                                                        crate::app::ToastMessage::info(
+                                                            "Level monitors must remain at a chain boundary",
+                                                        ),
+                                                    );
                                                     return;
                                                 }
                                                 match state.app.plugin_state.graph.move_plugin(source, target) {
                                                     Ok(()) => {
                                                         state.app.plugin_state.selected_plugin_index = target;
+                                                        state.app.plugin_state.clear_confirmations();
                                                         state.app.plugin_state.update_state.pending_plugin_update =
                                                             Some(PluginUpdateType::Structural);
                                                         state.app.update_level_meter_groups();
@@ -574,7 +605,8 @@ impl PlayerView {
                                     cx.listener(
                                         move |view, _: &MouseUpEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
-                                                state.app.plugin_state.selected_plugin_index = idx
+                                                state.app.plugin_state.selected_plugin_index = idx;
+                                                state.app.plugin_state.clear_confirmations();
                                             });
                                             cx.notify();
                                         },
@@ -1061,11 +1093,17 @@ impl PlayerView {
                                         let chain_len =
                                             state.app.plugin_state.graph.len();
                                         if source_is_monitor && target != chain_len - 1 {
+                                            state.app.ui_state.toast_message = Some(
+                                                crate::app::ToastMessage::info(
+                                                    "Level monitors must remain at a chain boundary",
+                                                ),
+                                            );
                                             return;
                                         }
                                         match state.app.plugin_state.graph.move_plugin(source, target) {
                                             Ok(()) => {
                                                 state.app.plugin_state.selected_plugin_index = target;
+                                                state.app.plugin_state.clear_confirmations();
                                                 state.app.plugin_state.update_state.pending_plugin_update =
                                                     Some(PluginUpdateType::Structural);
                                                 state.app.update_level_meter_groups();
@@ -1116,7 +1154,10 @@ impl PlayerView {
                                     let drop_highlight = theme_c.feedback.drag_over_highlight;
                                     let drop_border = theme_c.feedback.drag_over_border;
                                     move |style, _, _, _| {
-                                        style.bg(drop_highlight).border_color(drop_border)
+                                        style
+                                            .bg(drop_highlight)
+                                            .border_color(drop_border)
+                                            .border_l_4()
                                     }
                                 })
                                 .on_drop(cx.listener(
@@ -1134,6 +1175,7 @@ impl PlayerView {
                                                 match state.app.plugin_state.graph.move_plugin(source, target) {
                                                     Ok(()) => {
                                                         state.app.plugin_state.selected_plugin_index = target;
+                                                        state.app.plugin_state.clear_confirmations();
                                                         state.app.plugin_state.update_state.pending_plugin_update =
                                                             Some(PluginUpdateType::Structural);
                                                         state.app.update_level_meter_groups();
@@ -1154,6 +1196,7 @@ impl PlayerView {
                                         move |view, _: &MouseUpEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
                                                 state.app.plugin_state.selected_plugin_index = idx;
+                                                state.app.plugin_state.clear_confirmations();
                                             });
                                             cx.notify();
                                         },
@@ -1313,7 +1356,7 @@ impl PlayerView {
                             .mt(d.grid)
                             .px(d.card)
                             .py(d.card)
-                            .max_h(px(400.0))
+                            .max_h(rems(25.0))
                             .overflow_y_scroll()
                             .bg(theme.surface)
                             .border_1()
@@ -1770,11 +1813,11 @@ impl PlayerView {
                         // Category label
                         .child(
                             div()
-                                .text_size(rems(0.625))
+                                .text_size(d.text_xs)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_muted)
                                 // intentional: fixed 60px label column width for category labels
-                                .w(px(60.0))
+                                .w(rems(3.75))
                                 .flex_shrink_0()
                                 // intentional: 3px top offset to align with adjacent buttons
                                 .pt(px(3.0))
@@ -1808,7 +1851,15 @@ impl PlayerView {
         let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let common_text =
             PluginCommonTranslations::for_language(self.state.read(cx).app.ui_state.language);
-        let (plugin_data, selected_idx, editing_idx, param_selection, theme) = {
+        let (
+            plugin_data,
+            selected_idx,
+            editing_idx,
+            param_selection,
+            is_input_monitor,
+            is_output_monitor,
+            theme,
+        ) = {
             let state = self.state.read(cx);
             let plugin = state
                 .app
@@ -1821,6 +1872,16 @@ impl PlayerView {
                 state.app.plugin_state.selected_plugin_index,
                 state.app.plugin_state.editing_plugin_index,
                 state.app.plugin_state.plugin_param_selection,
+                state
+                    .app
+                    .plugin_state
+                    .graph
+                    .is_input_monitor(state.app.plugin_state.selected_plugin_index),
+                state
+                    .app
+                    .plugin_state
+                    .graph
+                    .is_output_monitor(state.app.plugin_state.selected_plugin_index),
                 state.app.ui_state.theme.clone(),
             )
         };
@@ -1838,22 +1899,10 @@ impl PlayerView {
                 let is_editing = editing_idx.is_some();
                 el.child({
                     let state = self.state.read(cx);
+                    let (min_meter_width, max_meter_width) =
+                        output_meter_width_bounds(state);
                     let (_, output_channels) =
                         state.app.plugin_state.graph.compute_channel_flow();
-                    // Compute minimum meter width based on actual element sizes:
-                    // Each meter bar: 1rem (16px) + 1px gap between bars
-                    // Each group: 2×2px padding (p_0p5) = 4px
-                    // Legend: ~16px
-                    // Input group: 2 bars (L/R) = 2×16 + 1 gap + 4 padding = 37px
-                    let num_output_groups = state.app.level_meters.groups.len();
-                    let meter_bar_width: f32 = 16.0; // 1rem
-                    let bar_gap: f32 = 1.0; // gap_px()
-                    let group_padding: f32 = 4.0; // p_0p5 = 2px each side
-                    let legend_width: f32 = 16.0;
-                    let input_width: f32 = 2.0 * meter_bar_width + bar_gap + group_padding;
-                    let output_width: f32 = output_channels as f32 * (meter_bar_width + bar_gap)
-                        + num_output_groups as f32 * group_padding;
-                    let min_meter_width = input_width + legend_width + output_width + 8.0; // 8px outer margin
 
                     let divider_theme = PaneDividerTheme {
                         background: theme.background,
@@ -1871,8 +1920,6 @@ impl PlayerView {
 
                     let output_collapsed = state.app.layout.output_meter_collapsed;
                     let config_open = state.app.plugin_state.plugin_ui_state.rack_config_overlay_open;
-                    // Auto-fit: default to min width, allow user to expand up to 2x
-                    let max_meter_width = min_meter_width * 2.0;
                     // If stored width is below minimum (e.g. channel count increased), snap to min
                     let output_meter_width = if state.app.layout.output_meter_width < min_meter_width {
                         min_meter_width
@@ -1886,6 +1933,7 @@ impl PlayerView {
                             .rack_theme_state
                             .resolved_id(selected_idx),
                         &theme,
+                        state.app.ui_state.theme_id,
                     )
                     .theme()
                     .chassis_bg_top;
@@ -1919,36 +1967,18 @@ impl PlayerView {
                                         .flex_1()
                                         .min_w_0()
                                         .min_h_0()
-                                        .overflow_y_scroll()
+                                        .overflow_scroll()
                                         .bg(plugin_bg)
                                         .p(d.card)
                                         .child({
                                             // Get plugin-specific real-time data based on plugin type
-                                            let plugin_data: Option<
-                                                std::sync::Arc<dyn std::any::Any + Send + Sync>,
-                                            > = match &plugin.settings {
-                                                sotf_audio_player::PluginSettings::SpectrumAnalyzer {
-                                                    ..
-                                                } => {
-                                                    self.state.read(cx).app.playback.spectrum_info.clone().map(|s| {
-                                                        std::sync::Arc::new(s)
-                                                            as std::sync::Arc<
-                                                                dyn std::any::Any + Send + Sync,
-                                                            >
-                                                    })
-                                                }
-                                                sotf_audio_player::PluginSettings::Compressor {
-                                                    ..
-                                                } => self.state.read(cx).app.playback.compressor_info.clone().map(
-                                                    |c| {
-                                                        std::sync::Arc::new(c)
-                                                            as std::sync::Arc<
-                                                                dyn std::any::Any + Send + Sync,
-                                                            >
-                                                    },
-                                                ),
-                                                _ => None,
-                                            };
+                                            let plugin_data = self
+                                                .state
+                                                .read(cx)
+                                                .app
+                                                .playback
+                                                .rack_plugin_data
+                                                .clone();
 
                                     // Determine which loudness data to pass for LoudnessMonitor plugins
                                     // First monitor in chain gets input data, last gets output data
@@ -2023,6 +2053,7 @@ impl PlayerView {
                                             .rack_theme_state
                                             .resolved_id(selected_idx),
                                         &theme,
+                                        app_st.app.ui_state.theme_id,
                                     )
                                     .theme()
                                     .apply_to(&theme);
@@ -2033,8 +2064,10 @@ impl PlayerView {
                                                         &d,
                                                         self.state.clone(),
                                                         selected_idx,
-                                                    &plugin.plugin_type(),
-                                                    plugin.enabled,
+                                                        &plugin.plugin_type(),
+                                                        is_input_monitor,
+                                                        is_output_monitor,
+                                                        plugin.enabled,
                                                     common_text,
                                                     &chassis,
                                                         super::super::ui_simple::render_simple_plugin_view(
@@ -2046,6 +2079,7 @@ impl PlayerView {
                                                             param_selection,
                                                             &chassis,
                                                             midi_ref.as_ref(),
+                                                            common_text,
                                                         ),
                                                     )
                                                 }
@@ -2054,8 +2088,10 @@ impl PlayerView {
                                                         &d,
                                                         self.state.clone(),
                                                         selected_idx,
-                                                    &plugin.plugin_type(),
-                                                    plugin.enabled,
+                                                        &plugin.plugin_type(),
+                                                        is_input_monitor,
+                                                        is_output_monitor,
+                                                        plugin.enabled,
                                                     common_text,
                                                     &chassis,
                                                         super::super::render_controller_view(
@@ -2236,6 +2272,7 @@ impl PlayerView {
                         .rack_theme_state
                         .resolved_id(selected_idx),
                     &state.app.ui_state.theme,
+                    state.app.ui_state.theme_id,
                 )
                 .theme(),
             )
@@ -2276,6 +2313,17 @@ impl PlayerView {
             .collect();
         let selected_skin_value = plugin_theme_select_value(plugin_theme_id).to_string();
 
+        let live_plugin_data = self.state.read(cx).app.playback.rack_plugin_data.clone();
+        let layout_scale = {
+            let state = self.state.read(cx);
+            crate::ui::compute_combined_scale(
+                state.app.ui_state.window_width,
+                state.app.ui_state.window_height,
+                state.app.ui_state.font_scale,
+                state.app.ui_state.min_font_size_px,
+                state.app.ui_state.max_font_size_px,
+            )
+        };
         let generated_config = super::super::ui_layout_renderer::render_config_controls_from_layout(
             &d,
             self.state.clone(),
@@ -2284,6 +2332,8 @@ impl PlayerView {
             editing_idx.is_some(),
             param_selection,
             220.0,
+            layout_scale,
+            live_plugin_data.as_ref(),
             &theme,
             &plugin_theme,
         );

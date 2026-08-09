@@ -1,5 +1,6 @@
 /// State for rendering the Matrix plugin
 pub struct MatrixRenderState<'a> {
+    pub plugin_instance_id: usize,
     pub input_channels: usize,
     pub output_channels: usize,
     pub matrix: &'a [f32],

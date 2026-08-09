@@ -30,7 +30,7 @@ pub enum KnobSize {
 }
 
 /// A column that the solver decided should be visible.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SolvedColumn {
     pub role: ColumnRole,
     /// Allocated width in pixels.
@@ -38,7 +38,7 @@ pub struct SolvedColumn {
 }
 
 /// A column that was collapsed into a tab.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CollapsedTab {
     pub role: ColumnRole,
     /// Tab label derived from column role.

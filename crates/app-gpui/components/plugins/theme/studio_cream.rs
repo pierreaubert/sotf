@@ -31,8 +31,8 @@ pub fn theme() -> PluginTheme {
         ink_hi: rgba(0x2a2620, 1.0),
         ink: rgba(0x4a4239, 1.0),
         ink_mid: rgba(0x7c7263, 1.0),
-        ink_low: rgba(0xa39880, 1.0),
-        ink_faint: rgba(0xc6bca0, 1.0),
+        ink_low: rgba(0x6b6257, 1.0),
+        ink_faint: rgba(0x7c7263, 1.0),
 
         // Accent — terracotta tomato
         accent: rgba(0xc94a32, 1.0),

@@ -48,7 +48,7 @@ pub(super) fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
             SpecialNodeType::Split => (Some(1), Some(MAX_WORKFLOW_PORTS)),
             SpecialNodeType::Merge => (Some(MAX_WORKFLOW_PORTS), Some(1)),
         };
-        let workflow_node = WorkflowNodeData::new(
+        let mut workflow_node = WorkflowNodeData::new(
             special_node.display_name(),
             Position::new(special_node.position.x, special_node.position.y),
         )
@@ -59,6 +59,9 @@ pub(super) fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
             "node_type": node_type,
             "channels": special_node.channels,
         }));
+        // PluginGraph and WorkflowCanvas both use UUID node IDs. Keeping
+        // them identical makes canvas selection/history survive model refreshes.
+        workflow_node.id = *special_node_id;
 
         let workflow_id = workflow_node.id;
         id_map.insert(*special_node_id, workflow_id);
@@ -75,7 +78,7 @@ pub(super) fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
 
         let height = 90.0 + ((input_ports.max(output_ports)).saturating_sub(2) as f32 * 8.0);
         let (max_in, max_out) = plugin_max_ports(&plugin_type);
-        let workflow_node = WorkflowNodeData::new(
+        let mut workflow_node = WorkflowNodeData::new(
             plugin_type.name(),
             Position::new(node.position.x, node.position.y),
         )
@@ -88,6 +91,7 @@ pub(super) fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
             "plugin_node_id": graph_node_id.to_string(),
             "enabled": node.plugin.enabled,
         }));
+        workflow_node.id = *graph_node_id;
 
         let workflow_id = workflow_node.id;
         id_map.insert(*graph_node_id, workflow_id);
@@ -182,7 +186,7 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
     //    plugin-node ids.
     let mut canvas_to_plugin: HashMap<NodeId, GraphNodeId> = HashMap::new();
     let mut surviving_plugin_ids: HashSet<GraphNodeId> = HashSet::new();
-    let mut plugin_port_counts: HashMap<GraphNodeId, (usize, usize)> = HashMap::new();
+    let mut plugin_canvas_state: HashMap<GraphNodeId, (usize, usize, Position)> = HashMap::new();
     let mut canvas_special_nodes: Vec<(NodeId, &str)> = Vec::new();
     let mut special_port_counts: HashMap<NodeId, (usize, usize)> = HashMap::new();
 
@@ -195,7 +199,10 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
         {
             canvas_to_plugin.insert(*workflow_id, graph_id);
             surviving_plugin_ids.insert(graph_id);
-            plugin_port_counts.insert(graph_id, (node.input_count, node.output_count));
+            plugin_canvas_state.insert(
+                graph_id,
+                (node.input_count, node.output_count, node.position),
+            );
             continue;
         }
         // Not a plugin node — track it as a special I/O candidate.
@@ -213,10 +220,11 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
     plugin_graph
         .nodes
         .retain(|id, _| surviving_plugin_ids.contains(id));
-    for (id, (input_count, output_count)) in plugin_port_counts {
+    for (id, (input_count, output_count, position)) in plugin_canvas_state {
         if let Some(node) = plugin_graph.nodes.get_mut(&id) {
             node.input_channels = input_count;
             node.output_channels = output_count;
+            node.position = sotf_audio_player::NodePosition::new(position.x, position.y);
         }
     }
 
@@ -247,6 +255,12 @@ pub(crate) fn reconcile_plugin_graph_with_canvas(
                     SpecialNodeType::Input | SpecialNodeType::Split => *output_count,
                     SpecialNodeType::Output | SpecialNodeType::Merge => *input_count,
                 };
+                if let Some(canvas_node) = workflow.nodes.get(workflow_id) {
+                    special.position = sotf_audio_player::NodePosition::new(
+                        canvas_node.position.x,
+                        canvas_node.position.y,
+                    );
+                }
             }
         }
     }

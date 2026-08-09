@@ -12,6 +12,8 @@ use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use gpui::prelude::*;
 use gpui::*;
+#[cfg(feature = "gpu-3d")]
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use gpui_ui_kit::{Select, SelectOption, SelectSize, Toggle, ToggleStyle};
 use sotf_plugins::speaker_config::SpeakerConfig;
 
@@ -31,6 +33,8 @@ pub(super) fn build_header(
     let e_2d = entity.clone();
     #[cfg(feature = "gpu-3d")]
     let e_3d = entity.clone();
+    #[cfg(feature = "gpu-3d")]
+    let e_reset = entity.clone();
     let e_spl = entity.clone();
     let e_corr = entity.clone();
 
@@ -47,7 +51,7 @@ pub(super) fn build_header(
                 .text_size(d.text_xs)
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme.text_muted)
-                .child("◎".to_string()),
+                .child(text.spatial_view_label),
         )
         .child(
             // TODO: this widget today reflects the *chain output* (the last
@@ -109,6 +113,32 @@ pub(super) fn build_header(
                 .child("3D".to_string()),
         );
 
+    #[cfg(feature = "gpu-3d")]
+    let header = header.when(view_mode == SpiderViewMode::View3D, |header| {
+        header
+            .child(
+                div()
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_muted)
+                    .child(text.spatial_orbit_hint),
+            )
+            .child(
+                Button::new(
+                    ("spider-reset-camera", plugin_idx),
+                    text.spatial_reset_camera,
+                )
+                .variant(ButtonVariant::Ghost)
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .on_click_event(move |_, _, cx| {
+                    e_reset.update(cx, |state, cx| {
+                        state.app.plugin_ui.spatial_spider.reset_camera();
+                        cx.notify();
+                    });
+                }),
+            )
+    });
+
     header
         .child(div().flex_none().w(px(1.0)).h(px(14.0)).bg(theme.border))
         .child(
@@ -159,7 +189,7 @@ pub(super) fn build_header(
                 .flex_none()
                 .text_size(d.text_xs)
                 .text_color(theme.text_secondary)
-                .child("ρ".to_string()),
+                .child(text.spatial_correlation_label),
         )
         .child(build_ref_channel_select(
             d,
@@ -226,6 +256,7 @@ pub(super) fn build_ref_channel_select(
             Select::new(("spider-ref-channel", plugin_idx))
                 .options(options)
                 .selected(selected_label)
+                .disabled(!active)
                 .is_open(is_open)
                 .size(SelectSize::Xs)
                 .theme(theme.to_select_theme())
@@ -279,6 +310,7 @@ pub(super) fn build_body(
     view_mode: SpiderViewMode,
     spider_mode: SpiderMode,
     ref_channel: usize,
+    text: PluginCommonTranslations,
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     let cfg = match cfg_opt {
@@ -293,7 +325,7 @@ pub(super) fn build_body(
                     div()
                         .text_size(d.text_xs)
                         .text_color(theme.text_muted)
-                        .child("…".to_string()),
+                        .child(text.spatial_no_layout),
                 )
                 .into_any_element();
         }
@@ -301,6 +333,32 @@ pub(super) fn build_body(
     };
     let loudness = snapshot.loudness.as_deref();
     let n = cfg.total_channels;
+    if loudness.is_none() {
+        return div()
+            .h(px(280.0))
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_size(d.text_xs)
+            .text_color(theme.text_muted)
+            .child(text.spatial_waiting_data)
+            .into_any_element();
+    }
+    if matches!(spider_mode, SpiderMode::CorrelationFromRef { .. })
+        && loudness.is_some_and(|data| data.correlation_samples_seen == 0)
+    {
+        return div()
+            .h(px(280.0))
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_size(d.text_xs)
+            .text_color(theme.text_muted)
+            .child(text.spatial_waiting_correlation)
+            .into_any_element();
+    }
 
     // SPL buffer.
     let metric_buf: Vec<f64> = match spider_mode {

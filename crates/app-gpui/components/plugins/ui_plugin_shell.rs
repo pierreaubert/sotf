@@ -210,6 +210,8 @@ pub fn render_plugin_shell(
     d: &Ds,
     plugin_idx: usize,
     plugin_type: &PluginType,
+    is_input_monitor: bool,
+    is_output_monitor: bool,
     enabled: bool,
     text: PluginCommonTranslations,
     theme: &Theme,
@@ -217,7 +219,7 @@ pub fn render_plugin_shell(
     on_bypass: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
 ) -> impl IntoElement {
     let accent = plugin_accent_color(plugin_type, theme);
-    let icon = plugin_icon(plugin_type, false, false);
+    let icon = plugin_icon(plugin_type, is_input_monitor, is_output_monitor);
     let name = plugin_type.name().to_uppercase();
     let description = super::ui_rack::plugin_description(plugin_type, text);
 

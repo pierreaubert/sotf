@@ -49,7 +49,9 @@ pub fn estimate_grid_dimensions(
 }
 
 /// Default minimum font size in pixels.
-pub const DEFAULT_MIN_FONT_SIZE_PX: f32 = 8.0;
+/// Keep the responsive baseline large enough that 0.625-rem captions remain
+/// readable at the minimum supported desktop window size.
+pub const DEFAULT_MIN_FONT_SIZE_PX: f32 = 12.0;
 
 /// Default maximum font size in pixels.
 pub const DEFAULT_MAX_FONT_SIZE_PX: f32 = 32.0;

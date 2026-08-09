@@ -56,4 +56,6 @@ pub struct EqRenderState<'a> {
     pub topology: f64,
     /// Available width in pixels for responsive compact-layout selection
     pub available_width: f32,
+    /// Effective responsive/font scale used to interpret logical breakpoints.
+    pub layout_scale: f32,
 }

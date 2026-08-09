@@ -1,7 +1,7 @@
 use super::consts::GROUP_STACK_THRESHOLD;
 use super::consts::SLIDER_HEIGHT_COMPACT;
 use super::consts::SLIDER_HEIGHT_NORMAL;
-use super::solve::solve_layout;
+use super::solve::{solve_layout, solve_layout_scaled};
 use super::types::Direction;
 use super::types::Orientation;
 use crate::plugin_layout::{ColumnConstraint, ColumnRole};
@@ -141,6 +141,29 @@ fn test_compact_slider_height() {
     // main_width = 920 - 120 - 100 = 700 → normal
     let solved_wide = solve_layout(&constraints, 920.0);
     assert_eq!(solved_wide.slider_height, SLIDER_HEIGHT_NORMAL);
+}
+
+#[test]
+fn scaled_layout_preserves_logical_breakpoints_and_scales_geometry() {
+    let constraints = compressor_constraints();
+    let baseline = solve_layout_scaled(&constraints, 650.0, 1.0);
+    let zoomed = solve_layout_scaled(&constraints, 975.0, 1.5);
+
+    assert_eq!(zoomed.orientation, baseline.orientation);
+    assert_eq!(zoomed.group_direction, baseline.group_direction);
+    assert_eq!(zoomed.knob_size, baseline.knob_size);
+    assert_eq!(zoomed.show_visualizations, baseline.show_visualizations);
+    assert_eq!(zoomed.slider_height, baseline.slider_height * 1.5);
+}
+
+#[test]
+fn invalid_scale_falls_back_to_baseline_geometry() {
+    let constraints = compressor_constraints();
+    let baseline = solve_layout(&constraints, 650.0);
+
+    for scale in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        assert_eq!(solve_layout_scaled(&constraints, 650.0, scale), baseline);
+    }
 }
 
 #[test]

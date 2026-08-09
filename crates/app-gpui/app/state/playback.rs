@@ -10,7 +10,6 @@ use crate::app::constants;
 use sotf_audio_player::{LoudnessData, PlaybackController, SignalPath, SpectrumData};
 use sotf_plugins::CompressorData;
 
-#[derive(Debug)]
 pub struct PlaybackState {
     ctrl: PlaybackController,
 
@@ -25,6 +24,8 @@ pub struct PlaybackState {
     pub loudness_info: Option<Arc<LoudnessData>>,
     pub spectrum_info: Option<Arc<SpectrumData>>,
     pub compressor_info: Option<Arc<CompressorData>>,
+    /// Type-erased real-time data for the plugin currently visible in the rack.
+    pub rack_plugin_data: Option<Arc<dyn std::any::Any + Send + Sync>>,
     /// Latest read-only signal-path snapshot for UI status badges.
     pub signal_path: Option<SignalPath>,
 }
@@ -60,6 +61,7 @@ impl PlaybackState {
             loudness_info: None,
             spectrum_info: None,
             compressor_info: None,
+            rack_plugin_data: None,
             signal_path: None,
         }
     }

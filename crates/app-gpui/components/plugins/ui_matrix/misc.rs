@@ -21,6 +21,45 @@ pub(super) fn cell_index(input_idx: usize, output_idx: usize, input_count: usize
     output_idx * input_count + input_idx
 }
 
+#[doc(hidden)]
+pub fn checked_matrix_cell_index(
+    input_idx: usize,
+    output_idx: usize,
+    input_channels: usize,
+    output_channels: usize,
+    matrix_len: usize,
+) -> Option<usize> {
+    if input_idx >= input_channels || output_idx >= output_channels {
+        return None;
+    }
+    let index = cell_index(input_idx, output_idx, input_channels);
+    (index < matrix_len).then_some(index)
+}
+
+#[doc(hidden)]
+pub fn matrix_settings_mut_by_instance_id(
+    graph: &mut sotf_audio_player::PluginGraph,
+    plugin_instance_id: usize,
+) -> Option<&mut sotf_audio_player::PluginSettings> {
+    graph
+        .nodes
+        .values_mut()
+        .find(|node| node.plugin.id == plugin_instance_id)
+        .map(|node| &mut node.plugin.settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stale_coordinates_cannot_alias_after_channel_count_shrinks() {
+        assert_eq!(checked_matrix_cell_index(2, 0, 2, 2, 4), None);
+        assert_eq!(checked_matrix_cell_index(0, 2, 2, 2, 4), None);
+        assert_eq!(checked_matrix_cell_index(1, 1, 2, 2, 4), Some(3));
+    }
+}
+
 /// Compute output channel groups from MeterGroupSpec
 pub(super) fn compute_output_groups(
     output_channels: usize,

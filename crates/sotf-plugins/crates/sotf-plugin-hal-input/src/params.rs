@@ -36,12 +36,16 @@ pub const PARAMS: &[ParamSpec] = &[ParamSpec::int(
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[ControlSpec::knob(0)], // input_channels
-    main: &[],
+    config: &[],
+    main: &[ControlGroup::new(
+        "INPUT",
+        "INPUT",
+        &[ControlSpec::knob(0)], // input_channels
+    )],
     output: &[],
     tabs: &[],
     visualizations: &[],
-    column_constraints: &[ColumnConstraint::config(120.0, 0.5)],
+    column_constraints: &[ColumnConstraint::main(120.0)],
     dynamic_sections: &[],
 };
 

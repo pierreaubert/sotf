@@ -53,6 +53,7 @@ pub fn render_upmixer_plugin(
     plugin_idx: usize,
     state: UpmixerRenderState,
     available_width: f32,
+    layout_scale: f32,
     text: PluginCommonTranslations,
     theme: &Theme,
     plugin_theme: &PluginTheme,
@@ -65,7 +66,7 @@ pub fn render_upmixer_plugin(
     // chassis palette. Same trick as ui_layout_renderer.
     let chassis_theme = plugin_theme.apply_to(theme);
     let theme = &chassis_theme;
-    let layout = UpmixerLayout::from_width(available_width);
+    let layout = UpmixerLayout::from_width(available_width / layout_scale.max(0.01));
 
     let main_area = match layout {
         UpmixerLayout::Wide => {
@@ -93,9 +94,9 @@ pub fn render_upmixer_plugin(
         .into_any_element(),
     };
 
-    let tab_bar = render_tab_bar(d, entity.clone(), selected_config, layout, true, theme);
+    let tab_bar = render_tab_bar(d, entity.clone(), selected_config, layout, false, theme);
 
-    // Configuration row: conditional on selected_config (1-7)
+    // Configuration row: conditional on one of the visible configuration tabs.
     let config_row = render_config_row(
         d,
         entity.clone(),
@@ -121,7 +122,8 @@ pub fn render_upmixer_plugin(
                 .child(main_area)
                 .when(layout == UpmixerLayout::Wide, |el| el.child(tab_bar))
                 .when(
-                    layout == UpmixerLayout::Wide && (1..=9).contains(&selected_config),
+                    layout == UpmixerLayout::Wide
+                        && (10..10 + upmixer_config_specs().len()).contains(&selected_config),
                     |el| el.child(config_row),
                 )
                 .build(),
@@ -266,7 +268,7 @@ fn render_main_area(
                 .flex()
                 .flex_col()
                 .gap(d.gap)
-                .child(render_spider_graph_row(d, state, theme))
+                .child(render_spider_graph_row(d, state, text, theme))
                 .child(render_primary_control_strip(
                     d, entity, plugin_idx, state, theme,
                 ))
@@ -316,7 +318,7 @@ fn render_medium_area(
                         .p(d.pad_y)
                         .bg(theme.surface)
                         .rounded(d.r_lg)
-                        .child(render_spider_graph_row(d, state, theme)),
+                        .child(render_spider_graph_row(d, state, text, theme)),
                 )
                 .child(
                     div()
@@ -392,7 +394,7 @@ fn render_narrow_area(
                 .p(d.pad_y)
                 .bg(theme.surface)
                 .rounded(d.r_lg)
-                .child(render_spider_graph_row(d, state, theme)),
+                .child(render_spider_graph_row(d, state, text, theme)),
         )
         .child(render_tab_bar(
             d,
@@ -1913,6 +1915,20 @@ fn render_config_output(
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
+                    text.label("Top Gain"),
+                    state.height_gain,
+                    pk(UP, "height_gain").min_f64(),
+                    pk(UP, "height_gain").max_f64(),
+                    "x",
+                    param_idx::HEIGHT_GAIN,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
                     text.label("Safety"),
                     state.safety_cap_db,
                     pk(UP, "safety_cap_db").min_f64(),
@@ -2629,7 +2645,12 @@ fn render_config_spatial(
 /// Permanent spider graph row below the tab bar. Always visible regardless
 /// of which tab is selected, so the user can watch the spatial field while
 /// editing parameters in any tab.
-fn render_spider_graph_row(d: &Ds, state: &UpmixerRenderState, theme: &Theme) -> impl IntoElement {
+fn render_spider_graph_row(
+    d: &Ds,
+    state: &UpmixerRenderState,
+    text: PluginCommonTranslations,
+    theme: &Theme,
+) -> impl IntoElement {
     use crate::components::plugins::spatial_spider::{
         SpatialSpiderSnapshot, render_spatial_spider_graph, resolve_speaker_config,
     };
@@ -2642,6 +2663,8 @@ fn render_spider_graph_row(d: &Ds, state: &UpmixerRenderState, theme: &Theme) ->
     div()
         .w_full()
         .pt(d.pad_y)
-        .child(render_spatial_spider_graph(d, &snapshot, cfg_opt, theme))
+        .child(render_spatial_spider_graph(
+            d, &snapshot, cfg_opt, text, theme,
+        ))
 }
 use crate::app::i18n::PluginCommonTranslations;

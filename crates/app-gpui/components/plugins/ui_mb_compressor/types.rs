@@ -14,6 +14,8 @@ use gpui::*;
 use gpui_ui_kit::{NumberInput, NumberInputSize};
 use sotf_plugins::param_specs::{find_by_key as pk, multiband_compressor::GLOBAL_PARAMS as MC};
 
+use super::super::ui_multiband_common::{band_tab_label, render_crossover_preset};
+
 /// State for rendering the Multiband Compressor plugin
 pub struct MbCompressorRenderState {
     pub num_bands: usize,
@@ -49,9 +51,12 @@ pub fn render_mb_compressor_plugin(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: MbCompressorRenderState,
+    available_width: f32,
+    layout_scale: f32,
     text: PluginCommonTranslations,
     theme: &Theme,
 ) -> impl IntoElement {
+    let compact = available_width / layout_scale.max(0.01) < 720.0;
     let get_param_idx = |base_idx: usize| -> usize {
         if state.selected_band_idx > 0 {
             state.selected_band_idx * 100 + base_idx
@@ -163,20 +168,14 @@ pub fn render_mb_compressor_plugin(
         ));
     }
 
-    // Missing global params
+    // Global params
     global_col = global_col
-        .child(render_knob(
+        .child(render_section_title(d, text.label("Preset"), theme))
+        .child(render_crossover_preset(
+            "mb-compressor-preset",
             entity.clone(),
             plugin_idx,
-            text.label("Preset"),
-            state.crossover_preset as f64,
-            pk(MC, "crossover_preset").min_f64(),
-            pk(MC, "crossover_preset").max_f64(),
-            "",
-            1,
-            state.selected_param,
-            state.is_editing,
-            Some('p'),
+            state.crossover_preset,
             theme,
         ))
         .child(render_knob(
@@ -236,16 +235,22 @@ pub fn render_mb_compressor_plugin(
     // Band tabs
     let band_tabs = div()
         .flex()
+        .flex_wrap()
         .justify_center()
         .border_b_1()
         .border_color(theme.border)
         .children((0..=state.num_bands).map(|i| {
             let is_selected = state.selected_band_idx == i;
-            let label = if i == 0 {
-                "Global".to_string()
-            } else {
-                format!("{}", i)
-            };
+            let label = band_tab_label(
+                i,
+                state.num_bands,
+                [
+                    state.crossover_freq_1,
+                    state.crossover_freq_2,
+                    state.crossover_freq_3,
+                    state.crossover_freq_4,
+                ],
+            );
             div()
                 .px(d.card)
                 // intentional: asymmetric underline-tab padding — 4/6 pair is visually tuned
@@ -435,7 +440,9 @@ pub fn render_mb_compressor_plugin(
         .flex()
         .flex_col()
         .flex_1()
+        .min_w_0()
         .gap(d.gap_md)
+        .when(compact, |column| column.w_full())
         .child(band_tabs)
         .child(sliders);
 
@@ -521,14 +528,31 @@ pub fn render_mb_compressor_plugin(
             theme,
         ));
 
-    // === Main layout: 3 columns, centered ===
-    div().w_full().flex().justify_center().p(d.pad_x).child(
-        div()
-            .flex()
-            .gap(d.section)
-            .child(global_col)
-            .child(center_col)
-            .child(right_col),
-    )
+    let content = div()
+        .w_full()
+        .min_w_0()
+        .flex()
+        .items_start()
+        .justify_center()
+        .gap(d.section)
+        .when(compact, |layout| layout.flex_col().items_center());
+
+    let content = if compact {
+        content.child(center_col).child(
+            div()
+                .w_full()
+                .flex()
+                .flex_wrap()
+                .items_start()
+                .justify_center()
+                .gap(d.section)
+                .child(global_col)
+                .child(right_col),
+        )
+    } else {
+        content.child(global_col).child(center_col).child(right_col)
+    };
+
+    div().w_full().min_w_0().p(d.pad_x).child(content)
 }
 use crate::app::i18n::PluginCommonTranslations;

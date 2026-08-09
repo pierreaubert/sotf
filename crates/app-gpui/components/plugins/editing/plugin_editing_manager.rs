@@ -1,6 +1,7 @@
 use super::misc::effect_to_update_type;
 use crate::app::types::PluginUpdateType;
 use crate::app::{App, ToastMessage};
+use sotf_audio::plugins::EqFilterTopology;
 use sotf_audio_player::{EqEditTarget, PluginSettings};
 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
@@ -67,6 +68,12 @@ pub trait PluginEditingManager {
     fn copy_eq_selected_to_all(&mut self, plugin_idx: usize) -> Result<(), String>;
     /// Cycle the topology of an EQ band: Biquad → Warped → Kautz → Biquad.
     fn cycle_eq_filter_topology(&mut self, plugin_idx: usize, band_idx: usize);
+    fn set_eq_filter_topology(
+        &mut self,
+        plugin_idx: usize,
+        band_idx: usize,
+        topology: EqFilterTopology,
+    );
     /// Cycle the warped-biquad `lambda` preset for the band.
     fn cycle_eq_filter_lambda(&mut self, plugin_idx: usize, band_idx: usize);
     /// Append a Kautz section. Only effective for Kautz-topology bands.
@@ -465,6 +472,25 @@ impl PluginEditingManager for App {
         } else {
             self.plugin_state
                 .cycle_eq_filter_topology(plugin_idx, band_idx)
+        };
+        self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
+    }
+
+    fn set_eq_filter_topology(
+        &mut self,
+        plugin_idx: usize,
+        band_idx: usize,
+        topology: EqFilterTopology,
+    ) {
+        let Some(target) = active_eq_edit_target(self, plugin_idx) else {
+            return;
+        };
+        let effect = if let Some(node_id) = self.plugin_state.graph_state.editing_graph_node_uuid {
+            self.plugin_state
+                .set_eq_filter_topology_for_target_by_node_id(node_id, target, band_idx, topology)
+        } else {
+            self.plugin_state
+                .set_eq_filter_topology_for_target(plugin_idx, target, band_idx, topology)
         };
         self.plugin_state.update_state.pending_plugin_update = effect_to_update_type(effect);
     }

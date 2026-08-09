@@ -167,11 +167,13 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::knob(14),  // lookahead_ms
             ],
         ),
+        ControlGroup::new(
+            "OUTPUT",
+            "OUTPUT",
+            &[ControlSpec::meter(-30.0, 0.0), ControlSpec::knob(5)],
+        ),
     ],
-    output: &[
-        ControlSpec::meter(-30.0, 0.0), // GR meter
-        ControlSpec::knob(5),           // mix
-    ],
+    output: &[],
     tabs: &[],
     visualizations: &[VizSlot::TransferCurve {
         position: VizPosition::BelowGroup("DYNAMICS"),
@@ -179,7 +181,6 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     column_constraints: &[
         ColumnConstraint::config(100.0, 0.5),
         ColumnConstraint::main(300.0),
-        ColumnConstraint::output(120.0, 0.6),
     ],
     dynamic_sections: &[],
 };

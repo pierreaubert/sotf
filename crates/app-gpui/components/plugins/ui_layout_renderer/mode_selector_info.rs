@@ -1,5 +1,5 @@
 use super::types::ModeSelectorInfo;
-use sotf_plugins::layout_solver::solve_control_groups;
+use sotf_plugins::layout_solver::solve_control_groups_scaled;
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
 use sotf_plugins::plugin_layout::*;
 
@@ -49,9 +49,10 @@ pub(super) fn solve_main_groups(
     values: &[f64],
     mode: Option<&ModeSelectorInfo>,
     main_width: f32,
+    layout_scale: f32,
 ) -> (Vec<&'static ControlGroup>, Vec<&'static ControlGroup>) {
     let groups = mode_visible_groups(layout, values, mode);
-    let solved = solve_control_groups(&groups, main_width)
+    let solved = solve_control_groups_scaled(&groups, main_width, layout_scale)
         .unwrap_or_else(|error| panic!("invalid generated plugin group layout: {error}"));
     let visible = groups
         .iter()

@@ -3,6 +3,7 @@
 //! Renders two side-by-side sub-rack columns (Path A and Path B), each with
 //! a scrollable plugin strip, an "add plugin" picker, and remove/move controls.
 
+use crate::app::i18n::ABCompareTranslations;
 use crate::app::state::plugin::ABPathTarget;
 use crate::components::design::Ds;
 use crate::components::plugins::actions::{
@@ -40,12 +41,34 @@ pub fn render_ab_compare(
         .ab_compare_file_b
         .clone();
     let add_menu_target = state.app.plugin_state.ab_compare_state.ab_add_menu_target;
+    let active_path = match ctx.settings {
+        sotf_audio_player::PluginSettings::ABCompare {
+            mix,
+            mix_mode,
+            selected_path,
+            ..
+        } => {
+            if *mix_mode == 1 {
+                Some((*selected_path).clamp(0, 1) as u8)
+            } else if *mix <= -0.999 {
+                Some(0)
+            } else if *mix >= 0.999 {
+                Some(1)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
     let workflow_text =
         crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
     let rack_text =
         crate::app::i18n::PluginRackTranslations::for_language(state.app.ui_state.language);
+    let text = ABCompareTranslations::for_language(state.app.ui_state.language);
+    let stack_paths = ctx.available_width / ctx.layout_scale.max(0.01) < 600.0;
 
     div()
+        .key_context("ABCompare")
         .flex()
         .flex_col()
         .gap(d.section)
@@ -59,6 +82,7 @@ pub fn render_ab_compare(
             ctx.selected_param,
             ctx.plugin_data.as_ref(),
             ctx.available_width,
+            ctx.layout_scale,
             ctx.theme,
         ))
         .child(ui_layout_renderer::render_tabs_from_layout(
@@ -70,34 +94,40 @@ pub fn render_ab_compare(
             ctx.selected_param,
             ctx.plugin_data.as_ref(),
             ctx.available_width,
+            ctx.layout_scale,
             ctx.theme,
         ))
         .child(
             div()
                 .flex()
+                .when(stack_paths, |paths| paths.flex_col())
                 .gap(d.section)
                 .w_full()
                 .child(render_path_section(
-                    "PATH A",
+                    text.path_a,
                     0,
                     plugin_idx,
                     &path_a,
                     path_a_file.as_deref(),
                     add_menu_target == Some(ABPathTarget::A),
+                    active_path == Some(0),
                     workflow_text,
                     rack_text,
+                    text,
                     ctx.theme,
                     cx,
                 ))
                 .child(render_path_section(
-                    "PATH B",
+                    text.path_b,
                     1,
                     plugin_idx,
                     &path_b,
                     path_b_file.as_deref(),
                     add_menu_target == Some(ABPathTarget::B),
+                    active_path == Some(1),
                     workflow_text,
                     rack_text,
+                    text,
                     ctx.theme,
                     cx,
                 )),
@@ -112,14 +142,17 @@ fn render_path_section(
     plugins: &[PluginInRack],
     loaded_config_file: Option<&str>,
     add_menu_open: bool,
+    is_active: bool,
     workflow_text: crate::app::i18n::WorkflowTranslations,
     rack_text: crate::app::i18n::PluginRackTranslations,
+    text: ABCompareTranslations,
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> Div {
     let d = Ds::from_cx(cx);
     let mut section = div()
         .flex_1()
+        .min_w_0()
         .flex()
         .flex_col()
         .gap(d.gap)
@@ -127,7 +160,11 @@ fn render_path_section(
         .bg(theme.background_secondary)
         .rounded(d.r_md)
         .border_1()
-        .border_color(theme.border);
+        .border_color(if is_active {
+            theme.accent
+        } else {
+            theme.border
+        });
 
     // Header
     section = section.child(
@@ -139,11 +176,19 @@ fn render_path_section(
                 div()
                     .flex()
                     .flex_col()
-                    .child(Text::eyebrow(label.to_string()).color(theme.text_primary))
+                    .child(Text::eyebrow(label.to_string()).color(if is_active {
+                        theme.accent
+                    } else {
+                        theme.text_primary
+                    }))
                     .child(Text::caption(format!(
-                        "{} plugin{}",
+                        "{} {}",
                         plugins.len(),
-                        if plugins.len() == 1 { "" } else { "s" }
+                        if plugins.len() == 1 {
+                            text.plugin
+                        } else {
+                            text.plugins
+                        }
                     ))),
             )
             .child(
@@ -174,7 +219,7 @@ fn render_path_section(
                 .text_color(theme.text_muted)
                 .overflow_hidden()
                 .text_ellipsis()
-                .child(format!("Loaded: {}", display_file_name(file_path))),
+                .child(format!("{}: {}", text.loaded, display_file_name(file_path))),
         );
     }
 
@@ -196,7 +241,7 @@ fn render_path_section(
         let len = plugins.len();
         for (sub_idx, plugin) in plugins.iter().enumerate() {
             section = section.child(render_sub_plugin_card(
-                path, plugin_idx, sub_idx, plugin, len, rack_text, theme, cx,
+                path, plugin_idx, sub_idx, plugin, len, rack_text, text, theme, cx,
             ));
         }
     }
@@ -205,7 +250,7 @@ fn render_path_section(
 }
 
 fn display_file_name(path: &str) -> &str {
-    path.rsplit('/')
+    path.rsplit(['/', '\\'])
         .next()
         .filter(|name| !name.is_empty())
         .unwrap_or(path)
@@ -261,10 +306,11 @@ fn render_sub_plugin_card(
     plugin: &PluginInRack,
     total: usize,
     rack_text: crate::app::i18n::PluginRackTranslations,
+    text: ABCompareTranslations,
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> Div {
-    let display_name = plugin_display_name(&plugin.plugin_type);
+    let display_name = plugin_display_name(&plugin.plugin_type).unwrap_or(text.unknown);
 
     let d = Ds::from_cx(cx);
     let mut card = div()
@@ -279,11 +325,12 @@ fn render_sub_plugin_card(
         .border_color(theme.border)
         // Plugin type label
         .child(
-            div().flex_1().child(
+            div().flex_1().min_w_0().overflow_hidden().child(
                 Text::new(display_name)
                     .size(TextSize::Xs)
                     .weight(TextWeight::Medium)
-                    .color(theme.text_primary),
+                    .color(theme.text_primary)
+                    .truncate(true),
             ),
         );
 
@@ -366,11 +413,11 @@ fn render_sub_plugin_card(
     card
 }
 
-fn plugin_display_name(plugin_type: &str) -> &'static str {
+fn plugin_display_name(plugin_type: &str) -> Option<&'static str> {
     for (key, name) in allowed_plugin_types() {
         if key == plugin_type {
-            return name;
+            return Some(name);
         }
     }
-    "Unknown"
+    None
 }

@@ -5,12 +5,12 @@ use super::common::{
 };
 use gpui_design::DesignSystem;
 use sotf_audio_player::ui_params::TuiEditablePlugin;
-use sotf_audio_player::{PluginSettings, PluginType};
+use sotf_audio_player::{NodePosition, PluginGraph, PluginSettings, PluginType};
 use sotf_audio_player_gpui::IconName;
 use sotf_audio_player_gpui::app::keybindings::KeymapPreset;
 use sotf_audio_player_gpui::app::state::{
-    ExternalPluginUiState, ExternalPluginWorkerHealth, PluginState, external_plugin_error_key,
-    external_plugin_worker_health,
+    ExternalPluginUiState, ExternalPluginWorkerHealth, PluginGraphState, PluginState,
+    external_plugin_error_key, external_plugin_worker_health,
 };
 use sotf_audio_player_gpui::components::design::typography_rems_from_rules;
 use sotf_audio_player_gpui::components::dialogs::get_keybindings_for_screen;
@@ -62,6 +62,137 @@ fn repo_source(relative: &str) -> String {
         .expect("app-gpui should live under crates/");
     std::fs::read_to_string(repo_root.join(relative))
         .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
+}
+
+fn matrix_first_gain(graph: &PluginGraph, plugin_instance_id: usize) -> f32 {
+    graph
+        .nodes
+        .values()
+        .find(|node| node.plugin.id == plugin_instance_id)
+        .and_then(|node| match &node.plugin.settings {
+            PluginSettings::Matrix { matrix, .. } => matrix.first().copied(),
+            _ => None,
+        })
+        .expect("matrix plugin instance should exist")
+}
+
+#[test]
+fn matrix_stale_coordinates_do_not_alias_after_channel_shrink() {
+    use sotf_audio_player_gpui::components::plugins::checked_matrix_cell_index;
+
+    assert_eq!(checked_matrix_cell_index(2, 0, 2, 2, 4), None);
+    assert_eq!(checked_matrix_cell_index(0, 2, 2, 2, 4), None);
+    assert_eq!(checked_matrix_cell_index(1, 1, 2, 2, 4), Some(3));
+}
+
+#[test]
+fn matrix_selection_follows_instance_identity_across_reorder_and_removal() {
+    use sotf_audio_player_gpui::components::plugins::matrix_settings_mut_by_instance_id;
+
+    let mut graph = PluginGraph::new();
+    let first_node = graph
+        .add_plugin_node(&PluginType::Matrix, NodePosition::new(0.0, 0.0))
+        .expect("first matrix should be constructible");
+    let selected_node = graph
+        .add_plugin_node(&PluginType::Matrix, NodePosition::new(100.0, 0.0))
+        .expect("selected matrix should be constructible");
+    let first_instance_id = graph.nodes[&first_node].plugin.id;
+    let selected_instance_id = graph.nodes[&selected_node].plugin.id;
+
+    graph.nodes.get_mut(&first_node).unwrap().position.x = 200.0;
+    graph.nodes.get_mut(&selected_node).unwrap().position.x = 0.0;
+    if let Some(PluginSettings::Matrix { matrix, .. }) =
+        matrix_settings_mut_by_instance_id(&mut graph, selected_instance_id)
+    {
+        matrix[0] = 0.25;
+    } else {
+        panic!("selected matrix should resolve by stable instance ID");
+    }
+
+    assert_eq!(matrix_first_gain(&graph, selected_instance_id), 0.25);
+    assert_eq!(matrix_first_gain(&graph, first_instance_id), 1.0);
+
+    graph.remove_node(first_node);
+    assert!(matrix_settings_mut_by_instance_id(&mut graph, first_instance_id).is_none());
+    assert!(matrix_settings_mut_by_instance_id(&mut graph, selected_instance_id).is_some());
+}
+
+#[test]
+fn nonlinear_matrix_modal_mutates_displayed_instance_not_an_unrelated_node() {
+    use sotf_audio_player_gpui::components::plugins::matrix_settings_mut_by_instance_id;
+
+    let mut graph = PluginGraph::new();
+    graph
+        .add_plugin_node(&PluginType::EQ, NodePosition::new(0.0, 0.0))
+        .expect("EQ should be constructible");
+    let unrelated_node = graph
+        .add_plugin_node(&PluginType::Matrix, NodePosition::new(200.0, 100.0))
+        .expect("unrelated matrix should be constructible");
+    let displayed_node = graph
+        .add_plugin_node(&PluginType::Matrix, NodePosition::new(100.0, 200.0))
+        .expect("displayed matrix should be constructible");
+    let unrelated_id = graph.nodes[&unrelated_node].plugin.id;
+    let displayed_id = graph.nodes[&displayed_node].plugin.id;
+
+    if let Some(PluginSettings::Matrix { matrix, .. }) =
+        matrix_settings_mut_by_instance_id(&mut graph, displayed_id)
+    {
+        matrix[0] = 0.5;
+    } else {
+        panic!("displayed nonlinear Matrix node should resolve by instance ID");
+    }
+
+    assert_eq!(matrix_first_gain(&graph, displayed_id), 0.5);
+    assert_eq!(matrix_first_gain(&graph, unrelated_id), 1.0);
+}
+
+#[test]
+fn escape_closed_graph_modal_cannot_redirect_later_rack_matrix_edits() {
+    use sotf_audio_player_gpui::components::plugins::plugin_instance_id_for_render;
+
+    let graph = PluginGraph::with_default_rack();
+    let rack_instance_id = graph
+        .get_plugin(0)
+        .expect("default rack should expose a linear plugin")
+        .id;
+    let (stale_node_uuid, stale_instance_id) = graph
+        .nodes
+        .iter()
+        .find_map(|(node_id, node)| {
+            (node.plugin.id != rack_instance_id).then_some((*node_id, node.plugin.id))
+        })
+        .expect("default rack should contain another graph node");
+
+    assert_eq!(
+        plugin_instance_id_for_render(
+            InputMode::EditingPluginNode,
+            Some(stale_node_uuid),
+            &graph,
+            0,
+        ),
+        Some(stale_instance_id),
+    );
+    assert_eq!(
+        plugin_instance_id_for_render(InputMode::Normal, Some(stale_node_uuid), &graph, 0),
+        Some(rack_instance_id),
+        "normal rack rendering must ignore a stale graph-modal node ID",
+    );
+
+    let mut graph_state = PluginGraphState {
+        editing_plugin_node: Some(stale_node_uuid),
+        editing_graph_node_uuid: Some(stale_node_uuid),
+        ..PluginGraphState::default()
+    };
+    graph_state.clear_editing_context();
+    assert!(graph_state.editing_plugin_node.is_none());
+    assert!(graph_state.editing_graph_node_uuid.is_none());
+
+    let cancel_source = app_source("ui/player_view.rs");
+    assert!(
+        cancel_source.contains("InputMode::EditingPluginNode")
+            && cancel_source.contains(".clear_editing_context();"),
+        "the universal Cancel handler must clear graph-modal identity before returning to Normal"
+    );
 }
 
 #[test]
@@ -987,7 +1118,7 @@ fn test_light_app_theme_always_uses_studio_cream_for_plugins() {
     let app_theme = Theme::from_id(ThemeId::Light);
     for selected in PluginThemeId::all() {
         assert_eq!(
-            plugin_theme_id_for_app_theme(*selected, &app_theme),
+            plugin_theme_id_for_app_theme(*selected, &app_theme, ThemeId::Light),
             PluginThemeId::StudioCream
         );
     }
@@ -997,17 +1128,33 @@ fn test_light_app_theme_always_uses_studio_cream_for_plugins() {
 fn test_dark_app_theme_uses_graphite_unless_brutalist_is_selected() {
     let app_theme = Theme::from_id(ThemeId::Dark);
     assert_eq!(
-        plugin_theme_id_for_app_theme(PluginThemeId::Graphite, &app_theme),
+        plugin_theme_id_for_app_theme(PluginThemeId::Graphite, &app_theme, ThemeId::Dark),
         PluginThemeId::Graphite
     );
     assert_eq!(
-        plugin_theme_id_for_app_theme(PluginThemeId::StudioCream, &app_theme),
+        plugin_theme_id_for_app_theme(PluginThemeId::StudioCream, &app_theme, ThemeId::Dark),
         PluginThemeId::Graphite
     );
     assert_eq!(
-        plugin_theme_id_for_app_theme(PluginThemeId::Brutalist, &app_theme),
+        plugin_theme_id_for_app_theme(PluginThemeId::Brutalist, &app_theme, ThemeId::Dark),
         PluginThemeId::Brutalist
     );
+}
+
+#[test]
+fn test_accessibility_palettes_use_the_high_contrast_plugin_chassis() {
+    for theme_id in [
+        ThemeId::BlackAndWhite,
+        ThemeId::Protanopia,
+        ThemeId::Deuteranopia,
+        ThemeId::Tritanopia,
+    ] {
+        let app_theme = Theme::from_id(theme_id);
+        assert_eq!(
+            plugin_theme_id_for_app_theme(PluginThemeId::Graphite, &app_theme, theme_id),
+            PluginThemeId::Brutalist
+        );
+    }
 }
 
 #[test]
