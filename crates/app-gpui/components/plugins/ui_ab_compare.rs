@@ -16,7 +16,40 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Divider, Text, TextSize, TextWeight};
-use sotf_audio_player::controllers::ab_compare_path::{PluginInRack, allowed_plugin_types};
+use sotf_audio_player::controllers::ab_compare_path::{
+    PluginInRack, allowed_plugin_types, parse_path_config,
+};
+
+/// Derive the custom A/B view from persisted settings. This keeps save/reload
+/// and graph-modal discard consistent without transient-state synchronization.
+#[doc(hidden)]
+pub fn ab_compare_view_state(
+    settings: &sotf_audio_player::PluginSettings,
+) -> (
+    Vec<PluginInRack>,
+    Option<String>,
+    Vec<PluginInRack>,
+    Option<String>,
+) {
+    let sotf_audio_player::PluginSettings::ABCompare {
+        path_a_config,
+        path_b_config,
+        path_a_file,
+        path_b_file,
+        ..
+    } = settings
+    else {
+        return (Vec::new(), None, Vec::new(), None);
+    };
+
+    let non_empty = |path: &str| (!path.is_empty()).then(|| path.to_string());
+    (
+        parse_path_config(path_a_config),
+        non_empty(path_a_file),
+        parse_path_config(path_b_config),
+        non_empty(path_b_file),
+    )
+}
 
 /// Render the A/B Compare custom plugin view.
 pub fn render_ab_compare(
@@ -26,20 +59,7 @@ pub fn render_ab_compare(
     let d = Ds::from_cx(cx);
     let state = ctx.entity.read(cx);
     let plugin_idx = ctx.plugin_idx;
-    let path_a = state.app.plugin_state.ab_compare_state.ab_path_a.clone();
-    let path_b = state.app.plugin_state.ab_compare_state.ab_path_b.clone();
-    let path_a_file = state
-        .app
-        .plugin_state
-        .ab_compare_state
-        .ab_compare_file_a
-        .clone();
-    let path_b_file = state
-        .app
-        .plugin_state
-        .ab_compare_state
-        .ab_compare_file_b
-        .clone();
+    let (path_a, path_a_file, path_b, path_b_file) = ab_compare_view_state(ctx.settings);
     let add_menu_target = state.app.plugin_state.ab_compare_state.ab_add_menu_target;
     let active_path = match ctx.settings {
         sotf_audio_player::PluginSettings::ABCompare {

@@ -38,6 +38,8 @@ pub enum IconName {
     Minus,
     X,
     Check,
+    Lock,
+    GripVertical,
     Search,
     Settings,
 
@@ -89,6 +91,8 @@ impl IconName {
             IconName::Minus => "icons/minus.svg",
             IconName::X => "icons/x.svg",
             IconName::Check => "icons/check.svg",
+            IconName::Lock => "icons/lock.svg",
+            IconName::GripVertical => "icons/grip-vertical.svg",
             IconName::Search => "icons/search.svg",
             IconName::Settings => "icons/settings.svg",
             IconName::Music => "icons/music.svg",

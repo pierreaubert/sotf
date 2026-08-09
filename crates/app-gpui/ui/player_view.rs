@@ -1026,8 +1026,25 @@ impl PlayerView {
         }
         let was_search =
             self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Search;
+        let mut keep_graph_modal_open = false;
         self.state.update(cx, |state, _cx| {
             if state.app.ui_state.input_mode == crate::app::InputMode::EditingPluginNode {
+                let graph_state = &state.app.plugin_state.graph_state;
+                let current_settings = graph_state
+                    .editing_graph_node_uuid
+                    .and_then(|uuid| state.app.plugin_state.graph.nodes.get(&uuid))
+                    .map(|node| &node.plugin.settings);
+                let current_enabled = graph_state
+                    .editing_graph_node_uuid
+                    .and_then(|uuid| state.app.plugin_state.graph.nodes.get(&uuid))
+                    .map(|node| node.plugin.enabled);
+                let settings_are_dirty =
+                    graph_state.settings_are_dirty(current_settings, current_enabled);
+                if settings_are_dirty {
+                    state.app.plugin_state.graph_state.confirm_close_dirty = true;
+                    keep_graph_modal_open = true;
+                    return;
+                }
                 state.app.plugin_state.graph_state.clear_editing_context();
             }
             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
@@ -1040,6 +1057,10 @@ impl PlayerView {
             state.app.ui_state.context_menu = None; // Close context menu
             state.app.ui_state.active_menu = crate::app::ActiveMenu::None; // Close dropdown menus
         });
+        if keep_graph_modal_open {
+            cx.notify();
+            return;
+        }
         if was_search {
             #[cfg(any(target_os = "ios", target_os = "tvos"))]
             gpui_ios::hide_keyboard();
@@ -1756,6 +1777,15 @@ impl PlayerView {
         {
             let plugin_idx = action.plugin_idx;
             let path_id = action.path_id.clone();
+            // Capture graph identity before the async dialog opens. Reading the
+            // live modal context after await could redirect the result.
+            let target_node_id = self
+                .state
+                .read(cx)
+                .app
+                .plugin_state
+                .graph_state
+                .editing_graph_node_uuid;
             let weak_state = self.state.downgrade();
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
@@ -1779,26 +1809,48 @@ impl PlayerView {
                             >(&content)
                             .is_ok()
                             {
-                                let plugins =
-                                    sotf_audio_player::controllers::ab_compare_path::parse_path_config(
-                                        &content,
-                                    );
-                                let param_idx = if path_id == "a" { 9 } else { 10 };
+                                let param_key = if path_id == "a" {
+                                    "path_a_config"
+                                } else {
+                                    "path_b_config"
+                                };
+                                let param_idx = sotf_plugins::param_specs::index_of(
+                                    sotf_plugins::param_specs::ab_compare::PARAMS,
+                                    param_key,
+                                );
                                 state_entity.update(&mut cx.clone(), |state, cx| {
-                                    // AB Compare configs are JSON, not file paths — error won't occur
-                                    let _ = state
-                                        .app
-                                        .set_plugin_param_string(plugin_idx, param_idx, content);
-                                    // Store the source file path for display
-                                    if path_id == "a" {
-                                        state.app.plugin_state.ab_compare_state.ab_compare_file_a = Some(file_path);
-                                        state.app.plugin_state.ab_compare_state.ab_path_a = plugins;
+                                    let effect = if let Some(node_id) = target_node_id {
+                                        if !state.app.plugin_state.graph.nodes.contains_key(&node_id)
+                                        {
+                                            log::warn!(
+                                                "AB Compare: target node disappeared while file dialog was open"
+                                            );
+                                            return;
+                                        }
+                                        state.app.plugin_state.set_ab_compare_config_file_by_node_id(
+                                            node_id,
+                                            param_idx,
+                                            content,
+                                            file_path.clone(),
+                                        )
                                     } else {
-                                        state.app.plugin_state.ab_compare_state.ab_compare_file_b = Some(file_path);
-                                        state.app.plugin_state.ab_compare_state.ab_path_b = plugins;
+                                        state.app.plugin_state.set_ab_compare_config_file(
+                                            plugin_idx,
+                                            param_idx,
+                                            content,
+                                            file_path.clone(),
+                                        )
+                                    };
+                                    if matches!(
+                                        effect,
+                                        sotf_audio_player::PluginUpdateEffect::Structural
+                                    ) {
+                                        state.app.plugin_state.update_state.pending_plugin_update =
+                                            Some(crate::app::types::PluginUpdateType::Structural);
+                                        state.app.plugin_state.ab_compare_state.ab_add_menu_target =
+                                            None;
+                                        cx.notify();
                                     }
-                                    state.app.plugin_state.ab_compare_state.ab_add_menu_target = None;
-                                    cx.notify();
                                 });
                             } else {
                                 log::warn!(
@@ -1826,23 +1878,36 @@ impl PlayerView {
             add_path_plugin, encode_path_config,
         };
         let plugin_idx = action.plugin_idx;
-        let param_idx: usize = if action.path == 0 { 9 } else { 10 };
+        let param_idx = sotf_plugins::param_specs::index_of(
+            sotf_plugins::param_specs::ab_compare::PARAMS,
+            if action.path == 0 {
+                "path_a_config"
+            } else {
+                "path_b_config"
+            },
+        );
 
         self.state.update(cx, |state, _cx| {
-            let plugins = if action.path == 0 {
-                state.app.plugin_state.ab_compare_state.ab_compare_file_a = None;
-                &mut state.app.plugin_state.ab_compare_state.ab_path_a
-            } else {
-                state.app.plugin_state.ab_compare_state.ab_compare_file_b = None;
-                &mut state.app.plugin_state.ab_compare_state.ab_path_b
-            };
-            add_path_plugin(plugins, &action.plugin_type);
-            let json = encode_path_config(plugins);
-            // AB Compare configs are JSON, not file paths — validation won't reject
-            let _ = state
+            let mut plugins = state
                 .app
-                .set_plugin_param_string(plugin_idx, param_idx, json);
-            state.app.plugin_state.ab_compare_state.ab_add_menu_target = None;
+                .plugin_state
+                .ab_compare_path_plugins(plugin_idx, param_idx);
+            add_path_plugin(&mut plugins, &action.plugin_type);
+            let json = encode_path_config(&plugins);
+            if matches!(
+                state
+                    .app
+                    .plugin_state
+                    .set_ab_compare_config_file_for_edit_target(
+                        plugin_idx,
+                        param_idx,
+                        json,
+                        String::new(),
+                    ),
+                sotf_audio_player::PluginUpdateEffect::Structural
+            ) {
+                state.app.plugin_state.ab_compare_state.ab_add_menu_target = None;
+            }
         });
         cx.notify();
     }
@@ -1857,21 +1922,31 @@ impl PlayerView {
             encode_path_config, remove_path_plugin,
         };
         let plugin_idx = action.plugin_idx;
-        let param_idx: usize = if action.path == 0 { 9 } else { 10 };
+        let param_idx = sotf_plugins::param_specs::index_of(
+            sotf_plugins::param_specs::ab_compare::PARAMS,
+            if action.path == 0 {
+                "path_a_config"
+            } else {
+                "path_b_config"
+            },
+        );
 
         self.state.update(cx, |state, _cx| {
-            let plugins = if action.path == 0 {
-                state.app.plugin_state.ab_compare_state.ab_compare_file_a = None;
-                &mut state.app.plugin_state.ab_compare_state.ab_path_a
-            } else {
-                state.app.plugin_state.ab_compare_state.ab_compare_file_b = None;
-                &mut state.app.plugin_state.ab_compare_state.ab_path_b
-            };
-            remove_path_plugin(plugins, action.sub_idx);
-            let json = encode_path_config(plugins);
-            let _ = state
+            let mut plugins = state
                 .app
-                .set_plugin_param_string(plugin_idx, param_idx, json);
+                .plugin_state
+                .ab_compare_path_plugins(plugin_idx, param_idx);
+            remove_path_plugin(&mut plugins, action.sub_idx);
+            let json = encode_path_config(&plugins);
+            state
+                .app
+                .plugin_state
+                .set_ab_compare_config_file_for_edit_target(
+                    plugin_idx,
+                    param_idx,
+                    json,
+                    String::new(),
+                );
         });
         cx.notify();
     }
@@ -1886,21 +1961,31 @@ impl PlayerView {
             encode_path_config, move_path_plugin,
         };
         let plugin_idx = action.plugin_idx;
-        let param_idx: usize = if action.path == 0 { 9 } else { 10 };
+        let param_idx = sotf_plugins::param_specs::index_of(
+            sotf_plugins::param_specs::ab_compare::PARAMS,
+            if action.path == 0 {
+                "path_a_config"
+            } else {
+                "path_b_config"
+            },
+        );
 
         self.state.update(cx, |state, _cx| {
-            let plugins = if action.path == 0 {
-                state.app.plugin_state.ab_compare_state.ab_compare_file_a = None;
-                &mut state.app.plugin_state.ab_compare_state.ab_path_a
-            } else {
-                state.app.plugin_state.ab_compare_state.ab_compare_file_b = None;
-                &mut state.app.plugin_state.ab_compare_state.ab_path_b
-            };
-            move_path_plugin(plugins, action.from, action.to);
-            let json = encode_path_config(plugins);
-            let _ = state
+            let mut plugins = state
                 .app
-                .set_plugin_param_string(plugin_idx, param_idx, json);
+                .plugin_state
+                .ab_compare_path_plugins(plugin_idx, param_idx);
+            move_path_plugin(&mut plugins, action.from, action.to);
+            let json = encode_path_config(&plugins);
+            state
+                .app
+                .plugin_state
+                .set_ab_compare_config_file_for_edit_target(
+                    plugin_idx,
+                    param_idx,
+                    json,
+                    String::new(),
+                );
         });
         cx.notify();
     }

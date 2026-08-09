@@ -1,4 +1,3 @@
-// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::actions::{OpenAbConfigFile, OpenIrFile, OpenSofaFile};
 use super::super::common::{
     render_knob_sized_enabled, render_section_title, render_toggle_enabled,
@@ -29,7 +28,10 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_audio_kit::audio::potentiometer::PotentiometerSize;
-use gpui_ui_kit::{AdaptiveOverflow, Button, ButtonSize, ButtonVariant};
+use gpui_ui_kit::{
+    AdaptiveOverflow, Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize,
+    IconButtonVariant,
+};
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::layout_solver::{Direction, KnobSize, SolvedLayout, solve_layout_scaled};
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
@@ -660,7 +662,7 @@ fn render_main_column(
                         .text_size(d.text_sm)
                         .px(d.card)
                         // intentional: asymmetric 6px bottom / 4px top for tab underline spacing
-                        .pb(px(6.0))
+                        .pb(rems(0.375))
                         .pt(spacing::SM)
                         .cursor_pointer()
                         .id(SharedString::from(format!("layout-tab-{plugin_idx}-{i}")))
@@ -678,12 +680,7 @@ fn render_main_column(
                         .border_color(if is_active {
                             theme.accent
                         } else {
-                            gpui::Rgba {
-                                r: 0.0,
-                                g: 0.0,
-                                b: 0.0,
-                                a: 0.0,
-                            }
+                            Theme::with_opacity(theme.border, 0.0)
                         })
                         .hover(|s| {
                             s.text_color(theme.text_primary).border_color(if is_active {
@@ -1387,7 +1384,7 @@ fn render_param_as_button_set(
         let btn_plugin_idx = plugin_idx;
         let btn_val = i;
         let choice = div()
-            .text_size(d.text_xs)
+            .text_size(d.text_sm)
             .min_w(rems(2.0))
             .min_h(rems(2.0))
             .flex()
@@ -1428,14 +1425,14 @@ fn render_param_as_button_set(
             .flex_col()
             .items_stretch()
             .gap(d.grid)
-            .min_w(px(130.0))
-            .max_w(px(240.0))
+            .min_w(rems(8.125))
+            .max_w(rems(15.0))
             .flex_1()
             .rounded(d.r_md)
             .when(is_sel, |el| el.border_1().border_color(theme.accent))
             .child(
                 div()
-                    .text_size(d.text_xs)
+                    .text_size(d.text_sm)
                     .text_color(theme.text_muted)
                     .text_left()
                     .child(param.name.to_string()),
@@ -1517,7 +1514,7 @@ fn render_param_as_label(d: &Ds, param: &ParamSpec, value: f64, theme: &Theme) -
         .bg(theme.background_secondary)
         .child(
             div()
-                .text_size(d.text_xs)
+                .text_size(d.text_sm)
                 .text_color(theme.text_muted)
                 .child(param.name),
         )
@@ -1552,6 +1549,7 @@ fn render_file_picker(
         theme.text_muted
     };
     let engine_key = param.engine_key;
+    let param_name = param.name;
 
     div()
         .flex()
@@ -1567,7 +1565,7 @@ fn render_file_picker(
                 .flex_col()
                 .child(
                     div()
-                        .text_size(d.text_xs)
+                        .text_size(d.text_sm)
                         .text_color(theme.text_muted)
                         .child(param.name),
                 )
@@ -1584,54 +1582,55 @@ fn render_file_picker(
         )
         .child(
             div()
-                .size(rems(2.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(d.r_md)
-                .bg(theme.surface)
-                .border_1()
-                .border_color(theme.border)
-                .text_size(d.text_xs)
                 .id(SharedString::from(format!(
-                    "load-file-btn-{plugin_idx}-{idx}"
+                    "load-file-tooltip-{plugin_idx}-{idx}"
                 )))
-                .when(interactive, |el| {
-                    el.cursor_pointer()
-                        .hover(|s| s.bg(theme.surface_hover))
-                        .on_click(move |_, _, cx| match file_picker_open_target(engine_key) {
-                            Some(FilePickerOpenTarget::Sofa) => {
-                                cx.dispatch_action(&OpenSofaFile {
-                                    plugin_idx,
-                                    param_idx: idx,
-                                });
-                            }
-                            Some(FilePickerOpenTarget::Ir) => {
-                                cx.dispatch_action(&OpenIrFile {
-                                    plugin_idx,
-                                    param_idx: idx,
-                                });
-                            }
-                            Some(FilePickerOpenTarget::AbConfig(path_id)) => {
-                                cx.dispatch_action(&OpenAbConfigFile {
-                                    plugin_idx,
-                                    path_id: path_id.to_string(),
-                                });
-                            }
-                            None => {
-                                log::warn!("No file open action for engine_key: {}", engine_key);
+                .child(
+                    IconButton::with_child(
+                        SharedString::from(format!("load-file-btn-{plugin_idx}-{idx}")),
+                        Icon::new(IconName::Folder)
+                            .small()
+                            .color(theme.text_secondary),
+                    )
+                    .variant(IconButtonVariant::Outline)
+                    .size(IconButtonSize::Sm)
+                    .theme(theme.to_icon_button_theme())
+                    .aria_label(param_name)
+                    .when(interactive, |button| {
+                        button.on_click_event(move |_event, _window, cx| {
+                            match file_picker_open_target(engine_key) {
+                                Some(FilePickerOpenTarget::Sofa) => {
+                                    cx.dispatch_action(&OpenSofaFile {
+                                        plugin_idx,
+                                        param_idx: idx,
+                                    });
+                                }
+                                Some(FilePickerOpenTarget::Ir) => {
+                                    cx.dispatch_action(&OpenIrFile {
+                                        plugin_idx,
+                                        param_idx: idx,
+                                    });
+                                }
+                                Some(FilePickerOpenTarget::AbConfig(path_id)) => {
+                                    cx.dispatch_action(&OpenAbConfigFile {
+                                        plugin_idx,
+                                        path_id: path_id.to_string(),
+                                    });
+                                }
+                                None => {
+                                    log::warn!(
+                                        "No file open action for engine_key: {}",
+                                        engine_key
+                                    );
+                                }
                             }
                         })
-                })
-                .when(!interactive, |el| el.opacity(0.45))
-                .child(
-                    Icon::new(IconName::Folder)
-                        .small()
-                        .color(theme.text_secondary),
+                    })
+                    .when(!interactive, |button| button.disabled(true)),
                 )
                 .tooltip({
                     let theme = theme.clone();
-                    move |_window, cx| themed_tooltip("Choose file", &theme, cx)
+                    move |_window, cx| themed_tooltip(param_name, &theme, cx)
                 }),
         )
         .into_any_element()

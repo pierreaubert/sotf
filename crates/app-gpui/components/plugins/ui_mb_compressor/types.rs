@@ -5,16 +5,13 @@ use super::super::common::{
 use super::misc::SLIDER_HEIGHT;
 use super::misc::TRANSFER_CURVE_SIZE;
 use crate::app::AppState;
-use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
-use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{NumberInput, NumberInputSize};
 use sotf_plugins::param_specs::{find_by_key as pk, multiband_compressor::GLOBAL_PARAMS as MC};
 
-use super::super::ui_multiband_common::{band_tab_label, render_crossover_preset};
+use super::super::ui_multiband_common::{band_tab_label, render_band_count_editor};
 
 /// State for rendering the Multiband Compressor plugin
 pub struct MbCompressorRenderState {
@@ -66,44 +63,23 @@ pub fn render_mb_compressor_plugin(
     };
 
     // === LEFT COLUMN: Global ===
-    let bands_entity = entity.clone();
     let mut global_col = div()
         .flex()
         .flex_col()
         .flex_shrink_0()
         .gap(d.gap_md)
         .child(render_section_title(d, text.label("GLOBAL"), theme))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.grid)
-                .child(
-                    div()
-                        .text_size(d.text_xs)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_secondary)
-                        .child(text.bands),
-                )
-                .child(
-                    NumberInput::new("mb-bands")
-                        .value(state.num_bands as f64)
-                        .min(pk(MC, "num_bands").min_f64())
-                        .max(pk(MC, "num_bands").max_f64())
-                        .step(1.0)
-                        .decimals(0)
-                        .size(NumberInputSize::Xs)
-                        .width(80.0)
-                        .aria_label(text.bands)
-                        .on_change(move |val, _window, cx| {
-                            bands_entity.update(cx, |state, _| {
-                                state.app.set_plugin_param(plugin_idx, 0, val);
-                                state.app.plugin_state.update_state.pending_plugin_update =
-                                    Some(PluginUpdateType::Structural);
-                            });
-                        }),
-                ),
-        )
+        .child(render_band_count_editor(
+            d,
+            "mb-bands",
+            entity.clone(),
+            plugin_idx,
+            state.num_bands,
+            pk(MC, "num_bands").min_f64(),
+            pk(MC, "num_bands").max_f64(),
+            text.bands,
+            theme,
+        ))
         .child(render_knob(
             entity.clone(),
             plugin_idx,
@@ -169,15 +145,9 @@ pub fn render_mb_compressor_plugin(
     }
 
     // Global params
+    // crossover_preset is not rendered: the DSP currently stores the value
+    // without applying a frequency profile, so exposing it would be misleading.
     global_col = global_col
-        .child(render_section_title(d, text.label("Preset"), theme))
-        .child(render_crossover_preset(
-            "mb-compressor-preset",
-            entity.clone(),
-            plugin_idx,
-            state.crossover_preset,
-            theme,
-        ))
         .child(render_knob(
             entity.clone(),
             plugin_idx,
@@ -254,8 +224,8 @@ pub fn render_mb_compressor_plugin(
             div()
                 .px(d.card)
                 // intentional: asymmetric underline-tab padding — 4/6 pair is visually tuned
-                .pb(px(6.0))
-                .pt(px(4.0))
+                .pb(rems(0.375))
+                .pt(rems(0.25))
                 .text_size(d.text_xs)
                 .font_weight(if is_selected {
                     FontWeight::BOLD

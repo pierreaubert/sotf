@@ -11,8 +11,8 @@ use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
 use sotf_audio_player::{
     AbTestController, AbTestError, ConnectionDrag, EarTrainingCourse, EarTrainingProgress,
-    EqTrainingConfig, EqTrainingSession, GraphNodeId, GraphSelection, NodeDrag, PluginController,
-    PluginSettings, PluginUpdateEffect, TrialAnswer, TrialCue, TrialMode,
+    EqTrainingConfig, EqTrainingSession, GraphNodeId, GraphSelection, NodeDrag, Plugin,
+    PluginController, PluginSettings, PluginUpdateEffect, TrialAnswer, TrialCue, TrialMode,
 };
 use sotf_audio_player_midi::MidiMappingEngine;
 use std::collections::HashMap;
@@ -221,12 +221,54 @@ pub struct PluginGraphState {
     /// When set, `set_plugin_param` redirects to the node-ID-based path so
     /// parameter edits work even in non-linear graphs.
     pub editing_graph_node_uuid: Option<sotf_audio_player::GraphNodeId>,
+    /// Serialized settings captured when the graph modal opens. This enables
+    /// a truthful discard path while parameter changes remain live-previewed.
+    pub editing_original_settings_json: Option<String>,
+    /// Enabled state captured when the graph modal opens. Bypass is edited by
+    /// the shared plugin shell, so it participates in dirty/discard semantics.
+    pub editing_original_enabled: Option<bool>,
+    /// Whether the close control is showing the dirty-edit confirmation.
+    pub confirm_close_dirty: bool,
 }
 
 impl PluginGraphState {
+    pub fn settings_are_dirty(
+        &self,
+        current_settings: Option<&PluginSettings>,
+        current_enabled: Option<bool>,
+    ) -> bool {
+        let settings_changed = current_settings
+            .and_then(|settings| serde_json::to_string(settings).ok())
+            .zip(self.editing_original_settings_json.as_deref())
+            .is_some_and(|(current, original)| current != original);
+        let enabled_changed = current_enabled
+            .zip(self.editing_original_enabled)
+            .is_some_and(|(current, original)| current != original);
+        settings_changed || enabled_changed
+    }
+
+    pub fn original_settings(&self) -> Option<PluginSettings> {
+        self.editing_original_settings_json
+            .as_deref()
+            .and_then(|settings| serde_json::from_str(settings).ok())
+    }
+
+    /// Restore every modal-owned live-preview field captured at open time.
+    pub fn restore_original(&self, plugin: &mut Plugin) {
+        if let Some(settings) = self.original_settings() {
+            plugin.settings = settings;
+        }
+        if let Some(enabled) = self.editing_original_enabled {
+            plugin.enabled = enabled;
+        }
+    }
+
     pub fn clear_editing_context(&mut self) {
         self.editing_plugin_node = None;
         self.editing_graph_node_uuid = None;
+        self.editing_original_settings_json = None;
+        self.editing_original_enabled = None;
+        self.confirm_close_dirty = false;
     }
 }
 
@@ -679,6 +721,62 @@ impl PluginState {
         {
             self.ab_compare_state.ab_path_b_selected = None;
         }
+    }
+
+    /// Read an A/B path from the current edit target, falling back to the
+    /// linear rack index outside the graph modal.
+    pub fn ab_compare_path_plugins(
+        &self,
+        plugin_idx: usize,
+        param_idx: usize,
+    ) -> Vec<sotf_audio_player::controllers::ab_compare_path::PluginInRack> {
+        use sotf_audio_player::controllers::ab_compare_path::parse_path_config;
+        let settings = if let Some(node_id) = self.graph_state.editing_graph_node_uuid {
+            self.graph
+                .nodes
+                .get(&node_id)
+                .map(|node| &node.plugin.settings)
+        } else {
+            self.graph
+                .get_plugin(plugin_idx)
+                .map(|plugin| &plugin.settings)
+        };
+        let Some(PluginSettings::ABCompare {
+            path_a_config,
+            path_b_config,
+            ..
+        }) = settings
+        else {
+            return Vec::new();
+        };
+        let path_a_idx = sotf_plugins::param_specs::index_of(
+            sotf_plugins::param_specs::ab_compare::PARAMS,
+            "path_a_config",
+        );
+        if param_idx == path_a_idx {
+            parse_path_config(path_a_config)
+        } else {
+            parse_path_config(path_b_config)
+        }
+    }
+
+    /// Store an A/B config and source path against the current edit target.
+    pub fn set_ab_compare_config_file_for_edit_target(
+        &mut self,
+        plugin_idx: usize,
+        param_idx: usize,
+        config: String,
+        source_path: String,
+    ) -> PluginUpdateEffect {
+        let effect = if let Some(node_id) = self.graph_state.editing_graph_node_uuid {
+            self.set_ab_compare_config_file_by_node_id(node_id, param_idx, config, source_path)
+        } else {
+            self.set_ab_compare_config_file(plugin_idx, param_idx, config, source_path)
+        };
+        if !matches!(effect, PluginUpdateEffect::None) {
+            self.update_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+        }
+        effect
     }
 
     /// Clear all A/B path state (called when an AB Compare plugin is removed).

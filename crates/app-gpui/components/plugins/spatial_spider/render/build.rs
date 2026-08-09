@@ -1,4 +1,3 @@
-// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::data::ChannelMetric;
 use super::super::{SpatialSpiderSnapshot, SpiderMode, SpiderViewMode};
 #[cfg(feature = "gpu-3d")]
@@ -48,7 +47,7 @@ pub(super) fn build_header(
         .child(
             div()
                 .flex_none()
-                .text_size(d.text_xs)
+                .text_size(d.text_sm)
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme.text_muted)
                 .child(text.spatial_view_label),
@@ -60,7 +59,7 @@ pub(super) fn build_header(
             // the host plugin's name so the source is unambiguous.
             div()
                 .flex_none()
-                .text_size(d.text_xs)
+                .text_size(d.text_sm)
                 .text_color(theme.text_muted)
                 .whitespace_nowrap()
                 .child("(chain out)".to_string()),
@@ -83,7 +82,7 @@ pub(super) fn build_header(
         .child(
             div()
                 .flex_none()
-                .text_size(d.text_xs)
+                .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
                 .child("2D".to_string()),
         );
@@ -108,7 +107,7 @@ pub(super) fn build_header(
         .child(
             div()
                 .flex_none()
-                .text_size(d.text_xs)
+                .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
                 .child("3D".to_string()),
         );
@@ -140,7 +139,13 @@ pub(super) fn build_header(
     });
 
     header
-        .child(div().flex_none().w(px(1.0)).h(px(14.0)).bg(theme.border))
+        .child(
+            div()
+                .flex_none()
+                .w(rems(0.0625))
+                .h(rems(0.875))
+                .bg(theme.border),
+        )
         .child(
             Toggle::new(("spider-mode-spl", plugin_idx))
                 .checked(matches!(spider_mode, SpiderMode::Spl))
@@ -159,7 +164,7 @@ pub(super) fn build_header(
         .child(
             div()
                 .flex_none()
-                .text_size(d.text_xs)
+                .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
                 .child("SPL".to_string()),
         )
@@ -187,7 +192,7 @@ pub(super) fn build_header(
         .child(
             div()
                 .flex_none()
-                .text_size(d.text_xs)
+                .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
                 .child(text.spatial_correlation_label),
         )
@@ -220,7 +225,7 @@ pub(super) fn build_ref_channel_select(
     let active = matches!(spider_mode, SpiderMode::CorrelationFromRef { .. });
     let cfg = match cfg_opt {
         Some(c) => c,
-        None => return div().w(px(0.0)).into_any_element(),
+        None => return div().w(rems(0.0)).into_any_element(),
     };
     let options: Vec<SelectOption> = cfg
         .speakers
@@ -248,9 +253,9 @@ pub(super) fn build_ref_channel_select(
         .when(!active, |el| el.opacity(0.4))
         .child(
             div()
-                .text_size(d.text_xs)
+                .text_size(d.text_sm)
                 .text_color(theme.text_secondary)
-                .child("R:".to_string()),
+                .child(text.spatial_reference_channel),
         )
         .child(
             Select::new(("spider-ref-channel", plugin_idx))
@@ -316,7 +321,7 @@ pub(super) fn build_body(
     let cfg = match cfg_opt {
         None => {
             return div()
-                .h(px(280.0))
+                .h(rems(17.5))
                 .w_full()
                 .flex()
                 .items_center()
@@ -335,7 +340,7 @@ pub(super) fn build_body(
     let n = cfg.total_channels;
     if loudness.is_none() {
         return div()
-            .h(px(280.0))
+            .h(rems(17.5))
             .w_full()
             .flex()
             .items_center()
@@ -349,7 +354,7 @@ pub(super) fn build_body(
         && loudness.is_some_and(|data| data.correlation_samples_seen == 0)
     {
         return div()
-            .h(px(280.0))
+            .h(rems(17.5))
             .w_full()
             .flex()
             .items_center()
@@ -400,7 +405,7 @@ pub(super) fn build_body(
     // `relative(1.0)` request resolves to a non-zero rect. Going through a
     // flex parent has bitten us before — `relative(1.0)` width inside a
     // flex row without an explicit flex_basis collapses to 0.
-    let container = || div().h(px(320.0)).w_full();
+    let container = || div().h(rems(20.0)).w_full();
     match view_mode {
         SpiderViewMode::Disc2D => container()
             .child(

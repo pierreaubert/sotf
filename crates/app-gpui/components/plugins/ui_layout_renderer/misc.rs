@@ -19,40 +19,29 @@ pub(super) fn visible_control_count(group: &ControlGroup) -> usize {
 }
 
 /// Extract file path strings from PluginSettings for FilePath params.
-pub(super) fn extract_file_paths(
+#[doc(hidden)]
+pub fn extract_file_paths(
     params: &[ParamSpec],
     settings: &PluginSettings,
 ) -> HashMap<usize, String> {
     let mut file_paths = HashMap::new();
     for (i, spec) in params.iter().enumerate() {
         if matches!(spec.param_type, ParamType::FilePath) {
-            let path = match settings {
-                PluginSettings::BinauralDecoder { sofa_file, .. }
-                    if spec.engine_key == "sofa_file" =>
-                {
-                    sofa_file.clone()
-                }
-                PluginSettings::Convolution { ir_file, .. } if spec.engine_key == "ir_file" => {
-                    ir_file.clone()
-                }
-                PluginSettings::XTC { room_ir_file, .. } if spec.engine_key == "room_ir_file" => {
-                    room_ir_file.clone().unwrap_or_default()
-                }
-                PluginSettings::ABCompare {
-                    path_a_config,
-                    path_b_config,
-                    ..
-                } => {
-                    if spec.engine_key == "path_a_config" {
-                        path_a_config.clone()
-                    } else if spec.engine_key == "path_b_config" {
-                        path_b_config.clone()
-                    } else {
-                        String::new()
+            // Keep the shared accessor as the source of truth. XTC's optional
+            // room IR is the sole legacy gap; fixing that engine accessor is
+            // intentionally deferred because engine changes require a
+            // dedicated PR in this repository.
+            let path = settings
+                .param_value_string(i)
+                .or_else(|| match settings {
+                    PluginSettings::XTC { room_ir_file, .. }
+                        if spec.engine_key == "room_ir_file" =>
+                    {
+                        room_ir_file.clone()
                     }
-                }
-                _ => String::new(),
-            };
+                    _ => None,
+                })
+                .unwrap_or_default();
             file_paths.insert(i, path);
         }
     }

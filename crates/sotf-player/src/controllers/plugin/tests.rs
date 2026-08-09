@@ -461,6 +461,73 @@ fn move_user_plugin_by_index_swaps_two_user_plugins() {
     assert_eq!(order_after[3], order_before[2]);
 }
 
+#[test]
+fn ab_config_source_path_persists_for_linear_and_node_addressing() {
+    const PATH_A_IDX: usize = sotf_plugins::param_specs::index_of(
+        sotf_plugins::param_specs::ab_compare::PARAMS,
+        "path_a_config",
+    );
+    const PATH_B_IDX: usize = sotf_plugins::param_specs::index_of(
+        sotf_plugins::param_specs::ab_compare::PARAMS,
+        "path_b_config",
+    );
+
+    let mut ctrl = PluginController::new();
+    let linear_idx = ctrl.graph.add_plugin(&PluginType::ABCompare).unwrap();
+    assert!(matches!(
+        ctrl.set_ab_compare_config_file(
+            linear_idx,
+            PATH_B_IDX,
+            "{\"plugins\":[]}".to_string(),
+            "/tmp/path-b.json".to_string(),
+        ),
+        PluginUpdateEffect::Structural
+    ));
+    let linear = ctrl.graph.get_plugin(linear_idx).unwrap();
+    assert_eq!(
+        linear.settings.param_value_string(PATH_B_IDX).as_deref(),
+        Some("/tmp/path-b.json")
+    );
+
+    ctrl.graph = PluginGraph::new();
+    let target = ctrl
+        .graph
+        .add_plugin_node(&PluginType::ABCompare, NodePosition::new(0.0, 0.0))
+        .unwrap();
+    let sibling = ctrl
+        .graph
+        .add_plugin_node(&PluginType::ABCompare, NodePosition::new(100.0, 0.0))
+        .unwrap();
+    ctrl.set_ab_compare_config_file_by_node_id(
+        target,
+        PATH_A_IDX,
+        "{\"plugins\":[]}".to_string(),
+        "/tmp/path-a.json".to_string(),
+    );
+
+    let target_settings = &ctrl.graph.nodes[&target].plugin.settings;
+    assert_eq!(
+        target_settings.param_value_string(PATH_A_IDX).as_deref(),
+        Some("/tmp/path-a.json")
+    );
+    assert_eq!(
+        ctrl.graph.nodes[&sibling]
+            .plugin
+            .settings
+            .param_value_string(PATH_A_IDX)
+            .as_deref(),
+        Some("")
+    );
+
+    let json = serde_json::to_string(target_settings).unwrap();
+    let reloaded: PluginSettings = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        reloaded.param_value_string(PATH_A_IDX).as_deref(),
+        Some("/tmp/path-a.json"),
+        "the selected basename/path must survive settings reload"
+    );
+}
+
 #[cfg(feature = "dev-api")]
 mod plugin_action_tests {
     use super::super::dev_api::actions::plugin_action;

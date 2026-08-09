@@ -1,4 +1,3 @@
-// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::common::{
     render_knob, render_section_title, render_toggle, render_transfer_curve_with_level,
     render_vertical_slider_with_ticks,
@@ -6,16 +5,14 @@ use super::super::common::{
 use super::misc::SLIDER_HEIGHT;
 use super::misc::TRANSFER_CURVE_SIZE;
 use crate::app::AppState;
-use crate::app::types::PluginUpdateType;
 use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{NumberInput, NumberInputSize};
 use sotf_plugins::param_specs::{find_by_key as pk, multiband_expander::GLOBAL_PARAMS as ME};
 
-use super::super::ui_multiband_common::{band_tab_label, render_crossover_preset};
+use super::super::ui_multiband_common::{band_tab_label, render_band_count_editor};
 
 /// State for rendering the Multiband Expander plugin
 pub struct MbExpanderRenderState {
@@ -67,44 +64,23 @@ pub fn render_mb_expander_plugin(
     };
 
     // === LEFT COLUMN: Global ===
-    let bands_entity = entity.clone();
     let mut global_col = div()
         .flex()
         .flex_col()
         .flex_shrink_0()
         .gap(d.gap_md)
         .child(render_section_title(d, text.label("GLOBAL"), theme))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(d.grid)
-                .child(
-                    div()
-                        .text_size(d.text_xs)
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_secondary)
-                        .child(text.bands),
-                )
-                .child(
-                    NumberInput::new("mb-expander-bands")
-                        .value(state.num_bands as f64)
-                        .min(pk(ME, "num_bands").min_f64())
-                        .max(pk(ME, "num_bands").max_f64())
-                        .step(1.0)
-                        .decimals(0)
-                        .size(NumberInputSize::Xs)
-                        .width(80.0)
-                        .aria_label(text.bands)
-                        .on_change(move |value, _window, cx| {
-                            bands_entity.update(cx, |state, _| {
-                                state.app.set_plugin_param(plugin_idx, 0, value);
-                                state.app.plugin_state.update_state.pending_plugin_update =
-                                    Some(PluginUpdateType::Structural);
-                            });
-                        }),
-                ),
-        )
+        .child(render_band_count_editor(
+            d,
+            "mb-expander-bands",
+            entity.clone(),
+            plugin_idx,
+            state.num_bands,
+            pk(ME, "num_bands").min_f64(),
+            pk(ME, "num_bands").max_f64(),
+            text.bands,
+            theme,
+        ))
         .child(render_knob(
             entity.clone(),
             plugin_idx,
@@ -170,15 +146,9 @@ pub fn render_mb_expander_plugin(
     }
 
     // Global params
+    // crossover_preset is not rendered: the DSP currently stores the value
+    // without applying a frequency profile, so exposing it would be misleading.
     global_col = global_col
-        .child(render_section_title(d, text.label("Preset"), theme))
-        .child(render_crossover_preset(
-            "mb-expander-preset",
-            entity.clone(),
-            plugin_idx,
-            state.crossover_preset,
-            theme,
-        ))
         .child(render_detection_mode_selector(
             d,
             entity.clone(),
@@ -227,8 +197,8 @@ pub fn render_mb_expander_plugin(
             div()
                 .px(d.card)
                 // intentional: asymmetric underline-tab padding — 4/6 pair is visually tuned
-                .pb(px(6.0))
-                .pt(px(4.0))
+                .pb(rems(0.375))
+                .pt(rems(0.25))
                 .text_size(d.text_xs)
                 .font_weight(if is_selected {
                     FontWeight::BOLD
@@ -244,12 +214,7 @@ pub fn render_mb_expander_plugin(
                 .border_color(if is_selected {
                     theme.accent
                 } else {
-                    gpui::Rgba {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 0.0,
-                    }
+                    Theme::with_opacity(theme.border, 0.0)
                 })
                 .cursor_pointer()
                 .hover(|s| {

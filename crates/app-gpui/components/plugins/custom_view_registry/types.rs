@@ -30,6 +30,9 @@ pub struct CustomViewRenderContext<'a> {
     pub spectrum_reference_select_open: bool,
     pub plugin_graph: &'a PluginGraph,
     pub midi_overlay: Option<&'a MidiOverlay>,
+    /// Stable chart focus target supplied by the owning PlayerView. Renderers
+    /// must not re-read PlayerView while it is already rendering.
+    pub eq_chart_focus_handle: FocusHandle,
 }
 
 /// Function signature for custom view renderers.

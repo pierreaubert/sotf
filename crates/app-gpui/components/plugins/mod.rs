@@ -45,6 +45,8 @@ pub use sotf_audio_player_midi::mapping::MidiOverlay;
 pub use theme::*;
 
 pub use gpui_audio_kit::{MeterData, SpectrumColors, SpectrumElement};
+#[doc(hidden)]
+pub use ui_ab_compare::ab_compare_view_state;
 pub use ui_controller_view::render_controller_view;
 pub use ui_dynamic_eq::render_dynamic_eq_plugin;
 pub use ui_eq::render_eq_plugin;
@@ -110,6 +112,7 @@ pub fn render_plugin_content(
     spectrum_reference_select_open: bool,
     plugin_graph: &PluginGraph,
     midi_overlay: Option<&MidiOverlay>,
+    eq_chart_focus_handle: FocusHandle,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
     let d = Ds::from_cx(cx);
@@ -239,6 +242,7 @@ pub fn render_plugin_content(
             spectrum_reference_select_open,
             plugin_graph,
             midi_overlay,
+            eq_chart_focus_handle,
         };
         render_fn(&ctx, cx)
     } else if settings.layout().is_some() {

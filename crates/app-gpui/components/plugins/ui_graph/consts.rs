@@ -141,8 +141,20 @@ pub(super) fn dispatch_plugin_node_action(
             .and_then(|v| v.as_str())
             .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
         state.update(cx, |state, _cx| {
+            let original_plugin =
+                plugin_uuid.and_then(|uuid| state.app.plugin_state.graph.nodes.get(&uuid));
+            let original_settings =
+                original_plugin.and_then(|node| serde_json::to_string(&node.plugin.settings).ok());
+            let original_enabled = original_plugin.map(|node| node.plugin.enabled);
             state.app.plugin_state.graph_state.editing_plugin_node = Some(node_id);
             state.app.plugin_state.graph_state.editing_graph_node_uuid = plugin_uuid;
+            state
+                .app
+                .plugin_state
+                .graph_state
+                .editing_original_settings_json = original_settings;
+            state.app.plugin_state.graph_state.editing_original_enabled = original_enabled;
+            state.app.plugin_state.graph_state.confirm_close_dirty = false;
             state.app.ui_state.input_mode = crate::app::InputMode::EditingPluginNode;
         });
         return;

@@ -18,6 +18,7 @@ use sotf_audio_player_gpui::components::home::album_card::{
     AlbumCardMode, album_card_height, format_channel_info, format_dr, format_sample_info,
     get_format_from_path,
 };
+use sotf_audio_player_gpui::components::plugins::ab_compare_view_state;
 use sotf_audio_player_gpui::components::plugins::common::{
     compute_transfer, format_shortcut_label,
 };
@@ -27,6 +28,7 @@ use sotf_audio_player_gpui::components::plugins::custom_view_registry::{
 use sotf_audio_player_gpui::components::plugins::theme::{
     PluginThemeId, plugin_theme_id_for_app_theme,
 };
+use sotf_audio_player_gpui::components::plugins::ui_layout_renderer::extract_file_paths;
 use sotf_audio_player_gpui::components::wizard_continue_label;
 use sotf_audio_player_gpui::components::{settings_tab_icon_name, settings_tab_label};
 use sotf_audio_player_gpui::i18n::{
@@ -178,20 +180,180 @@ fn escape_closed_graph_modal_cannot_redirect_later_rack_matrix_edits() {
         "normal rack rendering must ignore a stale graph-modal node ID",
     );
 
+    let original_settings = &graph.nodes[&stale_node_uuid].plugin.settings;
+    let original_settings_json =
+        serde_json::to_string(original_settings).expect("plugin settings should serialize");
     let mut graph_state = PluginGraphState {
         editing_plugin_node: Some(stale_node_uuid),
         editing_graph_node_uuid: Some(stale_node_uuid),
+        editing_original_settings_json: Some(original_settings_json),
+        editing_original_enabled: Some(true),
+        confirm_close_dirty: true,
         ..PluginGraphState::default()
     };
+    assert!(!graph_state.settings_are_dirty(Some(original_settings), Some(true)));
+    assert!(graph_state.settings_are_dirty(Some(original_settings), Some(false)));
+    let mut bypassed_plugin = graph.nodes[&stale_node_uuid].plugin.clone();
+    bypassed_plugin.enabled = false;
+    graph_state.restore_original(&mut bypassed_plugin);
+    assert!(bypassed_plugin.enabled, "discard must restore bypass state");
+    graph_state.editing_original_settings_json = Some("{}".to_string());
+    assert!(graph_state.settings_are_dirty(Some(original_settings), Some(true)));
     graph_state.clear_editing_context();
     assert!(graph_state.editing_plugin_node.is_none());
     assert!(graph_state.editing_graph_node_uuid.is_none());
+    assert!(graph_state.editing_original_settings_json.is_none());
+    assert!(graph_state.editing_original_enabled.is_none());
+    assert!(!graph_state.confirm_close_dirty);
 
     let cancel_source = app_source("ui/player_view.rs");
     assert!(
         cancel_source.contains("InputMode::EditingPluginNode")
             && cancel_source.contains(".clear_editing_context();"),
         "the universal Cancel handler must clear graph-modal identity before returning to Normal"
+    );
+}
+
+#[test]
+fn graph_modal_dirty_close_uses_keyboard_accessible_actions() {
+    let modal_source = app_source("components/plugins/ui_graph/player_view.rs");
+    for (id, label) in [
+        ("modal-continue-editing", "continue_editing"),
+        ("modal-keep-changes", "keep_changes"),
+        ("modal-close", "discard_changes"),
+    ] {
+        assert!(
+            modal_source.contains(&format!(
+                "Button::new(\n                                            \"{id}\""
+            )) || modal_source.contains(&format!("Button::new(\"{id}\"")),
+            "{id} must be a keyboard-activatable toolkit Button"
+        );
+        assert!(modal_source.contains(label), "{id} must use localized text");
+    }
+    assert!(
+        modal_source.contains(".aria_label("),
+        "dirty-close actions must expose accessible labels"
+    );
+}
+
+#[test]
+fn every_file_path_param_resolves_its_settings_value() {
+    for plugin_type in PluginType::all() {
+        let mut settings = PluginSettings::default_for(&plugin_type)
+            .expect("catalog plugin types must have default settings");
+        let file_params: Vec<(usize, &'static str)> = settings
+            .param_specs()
+            .iter()
+            .enumerate()
+            .filter(|(_, spec)| matches!(spec.param_type, ParamType::FilePath))
+            .map(|(index, spec)| (index, spec.engine_key))
+            .collect();
+
+        if file_params.is_empty() {
+            continue;
+        }
+
+        for (_, engine_key) in &file_params {
+            let value = format!("/tmp/{engine_key}.test");
+            match (&mut settings, *engine_key) {
+                (PluginSettings::Convolution { ir_file, .. }, "ir_file") => *ir_file = value,
+                (PluginSettings::BinauralDecoder { sofa_file, .. }, "sofa_file") => {
+                    *sofa_file = value;
+                }
+                (PluginSettings::XTC { room_ir_file, .. }, "room_ir_file") => {
+                    *room_ir_file = Some(value);
+                }
+                (PluginSettings::ABCompare { path_a_file, .. }, "path_a_config") => {
+                    *path_a_file = value;
+                }
+                (PluginSettings::ABCompare { path_b_file, .. }, "path_b_config") => {
+                    *path_b_file = value;
+                }
+                _ => panic!(
+                    "FilePath ParamSpec {engine_key} for {plugin_type:?} lacks test coverage"
+                ),
+            }
+        }
+
+        let paths = extract_file_paths(settings.param_specs(), &settings);
+        for (index, engine_key) in file_params {
+            let expected = format!("/tmp/{engine_key}.test");
+            assert_eq!(
+                paths.get(&index).map(String::as_str),
+                Some(expected.as_str()),
+                "{plugin_type:?}.{engine_key} did not resolve from PluginSettings"
+            );
+        }
+    }
+}
+
+#[test]
+fn ab_compare_view_follows_reloaded_and_discarded_plugin_settings() {
+    let mut graph = PluginGraph::new();
+    let node_id = graph
+        .add_plugin_node(&PluginType::ABCompare, NodePosition::new(0.0, 0.0))
+        .unwrap();
+    let plugin = &mut graph.nodes.get_mut(&node_id).unwrap().plugin;
+    let PluginSettings::ABCompare {
+        path_a_config,
+        path_a_file,
+        ..
+    } = &mut plugin.settings
+    else {
+        unreachable!();
+    };
+    *path_a_config = r#"{"type":"Plugin","plugin_type":"gain","parameters":{}}"#.into();
+    *path_a_file = "/tmp/original-a.json".into();
+
+    let original_json = serde_json::to_string(&plugin.settings).unwrap();
+    let reloaded: PluginSettings = serde_json::from_str(&original_json).unwrap();
+    let (reloaded_a, reloaded_a_file, _, _) = ab_compare_view_state(&reloaded);
+    assert_eq!(reloaded_a.len(), 1);
+    assert_eq!(reloaded_a_file.as_deref(), Some("/tmp/original-a.json"));
+
+    let graph_state = PluginGraphState {
+        editing_original_settings_json: Some(original_json),
+        editing_original_enabled: Some(plugin.enabled),
+        ..PluginGraphState::default()
+    };
+    let PluginSettings::ABCompare {
+        path_a_config,
+        path_a_file,
+        ..
+    } = &mut plugin.settings
+    else {
+        unreachable!();
+    };
+    *path_a_config = r#"{"type":"Plugin","plugin_type":"eq","parameters":{}}"#.into();
+    *path_a_file = "/tmp/replacement-a.json".into();
+    graph_state.restore_original(plugin);
+
+    let (discarded_a, discarded_a_file, _, _) = ab_compare_view_state(&plugin.settings);
+    assert_eq!(discarded_a[0].plugin_type, "gain");
+    assert_eq!(discarded_a_file.as_deref(), Some("/tmp/original-a.json"));
+}
+
+#[test]
+fn async_ab_picker_captures_graph_identity_before_await() {
+    let source = app_source("ui/player_view.rs");
+    let handler = source
+        .split("pub(crate) fn on_open_ab_config_file")
+        .nth(1)
+        .expect("A/B file handler must exist");
+    let capture = handler
+        .find("let target_node_id")
+        .expect("handler must snapshot graph node identity");
+    let spawn = handler
+        .find("cx.spawn")
+        .expect("handler must open the file dialog asynchronously");
+    assert!(
+        capture < spawn,
+        "graph identity must be captured before await"
+    );
+    assert!(
+        handler.contains("graph.nodes.contains_key(&node_id)")
+            && handler.contains("PluginUpdateEffect::Structural"),
+        "async result must reject a removed node and update UI only after structural success"
     );
 }
 

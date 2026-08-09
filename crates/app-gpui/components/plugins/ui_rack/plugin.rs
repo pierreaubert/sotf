@@ -667,7 +667,7 @@ impl PlayerView {
                                             IconButton::with_child(
                                                 ("plugin-solo", idx),
                                                 div()
-                                                    .text_size(rems(0.5625))
+                                                    .text_size(d.text_xs)
                                                     .font_weight(FontWeight::BOLD)
                                                     .child("S"),
                                             )
@@ -695,7 +695,7 @@ impl PlayerView {
                                             IconButton::with_child(
                                                 ("plugin-presets", idx),
                                                 div()
-                                                    .text_size(rems(0.5625))
+                                                    .text_size(d.text_xs)
                                                     .font_weight(FontWeight::BOLD)
                                                     .child("P"),
                                             )
@@ -776,9 +776,12 @@ impl PlayerView {
                                                     .flex()
                                                     .items_center()
                                                     .justify_center()
-                                                    .text_size(rems(0.5))
                                                     .text_color(theme_c.text_muted)
-                                                    .child("🔒"),
+                                                    .child(
+                                                        Icon::new(IconName::Lock)
+                                                            .small()
+                                                            .color(theme_c.text_muted),
+                                                    ),
                                             )
                                         })
                                 })
@@ -1023,9 +1026,12 @@ impl PlayerView {
                                                         .justify_end()
                                                         .px(d.grid)
                                                         .pb(spacing::XS)
-                                                        .text_size(rems(0.5))
                                                         .text_color(theme_c.text_muted)
-                                                        .child(":::"),
+                                                        .child(
+                                                            Icon::new(IconName::GripVertical)
+                                                                .small()
+                                                                .color(theme_c.text_muted),
+                                                        ),
                                                 )
                                             })
                                     }
@@ -1116,7 +1122,11 @@ impl PlayerView {
                                     cx.notify();
                                 },
                             ))
-                            .child("+")
+                            .child(
+                                Icon::new(IconName::Plus)
+                                    .small()
+                                    .color(theme_add.text_secondary),
+                            )
                     })
                     // Trailing permanent plugins (output matrix/monitor) after "+"
                     .children(tail_modules.iter().map(
@@ -1293,9 +1303,12 @@ impl PlayerView {
                                                     .flex()
                                                     .items_center()
                                                     .justify_center()
-                                                    .text_size(rems(0.5))
                                                     .text_color(theme_c.text_muted)
-                                                    .child("🔒"),
+                                                    .child(
+                                                        Icon::new(IconName::Lock)
+                                                            .small()
+                                                            .color(theme_c.text_muted),
+                                                    ),
                                             )
                                         }),
                                 )
@@ -2124,6 +2137,7 @@ impl PlayerView {
                                                         spectrum_ref_open,
                                                         &plugin_graph,
                                                         midi_ref.as_ref(),
+                                                        self.eq_chart_focus_handle.clone(),
                                                         cx,
                                                     )
                                                 }

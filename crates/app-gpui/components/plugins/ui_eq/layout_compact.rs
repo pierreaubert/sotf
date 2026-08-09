@@ -8,6 +8,7 @@ use crate::app::AppState;
 use crate::app::i18n::EqViewTranslations;
 use crate::components::PluginEditingManager;
 use crate::components::design::Ds;
+use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -32,10 +33,10 @@ pub(crate) fn render_eq_bottom_strip(
     selected_band_idx: usize,
     indexing: EqBandIndexing,
     theme: &Theme,
+    chart_focus_handle: FocusHandle,
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let d = Ds::from_cx(cx);
-    let chart_focus_handle = cx.entity().read(cx).eq_chart_focus_handle.clone();
     let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let config_open = entity
         .read(cx)
@@ -78,6 +79,7 @@ pub(crate) fn render_eq_bottom_strip(
             state.channels,
             selected_channel,
             state.per_channel_mode,
+            text,
             theme,
         ));
     }
@@ -141,10 +143,10 @@ pub(crate) fn render_eq_inspector(
     selected_band_idx: usize,
     indexing: EqBandIndexing,
     theme: &Theme,
+    chart_focus_handle: FocusHandle,
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let d = Ds::from_cx(cx);
-    let chart_focus_handle = cx.entity().read(cx).eq_chart_focus_handle.clone();
     let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let config_open = entity
         .read(cx)
@@ -186,6 +188,7 @@ pub(crate) fn render_eq_inspector(
             state.channels,
             selected_channel,
             state.per_channel_mode,
+            text,
             theme,
         ));
     }
@@ -522,6 +525,7 @@ fn render_compact_config_panel(
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     let is_lp_mode = matches!(state.mode, EqViewMode::LinearPhase { .. });
+    let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
 
     let mut col = div()
         .flex()
@@ -543,7 +547,7 @@ fn render_compact_config_panel(
                 .gap(d.grid)
                 .child(mode_pill(
                     d,
-                    "All Channels",
+                    text.all_channels,
                     !per_channel,
                     theme,
                     move |_, _, cx| {
@@ -555,7 +559,7 @@ fn render_compact_config_panel(
                 ))
                 .child(mode_pill(
                     d,
-                    "Per Channel",
+                    text.per_channel,
                     per_channel,
                     theme,
                     move |_, _, cx| {
@@ -604,7 +608,7 @@ fn render_compact_config_panel(
                         entity.clone(),
                         plugin_idx,
                         EqGlobalControl::StandardMaxFilters,
-                        "Filters",
+                        text.filters,
                         state.num_filters.to_string(),
                         theme,
                     ))
@@ -613,7 +617,7 @@ fn render_compact_config_panel(
                         entity.clone(),
                         plugin_idx,
                         EqGlobalControl::StandardTopology,
-                        "Topology",
+                        text.topology,
                         state.topology > 0.5,
                         "SVF",
                         "Biquad",
@@ -626,8 +630,8 @@ fn render_compact_config_panel(
                         EqGlobalControl::StandardTdf2,
                         "TDF-II",
                         state.tdf2,
-                        "On",
-                        "Off",
+                        text.on,
+                        text.off,
                         theme,
                     )),
             );
@@ -652,7 +656,7 @@ fn render_compact_config_panel(
                             entity.clone(),
                             plugin_idx,
                             EqGlobalControl::LpNumFilters,
-                            "Filters",
+                            text.filters,
                             state.num_filters.to_string(),
                             theme,
                         ))
@@ -661,7 +665,7 @@ fn render_compact_config_panel(
                             entity.clone(),
                             plugin_idx,
                             EqGlobalControl::LpFirLength,
-                            "FIR length",
+                            text.fir_length,
                             fir_length.to_string(),
                             theme,
                         ))
@@ -670,10 +674,10 @@ fn render_compact_config_panel(
                             entity.clone(),
                             plugin_idx,
                             EqGlobalControl::LpPhaseMode,
-                            "Phase",
+                            text.phase,
                             *phase_mode == "Minimum",
-                            "Minimum",
-                            "Linear",
+                            text.minimum_phase,
+                            text.linear_phase,
                             theme,
                         ))
                         .child(render_eq_global_toggle(
@@ -681,10 +685,10 @@ fn render_compact_config_panel(
                             entity.clone(),
                             plugin_idx,
                             EqGlobalControl::LpAutoGain,
-                            "Auto-gain",
+                            text.auto_gain,
                             *auto_gain,
-                            "On",
-                            "Off",
+                            text.on,
+                            text.off,
                             theme,
                         ))
                         .child(render_eq_global_stepper(
@@ -692,7 +696,7 @@ fn render_compact_config_panel(
                             entity.clone(),
                             plugin_idx,
                             EqGlobalControl::LpMix,
-                            "Mix",
+                            text.mix,
                             format!("{:.0}%", mix * 100.0),
                             theme,
                         )),
@@ -702,7 +706,8 @@ fn render_compact_config_panel(
                         .text_size(d.text_xs)
                         .text_color(theme.text_muted)
                         .child(format!(
-                            "Latency: {latency_samples} samples ({latency_ms:.2} ms)"
+                            "{}: {latency_samples} samples ({latency_ms:.2} ms)",
+                            text.latency,
                         )),
                 );
         }
@@ -738,7 +743,11 @@ fn render_add_band_button(
                 cx.notify();
             });
         })
-        .child("+")
+        .child(
+            Icon::new(IconName::Plus)
+                .small()
+                .color(theme.text_on_accent),
+        )
 }
 
 /// Small toggle pill used for channel mode and config toggles.
@@ -806,7 +815,11 @@ fn config_toggle_button(
                 cx.notify();
             });
         })
-        .child("⚙")
+        .child(Icon::new(IconName::Settings).small().color(if open {
+            theme.text_on_accent
+        } else {
+            theme.text_secondary
+        }))
 }
 
 /// Helper: readable label for a channel index.

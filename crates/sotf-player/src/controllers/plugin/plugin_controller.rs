@@ -9,6 +9,47 @@ use crate::plugin_graph::PluginGraph;
 use crate::{BiquadFilterType, ChannelConflict, EQFilter, Plugin, PluginSettings, PluginType};
 use std::path::Path;
 
+const AB_PATH_A_CONFIG_IDX: usize = sotf_plugins::param_specs::index_of(
+    sotf_plugins::param_specs::ab_compare::PARAMS,
+    "path_a_config",
+);
+const AB_PATH_B_CONFIG_IDX: usize = sotf_plugins::param_specs::index_of(
+    sotf_plugins::param_specs::ab_compare::PARAMS,
+    "path_b_config",
+);
+
+fn set_ab_compare_config_file_in_settings(
+    settings: &mut PluginSettings,
+    param_idx: usize,
+    config: String,
+    source_path: String,
+) -> bool {
+    let PluginSettings::ABCompare {
+        path_a_config,
+        path_b_config,
+        path_a_file,
+        path_b_file,
+        ..
+    } = settings
+    else {
+        return false;
+    };
+
+    match param_idx {
+        AB_PATH_A_CONFIG_IDX => {
+            *path_a_config = config;
+            *path_a_file = source_path;
+            true
+        }
+        AB_PATH_B_CONFIG_IDX => {
+            *path_b_config = config;
+            *path_b_file = source_path;
+            true
+        }
+        _ => false,
+    }
+}
+
 fn eq_filters_mut(
     settings: &mut PluginSettings,
     target: EqEditTarget,
@@ -1000,6 +1041,31 @@ impl PluginController {
         }
     }
 
+    /// Atomically persist an A/B path's parsed JSON and its source filename.
+    /// The filename is UI metadata serialized with `PluginSettings`; addressing
+    /// by graph node keeps modal edits correct for non-linear graphs.
+    pub fn set_ab_compare_config_file_by_node_id(
+        &mut self,
+        node_id: crate::plugin_graph::GraphNodeId,
+        param_idx: usize,
+        config: String,
+        source_path: String,
+    ) -> PluginUpdateEffect {
+        let updated = self.graph.nodes.get_mut(&node_id).is_some_and(|node| {
+            set_ab_compare_config_file_in_settings(
+                &mut node.plugin.settings,
+                param_idx,
+                config,
+                source_path,
+            )
+        });
+        if updated {
+            PluginUpdateEffect::Structural
+        } else {
+            PluginUpdateEffect::None
+        }
+    }
+
     /// Set a string parameter value for a plugin (e.g., file paths).
     ///
     /// File path parameters (IR file, SOFA file) are validated against
@@ -1064,6 +1130,29 @@ impl PluginController {
             Ok(PluginUpdateEffect::Structural)
         } else {
             Ok(PluginUpdateEffect::None)
+        }
+    }
+
+    /// Linear-rack counterpart to [`Self::set_ab_compare_config_file_by_node_id`].
+    pub fn set_ab_compare_config_file(
+        &mut self,
+        plugin_idx: usize,
+        param_idx: usize,
+        config: String,
+        source_path: String,
+    ) -> PluginUpdateEffect {
+        let updated = self.graph.get_plugin_mut(plugin_idx).is_some_and(|plugin| {
+            set_ab_compare_config_file_in_settings(
+                &mut plugin.settings,
+                param_idx,
+                config,
+                source_path,
+            )
+        });
+        if updated {
+            PluginUpdateEffect::Structural
+        } else {
+            PluginUpdateEffect::None
         }
     }
 

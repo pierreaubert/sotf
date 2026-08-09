@@ -47,6 +47,7 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
                 layout_scale: ctx.layout_scale,
             },
             ctx.theme,
+            ctx.eq_chart_focus_handle.clone(),
             cx,
         )
         .into_any_element()
@@ -283,6 +284,7 @@ pub(super) fn render_linear_phase_eq(
                 layout_scale: ctx.layout_scale,
             },
             ctx.theme,
+            ctx.eq_chart_focus_handle.clone(),
             cx,
         )
         .into_any_element()

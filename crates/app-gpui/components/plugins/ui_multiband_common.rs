@@ -1,34 +1,53 @@
 use crate::app::AppState;
+use crate::app::types::PluginUpdateType;
+use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
+use gpui_ui_kit::{NumberInput, NumberInputSize};
 
-pub(crate) fn render_crossover_preset(
+pub(crate) fn render_band_count_editor(
+    d: &Ds,
     id: &'static str,
     entity: Entity<AppState>,
     plugin_idx: usize,
-    current: i32,
+    current: usize,
+    min: f64,
+    max: f64,
+    label: &'static str,
     theme: &Theme,
 ) -> impl IntoElement {
-    ButtonSet::new(id)
-        .options(
-            (0..=3)
-                .map(|preset| ButtonSetOption::new(preset.to_string(), format!("P{}", preset + 1)))
-                .collect(),
+    div()
+        .flex()
+        .flex_col()
+        .gap(d.grid)
+        .child(
+            div()
+                .text_size(d.text_xs)
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_secondary)
+                .child(label),
         )
-        .selected(current.clamp(0, 3).to_string())
-        .size(ButtonSetSize::Sm)
-        .theme(theme.to_button_set_theme())
-        .on_change(move |value, _window, cx| {
-            let Ok(preset) = value.parse::<i32>() else {
-                return;
-            };
-            entity.update(cx, |state, _| {
-                state.app.set_plugin_param(plugin_idx, 1, preset as f64);
-            });
-        })
+        .child(
+            div().w(rems(5.0)).child(
+                NumberInput::new(id)
+                    .value(current as f64)
+                    .min(min)
+                    .max(max)
+                    .step(1.0)
+                    .decimals(0)
+                    .size(NumberInputSize::Xs)
+                    .aria_label(label)
+                    .on_change(move |value, _window, cx| {
+                        entity.update(cx, |state, _| {
+                            state.app.set_plugin_param(plugin_idx, 0, value);
+                            state.app.plugin_state.update_state.pending_plugin_update =
+                                Some(PluginUpdateType::Structural);
+                        });
+                    }),
+            ),
+        )
 }
 
 pub(crate) fn band_tab_label(band: usize, num_bands: usize, crossovers: [f64; 4]) -> String {

@@ -29,6 +29,7 @@ use crate::app::actions::{
 use crate::app::{AppState, ToastMessage};
 use crate::components::design::Ds;
 use crate::components::graphs::common::rgba_to_u32;
+use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -353,6 +354,7 @@ pub(crate) fn render_eq_channel_toolbar(
     channels: usize,
     selected_channel: usize,
     per_channel_mode: bool,
+    text: EqViewTranslations,
     theme: &Theme,
 ) -> AnyElement {
     let all_entity = entity.clone();
@@ -369,7 +371,7 @@ pub(crate) fn render_eq_channel_toolbar(
         .py(d.pad_y_half)
         .child(render_eq_mode_button(
             d,
-            "All",
+            text.all,
             !per_channel_mode,
             theme,
             move |_, _, cx| {
@@ -381,7 +383,7 @@ pub(crate) fn render_eq_channel_toolbar(
         ))
         .child(render_eq_mode_button(
             d,
-            "Per Ch",
+            text.per_channel_short,
             per_channel_mode,
             theme,
             move |_, _, cx| {
@@ -418,7 +420,7 @@ pub(crate) fn render_eq_channel_toolbar(
             )
             .child(render_eq_mode_button(
                 d,
-                "Copy All → Selected",
+                text.copy_all_to_selected,
                 false,
                 theme,
                 move |_, _, cx| {
@@ -435,8 +437,7 @@ pub(crate) fn render_eq_channel_toolbar(
                             state.app.plugin_state.preset_state.confirm_eq_copy_from_all =
                                 Some(key);
                             state.app.ui_state.toast_message = Some(ToastMessage::warning(
-                                "Click Copy All → Selected again to replace this channel"
-                                    .to_string(),
+                                text.confirm_copy_all_to_selected.to_string(),
                             ));
                         }
                         cx.notify();
@@ -445,7 +446,7 @@ pub(crate) fn render_eq_channel_toolbar(
             ))
             .child(render_eq_mode_button(
                 d,
-                "Copy Selected → All",
+                text.copy_selected_to_all,
                 false,
                 theme,
                 move |_, _, cx| {
@@ -460,8 +461,7 @@ pub(crate) fn render_eq_channel_toolbar(
                             state.app.plugin_state.clear_confirmations();
                             state.app.plugin_state.preset_state.confirm_eq_copy_to_all = Some(key);
                             state.app.ui_state.toast_message = Some(ToastMessage::warning(
-                                "Click Copy Selected → All again to replace every channel"
-                                    .to_string(),
+                                text.confirm_copy_selected_to_all.to_string(),
                             ));
                         }
                         cx.notify();
@@ -480,6 +480,7 @@ fn render_eq_channel_segment(
     channels: usize,
     selected_channel: usize,
     per_channel_mode: bool,
+    text: EqViewTranslations,
     theme: &Theme,
 ) -> AnyElement {
     let all_entity = entity.clone();
@@ -494,7 +495,7 @@ fn render_eq_channel_segment(
         .gap(d.grid)
         .child(render_eq_mode_button(
             d,
-            "All",
+            text.all,
             !per_channel_mode,
             theme,
             move |_, _, cx| {
@@ -506,7 +507,7 @@ fn render_eq_channel_segment(
         ))
         .child(render_eq_mode_button(
             d,
-            "Per Ch",
+            text.per_channel_short,
             per_channel_mode,
             theme,
             move |_, _, cx| {
@@ -534,7 +535,7 @@ fn render_eq_channel_segment(
             }))
             .child(render_eq_mode_button(
                 d,
-                "Copy All → Selected",
+                text.copy_all_to_selected,
                 false,
                 theme,
                 move |_, _, cx| {
@@ -550,9 +551,8 @@ fn render_eq_channel_segment(
                             state.app.plugin_state.clear_confirmations();
                             state.app.plugin_state.preset_state.confirm_eq_copy_from_all =
                                 Some(key);
-                            state.app.ui_state.toast_message = Some(ToastMessage::warning(
-                                "Click Copy All → Selected again to replace this channel",
-                            ));
+                            state.app.ui_state.toast_message =
+                                Some(ToastMessage::warning(text.confirm_copy_all_to_selected));
                         }
                         cx.notify();
                     });
@@ -560,7 +560,7 @@ fn render_eq_channel_segment(
             ))
             .child(render_eq_mode_button(
                 d,
-                "Copy Selected → All",
+                text.copy_selected_to_all,
                 false,
                 theme,
                 move |_, _, cx| {
@@ -574,9 +574,8 @@ fn render_eq_channel_segment(
                         } else {
                             state.app.plugin_state.clear_confirmations();
                             state.app.plugin_state.preset_state.confirm_eq_copy_to_all = Some(key);
-                            state.app.ui_state.toast_message = Some(ToastMessage::warning(
-                                "Click Copy Selected → All again to replace every channel",
-                            ));
+                            state.app.ui_state.toast_message =
+                                Some(ToastMessage::warning(text.confirm_copy_selected_to_all));
                         }
                         cx.notify();
                     });
@@ -698,7 +697,7 @@ pub(crate) fn render_eq_property_strip(
                         .gap(d.grid)
                         .child(render_eq_action_button(
                             d,
-                            "Solo",
+                            text.solo,
                             filter.solo,
                             theme.success,
                             theme,
@@ -714,7 +713,7 @@ pub(crate) fn render_eq_property_strip(
                         ))
                         .child(render_eq_action_button(
                             d,
-                            "Mute",
+                            text.mute,
                             filter.muted,
                             theme.error,
                             theme,
@@ -772,7 +771,7 @@ pub(crate) fn render_eq_property_strip(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "Freq",
+                    text.frequency,
                     filter.frequency,
                     pk(EQ, "freq").min_f64(),
                     pk(EQ, "freq").max_f64(),
@@ -787,7 +786,7 @@ pub(crate) fn render_eq_property_strip(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "Gain",
+                    text.gain,
                     filter.gain_db,
                     pk(EQ, "gain").min_f64(),
                     pk(EQ, "gain").max_f64(),
@@ -802,7 +801,7 @@ pub(crate) fn render_eq_property_strip(
                     d,
                     entity.clone(),
                     plugin_idx,
-                    "Q",
+                    text.quality_factor,
                     filter.q,
                     pk(EQ, "q").min_f64(),
                     pk(EQ, "q").max_f64(),
@@ -1674,11 +1673,11 @@ pub fn render_eq_plugin(
     plugin_idx: usize,
     state: EqRenderState,
     theme: &Theme,
+    eq_chart_focus_handle: FocusHandle,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
     let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let ds = Ds::from_cx(cx);
-    let eq_chart_focus_handle = cx.entity().read(cx).eq_chart_focus_handle.clone();
 
     // Read selected channel from AppState
     let app_state = entity.read(cx);
@@ -1771,7 +1770,7 @@ pub fn render_eq_plugin(
             theme,
             graph_width,
             state.layout_scale,
-            eq_chart_focus_handle,
+            eq_chart_focus_handle.clone(),
         ))
         .when(layout == EqCompactLayout::Current, |graph| {
             graph.child(render_eq_graph_action_row(
@@ -1882,7 +1881,7 @@ pub fn render_eq_plugin(
                     entity.clone(),
                     plugin_idx,
                     EqGlobalControl::LpNumFilters,
-                    "Filters",
+                    text.filters,
                     state.num_filters.to_string(),
                     theme,
                 ))
@@ -1891,7 +1890,7 @@ pub fn render_eq_plugin(
                     entity.clone(),
                     plugin_idx,
                     EqGlobalControl::LpFirLength,
-                    "FIR length",
+                    text.fir_length,
                     fir_length.to_string(),
                     theme,
                 ))
@@ -1900,24 +1899,25 @@ pub fn render_eq_plugin(
                     entity.clone(),
                     plugin_idx,
                     EqGlobalControl::LpPhaseMode,
-                    "Phase",
+                    text.phase,
                     phase_mode == "Minimum",
-                    "Minimum",
-                    "Linear",
+                    text.minimum_phase,
+                    text.linear_phase,
                     theme,
                 ))
                 .child(format!(
-                    "Latency: {latency_samples} samples ({latency_ms:.2} ms)"
+                    "{}: {latency_samples} samples ({latency_ms:.2} ms)",
+                    text.latency,
                 ))
                 .child(render_eq_global_toggle(
                     &ds,
                     entity.clone(),
                     plugin_idx,
                     EqGlobalControl::LpAutoGain,
-                    "Auto-gain",
+                    text.auto_gain,
                     auto_gain,
-                    "On",
-                    "Off",
+                    text.on,
+                    text.off,
                     theme,
                 ))
                 .child(render_eq_global_stepper(
@@ -1925,7 +1925,7 @@ pub fn render_eq_plugin(
                     entity.clone(),
                     plugin_idx,
                     EqGlobalControl::LpMix,
-                    "Mix",
+                    text.mix,
                     format!("{:.0}%", mix * 100.0),
                     theme,
                 ))
@@ -1964,7 +1964,7 @@ pub fn render_eq_plugin(
                     entity.clone(),
                     plugin_idx,
                     EqGlobalControl::StandardMaxFilters,
-                    "Filters",
+                    text.filters,
                     state.num_filters.to_string(),
                     theme,
                 ))
@@ -1973,7 +1973,7 @@ pub fn render_eq_plugin(
                     entity.clone(),
                     plugin_idx,
                     EqGlobalControl::StandardTopology,
-                    "Topology",
+                    text.topology,
                     state.topology > 0.5,
                     "SVF",
                     "Biquad",
@@ -1986,6 +1986,7 @@ pub fn render_eq_plugin(
                     channels,
                     selected_eq_channel,
                     per_channel_mode,
+                    text,
                     theme,
                 )),
         )
@@ -2017,6 +2018,7 @@ pub fn render_eq_plugin(
             selected_band_idx,
             indexing,
             theme,
+            eq_chart_focus_handle.clone(),
             cx,
         )
         .into_any_element(),
@@ -2028,6 +2030,7 @@ pub fn render_eq_plugin(
             selected_band_idx,
             indexing,
             theme,
+            eq_chart_focus_handle,
             cx,
         )
         .into_any_element(),
@@ -2340,7 +2343,11 @@ pub(crate) fn render_eq_global_stepper(
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     adjust_eq_global_control(&minus_entity, plugin_idx, control, -1.0, cx);
                 })
-                .child("-"),
+                .child(
+                    Icon::new(IconName::Minus)
+                        .small()
+                        .color(theme.text_secondary),
+                ),
         )
         .child(
             div()
@@ -2359,7 +2366,11 @@ pub(crate) fn render_eq_global_stepper(
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     adjust_eq_global_control(&plus_entity, plugin_idx, control, 1.0, cx);
                 })
-                .child("+"),
+                .child(
+                    Icon::new(IconName::Plus)
+                        .small()
+                        .color(theme.text_secondary),
+                ),
         )
         .into_any_element()
 }

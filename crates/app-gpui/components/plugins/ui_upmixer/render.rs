@@ -1,4 +1,3 @@
-// intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::super::common::{render_knob, render_knob_enabled};
 use super::misc::CONFIG_ITEMS;
 use super::misc::param_idx;
@@ -1085,7 +1084,7 @@ fn render_compact_toggle_row(
         .border_color(theme.border)
         .child(
             div()
-                .text_size(d.text_xs)
+                .text_size(d.text_sm)
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_secondary)
                 .child(label),
@@ -1207,7 +1206,7 @@ fn render_summary_chip(
     div()
         .flex()
         .items_center()
-        .gap(px(3.0))
+        .gap(d.grid)
         .px(d.pad_y)
         .py(d.pad_y_half)
         .rounded(d.r_sm)
@@ -1720,7 +1719,7 @@ fn render_config_content(
 /// Render a section header
 fn render_section_header(d: &Ds, label: &str, theme: &Theme) -> impl IntoElement {
     div()
-        .text_size(d.text_xs)
+        .text_size(d.text_sm)
         .font_weight(FontWeight::BOLD)
         .text_color(theme.text_muted)
         .pb(d.pad_y_half)
@@ -1748,7 +1747,7 @@ fn render_config_lfe(
                 .gap(d.gap_md)
                 .child(render_section_header(d, text.label("LFE & Bass"), theme))
                 // intentional: pixel-exact 1px vertical divider — do not scale
-                .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
+                .child(div().w(rems(0.0625)).h(rems(0.875)).bg(theme.border))
                 .child(render_section_header(d, text.label("SubHarmonic"), theme))
                 .child(
                     Toggle::new(("subharm-toggle", plugin_idx))
@@ -1810,7 +1809,7 @@ fn render_config_lfe(
                 ))
                 // Separator
                 // intentional: pixel-exact 1px vertical divider — do not scale
-                .child(div().w(px(1.0)).h(px(80.0)).bg(theme.border))
+                .child(div().w(rems(0.0625)).h(rems(5.0)).bg(theme.border))
                 // SubHarmonic knobs (dimmed when disabled)
                 .child(
                     div()
@@ -2029,7 +2028,7 @@ fn render_config_dialogue(
                 ))
                 // Separator
                 // intentional: pixel-exact 1px vertical divider — do not scale
-                .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
+                .child(div().w(rems(0.0625)).h(rems(2.5)).bg(theme.border))
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,
@@ -2422,7 +2421,7 @@ fn render_config_analysis(
                 .gap(d.gap_md)
                 .child(render_section_header(d, text.label("Analysis"), theme))
                 // intentional: pixel-exact 1px vertical divider — do not scale
-                .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
+                .child(div().w(rems(0.0625)).h(rems(0.875)).bg(theme.border))
                 .child(render_section_header(
                     d,
                     text.label("Source Extraction"),
@@ -2521,7 +2520,7 @@ fn render_config_analysis(
                 })
                 // Separator
                 // intentional: pixel-exact 1px vertical divider — do not scale
-                .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
+                .child(div().w(rems(0.0625)).h(rems(2.5)).bg(theme.border))
                 // Source Extraction threshold (dimmed when disabled)
                 .child(
                     div()

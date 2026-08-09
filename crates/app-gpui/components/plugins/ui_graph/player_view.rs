@@ -22,6 +22,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::workflow::{Position, WorkflowCanvas, WorkflowNodeData};
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use sotf_audio_player::PluginSettings;
 
 impl PlayerView {
@@ -110,9 +111,22 @@ impl PlayerView {
                             .and_then(|s| sotf_audio_player::GraphNodeId::parse_str(s).ok());
 
                         state.update(cx, |state, _cx| {
+                            let original_plugin = graph_node_uuid
+                                .and_then(|uuid| state.app.plugin_state.graph.nodes.get(&uuid));
+                            let original_settings = original_plugin
+                                .and_then(|node| serde_json::to_string(&node.plugin.settings).ok());
+                            let original_enabled = original_plugin.map(|node| node.plugin.enabled);
                             state.app.plugin_state.graph_state.editing_plugin_node = Some(node_id);
                             state.app.plugin_state.graph_state.editing_graph_node_uuid =
                                 graph_node_uuid;
+                            state
+                                .app
+                                .plugin_state
+                                .graph_state
+                                .editing_original_settings_json = original_settings;
+                            state.app.plugin_state.graph_state.editing_original_enabled =
+                                original_enabled;
+                            state.app.plugin_state.graph_state.confirm_close_dirty = false;
                             state.app.ui_state.input_mode =
                                 crate::app::InputMode::EditingPluginNode;
                         });
@@ -644,14 +658,16 @@ impl PlayerView {
             .as_ref()
             .and_then(|id_str| sotf_audio_player::GraphNodeId::parse_str(id_str).ok());
 
-        let (plugin_settings, plugin_linear_idx) = graph_node_uuid
+        let (plugin_settings, plugin_enabled, plugin_linear_idx) = graph_node_uuid
             .map(|uuid| {
                 let graph = &state.app.plugin_state.graph;
-                let settings = graph.nodes.get(&uuid).map(|n| n.plugin.settings.clone());
+                let plugin = graph.nodes.get(&uuid).map(|node| &node.plugin);
+                let settings = plugin.map(|plugin| plugin.settings.clone());
+                let enabled = plugin.map(|plugin| plugin.enabled);
                 let linear_idx = graph.linear_index_of_node(uuid);
-                (settings, linear_idx)
+                (settings, enabled, linear_idx)
             })
-            .unwrap_or((None, None));
+            .unwrap_or((None, None, None));
 
         // For non-linear graphs, linear_idx is None but the node still exists.
         // Enable editing whenever the plugin exists in the graph — the
@@ -660,7 +676,13 @@ impl PlayerView {
         let node_exists_in_graph = graph_node_uuid
             .is_some_and(|uuid| state.app.plugin_state.graph.nodes.contains_key(&uuid));
 
+        let graph_state = &state.app.plugin_state.graph_state;
+        let settings_are_dirty =
+            graph_state.settings_are_dirty(plugin_settings.as_ref(), plugin_enabled);
+        let confirm_close_dirty = graph_state.confirm_close_dirty;
         let state_for_close = self.state.clone();
+        let state_for_keep = self.state.clone();
+        let state_for_continue = self.state.clone();
 
         // Determine the title based on node type
         let title = if node_type == NODE_TYPE_PLUGIN {
@@ -731,37 +753,108 @@ impl PlayerView {
                                     .flex()
                                     .items_center()
                                     .gap(d.gap)
+                                    .children(confirm_close_dirty.then(|| {
+                                        let state = state_for_continue.clone();
+                                        Button::new(
+                                            "modal-continue-editing",
+                                            graph_text.nodes.continue_editing,
+                                        )
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Sm)
+                                            .theme(theme.to_button_theme())
+                                            .aria_label(graph_text.nodes.continue_editing)
+                                            .on_click_event(move |_, _, cx| {
+                                                state.update(cx, |state, cx| {
+                                                    state
+                                                        .app
+                                                        .plugin_state
+                                                        .graph_state
+                                                        .confirm_close_dirty = false;
+                                                    cx.notify();
+                                                });
+                                            })
+                                    }))
+                                    .children(confirm_close_dirty.then(|| {
+                                        let state = state_for_keep.clone();
+                                        Button::new(
+                                            "modal-keep-changes",
+                                            graph_text.nodes.keep_changes,
+                                        )
+                                            .variant(ButtonVariant::Primary)
+                                            .size(ButtonSize::Sm)
+                                            .theme(theme.to_button_theme())
+                                            .aria_label(graph_text.nodes.keep_changes)
+                                            .on_click_event(move |_, _, cx| {
+                                                state.update(cx, |state, cx| {
+                                                    state
+                                                        .app
+                                                        .plugin_state
+                                                        .graph_state
+                                                        .clear_editing_context();
+                                                    state.app.ui_state.input_mode =
+                                                        crate::app::InputMode::Normal;
+                                                    cx.notify();
+                                                });
+                                            })
+                                    }))
                                     // Close button
                                     .child({
                                         let state = state_for_close.clone();
-                                        div()
-                                            .id("modal-close")
-                                            .px(d.pad_x)
-                                            .py(d.pad_y_half)
-                                            .rounded(d.r_md)
-                                            .bg(theme.error)
-                                            .text_size(d.text_sm)
-                                            .text_color(theme.text_on_accent)
-                                            .cursor_pointer()
-                                            .hover(|s| s.opacity(0.8))
-                                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                                cx.stop_propagation();
-                                                state.update(cx, |state, _cx| {
+                                        let label = if confirm_close_dirty {
+                                            graph_text.nodes.discard_changes
+                                        } else {
+                                            graph_text.nodes.close
+                                        };
+                                        Button::new("modal-close", label)
+                                            .variant(ButtonVariant::Destructive)
+                                            .size(ButtonSize::Sm)
+                                            .theme(theme.to_button_theme())
+                                            .aria_label(label)
+                                            .on_click_event(move |_, _, cx| {
+                                                state.update(cx, |state, cx| {
+                                                    if settings_are_dirty && !confirm_close_dirty {
+                                                        state
+                                                            .app
+                                                            .plugin_state
+                                                            .graph_state
+                                                            .confirm_close_dirty = true;
+                                                        cx.notify();
+                                                        return;
+                                                    }
+                                                    if settings_are_dirty
+                                                        && let Some(uuid) = graph_node_uuid
+                                                    {
+                                                        let graph_state = state
+                                                            .app
+                                                            .plugin_state
+                                                            .graph_state
+                                                            .clone();
+                                                        if let Some(node) = state.app.plugin_state.graph.nodes.get_mut(&uuid) {
+                                                            graph_state.restore_original(&mut node.plugin);
+                                                        }
+                                                        state
+                                                            .app
+                                                            .plugin_state
+                                                            .graph
+                                                            .update_channel_dependent_plugins();
+                                                        state
+                                                            .app
+                                                            .plugin_state
+                                                            .update_state
+                                                            .pending_plugin_update = Some(
+                                                            crate::app::types::PluginUpdateType::Structural,
+                                                        );
+                                                    }
+                                                    state
+                                                        .app
+                                                        .plugin_state
+                                                        .graph_state
+                                                        .clear_editing_context();
                                                     state.app.ui_state.input_mode =
                                                         crate::app::InputMode::Normal;
-                                                    state
-                                                        .app
-                                                        .plugin_state
-                                                        .graph_state
-                                                        .editing_plugin_node = None;
-                                                    state
-                                                        .app
-                                                        .plugin_state
-                                                        .graph_state
-                                                        .editing_graph_node_uuid = None;
+                                                    cx.notify();
                                                 });
                                             })
-                                            .child(graph_text.nodes.close)
                                     }),
                             ),
                     )
@@ -989,6 +1082,7 @@ impl PlayerView {
             spectrum_ref_open,
             &plugin_graph,
             None,
+            self.eq_chart_focus_handle.clone(),
             cx,
         )
     }

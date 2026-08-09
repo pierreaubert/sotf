@@ -296,9 +296,21 @@ impl PlayerView {
                 self.state.update(cx, |state, _cx| {
                     let text = PluginGraphTranslations::for_language(state.app.ui_state.language);
                     if let (Some(selected), Some(workflow_node)) = (selected, workflow_node) {
+                        let original_plugin = state.app.plugin_state.graph.nodes.get(&selected);
+                        let original_settings = original_plugin
+                            .and_then(|node| serde_json::to_string(&node.plugin.settings).ok());
+                        let original_enabled = original_plugin.map(|node| node.plugin.enabled);
                         state.app.plugin_state.graph_state.editing_graph_node_uuid = Some(selected);
                         state.app.plugin_state.graph_state.editing_plugin_node =
                             Some(workflow_node);
+                        state
+                            .app
+                            .plugin_state
+                            .graph_state
+                            .editing_original_settings_json = original_settings;
+                        state.app.plugin_state.graph_state.editing_original_enabled =
+                            original_enabled;
+                        state.app.plugin_state.graph_state.confirm_close_dirty = false;
                         state.app.ui_state.input_mode = InputMode::EditingPluginNode;
                     } else {
                         state.app.ui_state.toast_message =

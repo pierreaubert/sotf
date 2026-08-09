@@ -18,6 +18,8 @@ mod pot;
 mod render;
 mod types;
 
+#[doc(hidden)]
+pub use misc::extract_file_paths;
 pub use render::*;
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::layout_solver::solve_layout_scaled;
