@@ -107,7 +107,7 @@ build_html = "2.7"
 anyhow = { version = "1.0" }
 assert_fs = "1.0"
 m3u8-rs = { version = "6" }
-librespot-core = { version = "0.6" }
+librespot-core = { version = "0.8" }
 librespot-playback = { version = "0.6" }
 librespot-metadata = { version = "0.6" }
 rcgen = "0.13"
