@@ -302,7 +302,7 @@ midir = "0.10"
 # TUI framework
 ratatui = "0.30"
 mpris-server = "0.9"
-ratatui-image = { version = "10", default-features = false, features = ["serde", "crossterm", "image-defaults"] }
+ratatui-image = { version = "11", default-features = false, features = ["serde", "crossterm", "image-defaults"] }
 crossterm = "0.29"
 
 # GPUI framework - all packages must use the same git revision
