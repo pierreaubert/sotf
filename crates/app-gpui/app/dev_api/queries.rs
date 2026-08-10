@@ -93,6 +93,23 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .recording_state
                 .all_channels_recorded()
         ),
+        "recording.channel_count" => json!(
+            app.measurement_state
+                .recording_state
+                .channel_recordings
+                .len()
+        ),
+        "recording.done_count" => json!(
+            app.measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .filter(|recording| {
+                    recording.state == crate::app::types::ChannelRecordingState::Done
+                })
+                .count()
+        ),
+        "recording.step" => json!(format!("{:?}", app.measurement_state.recording_state.step)),
         "roomeq.step" => json!(format!("{:?}", app.measurement_state.room_eq_state.step)),
         "roomeq.measurement_count" => json!(
             app.measurement_state

@@ -6,7 +6,6 @@ use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use ratatui::Terminal;
-use ratatui::backend::CrosstermBackend;
 use sotf_audio_player::Player;
 use sotf_audio_player_tui::app::{App, Screen};
 use sotf_audio_player_tui::media_controls::TuiMediaControls;
@@ -16,6 +15,8 @@ use std::io;
 use std::sync::mpsc;
 use std::time::Duration;
 
+#[path = "main/backend.rs"]
+mod backend;
 #[path = "main/misc.rs"]
 mod misc;
 #[path = "main/try_.rs"]
@@ -23,6 +24,7 @@ mod try_;
 #[path = "main/types.rs"]
 mod types;
 
+use backend::{RuntimeBackend, requested_dev_api_port, should_run_headless_dev_api};
 use misc::print_sotf_api_connection_qr;
 #[cfg(not(any(unix, windows)))]
 use try_::try_acquire_lock;
@@ -98,18 +100,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         original_panic_hook(info);
     }));
 
-    // Setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    // Enable Kitty keyboard protocol so modifiers (Shift, Ctrl, etc.) are
-    // reported with arrow keys and other special keys.
-    let _ = execute!(
-        stdout,
-        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
-    );
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    // Dev-driver launches redirect stdout/stderr to artifacts, so there is no
+    // terminal to put into raw mode. Keep the ordinary Crossterm path for
+    // interactive use and render to an in-memory backend for dev-api QA.
+    let dev_api_port = requested_dev_api_port()?;
+    let headless_dev_api = should_run_headless_dev_api(dev_api_port);
+    if !headless_dev_api {
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen)?;
+        // Enable Kitty keyboard protocol so modifiers (Shift, Ctrl, etc.) are
+        // reported with arrow keys and other special keys.
+        let _ = execute!(
+            stdout,
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+        );
+    }
+    let mut terminal = Terminal::new(RuntimeBackend::new(headless_dev_api))?;
 
     // Initialize app state
     let t_startup = std::time::Instant::now();
@@ -271,10 +278,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start dev-api server if requested (QA/debug builds only)
     #[cfg(feature = "dev-api")]
-    let dev_api_rx = std::env::var("SOTF_DEV_API_PORT")
-        .ok()
-        .and_then(|s| s.parse::<u16>().ok())
-        .map(sotf_audio_player_tui::dev_api::start);
+    let dev_api_rx = dev_api_port.map(sotf_audio_player_tui::dev_api::start);
 
     #[cfg(not(feature = "dev-api"))]
     let dev_api_rx: Option<DevApiRx> = None;
@@ -286,6 +290,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut player,
         &mut media_controls,
         dev_api_rx,
+        headless_dev_api,
     );
 
     // Save configuration before exit (skip in read-only mode)
@@ -296,10 +301,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Restore terminal
-    let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    if !headless_dev_api {
+        let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
+        disable_raw_mode()?;
+        execute!(io::stdout(), LeaveAlternateScreen)?;
+        terminal.show_cursor()?;
+    }
 
     log::info!("SOTF UI Player exiting...");
 

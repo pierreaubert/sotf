@@ -9,11 +9,18 @@ assert input_mode == "Configure"
 # Enter Room EQ sub-screen.
 key 3
 sleep 100ms
+assert input_mode == "FileExplorer"
+key esc
+sleep 100ms
 assert input_mode == "ConfigureRoomEq"
 assert configure.sub_screen == "RoomEq"
 assert roomeq.step == "LoadData"
 
-# Navigate step tab bar forward.
+# Move from content to the step tab bar, then navigate forward.
+key esc
+sleep 100ms
+assert input_mode == "ConfigureRoomEq"
+
 key right
 sleep 100ms
 assert roomeq.step == "Delay"
@@ -23,10 +30,14 @@ sleep 100ms
 assert roomeq.step == "Process"
 
 # In Process step, select Full wizard mode (2).
+key down
+sleep 50ms
 key 2
 sleep 50ms
 
 # Navigate to Configure step.
+key esc
+sleep 50ms
 key right
 sleep 100ms
 assert roomeq.step == "Configure"
@@ -37,6 +48,8 @@ sleep 100ms
 assert roomeq.step == "Process"
 
 # Esc chain: content → step tab → configure tab.
+key down
+sleep 50ms
 key esc
 sleep 100ms
 assert input_mode == "ConfigureRoomEq"

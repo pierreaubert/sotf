@@ -94,6 +94,14 @@ pub struct MetadataImportCandidate {
 }
 
 impl MetadataImportCandidate {
+    pub fn preferred_album_title(&self) -> Option<&str> {
+        self.album_title.as_deref().or(self.title.as_deref())
+    }
+
+    pub fn preferred_track_title(&self) -> Option<&str> {
+        self.title.as_deref().or(self.album_title.as_deref())
+    }
+
     pub fn into_patch(self) -> MetadataPatch {
         MetadataPatch {
             title: self.title,

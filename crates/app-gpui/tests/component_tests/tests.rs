@@ -1,3 +1,4 @@
+use super::common::factories::{album, track};
 use super::common::{
     FilterType, TestEQFilter, add_eq_band, clamp_parameter, denormalize_parameter,
     denormalize_parameter_log, normalize_parameter, normalize_parameter_log, remove_eq_band,
@@ -5,13 +6,16 @@ use super::common::{
 };
 use gpui_design::DesignSystem;
 use sotf_audio_player::ui_params::TuiEditablePlugin;
-use sotf_audio_player::{NodePosition, PluginGraph, PluginSettings, PluginType};
+use sotf_audio_player::{
+    MetadataImportCandidate, NodePosition, PluginGraph, PluginSettings, PluginType,
+};
 use sotf_audio_player_gpui::IconName;
 use sotf_audio_player_gpui::app::keybindings::KeymapPreset;
 use sotf_audio_player_gpui::app::state::{
     ExternalPluginUiState, ExternalPluginWorkerHealth, PluginGraphState, PluginState,
     external_plugin_error_key, external_plugin_worker_health,
 };
+use sotf_audio_player_gpui::app::types::MetadataEditorState;
 use sotf_audio_player_gpui::components::design::typography_rems_from_rules;
 use sotf_audio_player_gpui::components::dialogs::get_keybindings_for_screen;
 use sotf_audio_player_gpui::components::home::album_card::{
@@ -75,6 +79,35 @@ impl<'ast> Visit<'ast> for TextLabelVisitor {
 fn app_source(relative: &str) -> String {
     std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(relative))
         .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
+}
+
+#[test]
+fn metadata_candidate_title_matches_editor_scope() {
+    let mut album = album("Original Album")
+        .add_track(track("Original Track").build())
+        .build();
+    album.id = Some(1);
+    let candidate = MetadataImportCandidate {
+        provider_id: "musicbrainz".to_string(),
+        provider_entity_id: "scenario-release".to_string(),
+        title: Some("Imported Track".to_string()),
+        artist: Some("Imported Artist".to_string()),
+        album_artist: Some("Imported Artist".to_string()),
+        album_title: Some("Imported Album".to_string()),
+        year: Some(2024),
+        track_number: Some(1),
+        disc_number: Some(1),
+        isrc: None,
+        score: 97,
+    };
+
+    let mut album_editor = MetadataEditorState::for_album(&album).unwrap();
+    album_editor.apply_candidate(candidate.clone());
+    assert_eq!(album_editor.fields.title, "Imported Album");
+
+    let mut track_editor = MetadataEditorState::for_track(&album.tracks[0]);
+    track_editor.apply_candidate(candidate);
+    assert_eq!(track_editor.fields.title, "Imported Track");
 }
 
 fn repo_source(relative: &str) -> String {

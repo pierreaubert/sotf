@@ -344,6 +344,9 @@ fn metadata_candidate_into_patch() {
         score: 95,
     };
 
+    assert_eq!(candidate.preferred_album_title(), Some("Album"));
+    assert_eq!(candidate.preferred_track_title(), Some("Title"));
+
     let patch = candidate.into_patch();
     assert_eq!(patch.title, Some("Title".into()));
     assert_eq!(patch.artist, Some("Artist".into()));

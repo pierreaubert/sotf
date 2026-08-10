@@ -2,7 +2,7 @@ use super::compare::Compare;
 use super::comparison_op::split_comparison;
 use super::misc::response_excerpt;
 use super::types::ExpectedValue;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -110,11 +110,9 @@ pub(super) fn parse_literal(s: &str) -> Result<ExpectedValue> {
         return Ok(ExpectedValue::Number(n));
     }
     if s.starts_with('"') || s.ends_with('"') {
-        let quoted = s
-            .strip_prefix('"')
-            .and_then(|inner| inner.strip_suffix('"'))
-            .ok_or_else(|| anyhow!("string literal quotes must be balanced"))?;
-        return Ok(ExpectedValue::String(quoted.to_string()));
+        let quoted = serde_json::from_str::<String>(s)
+            .with_context(|| format!("invalid quoted string literal `{s}`"))?;
+        return Ok(ExpectedValue::String(quoted));
     }
     Ok(ExpectedValue::String(s.to_string()))
 }

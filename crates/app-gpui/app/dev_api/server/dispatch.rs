@@ -10,10 +10,12 @@ use super::misc::split_path_query;
 use super::post::post_action;
 use super::post::post_click;
 use super::post::post_key;
+use super::post::post_qa_recording_fake_capture;
 use super::post::post_qa_room_eq;
 use super::post::post_qa_room_eq_export_json;
 use super::post::post_qa_seed;
 use super::post::post_quit;
+use super::qa::qa_recording_fake_capture;
 use super::qa::qa_room_eq;
 use super::qa::qa_room_eq_export_json;
 use super::qa::qa_seed;
@@ -107,6 +109,14 @@ pub(super) fn process_command(cmd: DevCommand, window: AnyWindowHandle, cx: &mut
         }
         DevCommand::QaSeed { payload, reply } => {
             let result = cx.update(|cx| qa_seed(payload, window, cx));
+            let dev_reply = match result {
+                Ok(()) => DevReply::ok(),
+                Err(e) => DevReply::err(format!("{e:#}")),
+            };
+            let _ = reply.send(dev_reply);
+        }
+        DevCommand::QaRecordingFakeCapture { payload, reply } => {
+            let result = cx.update(|cx| qa_recording_fake_capture(payload, window, cx));
             let dev_reply = match result {
                 Ok(()) => DevReply::ok(),
                 Err(e) => DevReply::err(format!("{e:#}")),
@@ -506,6 +516,11 @@ pub(super) fn dispatch_request(req: &HttpRequest, tx: &mpsc::Sender<DevCommand>)
             let status = if r.ok { 200 } else { 500 };
             (status, r.to_json())
         }),
+        ("POST", "/qa/recording/fake-capture") => post_qa_recording_fake_capture(&req.body, tx)
+            .map(|r| {
+                let status = if r.ok { 200 } else { 500 };
+                (status, r.to_json())
+            }),
         ("POST", "/qa/room-eq") => post_qa_room_eq(&req.body, tx).map(|r| {
             let status = if r.ok { 200 } else { 500 };
             (status, r.to_json())

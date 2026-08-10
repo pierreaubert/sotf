@@ -53,12 +53,25 @@ pub(super) type DevApiRx = mpsc::Receiver<DevCommand>;
 #[cfg(not(feature = "dev-api"))]
 pub(super) type DevApiRx = ();
 
+fn next_app_event(
+    headless_dev_api: bool,
+    media_controls: Option<&TuiMediaControls>,
+) -> std::io::Result<Option<AppEvent>> {
+    if headless_dev_api {
+        std::thread::sleep(Duration::from_millis(20));
+        Ok(Some(AppEvent::Tick))
+    } else {
+        handle_events(Duration::from_millis(100), media_controls)
+    }
+}
+
 pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     player: &mut Player,
     media_controls: &mut Option<TuiMediaControls>,
     dev_api_rx: Option<DevApiRx>,
+    headless_dev_api: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Silence unused-variable warning when dev-api is disabled.
     let _ = dev_api_rx;
@@ -77,7 +90,8 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
         }
 
         // Handle events
-        if let Some(event) = handle_events(Duration::from_millis(100), media_controls.as_ref())? {
+        let event = next_app_event(headless_dev_api, media_controls.as_ref())?;
+        if let Some(event) = event {
             app.ui.needs_redraw = true;
             match event {
                 AppEvent::Key(key) => {
@@ -495,6 +509,16 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
 
 #[cfg(test)]
 mod p1_resize_tests {
+    use super::*;
+
+    #[test]
+    fn headless_loop_emits_ticks_for_periodic_maintenance() {
+        assert!(matches!(
+            next_app_event(true, None).unwrap(),
+            Some(AppEvent::Tick)
+        ));
+    }
+
     #[test]
     fn resize_invalidates_cached_image_protocol() {
         let source = include_str!("types.rs");

@@ -35,13 +35,10 @@ action Mute
 sleep 100ms
 assert playback.muted == false
 
-# Synthetic space key on queue screen (toggles play/pause in queue).
+# Synthetic space key on an empty queue follows the real playback path and
+# must remain stopped rather than inventing a playing track.
 action SwitchToQueue
 assert screen.focused == "Queue"
-key space
-sleep 100ms
-assert playback.is_playing == true
-
 key space
 sleep 100ms
 assert playback.is_playing == false

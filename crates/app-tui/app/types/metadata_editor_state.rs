@@ -237,7 +237,12 @@ impl MetadataEditorState {
     }
 
     pub fn apply_candidate(&mut self, candidate: sotf_audio_player::MetadataImportCandidate) {
-        if let Some(title) = candidate.title.or(candidate.album_title) {
+        let title = match self.scope {
+            MetadataEditorScope::Album => candidate.preferred_album_title(),
+            MetadataEditorScope::Track => candidate.preferred_track_title(),
+        }
+        .map(str::to_owned);
+        if let Some(title) = title {
             self.fields.title = title;
         }
         if let Some(artist) = candidate.artist {

@@ -13,7 +13,11 @@ assert input_mode == "ConfigureHeadphoneEq"
 assert configure.sub_screen == "HeadphoneEq"
 assert headphoneeq.step == "SelectFile"
 
-# Navigate step tab bar forward.
+# Move from content to the step tab bar, then navigate forward.
+key esc
+sleep 100ms
+assert input_mode == "ConfigureHeadphoneEq"
+
 key right
 sleep 100ms
 assert headphoneeq.step == "Configure"
@@ -28,6 +32,8 @@ sleep 100ms
 assert headphoneeq.step == "Configure"
 
 # Esc chain: content → step tab → configure tab.
+key down
+sleep 50ms
 key esc
 sleep 100ms
 assert input_mode == "ConfigureHeadphoneEq"

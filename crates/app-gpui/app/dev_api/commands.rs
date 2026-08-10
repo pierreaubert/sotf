@@ -103,6 +103,11 @@ pub enum DevCommand {
         payload: serde_json::Value,
         reply: mpsc::SyncSender<DevReply>,
     },
+    /// Install deterministic completed recording data for black-box QA.
+    QaRecordingFakeCapture {
+        payload: serde_json::Value,
+        reply: mpsc::SyncSender<DevReply>,
+    },
     /// Load deterministic RoomEQ recording fixture data and optionally start
     /// the real optimizer.
     QaRoomEq {

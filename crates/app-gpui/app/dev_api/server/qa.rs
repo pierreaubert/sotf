@@ -7,7 +7,10 @@ use super::parse::parse_simple_processing;
 use super::parse::parse_speaker_tier;
 use super::with::with_app_state;
 use super::with::with_player_view;
-use crate::app::types::RoomEqStep;
+use crate::app::types::{
+    ChannelMapping, ChannelRecording, ChannelRecordingState, RecordingResult, RecordingState,
+    RecordingStep, RoomEqStep,
+};
 use anyhow::{Result, anyhow};
 use gpui::{AnyWindowHandle, App};
 use sotf_audio_player::room_eq_types::RoomEqWizardMode;
@@ -50,6 +53,97 @@ pub(super) fn qa_seed(
         state.app.invalidate_library_stats();
         state.app.ui_state.current_screen = crate::app::Screen::Library;
         state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+        Ok(())
+    })
+}
+
+pub(super) fn qa_recording_fake_capture(
+    payload: serde_json::Value,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Result<()> {
+    let channels = payload
+        .get("channels")
+        .and_then(|value| value.as_u64())
+        .ok_or_else(|| anyhow!("fake recording payload needs `channels` integer"))?;
+    let channels = usize::try_from(channels)
+        .ok()
+        .filter(|channels| (1..=32).contains(channels))
+        .ok_or_else(|| anyhow!("fake recording `channels` must be between 1 and 32"))?;
+    let points = payload
+        .get("points")
+        .and_then(|value| value.as_u64())
+        .ok_or_else(|| anyhow!("fake recording payload needs `points` integer"))?;
+    let points = usize::try_from(points)
+        .ok()
+        .filter(|points| (2..=4096).contains(points))
+        .ok_or_else(|| anyhow!("fake recording `points` must be between 2 and 4096"))?;
+
+    let frequencies = (0..points)
+        .map(|index| {
+            let fraction = index as f32 / (points - 1) as f32;
+            20.0 * 1000.0_f32.powf(fraction)
+        })
+        .collect::<Vec<_>>();
+    let channel_names = (0..channels)
+        .map(|index| match index {
+            0 => "L".to_string(),
+            1 => "R".to_string(),
+            2 => "C".to_string(),
+            3 => "LFE".to_string(),
+            4 => "SL".to_string(),
+            5 => "SR".to_string(),
+            6 => "BL".to_string(),
+            7 => "BR".to_string(),
+            _ => format!("CH{}", index + 1),
+        })
+        .collect::<Vec<_>>();
+
+    let mut recording = RecordingState::default();
+    recording.model.playback_config.num_channels = channels;
+    recording.model.playback_config.channel_mappings = channel_names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| ChannelMapping::single(index + 1, name.clone()))
+        .collect();
+    recording.model.recording_config.num_channels = 1;
+    recording.model.recording_config.channel_mappings = vec![0];
+    recording.model.channel_recordings = channel_names
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let mut channel = ChannelRecording::new(index, name);
+            channel.state = ChannelRecordingState::Done;
+            channel.result = Some(RecordingResult {
+                channel: index,
+                wav_path: None,
+                csv_path: None,
+                frequencies: frequencies.clone(),
+                magnitude_db: vec![0.0; points],
+                phase_deg: vec![0.0; points],
+                impulse_response: None,
+                impulse_time_ms: None,
+                thd_percent: None,
+                harmonic_distortion_db: None,
+                excess_group_delay_ms: None,
+                rt60_ms: None,
+                clarity_c50_db: None,
+                clarity_c80_db: None,
+                spectrogram_db: None,
+            });
+            channel
+        })
+        .collect();
+    recording.model.step = RecordingStep::Evaluating;
+    recording.model.recording_progress = 1.0;
+    recording.model.current_recording_channel = None;
+
+    with_player_view(window, cx, |view, cx| {
+        view.state.update(cx, |state, cx| {
+            state.app.measurement_state.recording_state = recording;
+            cx.notify();
+        });
+        view.load_room_eq_from_recording(cx);
         Ok(())
     })
 }

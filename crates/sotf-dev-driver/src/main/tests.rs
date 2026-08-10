@@ -117,6 +117,16 @@ fn compare_string_quoted_and_bare() {
 }
 
 #[test]
+fn compare_decodes_escaped_quoted_string() {
+    let cmp = parse_compare(r#"metadata.target == "Album \"Scenario Album\"""#).unwrap();
+    assert_eq!(cmp.expected_text, r#""Album \"Scenario Album\"""#);
+    assert!(cmp.matches(&json!(r#"Album "Scenario Album""#)));
+
+    let escaped = parse_compare(r#"metadata.target == "line\npath\\file\tend""#).unwrap();
+    assert!(escaped.matches(&json!("line\npath\\file\tend")));
+}
+
+#[test]
 fn compare_timeout_clause() {
     let cmp = parse_compare("queue.length == 3 timeout=500ms").unwrap();
     assert_eq!(cmp.timeout, Some(Duration::from_millis(500)));
@@ -135,6 +145,7 @@ fn compare_keeps_clause_like_text_inside_string_literal() {
 fn compare_rejects_unbalanced_string_quotes() {
     assert!(parse_compare(r#"screen.focused == "Library"#).is_err());
     assert!(parse_compare(r#"screen.focused == Library""#).is_err());
+    assert!(parse_compare(r#"screen.focused == "bad\qescape""#).is_err());
 }
 
 #[test]

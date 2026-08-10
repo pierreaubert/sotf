@@ -21,12 +21,16 @@ sleep 50ms
 key c
 sleep 50ms
 
-# Navigate step tab bar forward to Configure.
+# Move from content to the step tab bar, then navigate to Configure.
+key esc
+sleep 100ms
 key right
 sleep 100ms
 assert spinorama.step == "Configure"
 
 # In Configure step, Tab cycles detail level.
+key down
+sleep 50ms
 key tab
 sleep 50ms
 

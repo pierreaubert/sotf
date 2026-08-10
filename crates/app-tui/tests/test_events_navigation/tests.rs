@@ -312,7 +312,7 @@ fn metadata_editor_opens_edits_previews_imports_and_closes() {
         .push(MetadataImportCandidate {
             provider_id: "musicbrainz".to_string(),
             provider_entity_id: "release-1".to_string(),
-            title: None,
+            title: Some("Imported Track".to_string()),
             artist: None,
             album_artist: Some("Imported Artist".to_string()),
             album_title: Some("Imported Album".to_string()),

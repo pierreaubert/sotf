@@ -10,7 +10,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "nearfield", "flat", "iir", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "NearField"
 loss = "Flat"
@@ -23,7 +23,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "nearfield", "flat", "iir", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "NearField"
 loss = "Flat"
@@ -36,7 +36,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "nearfield", "flat", "mixedphase", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "NearField"
 loss = "Flat"
@@ -49,7 +49,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "nearfield", "flat", "mixedphase", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "NearField"
 loss = "Flat"
@@ -62,7 +62,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "nearfield", "epa", "iir", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "NearField"
 loss = "Epa"
@@ -75,7 +75,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "nearfield", "epa", "iir", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "NearField"
 loss = "Epa"
@@ -88,7 +88,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "nearfield", "epa", "mixedphase", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "NearField"
 loss = "Epa"
@@ -101,7 +101,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "nearfield", "epa", "mixedphase", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "NearField"
 loss = "Epa"
@@ -114,7 +114,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "midfield", "flat", "iir", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "MidField"
 loss = "Flat"
@@ -127,7 +127,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "midfield", "flat", "iir", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "MidField"
 loss = "Flat"
@@ -140,7 +140,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "midfield", "flat", "mixedphase", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "MidField"
 loss = "Flat"
@@ -153,7 +153,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "midfield", "flat", "mixedphase", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "MidField"
 loss = "Flat"
@@ -166,7 +166,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "midfield", "epa", "iir", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "MidField"
 loss = "Epa"
@@ -179,7 +179,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "midfield", "epa", "iir", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "MidField"
 loss = "Epa"
@@ -192,7 +192,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "midfield", "epa", "mixedphase", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "MidField"
 loss = "Epa"
@@ -205,7 +205,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "midfield", "epa", "mixedphase", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "MidField"
 loss = "Epa"
@@ -218,7 +218,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "farfield", "flat", "iir", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "FarField"
 loss = "Flat"
@@ -231,7 +231,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "farfield", "flat", "iir", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "FarField"
 loss = "Flat"
@@ -244,7 +244,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "farfield", "flat", "mixedphase", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "FarField"
 loss = "Flat"
@@ -257,7 +257,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "farfield", "flat", "mixedphase", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "FarField"
 loss = "Flat"
@@ -270,7 +270,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "farfield", "epa", "iir", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "FarField"
 loss = "Epa"
@@ -283,7 +283,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "farfield", "epa", "iir", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "FarField"
 loss = "Epa"
@@ -296,7 +296,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "farfield", "epa", "mixedphase", "lr24"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "FarField"
 loss = "Epa"
@@ -309,7 +309,7 @@ path = "crates/sotf-dev-driver/scenarios/roomeq_d3v_wizard_matrix.scn"
 timeout = "150s"
 tags = ["roomeq", "autoeq", "fixtures", "farfield", "epa", "mixedphase", "lr48"]
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "FarField"
 loss = "Epa"

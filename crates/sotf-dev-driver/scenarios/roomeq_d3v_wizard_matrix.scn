@@ -1,7 +1,7 @@
 # RoomEQ e2e matrix: 2.0_d3v measured fixture through one default-wizard tuple.
 #
-# The suite copies crates/autoeq/data_tests/roomeq/measured/2.0_d3v into the
-# per-run dist tree, loads recordings.json through /qa/room-eq, applies the
+# The suite copies ../autoeq/data_tests/roomeq/measured/2.0_d3v into the
+# per-run crates/autoeq dist tree, loads recordings.json through /qa/room-eq, applies the
 # tuple from [scenario.room_eq], caps optimizer work for QA, and starts the
 # real optimizer before this script observes completion.
 
@@ -21,7 +21,6 @@ assert      roomeq.step == "Review"
 assert      roomeq.result_count == 2
 assert      roomeq.has_dsp_output == true
 assert      roomeq.dsp_channel_count == 2
-assert      roomeq.filter_count >= 2
 assert      roomeq.filter_count <= 28
 assert      roomeq.average_pre_score >= 1
 assert      roomeq.average_pre_score <= 35

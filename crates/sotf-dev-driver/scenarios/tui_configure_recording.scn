@@ -13,24 +13,29 @@ assert input_mode == "ConfigureRecording"
 assert configure.sub_screen == "Recording"
 assert recording.step == "Config"
 
-# Navigate step tab bar forward with Right.
-key right
+# Move from content to the step tab bar, then navigate forward with Right.
+key esc
 sleep 100ms
-assert recording.step == "SplCalibration"
+assert input_mode == "ConfigureRecording"
 
 key right
 sleep 100ms
-assert recording.step == "Capture"
+assert recording.step == "SplCalibration"
 
 # Navigate step tab bar backward with Left.
 key left
 sleep 100ms
+assert recording.step == "Config"
+
+key right
+sleep 100ms
 assert recording.step == "SplCalibration"
 
-# Esc from content → step tab bar (first level).
+# Return to content, then Esc moves back to the step tab bar.
+key down
+sleep 100ms
 key esc
 sleep 100ms
-# Step tab should be focused; input_mode stays configure sub-screen.
 assert input_mode == "ConfigureRecording"
 
 # Esc again → Configure tab bar.

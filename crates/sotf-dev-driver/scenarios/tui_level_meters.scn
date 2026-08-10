@@ -7,7 +7,7 @@ assert screen.focused == "Library"
 assert input_mode == "Normal"
 
 # Enter level meters mode from library.
-key m
+key shift-M
 sleep 100ms
 assert input_mode == "LevelMeters"
 
@@ -46,7 +46,7 @@ assert input_mode == "Normal"
 assert screen.focused == "Library"
 
 # Re-enter and exit via Tab (also returns to Library).
-key m
+key shift-M
 sleep 100ms
 assert input_mode == "LevelMeters"
 

@@ -88,11 +88,13 @@ is set; use it for BlackHole/SotF HAL loopback smoke tests.
 RoomEQ fixture scenarios use `[scenario.room_eq]`. The runner copies the
 fixture into the per-scenario artifact `dist/` tree, loads `recordings.json`
 through `/qa/room-eq`, applies the requested default-wizard tuple, and can
-start the real optimizer:
+start the real optimizer. The checked-in `roomeq_matrix.toml` expects the
+separate `autoeq` repository to be checked out next to `sotf`; that repository
+owns the D3V measurement fixture used by all 24 matrix cases.
 
 ```toml
 [scenario.room_eq]
-fixture_dir = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
+fixture_dir = "../autoeq/data_tests/roomeq/measured/2.0_d3v"
 dist_path = "crates/autoeq/data_tests/roomeq/measured/2.0_d3v"
 target = "NearField"      # NearField | MidField | FarField
 loss = "Flat"             # Flat | Epa
