@@ -7,7 +7,44 @@
 //! EQ has dynamic per-filter params, so there is no static `Params` struct
 //! or `PluginParamDef` impl here.
 
+use math_audio_iir_fir::BiquadFilterType;
 use sotf_host::param_specs::ParamSpec;
+
+/// Minimum Q for every filter type.
+pub const Q_MIN: f64 = 0.1;
+
+/// UI edit ceiling for every filter type except Notch (knob/drag range).
+pub const Q_MAX_STANDARD: f64 = 10.0;
+
+/// Validation/load ceiling for every filter type except Notch. Matches the
+/// optimizers' `max_q` ceiling so optimized chains load unclamped.
+pub const Q_MAX_OPTIMIZED: f64 = 20.0;
+
+/// Maximum Q for Notch filters (very narrow rejection bands).
+pub const Q_MAX_NOTCH: f64 = 40.0;
+
+/// Per-filter-type validation ceiling: notch filters accept much higher Q
+/// than all other types. Used by the DSP validation, the settings layer, and
+/// preset/config loading.
+pub fn q_max_for(filter_type: BiquadFilterType) -> f64 {
+    match filter_type {
+        BiquadFilterType::Notch => Q_MAX_NOTCH,
+        _ => Q_MAX_OPTIMIZED,
+    }
+}
+
+/// Per-filter-type UI edit ceiling for knobs and drag handles.
+pub fn q_max_ui(filter_type: BiquadFilterType) -> f64 {
+    match filter_type {
+        BiquadFilterType::Notch => Q_MAX_NOTCH,
+        _ => Q_MAX_STANDARD,
+    }
+}
+
+/// Clamp a Q value into the accepted range for the given filter type.
+pub fn clamp_q(filter_type: BiquadFilterType, q: f64) -> f64 {
+    q.clamp(Q_MIN, q_max_for(filter_type))
+}
 
 // ============================================================================
 // Global Parameter Specifications
@@ -45,8 +82,8 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
         "Filter",
     )
     .doc("Filter center/corner frequency"),
-    ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.05, "", "Filter")
-        .doc("Filter bandwidth (quality factor)"),
+    ParamSpec::float("Q", "q", 1.0, 0.1, 40.0, 0.05, "", "Filter")
+        .doc("Filter bandwidth (quality factor); notch filters accept up to 40"),
     ParamSpec::float("Gain", "gain", 0.0, -24.0, 24.0, 0.5, "dB", "Filter")
         .doc("Boost or cut amount"),
     ParamSpec::choice(

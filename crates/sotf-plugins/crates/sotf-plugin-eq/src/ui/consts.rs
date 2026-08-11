@@ -1,5 +1,13 @@
 use crate::params::BAND_TEMPLATE as EQ;
+use crate::params::{Q_MIN, q_max_ui};
+use math_audio_iir_fir::BiquadFilterType;
 use sotf_host::param_specs::find_by_key as pk;
+
+/// Per-filter-type Q bounds: notch filters accept very narrow bandwidths
+/// (up to 40); all other types stay within the classic 0.1–10 edit range.
+pub fn q_bounds_for(filter_type: BiquadFilterType) -> (f64, f64) {
+    (Q_MIN, q_max_ui(filter_type))
+}
 
 /// Sample rate for filter calculations
 pub const SAMPLE_RATE: f64 = sotf_host::DEFAULT_PREVIEW_SAMPLE_RATE;

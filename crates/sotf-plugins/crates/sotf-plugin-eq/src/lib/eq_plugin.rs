@@ -6,6 +6,7 @@ use super::consts::GAIN_MAX;
 use super::consts::GAIN_MIN;
 use super::consts::MEASUREMENT_THROTTLE;
 use super::consts::Q_MAX;
+use super::consts::Q_MAX_NOTCH;
 use super::consts::Q_MIN;
 use super::consts::TRANSITION_DURATION_SECS;
 use super::misc::butterworth_q_values;
@@ -31,6 +32,15 @@ use std::any::Any;
 use std::sync::Arc;
 
 const MAX_FILTERS: i32 = 20;
+
+/// Maximum accepted Q for a band: notch filters allow much higher Q
+/// (very narrow rejection bands) than other filter types.
+fn q_max_for(filter_type: BiquadFilterType) -> f32 {
+    match filter_type {
+        BiquadFilterType::Notch => Q_MAX_NOTCH,
+        _ => Q_MAX,
+    }
+}
 
 fn filter_type_index(filter_type: BiquadFilterType) -> i32 {
     match filter_type {
@@ -211,7 +221,7 @@ impl EqPlugin {
                             "Q",
                             f.q as f32,
                             Q_MIN,
-                            Q_MAX,
+                            q_max_for(f.filter_type),
                         )
                         .with_group(&group),
                     );
@@ -323,14 +333,10 @@ impl EqPlugin {
                     "Filter order must be even (2, 4, 6, 8); got {order}"
                 ));
             }
-            let stages = create_band_stages(
-                filter_type,
-                f.freq,
-                sample_rate as f64,
-                f.q,
-                f.db_gain,
-                order,
-            );
+            // Clamp Q into the accepted range for this filter type: presets
+            // and hand-edited configs may carry out-of-range values.
+            let q = f.q.clamp(Q_MIN as f64, q_max_for(filter_type) as f64);
+            let stages = create_band_stages(filter_type, f.freq, sample_rate as f64, q, f.db_gain, order);
             Ok((stages, order))
         };
         let config_to_advanced =
@@ -952,7 +958,15 @@ impl EqPlugin {
                 match field {
                     "freq" => Parameter::new_float("freq", "Freq", 1000.0, FREQ_MIN, FREQ_MAX)
                         .validate(&value)?,
-                    "q" => Parameter::new_float("q", "Q", 1.0, Q_MIN, Q_MAX).validate(&value)?,
+                    "q" => {
+                        let q_max = self
+                            .filters[0]
+                            .get(b_idx)
+                            .and_then(|stages| stages.first())
+                            .map(|primary| q_max_for(primary.filter_type))
+                            .unwrap_or(Q_MAX);
+                        Parameter::new_float("q", "Q", 1.0, Q_MIN, q_max).validate(&value)?
+                    }
                     "gain" => Parameter::new_float("gain", "Gain", 0.0, GAIN_MIN, GAIN_MAX)
                         .validate(&value)?,
                     "filter_type" => {
@@ -1013,6 +1027,8 @@ impl EqPlugin {
                                 "filter_type" => {
                                     if let Some(filter_type) = filter_type_from_index(v as i32) {
                                         ft = filter_type;
+                                        // Keep Q within the new type's accepted range.
+                                        q = q.clamp(Q_MIN as f64, q_max_for(ft) as f64);
                                     }
                                 }
                                 _ => {}

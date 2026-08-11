@@ -2,6 +2,7 @@ use super::misc::apply_structural_side_effects;
 use super::misc::eq_band_types;
 use super::types::EqEditTarget;
 use crate::{EQFilter, PluginSettings};
+use sotf_plugins::param_specs::eq::{clamp_q, q_max_for};
 
 pub(super) fn set_eq_band_field_for_plugin(
     filter_idx: usize,
@@ -19,7 +20,7 @@ pub(super) fn set_eq_band_field_for_plugin(
             true
         }
         1 => {
-            filter.q = value.clamp(0.1, 10.0);
+            filter.q = clamp_q(filter.filter_type, value);
             true
         }
         2 => {
@@ -30,6 +31,8 @@ pub(super) fn set_eq_band_field_for_plugin(
             let types = eq_band_types(allow_extended_types);
             let type_idx = (value as usize).clamp(0, types.len() - 1);
             filter.filter_type = types[type_idx];
+            // Keep Q within the new type's accepted range.
+            filter.q = filter.q.clamp(0.1, q_max_for(filter.filter_type));
             true
         }
         _ => false,
@@ -441,6 +444,78 @@ mod tests {
         assert!(set_plugin_param_value(&mut settings, 2, 50.0, &mut changed));
         match settings {
             PluginSettings::EQ { filters, .. } => assert_eq!(filters[0].gain_db, 24.0),
+            _ => panic!("expected EQ"),
+        }
+    }
+
+    #[test]
+    fn set_plugin_param_value_eq_q_notch_allows_up_to_40() {
+        let mut settings = PluginSettings::EQ {
+            channels: 2,
+            filters: vec![EQFilter::new(BiquadFilterType::Notch, 1000.0, 1.0, 0.0)],
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+        let mut changed = false;
+
+        // Param index 1 = band 0 q; notch accepts up to 40
+        assert!(set_plugin_param_value(&mut settings, 1, 25.0, &mut changed));
+        match &settings {
+            PluginSettings::EQ { filters, .. } => assert_eq!(filters[0].q, 25.0),
+            _ => panic!("expected EQ"),
+        }
+
+        // Above 40 clamps to 40
+        assert!(set_plugin_param_value(&mut settings, 1, 99.0, &mut changed));
+        match settings {
+            PluginSettings::EQ { filters, .. } => assert_eq!(filters[0].q, 40.0),
+            _ => panic!("expected EQ"),
+        }
+    }
+
+    #[test]
+    fn set_plugin_param_value_eq_q_peak_clamps_to_20() {
+        let mut settings = PluginSettings::EQ {
+            channels: 2,
+            filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0)],
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+        let mut changed = false;
+
+        assert!(set_plugin_param_value(&mut settings, 1, 25.0, &mut changed));
+        match settings {
+            PluginSettings::EQ { filters, .. } => assert_eq!(filters[0].q, 20.0),
+            _ => panic!("expected EQ"),
+        }
+    }
+
+    #[test]
+    fn set_plugin_param_value_eq_type_switch_clamps_q() {
+        let mut settings = PluginSettings::EQ {
+            channels: 2,
+            filters: vec![EQFilter::new(BiquadFilterType::Notch, 1000.0, 25.0, 0.0)],
+            channel_filters: None,
+            per_channel_mode: false,
+            max_filters: 10,
+            tdf2: false,
+            topology: 0.0,
+        };
+        let mut changed = false;
+
+        // Switch band 0 (q=25 notch) to Peak (index 0): q must clamp to 20
+        assert!(set_plugin_param_value(&mut settings, 3, 0.0, &mut changed));
+        match settings {
+            PluginSettings::EQ { filters, .. } => {
+                assert_eq!(filters[0].filter_type, BiquadFilterType::Peak);
+                assert_eq!(filters[0].q, 20.0);
+            }
             _ => panic!("expected EQ"),
         }
     }

@@ -22,7 +22,6 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
         per_channel_mode,
         max_filters,
         tdf2,
-        topology,
         ..
     } = ctx.settings
     {
@@ -42,7 +41,6 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
                 mode: ui_eq::EqViewMode::Standard,
                 num_filters: *max_filters,
                 tdf2: *tdf2,
-                topology: *topology,
                 available_width: ctx.available_width,
                 layout_scale: ctx.layout_scale,
             },
@@ -279,7 +277,6 @@ pub(super) fn render_linear_phase_eq(
                 },
                 num_filters: *num_filters as usize,
                 tdf2: false,
-                topology: 0.0,
                 available_width: ctx.available_width,
                 layout_scale: ctx.layout_scale,
             },

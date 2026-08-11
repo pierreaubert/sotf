@@ -42,7 +42,7 @@ use sotf_audio::plugins::EqFilterTopology;
 use sotf_audio_player::{EQFilter, PluginSettings};
 use sotf_audio_player_midi::mapping::MidiOverlay;
 use sotf_plugins::param_specs::{
-    eq::BAND_TEMPLATE as EQ, eq::GLOBAL_PARAMS as EQ_GLOBAL, find_by_key as pk,
+    eq::BAND_TEMPLATE as EQ, find_by_key as pk,
     linear_phase_eq::PARAMS as LP_PARAMS,
 };
 use std::cell::RefCell;
@@ -114,9 +114,7 @@ fn commit_eq_drag_preview(
 
 #[derive(Clone, Copy)]
 pub(crate) enum EqGlobalControl {
-    StandardMaxFilters,
     StandardTdf2,
-    StandardTopology,
     LpNumFilters,
     LpFirLength,
     LpPhaseMode,
@@ -128,6 +126,16 @@ pub(crate) enum EqGlobalControl {
 enum EqBandAction {
     Add,
     Remove(usize),
+}
+
+/// Per-filter-type Q bounds for the EQ editor: notch filters accept very
+/// narrow bandwidths (up to 40); all other types stay within the classic
+/// 0.1–10 edit range.
+fn eq_q_bounds(filter_type: BiquadFilterType) -> (f64, f64) {
+    (
+        sotf_plugins::param_specs::eq::Q_MIN,
+        sotf_plugins::param_specs::eq::q_max_ui(filter_type),
+    )
 }
 
 fn format_eq_frequency_label(freq: f64) -> String {
@@ -794,21 +802,24 @@ pub(crate) fn render_eq_property_strip(
                     midi_overlay,
                     theme,
                 ))
-                .child(render_eq_knob_with_midi(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    text.quality_factor,
-                    filter.q,
-                    pk(EQ, "q").min_f64(),
-                    pk(EQ, "q").max_f64(),
-                    "",
-                    base_param_idx + indexing.q,
-                    state.selected_param,
-                    state.is_editing,
-                    midi_overlay,
-                    theme,
-                ))
+                .child({
+                    let (q_min, q_max) = eq_q_bounds(filter.filter_type);
+                    render_eq_knob_with_midi(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        text.quality_factor,
+                        filter.q,
+                        q_min,
+                        q_max,
+                        "",
+                        base_param_idx + indexing.q,
+                        state.selected_param,
+                        state.is_editing,
+                        midi_overlay,
+                        theme,
+                    )
+                })
                 .children(indexing.active.map(|active_local_idx| {
                     render_eq_active_toggle(
                         d,
@@ -1145,6 +1156,7 @@ pub(crate) fn render_eq_visualization_sized(
         let left_handle = {
             let entity_left = entity.clone();
             let current_q = filter.q;
+            let (q_min, q_max) = eq_q_bounds(filter.filter_type);
             let bounds_ref = bounds_ref.clone();
             div()
                 .id(("eq-q-left", i))
@@ -1198,8 +1210,7 @@ pub(crate) fn render_eq_visualization_sized(
                         // drag_data.start_x is in local coordinates
                         let delta = drag_data.start_x - x_px;
                         let q_change = drag_delta_to_q_change(delta);
-                        let new_q = (drag_data.start_q + q_change)
-                            .clamp(pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64());
+                        let new_q = (drag_data.start_q + q_change).clamp(q_min, q_max);
 
                         let plugin_idx = drag_data.plugin_idx;
                         let band_idx = drag_data.band_idx;
@@ -1225,6 +1236,7 @@ pub(crate) fn render_eq_visualization_sized(
         let right_handle = {
             let entity_right = entity.clone();
             let current_q = filter.q;
+            let (q_min, q_max) = eq_q_bounds(filter.filter_type);
             let bounds_ref = bounds_ref.clone();
             div()
                 .id(("eq-q-right", i))
@@ -1277,8 +1289,7 @@ pub(crate) fn render_eq_visualization_sized(
                         // For right handle: moving right increases Q, moving left decreases Q
                         let delta = x_px - drag_data.start_x;
                         let q_change = drag_delta_to_q_change(delta);
-                        let new_q = (drag_data.start_q + q_change)
-                            .clamp(pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64());
+                        let new_q = (drag_data.start_q + q_change).clamp(q_min, q_max);
 
                         let plugin_idx = drag_data.plugin_idx;
                         let band_idx = drag_data.band_idx;
@@ -1808,12 +1819,27 @@ pub fn render_eq_plugin(
         div().into_any_element()
     };
     let wide_band_strip = (layout == EqCompactLayout::Current).then(|| {
+        // Single header row: channel mode segment (Standard EQ only), then one
+        // chip per filter and the add-band button.
+        let leading = matches!(&state.mode, EqViewMode::Standard).then(|| {
+            render_eq_channel_segment(
+                &ds,
+                entity.clone(),
+                plugin_idx,
+                channels,
+                selected_eq_channel,
+                per_channel_mode,
+                text,
+                theme,
+            )
+        });
         super::layout_compact::render_narrow_band_strip(
             &ds,
             entity.clone(),
             plugin_idx,
             display_filters,
             selected_band_idx,
+            leading,
             theme,
         )
         .into_any_element()
@@ -1942,56 +1968,6 @@ pub fn render_eq_plugin(
         },
     );
 
-    // Algorithm info bar for Standard EQ
-    let eq_header = if matches!(&state.mode, EqViewMode::Standard) {
-        Some(
-            div()
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .justify_center()
-                .gap(ds.gap)
-                .px(ds.pad_x)
-                .py(ds.pad_y_half)
-                .bg(theme.surface)
-                .rounded(ds.r_md)
-                .text_size(ds.text_sm)
-                .text_color(theme.text_secondary)
-                .child(render_eq_global_stepper(
-                    &ds,
-                    entity.clone(),
-                    plugin_idx,
-                    EqGlobalControl::StandardMaxFilters,
-                    text.filters,
-                    state.num_filters.to_string(),
-                    theme,
-                ))
-                .child(render_eq_global_toggle(
-                    &ds,
-                    entity.clone(),
-                    plugin_idx,
-                    EqGlobalControl::StandardTopology,
-                    text.topology,
-                    state.topology > 0.5,
-                    "SVF",
-                    "Biquad",
-                    theme,
-                ))
-                .child(render_eq_channel_segment(
-                    &ds,
-                    entity.clone(),
-                    plugin_idx,
-                    channels,
-                    selected_eq_channel,
-                    per_channel_mode,
-                    text,
-                    theme,
-                )),
-        )
-    } else {
-        None
-    };
-
     // Combine sections based on layout mode
 
     match layout {
@@ -2000,7 +1976,6 @@ pub fn render_eq_plugin(
             .flex_col()
             .items_center()
             .gap(ds.section_xl)
-            .children(eq_header)
             .children(lp_header)
             .children(midi_status)
             .children(wide_band_strip)
@@ -2267,16 +2242,7 @@ fn adjust_eq_global_control(
             return;
         };
         match (&mut plugin.settings, control) {
-            (PluginSettings::EQ { max_filters, .. }, EqGlobalControl::StandardMaxFilters) => {
-                *max_filters = ((*max_filters as i64) + delta as i64).clamp(
-                    pk(EQ_GLOBAL, "max_filters").min_f64() as i64,
-                    pk(EQ_GLOBAL, "max_filters").max_f64() as i64,
-                ) as usize;
-            }
             (PluginSettings::EQ { tdf2, .. }, EqGlobalControl::StandardTdf2) => *tdf2 = !*tdf2,
-            (PluginSettings::EQ { topology, .. }, EqGlobalControl::StandardTopology) => {
-                *topology = if *topology > 0.5 { 0.0 } else { 1.0 };
-            }
             (PluginSettings::LinearPhaseEq { num_filters, .. }, EqGlobalControl::LpNumFilters) => {
                 *num_filters = (*num_filters + delta).clamp(
                     pk(LP_PARAMS, "num_filters").min_f64(),

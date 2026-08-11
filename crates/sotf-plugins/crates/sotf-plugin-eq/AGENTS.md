@@ -50,5 +50,6 @@ cargo test -p sotf-plugin-eq
 - High-order filters (order > 2) use Butterworth Q staggering: `Q_k = 1 / (2 * cos(pi * (2k+1) / 2N))`. For peak filters, user Q is multiplied by Butterworth Q; for LP/HP/shelf, Butterworth Q is used directly.
 - Per-channel filters (`channel_filters`) override the global `filters` list for specific channels. If `channel_filters` is set, each channel uses its own filter bank.
 - SVF topology does not support cascading (always single stage per band regardless of order setting).
+- Q bounds are per filter type, with two ceilings (`params.rs` is the single source of truth: `Q_MIN`/`Q_MAX_STANDARD`/`Q_MAX_OPTIMIZED`/`Q_MAX_NOTCH`, `q_max_for`/`q_max_ui`/`clamp_q`): validation/loading accepts 0.1–20 for non-notch types (matching the optimizers' `max_q` ceiling) and 0.1–40 for Notch; UI knobs/drags edit within 0.1–10 for non-notch (`q_max_ui`) and 0.1–40 for Notch. The DSP mirrors the validation ceiling in `lib/consts.rs` (`Q_MAX`/`Q_MAX_NOTCH`, f32). Switching a band away from Notch re-clamps Q to 20.
 - Parameter IDs follow the pattern `filter_{band}_freq`, `filter_{band}_q`, `filter_{band}_gain`, `filter_{band}_type`, `filter_{band}_order`.
 - The `gpui-ui` feature adds a GPUI-based UI component (optional dependency).

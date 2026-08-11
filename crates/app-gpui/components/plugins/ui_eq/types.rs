@@ -52,8 +52,6 @@ pub struct EqRenderState<'a> {
     pub num_filters: usize,
     /// Use Transposed Direct Form II (Standard EQ only)
     pub tdf2: bool,
-    /// Filter topology: 0 = Biquad, 1 = SVF (Standard EQ only)
-    pub topology: f64,
     /// Available width in pixels for responsive compact-layout selection
     pub available_width: f32,
     /// Effective responsive/font scale used to interpret logical breakpoints.

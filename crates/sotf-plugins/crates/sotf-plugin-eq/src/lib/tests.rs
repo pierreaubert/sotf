@@ -162,6 +162,41 @@ fn test_eq_allpass_filter_type_parses() {
 }
 
 #[test]
+fn test_from_params_clamps_q_per_filter_type() {
+    // A preset/config with out-of-range Q is clamped on load: peak clamps to
+    // the 20.0 validation ceiling, notch keeps up to 40.
+    let params = EqPluginParams {
+        filters: vec![
+            BiquadFilterConfig {
+                filter_type: "peak".to_string(),
+                freq: 1000.0,
+                q: 25.0,
+                db_gain: 0.0,
+                order: 2,
+                topology: Default::default(),
+                lambda: None,
+                kautz_sections: Vec::new(),
+            },
+            BiquadFilterConfig {
+                filter_type: "notch".to_string(),
+                freq: 2000.0,
+                q: 25.0,
+                db_gain: 0.0,
+                order: 2,
+                topology: Default::default(),
+                lambda: None,
+                kautz_sections: Vec::new(),
+            },
+        ],
+        channel_filters: None,
+        auto_gain: Default::default(),
+    };
+    let p = EqPlugin::from_params(1, 48000, params).unwrap();
+    assert_eq!(p.filters[0][0][0].q, 20.0, "peak Q should clamp to 20");
+    assert_eq!(p.filters[0][1][0].q, 25.0, "notch Q should be kept");
+}
+
+#[test]
 fn test_eq_warped_biquad_filter_processes() {
     let params = EqPluginParams {
         filters: vec![BiquadFilterConfig {
@@ -1308,6 +1343,89 @@ fn test_set_parameter_band_gain_out_of_bounds_rejected() {
         ParameterValue::Float(-30.0),
     );
     assert!(result.is_err(), "gain below GAIN_MIN should be rejected");
+}
+
+#[test]
+fn test_set_parameter_band_q_notch_allows_up_to_40() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Notch,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )],
+    );
+    p.plugin_initialize(48000).unwrap();
+
+    // Notch accepts Q above the standard 10.0 limit, up to 40.
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_q"),
+        ParameterValue::Float(25.0),
+    );
+    assert!(result.is_ok(), "notch Q of 25 should be accepted");
+    let q = p.parametric_get_parameter(&ParameterId::from("band_0_q"));
+    assert_eq!(q, Some(ParameterValue::Float(25.0)));
+
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_q"),
+        ParameterValue::Float(45.0),
+    );
+    assert!(result.is_err(), "notch Q above 40 should be rejected");
+}
+
+#[test]
+fn test_set_parameter_band_q_peak_rejects_above_20() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            0.0,
+        )],
+    );
+    p.plugin_initialize(48000).unwrap();
+
+    // Peak accepts up to the optimizer ceiling (20)...
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_q"),
+        ParameterValue::Float(15.0),
+    );
+    assert!(result.is_ok(), "peak Q of 15 should be accepted");
+
+    // ...but not beyond it.
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_q"),
+        ParameterValue::Float(25.0),
+    );
+    assert!(result.is_err(), "peak Q above 20 should be rejected");
+}
+
+#[test]
+fn test_set_parameter_filter_type_switch_clamps_q() {
+    let mut p = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Notch,
+            1000.0,
+            48000.0,
+            20.0,
+            0.0,
+        )],
+    );
+    p.plugin_initialize(48000).unwrap();
+
+    // Switching a high-Q notch to Peak must clamp Q back to 20.
+    let result = p.parametric_set_parameter(
+        ParameterId::from("band_0_filter_type"),
+        ParameterValue::Int(0),
+    );
+    assert!(result.is_ok());
+    let q = p.parametric_get_parameter(&ParameterId::from("band_0_q"));
+    assert_eq!(q, Some(ParameterValue::Float(20.0)));
 }
 
 #[test]

@@ -227,6 +227,7 @@ pub(crate) fn render_eq_inspector(
             plugin_idx,
             display_filters,
             selected_band_idx,
+            None,
             theme,
         ));
 
@@ -274,6 +275,7 @@ pub(crate) fn render_narrow_band_strip(
     plugin_idx: usize,
     display_filters: &[EQFilter],
     selected_band_idx: usize,
+    leading: Option<AnyElement>,
     theme: &Theme,
 ) -> impl IntoElement {
     let mut strip = div()
@@ -286,6 +288,16 @@ pub(crate) fn render_narrow_band_strip(
         .py(d.pad_y_half)
         .bg(theme.surface)
         .rounded(d.r_md);
+
+    if let Some(leading) = leading {
+        strip = strip.child(leading).child(
+            div()
+                .w(px(1.0))
+                .h(rems(1.5))
+                .flex_shrink_0()
+                .bg(theme.border),
+        );
+    }
 
     for (i, filter) in display_filters.iter().enumerate() {
         strip = strip.child(render_narrow_band_chip(
@@ -598,31 +610,14 @@ fn render_compact_config_panel(
     // Global controls based on EQ variant
     match &state.mode {
         EqViewMode::Standard => {
+            // Filter count and topology are per-filter concerns (add button in
+            // the band strip, topology in the band editor) — only the global
+            // TDF-II toggle stays here.
             col = col.child(
                 div()
                     .flex()
                     .flex_wrap()
                     .gap(d.gap)
-                    .child(render_eq_global_stepper(
-                        d,
-                        entity.clone(),
-                        plugin_idx,
-                        EqGlobalControl::StandardMaxFilters,
-                        text.filters,
-                        state.num_filters.to_string(),
-                        theme,
-                    ))
-                    .child(render_eq_global_toggle(
-                        d,
-                        entity.clone(),
-                        plugin_idx,
-                        EqGlobalControl::StandardTopology,
-                        text.topology,
-                        state.topology > 0.5,
-                        "SVF",
-                        "Biquad",
-                        theme,
-                    ))
                     .child(render_eq_global_toggle(
                         d,
                         entity.clone(),

@@ -38,12 +38,15 @@ impl PlayerView {
     /// Main Room EQ screen entry point
     pub(crate) fn render_room_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
-        let (theme, current_step, current_hint) = {
+        let (theme, current_step, current_hint, dismiss_hint_label) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
                 state.app.measurement_state.room_eq_state.step,
                 state.app.tutorial.current_hint.clone(),
+                crate::app::i18n::DialogTranslations::for_language(state.app.ui_state.language)
+                    .about
+                    .close,
             )
         };
 
@@ -81,14 +84,32 @@ impl PlayerView {
                             .on_mouse_up(
                                 gpui::MouseButton::Left,
                                 cx.listener(|view, _: &gpui::MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
+                                    view.state.update(cx, |state, cx| {
                                         state.app.dismiss_hint();
+                                        let layout = state.layout.read(cx);
+                                        if let Err(error) = state.app.save_config(layout) {
+                                            log::error!("Failed to save config: {error}");
+                                        }
                                     });
                                     cx.notify();
                                 }),
                             )
                             .child(crate::components::dialogs::tutorial::render_hint_banner(
-                                &hint, &theme, d,
+                                &hint,
+                                &theme,
+                                d,
+                                dismiss_hint_label,
+                                cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                    cx.stop_propagation();
+                                    view.state.update(cx, |state, cx| {
+                                        state.app.dismiss_hint();
+                                        let layout = state.layout.read(cx);
+                                        if let Err(error) = state.app.save_config(layout) {
+                                            log::error!("Failed to save config: {error}");
+                                        }
+                                    });
+                                    cx.notify();
+                                }),
                             )),
                     )
                 },

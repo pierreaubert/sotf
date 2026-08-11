@@ -2986,7 +2986,6 @@ pub struct EqViewTranslations {
     pub on: &'static str,
     pub off: &'static str,
     pub mix: &'static str,
-    pub topology: &'static str,
 }
 
 impl EqViewTranslations {
@@ -3021,7 +3020,6 @@ impl EqViewTranslations {
                 on: "On",
                 off: "Off",
                 mix: "Mix",
-                topology: "Topology",
             },
             Language::French => Self {
                 no_bands: "Aucune bande",
@@ -3052,7 +3050,6 @@ impl EqViewTranslations {
                 on: "Activé",
                 off: "Désactivé",
                 mix: "Mix",
-                topology: "Topologie",
             },
             Language::German => Self {
                 no_bands: "Keine Bänder",
@@ -3083,7 +3080,6 @@ impl EqViewTranslations {
                 on: "Ein",
                 off: "Aus",
                 mix: "Mix",
-                topology: "Topologie",
             },
             Language::Spanish => Self {
                 no_bands: "Sin bandas",
@@ -3114,7 +3110,6 @@ impl EqViewTranslations {
                 on: "Activado",
                 off: "Desactivado",
                 mix: "Mezcla",
-                topology: "Topología",
             },
         }
     }

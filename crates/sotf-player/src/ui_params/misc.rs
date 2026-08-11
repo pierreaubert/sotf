@@ -15,13 +15,14 @@
 /// Returns `true` if the field was recognised and updated.
 pub fn apply_eq_band_field(filter: &mut crate::EQFilter, field_idx: usize, delta: f64) -> bool {
     use crate::BiquadFilterType;
+    use sotf_plugins::param_specs::eq::q_max_for;
     match field_idx {
         0 => {
             filter.frequency = (filter.frequency + delta * 10.0).clamp(20.0, 20_000.0);
             true
         }
         1 => {
-            filter.q = (filter.q + delta * 0.1).clamp(0.1, 10.0);
+            filter.q = (filter.q + delta * 0.1).clamp(0.1, q_max_for(filter.filter_type));
             true
         }
         2 => {
@@ -50,6 +51,8 @@ pub fn apply_eq_band_field(filter: &mut crate::EQFilter, field_idx: usize, delta
                 current_idx - 1
             };
             filter.filter_type = types[new_idx];
+            // Keep Q within the new type's accepted range.
+            filter.q = filter.q.clamp(0.1, q_max_for(filter.filter_type));
             true
         }
         _ => false,

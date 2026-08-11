@@ -11,6 +11,7 @@ use super::consts::Q_BAR_HEIGHT;
 use super::consts::Q_HANDLE_RADIUS;
 use super::consts::freq_to_x;
 use super::consts::gain_to_y;
+use super::consts::q_bounds_for;
 use super::consts::q_to_bar_width;
 use super::consts::x_to_freq;
 use super::consts::y_to_gain;
@@ -227,6 +228,7 @@ fn render_eq_visualization<H: PluginViewHost>(
         let left_handle = {
             let entity_left = entity.clone();
             let current_q = filter.q;
+            let (q_min, q_max) = q_bounds_for(filter.filter_type);
             let bounds_ref = bounds_ref.clone();
             div()
                 .id(("eq-q-left", i))
@@ -275,8 +277,7 @@ fn render_eq_visualization<H: PluginViewHost>(
                         // drag_data.start_x is in local coordinates
                         let delta = drag_data.start_x - x_px;
                         let q_change = drag_delta_to_q_change(delta);
-                        let new_q = (drag_data.start_q + q_change)
-                            .clamp(pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64());
+                        let new_q = (drag_data.start_q + q_change).clamp(q_min, q_max);
 
                         let plugin_idx = drag_data.plugin_idx;
                         let band_idx = drag_data.band_idx;
@@ -298,6 +299,7 @@ fn render_eq_visualization<H: PluginViewHost>(
         let right_handle = {
             let entity_right = entity.clone();
             let current_q = filter.q;
+            let (q_min, q_max) = q_bounds_for(filter.filter_type);
             let bounds_ref = bounds_ref.clone();
             div()
                 .id(("eq-q-right", i))
@@ -345,8 +347,7 @@ fn render_eq_visualization<H: PluginViewHost>(
                         // For right handle: moving right increases Q, moving left decreases Q
                         let delta = x_px - drag_data.start_x;
                         let q_change = drag_delta_to_q_change(delta);
-                        let new_q = (drag_data.start_q + q_change)
-                            .clamp(pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64());
+                        let new_q = (drag_data.start_q + q_change).clamp(q_min, q_max);
 
                         let plugin_idx = drag_data.plugin_idx;
                         let band_idx = drag_data.band_idx;
@@ -985,20 +986,23 @@ pub fn render_eq_plugin<H: PluginViewHost>(
                                 midi_overlay,
                                 theme,
                             ))
-                            .child(render_eq_knob_with_midi(
-                                entity.clone(),
-                                plugin_idx,
-                                "Q",
-                                filter.q,
-                                pk(EQ, "q").min_f64(),
-                                pk(EQ, "q").max_f64(),
-                                "",
-                                base_param_idx + 1,
-                                state.selected_param,
-                                state.is_editing,
-                                midi_overlay,
-                                theme,
-                            ))
+                            .child({
+                                let (q_min, q_max) = q_bounds_for(filter.filter_type);
+                                render_eq_knob_with_midi(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Q",
+                                    filter.q,
+                                    q_min,
+                                    q_max,
+                                    "",
+                                    base_param_idx + 1,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    midi_overlay,
+                                    theme,
+                                )
+                            })
                             .child(render_eq_knob_with_midi(
                                 entity.clone(),
                                 plugin_idx,

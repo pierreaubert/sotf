@@ -27,6 +27,10 @@ pub(super) fn adjust_eq_band_field_for_plugin(
         (current_idx + types.len() - 1) % types.len()
     };
     filter.filter_type = types[new_idx];
+    // Keep Q within the new type's accepted range.
+    filter.q = filter
+        .q
+        .clamp(0.1, sotf_plugins::param_specs::eq::q_max_for(filter.filter_type));
     true
 }
 

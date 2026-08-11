@@ -6,7 +6,7 @@ use super::super::ui_plugin_shell::{plugin_accent_color as plugin_color, plugin_
 use super::plugin_drag_info::PluginDragInfo;
 use super::short::short_name;
 use super::short::short_name_with_permanent;
-use crate::app::i18n::{PluginCommonTranslations, PluginRackTranslations};
+use crate::app::i18n::{DialogTranslations, PluginCommonTranslations, PluginRackTranslations};
 use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
 use crate::app::types::{PluginUpdateType, Screen};
@@ -78,6 +78,8 @@ impl PlayerView {
     pub(crate) fn render_plugins_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
+        let dismiss_hint_label =
+            DialogTranslations::for_language(self.state.read(cx).app.ui_state.language).about.close;
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let current_hint = self.state.read(cx).app.tutorial.current_hint.clone();
 
@@ -195,14 +197,32 @@ impl PlayerView {
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
+                                    view.state.update(cx, |state, cx| {
                                         state.app.dismiss_hint();
+                                        let layout = state.layout.read(cx);
+                                        if let Err(error) = state.app.save_config(layout) {
+                                            log::error!("Failed to save config: {error}");
+                                        }
                                     });
                                     cx.notify();
                                 }),
                             )
                             .child(crate::components::dialogs::tutorial::render_hint_banner(
-                                &hint, &theme, d,
+                                &hint,
+                                &theme,
+                                d,
+                                dismiss_hint_label,
+                                cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                    cx.stop_propagation();
+                                    view.state.update(cx, |state, cx| {
+                                        state.app.dismiss_hint();
+                                        let layout = state.layout.read(cx);
+                                        if let Err(error) = state.app.save_config(layout) {
+                                            log::error!("Failed to save config: {error}");
+                                        }
+                                    });
+                                    cx.notify();
+                                }),
                             )),
                     )
                 },
