@@ -53,14 +53,44 @@ pub fn screen_shows_rack_data(screen: Screen, layout_mode: crate::app::LayoutMod
             && layout_mode == crate::app::LayoutMode::Expanded)
 }
 
+/// True when the engine stopped unexpectedly and the UI should auto-advance
+/// the queue. A user-initiated pause surfaces as `StreamingState::Paused`
+/// (and track reloads as `Loading`/`Ready`/`Seeking`), none of which may
+/// advance; only a genuine stop (`Idle`/`Error`) or an end-of-stream flag
+/// means the current track is over.
+pub fn should_auto_advance_on_engine_stop(
+    track_ended: bool,
+    was_playing: bool,
+    engine_is_playing: bool,
+    streaming_state: StreamingState,
+    has_queue_context: bool,
+) -> bool {
+    (track_ended
+        || (was_playing
+            && !engine_is_playing
+            && matches!(
+                streaming_state,
+                StreamingState::Idle | StreamingState::Error
+            )))
+        && has_queue_context
+}
+
 /// True when a clean engine stop has no queue context to auto-advance from,
-/// so the UI must clear stale "playing" state immediately.
+/// so the UI must clear stale "playing" state immediately. Pauses and
+/// transitional states (`Paused`/`Loading`/`Ready`/`Seeking`) are not stops.
 pub fn engine_stop_without_queue_should_clear(
     was_playing: bool,
     engine_is_playing: bool,
+    streaming_state: StreamingState,
     has_queue_context: bool,
 ) -> bool {
-    was_playing && !engine_is_playing && !has_queue_context
+    was_playing
+        && !engine_is_playing
+        && matches!(
+            streaming_state,
+            StreamingState::Idle | StreamingState::Error
+        )
+        && !has_queue_context
 }
 
 impl PlayerView {
@@ -234,10 +264,19 @@ impl PlayerView {
         }
 
         let Some(snapshot_read) = state.player.read_snapshot() else {
+            // No snapshot yet: fabricate state consistent with the UI flags.
+            // Never fabricate `Idle`/`Error` here — that would let the
+            // auto-advance guard fire without any real engine input.
+            let fallback_is_playing = state.app.playback.is_playing;
             return (
                 sotf_audio_player::PlaybackState {
                     position_secs: state.app.playback.position_secs,
-                    is_playing: state.app.playback.is_playing,
+                    is_playing: fallback_is_playing,
+                    streaming_state: if fallback_is_playing {
+                        StreamingState::Playing
+                    } else {
+                        StreamingState::Paused
+                    },
                     sample_rate: state.app.playback.sample_rate,
                     last_error: None,
                     engine_restarted: false,
@@ -400,9 +439,13 @@ impl PlayerView {
             if let Some(path) = state.app.get_current_track_path() {
                 state.app.start_track_tracking(path);
             }
-        } else if (playback_state.track_ended || (was_playing && !playback_state.is_playing))
-            && state.app.playback.current_queue_index.is_some()
-        {
+        } else if should_auto_advance_on_engine_stop(
+            playback_state.track_ended,
+            was_playing,
+            playback_state.is_playing,
+            playback_state.streaming_state,
+            state.app.playback.current_queue_index.is_some(),
+        ) {
             state.app.stop_track_tracking();
             if let Some(path) = state.app.next_track() {
                 Self::play_track_auto_advance(state, path);
@@ -412,6 +455,7 @@ impl PlayerView {
         } else if engine_stop_without_queue_should_clear(
             was_playing,
             playback_state.is_playing,
+            playback_state.streaming_state,
             state.app.playback.current_queue_index.is_some(),
         ) {
             log::info!("[GPUI] Engine stopped without queue context; clearing playing state");

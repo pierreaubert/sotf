@@ -1,5 +1,6 @@
 use sotf_audio::decoder::AudioSource;
 use sotf_audio::engine::{AudioEngineState, PluginConfig, PluginGraphConfig};
+use sotf_audio::manager::StreamingState;
 use sotf_audio_player::{LoudnessData, PlaybackState, Player, SignalPath, SpectrumData};
 use sotf_plugins::CompressorData;
 use std::path::PathBuf;
@@ -51,6 +52,7 @@ pub struct PlayerSnapshot {
     pub sequence: u64,
     pub position_secs: f64,
     pub is_playing: bool,
+    pub streaming_state: StreamingState,
     pub sample_rate: Option<u32>,
     pub signal_path: SignalPath,
     pub input_loudness_info: Option<Arc<LoudnessData>>,
@@ -97,6 +99,7 @@ impl PendingPlaybackEvents {
         PlaybackState {
             position_secs: snapshot.position_secs,
             is_playing: snapshot.is_playing,
+            streaming_state: snapshot.streaming_state,
             sample_rate: snapshot.sample_rate,
             last_error: self.last_error.take(),
             engine_restarted: std::mem::take(&mut self.engine_restarted),
@@ -165,6 +168,7 @@ impl PlayerHandle {
             let playback_state = player.get_playback_state();
             let position_secs = playback_state.position_secs;
             let is_playing = playback_state.is_playing;
+            let streaming_state = playback_state.streaming_state;
             let sample_rate = playback_state.sample_rate;
             pending_events.lock().merge(playback_state);
 
@@ -175,6 +179,7 @@ impl PlayerHandle {
                     .map_or(0, |snapshot| snapshot.sequence.wrapping_add(1)),
                 position_secs,
                 is_playing,
+                streaming_state,
                 sample_rate,
                 signal_path: player.signal_path(),
                 input_loudness_info: request

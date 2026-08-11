@@ -1,6 +1,6 @@
 use sotf_audio::decoder::{AudioSource, AudioSpec};
 use sotf_audio::engine::{AudioEngineState, OutputAccessStatus, PluginConfig, StreamMetadata};
-use sotf_audio::manager::AudioFileInfo;
+use sotf_audio::manager::{AudioFileInfo, StreamingState};
 use std::sync::Arc;
 
 /// Batched playback state to reduce mutex locking
@@ -8,6 +8,11 @@ use std::sync::Arc;
 pub struct PlaybackState {
     pub position_secs: f64,
     pub is_playing: bool,
+    /// Engine streaming state (Playing/Paused/Loading/...). Unlike
+    /// `is_playing`, this distinguishes a user-initiated pause from an
+    /// unexpected engine stop, so the UI must use it to decide whether
+    /// auto-advancing the queue is appropriate.
+    pub streaming_state: StreamingState,
     pub sample_rate: Option<u32>,
     pub last_error: Option<String>,
     /// Set once after the engine auto-restarted from a crash. Cleared after read.

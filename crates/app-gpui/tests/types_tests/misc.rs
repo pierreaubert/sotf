@@ -1,5 +1,6 @@
+use sotf_audio::manager::StreamingState;
 use sotf_audio_player::library::{Album, Track};
-use sotf_audio_player_gpui::QueueItem;
+use sotf_audio_player_gpui::{QueueItem, should_auto_advance_on_engine_stop};
 use std::path::PathBuf;
 
 fn create_test_album(track_count: usize) -> Album {
@@ -109,11 +110,13 @@ fn test_queue_item_empty_album() {
     assert!(item.current_track().is_none());
 }
 
-/// Simulates the auto-advance detection from ui/mod.rs polling loop.
-/// Returns the path of the next track if auto-advance triggered.
+/// Simulates the auto-advance detection from the ui/tick.rs polling loop,
+/// using the production predicate. Returns the path of the next track if
+/// auto-advance triggered.
 fn simulate_auto_advance(
     app_is_playing: bool,
     engine_is_playing: bool,
+    streaming_state: StreamingState,
     current_queue_index: &mut Option<usize>,
     queue: &mut [QueueItem],
 ) -> Option<PathBuf> {
@@ -121,8 +124,15 @@ fn simulate_auto_advance(
     let was_playing = app_is_playing;
     // Step 2: app_is_playing would be overwritten to engine_is_playing here
 
-    // Step 3: auto-advance check uses was_playing, NOT the overwritten value
-    if was_playing && !engine_is_playing && current_queue_index.is_some() {
+    // Step 3: auto-advance check uses was_playing and the engine streaming
+    // state, NOT the overwritten value
+    if should_auto_advance_on_engine_stop(
+        false,
+        was_playing,
+        engine_is_playing,
+        streaming_state,
+        current_queue_index.is_some(),
+    ) {
         let idx = current_queue_index.unwrap();
         if let Some(item) = queue.get_mut(idx) {
             // Try next track in current album
@@ -147,7 +157,13 @@ fn test_auto_advance_within_album() {
     let mut current_idx = Some(0);
 
     // Track ends: app was playing, engine stopped
-    let next = simulate_auto_advance(true, false, &mut current_idx, &mut queue);
+    let next = simulate_auto_advance(
+        true,
+        false,
+        StreamingState::Idle,
+        &mut current_idx,
+        &mut queue,
+    );
 
     assert!(next.is_some(), "Should advance to next track in album");
     assert_eq!(queue[0].current_track_index, 1);
@@ -161,7 +177,13 @@ fn test_auto_advance_across_albums() {
     let mut current_idx = Some(0);
 
     // Last track of album 1 ends
-    let next = simulate_auto_advance(true, false, &mut current_idx, &mut queue);
+    let next = simulate_auto_advance(
+        true,
+        false,
+        StreamingState::Idle,
+        &mut current_idx,
+        &mut queue,
+    );
 
     assert!(
         next.is_some(),
@@ -178,7 +200,13 @@ fn test_auto_advance_stops_at_end_of_queue() {
     let mut current_idx = Some(0);
 
     // Only track in only album ends
-    let next = simulate_auto_advance(true, false, &mut current_idx, &mut queue);
+    let next = simulate_auto_advance(
+        true,
+        false,
+        StreamingState::Idle,
+        &mut current_idx,
+        &mut queue,
+    );
 
     assert!(next.is_none(), "Should not advance — queue is finished");
 }
@@ -190,7 +218,13 @@ fn test_no_auto_advance_when_paused() {
     let mut current_idx = Some(0);
 
     // User paused: app not playing, engine not playing
-    let next = simulate_auto_advance(false, false, &mut current_idx, &mut queue);
+    let next = simulate_auto_advance(
+        false,
+        false,
+        StreamingState::Paused,
+        &mut current_idx,
+        &mut queue,
+    );
 
     assert!(next.is_none(), "Should not advance when user paused");
     assert_eq!(
@@ -200,13 +234,60 @@ fn test_no_auto_advance_when_paused() {
 }
 
 #[test]
+fn test_no_auto_advance_on_pause_while_ui_still_playing() {
+    let album = create_test_album(3);
+    let mut queue = vec![QueueItem::new(album)];
+    let mut current_idx = Some(0);
+
+    // Regression test for the pause bug: the tick right after the user hits
+    // pause sees was_playing=true (UI not yet synced) and engine
+    // is_playing=false, but the engine state is Paused — not a stop.
+    let next = simulate_auto_advance(
+        true,
+        false,
+        StreamingState::Paused,
+        &mut current_idx,
+        &mut queue,
+    );
+
+    assert!(
+        next.is_none(),
+        "Pause must not auto-advance even when was_playing is still true"
+    );
+    assert_eq!(queue[0].current_track_index, 0);
+    assert_eq!(current_idx, Some(0));
+}
+
+#[test]
+fn test_no_auto_advance_during_track_load() {
+    let album = create_test_album(3);
+    let mut queue = vec![QueueItem::new(album)];
+    let mut current_idx = Some(0);
+
+    // While a new track engine is starting, the manager reports
+    // Loading/Ready with is_playing=false; this must not skip tracks.
+    for state in [StreamingState::Loading, StreamingState::Ready] {
+        let next = simulate_auto_advance(true, false, state, &mut current_idx, &mut queue);
+        assert!(next.is_none(), "{state:?} must not auto-advance");
+        assert_eq!(queue[0].current_track_index, 0);
+        assert_eq!(current_idx, Some(0));
+    }
+}
+
+#[test]
 fn test_no_auto_advance_while_still_playing() {
     let album = create_test_album(3);
     let mut queue = vec![QueueItem::new(album)];
     let mut current_idx = Some(0);
 
     // Normal playback: both app and engine report playing
-    let next = simulate_auto_advance(true, true, &mut current_idx, &mut queue);
+    let next = simulate_auto_advance(
+        true,
+        true,
+        StreamingState::Playing,
+        &mut current_idx,
+        &mut queue,
+    );
 
     assert!(
         next.is_none(),

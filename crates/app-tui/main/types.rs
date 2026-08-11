@@ -6,6 +6,7 @@ use super::misc::signal_path_redraw_signature;
 use super::misc::start_playback;
 use super::misc::update_media_controls;
 use ratatui::Terminal;
+use sotf_audio::manager::StreamingState;
 use sotf_audio_player::Player;
 use sotf_audio_player_tui::app::{App, InputMode, Screen};
 #[cfg(feature = "dev-api")]
@@ -263,7 +264,15 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             app.start_track_tracking(path);
                         }
                         update_media_controls(app, player, media_controls);
-                    } else if (state.track_ended || (app.playback.is_playing && !state.is_playing))
+                    } else if (state.track_ended
+                        || (app.playback.is_playing
+                            && !state.is_playing
+                            // Only a genuine stop advances: user pause surfaces as
+                            // `Paused`, track loads/seeks as `Loading`/`Ready`/`Seeking`.
+                            && matches!(
+                                state.streaming_state,
+                                StreamingState::Idle | StreamingState::Error
+                            )))
                         && app.playback.current_queue_index.is_some()
                     {
                         log::info!("[TUI] Track ended, attempting auto-advance...");

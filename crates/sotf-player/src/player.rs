@@ -491,6 +491,7 @@ impl Player {
         PlaybackState {
             position_secs,
             is_playing,
+            streaming_state: state,
             sample_rate,
             last_error,
             engine_restarted,

@@ -1,3 +1,4 @@
+use sotf_audio::manager::StreamingState;
 use sotf_audio_player::PluginType;
 use sotf_audio_player_gpui::app::types::{
     ChannelMeasurement, DensityMode, HeadphoneEqResult, HeadphoneEqState, HeadphoneEqStep,
@@ -11,6 +12,7 @@ use sotf_audio_player_gpui::{
     RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode, RoomEqAlgorithm,
     RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration, ToastMessage, ToastType,
     engine_stop_without_queue_should_clear, screen_shows_rack_data,
+    should_auto_advance_on_engine_stop,
 };
 
 #[test]
@@ -192,11 +194,125 @@ fn test_tick_rack_data_is_screen_and_layout_gated() {
 
 #[test]
 fn test_engine_stop_without_queue_clear_predicate() {
-    assert!(engine_stop_without_queue_should_clear(true, false, false));
+    assert!(engine_stop_without_queue_should_clear(
+        true,
+        false,
+        StreamingState::Idle,
+        false
+    ));
 
-    assert!(!engine_stop_without_queue_should_clear(false, false, false));
-    assert!(!engine_stop_without_queue_should_clear(true, true, false));
-    assert!(!engine_stop_without_queue_should_clear(true, false, true));
+    assert!(!engine_stop_without_queue_should_clear(
+        false,
+        false,
+        StreamingState::Idle,
+        false
+    ));
+    assert!(!engine_stop_without_queue_should_clear(
+        true,
+        true,
+        StreamingState::Playing,
+        false
+    ));
+    assert!(!engine_stop_without_queue_should_clear(
+        true,
+        false,
+        StreamingState::Idle,
+        true
+    ));
+    // A user pause is not a stop: transitional/paused states must not clear.
+    assert!(!engine_stop_without_queue_should_clear(
+        true,
+        false,
+        StreamingState::Paused,
+        false
+    ));
+    assert!(!engine_stop_without_queue_should_clear(
+        true,
+        false,
+        StreamingState::Loading,
+        false
+    ));
+    assert!(!engine_stop_without_queue_should_clear(
+        true,
+        false,
+        StreamingState::Ready,
+        false
+    ));
+    assert!(!engine_stop_without_queue_should_clear(
+        true,
+        false,
+        StreamingState::Seeking,
+        false
+    ));
+}
+
+#[test]
+fn test_should_auto_advance_on_engine_stop_predicate() {
+    // End-of-stream flag always advances when a queue is active.
+    assert!(should_auto_advance_on_engine_stop(
+        true,
+        true,
+        false,
+        StreamingState::Idle,
+        true
+    ));
+    // Unexpected engine stop (Idle/Error) while the UI thought it was playing.
+    assert!(should_auto_advance_on_engine_stop(
+        false,
+        true,
+        false,
+        StreamingState::Idle,
+        true
+    ));
+    assert!(should_auto_advance_on_engine_stop(
+        false,
+        true,
+        false,
+        StreamingState::Error,
+        true
+    ));
+
+    // Regression: a user-initiated pause must NOT auto-advance.
+    assert!(!should_auto_advance_on_engine_stop(
+        false,
+        true,
+        false,
+        StreamingState::Paused,
+        true
+    ));
+    // Engine transitional states during track load must NOT auto-advance.
+    for state in [
+        StreamingState::Loading,
+        StreamingState::Ready,
+        StreamingState::Seeking,
+    ] {
+        assert!(
+            !should_auto_advance_on_engine_stop(false, true, false, state, true),
+            "{state:?} must not auto-advance"
+        );
+    }
+    // No queue context, still playing, or UI was not playing: no advance.
+    assert!(!should_auto_advance_on_engine_stop(
+        false,
+        true,
+        false,
+        StreamingState::Idle,
+        false
+    ));
+    assert!(!should_auto_advance_on_engine_stop(
+        false,
+        true,
+        true,
+        StreamingState::Playing,
+        true
+    ));
+    assert!(!should_auto_advance_on_engine_stop(
+        false,
+        false,
+        false,
+        StreamingState::Idle,
+        true
+    ));
 }
 
 #[test]
