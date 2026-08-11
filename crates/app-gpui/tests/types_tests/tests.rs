@@ -12,7 +12,7 @@ use sotf_audio_player_gpui::{
     RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode, RoomEqAlgorithm,
     RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration, ToastMessage, ToastType,
     engine_stop_without_queue_should_clear, screen_shows_rack_data,
-    should_auto_advance_on_engine_stop,
+    should_auto_advance_on_engine_stop, silent_loudness,
 };
 
 #[test]
@@ -190,6 +190,40 @@ fn test_tick_rack_data_is_screen_and_layout_gated() {
         Screen::Spinorama,
         LayoutMode::Expanded
     ));
+}
+
+#[test]
+fn test_silent_loudness_zeroes_levels_but_keeps_layout() {
+    use sotf_audio_player::LoudnessData;
+    use std::sync::Arc;
+
+    let mut data = LoudnessData::new(6);
+    data.momentary_lufs = -14.0;
+    data.shortterm_lufs = -16.0;
+    data.integrated_lufs = -18.5;
+    data.peak = 0.8;
+    data.channel_peaks = Arc::new(vec![0.5; 6]);
+    data.true_peaks_dbtp = Arc::new(vec![-1.0; 6]);
+
+    let silenced = silent_loudness(&Some(Arc::new(data))).expect("Some stays Some");
+
+    // Instantaneous levels fall to silence...
+    assert_eq!(silenced.momentary_lufs, f64::NEG_INFINITY);
+    assert_eq!(silenced.shortterm_lufs, f64::NEG_INFINITY);
+    assert_eq!(silenced.peak, 0.0);
+    assert!(silenced.channel_peaks.iter().all(|&p| p == 0.0));
+    assert!(
+        silenced
+            .true_peaks_dbtp
+            .iter()
+            .all(|&p| p == f64::NEG_INFINITY)
+    );
+    // ...but channel layout and program loudness are preserved.
+    assert_eq!(silenced.channel_peaks.len(), 6);
+    assert_eq!(silenced.true_peaks_dbtp.len(), 6);
+    assert_eq!(silenced.integrated_lufs, -18.5);
+
+    assert!(silent_loudness(&None).is_none());
 }
 
 #[test]

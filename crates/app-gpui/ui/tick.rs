@@ -75,6 +75,27 @@ pub fn should_auto_advance_on_engine_stop(
         && has_queue_context
 }
 
+/// Analyzer caches are only refreshed while audio flows. When the engine is
+/// paused or sits idle at end-of-stream it stays alive and keeps serving the
+/// last computed `LoudnessData`, which would freeze the meters mid-value.
+/// Return a copy with the instantaneous level fields zeroed for any state
+/// that isn't playing. The channel layout is preserved so meter groups don't
+/// rebuild, and `integrated_lufs` is kept — program loudness doesn't change
+/// just because playback paused.
+pub fn silent_loudness(
+    info: &Option<Arc<sotf_audio_player::LoudnessData>>,
+) -> Option<Arc<sotf_audio_player::LoudnessData>> {
+    info.as_ref().map(|data| {
+        let mut silent = (**data).clone();
+        silent.momentary_lufs = f64::NEG_INFINITY;
+        silent.shortterm_lufs = f64::NEG_INFINITY;
+        silent.peak = 0.0;
+        silent.channel_peaks = Arc::new(vec![0.0; data.channel_peaks.len()]);
+        silent.true_peaks_dbtp = Arc::new(vec![f64::NEG_INFINITY; data.true_peaks_dbtp.len()]);
+        Arc::new(silent)
+    })
+}
+
 /// True when a clean engine stop has no queue context to auto-advance from,
 /// so the UI must clear stale "playing" state immediately. Pauses and
 /// transitional states (`Paused`/`Loading`/`Ready`/`Seeking`) are not stops.
@@ -309,8 +330,21 @@ impl PlayerView {
         state.app.playback.position_secs = playback_state.position_secs;
         state.app.playback.duration_secs = state.app.get_current_track_duration();
 
-        state.app.playback.input_loudness_info = snapshot.input_loudness_info.clone();
-        state.app.playback.loudness_info = snapshot.loudness_info.clone();
+        // Analyzer caches freeze when audio stops flowing (pause / end-of-
+        // stream leave the engine alive); only full stop() drops the data.
+        // Feed the meters zeroed levels whenever nothing is playing so they
+        // fall to 0 instead of staying where they were.
+        let meters_live = playback_state.is_playing;
+        state.app.playback.input_loudness_info = if meters_live {
+            snapshot.input_loudness_info.clone()
+        } else {
+            silent_loudness(&snapshot.input_loudness_info)
+        };
+        state.app.playback.loudness_info = if meters_live {
+            snapshot.loudness_info.clone()
+        } else {
+            silent_loudness(&snapshot.loudness_info)
+        };
         if include_spectrum {
             state.app.playback.spectrum_info = snapshot.spectrum_info.clone();
         }

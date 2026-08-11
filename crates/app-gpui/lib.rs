@@ -117,7 +117,7 @@ pub use ui::{
     DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX, combined_scale_bounds,
     compute_combined_scale, compute_responsive_scale, engine_stop_without_queue_should_clear,
     estimate_grid_dimensions, is_phone_sized_window, responsive_scale_reference_size,
-    screen_shows_rack_data, should_auto_advance_on_engine_stop,
+    screen_shows_rack_data, should_auto_advance_on_engine_stop, silent_loudness,
 };
 
 // Re-export room EQ rack-apply helper for testing.

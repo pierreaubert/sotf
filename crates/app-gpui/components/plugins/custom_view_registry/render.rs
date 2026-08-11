@@ -338,6 +338,7 @@ pub(super) fn render_spectrum(
                             state.app.ui_state.max_font_size_px,
                         )
                 },
+                available_width: ctx.available_width,
             },
             text,
             ctx.theme,

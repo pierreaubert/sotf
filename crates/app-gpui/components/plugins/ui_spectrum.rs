@@ -70,6 +70,10 @@ pub struct SpectrumRenderState<'a> {
     pub selected_param: usize,
     pub data: Option<&'a SpectrumData>,
     pub chart_height: f32,
+    /// Definite pixel width of the plugin content area. The detail panel is
+    /// shrink-to-fit, so flex/`w_full` cannot size the chart — it must be
+    /// given explicit pixels (same approach as the EQ chart).
+    pub available_width: f32,
 }
 
 /// Render the Spectrum Analyzer plugin
@@ -95,10 +99,18 @@ pub fn render_spectrum_analyzer_plugin(
     theme: &Theme,
 ) -> impl IntoElement {
     // === TOP: Spectrum display (full width) ===
+    // The panel this renders into is shrink-to-fit, so relative/flex sizing
+    // collapses the chart to its minimum. Derive explicit pixel dimensions
+    // from the content-area width instead: the graph takes everything left
+    // after the dB axis, and its height follows a fixed aspect ratio (with
+    // the caller-provided height acting as floor and 3x as ceiling).
+    let axis_theme = spectrum_axis_theme(d, theme);
+    let chart_width = (state.available_width - axis_theme.db_axis_width).max(160.0);
+    let chart_height =
+        (chart_width * 0.38).clamp(state.chart_height, state.chart_height * 3.0);
     let spectrum_display = div()
         .flex()
         .flex_col()
-        .w_full()
         .gap(d.gap)
         // Main spectrum area with dB axis
         .child(
@@ -108,8 +120,8 @@ pub fn render_spectrum_analyzer_plugin(
                 .child(render_spectrum_db_axis(spectrum_axis_theme(d, theme)))
                 .child(
                     div()
-                        .flex_1()
-                        .h(px(state.chart_height))
+                        .w(px(chart_width))
+                        .h(px(chart_height))
                         .bg(theme.surface)
                         .rounded(d.r_lg)
                         .border_1()
@@ -122,7 +134,7 @@ pub fn render_spectrum_analyzer_plugin(
                             let magnitudes: Arc<[f32]> =
                                 Arc::from(data.magnitudes.as_ref().as_slice());
                             SpectrumElement::new(magnitudes)
-                                .height(px(state.chart_height))
+                                .height(px(chart_height))
                                 .frequency_range(state.min_freq, state.max_freq)
                                 .smoothing(state.smoothing)
                                 .colors(spectrum_colors_from_theme(
@@ -142,13 +154,17 @@ pub fn render_spectrum_analyzer_plugin(
                 ),
         )
         // Frequency axis
-        .child(div().flex().child(spectrum_db_axis_spacer(d, theme)).child(
-            render_spectrum_frequency_axis(
-                state.min_freq,
-                state.max_freq,
-                spectrum_axis_theme(d, theme),
-            ),
-        ));
+        .child(
+            div()
+                .flex()
+                .w(px(chart_width + axis_theme.db_axis_width))
+                .child(spectrum_db_axis_spacer(d, theme))
+                .child(div().flex_1().child(render_spectrum_frequency_axis(
+                    state.min_freq,
+                    state.max_freq,
+                    spectrum_axis_theme(d, theme),
+                ))),
+        );
 
     // === BOTTOM: Config params (horizontal row with wrapping) ===
     let config_row = div()
