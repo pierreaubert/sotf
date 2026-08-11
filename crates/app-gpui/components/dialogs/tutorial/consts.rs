@@ -113,8 +113,21 @@ impl PlayerView {
                                     .on_change({
                                         let state = self.state.clone();
                                         move |checked, _window, cx| {
-                                            state.update(cx, |state, _| {
+                                            state.update(cx, |state, cx| {
                                                 state.app.ui_state.tutorial_dont_show = checked;
+                                                // "Don't show again" is a preference the moment
+                                                // it is toggled: persist it immediately so that
+                                                // quitting (or a crash) while the dialog is still
+                                                // open cannot lose it. Unchecking intentionally
+                                                // re-arms the tutorial for the next launch.
+                                                state.app.tutorial.completed = checked;
+                                                let layout = state.layout.read(cx);
+                                                if let Err(e) = state.app.save_config(layout) {
+                                                    log::warn!(
+                                                        "Failed to save tutorial config: {}",
+                                                        e
+                                                    );
+                                                }
                                             });
                                         }
                                     }),

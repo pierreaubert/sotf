@@ -716,3 +716,33 @@ fn test_icon_size_to_rems_matches_px_at_base_rem() {
         );
     }
 }
+
+/// Regression test: preferences changed through the settings UI (language) and
+/// the tutorial's "don't show again" checkbox must survive a save/load cycle.
+/// Both handlers persist via `App::save_config` immediately when they fire;
+/// this pins the state -> Config -> disk -> Config roundtrip they rely on.
+#[test]
+fn test_save_and_load_config_persists_language_and_tutorial_flag() {
+    use sotf_audio_player::config::set_config_dir_override;
+    use sotf_audio_player_gpui::i18n::Language;
+    use sotf_audio_player_gpui::app::state::ui::LayoutState;
+    use sotf_audio_player_gpui::{App, Config};
+
+    let dir = std::env::temp_dir().join(format!("sotf-config-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    set_config_dir_override(dir.clone());
+
+    let mut app = App::new();
+    // Use a non-default language so the assertion proves a real write/read
+    // roundtrip (Config::load falls back to Language::default() == English
+    // when the state file was never written).
+    app.set_language(Language::French);
+    app.tutorial.completed = true;
+    app.save_config(&LayoutState::default()).unwrap();
+
+    let loaded = Config::load().unwrap();
+    assert_eq!(loaded.language, Language::French);
+    assert!(loaded.tutorial_completed);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

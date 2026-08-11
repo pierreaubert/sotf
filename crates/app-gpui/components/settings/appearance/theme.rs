@@ -626,8 +626,12 @@ impl PlayerView {
                                 .find(|l| l.name() == value.as_ref())
                                 .copied();
                             if let Some(lang) = lang {
-                                state_entity.update(cx, |state, _cx| {
+                                state_entity.update(cx, |state, cx| {
                                     state.app.set_language(lang);
+                                    let layout = state.layout.read(cx);
+                                    if let Err(error) = state.app.save_config(layout) {
+                                        log::error!("Failed to save config: {error}");
+                                    }
                                 });
                             }
                         })
