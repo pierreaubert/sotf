@@ -10726,10 +10726,9 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-hal-input"
-version = "0.5.84"
+version = "0.5.87"
 dependencies = [
  "driver-hal",
- "log",
  "serde",
  "serde_json",
  "sotf-host",

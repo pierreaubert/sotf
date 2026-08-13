@@ -36,12 +36,8 @@ pub const PARAMS: &[ParamSpec] = &[ParamSpec::int(
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    config: &[],
-    main: &[ControlGroup::new(
-        "INPUT",
-        "INPUT",
-        &[ControlSpec::knob(0)], // input_channels
-    )],
+    config: &[ControlSpec::knob(0)], // input_channels
+    main: &[],
     output: &[],
     tabs: &[],
     visualizations: &[],
@@ -60,12 +56,12 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 /// don't have the new field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Params {
-    #[serde(default = "d_input_channels")]
-    pub input_channels: f64,
+    #[serde(default = "d_input_channels", alias = "channels")]
+    pub input_channels: usize,
 }
 
-fn d_input_channels() -> f64 {
-    pk(PARAMS, "input_channels").default_f64()
+fn d_input_channels() -> usize {
+    pk(PARAMS, "input_channels").default_f64() as usize
 }
 
 impl Default for Params {
@@ -88,14 +84,15 @@ impl PluginParamDef for Params {
 
     fn param_value(&self, index: usize) -> Option<f64> {
         match index {
-            0 => Some(self.input_channels),
+            0 => Some(self.input_channels as f64),
             _ => None,
         }
     }
 
     fn set_param_value(&mut self, index: usize, value: f64) {
-        if index == 0 {
-            self.input_channels = value;
+        if index == 0 && value.is_finite() && value.fract() == 0.0 && (1.0..=16.0).contains(&value)
+        {
+            self.input_channels = value as usize;
         }
     }
 }
@@ -135,6 +132,17 @@ mod tests {
     #[test]
     fn deserialize_empty_json_uses_defaults() {
         let p: Params = serde_json::from_str("{}").unwrap();
-        assert_eq!(p.input_channels, pk(PARAMS, "input_channels").default_f64());
+        assert_eq!(
+            p.input_channels,
+            pk(PARAMS, "input_channels").default_f64() as usize
+        );
+    }
+
+    #[test]
+    fn typed_config_accepts_legacy_name_and_rejects_fractional_or_non_finite_channels() {
+        let legacy: Params = serde_json::from_str(r#"{"channels": 6}"#).unwrap();
+        assert_eq!(legacy.input_channels, 6);
+        assert!(serde_json::from_str::<Params>(r#"{"input_channels": 2.5}"#).is_err());
+        assert!(serde_json::from_str::<Params>(r#"{"input_channels": "NaN"}"#).is_err());
     }
 }

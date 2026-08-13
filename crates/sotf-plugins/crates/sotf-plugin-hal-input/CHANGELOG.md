@@ -1,3 +1,46 @@
+# 0.5.87
+
+## HAL Input review closure
+
+- Consolidate serialized and UI channel configuration into typed
+  `input_channels: usize`, accepting legacy `channels` JSON while rejecting
+  fractional/non-numeric values; expose it only as build-time configuration.
+- Move dynamic diagnostics out of automatable parameters into lossless typed
+  telemetry with `u64` underrun/missing-frame and connection/recovery/format
+  generations, negotiated format, capacity/fill, and explicit error kind.
+- Add a non-realtime `refresh_transport` control operation that opens and
+  validates a replacement shared-memory mapping and cipher before activation;
+  the realtime callback only raises recovery generations and emits silence.
+- Validate callback sample rate and initialization before consuming transport,
+  preserve the active reader when replacement format validation fails, and
+  distinguish disconnect, cipher reload, format mismatch, corruption, and
+  underrun states.
+- Add focused configuration migration, format/recovery generation, failed
+  replacement, context-rate, missing-frame, 1–16 channel, and zero-allocation
+  callback tests with the real macOS HAL feature enabled.
+
+# 0.5.86
+
+## Fixes
+
+- Treat `HalInputReader::read` results as frames and convert to interleaved
+  sample indices with checked multiplication, preserving complete and partial
+  reads for 1–16 channels.
+- Validate configured channels and sample rate against the negotiated shared
+  format during initialization and every callback, failing before consuming a
+  changed or corrupt transport format.
+- Count complete starvation after the connected stream is armed while keeping
+  startup/disconnected silence distinct, and remove all logging from the audio
+  callback.
+- Report conservative zero graph latency instead of shared-buffer capacity,
+  reject nonempty source input and malformed/overflowing buffers, and replace
+  unsafe tail clearing with optimized safe slice filling.
+
+## Testing
+
+- Added an injectable reader contract with deterministic full, partial, empty,
+  oversized, channel-change, and rate-negotiation coverage on every platform.
+
 # 0.5.85
 
 ## Fixes
