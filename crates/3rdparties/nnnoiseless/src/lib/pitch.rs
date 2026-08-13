@@ -1,8 +1,5 @@
 use super::celt::celt_autocorr;
 use super::celt::celt_lpc;
-use super::consts::PITCH_BUF_SIZE;
-use super::consts::PITCH_FRAME_SIZE;
-use super::consts::PITCH_MAX_PERIOD;
 use super::misc::find_best_pitch;
 use super::misc::fir5;
 
@@ -75,16 +72,21 @@ pub(super) fn pitch_xcorr(xs: &[f32], ys: &[f32], xcorr: &mut [f32]) {
     }
 }
 
-pub(crate) fn pitch_search(x_lp: &[f32], y: &[f32], len: usize, max_pitch: usize) -> usize {
+pub(crate) fn pitch_search(
+    x_lp: &[f32],
+    y: &[f32],
+    len: usize,
+    max_pitch: usize,
+    x_lp4_storage: &mut [f32],
+    y_lp4_storage: &mut [f32],
+    xcorr_storage: &mut [f32],
+) -> usize {
     let lag = len + max_pitch;
 
-    let mut x_lp4_storage = [0.0; PITCH_FRAME_SIZE / 4];
-    let mut y_lp4_storage = [0.0; PITCH_BUF_SIZE / 4];
     let x_lp4 = &mut x_lp4_storage[..len / 4];
     let y_lp4 = &mut y_lp4_storage[..lag / 4];
     // It seems like only the first half of this is really used? The second half seems to always
     // stay zero.
-    let mut xcorr_storage = [0.0; PITCH_MAX_PERIOD / 2];
     let xcorr = &mut xcorr_storage[..max_pitch / 2];
 
     // It says "again", but this was only downsampled once? Also, it's downsampling only the first
@@ -136,18 +138,26 @@ pub(crate) fn pitch_search(x_lp: &[f32], y: &[f32], len: usize, max_pitch: usize
     (2 * best_pitch as isize - offset) as usize
 }
 
-pub(crate) fn pitch_downsample(x: &[f32], x_lp: &mut [f32]) {
-    let mut ac = [0.0; 5];
-    let mut lpc = [0.0; 4];
-    let mut mem = [0.0; 5];
-    let mut lpc2 = [0.0; 5];
+pub(crate) fn pitch_downsample(
+    x: &[f32],
+    x_lp: &mut [f32],
+    ac: &mut [f32; 5],
+    lpc: &mut [f32; 4],
+    mem: &mut [f32; 5],
+    lpc2: &mut [f32; 5],
+    x_lp_copy: &mut [f32],
+) {
+    ac.fill(0.0);
+    lpc.fill(0.0);
+    mem.fill(0.0);
+    lpc2.fill(0.0);
 
     for i in 1..(x.len() / 2) {
         x_lp[i] = ((x[2 * i - 1] + x[2 * i + 1]) / 2.0 + x[2 * i]) / 2.0;
     }
     x_lp[0] = (x[1] / 2.0 + x[0]) / 2.0;
 
-    celt_autocorr(x_lp, &mut ac);
+    celt_autocorr(x_lp, ac);
 
     // Noise floor -40 dB
     ac[0] *= 1.0001;
@@ -156,7 +166,7 @@ pub(crate) fn pitch_downsample(x: &[f32], x_lp: &mut [f32]) {
         ac[i] -= ac[i] * (0.008 * i as f32) * (0.008 * i as f32);
     }
 
-    celt_lpc(&mut lpc, &ac);
+    celt_lpc(lpc, ac);
     let mut tmp = 1.0;
     for i in 0..4 {
         tmp *= 0.9;
@@ -169,12 +179,11 @@ pub(crate) fn pitch_downsample(x: &[f32], x_lp: &mut [f32]) {
     lpc2[3] = lpc[3] + 0.8 * lpc[2];
     lpc2[4] = 0.8 * lpc[3];
 
-    let mut x_lp_copy = [0.0; PITCH_BUF_SIZE / 2];
+    x_lp_copy.fill(0.0);
     x_lp_copy[..x_lp.len()].copy_from_slice(x_lp);
-    fir5(&x_lp_copy[..x_lp.len()], &lpc2, x_lp, &mut mem);
+    fir5(&x_lp_copy[..x_lp.len()], lpc2, x_lp, mem);
 }
 
 pub(super) fn pitch_gain(xy: f32, xx: f32, yy: f32) -> f32 {
     xy / (1.0 + xx * yy).sqrt()
 }
-

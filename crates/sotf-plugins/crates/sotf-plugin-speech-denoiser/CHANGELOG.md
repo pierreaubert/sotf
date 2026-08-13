@@ -1,3 +1,52 @@
+# 0.5.11
+
+## Fixes (2026-08-12 review closure)
+
+- Keep the RNNoise model warm during bypass and crossfade over 480 samples on a
+  latency-aligned dry path, preventing stale-state re-entry and hard switches.
+- Restrict the supported layout contract to mono/stereo and enforce it in both
+  factories, the catalog, and the Audio Unit format negotiation path.
+- Clamp finite input to the RNNoise model domain, remove unused reduction-meter
+  work, and update cached parameter metadata without callback-time allocation.
+- Move reusable FFT, pitch, analysis, synthesis, and RNN workspaces from the
+  per-frame stack into initialized state while preserving reference output.
+- Add cold-callback allocation, 64 KiB stack, bypass continuity, non-finite
+  recovery, strict schema, invalid-layout, variable-block, and deadline tests.
+
+# 0.5.10
+
+## Fixes (2026-08-12 review follow-up)
+
+- Update the all-plugin block-size conformance matrix to exercise the new
+  arbitrary-callback FIFO contract instead of treating non-480-frame blocks
+  as unsupported.
+
+# 0.5.9
+
+Linked-stereo RNNoise gain now transitions between detector decisions over
+model frames. This bounds cancellation-prone stereo amplitude modulation while
+retaining one common gain and preserving the stereo image.
+
+# 0.5.8
+
+Fix linked stereo cancellation: anti-phase, hard-panned, and unequal-level
+signals no longer collapse in the mono detector or acquire unstable channel
+gain differences. Regression coverage now verifies image and level-ratio
+preservation.
+
+# 0.5.7
+
+Bug fixes from code review (2026-08-12):
+
+- Accept arbitrary host callback sizes by framing input internally and always
+  returning the requested frame count with a constant 480-sample startup delay.
+- Preserve the first processed frame instead of deleting it at startup; bypass
+  is now timeline-aligned with enabled processing.
+- Sanitize non-finite input and reject buffer-size multiplication overflow.
+- Prepare RNNoise shared FFT resources during initialization and use a stable
+  frame-level linked-stereo gain rather than sample-wise cancellation-prone
+  division.
+
 # 0.5.6
 
 Bug fixes from code review (2026-05-16):

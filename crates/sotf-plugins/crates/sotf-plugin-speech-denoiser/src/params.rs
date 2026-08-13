@@ -21,6 +21,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Params {
     #[serde(default = "d_enabled")]
     pub enabled: bool,
@@ -55,5 +56,30 @@ impl PluginParamDef for Params {
         if index == 0 {
             self.enabled = value > 0.5;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn schema_v1_roundtrip_and_missing_enabled_default() {
+        assert_eq!(<Params as PluginParamDef>::VERSION, 1);
+        let missing: Params = serde_json::from_str("{}").unwrap();
+        assert!(missing.enabled);
+        for enabled in [false, true] {
+            let params = Params { enabled };
+            let json = serde_json::to_string(&params).unwrap();
+            let decoded: Params = serde_json::from_str(&json).unwrap();
+            assert_eq!(decoded.enabled, enabled);
+        }
+    }
+
+    #[test]
+    fn schema_rejects_unknown_future_fields_and_malformed_values() {
+        assert!(serde_json::from_str::<Params>(r#"{"enabled":1}"#).is_err());
+        assert!(serde_json::from_str::<Params>(r#"{"enabled":true,"future":2}"#).is_err());
+        assert!(serde_json::from_str::<Params>(r#"{"version":2,"enabled":true}"#).is_err());
     }
 }

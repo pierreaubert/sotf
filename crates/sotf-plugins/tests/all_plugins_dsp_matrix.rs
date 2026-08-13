@@ -202,22 +202,13 @@ fn every_builtin_obeys_its_block_size_contract() {
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 process_fixture(entry.canonical_type, 48_000, frames)
             }));
-            let rnnoise_unsupported =
-                entry.canonical_type == "speech_denoiser" && !frames.is_multiple_of(480);
-
-            match (rnnoise_unsupported, outcome) {
-                (false, Ok(Ok(()))) => {}
-                (true, Ok(Err(error))) if error.contains("480") || error.contains("frame size") => {
-                }
-                (true, Ok(Ok(()))) => failures.push(format!(
-                    "{}@{frames} frames unexpectedly accepted RNNoise's unsupported block size",
-                    entry.canonical_type
-                )),
-                (_, Ok(Err(error))) => failures.push(format!(
+            match outcome {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => failures.push(format!(
                     "{}@{frames} frames failed: {error}",
                     entry.canonical_type
                 )),
-                (_, Err(payload)) => failures.push(format!(
+                Err(payload) => failures.push(format!(
                     "{}@{frames} frames panicked: {}",
                     entry.canonical_type,
                     panic_payload_description(&payload)

@@ -1,8 +1,8 @@
-use once_cell::sync::OnceCell;
 use super::misc::inner_prod;
 use super::pitch::pitch_gain;
 use super::types::CommonState;
 use super::types::Complex;
+use once_cell::sync::OnceCell;
 
 const SECOND_CHECK: [usize; 16] = [0, 0, 3, 2, 3, 2, 5, 2, 3, 2, 3, 2, 5, 2, 3, 2];
 
@@ -14,6 +14,8 @@ pub(crate) fn remove_doubling(
     mut t0: usize,
     mut prev_period: usize,
     prev_gain: f32,
+    yy_lookup_storage: &mut [f32],
+    xcorr: &mut [f32; 3],
 ) -> (usize, f32) {
     let init_min_period = min_period;
     min_period /= 2;
@@ -27,7 +29,7 @@ pub(crate) fn remove_doubling(
 
     // Note that because we can't index with negative numbers, the x in the C code is our
     // x[max_period..].
-    let mut yy_lookup_storage = [0.0f32; PITCH_MAX_PERIOD / 2 + 1];
+    yy_lookup_storage.fill(0.0);
     let yy_lookup = &mut yy_lookup_storage[..=max_period];
     let xx = inner_prod(&x[max_period..], &x[max_period..], n);
     let mut xy = inner_prod(&x[max_period..], &x[(max_period - t0)..], n);
@@ -54,11 +56,7 @@ pub(crate) fn remove_doubling(
         }
         // Look for another strong correlation at t1b
         let t1b = if k == 2 {
-            if t1 + t0 > max_period {
-                t0
-            } else {
-                t0 + t1
-            }
+            if t1 + t0 > max_period { t0 } else { t0 + t1 }
         } else {
             (2 * SECOND_CHECK[k] * t0 + k) / (2 * k)
         };
@@ -100,7 +98,7 @@ pub(crate) fn remove_doubling(
         best_xy / (best_yy + 1.0)
     };
 
-    let mut xcorr = [0.0; 3];
+    xcorr.fill(0.0);
     for k in 0..3 {
         xcorr[k] = inner_prod(&x[max_period..], &x[(max_period - (t + k - 1))..], n);
     }
@@ -215,6 +213,11 @@ fn common() -> &'static CommonState {
     COMMON.get().unwrap()
 }
 
+/// Build the immutable FFT/window tables off the realtime callback.
+pub fn prepare() {
+    let _ = common();
+}
+
 /// A brute-force DCT (discrete cosine transform) of size NB_BANDS.
 pub(crate) fn dct(out: &mut [f32], x: &[f32]) {
     let c = common();
@@ -235,10 +238,15 @@ pub(crate) fn apply_window(x: &mut [f32]) {
     }
 }
 
-pub(crate) fn forward_transform(output: &mut [Complex], input: &[f32]) {
-    let mut complex_input = [Complex::from(0.0); WINDOW_SIZE];
-    let mut scratch_output = [Complex::from(0.0); WINDOW_SIZE];
+pub(crate) fn forward_transform(
+    output: &mut [Complex],
+    input: &[f32],
+    complex_input: &mut [Complex],
+    scratch_output: &mut [Complex],
+) {
     let c = common();
+    complex_input.fill(Complex::from(0.0));
+    scratch_output.fill(Complex::from(0.0));
     for i in 0..WINDOW_SIZE {
         complex_input[i].re = input[i];
     }
@@ -253,10 +261,15 @@ pub(crate) fn forward_transform(output: &mut [Complex], input: &[f32]) {
     }
 }
 
-pub(crate) fn inverse_transform(output: &mut [f32], input: &[Complex]) {
-    let mut scratch_input = [Complex::from(0.0); WINDOW_SIZE];
-    let mut complex_output = [Complex::from(0.0); WINDOW_SIZE];
+pub(crate) fn inverse_transform(
+    output: &mut [f32],
+    input: &[Complex],
+    scratch_input: &mut [Complex],
+    complex_output: &mut [Complex],
+) {
     let c = common();
+    scratch_input.fill(Complex::from(0.0));
+    complex_output.fill(Complex::from(0.0));
     for i in 0..FREQ_SIZE {
         scratch_input[i] = input[i];
     }
@@ -273,8 +286,8 @@ pub(crate) fn inverse_transform(output: &mut [f32], input: &[Complex]) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::*;
+    use super::*;
 
     fn to_f32(bytes: &[u8]) -> Vec<f32> {
         let mut ret = Vec::with_capacity(bytes.len() / 2);

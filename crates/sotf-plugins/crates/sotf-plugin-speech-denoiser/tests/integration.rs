@@ -2,10 +2,15 @@
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::ParameterSet;
 use sotf_host::plugin::ProcessContext;
+use sotf_host::{CountingAlloc, assert_no_allocs};
 use sotf_plugin_speech_denoiser::{
     SPEECH_DENOISER_FRAME_SIZE, SpeechDenoiserPlugin, SpeechDenoiserPluginParams,
 };
+
+#[global_allocator]
+static ALLOCATOR: CountingAlloc = CountingAlloc;
 
 #[test]
 fn integration_plugin_info_and_channels() {
@@ -69,15 +74,15 @@ fn integration_disabled_is_transparent_after_latency() {
     plugin.initialize(48000).unwrap();
 
     // Process two frames: the first 480-sample frame is the startup delay,
-    // the second passes through.
+    // followed by the first input frame.
     let mut buffer: Vec<f32> = (0..1920)
         .map(|i| ((i % 100) as f32 - 50.0) / 100.0)
         .collect();
     let input = buffer.clone();
     let ctx = ProcessContext::new(48000, 960);
     let written = plugin.process_in_place(&mut buffer, &ctx).unwrap();
-    assert_eq!(written, 480);
-    assert_eq!(&buffer[..960], &input[960..1920]);
+    assert_eq!(written, 960);
+    assert_eq!(&buffer[960..1920], &input[..960]);
 }
 
 #[test]
@@ -121,11 +126,14 @@ fn integration_process_rejects_bad_block_size_and_buffer() {
     let mut plugin = SpeechDenoiserPlugin::new(1);
     plugin.initialize(48000).unwrap();
 
-    // Non-multiple of 480 must fail.
+    // Arbitrary host block sizes are accepted.
     for &bad_size in &[64usize, 128, 256, 512, 1024] {
         let mut buffer = vec![0.0f32; bad_size];
         let ctx = ProcessContext::new(48000, bad_size);
-        assert!(plugin.process_in_place(&mut buffer, &ctx).is_err());
+        assert_eq!(
+            plugin.process_in_place(&mut buffer, &ctx).unwrap(),
+            bad_size
+        );
     }
 
     // Buffer smaller than the declared frame count must fail.
@@ -141,4 +149,74 @@ fn integration_from_params_applies_initial_state() {
     let v = plugin.get_parameter(&ParameterId::from("enabled")).unwrap();
     assert_eq!(v, ParameterValue::Bool(false));
     assert_eq!(plugin.channels(), 1);
+}
+
+#[test]
+fn first_callback_and_live_toggle_are_allocation_free_without_warmup() {
+    let mut plugin = SpeechDenoiserPlugin::new(2);
+    plugin.initialize(48000).unwrap();
+    let mut buffer = vec![0.1; SPEECH_DENOISER_FRAME_SIZE * 2];
+    let context = ProcessContext::new(48000, SPEECH_DENOISER_FRAME_SIZE);
+    assert_no_allocs("Speech Denoiser cold first callback", || {
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+    });
+    let mut values = ParameterSet::new();
+    values.insert(ParameterId::from("enabled"), ParameterValue::Bool(false));
+    assert_no_allocs("Speech Denoiser live bypass setter", || {
+        plugin.apply_values(values).unwrap();
+    });
+    assert_no_allocs("Speech Denoiser first bypass-transition callback", || {
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+    });
+}
+
+#[test]
+fn construction_and_process_contract_reject_invalid_dimensions_and_rate() {
+    assert!(
+        SpeechDenoiserPlugin::try_from_params(0, SpeechDenoiserPluginParams::default()).is_err()
+    );
+    for channels in [3, 6, 8, 12] {
+        assert!(
+            SpeechDenoiserPlugin::try_from_params(channels, SpeechDenoiserPluginParams::default())
+                .is_err()
+        );
+    }
+
+    let mut plugin = SpeechDenoiserPlugin::new(2);
+    let mut empty = [];
+    assert!(
+        plugin
+            .process_in_place(&mut empty, &ProcessContext::new(48000, 0))
+            .unwrap_err()
+            .contains("initialized")
+    );
+    plugin.initialize(48000).unwrap();
+    assert!(
+        plugin
+            .process_in_place(&mut empty, &ProcessContext::new(44100, 0))
+            .unwrap_err()
+            .contains("context rate")
+    );
+    assert!(
+        plugin
+            .process_in_place(&mut empty, &ProcessContext::new(48000, usize::MAX))
+            .unwrap_err()
+            .contains("overflow")
+    );
+}
+
+#[test]
+fn factory_parameter_json_is_strict_and_backward_compatible() {
+    let missing: SpeechDenoiserPluginParams = serde_json::from_str("{}").unwrap();
+    assert!(missing.enabled);
+    for enabled in [false, true] {
+        let json = format!(r#"{{"enabled":{enabled}}}"#);
+        let decoded: SpeechDenoiserPluginParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.enabled, enabled);
+    }
+    assert!(serde_json::from_str::<SpeechDenoiserPluginParams>(r#"{"enabled":1}"#).is_err());
+    assert!(
+        serde_json::from_str::<SpeechDenoiserPluginParams>(r#"{"enabled":true,"unknown":1}"#)
+            .is_err()
+    );
 }

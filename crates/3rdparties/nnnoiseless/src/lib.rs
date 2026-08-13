@@ -17,6 +17,7 @@ mod types;
 
 pub(crate) use consts::*;
 pub(crate) use pitch::*;
+pub use consts::prepare;
 pub(crate) use consts::{
     apply_window, forward_transform, interp_band_gain, inverse_transform, remove_doubling,
     NB_DELTA_CEPS,

@@ -1,39 +1,44 @@
 const RNNOISE_FRAME_SIZE: usize = 480;
-
-/// Monitoring data exposed by the RNNoise speech denoiser.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RnnoiseData {
-    pub avg_reduction_db: f32,
-}
+const LINKED_STEREO_COHERENCE_THRESHOLD: f32 = 0.75;
+const BYPASS_CROSSFADE_SAMPLES: usize = RNNOISE_FRAME_SIZE;
+/// Maximum fraction of a new detector gain applied at one 10 ms model frame.
+/// Keeping this frame-level (rather than sample-level) avoids image-changing
+/// gain modulation while preventing cancellation-prone stereo from pumping.
+const LINKED_STEREO_GAIN_SMOOTHING: f32 = 0.2;
 
 /// RNNoise speech-denoising backend.
 ///
 /// # Constraints
 /// - Only supports 48 kHz sample rate (hard-coded by RNNoise / nnnoiseless).
-/// - Block sizes passed to `process()` must be exact multiples of 480 samples.
+/// - Host block sizes may be arbitrary; input is framed internally in 480-sample quanta.
 /// - Reports a fixed latency of 480 samples regardless of bypass state.
-/// - The first processed 480-sample frame is discarded to avoid RNNoise's
-///   documented fade-in artifact; this adds a one-time 480-sample startup delay.
+/// - A pre-seeded 480-sample output queue provides a constant startup delay.
 pub struct RnnoiseBackend {
     denoisers: Vec<Box<nnnoiseless::DenoiseState>>,
     channels: usize,
     sample_rate: u32,
     accum_buffers: Vec<Vec<f32>>,
+    /// Processed signal, delayed by one model frame.
     output_buffers: Vec<Vec<f32>>,
+    /// Unprocessed signal with the identical delay used for click-free bypass.
+    dry_output_buffers: Vec<Vec<f32>>,
     /// Monotonically increasing write head (wraps modulo ring_size internally
     /// but the absolute count is stored for simplicity in available-sample
     /// arithmetic). Wrapped on every read/write via `% ring_size`.
     output_write_pos: usize,
     output_read_pos: usize,
     accum_fill: usize,
-    avg_reduction_db: f32,
     /// Per-channel scratch buffers pre-allocated during `initialize`.
     /// Avoids stack growth inside the real-time audio callback.
     scratch_input: Vec<Vec<f32>>,
     scratch_output: Vec<Vec<f32>>,
-    /// True once we have discarded the first 480-sample frame to remove
-    /// nnnoiseless's documented fade-in artifact.
-    first_frame_discarded: bool,
+    /// Common gain used for linked stereo.  It is smoothed across model frames
+    /// so detector changes near L/R cancellation cannot create hard amplitude
+    /// steps on both channels.
+    linked_stereo_gain: f32,
+    bypass_mix: f32,
+    bypass_target: f32,
+    bypass_initialized: bool,
 }
 
 impl Default for RnnoiseBackend {
@@ -50,13 +55,16 @@ impl RnnoiseBackend {
             sample_rate: 48000,
             accum_buffers: Vec::new(),
             output_buffers: Vec::new(),
+            dry_output_buffers: Vec::new(),
             output_write_pos: 0,
             output_read_pos: 0,
             accum_fill: 0,
-            avg_reduction_db: 0.0,
             scratch_input: Vec::new(),
             scratch_output: Vec::new(),
-            first_frame_discarded: false,
+            linked_stereo_gain: 1.0,
+            bypass_mix: 0.0,
+            bypass_target: 0.0,
+            bypass_initialized: false,
         }
     }
 
@@ -71,6 +79,12 @@ impl RnnoiseBackend {
                 sample_rate
             ));
         }
+        if !(1..=2).contains(&channels) {
+            return Err(format!(
+                "RNNoise supports mono or stereo only; got {channels} channels"
+            ));
+        }
+        nnnoiseless::prepare();
         self.sample_rate = sample_rate;
         self.channels = channels;
         self.denoisers = (0..channels)
@@ -81,14 +95,19 @@ impl RnnoiseBackend {
         // wrap back onto unread data before the reader catches up.
         let ring_size = RNNOISE_FRAME_SIZE * 4;
         self.output_buffers = vec![vec![0.0; ring_size]; channels];
+        self.dry_output_buffers = vec![vec![0.0; ring_size]; channels];
         // Pre-allocate scratch buffers used inside the hot processing loop.
         self.scratch_input = vec![vec![0.0; RNNOISE_FRAME_SIZE]; channels];
         self.scratch_output = vec![vec![0.0; RNNOISE_FRAME_SIZE]; channels];
-        self.output_write_pos = 0;
+        // Keep one model frame of zeroes ahead of the write head. This gives
+        // every input sample the same declared latency, including startup.
+        self.output_write_pos = RNNOISE_FRAME_SIZE;
         self.output_read_pos = 0;
         self.accum_fill = 0;
-        self.avg_reduction_db = 0.0;
-        self.first_frame_discarded = false;
+        self.linked_stereo_gain = 1.0;
+        self.bypass_mix = 0.0;
+        self.bypass_target = 0.0;
+        self.bypass_initialized = false;
         Ok(())
     }
 
@@ -99,8 +118,8 @@ impl RnnoiseBackend {
         channels: usize,
         bypass: bool,
     ) -> usize {
-        if self.denoisers.is_empty() || channels == 0 {
-            return num_frames;
+        if self.denoisers.is_empty() || channels != self.channels {
+            return 0;
         }
         let Some(required_samples) = num_frames.checked_mul(channels) else {
             return 0;
@@ -109,93 +128,143 @@ impl RnnoiseBackend {
             return 0;
         }
 
-        let ch_count = channels.min(self.channels);
+        let ch_count = channels;
+        self.bypass_target = if bypass { 1.0 } else { 0.0 };
+        if !self.bypass_initialized {
+            self.bypass_mix = self.bypass_target;
+            self.bypass_initialized = true;
+        }
 
         for frame in 0..num_frames {
             for ch in 0..ch_count {
-                self.accum_buffers[ch][self.accum_fill] = buffer[frame * channels + ch];
+                let sample = buffer[frame * channels + ch];
+                self.accum_buffers[ch][self.accum_fill] = if sample.is_finite() {
+                    sample.clamp(-1.0, 1.0)
+                } else {
+                    0.0
+                };
             }
             self.accum_fill += 1;
 
             if self.accum_fill == RNNOISE_FRAME_SIZE {
-                if bypass {
-                    for ch in 0..ch_count {
-                        let ring_size = self.output_buffers[ch].len();
-                        for (i, &s) in self.accum_buffers[ch].iter().enumerate() {
-                            self.output_buffers[ch][(self.output_write_pos + i) % ring_size] = s;
-                        }
+                // The dry stream is always queued and the model is always
+                // advanced. Bypass is a latency-aligned output crossfade, not
+                // a frozen-state alternate topology.
+                for ch in 0..ch_count {
+                    let ring_size = self.dry_output_buffers[ch].len();
+                    for (i, &sample) in self.accum_buffers[ch].iter().enumerate() {
+                        self.dry_output_buffers[ch][(self.output_write_pos + i) % ring_size] =
+                            sample;
                     }
-                } else {
+                }
+
+                if ch_count == 2 {
                     let mut input_power_sum = 0.0f32;
                     let mut output_power_sum = 0.0f32;
+                    // Use a mono detector only when the stereo signal is
+                    // sufficiently coherent.  The normalized coherence is
+                    // one for identical channels, zero for anti-phase, and
+                    // one half for a hard-panned signal.
+                    let mut mono_input_power_sum = 0.0f32;
+                    let mut stereo_input_power_sum = 0.0f32;
+                    for i in 0..RNNOISE_FRAME_SIZE {
+                        let mono = (self.accum_buffers[0][i] + self.accum_buffers[1][i]) * 0.5;
+                        self.scratch_input[0][i] = mono * 32768.0;
+                        mono_input_power_sum += mono * mono;
+                        stereo_input_power_sum += self.accum_buffers[0][i]
+                            * self.accum_buffers[0][i]
+                            + self.accum_buffers[1][i] * self.accum_buffers[1][i];
+                    }
 
-                    if ch_count == 2 {
-                        // Stereo: downmix to mono, process once, apply linked gain
-                        // to both channels so the stereo image is preserved.
-                        for i in 0..RNNOISE_FRAME_SIZE {
-                            let mono = (self.accum_buffers[0][i] + self.accum_buffers[1][i]) * 0.5;
-                            self.scratch_input[0][i] = mono * 32768.0;
-                        }
+                    let coherence = if stereo_input_power_sum > 1e-10 {
+                        (2.0 * mono_input_power_sum / stereo_input_power_sum).clamp(0.0, 1.0)
+                    } else {
+                        1.0
+                    };
 
+                    if coherence >= LINKED_STEREO_COHERENCE_THRESHOLD {
+                        // Coherent stereo: process one detector and apply
+                        // its frame-level gain to both channels.
                         self.denoisers[0]
                             .process_frame(&mut self.scratch_output[0], &self.scratch_input[0]);
-
                         for i in 0..RNNOISE_FRAME_SIZE {
-                            let mono_in =
-                                (self.accum_buffers[0][i] + self.accum_buffers[1][i]) * 0.5;
                             let mono_out = self.scratch_output[0][i] / 32768.0;
-                            let gain = linked_stereo_gain(mono_in, mono_out);
                             let ring_size = self.output_buffers[0].len();
-                            let left = self.accum_buffers[0][i] * gain;
-                            let right = self.accum_buffers[1][i] * gain;
-                            self.output_buffers[0][(self.output_write_pos + i) % ring_size] = left;
-                            self.output_buffers[1][(self.output_write_pos + i) % ring_size] = right;
-                            input_power_sum += self.accum_buffers[0][i] * self.accum_buffers[0][i]
-                                + self.accum_buffers[1][i] * self.accum_buffers[1][i];
-                            output_power_sum += left * left + right * right;
+                            self.output_buffers[0][(self.output_write_pos + i) % ring_size] =
+                                self.accum_buffers[0][i];
+                            self.output_buffers[1][(self.output_write_pos + i) % ring_size] =
+                                self.accum_buffers[1][i];
+                            output_power_sum += mono_out * mono_out;
+                        }
+                        let gain = self.update_linked_stereo_gain(linked_stereo_gain(
+                            mono_input_power_sum,
+                            output_power_sum,
+                        ));
+                        for i in 0..RNNOISE_FRAME_SIZE {
+                            let ring_size = self.output_buffers[0].len();
+                            self.output_buffers[0][(self.output_write_pos + i) % ring_size] *= gain;
+                            self.output_buffers[1][(self.output_write_pos + i) % ring_size] *= gain;
                         }
                     } else {
-                        // Mono or >2 channels: fall back to independent processing.
-                        for ch in 0..ch_count {
+                        // Anti-phase, hard-panned, and otherwise wide
+                        // material can cancel in a mono detector.  Run
+                        // independent detectors to obtain a stable shared
+                        // frame gain, then apply that gain to the original
+                        // channels so the stereo image is not altered.
+                        for ch in 0..2 {
                             self.scratch_input[ch].copy_from_slice(&self.accum_buffers[ch]);
-                            for s in &mut self.scratch_input[ch] {
-                                *s *= 32768.0;
+                            for sample in &mut self.scratch_input[ch] {
+                                *sample *= 32768.0;
                             }
-
                             self.denoisers[ch].process_frame(
                                 &mut self.scratch_output[ch],
                                 &self.scratch_input[ch],
                             );
-
-                            for s in &mut self.scratch_output[ch] {
-                                *s /= 32768.0;
+                            for sample in &mut self.scratch_output[ch] {
+                                *sample /= 32768.0;
                             }
-                            input_power_sum +=
-                                self.accum_buffers[ch].iter().map(|x| x * x).sum::<f32>();
-                            output_power_sum +=
-                                self.scratch_output[ch].iter().map(|x| x * x).sum::<f32>();
-
-                            let ring_size = self.output_buffers[ch].len();
-                            for (i, &s) in self.scratch_output[ch].iter().enumerate() {
-                                self.output_buffers[ch][(self.output_write_pos + i) % ring_size] =
-                                    s;
-                            }
+                            input_power_sum += self.accum_buffers[ch]
+                                .iter()
+                                .map(|sample| sample * sample)
+                                .sum::<f32>();
+                            output_power_sum += self.scratch_output[ch]
+                                .iter()
+                                .map(|sample| sample * sample)
+                                .sum::<f32>();
+                        }
+                        let gain = self.update_linked_stereo_gain(linked_stereo_gain(
+                            input_power_sum,
+                            output_power_sum,
+                        ));
+                        for i in 0..RNNOISE_FRAME_SIZE {
+                            let ring_size = self.output_buffers[0].len();
+                            self.output_buffers[0][(self.output_write_pos + i) % ring_size] =
+                                self.accum_buffers[0][i] * gain;
+                            self.output_buffers[1][(self.output_write_pos + i) % ring_size] =
+                                self.accum_buffers[1][i] * gain;
                         }
                     }
+                } else {
+                    // Mono processing.
+                    for ch in 0..ch_count {
+                        self.scratch_input[ch].copy_from_slice(&self.accum_buffers[ch]);
+                        for s in &mut self.scratch_input[ch] {
+                            *s *= 32768.0;
+                        }
 
-                    let denom = (RNNOISE_FRAME_SIZE * ch_count) as f32;
-                    let input_power = input_power_sum / denom;
-                    let output_power = output_power_sum / denom;
-                    if input_power > 1e-10 {
-                        self.avg_reduction_db = 0.9 * self.avg_reduction_db
-                            + 0.1 * 10.0 * (input_power / output_power.max(1e-10)).log10();
+                        self.denoisers[ch]
+                            .process_frame(&mut self.scratch_output[ch], &self.scratch_input[ch]);
+
+                        for s in &mut self.scratch_output[ch] {
+                            *s /= 32768.0;
+                        }
+                        let ring_size = self.output_buffers[ch].len();
+                        for (i, &sample) in self.scratch_output[ch].iter().enumerate() {
+                            self.output_buffers[ch][(self.output_write_pos + i) % ring_size] =
+                                sample;
+                        }
                     }
                 }
-                if !self.first_frame_discarded {
-                    self.first_frame_discarded = true;
-                    self.output_read_pos += RNNOISE_FRAME_SIZE;
-                }
-
                 self.output_write_pos += RNNOISE_FRAME_SIZE;
 
                 self.accum_fill = 0;
@@ -209,16 +278,18 @@ impl RnnoiseBackend {
             let ring_size = self.output_buffers[0].len();
             for frame in 0..to_write {
                 let read = (self.output_read_pos + frame) % ring_size;
+                self.advance_bypass_mix();
                 for ch in 0..ch_count {
-                    buffer[frame * channels + ch] = self.output_buffers[ch][read];
+                    let wet = self.output_buffers[ch][read];
+                    let dry = self.dry_output_buffers[ch][read];
+                    buffer[frame * channels + ch] = wet + self.bypass_mix * (dry - wet);
                 }
             }
             self.output_read_pos += to_write;
         }
 
-        // Zero out any frames that could not be filled from the ring buffer.
-        // With correct usage (multiples of 480 after the first-frame warm-up),
-        // `to_write` should equal `num_frames` on every call.
+        // The pre-seeded delay queue guarantees a full output block for every
+        // valid call, including partial model frames.
         for frame in to_write..num_frames {
             for ch in 0..channels {
                 buffer[frame * channels + ch] = 0.0;
@@ -231,7 +302,7 @@ impl RnnoiseBackend {
             self.output_read_pos = 0;
         }
 
-        to_write
+        num_frames
     }
 
     /// Reset processing state in place without heap allocation.
@@ -245,17 +316,22 @@ impl RnnoiseBackend {
         for buf in &mut self.output_buffers {
             buf.fill(0.0);
         }
+        for buf in &mut self.dry_output_buffers {
+            buf.fill(0.0);
+        }
         for buf in &mut self.scratch_input {
             buf.fill(0.0);
         }
         for buf in &mut self.scratch_output {
             buf.fill(0.0);
         }
-        self.output_write_pos = 0;
+        self.output_write_pos = RNNOISE_FRAME_SIZE;
         self.output_read_pos = 0;
         self.accum_fill = 0;
-        self.avg_reduction_db = 0.0;
-        self.first_frame_discarded = false;
+        self.linked_stereo_gain = 1.0;
+        self.bypass_mix = 0.0;
+        self.bypass_target = 0.0;
+        self.bypass_initialized = false;
     }
 
     /// Always returns 480 (RNNOISE_FRAME_SIZE) regardless of bypass state.
@@ -267,28 +343,126 @@ impl RnnoiseBackend {
         RNNOISE_FRAME_SIZE
     }
 
-    pub fn data(&self) -> RnnoiseData {
-        RnnoiseData {
-            avg_reduction_db: self.avg_reduction_db,
+    fn update_linked_stereo_gain(&mut self, target: f32) -> f32 {
+        let target = if target.is_finite() {
+            target.clamp(0.0, 1.0)
+        } else {
+            self.linked_stereo_gain
+        };
+        self.linked_stereo_gain +=
+            LINKED_STEREO_GAIN_SMOOTHING * (target - self.linked_stereo_gain);
+        self.linked_stereo_gain = self.linked_stereo_gain.clamp(0.0, 1.0);
+        self.linked_stereo_gain
+    }
+
+    fn advance_bypass_mix(&mut self) {
+        let step = 1.0 / BYPASS_CROSSFADE_SAMPLES as f32;
+        if self.bypass_mix < self.bypass_target {
+            self.bypass_mix = (self.bypass_mix + step).min(self.bypass_target);
+        } else if self.bypass_mix > self.bypass_target {
+            self.bypass_mix = (self.bypass_mix - step).max(self.bypass_target);
         }
     }
 }
 
 fn linked_stereo_gain(mono_in: f32, mono_out: f32) -> f32 {
-    if mono_in.abs() <= 1e-5 {
-        return 1.0;
+    if mono_in <= 1e-10 || mono_out <= 0.0 || !mono_in.is_finite() || !mono_out.is_finite() {
+        return 0.0;
     }
-    let gain = mono_out / mono_in;
-    if gain.is_finite() {
-        gain.clamp(0.0, 2.0)
-    } else {
-        1.0
-    }
+    (mono_out / mono_in).sqrt().clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_common_gain_preserves_stereo(input: &[f32]) {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 2).unwrap();
+        let mut first = input.to_vec();
+        backend.process(&mut first, RNNOISE_FRAME_SIZE, 2, false);
+        let mut output = vec![0.0; RNNOISE_FRAME_SIZE * 2];
+        backend.process(&mut output, RNNOISE_FRAME_SIZE, 2, false);
+
+        let input_energy: f32 = input.iter().map(|sample| sample * sample).sum();
+        let gain = input
+            .iter()
+            .zip(&output)
+            .map(|(dry, wet)| dry * wet)
+            .sum::<f32>()
+            / input_energy;
+        assert!((0.0..=1.0).contains(&gain), "invalid linked gain: {gain}");
+        let max_residual = input
+            .iter()
+            .zip(&output)
+            .map(|(dry, wet)| (wet - gain * dry).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_residual < 1e-5,
+            "linked processing changed the stereo image: residual={max_residual}"
+        );
+    }
+
+    #[test]
+    fn vendored_model_matches_reference_after_workspace_reuse_refactor() {
+        let input_bytes = include_bytes!("../../../../3rdparties/nnnoiseless/tests/testing.raw");
+        let output_bytes =
+            include_bytes!("../../../../3rdparties/nnnoiseless/tests/reference_output.raw");
+        let input: Vec<f32> = input_bytes
+            .chunks_exact(2)
+            .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]) as f32)
+            .collect();
+        let reference: Vec<i16> = output_bytes
+            .chunks_exact(2)
+            .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
+            .collect();
+        let mut state = nnnoiseless::DenoiseState::new();
+        let mut frame = [0.0; RNNOISE_FRAME_SIZE];
+        let mut actual = Vec::with_capacity(reference.len());
+        for (index, input_frame) in input.chunks_exact(RNNOISE_FRAME_SIZE).enumerate() {
+            state.process_frame(&mut frame, input_frame);
+            if index > 0 {
+                actual.extend(frame.iter().map(|sample| *sample as i16));
+            }
+        }
+        assert_eq!(actual.len(), reference.len());
+        let xx: f64 = reference
+            .iter()
+            .map(|sample| *sample as f64 * *sample as f64)
+            .sum();
+        let yy: f64 = actual
+            .iter()
+            .map(|sample| *sample as f64 * *sample as f64)
+            .sum();
+        let xy: f64 = reference
+            .iter()
+            .zip(&actual)
+            .map(|(a, b)| *a as f64 * *b as f64)
+            .sum();
+        let correlation = xy / (xx.sqrt() * yy.sqrt());
+        assert!(
+            (correlation - 1.0).abs() < 1e-4,
+            "reference correlation={correlation}"
+        );
+    }
+
+    #[test]
+    fn model_processes_on_a_bounded_audio_thread_stack() {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024)
+            .spawn(|| {
+                let mut state = nnnoiseless::DenoiseState::new();
+                let input = [0.1; RNNOISE_FRAME_SIZE];
+                let mut output = [0.0; RNNOISE_FRAME_SIZE];
+                for _ in 0..8 {
+                    state.process_frame(&mut output, &input);
+                }
+                assert!(output.iter().all(|sample| sample.is_finite()));
+            })
+            .unwrap()
+            .join()
+            .expect("RNNoise exceeded the bounded callback stack");
+    }
 
     #[test]
     fn creates_state_per_channel() {
@@ -311,8 +485,8 @@ mod tests {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
 
-        // Two full frames: the first is discarded (warm-up), the second
-        // produces real output — both should be near-silent for silence input.
+        // Two full frames: the first is the declared zero-valued latency
+        // region and the second contains the delayed processed first frame.
         let mut buffer = vec![0.0f32; 960];
         backend.process(&mut buffer, 960, 1, false);
 
@@ -331,10 +505,10 @@ mod tests {
         assert_eq!(backend.latency_samples(), RNNOISE_FRAME_SIZE);
     }
 
-    /// Verify that the first 480 samples output are all zero (the warm-up
-    /// frame was discarded and the ring buffer fills up on the second call).
+    /// Verify that the declared 480-sample startup latency is emitted as
+    /// zeroes without discarding the first processed input frame.
     #[test]
-    fn first_frame_is_discarded() {
+    fn startup_emits_zero_valued_latency_region() {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
 
@@ -342,22 +516,21 @@ mod tests {
         let mut first = vec![0.1f32; RNNOISE_FRAME_SIZE];
         backend.process(&mut first, RNNOISE_FRAME_SIZE, 1, false);
 
-        // The first 480 output samples should be zeroed because the warm-up
-        // frame is discarded and the ring buffer has no output yet.
+        // The first 480 output samples are the pre-seeded latency queue.
         for (i, &s) in first.iter().enumerate() {
-            assert_eq!(s, 0.0, "Sample {i} of warm-up frame should be zero");
+            assert_eq!(s, 0.0, "Sample {i} of startup latency should be zero");
         }
     }
 
-    /// After warm-up, the second frame should carry non-trivial output.
+    /// After the latency region, the second frame carries the processed first
+    /// input frame rather than deleting it.
     #[test]
     fn second_frame_produces_output() {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
 
-        // First frame: warm-up (discarded).
-        let mut warmup = vec![0.5f32; RNNOISE_FRAME_SIZE];
-        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 1, false);
+        let mut first = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut first, RNNOISE_FRAME_SIZE, 1, false);
 
         // Second frame: should produce output from the first processed frame.
         let mut second = vec![0.5f32; RNNOISE_FRAME_SIZE];
@@ -366,7 +539,7 @@ mod tests {
         let energy: f32 = second.iter().map(|s| s * s).sum();
         assert!(
             energy > 0.0,
-            "Second frame should have non-zero output after warm-up"
+            "Second frame should contain the delayed first processed frame"
         );
     }
 
@@ -381,10 +554,169 @@ mod tests {
 
     #[test]
     fn linked_stereo_gain_is_finite_and_bounded() {
-        assert_eq!(linked_stereo_gain(1e-6, 1.0), 1.0);
-        assert_eq!(linked_stereo_gain(0.1, 10.0), 2.0);
-        assert_eq!(linked_stereo_gain(0.1, -10.0), 0.0);
-        assert_eq!(linked_stereo_gain(0.1, f32::INFINITY), 1.0);
+        assert_eq!(linked_stereo_gain(0.0, 1.0), 0.0);
+        assert_eq!(linked_stereo_gain(1e-12, 1.0), 0.0);
+        assert_eq!(linked_stereo_gain(1.0, 4.0), 1.0);
+        assert_eq!(linked_stereo_gain(4.0, 1.0), 0.5);
+        assert_eq!(linked_stereo_gain(1.0, f32::NAN), 0.0);
+    }
+
+    #[test]
+    fn linked_stereo_gain_changes_are_smoothed_between_frames() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 2).unwrap();
+
+        // A near-cancelled stereo frame can make the detector's target gain
+        // change substantially from one 10 ms model frame to the next.  The
+        // common gain must ramp rather than imposing a full-scale step on both
+        // channels, which would turn the cancellation-prone signal into
+        // audible amplitude modulation.
+        let first = backend.update_linked_stereo_gain(0.0);
+        assert!(first > 0.0 && first < 1.0);
+        let second = backend.update_linked_stereo_gain(1.0);
+        assert!(second > first && second < 1.0);
+        assert!((second - first) <= LINKED_STEREO_GAIN_SMOOTHING + 1e-6);
+    }
+
+    #[test]
+    fn anti_phase_stereo_does_not_collapse_to_silence() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 2).unwrap();
+
+        // A linked mono detector must not treat a wide stereo signal as
+        // silence.  The second call reads the first processed frame after the
+        // fixed startup latency.
+        let mut warmup = vec![0.0f32; RNNOISE_FRAME_SIZE * 2];
+        for i in 0..RNNOISE_FRAME_SIZE {
+            let sample = (i as f32 * 0.071).sin() * 0.35;
+            warmup[2 * i] = sample;
+            warmup[2 * i + 1] = -sample;
+        }
+        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 2, false);
+
+        let mut output = vec![0.0f32; RNNOISE_FRAME_SIZE * 2];
+        for i in 0..RNNOISE_FRAME_SIZE {
+            let sample = (i as f32 * 0.071).sin() * 0.35;
+            output[2 * i] = sample;
+            output[2 * i + 1] = -sample;
+        }
+        backend.process(&mut output, RNNOISE_FRAME_SIZE, 2, false);
+
+        let left_power: f32 = output.iter().step_by(2).map(|s| s * s).sum();
+        let right_power: f32 = output.iter().skip(1).step_by(2).map(|s| s * s).sum();
+        let cross: f32 = output
+            .chunks_exact(2)
+            .map(|stereo| stereo[0] * stereo[1])
+            .sum();
+        assert!(left_power > 1e-5, "anti-phase left channel was collapsed");
+        assert!(right_power > 1e-5, "anti-phase right channel was collapsed");
+        assert!(
+            cross < -0.9 * (left_power * right_power).sqrt(),
+            "anti-phase image was not preserved: cross={cross}, L={left_power}, R={right_power}"
+        );
+    }
+
+    #[test]
+    fn quadrature_stereo_preserves_phase_relationship() {
+        let mut input = vec![0.0; RNNOISE_FRAME_SIZE * 2];
+        for frame in 0..RNNOISE_FRAME_SIZE {
+            let phase = frame as f32 * 0.071;
+            input[2 * frame] = phase.sin() * 0.35;
+            input[2 * frame + 1] = phase.cos() * 0.35;
+        }
+        assert_common_gain_preserves_stereo(&input);
+    }
+
+    #[test]
+    fn uncorrelated_stereo_preserves_each_channel() {
+        let mut input = vec![0.0; RNNOISE_FRAME_SIZE * 2];
+        let mut left_state = 0x1234_5678_u32;
+        let mut right_state = 0x9abc_def0_u32;
+        for frame in 0..RNNOISE_FRAME_SIZE {
+            left_state = left_state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            right_state = right_state.wrapping_mul(22_695_477).wrapping_add(1);
+            input[2 * frame] = (left_state as f32 / u32::MAX as f32 - 0.5) * 0.7;
+            input[2 * frame + 1] = (right_state as f32 / u32::MAX as f32 - 0.5) * 0.7;
+        }
+        assert_common_gain_preserves_stereo(&input);
+    }
+
+    #[test]
+    fn hard_panned_stereo_keeps_active_channel_and_silence() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 2).unwrap();
+
+        let mut warmup = vec![0.0f32; RNNOISE_FRAME_SIZE * 2];
+        for i in 0..RNNOISE_FRAME_SIZE {
+            warmup[2 * i] = (i as f32 * 0.083).sin() * 0.35;
+        }
+        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 2, false);
+
+        let mut output = vec![0.0f32; RNNOISE_FRAME_SIZE * 2];
+        for i in 0..RNNOISE_FRAME_SIZE {
+            output[2 * i] = (i as f32 * 0.083).sin() * 0.35;
+        }
+        backend.process(&mut output, RNNOISE_FRAME_SIZE, 2, false);
+
+        let left_power: f32 = output.iter().step_by(2).map(|s| s * s).sum();
+        let right_power: f32 = output.iter().skip(1).step_by(2).map(|s| s * s).sum();
+        assert!(
+            left_power > 1e-5,
+            "hard-panned active channel was collapsed"
+        );
+        assert!(
+            right_power < 1e-12,
+            "hard-panned silent channel was contaminated"
+        );
+    }
+
+    #[test]
+    fn unequal_stereo_levels_keep_their_image_ratio() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 2).unwrap();
+
+        let mut warmup = vec![0.0f32; RNNOISE_FRAME_SIZE * 2];
+        for i in 0..RNNOISE_FRAME_SIZE {
+            let sample = (i as f32 * 0.067).sin() * 0.35;
+            warmup[2 * i] = sample;
+            warmup[2 * i + 1] = sample / 6.0;
+        }
+        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 2, false);
+
+        let mut output = vec![0.0f32; RNNOISE_FRAME_SIZE * 2];
+        for i in 0..RNNOISE_FRAME_SIZE {
+            let sample = (i as f32 * 0.067).sin() * 0.35;
+            output[2 * i] = sample;
+            output[2 * i + 1] = sample / 6.0;
+        }
+        backend.process(&mut output, RNNOISE_FRAME_SIZE, 2, false);
+
+        let left_power: f32 = output.iter().step_by(2).map(|s| s * s).sum();
+        let right_power: f32 = output.iter().skip(1).step_by(2).map(|s| s * s).sum();
+        assert!(
+            left_power > 1e-5,
+            "unequal stereo active channel was collapsed"
+        );
+        assert!(
+            right_power > 1e-7,
+            "unequal stereo quiet channel was collapsed"
+        );
+        let ratio = (left_power / right_power).sqrt();
+        assert!(
+            (ratio - 6.0).abs() < 0.01,
+            "stereo level ratio changed: {ratio}"
+        );
+    }
+
+    #[test]
+    fn arbitrary_blocks_return_full_length_with_constant_startup_delay() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+        for size in [1usize, 16, 63, 64, 127, 128, 256, 479, 480, 481, 512, 1024] {
+            let mut buffer = vec![0.1; size];
+            assert_eq!(backend.process(&mut buffer, size, 1, true), size);
+            assert!(buffer.iter().all(|sample| sample.is_finite()));
+        }
     }
 
     #[test]
@@ -404,14 +736,13 @@ mod tests {
         // Process some audio to advance pointers.
         let mut buf = vec![0.5f32; 960];
         backend.process(&mut buf, 960, 1, false);
-        assert!(backend.output_write_pos > 0 || backend.first_frame_discarded);
+        assert!(backend.output_write_pos > RNNOISE_FRAME_SIZE);
 
         backend.reset();
 
         assert_eq!(backend.accum_fill, 0);
-        assert_eq!(backend.output_write_pos, 0);
+        assert_eq!(backend.output_write_pos, RNNOISE_FRAME_SIZE);
         assert_eq!(backend.output_read_pos, 0);
-        assert!(!backend.first_frame_discarded);
     }
 
     /// Regression test: reset() must not heap-allocate new DenoiseState objects.
@@ -485,54 +816,128 @@ mod tests {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
 
-        // First frame is discarded even in bypass mode.
+        // Startup emits the pre-seeded latency queue.
         let mut first = vec![0.5f32; RNNOISE_FRAME_SIZE];
         backend.process(&mut first, RNNOISE_FRAME_SIZE, 1, true);
         for (i, &s) in first.iter().enumerate() {
-            assert_eq!(s, 0.0, "warm-up sample {i} should be zero in bypass");
+            assert_eq!(s, 0.0, "startup-latency sample {i} should be zero in bypass");
         }
 
-        // Second frame should carry its own input through unchanged (bypass).
+        // The next block carries the first frame through unchanged (bypass).
         let mut second = vec![0.3f32; RNNOISE_FRAME_SIZE];
         backend.process(&mut second, RNNOISE_FRAME_SIZE, 1, true);
         for (i, &s) in second.iter().enumerate() {
             assert!(
-                (s - 0.3).abs() < 1e-6,
-                "bypass sample {i} should equal input (0.3), got {s}"
+                (s - 0.5).abs() < 1e-6,
+                "bypass sample {i} should equal delayed input (0.5), got {s}"
             );
         }
     }
 
     #[test]
-    fn uninitialized_process_returns_num_frames() {
+    fn bypass_keeps_model_state_warm_and_crossfades_back_to_wet() {
+        let mut always_wet = RnnoiseBackend::new();
+        let mut toggled = RnnoiseBackend::new();
+        always_wet.initialize(48000, 1).unwrap();
+        toggled.initialize(48000, 1).unwrap();
+
+        for frame_index in 0..6 {
+            let mut reference = vec![0.0; RNNOISE_FRAME_SIZE];
+            for (index, sample) in reference.iter_mut().enumerate() {
+                *sample = ((frame_index * RNNOISE_FRAME_SIZE + index) as f32 * 0.071).sin() * 0.3;
+            }
+            let mut actual = reference.clone();
+            always_wet.process(&mut reference, RNNOISE_FRAME_SIZE, 1, false);
+            toggled.process(&mut actual, RNNOISE_FRAME_SIZE, 1, frame_index < 3);
+
+            if frame_index == 5 {
+                let max_error = actual
+                    .iter()
+                    .zip(&reference)
+                    .map(|(a, b)| (a - b).abs())
+                    .fold(0.0_f32, f32::max);
+                assert!(
+                    max_error < 1e-6,
+                    "re-enabled model resumed stale state: {max_error}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bypass_transition_is_bounded_and_latency_constant() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 1).unwrap();
+        let mut previous = 0.0_f32;
+        let mut max_step = 0.0_f32;
+        for bypass in [false, false, true, true, false, false] {
+            let mut frame = vec![0.2; RNNOISE_FRAME_SIZE];
+            backend.process(&mut frame, RNNOISE_FRAME_SIZE, 1, bypass);
+            for sample in frame {
+                max_step = max_step.max((sample - previous).abs());
+                previous = sample;
+            }
+            assert_eq!(backend.latency_samples(), RNNOISE_FRAME_SIZE);
+        }
+        assert!(max_step < 0.25, "bypass transition clicked: {max_step}");
+    }
+
+    #[test]
+    fn model_domain_is_sanitized_and_clamped_for_each_stereo_channel() {
+        let mut backend = RnnoiseBackend::new();
+        backend.initialize(48000, 2).unwrap();
+        let mut buffer = vec![0.0; RNNOISE_FRAME_SIZE * 2 * 2];
+        for frame in 0..RNNOISE_FRAME_SIZE {
+            buffer[frame * 2] = if frame % 3 == 0 { f32::NAN } else { 1.0e30 };
+            buffer[frame * 2 + 1] = if frame % 5 == 0 {
+                f32::NEG_INFINITY
+            } else {
+                -1.0e30
+            };
+        }
+        backend.process(&mut buffer, RNNOISE_FRAME_SIZE * 2, 2, true);
+        assert!(buffer.iter().all(|sample| sample.is_finite()));
+        assert!(buffer.iter().all(|sample| sample.abs() <= 1.0));
+        let delayed = &buffer[RNNOISE_FRAME_SIZE * 2..];
+        assert!(delayed.iter().step_by(2).any(|sample| *sample == 1.0));
+        assert!(
+            delayed
+                .iter()
+                .skip(1)
+                .step_by(2)
+                .any(|sample| *sample == -1.0)
+        );
+    }
+
+    #[test]
+    fn uninitialized_process_returns_zero_frames() {
         let mut backend = RnnoiseBackend::new();
         // Denoisers vector is empty because initialize() was never called.
         let mut buffer = vec![0.5f32; RNNOISE_FRAME_SIZE];
         assert_eq!(
             backend.process(&mut buffer, RNNOISE_FRAME_SIZE, 1, false),
-            RNNOISE_FRAME_SIZE
+            0
         );
     }
 
     #[test]
-    fn channels_zero_returns_num_frames() {
+    fn channels_zero_is_rejected() {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
         let mut buffer = vec![0.5f32; RNNOISE_FRAME_SIZE];
         assert_eq!(
             backend.process(&mut buffer, RNNOISE_FRAME_SIZE, 0, false),
-            RNNOISE_FRAME_SIZE
+            0
         );
     }
 
     #[test]
-    fn mono_processing_produces_output_after_warmup() {
+    fn mono_processing_produces_output_after_latency() {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
 
-        // Warm-up frame (discarded).
-        let mut warmup = vec![0.5f32; RNNOISE_FRAME_SIZE];
-        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 1, false);
+        let mut first = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut first, RNNOISE_FRAME_SIZE, 1, false);
 
         // Second frame: should produce output from the mono path.
         let mut frame = vec![0.5f32; RNNOISE_FRAME_SIZE];
@@ -541,57 +946,17 @@ mod tests {
         let energy: f32 = frame.iter().map(|s| s * s).sum();
         assert!(
             energy > 0.0,
-            "Mono second frame should have non-zero output after warm-up"
+            "Mono second frame should contain delayed processed output"
         );
     }
 
     #[test]
-    fn four_channel_processing_produces_finite_output() {
+    fn initialize_rejects_undefined_multichannel_layouts() {
         let mut backend = RnnoiseBackend::new();
-        backend.initialize(48000, 4).unwrap();
-
-        // Warm-up + one real frame.
-        let mut buffer = vec![0.2f32; RNNOISE_FRAME_SIZE * 2 * 4];
-        backend.process(&mut buffer, RNNOISE_FRAME_SIZE * 2, 4, false);
-
-        assert!(
-            buffer.iter().all(|s| s.is_finite()),
-            "4-channel output must be finite"
-        );
-    }
-
-    #[test]
-    fn data_returns_reduction_db() {
-        let mut backend = RnnoiseBackend::new();
-        backend.initialize(48000, 1).unwrap();
-
-        // Before any processing, reduction should be zero.
-        assert_eq!(backend.data().avg_reduction_db, 0.0);
-
-        // Warm-up.
-        let mut warmup = vec![0.5f32; RNNOISE_FRAME_SIZE];
-        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 1, false);
-
-        // Second frame with non-silent audio should update reduction.
-        let mut frame = vec![0.5f32; RNNOISE_FRAME_SIZE];
-        backend.process(&mut frame, RNNOISE_FRAME_SIZE, 1, false);
-
-        // Reduction is updated as a running average and should be finite.
-        let data = backend.data();
-        assert!(data.avg_reduction_db.is_finite());
-    }
-
-    #[test]
-    fn silence_does_not_update_reduction_db() {
-        let mut backend = RnnoiseBackend::new();
-        backend.initialize(48000, 1).unwrap();
-
-        // Warm-up + real frame, all silence.
-        let mut buffer = vec![0.0f32; RNNOISE_FRAME_SIZE * 2];
-        backend.process(&mut buffer, RNNOISE_FRAME_SIZE * 2, 1, false);
-
-        // avg_reduction_db should remain at 0.0 because input_power <= 1e-10.
-        assert_eq!(backend.data().avg_reduction_db, 0.0);
+        assert!(backend.initialize(48000, 0).is_err());
+        assert!(backend.initialize(48000, 3).is_err());
+        assert!(backend.initialize(48000, 6).is_err());
+        assert!(backend.initialize(48000, 12).is_err());
     }
 
     #[test]
@@ -600,16 +965,13 @@ mod tests {
         backend.initialize(48000, 1).unwrap();
 
         // Process enough 480-sample frames to exceed the ring buffer size (4×480 = 1920).
-        // After the first-frame discard, each subsequent frame reads back 480 samples.
+        // Each call reads a full frame, starting with the pre-seeded latency region.
         // We need 10 calls to push write_pos past 3840 (ring_size * 2).
         for i in 0..10 {
             let val = 0.1 * (i + 1) as f32;
             let mut frame = vec![val; RNNOISE_FRAME_SIZE];
             let written = backend.process(&mut frame, RNNOISE_FRAME_SIZE, 1, false);
-            // After the warm-up call, every call should return the full frame.
-            if i > 0 {
-                assert_eq!(written, RNNOISE_FRAME_SIZE);
-            }
+            assert_eq!(written, RNNOISE_FRAME_SIZE);
         }
 
         // The wrap should have happened transparently; pointers must stay consistent.
@@ -623,9 +985,8 @@ mod tests {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
 
-        // Warm-up frame (discarded).
-        let mut warmup = vec![0.5f32; RNNOISE_FRAME_SIZE];
-        backend.process(&mut warmup, RNNOISE_FRAME_SIZE, 1, false);
+        let mut first = vec![0.5f32; RNNOISE_FRAME_SIZE];
+        backend.process(&mut first, RNNOISE_FRAME_SIZE, 1, false);
 
         // Two sequential frames should both produce full output.
         let mut frame1 = vec![0.4f32; RNNOISE_FRAME_SIZE];
@@ -644,16 +1005,16 @@ mod tests {
     }
 
     #[test]
-    fn first_frame_not_double_discarded_on_subsequent_calls() {
+    fn first_processed_frame_is_emitted_after_latency() {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 1).unwrap();
 
-        // First call: first frame discarded.
+        // First call emits only the pre-seeded latency region.
         let mut first = vec![0.5f32; RNNOISE_FRAME_SIZE];
         backend.process(&mut first, RNNOISE_FRAME_SIZE, 1, false);
-        assert!(backend.first_frame_discarded);
+        assert!(first.iter().all(|sample| *sample == 0.0));
 
-        // Second call: should not discard again.
+        // The next call emits the processed first input frame.
         let mut second = vec![0.3f32; RNNOISE_FRAME_SIZE];
         backend.process(&mut second, RNNOISE_FRAME_SIZE, 1, false);
 

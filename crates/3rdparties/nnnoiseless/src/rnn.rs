@@ -106,6 +106,12 @@ pub struct RnnState {
     vad_gru_state: Vec<f32>,
     noise_gru_state: Vec<f32>,
     denoise_gru_state: Vec<f32>,
+    dense_out: [f32; MAX_NEURONS],
+    noise_input: [f32; MAX_NEURONS * 3],
+    denoise_input: [f32; MAX_NEURONS * 3],
+    gru_z: [f32; MAX_NEURONS],
+    gru_r: [f32; MAX_NEURONS],
+    gru_h: [f32; MAX_NEURONS],
 }
 
 impl RnnState {
@@ -119,6 +125,12 @@ impl RnnState {
             vad_gru_state,
             noise_gru_state,
             denoise_gru_state,
+            dense_out: [0.0; MAX_NEURONS],
+            noise_input: [0.0; MAX_NEURONS * 3],
+            denoise_input: [0.0; MAX_NEURONS * 3],
+            gru_z: [0.0; MAX_NEURONS],
+            gru_r: [0.0; MAX_NEURONS],
+            gru_h: [0.0; MAX_NEURONS],
         }
     }
 
@@ -126,6 +138,12 @@ impl RnnState {
         self.vad_gru_state.fill(0.0);
         self.noise_gru_state.fill(0.0);
         self.denoise_gru_state.fill(0.0);
+        self.dense_out.fill(0.0);
+        self.noise_input.fill(0.0);
+        self.denoise_input.fill(0.0);
+        self.gru_z.fill(0.0);
+        self.gru_r.fill(0.0);
+        self.gru_h.fill(0.0);
     }
 }
 
@@ -180,10 +198,14 @@ fn compute_dense(layer: &DenseLayer, output: &mut [f32], input: &[f32]) {
     }
 }
 
-fn compute_gru(gru: &GruLayer, state: &mut [f32], input: &[f32]) {
-    let mut z = [0.0; MAX_NEURONS];
-    let mut r = [0.0; MAX_NEURONS];
-    let mut h = [0.0; MAX_NEURONS];
+fn compute_gru(
+    gru: &GruLayer,
+    state: &mut [f32],
+    input: &[f32],
+    z: &mut [f32; MAX_NEURONS],
+    r: &mut [f32; MAX_NEURONS],
+    h: &mut [f32; MAX_NEURONS],
+) {
     let m = gru.nb_inputs;
     let n = gru.nb_neurons;
 
@@ -232,16 +254,29 @@ fn compute_gru(gru: &GruLayer, state: &mut [f32], input: &[f32]) {
 const INPUT_SIZE: usize = 42;
 
 pub fn compute_rnn(rnn: &mut RnnState, gains: &mut [f32], vad: &mut [f32], input: &[f32]) {
-    let mut dense_out = [0.0; MAX_NEURONS];
-    let mut noise_input = [0.0; MAX_NEURONS * 3];
-    let mut denoise_input = [0.0; MAX_NEURONS * 3];
-    let model = &rnn.model;
+    let RnnState {
+        model,
+        vad_gru_state,
+        noise_gru_state,
+        denoise_gru_state,
+        dense_out,
+        noise_input,
+        denoise_input,
+        gru_z,
+        gru_r,
+        gru_h,
+    } = rnn;
+    let model = *model;
 
-    let vad_gru_state = &mut rnn.vad_gru_state[..];
-    let noise_gru_state = &mut rnn.noise_gru_state[..];
-    let denoise_gru_state = &mut rnn.denoise_gru_state[..];
-    compute_dense(&model.input_dense, &mut dense_out, input);
-    compute_gru(&model.vad_gru, vad_gru_state, &dense_out);
+    compute_dense(&model.input_dense, dense_out, input);
+    compute_gru(
+        &model.vad_gru,
+        vad_gru_state,
+        dense_out,
+        gru_z,
+        gru_r,
+        gru_h,
+    );
     compute_dense(&model.vad_output, vad, vad_gru_state);
 
     for i in 0..model.input_dense_size {
@@ -253,7 +288,14 @@ pub fn compute_rnn(rnn: &mut RnnState, gains: &mut [f32], vad: &mut [f32], input
     for i in 0..INPUT_SIZE {
         noise_input[i + model.input_dense_size + model.vad_gru_size] = input[i];
     }
-    compute_gru(&model.noise_gru, noise_gru_state, &noise_input);
+    compute_gru(
+        &model.noise_gru,
+        noise_gru_state,
+        noise_input,
+        gru_z,
+        gru_r,
+        gru_h,
+    );
 
     for i in 0..model.vad_gru_size {
         denoise_input[i] = vad_gru_state[i];
@@ -264,6 +306,13 @@ pub fn compute_rnn(rnn: &mut RnnState, gains: &mut [f32], vad: &mut [f32], input
     for i in 0..INPUT_SIZE {
         denoise_input[i + model.vad_gru_size + model.noise_gru_size] = input[i];
     }
-    compute_gru(&model.denoise_gru, denoise_gru_state, &denoise_input);
+    compute_gru(
+        &model.denoise_gru,
+        denoise_gru_state,
+        denoise_input,
+        gru_z,
+        gru_r,
+        gru_h,
+    );
     compute_dense(&model.denoise_output, gains, denoise_gru_state);
 }

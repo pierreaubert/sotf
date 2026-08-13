@@ -11,17 +11,16 @@ fn disabled_is_transparent() {
         .expect("set enabled");
     plugin.initialize(48000).expect("initialize");
 
-    // Process 960 frames: first 480 discarded (startup delay), second 480 pass through.
+    // Process an arbitrary host block. The first 480 output samples are the
+    // declared startup latency, followed by the beginning of the dry stream.
     let mut buffer: Vec<f32> = (0..1920)
         .map(|i| ((i % 100) as f32 - 50.0) / 100.0)
         .collect();
     let input = buffer.clone();
     let context = ProcessContext::new(48000, 960);
     let written = plugin.process_in_place(&mut buffer, &context).unwrap();
-    // First frame discarded, so only 480 frames written.
-    assert_eq!(written, 480);
-    // The second 480 frames of input should appear at the start of the output.
-    assert_eq!(&buffer[..960], &input[960..1920]);
+    assert_eq!(written, 960);
+    assert_eq!(&buffer[960..1920], &input[..960]);
 }
 
 #[test]
@@ -37,15 +36,14 @@ fn latency_is_constant_when_disabled() {
 }
 
 #[test]
-fn rejects_non_multiple_of_480() {
+fn accepts_non_multiple_of_480_and_preserves_latency() {
     let mut plugin = SpeechDenoiserPlugin::new(1);
     plugin.initialize(48000).expect("initialize");
 
     let mut buffer = vec![0.0f32; 512];
     let context = ProcessContext::new(48000, 512);
-    let result = plugin.process_in_place(&mut buffer, &context);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("480"));
+    assert_eq!(plugin.process_in_place(&mut buffer, &context).unwrap(), 512);
+    assert!(buffer[..480].iter().all(|sample| *sample == 0.0));
 }
 
 #[test]
@@ -96,46 +94,66 @@ fn latency_is_constant_regardless_of_enabled() {
     assert_eq!(latency_off, 480, "Latency when disabled must still be 480");
 }
 
-/// 1.2 CRITICAL: non-multiple-of-480 block sizes must return an error.
 #[test]
-fn process_rejects_non_multiple_of_480_when_enabled() {
+fn arbitrary_partitions_match_one_continuous_stream() {
     let mut plugin = SpeechDenoiserPlugin::new(1);
     plugin
         .set_parameter("enabled".into(), ParameterValue::Bool(true))
         .unwrap();
     plugin.initialize(48000).expect("initialize");
 
-    for &bad_size in &[64usize, 128, 256, 512, 1024] {
-        let mut buffer = vec![0.0f32; bad_size];
-        let ctx = ProcessContext::new(48000, bad_size);
+    let source: Vec<f32> = (0..1440)
+        .map(|i| ((i * 17 % 101) as f32 - 50.0) / 100.0)
+        .collect();
+    let mut continuous = source.clone();
+    let mut partitioned = source;
+    let whole = ProcessContext::new(48000, continuous.len());
+    assert_eq!(
+        plugin.process_in_place(&mut continuous, &whole).unwrap(),
+        1440
+    );
+
+    plugin.reset();
+    let mut offset = 0;
+    for requested in [1usize, 16, 63, 64, 127, 128, 256, 479, 480, 481, 512, 1024] {
+        if offset == partitioned.len() {
+            break;
+        }
+        let size = requested.min(partitioned.len() - offset);
+        let mut block = partitioned[offset..offset + size].to_vec();
+        let ctx = ProcessContext::new(48000, size);
+        assert_eq!(plugin.process_in_place(&mut block, &ctx).unwrap(), size);
+        partitioned[offset..offset + size].copy_from_slice(&block);
+        offset += size;
+    }
+    assert_eq!(offset, partitioned.len());
+    for (actual, expected) in partitioned.iter().zip(continuous) {
         assert!(
-            plugin.process_in_place(&mut buffer, &ctx).is_err(),
-            "Block size {bad_size} (not a multiple of 480) must be rejected"
+            (actual - expected).abs() < 1e-5,
+            "stream changed: {actual} vs {expected}"
         );
     }
 }
 
-/// 1.2: exact multiples of 480 must succeed.
 #[test]
-fn process_accepts_multiples_of_480() {
+fn non_finite_input_is_sanitized_and_does_not_poison_following_audio() {
     let mut plugin = SpeechDenoiserPlugin::new(1);
     plugin
         .set_parameter("enabled".into(), ParameterValue::Bool(true))
         .unwrap();
     plugin.initialize(48000).expect("initialize");
 
-    for &good_size in &[
-        SPEECH_DENOISER_FRAME_SIZE,
-        SPEECH_DENOISER_FRAME_SIZE * 2,
-        SPEECH_DENOISER_FRAME_SIZE * 3,
-    ] {
-        let mut buffer = vec![0.0f32; good_size];
-        let ctx = ProcessContext::new(48000, good_size);
-        assert!(
-            plugin.process_in_place(&mut buffer, &ctx).is_ok(),
-            "Block size {good_size} must be accepted"
-        );
-    }
+    let mut buffer = vec![0.1f32; SPEECH_DENOISER_FRAME_SIZE];
+    buffer[10] = f32::NAN;
+    buffer[11] = f32::INFINITY;
+    buffer[12] = f32::NEG_INFINITY;
+    let ctx = ProcessContext::new(48000, buffer.len());
+    assert_eq!(plugin.process_in_place(&mut buffer, &ctx).unwrap(), 480);
+    assert!(buffer.iter().all(|sample| sample.is_finite()));
+
+    let mut next = vec![0.1f32; SPEECH_DENOISER_FRAME_SIZE];
+    assert_eq!(plugin.process_in_place(&mut next, &ctx).unwrap(), 480);
+    assert!(next.iter().all(|sample| sample.is_finite()));
 }
 
 #[test]

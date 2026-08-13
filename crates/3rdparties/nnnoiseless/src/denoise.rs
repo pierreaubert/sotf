@@ -1,5 +1,5 @@
 use crate::{
-    Complex, CEPS_MEM, FRAME_SIZE, FREQ_SIZE, NB_BANDS, NB_DELTA_CEPS, NB_FEATURES, PITCH_BUF_SIZE,
+    CEPS_MEM, Complex, FRAME_SIZE, FREQ_SIZE, NB_BANDS, NB_DELTA_CEPS, NB_FEATURES, PITCH_BUF_SIZE,
     PITCH_FRAME_SIZE, PITCH_MAX_PERIOD, PITCH_MIN_PERIOD, WINDOW_SIZE,
 };
 
@@ -31,7 +31,7 @@ use crate::{
 ///     first = false;
 /// }
 /// ```
-pub struct DenoiseState {
+struct DenoiseCore {
     analysis_mem: [f32; FRAME_SIZE],
     /// This is some sort of ring buffer, storing the last bunch of cepstra.
     cepstral_mem: [[f32; crate::NB_BANDS]; crate::CEPS_MEM],
@@ -44,7 +44,91 @@ pub struct DenoiseState {
     last_period: usize,
     mem_hp_x: [f32; 2],
     lastg: [f32; crate::NB_BANDS],
+}
+
+/// Reused model workspace. Keeping the large FFT, analysis, pitch, and
+/// synthesis arrays behind the state allocation avoids tens of KiB of
+/// per-frame audio-thread stack growth and repeated zero initialization.
+struct DenoiseScratch {
+    analysis_window: [f32; WINDOW_SIZE],
+    pitch_window: [f32; WINDOW_SIZE],
+    pitch_downsample: [f32; PITCH_BUF_SIZE / 2],
+    pitch_search_x: [f32; PITCH_FRAME_SIZE / 4],
+    pitch_search_y: [f32; PITCH_BUF_SIZE / 4],
+    pitch_xcorr: [f32; PITCH_MAX_PERIOD / 2],
+    pitch_yy: [f32; PITCH_MAX_PERIOD / 2 + 1],
+    pitch_refine: [f32; 3],
+    pitch_ac: [f32; 5],
+    pitch_lpc: [f32; 4],
+    pitch_mem: [f32; 5],
+    pitch_lpc2: [f32; 5],
+    pitch_copy: [f32; PITCH_BUF_SIZE / 2],
+    synthesis_window: [f32; WINDOW_SIZE],
+    x_freq: [Complex; FREQ_SIZE],
+    pitch_freq: [Complex; WINDOW_SIZE],
+    x_time: [f32; FRAME_SIZE],
+    ex: [f32; NB_BANDS],
+    ep: [f32; NB_BANDS],
+    exp: [f32; NB_BANDS],
+    features: [f32; NB_FEATURES],
+    gains: [f32; NB_BANDS],
+    interpolated_gains: [f32; FREQ_SIZE],
+    vad: [f32; 1],
+    ly: [f32; NB_BANDS],
+    tmp: [f32; NB_BANDS],
+    pitch_filter_r: [f32; NB_BANDS],
+    pitch_filter_rf: [f32; FREQ_SIZE],
+    pitch_filter_energy: [f32; NB_BANDS],
+    pitch_filter_norm: [f32; NB_BANDS],
+    pitch_filter_normf: [f32; FREQ_SIZE],
+    fft_input: [Complex; WINDOW_SIZE],
+    fft_output: [Complex; WINDOW_SIZE],
+}
+
+impl DenoiseScratch {
+    fn new() -> Self {
+        Self {
+            analysis_window: [0.0; WINDOW_SIZE],
+            pitch_window: [0.0; WINDOW_SIZE],
+            pitch_downsample: [0.0; PITCH_BUF_SIZE / 2],
+            pitch_search_x: [0.0; PITCH_FRAME_SIZE / 4],
+            pitch_search_y: [0.0; PITCH_BUF_SIZE / 4],
+            pitch_xcorr: [0.0; PITCH_MAX_PERIOD / 2],
+            pitch_yy: [0.0; PITCH_MAX_PERIOD / 2 + 1],
+            pitch_refine: [0.0; 3],
+            pitch_ac: [0.0; 5],
+            pitch_lpc: [0.0; 4],
+            pitch_mem: [0.0; 5],
+            pitch_lpc2: [0.0; 5],
+            pitch_copy: [0.0; PITCH_BUF_SIZE / 2],
+            synthesis_window: [0.0; WINDOW_SIZE],
+            x_freq: [Complex::new(0.0, 0.0); FREQ_SIZE],
+            pitch_freq: [Complex::new(0.0, 0.0); WINDOW_SIZE],
+            x_time: [0.0; FRAME_SIZE],
+            ex: [0.0; NB_BANDS],
+            ep: [0.0; NB_BANDS],
+            exp: [0.0; NB_BANDS],
+            features: [0.0; NB_FEATURES],
+            gains: [0.0; NB_BANDS],
+            interpolated_gains: [1.0; FREQ_SIZE],
+            vad: [0.0; 1],
+            ly: [0.0; NB_BANDS],
+            tmp: [0.0; NB_BANDS],
+            pitch_filter_r: [0.0; NB_BANDS],
+            pitch_filter_rf: [0.0; FREQ_SIZE],
+            pitch_filter_energy: [0.0; NB_BANDS],
+            pitch_filter_norm: [0.0; NB_BANDS],
+            pitch_filter_normf: [0.0; FREQ_SIZE],
+            fft_input: [Complex::new(0.0, 0.0); WINDOW_SIZE],
+            fft_output: [Complex::new(0.0, 0.0); WINDOW_SIZE],
+        }
+    }
+}
+
+pub struct DenoiseState {
+    core: DenoiseCore,
     rnn: crate::rnn::RnnState,
+    scratch: Box<DenoiseScratch>,
 }
 
 impl DenoiseState {
@@ -54,16 +138,19 @@ impl DenoiseState {
     /// Creates a new `DenoiseState`.
     pub fn new() -> Box<DenoiseState> {
         Box::new(DenoiseState {
-            analysis_mem: [0.0; FRAME_SIZE],
-            cepstral_mem: [[0.0; NB_BANDS]; CEPS_MEM],
-            mem_id: 0,
-            synthesis_mem: [0.0; FRAME_SIZE],
-            pitch_buf: [0.0; PITCH_BUF_SIZE],
-            last_gain: 0.0,
-            last_period: 0,
-            mem_hp_x: [0.0; 2],
-            lastg: [0.0; NB_BANDS],
+            core: DenoiseCore {
+                analysis_mem: [0.0; FRAME_SIZE],
+                cepstral_mem: [[0.0; NB_BANDS]; CEPS_MEM],
+                mem_id: 0,
+                synthesis_mem: [0.0; FRAME_SIZE],
+                pitch_buf: [0.0; PITCH_BUF_SIZE],
+                last_gain: 0.0,
+                last_period: 0,
+                mem_hp_x: [0.0; 2],
+                lastg: [0.0; NB_BANDS],
+            },
             rnn: crate::rnn::RnnState::new(),
+            scratch: Box::new(DenoiseScratch::new()),
         })
     }
 
@@ -80,153 +167,162 @@ impl DenoiseState {
 
     /// Resets all internal state to zero without heap allocation.
     pub fn reset(&mut self) {
-        self.analysis_mem.fill(0.0);
-        self.cepstral_mem = [[0.0; crate::NB_BANDS]; crate::CEPS_MEM];
-        self.mem_id = 0;
-        self.synthesis_mem.fill(0.0);
-        self.pitch_buf.fill(0.0);
-        self.last_gain = 0.0;
-        self.last_period = 0;
-        self.mem_hp_x.fill(0.0);
-        self.lastg.fill(0.0);
+        self.core.analysis_mem.fill(0.0);
+        self.core.cepstral_mem = [[0.0; crate::NB_BANDS]; crate::CEPS_MEM];
+        self.core.mem_id = 0;
+        self.core.synthesis_mem.fill(0.0);
+        self.core.pitch_buf.fill(0.0);
+        self.core.last_gain = 0.0;
+        self.core.last_period = 0;
+        self.core.mem_hp_x.fill(0.0);
+        self.core.lastg.fill(0.0);
         self.rnn.reset();
     }
 }
 
-fn frame_analysis(state: &mut DenoiseState, x: &mut [Complex], ex: &mut [f32], input: &[f32]) {
-    let mut buf = [0.0; WINDOW_SIZE];
+fn frame_analysis(core: &mut DenoiseCore, scratch: &mut DenoiseScratch) {
+    let buf = &mut scratch.analysis_window;
     for i in 0..FRAME_SIZE {
-        buf[i] = state.analysis_mem[i];
+        buf[i] = core.analysis_mem[i];
     }
     for i in 0..crate::FRAME_SIZE {
-        buf[i + crate::FRAME_SIZE] = input[i];
-        state.analysis_mem[i] = input[i];
+        buf[i + crate::FRAME_SIZE] = scratch.x_time[i];
+        core.analysis_mem[i] = scratch.x_time[i];
     }
     crate::apply_window(&mut buf[..]);
-    crate::forward_transform(x, &buf[..]);
-    crate::compute_band_corr(ex, x, x);
+    crate::forward_transform(
+        &mut scratch.x_freq,
+        &buf[..],
+        &mut scratch.fft_input,
+        &mut scratch.fft_output,
+    );
+    crate::compute_band_corr(&mut scratch.ex, &scratch.x_freq, &scratch.x_freq);
 }
 
-fn compute_frame_features(
-    state: &mut DenoiseState,
-    x: &mut [Complex],
-    p: &mut [Complex],
-    ex: &mut [f32],
-    ep: &mut [f32],
-    exp: &mut [f32],
-    features: &mut [f32],
-    input: &[f32],
-) -> usize {
-    let mut ly = [0.0; NB_BANDS];
-    let mut p_buf = [0.0; WINDOW_SIZE];
-    // Apparently, PITCH_BUF_SIZE wasn't the best name...
-    let mut pitch_buf = [0.0; PITCH_BUF_SIZE / 2];
-    let mut tmp = [0.0; NB_BANDS];
-
-    frame_analysis(state, x, ex, input);
+fn compute_frame_features(core: &mut DenoiseCore, scratch: &mut DenoiseScratch) -> usize {
+    frame_analysis(core, scratch);
     for i in 0..(PITCH_BUF_SIZE - FRAME_SIZE) {
-        state.pitch_buf[i] = state.pitch_buf[i + FRAME_SIZE];
+        core.pitch_buf[i] = core.pitch_buf[i + FRAME_SIZE];
     }
     for i in 0..FRAME_SIZE {
-        state.pitch_buf[PITCH_BUF_SIZE - FRAME_SIZE + i] = input[i];
+        core.pitch_buf[PITCH_BUF_SIZE - FRAME_SIZE + i] = scratch.x_time[i];
     }
 
-    crate::pitch_downsample(&state.pitch_buf[..], &mut pitch_buf);
+    crate::pitch_downsample(
+        &core.pitch_buf[..],
+        &mut scratch.pitch_downsample,
+        &mut scratch.pitch_ac,
+        &mut scratch.pitch_lpc,
+        &mut scratch.pitch_mem,
+        &mut scratch.pitch_lpc2,
+        &mut scratch.pitch_copy,
+    );
     let pitch_idx = crate::pitch_search(
-        &pitch_buf[(PITCH_MAX_PERIOD / 2)..],
-        &pitch_buf,
+        &scratch.pitch_downsample[(PITCH_MAX_PERIOD / 2)..],
+        &scratch.pitch_downsample,
         PITCH_FRAME_SIZE,
         PITCH_MAX_PERIOD - 3 * PITCH_MIN_PERIOD,
+        &mut scratch.pitch_search_x,
+        &mut scratch.pitch_search_y,
+        &mut scratch.pitch_xcorr,
     );
     let pitch_idx = PITCH_MAX_PERIOD - pitch_idx;
 
     let (pitch_idx, gain) = crate::remove_doubling(
-        &pitch_buf[..],
+        &scratch.pitch_downsample[..],
         PITCH_MAX_PERIOD,
         PITCH_MIN_PERIOD,
         PITCH_FRAME_SIZE,
         pitch_idx,
-        state.last_period,
-        state.last_gain,
+        core.last_period,
+        core.last_gain,
+        &mut scratch.pitch_yy,
+        &mut scratch.pitch_refine,
     );
-    state.last_period = pitch_idx;
-    state.last_gain = gain;
+    core.last_period = pitch_idx;
+    core.last_gain = gain;
 
     for i in 0..WINDOW_SIZE {
-        p_buf[i] = state.pitch_buf[PITCH_BUF_SIZE - WINDOW_SIZE - pitch_idx + i];
+        scratch.pitch_window[i] = core.pitch_buf[PITCH_BUF_SIZE - WINDOW_SIZE - pitch_idx + i];
     }
-    crate::apply_window(&mut p_buf[..]);
-    crate::forward_transform(p, &p_buf[..]);
-    crate::compute_band_corr(ep, p, p);
-    crate::compute_band_corr(exp, x, p);
+    crate::apply_window(&mut scratch.pitch_window[..]);
+    crate::forward_transform(
+        &mut scratch.pitch_freq,
+        &scratch.pitch_window,
+        &mut scratch.fft_input,
+        &mut scratch.fft_output,
+    );
+    crate::compute_band_corr(&mut scratch.ep, &scratch.pitch_freq, &scratch.pitch_freq);
+    crate::compute_band_corr(&mut scratch.exp, &scratch.x_freq, &scratch.pitch_freq);
     for i in 0..NB_BANDS {
-        exp[i] /= (0.001 + ex[i] * ep[i]).sqrt();
+        scratch.exp[i] /= (0.001 + scratch.ex[i] * scratch.ep[i]).sqrt();
     }
-    crate::dct(&mut tmp[..], exp);
+    crate::dct(&mut scratch.tmp[..], &scratch.exp);
     for i in 0..NB_DELTA_CEPS {
-        features[NB_BANDS + 2 * NB_DELTA_CEPS + i] = tmp[i];
+        scratch.features[NB_BANDS + 2 * NB_DELTA_CEPS + i] = scratch.tmp[i];
     }
 
-    features[NB_BANDS + 2 * NB_DELTA_CEPS] -= 1.3;
-    features[NB_BANDS + 2 * NB_DELTA_CEPS + 1] -= 0.9;
-    features[NB_BANDS + 3 * NB_DELTA_CEPS] = 0.01 * (pitch_idx as f32 - 300.0);
+    scratch.features[NB_BANDS + 2 * NB_DELTA_CEPS] -= 1.3;
+    scratch.features[NB_BANDS + 2 * NB_DELTA_CEPS + 1] -= 0.9;
+    scratch.features[NB_BANDS + 3 * NB_DELTA_CEPS] = 0.01 * (pitch_idx as f32 - 300.0);
     let mut log_max = -2.0;
     let mut follow = -2.0;
     let mut e = 0.0;
     for i in 0..NB_BANDS {
-        ly[i] = (1e-2 + ex[i]).log10().max(log_max - 7.0).max(follow - 1.5);
-        log_max = log_max.max(ly[i]);
-        follow = (follow - 1.5).max(ly[i]);
-        e += ex[i];
+        scratch.ly[i] = (1e-2 + scratch.ex[i])
+            .log10()
+            .max(log_max - 7.0)
+            .max(follow - 1.5);
+        log_max = log_max.max(scratch.ly[i]);
+        follow = (follow - 1.5).max(scratch.ly[i]);
+        e += scratch.ex[i];
     }
 
     if e < 0.04 {
         /* If there's no audio, avoid messing up the state. */
-        for i in 0..NB_FEATURES {
-            features[i] = 0.0;
-        }
+        scratch.features.fill(0.0);
         return 1;
     }
-    crate::dct(features, &ly[..]);
-    features[0] -= 12.0;
-    features[1] -= 4.0;
-    let ceps_0_idx = state.mem_id;
-    let ceps_1_idx = if state.mem_id < 1 {
-        CEPS_MEM + state.mem_id - 1
+    crate::dct(&mut scratch.features, &scratch.ly[..]);
+    scratch.features[0] -= 12.0;
+    scratch.features[1] -= 4.0;
+    let ceps_0_idx = core.mem_id;
+    let ceps_1_idx = if core.mem_id < 1 {
+        CEPS_MEM + core.mem_id - 1
     } else {
-        state.mem_id - 1
+        core.mem_id - 1
     };
-    let ceps_2_idx = if state.mem_id < 2 {
-        CEPS_MEM + state.mem_id - 2
+    let ceps_2_idx = if core.mem_id < 2 {
+        CEPS_MEM + core.mem_id - 2
     } else {
-        state.mem_id - 2
+        core.mem_id - 2
     };
 
     for i in 0..NB_BANDS {
-        state.cepstral_mem[ceps_0_idx][i] = features[i];
+        core.cepstral_mem[ceps_0_idx][i] = scratch.features[i];
     }
-    state.mem_id += 1;
+    core.mem_id += 1;
 
-    let ceps_0 = &state.cepstral_mem[ceps_0_idx];
-    let ceps_1 = &state.cepstral_mem[ceps_1_idx];
-    let ceps_2 = &state.cepstral_mem[ceps_2_idx];
+    let ceps_0 = &core.cepstral_mem[ceps_0_idx];
+    let ceps_1 = &core.cepstral_mem[ceps_1_idx];
+    let ceps_2 = &core.cepstral_mem[ceps_2_idx];
     for i in 0..NB_DELTA_CEPS {
-        features[i] = ceps_0[i] + ceps_1[i] + ceps_2[i];
-        features[NB_BANDS + i] = ceps_0[i] - ceps_2[i];
-        features[NB_BANDS + NB_DELTA_CEPS + i] = ceps_0[i] - 2.0 * ceps_1[i] + ceps_2[i];
+        scratch.features[i] = ceps_0[i] + ceps_1[i] + ceps_2[i];
+        scratch.features[NB_BANDS + i] = ceps_0[i] - ceps_2[i];
+        scratch.features[NB_BANDS + NB_DELTA_CEPS + i] = ceps_0[i] - 2.0 * ceps_1[i] + ceps_2[i];
     }
 
     /* Spectral variability features. */
     let mut spec_variability = 0.0;
-    if state.mem_id == CEPS_MEM {
-        state.mem_id = 0;
+    if core.mem_id == CEPS_MEM {
+        core.mem_id = 0;
     }
     for i in 0..CEPS_MEM {
         let mut min_dist = 1e15f32;
         for j in 0..CEPS_MEM {
             let mut dist = 0.0;
             for k in 0..NB_BANDS {
-                let tmp = state.cepstral_mem[i][k] - state.cepstral_mem[j][k];
+                let tmp = core.cepstral_mem[i][k] - core.cepstral_mem[j][k];
                 dist += tmp * tmp;
             }
             if j != i {
@@ -236,18 +332,22 @@ fn compute_frame_features(
         spec_variability += min_dist;
     }
 
-    features[NB_BANDS + 3 * NB_DELTA_CEPS + 1] = spec_variability / CEPS_MEM as f32 - 2.1;
+    scratch.features[NB_BANDS + 3 * NB_DELTA_CEPS + 1] = spec_variability / CEPS_MEM as f32 - 2.1;
 
-    return 0;
+    0
 }
 
-fn frame_synthesis(state: &mut DenoiseState, out: &mut [f32], y: &[Complex]) {
-    let mut x = [0.0; WINDOW_SIZE];
-    crate::inverse_transform(&mut x[..], y);
-    crate::apply_window(&mut x[..]);
+fn frame_synthesis(core: &mut DenoiseCore, scratch: &mut DenoiseScratch, out: &mut [f32]) {
+    crate::inverse_transform(
+        &mut scratch.synthesis_window[..],
+        &scratch.x_freq,
+        &mut scratch.fft_input,
+        &mut scratch.fft_output,
+    );
+    crate::apply_window(&mut scratch.synthesis_window[..]);
     for i in 0..FRAME_SIZE {
-        out[i] = x[i] + state.synthesis_mem[i];
-        state.synthesis_mem[i] = x[FRAME_SIZE + i];
+        out[i] = scratch.synthesis_window[i] + core.synthesis_mem[i];
+        core.synthesis_mem[i] = scratch.synthesis_window[FRAME_SIZE + i];
     }
 }
 
@@ -261,96 +361,67 @@ fn biquad(y: &mut [f32], mem: &mut [f32], x: &[f32], b: &[f32], a: &[f32]) {
     }
 }
 
-fn pitch_filter(
-    x: &mut [Complex],
-    p: &mut [Complex],
-    ex: &[f32],
-    ep: &[f32],
-    exp: &[f32],
-    g: &[f32],
-) {
-    let mut r = [0.0; NB_BANDS];
-    let mut rf = [0.0; FREQ_SIZE];
+fn pitch_filter(scratch: &mut DenoiseScratch) {
     for i in 0..NB_BANDS {
-        r[i] = if exp[i] > g[i] {
+        scratch.pitch_filter_r[i] = if scratch.exp[i] > scratch.gains[i] {
             1.0
         } else {
-            let exp_sq = exp[i] * exp[i];
-            let g_sq = g[i] * g[i];
+            let exp_sq = scratch.exp[i] * scratch.exp[i];
+            let g_sq = scratch.gains[i] * scratch.gains[i];
             exp_sq * (1.0 - g_sq) / (0.001 + g_sq * (1.0 - exp_sq))
         };
-        r[i] = 1.0_f32.min(0.0_f32.max(r[i])).sqrt();
-        r[i] *= (ex[i] / (1e-8 + ep[i])).sqrt();
+        scratch.pitch_filter_r[i] = 1.0_f32.min(0.0_f32.max(scratch.pitch_filter_r[i])).sqrt();
+        scratch.pitch_filter_r[i] *= (scratch.ex[i] / (1e-8 + scratch.ep[i])).sqrt();
     }
-    crate::interp_band_gain(&mut rf[..], &r[..]);
+    crate::interp_band_gain(&mut scratch.pitch_filter_rf, &scratch.pitch_filter_r);
     for i in 0..FREQ_SIZE {
-        x[i] += rf[i] * p[i];
+        scratch.x_freq[i] += scratch.pitch_filter_rf[i] * scratch.pitch_freq[i];
     }
 
-    let mut new_e = [0.0; NB_BANDS];
-    crate::compute_band_corr(&mut new_e[..], x, x);
-    let mut norm = [0.0; NB_BANDS];
-    let mut normf = [0.0; FREQ_SIZE];
+    crate::compute_band_corr(
+        &mut scratch.pitch_filter_energy,
+        &scratch.x_freq,
+        &scratch.x_freq,
+    );
     for i in 0..NB_BANDS {
-        norm[i] = (ex[i] / (1e-8 + new_e[i])).sqrt();
+        scratch.pitch_filter_norm[i] =
+            (scratch.ex[i] / (1e-8 + scratch.pitch_filter_energy[i])).sqrt();
     }
-    crate::interp_band_gain(&mut normf[..], &norm[..]);
+    crate::interp_band_gain(&mut scratch.pitch_filter_normf, &scratch.pitch_filter_norm);
     for i in 0..FREQ_SIZE {
-        x[i] *= normf[i];
+        scratch.x_freq[i] *= scratch.pitch_filter_normf[i];
     }
 }
 
 fn process_frame(state: &mut DenoiseState, output: &mut [f32], input: &[f32]) -> f32 {
-    let mut x_freq = [Complex::from(0.0); FREQ_SIZE];
-    let mut p = [Complex::from(0.0); WINDOW_SIZE];
-    let mut x_time = [0.0; FRAME_SIZE];
-    let mut ex = [0.0; NB_BANDS];
-    let mut ep = [0.0; NB_BANDS];
-    let mut exp = [0.0; NB_BANDS];
-    let mut features = [0.0; NB_FEATURES];
-    let mut g = [0.0; NB_BANDS];
-    let mut gf = [1.0; FREQ_SIZE];
     let a_hp = [-1.99599, 0.99600];
     let b_hp = [-2.0, 1.0];
-    let mut vad_prob = [0.0];
+    let DenoiseState { core, rnn, scratch } = state;
+    let scratch = scratch.as_mut();
+    scratch.interpolated_gains.fill(1.0);
+    scratch.vad[0] = 0.0;
 
     biquad(
-        &mut x_time[..],
-        &mut state.mem_hp_x[..],
+        &mut scratch.x_time[..],
+        &mut core.mem_hp_x[..],
         input,
         &b_hp[..],
         &a_hp[..],
     );
-    let silence = compute_frame_features(
-        state,
-        &mut x_freq[..],
-        &mut p[..],
-        &mut ex[..],
-        &mut ep[..],
-        &mut exp[..],
-        &mut features[..],
-        &x_time[..],
-    );
+    let silence = compute_frame_features(core, scratch);
     if silence == 0 {
-        crate::rnn::compute_rnn(&mut state.rnn, &mut g[..], &mut vad_prob[..], &features[..]);
-        pitch_filter(
-            &mut x_freq[..],
-            &mut p[..],
-            &mut ex[..],
-            &mut ep[..],
-            &mut exp[..],
-            &mut g[..],
-        );
+        crate::rnn::compute_rnn(rnn, &mut scratch.gains, &mut scratch.vad, &scratch.features);
+        pitch_filter(scratch);
         for i in 0..NB_BANDS {
-            g[i] = g[i].max(0.6 * state.lastg[i]);
-            state.lastg[i] = g[i];
+            scratch.gains[i] = scratch.gains[i].max(0.6 * core.lastg[i]);
+            core.lastg[i] = scratch.gains[i];
         }
-        crate::interp_band_gain(&mut gf[..], &g[..]);
+        crate::interp_band_gain(&mut scratch.interpolated_gains, &scratch.gains);
         for i in 0..FREQ_SIZE {
-            x_freq[i] *= gf[i];
+            scratch.x_freq[i] *= scratch.interpolated_gains[i];
         }
     }
 
-    frame_synthesis(state, output, &x_freq[..]);
-    vad_prob[0]
+    frame_synthesis(core, scratch, output);
+    scratch.vad[0]
 }

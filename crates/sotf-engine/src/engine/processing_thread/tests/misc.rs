@@ -102,14 +102,12 @@ fn test_process_audio_all_types() {
         // - Convolution requires an IR file on disk
         // - Upmixer/BinauralDecoder/Pnd use FFT overlap-add that returns 0 frames
         //   on first call, which triggers an assertion in PluginHost
-        // - SpeechDenoiser requires block sizes that are multiples of 480
         let skip_process = matches!(
             plugin_type,
             PluginType::Convolution
                 | PluginType::Upmixer
                 | PluginType::BinauralDecoder
                 | PluginType::Pnd
-                | PluginType::SpeechDenoiser
         );
         if skip_process {
             continue;
