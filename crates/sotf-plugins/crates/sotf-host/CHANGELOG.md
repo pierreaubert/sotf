@@ -1,5 +1,18 @@
 # Unreleased
 
+## Sample-rate-correct true peak and correlation evidence
+
+- Measure true peak with the normative BS.1770 Table-2 polyphase FIR at its
+  specified measurement rate: four phases at 44.1/48 kHz and the aligned
+  zero/half-sample phases at 88.2/96 kHz. Other rates publish unavailable
+  true peaks and explicitly remain non-compliant instead of reusing a
+  mismatched interpolation rate.
+- Preserve the detector delay line across callbacks and reuse per-channel FIR
+  state and peak scratch without audio-thread allocation.
+- Add an independent Table-2 convolution oracle, boundary-impulse and
+  intersample-tone fixtures, and combined true-peak/centered-correlation
+  partition regressions at 44.1, 48, and 96 kHz.
+
 ## Explicit channel layouts and BS.1770 weighting
 
 - Add a validated, serializable `ChannelLayout`/`ChannelRole` contract with

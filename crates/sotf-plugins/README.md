@@ -122,7 +122,7 @@ Sample values are typically in the range -1.0 to +1.0.
 | Plugin | Description | Output Data |
 |--------|-------------|-------------|
 | `SpectrumAnalyzerPlugin` | FFT-based spectrum analysis | `SpectrumInfo { frequencies, magnitudes, peak }` |
-| `LoudnessMonitorPlugin` | EBU R128-style loudness measurement | `LoudnessData` includes validity/enabled state, count-only multichannel-layout compliance, 48 kHz true-peak compliance, an explicit one-hour integrated-history policy, and centered Pearson correlation. Other rates expose true peak as approximate; multichannel callers need an explicit future role map for compliant LFE/surround weighting. |
+| `LoudnessMonitorPlugin` | EBU R128-style loudness measurement | `LoudnessData` includes validity/enabled state, explicit channel-layout compliance, BS.1770 true peak at 44.1/48/88.2/96 kHz, an explicit one-hour integrated-history policy, and centered Pearson correlation. Other rates publish true peak as unavailable rather than silently applying a mismatched interpolation rate. |
 
 Analyzers pass audio through unmodified while extracting measurements accessible via `get_data()`.
 

@@ -11,10 +11,118 @@ use crate::plugin::{
 };
 use crate::speaker_config::ChannelLayout;
 use math_audio_dsp::ebur128::{EbuR128, Mode};
-use math_audio_dsp::fast_math::fast_log10;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
+
+const TRUE_PEAK_TAPS: usize = 12;
+
+// ITU-R BS.1770-4 Table 2. At 44.1/48 kHz all four phases provide the
+// required 4x measurement rate. At 88.2/96 kHz phases 0 and 2 provide the
+// required 2x measurement rate without changing the FIR's input-time basis.
+const TRUE_PEAK_PHASES: [[f64; TRUE_PEAK_TAPS]; 4] = [
+    [
+        0.0017089843750,
+        -0.0291748046875,
+        -0.0189208984375,
+        0.0776367187500,
+        0.0983886718750,
+        -0.1897583007813,
+        -0.3953857421875,
+        0.8893127441406,
+        0.6444091796875,
+        -0.0517578125000,
+        -0.0245361328125,
+        0.0015869140625,
+    ],
+    [
+        -0.0291748046875,
+        0.0017089843750,
+        0.0776367187500,
+        -0.0189208984375,
+        -0.1897583007813,
+        0.0983886718750,
+        0.8893127441406,
+        -0.3953857421875,
+        -0.0517578125000,
+        0.6444091796875,
+        0.0015869140625,
+        -0.0245361328125,
+    ],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [
+        -0.0245361328125,
+        0.0015869140625,
+        0.6444091796875,
+        -0.0517578125000,
+        -0.3953857421875,
+        0.8893127441406,
+        0.0983886718750,
+        -0.1897583007813,
+        -0.0189208984375,
+        0.0776367187500,
+        0.0017089843750,
+        -0.0291748046875,
+    ],
+];
+
+struct Bs1770TruePeakMeter {
+    history: Vec<[f64; TRUE_PEAK_TAPS]>,
+    interval_peaks: Vec<f64>,
+    phase_indices: &'static [usize],
+    compliant: bool,
+}
+
+impl Bs1770TruePeakMeter {
+    fn new(channels: usize, sample_rate: u32) -> Self {
+        const FOUR_PHASES: &[usize] = &[0, 1, 2, 3];
+        const TWO_PHASES: &[usize] = &[0, 2];
+        const UNSUPPORTED_PHASES: &[usize] = &[];
+        let (phase_indices, compliant) = match sample_rate {
+            44_100 | 48_000 => (FOUR_PHASES, true),
+            88_200 | 96_000 => (TWO_PHASES, true),
+            _ => (UNSUPPORTED_PHASES, false),
+        };
+        Self {
+            history: vec![[0.0; TRUE_PEAK_TAPS]; channels],
+            interval_peaks: vec![0.0; channels],
+            phase_indices,
+            compliant,
+        }
+    }
+
+    fn add_frames(&mut self, samples: &[f32], channels: usize) {
+        if !self.compliant {
+            return;
+        }
+        for frame in samples.chunks_exact(channels) {
+            for (channel, &sample) in frame.iter().enumerate() {
+                let history = &mut self.history[channel];
+                history.copy_within(1.., 0);
+                history[TRUE_PEAK_TAPS - 1] = sample as f64;
+                for &phase_index in self.phase_indices {
+                    let interpolated = TRUE_PEAK_PHASES[phase_index]
+                        .iter()
+                        .zip(history.iter())
+                        .map(|(coefficient, value)| coefficient * value)
+                        .sum::<f64>()
+                        .abs();
+                    self.interval_peaks[channel] = self.interval_peaks[channel].max(interpolated);
+                }
+            }
+        }
+    }
+
+    fn take_interval_peak(&mut self, channel: usize) -> Option<f64> {
+        self.compliant
+            .then(|| std::mem::take(&mut self.interval_peaks[channel]))
+    }
+
+    fn reset(&mut self) {
+        self.history.fill([0.0; TRUE_PEAK_TAPS]);
+        self.interval_peaks.fill(0.0);
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoudnessInfo {
@@ -55,6 +163,7 @@ pub struct LoudnessMonitor {
     /// beds) do not silently truncate.
     peaks_buf: Vec<f64>,
     true_peaks_buf: Vec<f64>,
+    true_peak_meter: Bs1770TruePeakMeter,
     query_error_generation: u64,
     frames_seen: u64,
 }
@@ -98,13 +207,13 @@ impl LoudnessMonitor {
         let loudness_mode = if channel_layout.is_some() {
             Mode::M | Mode::S | Mode::I
         } else {
-            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK | Mode::TRUE_PEAK
+            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK
         };
         let ebur = EbuR128::new(loudness_channels as u32, sr, loudness_mode)
             .map_err(|e| format!("{:?}", e))?;
         let peak_meter = channel_layout
             .as_ref()
-            .map(|_| EbuR128::new(channels, sr, Mode::SAMPLE_PEAK | Mode::TRUE_PEAK))
+            .map(|_| EbuR128::new(channels, sr, Mode::SAMPLE_PEAK))
             .transpose()
             .map_err(|e| format!("{e:?}"))?;
         let loudness_gains = channel_layout
@@ -137,6 +246,7 @@ impl LoudnessMonitor {
             matrix_scratch: crate::analyzer::CorrelationData::new(channels as usize),
             peaks_buf: vec![0.0; channels as usize],
             true_peaks_buf: vec![0.0; channels as usize],
+            true_peak_meter: Bs1770TruePeakMeter::new(channels as usize, sr),
             query_error_generation: 0,
             frames_seen: 0,
         })
@@ -185,6 +295,8 @@ impl LoudnessMonitor {
         if self.channels == 2 || self.spatial_enabled {
             self.correlation_matrix.add_frames(samples);
         }
+        self.true_peak_meter
+            .add_frames(samples, self.channels as usize);
 
         if let Some(peak_meter) = &mut self.peak_meter {
             peak_meter
@@ -245,13 +357,12 @@ impl LoudnessMonitor {
         for ch in 0..nc {
             let peak_meter = self.peak_meter.as_mut().unwrap_or(&mut self.ebur128);
             let sample_peak = peak_meter.prev_sample_peak(ch as u32);
-            let true_peak = peak_meter.prev_true_peak(ch as u32);
-            valid &= sample_peak.is_ok() && true_peak.is_ok();
+            let true_peak = self.true_peak_meter.take_interval_peak(ch);
+            valid &= sample_peak.is_ok();
             peaks[ch] = sample_peak.unwrap_or(0.0);
             let tp_linear = true_peak.unwrap_or(0.0);
             tps[ch] = if tp_linear > 0.0 {
-                // Use fast math for true peak dB conversion
-                20.0 * fast_log10(tp_linear as f32) as f64
+                20.0 * tp_linear.log10()
             } else {
                 f64::NEG_INFINITY
             };
@@ -268,7 +379,7 @@ impl LoudnessMonitor {
         d.measurement_enabled = true;
         d.channel_layout_is_compliant = self.channel_layout.is_some() || self.channels <= 2;
         d.query_error_generation = self.query_error_generation;
-        d.true_peak_is_compliant = self.sample_rate == 48_000;
+        d.true_peak_is_compliant = self.true_peak_meter.compliant;
         d.integrated_window_seconds = 3_600;
         if self.channels == 2 {
             self.correlation_matrix
@@ -308,6 +419,7 @@ impl LoudnessMonitor {
             peak_meter.reset();
         }
         self.correlation_matrix.reset();
+        self.true_peak_meter.reset();
         self.query_error_generation = 0;
         self.frames_seen = 0;
         Ok(())
@@ -635,5 +747,137 @@ fn reset_loudness_data(
         } else if !spatial {
             matrix.clear();
         }
+    }
+}
+
+#[cfg(test)]
+mod true_peak_tests {
+    use super::*;
+
+    // Independent test oracle copied directly from BS.1770-4 Table 2. Tests
+    // deliberately do not call the production convolution or its constants.
+    const ORACLE_PHASES: [[f64; 12]; 4] = [
+        [
+            0.0017089843750,
+            -0.0291748046875,
+            -0.0189208984375,
+            0.0776367187500,
+            0.0983886718750,
+            -0.1897583007813,
+            -0.3953857421875,
+            0.8893127441406,
+            0.6444091796875,
+            -0.0517578125000,
+            -0.0245361328125,
+            0.0015869140625,
+        ],
+        [
+            -0.0291748046875,
+            0.0017089843750,
+            0.0776367187500,
+            -0.0189208984375,
+            -0.1897583007813,
+            0.0983886718750,
+            0.8893127441406,
+            -0.3953857421875,
+            -0.0517578125000,
+            0.6444091796875,
+            0.0015869140625,
+            -0.0245361328125,
+        ],
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [
+            -0.0245361328125,
+            0.0015869140625,
+            0.6444091796875,
+            -0.0517578125000,
+            -0.3953857421875,
+            0.8893127441406,
+            0.0983886718750,
+            -0.1897583007813,
+            -0.0189208984375,
+            0.0776367187500,
+            0.0017089843750,
+            -0.0291748046875,
+        ],
+    ];
+
+    fn oracle_peak(signal: &[f32], phases: &[usize]) -> f64 {
+        let mut history = [0.0_f64; 12];
+        let mut peak = 0.0_f64;
+        for &sample in signal {
+            history.copy_within(1.., 0);
+            history[11] = sample as f64;
+            for &phase in phases {
+                let value = ORACLE_PHASES[phase]
+                    .iter()
+                    .zip(history)
+                    .map(|(coefficient, sample)| coefficient * sample)
+                    .sum::<f64>()
+                    .abs();
+                peak = peak.max(value);
+            }
+        }
+        peak
+    }
+
+    fn fixture() -> Vec<f32> {
+        let mut signal: Vec<f32> = (0..513)
+            .map(|index| (std::f64::consts::TAU * 0.459 * index as f64).sin() as f32 * 0.91)
+            .collect();
+        // An impulse immediately on a likely callback boundary exercises FIR
+        // history continuity rather than merely steady-state tone behavior.
+        signal[64] = -0.97;
+        signal
+    }
+
+    #[test]
+    fn table_2_meter_matches_independent_oracle_at_supported_rates() {
+        let signal = fixture();
+        for (sample_rate, phases) in [
+            (44_100, &[0, 1, 2, 3][..]),
+            (48_000, &[0, 1, 2, 3][..]),
+            (88_200, &[0, 2][..]),
+            (96_000, &[0, 2][..]),
+        ] {
+            let mut meter = Bs1770TruePeakMeter::new(1, sample_rate);
+            meter.add_frames(&signal, 1);
+            let measured = meter.take_interval_peak(0).unwrap();
+            let expected = oracle_peak(&signal, phases);
+            assert!((measured - expected).abs() < 1.0e-14, "{sample_rate} Hz");
+        }
+    }
+
+    #[test]
+    fn table_2_meter_preserves_history_across_callback_boundaries() {
+        let signal = fixture();
+        for sample_rate in [44_100, 48_000, 96_000] {
+            let mut whole = Bs1770TruePeakMeter::new(1, sample_rate);
+            whole.add_frames(&signal, 1);
+            let expected = whole.take_interval_peak(0).unwrap();
+
+            let mut split = Bs1770TruePeakMeter::new(1, sample_rate);
+            let mut measured = 0.0_f64;
+            let mut offset = 0;
+            for length in [1, 7, 56, 1, 113, 257, usize::MAX] {
+                if offset == signal.len() {
+                    break;
+                }
+                let end = offset.saturating_add(length).min(signal.len());
+                split.add_frames(&signal[offset..end], 1);
+                measured = measured.max(split.take_interval_peak(0).unwrap());
+                offset = end;
+            }
+            assert_eq!(offset, signal.len());
+            assert!((measured - expected).abs() < 1.0e-14, "{sample_rate} Hz");
+        }
+    }
+
+    #[test]
+    fn unsupported_rate_publishes_no_true_peak() {
+        let mut meter = Bs1770TruePeakMeter::new(1, 192_000);
+        meter.add_frames(&fixture(), 1);
+        assert!(!meter.compliant);
+        assert_eq!(meter.take_interval_peak(0), None);
     }
 }

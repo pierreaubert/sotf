@@ -1,5 +1,35 @@
 # Loudness Monitor plugin review — 2026-08-12
 
+## True-peak and correlation closure — sotf-host 0.5.103
+
+The remaining sample-rate and deterministic-streaming evidence gap is closed:
+
+- True peak now uses the normative BS.1770 Table-2 FIR at the required
+  measurement rate: all four phases at 44.1/48 kHz and the time-aligned phase
+  0/2 pair at 88.2/96 kHz. Other rates expose `-inf`/unavailable true peak and
+  `true_peak_is_compliant = false`; loudness measurement remains independently
+  valid.
+- The custom meter owns preallocated per-channel histories and interval peaks,
+  preserves FIR alignment across callback boundaries, and removes the pinned
+  dependency's incorrect reuse of four phases at every input rate.
+- Independent Table-2 oracle fixtures cover a high-frequency intersample tone,
+  an impulse on a callback boundary, supported/unsupported rates, and
+  partition equivalence. Plugin-level tests jointly verify true peak and the
+  shared centered stereo/spatial Pearson result at 44.1, 48, and 96 kHz.
+
+Verification:
+
+- `cargo test -p sotf-host --lib --offline` — 423 passed.
+- `cargo test -p sotf-host --test test_analyzer_plugins --offline` — 22 passed.
+- `cargo test -p sotf-plugins --test realtime_allocation_tests loudness_monitor --offline` — 4 passed.
+- `cargo run -p sotf-host --features qa --bin qa-host --offline` — passed.
+- `cargo fmt --all -- --check` and `git diff --check` — passed.
+- Strict plugin-local `cargo clippy -p sotf-host --lib --no-deps --offline --
+  -D warnings` reaches only the three pre-existing
+  `analyzer_spectrum.rs`/`auto_gain.rs` warnings already recorded by the prior
+  closure. The same command with those exact `manual_range_contains` and
+  `collapsible_if` lints allowed passes; this change introduces no warning.
+
 ## Explicit layout closure — sotf-host 0.5.102 / sotf-engine 1.0.31
 
 The retained multichannel-layout gap is now closed:
@@ -101,9 +131,9 @@ Track exponentially weighted sums `x`, `y`, `x²`, `y²`, and `xy`, derive cente
 
 ### P1 — True-peak results are knowingly invalid away from 48 kHz but exposed as dBTP
 
-**Deferred: math-DSP redesign required.** Compliance needs verified
-sample-rate-specific interpolation filters in `math-dsp` (and reference
-vectors), not a local wrapper approximation.
+**Fixed in the 0.5.103 remediation.** A host-local, preallocated Table-2 meter
+uses four phases at 44.1/48 kHz and the aligned phase 0/2 pair at 88.2/96 kHz.
+Other rates no longer publish approximate values as dBTP.
 
 The plugin always enables `Mode::TRUE_PEAK` (`analyzer_loudness_monitor.rs:68-73`). The pinned `math-dsp` implementation uses the BS.1770 48 kHz FIR table unchanged at every rate and explicitly says non-48 kHz values are only approximate (`math-dsp/src/ebur128.rs`; `consts.rs`). Yet `LoudnessData.true_peaks_dbtp` is documented without qualification and 96 kHz operation is a supported/performance-tested path.
 

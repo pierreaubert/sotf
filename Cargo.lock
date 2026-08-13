@@ -10264,7 +10264,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.102"
+version = "0.5.103"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",

@@ -434,11 +434,106 @@ fn loudness_data_exposes_validity_true_peak_scope_and_integrated_window() {
             .unwrap();
         let data = plugin.get_data().unwrap();
         let data = data.downcast_ref::<LoudnessData>().unwrap();
-        assert_eq!(data.true_peak_is_compliant, sample_rate == 48_000);
+        assert_eq!(
+            data.true_peak_is_compliant,
+            matches!(sample_rate, 44_100 | 48_000 | 88_200 | 96_000)
+        );
+        if sample_rate == 192_000 {
+            assert!(
+                data.true_peaks_dbtp
+                    .iter()
+                    .all(|peak| peak.is_infinite() && peak.is_sign_negative())
+            );
+        }
         assert_eq!(data.integrated_window_seconds, 3_600);
         assert!(data.channel_layout_is_compliant);
         assert!(data.measurement_valid);
         assert_eq!(data.query_error_generation, 0);
+    }
+}
+
+#[test]
+fn loudness_true_peak_and_centered_correlation_are_partition_invariant_across_rates() {
+    fn render(sample_rate: u32, partitions: &[usize]) -> (f64, f64, f32) {
+        let frames = sample_rate as usize / 3 + 37;
+        let mut input = vec![0.0_f32; frames * 2];
+        for (frame, stereo) in input.chunks_exact_mut(2).enumerate() {
+            let signal = (std::f64::consts::TAU * 0.459 * frame as f64).sin() as f32 * 0.91;
+            stereo[0] = signal + 0.03;
+            stereo[1] = signal * 0.27 - 0.19;
+        }
+
+        let mut plugin = LoudnessMonitorPlugin::new(2).unwrap().with_spatial();
+        plugin.initialize(sample_rate).unwrap();
+        let mut offset = 0;
+        let mut max_true_peak = [f64::NEG_INFINITY; 2];
+        for &requested in partitions {
+            if offset == frames {
+                break;
+            }
+            let count = requested.min(frames - offset);
+            let start = offset * 2;
+            let end = (offset + count) * 2;
+            let mut output = vec![0.0; count * 2];
+            plugin
+                .process(
+                    &input[start..end],
+                    &mut output,
+                    &ProcessContext::new(sample_rate, count),
+                )
+                .unwrap();
+            let snapshot = plugin.get_data().unwrap();
+            let data = snapshot.downcast_ref::<LoudnessData>().unwrap();
+            for (maximum, &peak) in max_true_peak.iter_mut().zip(data.true_peaks_dbtp.iter()) {
+                *maximum = maximum.max(peak);
+            }
+            offset += count;
+        }
+        if offset < frames {
+            let count = frames - offset;
+            let mut output = vec![0.0; count * 2];
+            plugin
+                .process(
+                    &input[offset * 2..],
+                    &mut output,
+                    &ProcessContext::new(sample_rate, count),
+                )
+                .unwrap();
+            let snapshot = plugin.get_data().unwrap();
+            let data = snapshot.downcast_ref::<LoudnessData>().unwrap();
+            for (maximum, &peak) in max_true_peak.iter_mut().zip(data.true_peaks_dbtp.iter()) {
+                *maximum = maximum.max(peak);
+            }
+        }
+        let snapshot = plugin.get_data().unwrap();
+        let data = snapshot.downcast_ref::<LoudnessData>().unwrap();
+        (
+            max_true_peak[0],
+            max_true_peak[1],
+            data.correlation_matrix[1],
+        )
+    }
+
+    for sample_rate in [44_100, 48_000, 96_000] {
+        let whole = render(sample_rate, &[usize::MAX]);
+        let partitioned = render(sample_rate, &[1, 7, 64, 511, 2_047, 4_093]);
+        assert!(
+            (whole.0 - partitioned.0).abs() < 1.0e-12,
+            "{sample_rate} Hz left TP"
+        );
+        assert!(
+            (whole.1 - partitioned.1).abs() < 1.0e-12,
+            "{sample_rate} Hz right TP"
+        );
+        assert!(
+            (whole.2 - partitioned.2).abs() < 1.0e-6,
+            "{sample_rate} Hz correlation"
+        );
+        assert!(
+            whole.2 > 0.999,
+            "{sample_rate} Hz centered correlation={}",
+            whole.2
+        );
     }
 }
 
