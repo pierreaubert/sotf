@@ -364,6 +364,7 @@ pub fn convert_spectral_compressor(
         delta_listen,
         adaptive_threshold,
         adaptive_offset_db,
+        channel_link,
     } = settings
     else {
         return None;
@@ -383,6 +384,7 @@ pub fn convert_spectral_compressor(
             "delta_listen": delta_listen,
             "adaptive_threshold": adaptive_threshold,
             "adaptive_offset_db": adaptive_offset_db,
+            "channel_link": channel_link,
         }),
     ))
 }

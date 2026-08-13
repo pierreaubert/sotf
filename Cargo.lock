@@ -10872,11 +10872,9 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-spectral-compressor"
-version = "0.5.23"
+version = "0.5.25"
 dependencies = [
  "math-dsp",
- "realfft",
- "rustfft 6.4.1",
  "serde",
  "serde_json",
  "sotf-host",

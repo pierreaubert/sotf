@@ -30,7 +30,7 @@ fn info_and_channels() {
 
     let info = plugin.info();
     assert_eq!(info.name, "Spectral Compressor");
-    assert_eq!(info.version, "1.0.0");
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(info.author, "Sotf");
 
     assert_eq!(plugin.channels(), 2);
@@ -76,14 +76,11 @@ fn parameter_roundtrip() {
     );
 
     plugin
-        .set_parameter(
-            ParameterId::from("target_mode"),
-            ParameterValue::String("Tonal".to_string()),
-        )
+        .set_parameter(ParameterId::from("target_mode"), ParameterValue::Int(1))
         .expect("valid target mode");
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("target_mode")),
-        Some(ParameterValue::String("Tonal".to_string()))
+        Some(ParameterValue::Int(1))
     );
 
     // Unknown parameter returns an error through the public API
@@ -241,21 +238,17 @@ fn delta_listen() {
 }
 
 #[test]
-fn fft_size_change_updates_latency() {
+fn fft_size_change_requires_host_rebuild() {
     let mut plugin =
         SpectralCompressorPlugin::from_params(2, SpectralCompressorPluginParams::default());
     let default_latency = plugin.latency_samples();
     assert_eq!(default_latency, 2048);
 
-    plugin
+    let error = plugin
         .set_parameter(ParameterId::from("fft_size"), ParameterValue::Int(0))
-        .unwrap();
-    assert_eq!(plugin.latency_samples(), 1024);
-
-    plugin
-        .set_parameter(ParameterId::from("fft_size"), ParameterValue::Int(2))
-        .unwrap();
-    assert_eq!(plugin.latency_samples(), 4096);
+        .unwrap_err();
+    assert!(error.contains("host rebuild"));
+    assert_eq!(plugin.latency_samples(), default_latency);
 }
 
 #[test]
@@ -303,4 +296,25 @@ fn wrong_buffer_size_returns_error() {
             .is_ok(),
         "correct buffer size should succeed"
     );
+}
+
+#[test]
+fn non_finite_input_is_sanitized_without_poisoning_following_audio() {
+    let mut plugin =
+        SpectralCompressorPlugin::from_params(1, SpectralCompressorPluginParams::default());
+    plugin.initialize(48_000).unwrap();
+    let mut poisoned = vec![0.0; 4096];
+    poisoned[0] = f32::NAN;
+    poisoned[1] = f32::INFINITY;
+    poisoned[2] = f32::NEG_INFINITY;
+    plugin
+        .process_in_place(&mut poisoned, &ctx(48_000, 4096))
+        .unwrap();
+    assert!(poisoned.iter().all(|sample| sample.is_finite()));
+
+    let mut followup = make_sine(48_000, 1_000.0, 8192, 1);
+    plugin
+        .process_in_place(&mut followup, &ctx(48_000, 8192))
+        .unwrap();
+    assert!(followup.iter().all(|sample| sample.is_finite()));
 }

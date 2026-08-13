@@ -1463,6 +1463,8 @@ pub enum PluginSettings {
         adaptive_threshold: bool,
         #[serde(default)]
         adaptive_offset_db: f64,
+        #[serde(default)]
+        channel_link: f64,
     },
     /// Concrete third-party plugin state. Unlike built-in variants, this must
     /// be created from a scanner-provided descriptor and has no default.
@@ -2249,6 +2251,7 @@ impl PluginSettings {
                     delta_listen: false,
                     adaptive_threshold: false,
                     adaptive_offset_db: 0.0,
+                    channel_link: p(sc, "channel_link").default_f64(),
                 }
             }
             PluginType::AAE => {

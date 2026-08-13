@@ -1,4 +1,5 @@
 use super::misc::FFT_SIZE_OPTIONS;
+use super::misc::adaptive_alpha;
 use super::misc::compress_gr;
 use super::misc::fft_size_from_index;
 use super::misc::smooth_spectral_envelope;
@@ -6,7 +7,7 @@ use super::spectral_compressor_plugin_params::SpectralCompressorPluginParams;
 use super::stft_state::StftState;
 use crate::params::{PARAMS as SC, TARGET_MODES};
 use sotf_host::delta_monitor::DeltaMonitor;
-use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::param_specs::{UpdateMode, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
@@ -17,6 +18,7 @@ use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
 const MAX_BLOCK_FRAMES: usize = 16_384;
+const ADAPTIVE_TAU_SECONDS: f32 = 0.5;
 
 pub struct SpectralCompressorPlugin {
     pub(super) channels: usize,
@@ -42,6 +44,7 @@ pub struct SpectralCompressorPlugin {
     pub(super) delta_monitor: DeltaMonitor,
     pub(super) adaptive_threshold: bool,
     pub(super) adaptive_offset_db: f32,
+    pub(super) channel_link: f32,
 
     // STFT state
     pub(super) stft: StftState,
@@ -57,7 +60,51 @@ pub struct SpectralCompressorPlugin {
 }
 
 impl SpectralCompressorPlugin {
+    pub fn try_from_params(
+        channels: usize,
+        params: SpectralCompressorPluginParams,
+    ) -> PluginResult<Self> {
+        if channels == 0 {
+            return Err("Spectral compressor requires at least one channel".into());
+        }
+        let values = [
+            ("threshold", params.threshold_db, -60.0, 0.0),
+            ("ratio", params.ratio, 1.0, 20.0),
+            ("attack", params.attack_ms, 0.1, 100.0),
+            ("release", params.release_ms, 10.0, 1000.0),
+            ("knee", params.knee_db, 0.0, 20.0),
+            ("spectral_smoothing", params.spectral_smoothing, 0.0, 1.0),
+            ("mix", params.mix, 0.0, 1.0),
+            ("adaptive_offset_db", params.adaptive_offset_db, -20.0, 20.0),
+            ("channel_link", params.channel_link, 0.0, 1.0),
+        ];
+        for (name, value, min, max) in values {
+            if !value.is_finite() || !(min..=max).contains(&value) {
+                return Err(format!(
+                    "{name} must be finite and in [{min}, {max}], got {value}"
+                ));
+            }
+        }
+        if params.fft_size_index >= FFT_SIZE_OPTIONS.len() {
+            return Err(format!(
+                "FFT size index {} is out of range",
+                params.fft_size_index
+            ));
+        }
+        if params.target_mode >= TARGET_MODES.len() {
+            return Err(format!(
+                "Target mode index {} is out of range",
+                params.target_mode
+            ));
+        }
+        Ok(Self::from_validated_params(channels, params))
+    }
+
     pub fn from_params(channels: usize, params: SpectralCompressorPluginParams) -> Self {
+        Self::try_from_params(channels, params).expect("invalid spectral compressor parameters")
+    }
+
+    fn from_validated_params(channels: usize, params: SpectralCompressorPluginParams) -> Self {
         let fft_size = fft_size_from_index(params.fft_size_index);
         let sample_rate = 48000u32;
         let hop_size = fft_size / 4;
@@ -93,10 +140,15 @@ impl SpectralCompressorPlugin {
             attack_coeff,
             release_coeff,
 
-            target_mode: 0, // All
-            delta_monitor: DeltaMonitor::new(),
-            adaptive_threshold: false,
-            adaptive_offset_db: 0.0,
+            target_mode: params.target_mode,
+            delta_monitor: {
+                let mut monitor = DeltaMonitor::new();
+                monitor.set_enabled(params.delta_listen);
+                monitor
+            },
+            adaptive_threshold: params.adaptive_threshold,
+            adaptive_offset_db: params.adaptive_offset_db,
+            channel_link: params.channel_link,
 
             stft: StftState::new(fft_size, channels),
             block_input: vec![0.0; MAX_BLOCK_FRAMES * channels],
@@ -126,16 +178,6 @@ impl SpectralCompressorPlugin {
         };
     }
 
-    /// Rebuild STFT state when FFT size changes.
-    pub(super) fn rebuild_stft(&mut self) {
-        let new_fft_size = fft_size_from_index(self.fft_size_index);
-        if new_fft_size != self.fft_size {
-            self.fft_size = new_fft_size;
-            self.stft = StftState::new(new_fft_size, self.channels);
-            self.recompute_coefficients();
-        }
-    }
-
     /// Process one STFT hop: FFT -> per-bin compression -> IFFT -> OLA.
     pub(super) fn process_spectral_hop(&mut self) {
         let channels = self.channels;
@@ -150,82 +192,105 @@ impl SpectralCompressorPlugin {
         let attack_coeff = self.attack_coeff;
         let release_coeff = self.release_coeff;
         let spectral_smoothing = self.spectral_smoothing;
-
-        // Magnitude calibration:
-        // realfft produces an unnormalized FFT. For a rectangular window a unit
-        // sine peak = fft_size/2, so the base scale is 2/fft_size.
-        // With a periodic Hann analysis window the coherent gain is 0.5, so the
-        // peak drops to fft_size/4 for all interior bins. We compensate by an
-        // extra ×2, giving mag_norm_interior = 4/fft_size.
-        // DC (k=0) and Nyquist (k=num_bins-1) are real-valued and scale as
-        // fft_size/2 regardless of the window, so they keep the base scale.
         let mag_norm_base = 2.0 / fft_size as f32;
-        let mag_norm_interior = mag_norm_base * 2.0; // compensate Hann coherent gain
+        let mag_norm_interior = mag_norm_base * 2.0;
         let use_adaptive = self.adaptive_threshold;
         let adaptive_offset = self.adaptive_offset_db;
-        // EMA coefficient for long-term average: ~500ms at hop rate
-        let adaptive_alpha = 0.98_f32;
+        let adaptive_coeff =
+            adaptive_alpha(self.stft.hop_size, self.sample_rate, ADAPTIVE_TAU_SECONDS);
 
+        // Analysis/detector phase. Keeping each channel's FFT in its own
+        // processor permits linking before envelopes and gain application.
         for ch in 0..channels {
-            // --- Forward FFT ---
-            // Write directly into the FFT processor's time buffer to avoid an extra copy.
             for i in 0..fft_size {
+                let history_index = (self.stft.input_write_pos + i) & (fft_size - 1);
                 self.stft.fft_processors[ch].time_buffer[i] =
-                    self.stft.input_buffers[ch][i] * self.stft.analysis_window[i];
+                    self.stft.input_buffers[ch][history_index] * self.stft.analysis_window[i];
             }
             self.stft.fft_processors[ch].forward();
-            self.stft
-                .freq_scratch
-                .copy_from_slice(&self.stft.fft_processors[ch].freq_buffer);
 
-            // --- Per-bin compression ---
+            // First calibrate every bin. Interior bins compensate the periodic
+            // Hann coherent gain. The detector below aggregates local energy,
+            // making a tone's threshold substantially less sensitive to its
+            // fractional-bin alignment.
             for k in 0..num_bins {
-                // DC and Nyquist use base scale; all interior bins compensate for
-                // the Hann window's 0.5 coherent gain with ×2.
                 let mag_norm = if k == 0 || k == num_bins - 1 {
                     mag_norm_base
                 } else {
                     mag_norm_interior
                 };
-                let mag = self.stft.freq_scratch[k].norm() * mag_norm;
-                self.stft.magnitudes_scratch[k] = mag;
-                let mag_db = 20.0 * mag.max(1e-10).log10();
+                self.stft.spectral_magnitudes[ch][k] =
+                    self.stft.fft_processors[ch].freq_buffer[k].norm() * mag_norm;
+            }
 
-                // Adaptive threshold: use long-term per-bin average + offset
+            let was_initialized = self.stft.adaptive_initialized[ch];
+            for k in 0..num_bins {
+                let start = k.saturating_sub(2);
+                let end = (k + 3).min(num_bins);
+                let local_power: f32 = self.stft.spectral_magnitudes[ch][start..end]
+                    .iter()
+                    .map(|magnitude| magnitude * magnitude)
+                    .sum();
+                // A bin-centred Hann-windowed sinusoid distributes calibrated
+                // squared magnitude as 1 + 0.25 + 0.25 across three bins.
+                let detector_magnitude = (local_power / 1.5).sqrt();
+                let mag_db = 20.0 * detector_magnitude.max(1e-10).log10();
                 let effective_threshold = if use_adaptive {
                     let avg = &mut self.stft.adaptive_avg[ch][k];
-                    *avg = adaptive_alpha * *avg + (1.0 - adaptive_alpha) * mag_db;
+                    if was_initialized {
+                        *avg = adaptive_coeff * *avg + (1.0 - adaptive_coeff) * mag_db;
+                    } else {
+                        *avg = mag_db;
+                    }
                     *avg + adaptive_offset
                 } else {
                     threshold
                 };
 
                 let mut target_gr = compress_gr(mag_db, effective_threshold, ratio, knee);
-
-                // --- Phase 4A: Tonal/Transient masking (applied before envelope smoothing) ---
-                // Masking target_gr *before* the one-pole smoother ensures the envelope
-                // only tracks energy in the selected component. If we masked after, the
-                // envelope would still attack/release based on the unwanted component and
-                // then be zeroed, leaving stale state that causes a delayed response when
-                // the bin later enters the active component.
-                //
-                // The tonal_transient separator is run once per channel (not per-bin here),
-                // so we defer the actual process() call to outside the k-loop below and
-                // re-enter per-bin once the masks are available.
-                // For the per-bin loop we rely on previously computed masks (first hop uses
-                // all-ones which is safe; subsequent hops use the masks computed at the end
-                // of this block).
-                let target_mode = self.target_mode;
-                if target_mode > 0 {
-                    let mask = match target_mode {
-                        1 => self.stft.tonal_mask[k],
-                        2 => self.stft.transient_mask[k],
+                if self.target_mode > 0 {
+                    let component_mask = match self.target_mode {
+                        1 => self.stft.tonal_mask[ch][k],
+                        2 => self.stft.transient_mask[ch][k],
                         _ => 1.0,
                     };
-                    target_gr *= mask;
+                    target_gr *= component_mask;
                 }
+                self.stft.detector_gr[ch][k] = target_gr;
+            }
+            self.stft.adaptive_initialized[ch] |= use_adaptive;
 
-                // One-pole envelope smoothing at hop rate
+            if self.target_mode > 0 {
+                self.stft.tonal_transient[ch].process(
+                    &self.stft.spectral_magnitudes[ch][..num_bins],
+                    &mut self.stft.tonal_mask[ch][..num_bins],
+                    &mut self.stft.transient_mask[ch][..num_bins],
+                );
+            }
+        }
+
+        // Blend independent gain reduction toward the maximum across channels.
+        // Linking detector values (rather than audio) preserves phase and layout.
+        if self.channel_link > 0.0 && channels > 1 {
+            for k in 0..num_bins {
+                let linked = self
+                    .stft
+                    .detector_gr
+                    .iter()
+                    .map(|channel| channel[k])
+                    .fold(0.0_f32, f32::max);
+                for ch in 0..channels {
+                    let independent = self.stft.detector_gr[ch][k];
+                    self.stft.detector_gr[ch][k] =
+                        independent + self.channel_link * (linked - independent);
+                }
+            }
+        }
+
+        // Envelope, frequency smoothing, gain, and synthesis phase.
+        for ch in 0..channels {
+            for k in 0..num_bins {
+                let target_gr = self.stft.detector_gr[ch][k];
                 let envelope = &mut self.stft.bin_envelopes[ch][k];
                 let coeff = if target_gr > *envelope {
                     attack_coeff
@@ -235,21 +300,6 @@ impl SpectralCompressorPlugin {
                 *envelope = target_gr + coeff * (*envelope - target_gr);
             }
 
-            // --- Update tonal/transient masks for the NEXT hop ---
-            // We update after the compression loop so that the current hop uses the masks
-            // from the previous hop (which were computed from the previous hop's magnitudes).
-            // This is a one-hop lag but is the correct approach: computing masks from the
-            // current magnitudes and then using them in the same hop would require two passes.
-            if self.target_mode > 0 {
-                self.stft.tonal_transient[ch].process(
-                    &self.stft.magnitudes_scratch[..num_bins],
-                    &mut self.stft.tonal_mask[..num_bins],
-                    &mut self.stft.transient_mask[..num_bins],
-                );
-            }
-
-            // --- 3-bin median filter on envelope (reduce musical noise) ---
-            // Copy envelopes to scratch for in-place median
             self.stft.gains_scratch[..num_bins]
                 .copy_from_slice(&self.stft.bin_envelopes[ch][..num_bins]);
 
@@ -287,25 +337,22 @@ impl SpectralCompressorPlugin {
                     self.stft.gains_scratch[last].min(self.stft.gains_scratch[last - 1]);
             }
 
-            // --- Frequency-axis EMA smoothing (optional) ---
             if spectral_smoothing > 0.001 {
-                smooth_spectral_envelope(&mut self.stft.bin_envelopes[ch], spectral_smoothing);
+                smooth_spectral_envelope(
+                    &mut self.stft.bin_envelopes[ch],
+                    spectral_smoothing,
+                    &mut self.stft.smoothing_prefix,
+                );
             }
 
-            // --- Apply gain reduction to frequency bins ---
             for k in 0..num_bins {
                 let envelope_db = self.stft.bin_envelopes[ch][k];
                 if envelope_db > 0.001 {
                     let gain_linear = 10.0_f32.powf(-envelope_db / 20.0);
-                    self.stft.freq_scratch[k] *= gain_linear;
+                    self.stft.fft_processors[ch].freq_buffer[k] *= gain_linear;
                 }
-                // else: no gain change needed (envelope ~= 0)
             }
 
-            // --- Inverse FFT ---
-            self.stft.fft_processors[ch]
-                .freq_buffer
-                .copy_from_slice(&self.stft.freq_scratch);
             self.stft.fft_processors[ch].inverse();
 
             // Apply synthesis window (Hann) + scale, overlap-add into ring
@@ -322,19 +369,6 @@ impl SpectralCompressorPlugin {
         // Advance OLA write position by one hop
         let hop_size = self.stft.hop_size;
         self.stft.next_add_position = (self.stft.next_add_position + hop_size) & mask;
-
-        // Clear the full region the next IFFT can occupy; clearing only one
-        // hop leaves stale samples after the accumulator ring wraps.
-        {
-            let clear_start = (self.stft.next_add_position + fft_size) & mask;
-            for i in 0..fft_size {
-                let frame_idx = (clear_start + i) & mask;
-                for ch in 0..channels {
-                    self.stft.output_accumulator[frame_idx * channels + ch] = 0.0;
-                }
-            }
-        }
-
         self.stft.output_accumulator_fill += hop_size;
     }
 
@@ -347,6 +381,7 @@ impl SpectralCompressorPlugin {
                 0,
                 (FFT_SIZE_OPTIONS.len() - 1) as i32,
             )
+            .with_update_mode(UpdateMode::Structural)
             .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "threshold",
@@ -405,10 +440,12 @@ impl SpectralCompressorPlugin {
             )
             .with_importance(ParameterImportance::Critical),
             // Phase 4A: SOTA
-            Parameter::new_string(
+            Parameter::new_int(
                 "target_mode",
                 "Target",
-                TARGET_MODES[self.target_mode.min(2)].to_string(),
+                self.target_mode as i32,
+                0,
+                (TARGET_MODES.len() - 1) as i32,
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::Useful),
@@ -427,6 +464,9 @@ impl SpectralCompressorPlugin {
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("channel_link", "Channel Link", self.channel_link, 0.0, 1.0)
+                .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
         ];
     }
 
@@ -448,15 +488,99 @@ impl SpectralCompressorPlugin {
 
     /// Backward-compatible single-parameter setter.
     pub fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        let mut values = ParameterSet::new();
-        values.insert(id, value);
-        self.apply_values(values)
+        self.parametric_set_parameter(id, value)
+    }
+
+    fn apply_parameter(&mut self, id: &ParameterId, value: ParameterValue) -> PluginResult<()> {
+        match id.as_str() {
+            "fft_size" => {
+                let idx = value
+                    .as_int()
+                    .ok_or_else(|| "FFT size must be an integer".to_string())?
+                    as usize;
+                if idx != self.fft_size_index {
+                    return Err("fft_size is structural and requires a host rebuild".into());
+                }
+            }
+            "threshold" => {
+                self.threshold_db = value
+                    .as_float()
+                    .ok_or_else(|| "Threshold must be a float".to_string())?;
+                self.threshold_smoother.set_target(self.threshold_db);
+            }
+            "ratio" => {
+                self.ratio = value
+                    .as_float()
+                    .ok_or_else(|| "Ratio must be a float".to_string())?;
+            }
+            "attack" => {
+                self.attack_ms = value
+                    .as_float()
+                    .ok_or_else(|| "Attack must be a float".to_string())?;
+                self.recompute_coefficients();
+            }
+            "release" => {
+                self.release_ms = value
+                    .as_float()
+                    .ok_or_else(|| "Release must be a float".to_string())?;
+                self.recompute_coefficients();
+            }
+            "knee" => {
+                self.knee_db = value
+                    .as_float()
+                    .ok_or_else(|| "Knee must be a float".to_string())?;
+            }
+            "spectral_smoothing" => {
+                self.spectral_smoothing = value
+                    .as_float()
+                    .ok_or_else(|| "Spectral smoothing must be a float".to_string())?;
+            }
+            "mix" => {
+                self.mix = value
+                    .as_float()
+                    .ok_or_else(|| "Mix must be a float".to_string())?;
+                self.mix_smoother.set_target(self.mix);
+            }
+            "target_mode" => {
+                self.target_mode = value
+                    .as_int()
+                    .ok_or_else(|| "Target mode must be a choice index".to_string())?
+                    as usize;
+            }
+            "delta_listen" => {
+                let enabled = value
+                    .as_bool()
+                    .ok_or_else(|| "Delta listen must be boolean".to_string())?;
+                self.delta_monitor.set_enabled(enabled);
+            }
+            "adaptive_threshold" => {
+                let enabled = value
+                    .as_bool()
+                    .ok_or_else(|| "Adaptive threshold must be boolean".to_string())?;
+                if enabled && !self.adaptive_threshold {
+                    self.stft.adaptive_initialized.fill(false);
+                }
+                self.adaptive_threshold = enabled;
+            }
+            "adaptive_offset_db" => {
+                self.adaptive_offset_db = value
+                    .as_float()
+                    .ok_or_else(|| "Adaptive offset must be a float".to_string())?;
+            }
+            "channel_link" => {
+                self.channel_link = value
+                    .as_float()
+                    .ok_or_else(|| "Channel link must be a float".to_string())?;
+            }
+            other => return Err(format!("Unknown parameter: {other}")),
+        }
+        Ok(())
     }
 }
 
 impl ParametricInPlacePlugin for SpectralCompressorPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Spectral Compressor", "1.0.0", "Sotf")
+        PluginInfo::new("Spectral Compressor", env!("CARGO_PKG_VERSION"), "Sotf")
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -508,7 +632,7 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
         values.insert(ParameterId::from("mix"), ParameterValue::Float(self.mix));
         values.insert(
             ParameterId::from("target_mode"),
-            ParameterValue::String(TARGET_MODES[self.target_mode.min(2)].to_string()),
+            ParameterValue::Int(self.target_mode as i32),
         );
         values.insert(
             ParameterId::from("delta_listen"),
@@ -522,89 +646,40 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
             ParameterId::from("adaptive_offset_db"),
             ParameterValue::Float(self.adaptive_offset_db),
         );
+        values.insert(
+            ParameterId::from("channel_link"),
+            ParameterValue::Float(self.channel_link),
+        );
         values
     }
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
         for (id, value) in values {
-            match id.as_str() {
-                "fft_size" => {
-                    let idx = value
-                        .as_int()
-                        .ok_or_else(|| "FFT size must be an integer".to_string())?
-                        as usize;
-                    if idx != self.fft_size_index {
-                        self.fft_size_index = idx;
-                        self.rebuild_stft();
-                    }
-                }
-                "threshold" => {
-                    self.threshold_db = value
-                        .as_float()
-                        .ok_or_else(|| "Threshold must be a float".to_string())?;
-                    self.threshold_smoother.set_target(self.threshold_db);
-                }
-                "ratio" => {
-                    self.ratio = value
-                        .as_float()
-                        .ok_or_else(|| "Ratio must be a float".to_string())?;
-                }
-                "attack" => {
-                    self.attack_ms = value
-                        .as_float()
-                        .ok_or_else(|| "Attack must be a float".to_string())?;
-                    self.recompute_coefficients();
-                }
-                "release" => {
-                    self.release_ms = value
-                        .as_float()
-                        .ok_or_else(|| "Release must be a float".to_string())?;
-                    self.recompute_coefficients();
-                }
-                "knee" => {
-                    self.knee_db = value
-                        .as_float()
-                        .ok_or_else(|| "Knee must be a float".to_string())?;
-                }
-                "spectral_smoothing" => {
-                    self.spectral_smoothing = value
-                        .as_float()
-                        .ok_or_else(|| "Spectral smoothing must be a float".to_string())?;
-                }
-                "mix" => {
-                    self.mix = value
-                        .as_float()
-                        .ok_or_else(|| "Mix must be a float".to_string())?;
-                    self.mix_smoother.set_target(self.mix);
-                }
-                "target_mode" => {
-                    let idx = if let Some(s) = value.as_string() {
-                        TARGET_MODES.iter().position(|&m| m == s).unwrap_or(0)
-                    } else if let Some(v) = value.as_float() {
-                        (v as usize).min(2)
-                    } else {
-                        0
-                    };
-                    self.target_mode = idx;
-                }
-                "delta_listen" => {
-                    let enabled = value.as_bool().unwrap_or(false);
-                    self.delta_monitor.set_enabled(enabled);
-                }
-                "adaptive_threshold" => {
-                    self.adaptive_threshold = value.as_bool().unwrap_or(false);
-                }
-                "adaptive_offset_db" => {
-                    let v = value.as_float().unwrap_or(0.0);
-                    if v.is_finite() {
-                        self.adaptive_offset_db = v.clamp(-20.0, 20.0);
-                    }
-                }
-                other => return Err(format!("Unknown parameter: {other}")),
-            }
+            self.apply_parameter(&id, value)?;
         }
-        self.rebuild_cached_parameters();
         Ok(())
+    }
+
+    fn parametric_validate_parameter(
+        &self,
+        id: &ParameterId,
+        value: &ParameterValue,
+    ) -> PluginResult<()> {
+        self.cached_parameters
+            .iter()
+            .find(|parameter| &parameter.id == id)
+            .ok_or_else(|| format!("Unknown parameter: {id}"))?
+            .validate(value)
+            .map_err(|error| format!("{id}: {error}"))
+    }
+
+    fn parametric_set_parameter(
+        &mut self,
+        id: ParameterId,
+        value: ParameterValue,
+    ) -> PluginResult<()> {
+        self.parametric_validate_parameter(&id, &value)?;
+        self.apply_parameter(&id, value)
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
@@ -653,6 +728,11 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
                 "Spectral compressor block size {nf} exceeds max {MAX_BLOCK_FRAMES} frames"
             ));
         }
+        for sample in buffer.iter_mut() {
+            if !sample.is_finite() {
+                *sample = 0.0;
+            }
+        }
         self.block_input[..total].copy_from_slice(buffer);
 
         let delta_enabled = self.delta_monitor.enabled();
@@ -674,10 +754,12 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
                     // interleaved source buffer contiguously (cache-friendly).
                     for i in 0..to_copy {
                         let src_base = (input_pos + i) * channels;
-                        let dst_idx = self.stft.input_fill + i;
+                        let dst_idx = self.stft.input_write_pos;
                         for ch in 0..channels {
                             self.stft.input_buffers[ch][dst_idx] = self.block_input[src_base + ch];
                         }
+                        self.stft.input_write_pos =
+                            (self.stft.input_write_pos + 1) & (fft_size - 1);
                     }
                     self.stft.input_fill += to_copy;
                     input_pos += to_copy;
@@ -687,11 +769,9 @@ impl ParametricInPlacePlugin for SpectralCompressorPlugin {
             // --- Step 2: Process STFT frames while we have a full window ---
             if self.stft.input_fill >= fft_size {
                 self.process_spectral_hop();
-                // Shift input ring: keep overlap = fft_size - hop_size samples
+                // Circular history already retains the overlap; only the
+                // logical fill count moves back by one hop.
                 let overlap = fft_size - hop_size;
-                for ch in 0..channels {
-                    self.stft.input_buffers[ch].copy_within(hop_size..fft_size, 0);
-                }
                 self.stft.input_fill = overlap;
             }
 

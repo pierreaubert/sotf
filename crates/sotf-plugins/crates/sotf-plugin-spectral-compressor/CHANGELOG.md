@@ -1,3 +1,40 @@
+# 0.5.25
+
+## Complete 2026-08-12 review remediation
+
+- Replaced directional recursive spectral smoothing with an edge-normalized,
+  reversal-invariant box kernel. The 0–100% control now maps to a documented
+  radius of 0–12 bins and preserves flat spectra and both frequency boundaries.
+- Made the adaptive estimator's 500 ms time constant independent of FFT size
+  and sample rate, primes from the first valid spectrum, and reprimes on enable/reset.
+- Defined threshold calibration as local narrowband coherent amplitude and
+  aggregate five-bin Hann energy, stabilizing bin-centred and fractional-bin tones
+  across every FFT size.
+- Added a 0–100% channel-link control that blends independent gain reduction
+  toward the per-bin maximum across all channels without mixing audio or phase.
+- Replaced the per-hop input shift with circular history, removed redundant FFT
+  bin copies and full-frame accumulator clears, and expanded QA to the complete
+  1/2/6/8/12/16-channel, FFT-size, and target-mode matrix.
+- Kept every realtime setter allocation-free, marked FFT size structural in the
+  runtime schema, made both factories fallible, and added raw/normalized exported
+  target-choice round trips.
+- Added reset/fresh equivalence, 12-channel isolation, linked-detector, adaptive
+  timing/priming, smoothing properties, calibration, non-finite recovery, factory,
+  allocation, long-stream reconstruction, and performance regressions.
+
+# 0.5.24
+
+## Review remediation
+
+- Preserve all advanced controls in serialized construction and reject unknown
+  fields or invalid finite/range/choice state through a fallible factory path.
+- Store tonal/transient masks per channel and initialize/reset them to a neutral
+  all-one state, eliminating cross-channel classification leakage and stale reset state.
+- Use integer choice indices for target mode across runtime and exported bridges.
+- Route the direct setter through schema validation and reject live FFT-size
+  mutation, preserving prepared buffers and host latency compensation.
+- Report the crate version through plugin metadata.
+
 # 0.5.23
 
 ## Fixes

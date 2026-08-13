@@ -1,6 +1,5 @@
 use math_audio_dsp::stft::{RealFftProcessor, generate_hann_window};
 use math_audio_dsp::tonal_transient::TonalTransientSeparator;
-use rustfft::num_complex::Complex;
 
 /// All STFT buffers needed for spectral processing.
 /// Pre-allocated to avoid hot-path allocation.
@@ -21,8 +20,10 @@ pub(super) struct StftState {
     pub(super) output_scale: f32,
 
     // --- Input staging ---
-    /// Per-channel linear input buffer [channels][fft_size]
+    /// Per-channel circular input history [channels][fft_size].
     pub(super) input_buffers: Vec<Vec<f32>>,
+    /// Next frame position to overwrite in each input history.
+    pub(super) input_write_pos: usize,
     /// How many valid samples are in the tail of each input_buffer
     pub(super) input_fill: usize,
 
@@ -44,22 +45,26 @@ pub(super) struct StftState {
     pub(super) dry_delay_pos: usize,
 
     // --- Temporary working buffers ---
-    /// Frequency-domain scratch [num_bins]
-    pub(super) freq_scratch: Vec<Complex<f32>>,
+    /// Calibrated spectral magnitudes [channels][num_bins].
+    pub(super) spectral_magnitudes: Vec<Vec<f32>>,
     /// Scratch for envelope values after median + smoothing [num_bins]
     pub(super) gains_scratch: Vec<f32>,
+    /// Prefix sums for allocation-free symmetric spectral smoothing [num_bins + 1].
+    pub(super) smoothing_prefix: Vec<f32>,
+    /// Unsmoothed detector gain reduction [channels][num_bins].
+    pub(super) detector_gr: Vec<Vec<f32>>,
 
     // --- Phase 4A: Tonal/Transient separation ---
     /// Per-channel tonal/transient separator
     pub(super) tonal_transient: Vec<TonalTransientSeparator>,
-    /// Scratch for magnitudes [num_bins]
-    pub(super) magnitudes_scratch: Vec<f32>,
     /// Scratch for tonal mask [num_bins]
-    pub(super) tonal_mask: Vec<f32>,
+    pub(super) tonal_mask: Vec<Vec<f32>>,
     /// Scratch for transient mask [num_bins]
-    pub(super) transient_mask: Vec<f32>,
+    pub(super) transient_mask: Vec<Vec<f32>>,
     /// Per-channel long-term spectral average for adaptive threshold [channels][num_bins]
     pub(super) adaptive_avg: Vec<Vec<f32>>,
+    /// Whether each channel's adaptive estimator has observed its first spectrum.
+    pub(super) adaptive_initialized: Vec<bool>,
 }
 
 impl StftState {
@@ -89,6 +94,7 @@ impl StftState {
             analysis_window,
             output_scale,
             input_buffers: vec![vec![0.0f32; fft_size]; channels],
+            input_write_pos: 0,
             input_fill: 0,
             bin_envelopes,
             output_accumulator,
@@ -99,16 +105,18 @@ impl StftState {
             latency_filled: 0,
             dry_delay_buf: vec![0.0; fft_size * channels],
             dry_delay_pos: 0,
-            freq_scratch: vec![Complex::new(0.0, 0.0); num_bins],
+            spectral_magnitudes: vec![vec![0.0; num_bins]; channels],
             gains_scratch: vec![0.0; num_bins],
+            smoothing_prefix: vec![0.0; num_bins + 1],
+            detector_gr: vec![vec![0.0; num_bins]; channels],
             // Phase 4A: Tonal/Transient
             tonal_transient: (0..channels)
                 .map(|_| TonalTransientSeparator::new(num_bins, 7, 7))
                 .collect(),
-            magnitudes_scratch: vec![0.0; num_bins],
-            tonal_mask: vec![0.0; num_bins],
-            transient_mask: vec![0.0; num_bins],
-            adaptive_avg: vec![vec![-20.0; num_bins]; channels], // init near typical threshold to avoid startup transient
+            tonal_mask: vec![vec![1.0; num_bins]; channels],
+            transient_mask: vec![vec![1.0; num_bins]; channels],
+            adaptive_avg: vec![vec![0.0; num_bins]; channels],
+            adaptive_initialized: vec![false; channels],
         }
     }
 
@@ -117,14 +125,25 @@ impl StftState {
             buf.fill(0.0);
         }
         self.input_fill = 0;
+        self.input_write_pos = 0;
         for env in &mut self.bin_envelopes {
             env.fill(0.0);
         }
         for tt in &mut self.tonal_transient {
             tt.reset();
         }
+        for mask in &mut self.tonal_mask {
+            mask.fill(1.0);
+        }
+        for mask in &mut self.transient_mask {
+            mask.fill(1.0);
+        }
         for avg in &mut self.adaptive_avg {
-            avg.fill(-20.0);
+            avg.fill(0.0);
+        }
+        self.adaptive_initialized.fill(false);
+        for detector in &mut self.detector_gr {
+            detector.fill(0.0);
         }
         self.output_accumulator.fill(0.0);
         self.output_accumulator_fill = 0;

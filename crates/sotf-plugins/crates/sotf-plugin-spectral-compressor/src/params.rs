@@ -91,6 +91,18 @@ pub const PARAMS: &[ParamSpec] = &[
         "Analysis",
     )
     .doc("Offset from adaptive threshold (positive = less compression)"),
+    ParamSpec::float(
+        "Channel Link",
+        "channel_link",
+        0.0,
+        0.0,
+        1.0,
+        0.01,
+        "%",
+        "Channels",
+    )
+    .scaled(100.0)
+    .doc("Blend independent detection toward the maximum gain reduction across channels"),
 ];
 
 // ============================================================================
@@ -99,7 +111,7 @@ pub const PARAMS: &[ParamSpec] = &[
 
 /// Spectral Compressor: idx 0=fft_size, 1=threshold, 2=ratio, 3=attack,
 /// 4=release, 5=knee, 6=spectral_smoothing, 7=mix, 8=target_mode,
-/// 9=delta_listen, 10=adaptive_threshold, 11=adaptive_offset_db
+/// 9=delta_listen, 10=adaptive_threshold, 11=adaptive_offset_db, 12=channel_link
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::selector(0), // fft_size
@@ -108,6 +120,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ControlSpec::toggle(9),   // delta_listen
         ControlSpec::toggle(10),  // adaptive_threshold
         ControlSpec::knob(11),    // adaptive_offset_db
+        ControlSpec::knob(12),    // channel_link
     ],
     main: &[
         ControlGroup::new(
@@ -174,6 +187,8 @@ pub struct Params {
     pub adaptive_threshold: f64,
     #[serde(default)]
     pub adaptive_offset_db: f64,
+    #[serde(default)]
+    pub channel_link: f64,
 }
 
 fn d_target_mode() -> f64 {
@@ -245,6 +260,7 @@ impl Default for Params {
             delta_listen: 0.0,
             adaptive_threshold: 0.0,
             adaptive_offset_db: 0.0,
+            channel_link: 0.0,
         }
     }
 }
@@ -273,6 +289,7 @@ impl PluginParamDef for Params {
             9 => Some(self.delta_listen),
             10 => Some(self.adaptive_threshold),
             11 => Some(self.adaptive_offset_db),
+            12 => Some(self.channel_link),
             _ => None,
         }
     }
@@ -291,6 +308,7 @@ impl PluginParamDef for Params {
             9 => self.delta_listen = value,
             10 => self.adaptive_threshold = value,
             11 => self.adaptive_offset_db = value,
+            12 => self.channel_link = value,
             _ => {}
         }
     }

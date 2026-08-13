@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-spectral-compressor"
 description = "SOTF Spectral Compressor plugin - per-bin frequency domain dynamics"
-version = "0.5.23"
+version = "0.5.25"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -18,8 +18,6 @@ sotf-host = { workspace = true }
 math-dsp = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-realfft = { workspace = true }
-rustfft = { workspace = true }
 
 [features]
 qa = ["sotf-host/qa"]

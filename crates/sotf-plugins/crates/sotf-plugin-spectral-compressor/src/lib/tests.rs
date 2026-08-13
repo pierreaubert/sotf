@@ -1,3 +1,4 @@
+use super::misc::adaptive_alpha;
 use super::misc::compress_gr;
 use super::misc::fft_size_from_index;
 use super::misc::smooth_spectral_envelope;
@@ -90,8 +91,7 @@ fn partial_mix_has_fixed_latency_across_host_block_sizes() {
     assert!(small_diff < 1.0e-5, "64-frame max diff {small_diff}");
 }
 
-/// Verify that constructing a plugin with attack_ms=0 or release_ms=0 does
-/// not produce NaN/inf coefficients. Zero → instant response (coeff=0).
+/// Serialized construction obeys the public timing ranges.
 #[test]
 fn test_zero_attack_release_coefficients() {
     let params = SpectralCompressorPluginParams {
@@ -99,55 +99,35 @@ fn test_zero_attack_release_coefficients() {
         release_ms: 0.0,
         ..Default::default()
     };
-    let plugin = SpectralCompressorPlugin::from_params(2, params);
-    assert!(
-        plugin.attack_coeff.is_finite(),
-        "attack_coeff should be finite when attack_ms=0, got {}",
-        plugin.attack_coeff
-    );
-    assert!(
-        plugin.release_coeff.is_finite(),
-        "release_coeff should be finite when release_ms=0, got {}",
-        plugin.release_coeff
-    );
-    assert_eq!(
-        plugin.attack_coeff, 0.0,
-        "attack_ms=0 should give instant coeff=0"
-    );
-    assert_eq!(
-        plugin.release_coeff, 0.0,
-        "release_ms=0 should give instant coeff=0"
-    );
+    assert!(SpectralCompressorPlugin::try_from_params(2, params).is_err());
 }
 
 #[test]
 fn test_spectral_smoothing_symmetric_bounds() {
-    // Regression test for asymmetric smoothing loop ranges.
-    // Forward and backward passes must visit the same set of bins.
-    let alpha = 0.5;
+    let original = vec![10.0, 2.0, 7.0, 0.0, 3.0, 9.0, 1.0];
+    for amount in [0.0, 0.1, 0.5, 1.0] {
+        let mut forward = original.clone();
+        let mut reverse: Vec<_> = original.iter().copied().rev().collect();
+        let mut forward_prefix = vec![0.0; forward.len() + 1];
+        let mut reverse_prefix = vec![0.0; reverse.len() + 1];
+        smooth_spectral_envelope(&mut forward, amount, &mut forward_prefix);
+        smooth_spectral_envelope(&mut reverse, amount, &mut reverse_prefix);
+        reverse.reverse();
+        assert_eq!(
+            forward, reverse,
+            "smoothing changed under reversal at {amount}"
+        );
+    }
 
-    // Spike at DC (bin 0)
-    let mut dc_spike = vec![10.0, 0.0, 0.0, 0.0];
-    smooth_spectral_envelope(&mut dc_spike, alpha);
-    // Forward:  [10.0, 5.0, 2.5, 1.25]
-    // Backward: [6.71875, 3.4375, 1.875, 1.25]
-    assert!((dc_spike[0] - 6.71875).abs() < 1e-6);
-    assert!((dc_spike[1] - 3.4375).abs() < 1e-6);
-    assert!((dc_spike[2] - 1.875).abs() < 1e-6);
-    assert!((dc_spike[3] - 1.25).abs() < 1e-6);
-
-    // Spike at Nyquist (last bin)
-    let mut nyq_spike = vec![0.0, 0.0, 0.0, 10.0];
-    smooth_spectral_envelope(&mut nyq_spike, alpha);
-    // Forward:  [0.0, 0.0, 0.0, 5.0]
-    // Backward: [0.625, 1.25, 2.5, 5.0]
-    assert!((nyq_spike[0] - 0.625).abs() < 1e-6);
-    assert!((nyq_spike[1] - 1.25).abs() < 1e-6);
-    assert!((nyq_spike[2] - 2.5).abs() < 1e-6);
-    assert!((nyq_spike[3] - 5.0).abs() < 1e-6);
-
-    // Both boundary spikes should propagate through the full range,
-    // confirming that forward visits bin 0 and backward visits bin N-1.
+    let mut dc = vec![10.0, 0.0, 0.0, 0.0, 0.0];
+    let mut nyquist = vec![0.0, 0.0, 0.0, 0.0, 10.0];
+    let mut prefix = vec![0.0; 6];
+    smooth_spectral_envelope(&mut dc, 1.0, &mut prefix);
+    smooth_spectral_envelope(&mut nyquist, 1.0, &mut prefix);
+    nyquist.reverse();
+    assert_eq!(dc, nyquist);
+    assert!(dc.iter().skip(1).any(|value| *value > 0.0));
+    assert!(dc.iter().any(|value| *value < 10.0));
 }
 
 // -------------------------------------------------------------------------
@@ -175,13 +155,67 @@ fn test_compress_gr_soft_knee() {
 #[test]
 fn test_smooth_spectral_envelope_edge_cases() {
     let mut empty: Vec<f32> = vec![];
-    smooth_spectral_envelope(&mut empty, 0.5); // must not panic
+    let mut empty_prefix = vec![0.0];
+    smooth_spectral_envelope(&mut empty, 0.5, &mut empty_prefix); // must not panic
     let mut one = vec![7.0f32];
-    smooth_spectral_envelope(&mut one, 0.5);
+    let mut one_prefix = vec![0.0; 2];
+    smooth_spectral_envelope(&mut one, 0.5, &mut one_prefix);
     assert_eq!(one[0], 7.0);
     let mut flat = vec![1.0f32; 4];
-    smooth_spectral_envelope(&mut flat, 0.5);
+    let mut flat_prefix = vec![0.0; 5];
+    smooth_spectral_envelope(&mut flat, 0.5, &mut flat_prefix);
     assert!(flat.iter().all(|&s| (s - 1.0).abs() < 1e-6));
+
+    let original = vec![1.0, 2.0, 3.0, 4.0];
+    let mut identity = original.clone();
+    let mut identity_prefix = vec![0.0; 5];
+    smooth_spectral_envelope(&mut identity, 0.0, &mut identity_prefix);
+    assert_eq!(identity, original);
+}
+
+#[test]
+fn adaptive_estimator_has_sample_rate_and_fft_invariant_time_constant() {
+    const TAU_SECONDS: f32 = 0.5;
+    for sample_rate in [44_100, 48_000, 96_000, 192_000] {
+        for fft_size in [1024, 2048, 4096] {
+            let hop = fft_size / 4;
+            let alpha = adaptive_alpha(hop, sample_rate, TAU_SECONDS);
+            let hops = (TAU_SECONDS * sample_rate as f32 / hop as f32).round() as usize;
+            let remaining = alpha.powi(hops as i32);
+            assert!(
+                (remaining - (-1.0_f32).exp()).abs() < 0.025,
+                "tau drifted at {sample_rate} Hz / N={fft_size}: {remaining}"
+            );
+        }
+    }
+}
+
+#[test]
+fn adaptive_processing_is_finite_across_supported_rates_and_fft_sizes() {
+    for sample_rate in [44_100, 48_000, 96_000, 192_000] {
+        for fft_size_index in 0..3 {
+            let params = SpectralCompressorPluginParams {
+                fft_size_index,
+                adaptive_threshold: true,
+                adaptive_offset_db: -6.0,
+                ..Default::default()
+            };
+            let mut plugin = SpectralCompressorPlugin::from_params(2, params);
+            plugin.initialize(sample_rate).unwrap();
+            let frames = 8192;
+            let mut audio = vec![0.0; frames * 2];
+            for frame in 0..frames {
+                let sample =
+                    0.2 * (std::f32::consts::TAU * 997.0 * frame as f32 / sample_rate as f32).sin();
+                audio[frame * 2] = sample;
+                audio[frame * 2 + 1] = sample;
+            }
+            plugin
+                .process_in_place(&mut audio, &ProcessContext::new(sample_rate, frames))
+                .unwrap();
+            assert!(audio.iter().all(|sample| sample.is_finite()));
+        }
+    }
 }
 
 #[test]
@@ -271,10 +305,7 @@ fn test_target_mode_tonal_no_nan() {
     let mut plugin = SpectralCompressorPlugin::from_params(2, params);
     plugin.initialize(48000).unwrap();
     plugin
-        .set_parameter(
-            ParameterId::from("target_mode"),
-            ParameterValue::String("Tonal".into()),
-        )
+        .set_parameter(ParameterId::from("target_mode"), ParameterValue::Int(1))
         .unwrap();
 
     let nf = 8192usize;
@@ -332,4 +363,203 @@ fn test_recompute_coefficients_after_parameter_change() {
         plugin.attack_coeff < old_attack,
         "Faster attack should produce a smaller EMA coefficient"
     );
+}
+
+#[test]
+fn local_energy_detector_is_stable_across_fft_size_and_bin_alignment() {
+    fn detector_gr(fft_index: usize, fractional_bin: f32) -> f32 {
+        let params = SpectralCompressorPluginParams {
+            fft_size_index: fft_index,
+            threshold_db: -40.0,
+            ratio: 8.0,
+            attack_ms: 0.1,
+            knee_db: 0.0,
+            spectral_smoothing: 0.0,
+            ..Default::default()
+        };
+        let mut plugin = SpectralCompressorPlugin::from_params(1, params);
+        plugin.initialize(48_000).unwrap();
+        let fft_size = plugin.fft_size;
+        let bin = 43.0 + fractional_bin;
+        for frame in 0..fft_size {
+            plugin.stft.input_buffers[0][frame] =
+                0.1 * (std::f32::consts::TAU * bin * frame as f32 / fft_size as f32).sin();
+        }
+        plugin.stft.input_fill = fft_size;
+        plugin.process_spectral_hop();
+        plugin.stft.detector_gr[0]
+            .iter()
+            .copied()
+            .fold(0.0_f32, f32::max)
+    }
+
+    let reference = detector_gr(0, 0.0);
+    for fft_index in 0..3 {
+        for fractional_bin in [0.0, 0.25, 0.5] {
+            let measured = detector_gr(fft_index, fractional_bin);
+            assert!(
+                (measured - reference).abs() < 0.75,
+                "detector moved by {:.2} dB for FFT index {fft_index}, bin offset {fractional_bin}",
+                measured - reference
+            );
+        }
+    }
+}
+
+#[test]
+fn channel_link_preserves_gain_for_correlated_layout_channels() {
+    fn quiet_channel_envelope(link: f32) -> f32 {
+        let params = SpectralCompressorPluginParams {
+            fft_size_index: 0,
+            threshold_db: -30.0,
+            ratio: 10.0,
+            attack_ms: 0.1,
+            knee_db: 0.0,
+            spectral_smoothing: 0.0,
+            channel_link: link,
+            ..Default::default()
+        };
+        let mut plugin = SpectralCompressorPlugin::from_params(2, params);
+        plugin.initialize(48_000).unwrap();
+        let fft_size = plugin.fft_size;
+        for frame in 0..fft_size {
+            let tone = (std::f32::consts::TAU * 32.0 * frame as f32 / fft_size as f32).sin();
+            plugin.stft.input_buffers[0][frame] = 0.8 * tone;
+            plugin.stft.input_buffers[1][frame] = 0.001 * tone;
+        }
+        plugin.stft.input_fill = fft_size;
+        plugin.process_spectral_hop();
+        plugin.stft.bin_envelopes[1][32]
+    }
+
+    let independent = quiet_channel_envelope(0.0);
+    let linked = quiet_channel_envelope(1.0);
+    assert!(
+        independent < 0.1,
+        "quiet independent channel compressed by {independent} dB"
+    );
+    assert!(
+        linked > 10.0,
+        "linked quiet channel did not follow the loud channel: {linked} dB"
+    );
+}
+
+#[test]
+fn adaptive_estimator_primes_from_first_valid_spectrum_and_reprime_on_enable() {
+    let params = SpectralCompressorPluginParams {
+        fft_size_index: 0,
+        adaptive_threshold: true,
+        ..Default::default()
+    };
+    let mut plugin = SpectralCompressorPlugin::from_params(1, params);
+    plugin.initialize(48_000).unwrap();
+    let fft_size = plugin.fft_size;
+    for frame in 0..fft_size {
+        plugin.stft.input_buffers[0][frame] =
+            0.02 * (std::f32::consts::TAU * 24.0 * frame as f32 / fft_size as f32).sin();
+    }
+    plugin.stft.input_fill = fft_size;
+    plugin.process_spectral_hop();
+    assert!(plugin.stft.adaptive_initialized[0]);
+    assert!(plugin.stft.adaptive_avg[0][24] < -25.0);
+    assert!(plugin.stft.adaptive_avg[0][24] > -40.0);
+
+    plugin
+        .set_parameter(
+            ParameterId::from("adaptive_threshold"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("adaptive_threshold"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    assert!(!plugin.stft.adaptive_initialized[0]);
+}
+
+#[test]
+fn targeted_reset_matches_fresh_instance_for_initial_hops() {
+    for target_mode in [1, 2] {
+        let params = SpectralCompressorPluginParams {
+            fft_size_index: 0,
+            target_mode,
+            threshold_db: -35.0,
+            ratio: 6.0,
+            ..Default::default()
+        };
+        let mut reset_plugin = SpectralCompressorPlugin::from_params(1, params.clone());
+        let mut fresh_plugin = SpectralCompressorPlugin::from_params(1, params);
+        reset_plugin.initialize(48_000).unwrap();
+        fresh_plugin.initialize(48_000).unwrap();
+
+        let mut precondition = vec![0.0; 8192];
+        for (frame, sample) in precondition.iter_mut().enumerate() {
+            *sample = if frame % 127 == 0 {
+                0.8
+            } else {
+                0.2 * (std::f32::consts::TAU * 997.0 * frame as f32 / 48_000.0).sin()
+            };
+        }
+        reset_plugin
+            .process_in_place(&mut precondition, &ProcessContext::new(48_000, 8192))
+            .unwrap();
+        reset_plugin.reset();
+
+        let mut reset_output = vec![0.0; 8192];
+        for (frame, sample) in reset_output.iter_mut().enumerate() {
+            *sample = 0.25 * (std::f32::consts::TAU * 733.0 * frame as f32 / 48_000.0).sin();
+        }
+        let mut fresh_output = reset_output.clone();
+        reset_plugin
+            .process_in_place(
+                &mut reset_output,
+                &ProcessContext::new(48_000, fresh_output.len()),
+            )
+            .unwrap();
+        fresh_plugin
+            .process_in_place(&mut fresh_output, &ProcessContext::new(48_000, 8192))
+            .unwrap();
+        let max_error = reset_output
+            .iter()
+            .zip(fresh_output)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_error < 1e-6,
+            "target {target_mode} reset error: {max_error}"
+        );
+    }
+}
+
+#[test]
+fn targeted_processing_has_no_cross_channel_control_leakage_at_twelve_channels() {
+    fn render(channel_eleven_active: bool) -> Vec<f32> {
+        let params = SpectralCompressorPluginParams {
+            fft_size_index: 0,
+            target_mode: 1,
+            threshold_db: -35.0,
+            ratio: 6.0,
+            channel_link: 0.0,
+            ..Default::default()
+        };
+        let mut plugin = SpectralCompressorPlugin::from_params(12, params);
+        plugin.initialize(48_000).unwrap();
+        let frames = 8192;
+        let mut audio = vec![0.0; frames * 12];
+        for frame in 0..frames {
+            audio[frame * 12] =
+                0.3 * (std::f32::consts::TAU * 997.0 * frame as f32 / 48_000.0).sin();
+            if channel_eleven_active {
+                audio[frame * 12 + 11] = if frame % 113 == 0 { 0.9 } else { 0.0 };
+            }
+        }
+        plugin
+            .process_in_place(&mut audio, &ProcessContext::new(48_000, frames))
+            .unwrap();
+        audio.chunks_exact(12).map(|frame| frame[0]).collect()
+    }
+
+    assert_eq!(render(false), render(true));
 }

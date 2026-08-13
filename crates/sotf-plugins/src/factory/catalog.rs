@@ -787,7 +787,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             true,
         ),
         zero_alloc_evidence(
-            "sotf-plugin-spectral-compressor Hann magnitude calibration, FFT roundtrip, hard/soft knee, loud/quiet-bin, delta-listen, and latency tests"
+            "sotf-plugin-spectral-compressor realtime process/setter allocation tests; Hann local-energy calibration, circular-WOLA reconstruction, linking, target/reset, adaptive timing, delta-listen, and latency QA"
         )
     ),
     entry!(
@@ -798,7 +798,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             "sotf-plugin-stereo-imager",
             "Stereo Imager",
             Beta,
-            PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
+            PluginSupportedInputLayouts::Enumerated(STEREO_CHANNEL_WIDTH),
             PluginChannelOutputModel::PreservesInput,
             PluginLatencyModel::PluginReported("crossover and active width configuration"),
             "sotf_plugin_stereo_imager::params::PARAMS",

@@ -552,6 +552,7 @@ impl_param_accessors! {
             spectral_smoothing: f64, mix: f64,
             target_mode: f64, delta_listen: bool,
             adaptive_threshold: bool, adaptive_offset_db: f64,
+            channel_link: f64,
         ]
     },
     LinearPhaseEq {

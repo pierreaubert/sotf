@@ -5,6 +5,7 @@ use crate::params::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpectralCompressorPluginParams {
     #[serde(default = "default_fft_size_index")]
     pub fft_size_index: usize,
@@ -22,6 +23,16 @@ pub struct SpectralCompressorPluginParams {
     pub spectral_smoothing: f32,
     #[serde(default = "default_mix")]
     pub mix: f32,
+    #[serde(default)]
+    pub target_mode: usize,
+    #[serde(default)]
+    pub delta_listen: bool,
+    #[serde(default)]
+    pub adaptive_threshold: bool,
+    #[serde(default)]
+    pub adaptive_offset_db: f32,
+    #[serde(default)]
+    pub channel_link: f32,
 }
 
 impl Default for SpectralCompressorPluginParams {
@@ -35,6 +46,11 @@ impl Default for SpectralCompressorPluginParams {
             knee_db: default_knee_db(),
             spectral_smoothing: default_spectral_smoothing(),
             mix: default_mix(),
+            target_mode: 0,
+            delta_listen: false,
+            adaptive_threshold: false,
+            adaptive_offset_db: 0.0,
+            channel_link: 0.0,
         }
     }
 }

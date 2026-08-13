@@ -19,6 +19,7 @@
 use plugins_bridge::factory::{available_plugin_types, create_plugin};
 use plugins_bridge::param_bridge::ParamBridge;
 use sotf_host::param_specs::ParamType;
+use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::ProcessContext;
 
 const SAMPLE_RATE: u32 = 48000;
@@ -241,7 +242,10 @@ fn test_all_factory_plugins_create_successfully() {
         if needs_config.contains(&plugin_type) {
             continue;
         }
-        match create_plugin(plugin_type, 2, SAMPLE_RATE, "{}") {
+        // MonoToStereo has a deliberately fixed one-channel input contract;
+        // all other factory entries use the stereo smoke-test layout.
+        let input_channels = if plugin_type == "MonoToStereo" { 1 } else { 2 };
+        match create_plugin(plugin_type, input_channels, SAMPLE_RATE, "{}") {
             Ok(mut plugin) => {
                 if let Err(e) = plugin.initialize(SAMPLE_RATE) {
                     failures.push(format!("{plugin_type}: initialize failed: {e}"));
@@ -260,6 +264,34 @@ fn test_all_factory_plugins_create_successfully() {
             failures.join("\n  ")
         );
     }
+}
+
+#[test]
+fn spectral_compressor_bridge_factory_is_fallible_and_preserves_advanced_state() {
+    let plugin = create_plugin(
+        "SpectralCompressor",
+        2,
+        48_000,
+        r#"{"target_mode":2,"adaptive_threshold":true,"adaptive_offset_db":3.0,"channel_link":1.0}"#,
+    )
+    .expect("valid complete spectral compressor state");
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("target_mode")),
+        Some(ParameterValue::Int(2))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("channel_link")),
+        Some(ParameterValue::Float(1.0))
+    );
+    assert!(
+        create_plugin(
+            "SpectralCompressor",
+            2,
+            48_000,
+            r#"{"spectral_smoothing":2.0}"#,
+        )
+        .is_err()
+    );
 }
 
 // ============================================================================
