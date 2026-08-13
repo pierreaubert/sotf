@@ -414,16 +414,27 @@ format compatibility identified above.
 
 All P1–P3 findings are closed; this review reported no P0 finding.
 
+Retained quality correction: the first closure used a smoothed broadband
+output/input RMS ratio for stereo. The final implementation now exposes the
+model's actual 22 suppression gains after RNNoise release smoothing and applies
+those frequency-dependent decisions to both original channels. A
+polarity-aware, energy-normalized detector prevents anti-phase cancellation;
+fixed-size cached analyzer data publishes the bounded gains and VAD probability
+without audio-thread allocation. This is deterministic implementation evidence,
+not an external-corpus speech-quality claim.
+
 - **Arbitrary framing and latency:** preallocated input/output FIFOs accept
   arbitrary callback partitions, return the requested frame count, and emit a
   real constant 480-sample delay without deleting the first processed frame.
   Backend partition/timeline tests cover 1, 16, 31, 63, 64, 127, 128, 256,
   479, 480, 481, 512, 1024, and 4093-frame calls; the engine no longer skips
   Speech Denoiser in its 1024-frame plugin processing test.
-- **Stereo correctness:** sample-wise `mono_out / mono_in` gain inference was
-  removed. Identical, anti-phase, quadrature, uncorrelated, hard-panned, and
-  unequal-level tests establish one bounded common frame gain, no amplification,
-  and preservation of phase, level ratio, and stereo image.
+- **Stereo correctness:** sample-wise `mono_out / mono_in` and later broadband
+  RMS gain inference were removed. Identical, anti-phase, quadrature,
+  uncorrelated, hard-panned, and unequal-level tests establish one common set of
+  bounded model band gains, no requested amplification, channel-swap symmetry,
+  and preservation of phase/level relationships where the inputs are linearly
+  related.
 - **Bypass continuity:** the model always advances, delayed dry and wet paths
   remain aligned, and enable/bypass changes crossfade over 480 samples. Focused
   tests cover long bypass/re-entry, repeated toggles, bounded discontinuity, and
@@ -440,10 +451,36 @@ All P1–P3 findings are closed; this review reported no P0 finding.
   out-of-domain input is sanitized/clamped before persistent model state. Tests
   cover zero/wide layouts, rate/context mismatch, NaN, infinities, huge finite
   input, both stereo channels, and recovery.
-- **Meter/schema/docs:** unused reduction-meter calculation was removed. Strict
+- **Meter/schema/docs:** fixed-size cached monitoring publishes actual smoothed
+  band gains, bounded VAD probability, and a model-frame generation. Strict
   parameter JSON tests cover absent/default/true/false values, malformed and
   unknown fields, schema v1 round-trip, and future-version rejection. README,
   changelog, catalog evidence, and package versions now state the executable
   48-kHz mono/stereo, latency, bypass, and realtime contracts.
 
-Verification for the closure commit is recorded in the final task handoff.
+Retained-quality verification (2026-08-13):
+
+```text
+cargo test --offline -p plugins-denoiser
+  64 passed; 0 failed
+cargo test --offline -p sotf-plugin-speech-denoiser
+  25 passed; 0 failed
+cargo test --offline -p sotf-plugins --test speech_denoiser_factory
+  1 passed; 0 failed
+cargo test --offline -p sotf-plugins --test realtime_allocation_tests speech_denoiser_zero_alloc
+  1 passed; 0 failed
+cargo run --offline -p sotf-plugin-speech-denoiser --features qa --bin qa-speech-denoiser
+  mono max 162.417 us; stereo max 247.541 us; zero cold allocations
+cargo clippy --offline -p plugins-denoiser -p sotf-plugin-speech-denoiser --all-targets --no-deps -- -D warnings
+cargo fmt --all -- --check
+cargo check --offline -p plugins-denoiser -p sotf-plugin-speech-denoiser
+git diff --check
+  passed
+```
+
+The standalone vendored `nnnoiseless` manifest test could not run offline
+because its legacy Criterion development graph requires an uncached `clap`
+2.x package. Its reference-vector parity is exercised through the passing
+`plugins-denoiser` suite. The repository struct-size checker reports three
+pre-existing, unrelated unallowlisted structs in host Convolution/Delay code;
+this change adds no over-budget struct.

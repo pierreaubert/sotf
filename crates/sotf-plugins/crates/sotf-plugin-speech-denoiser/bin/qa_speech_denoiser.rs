@@ -2,7 +2,7 @@ use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 use sotf_host::{CountingAlloc, assert_no_allocs};
-use sotf_plugin_speech_denoiser::SpeechDenoiserPlugin;
+use sotf_plugin_speech_denoiser::{RNNOISE_BAND_COUNT, SpeechDenoiserData, SpeechDenoiserPlugin};
 use std::time::{Duration, Instant};
 
 #[global_allocator]
@@ -70,6 +70,20 @@ fn run_layout(channels: usize) {
         "{channels}ch callback missed deadline: {max:?}"
     );
     assert!(buffer.iter().all(|sample| sample.is_finite()));
+    let analyzer = plugin
+        .get_data()
+        .unwrap()
+        .downcast::<SpeechDenoiserData>()
+        .unwrap();
+    assert!(analyzer.model_frames > 0);
+    assert_eq!(analyzer.band_gains.len(), RNNOISE_BAND_COUNT);
+    assert!((0.0..=1.0).contains(&analyzer.vad_probability));
+    assert!(
+        analyzer
+            .band_gains
+            .iter()
+            .all(|gain| gain.is_finite() && (0.0..=1.0).contains(gain))
+    );
     println!(
         "Speech Denoiser {channels}ch: p50={:?}, p95={:?}, p99={:?}, max={max:?}, zero cold allocations",
         percentile(50),

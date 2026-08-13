@@ -1,7 +1,9 @@
 use sotf_host::parameters::ParameterValue;
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
-use sotf_plugin_speech_denoiser::{SPEECH_DENOISER_FRAME_SIZE, SpeechDenoiserPlugin};
+use sotf_plugin_speech_denoiser::{
+    SPEECH_DENOISER_FRAME_SIZE, SpeechDenoiserData, SpeechDenoiserPlugin,
+};
 
 #[test]
 fn disabled_is_transparent() {
@@ -112,6 +114,11 @@ fn arbitrary_partitions_match_one_continuous_stream() {
         plugin.process_in_place(&mut continuous, &whole).unwrap(),
         1440
     );
+    let continuous_data = *plugin
+        .get_data()
+        .unwrap()
+        .downcast::<SpeechDenoiserData>()
+        .unwrap();
 
     plugin.reset();
     let mut offset = 0;
@@ -133,6 +140,12 @@ fn arbitrary_partitions_match_one_continuous_stream() {
             "stream changed: {actual} vs {expected}"
         );
     }
+    let partitioned_data = *plugin
+        .get_data()
+        .unwrap()
+        .downcast::<SpeechDenoiserData>()
+        .unwrap();
+    assert_eq!(partitioned_data, continuous_data);
 }
 
 #[test]

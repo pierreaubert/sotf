@@ -3,6 +3,29 @@ use crate::{
     PITCH_FRAME_SIZE, PITCH_MAX_PERIOD, PITCH_MIN_PERIOD, WINDOW_SIZE,
 };
 
+/// Number of perceptual suppression bands produced by the RNNoise model.
+pub const DENOISE_BAND_COUNT: usize = NB_BANDS;
+
+/// Bounded decisions produced for one 10 ms model frame.
+///
+/// `band_gains` are the model gains after RNNoise's inter-frame release
+/// smoothing. They are the gains actually applied by `process_frame`, not an
+/// estimate reconstructed from input/output sample power.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DenoiseFrameAnalysis {
+    pub band_gains: [f32; DENOISE_BAND_COUNT],
+    pub vad_probability: f32,
+}
+
+impl Default for DenoiseFrameAnalysis {
+    fn default() -> Self {
+        Self {
+            band_gains: [1.0; DENOISE_BAND_COUNT],
+            vad_probability: 0.0,
+        }
+    }
+}
+
 /// This is the main entry-point into `nnnoiseless`. It mainly contains the various memory buffers
 /// that are used while denoising. As such, this is quite a large struct, and should probably be
 /// kept behind some kind of pointer.
@@ -162,7 +185,33 @@ impl DenoiseState {
     /// preceding inputs. Because of this, you might prefer to discard the very first output; it
     /// will contain some fade-in artifacts.
     pub fn process_frame(&mut self, output: &mut [f32], input: &[f32]) {
-        process_frame(self, output, input);
+        let _ = process_frame(self, output, input);
+    }
+
+    /// Process a frame and return the bounded model decisions that were
+    /// applied during synthesis.
+    pub fn process_frame_with_analysis(
+        &mut self,
+        output: &mut [f32],
+        input: &[f32],
+    ) -> DenoiseFrameAnalysis {
+        process_frame(self, output, input)
+    }
+
+    /// Apply an externally supplied common suppression decision to this
+    /// channel while retaining this state's analysis/synthesis continuity.
+    ///
+    /// This is used for linked stereo: one detector owns the neural decision,
+    /// while each original channel receives the same frequency-dependent
+    /// filter. Values are defensively bounded and non-finite values suppress
+    /// the affected band rather than contaminating persistent state.
+    pub fn process_frame_with_band_gains(
+        &mut self,
+        output: &mut [f32],
+        input: &[f32],
+        band_gains: &[f32; DENOISE_BAND_COUNT],
+    ) {
+        process_frame_with_band_gains(self, output, input, band_gains);
     }
 
     /// Resets all internal state to zero without heap allocation.
@@ -393,11 +442,16 @@ fn pitch_filter(scratch: &mut DenoiseScratch) {
     }
 }
 
-fn process_frame(state: &mut DenoiseState, output: &mut [f32], input: &[f32]) -> f32 {
+fn process_frame(
+    state: &mut DenoiseState,
+    output: &mut [f32],
+    input: &[f32],
+) -> DenoiseFrameAnalysis {
     let a_hp = [-1.99599, 0.99600];
     let b_hp = [-2.0, 1.0];
     let DenoiseState { core, rnn, scratch } = state;
     let scratch = scratch.as_mut();
+    scratch.gains.fill(1.0);
     scratch.interpolated_gains.fill(1.0);
     scratch.vad[0] = 0.0;
 
@@ -423,5 +477,41 @@ fn process_frame(state: &mut DenoiseState, output: &mut [f32], input: &[f32]) ->
     }
 
     frame_synthesis(core, scratch, output);
-    scratch.vad[0]
+    DenoiseFrameAnalysis {
+        band_gains: scratch.gains,
+        vad_probability: scratch.vad[0].clamp(0.0, 1.0),
+    }
+}
+
+fn process_frame_with_band_gains(
+    state: &mut DenoiseState,
+    output: &mut [f32],
+    input: &[f32],
+    band_gains: &[f32; DENOISE_BAND_COUNT],
+) {
+    let a_hp = [-1.99599, 0.99600];
+    let b_hp = [-2.0, 1.0];
+    let DenoiseState { core, scratch, .. } = state;
+    let scratch = scratch.as_mut();
+
+    biquad(
+        &mut scratch.x_time[..],
+        &mut core.mem_hp_x[..],
+        input,
+        &b_hp[..],
+        &a_hp[..],
+    );
+    frame_analysis(core, scratch);
+    for (gain, supplied) in scratch.gains.iter_mut().zip(band_gains) {
+        *gain = if supplied.is_finite() {
+            supplied.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+    }
+    crate::interp_band_gain(&mut scratch.interpolated_gains, &scratch.gains);
+    for i in 0..FREQ_SIZE {
+        scratch.x_freq[i] *= scratch.interpolated_gains[i];
+    }
+    frame_synthesis(core, scratch, output);
 }

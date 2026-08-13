@@ -1,3 +1,10 @@
+# 0.5.13
+
+- Expose RNNoise's bounded, release-smoothed 22-band suppression decisions and
+  VAD probability instead of reconstructing a broadband gain from output RMS.
+- Apply one polarity-aware, energy-normalized stereo detector's band gains to
+  both original channels with fixed latency and the existing warm bypass path.
+
 # 0.5.12
 
 - Keep RNNoise state advancing through a latency-aligned, 480-sample bypass

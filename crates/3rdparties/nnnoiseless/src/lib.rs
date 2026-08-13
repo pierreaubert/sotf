@@ -1,4 +1,4 @@
-pub use denoise::DenoiseState;
+pub use denoise::{DENOISE_BAND_COUNT, DenoiseFrameAnalysis, DenoiseState};
 
 mod denoise;
 mod model;

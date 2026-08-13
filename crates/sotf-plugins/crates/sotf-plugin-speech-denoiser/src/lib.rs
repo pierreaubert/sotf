@@ -2,7 +2,11 @@ pub mod params;
 
 use crate::params::PARAMS as SP;
 use plugins_denoiser::rnnoise::RnnoiseBackend;
+pub use plugins_denoiser::rnnoise::{
+    RNNOISE_BAND_COUNT, RnnoiseAnalyzerData as SpeechDenoiserData,
+};
 use serde::{Deserialize, Serialize};
+use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_bridge;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
@@ -10,6 +14,8 @@ use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::plugin::{
     PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
 };
+use std::any::Any;
+use std::sync::Arc;
 
 /// RNNoise processes fixed 480-sample frames at 48 kHz.
 pub const SPEECH_DENOISER_FRAME_SIZE: usize = 480;
@@ -39,6 +45,8 @@ pub struct SpeechDenoiserPlugin {
     inner: RnnoiseBackend,
     cached_parameters: Vec<Parameter>,
     initialized_sample_rate: Option<u32>,
+    analyzer_cache: RealTimeCache<SpeechDenoiserData>,
+    published_model_frames: u64,
 }
 
 impl SpeechDenoiserPlugin {
@@ -53,6 +61,12 @@ impl SpeechDenoiserPlugin {
             inner: RnnoiseBackend::new(),
             cached_parameters: Vec::new(),
             initialized_sample_rate: None,
+            analyzer_cache: RealTimeCache::new_triplet(
+                SpeechDenoiserData::default(),
+                SpeechDenoiserData::default(),
+                SpeechDenoiserData::default(),
+            ),
+            published_model_frames: 0,
         };
         plugin.rebuild_cached_parameters();
         plugin
@@ -84,7 +98,7 @@ impl SpeechDenoiserPlugin {
 
 impl ParametricInPlacePlugin for SpeechDenoiserPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Speech Denoiser", "1.0.0", "SotF")
+        PluginInfo::new("Speech Denoiser", env!("CARGO_PKG_VERSION"), "SotF")
             .with_description("RNNoise speech denoiser")
     }
 
@@ -152,11 +166,17 @@ impl ParametricInPlacePlugin for SpeechDenoiserPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.inner.initialize(sample_rate, self.channels)?;
         self.initialized_sample_rate = Some(sample_rate);
+        self.published_model_frames = 0;
+        self.analyzer_cache
+            .update(|data| *data = SpeechDenoiserData::default());
         Ok(())
     }
 
     fn reset(&mut self) {
         self.inner.reset();
+        self.published_model_frames = 0;
+        self.analyzer_cache
+            .update(|data| *data = SpeechDenoiserData::default());
     }
 
     fn process_in_place(
@@ -202,7 +222,16 @@ impl ParametricInPlacePlugin for SpeechDenoiserPlugin {
                 context.num_frames
             ));
         }
+        let analyzer_data = self.inner.analyzer_data();
+        if analyzer_data.model_frames != self.published_model_frames {
+            self.analyzer_cache.update(|data| *data = analyzer_data);
+            self.published_model_frames = analyzer_data.model_frames;
+        }
         Ok(context.num_frames)
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        Some(self.analyzer_cache.load() as Arc<dyn Any + Send + Sync>)
     }
 
     /// Returns a fixed latency of 480 samples regardless of the `enabled`

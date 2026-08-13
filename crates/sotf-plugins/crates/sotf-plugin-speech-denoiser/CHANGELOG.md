@@ -1,3 +1,17 @@
+# 0.5.12
+
+## Fixes (2026-08-13 retained quality closure)
+
+- Replace broadband output/input RMS suppression inference with the RNNoise
+  model's actual 22 smoothed band gains.
+- Define stereo linking as one polarity-aware, energy-normalized detector whose
+  bounded spectral decisions are applied identically to both original channels.
+- Publish fixed-size band-gain, VAD-probability, and model-frame diagnostics
+  through a preallocated realtime cache without changing the v1 parameter
+  schema or the latency-aligned `enabled` crossfade.
+- Add deterministic voiced/noise, mono/stereo image, no-amplification,
+  partition, reset, factory/parameter parity, cold-allocation, and QA coverage.
+
 # 0.5.11
 
 ## Fixes (2026-08-12 review closure)

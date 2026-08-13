@@ -6,7 +6,8 @@ use sotf_host::parametric_plugin::ParameterSet;
 use sotf_host::plugin::ProcessContext;
 use sotf_host::{CountingAlloc, assert_no_allocs};
 use sotf_plugin_speech_denoiser::{
-    SPEECH_DENOISER_FRAME_SIZE, SpeechDenoiserPlugin, SpeechDenoiserPluginParams,
+    RNNOISE_BAND_COUNT, SPEECH_DENOISER_FRAME_SIZE, SpeechDenoiserData, SpeechDenoiserPlugin,
+    SpeechDenoiserPluginParams,
 };
 
 #[global_allocator]
@@ -19,6 +20,7 @@ fn integration_plugin_info_and_channels() {
     assert_eq!(plugin.input_channels(), 2);
     let info = plugin.info();
     assert_eq!(info.name, "Speech Denoiser");
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
 }
 
 #[test]
@@ -115,6 +117,14 @@ fn integration_reset_is_recoverable() {
 
     let latency_before = plugin.latency_samples();
     plugin.reset();
+    let reset_data = plugin
+        .get_data()
+        .unwrap()
+        .downcast::<SpeechDenoiserData>()
+        .unwrap();
+    assert_eq!(reset_data.model_frames, 0);
+    assert_eq!(reset_data.band_gains, [1.0; RNNOISE_BAND_COUNT]);
+    assert_eq!(reset_data.vad_probability, 0.0);
     let latency_after = plugin.latency_samples();
     assert_eq!(latency_after, latency_before);
 
@@ -157,8 +167,10 @@ fn first_callback_and_live_toggle_are_allocation_free_without_warmup() {
     plugin.initialize(48000).unwrap();
     let mut buffer = vec![0.1; SPEECH_DENOISER_FRAME_SIZE * 2];
     let context = ProcessContext::new(48000, SPEECH_DENOISER_FRAME_SIZE);
+    let held_initial_data = plugin.get_data().unwrap();
     assert_no_allocs("Speech Denoiser cold first callback", || {
         plugin.process_in_place(&mut buffer, &context).unwrap();
+        let _ = plugin.get_data().unwrap();
     });
     let mut values = ParameterSet::new();
     values.insert(ParameterId::from("enabled"), ParameterValue::Bool(false));
@@ -167,7 +179,55 @@ fn first_callback_and_live_toggle_are_allocation_free_without_warmup() {
     });
     assert_no_allocs("Speech Denoiser first bypass-transition callback", || {
         plugin.process_in_place(&mut buffer, &context).unwrap();
+        let _ = plugin.get_data().unwrap();
     });
+    drop(held_initial_data);
+}
+
+#[test]
+fn analyzer_data_is_fixed_size_bounded_and_updates_only_on_model_frames() {
+    let mut plugin = SpeechDenoiserPlugin::new(1);
+    plugin.initialize(48_000).unwrap();
+
+    let initial = plugin
+        .get_data()
+        .unwrap()
+        .downcast::<SpeechDenoiserData>()
+        .unwrap();
+    assert_eq!(initial.model_frames, 0);
+    assert_eq!(initial.band_gains.len(), RNNOISE_BAND_COUNT);
+
+    let mut partial = vec![0.1; SPEECH_DENOISER_FRAME_SIZE - 1];
+    let partial_context = ProcessContext::new(48_000, partial.len());
+    plugin
+        .process_in_place(&mut partial, &partial_context)
+        .unwrap();
+    assert_eq!(
+        plugin
+            .get_data()
+            .unwrap()
+            .downcast::<SpeechDenoiserData>()
+            .unwrap()
+            .model_frames,
+        0
+    );
+
+    let mut final_sample = [0.1];
+    plugin
+        .process_in_place(&mut final_sample, &ProcessContext::new(48_000, 1))
+        .unwrap();
+    let data = plugin
+        .get_data()
+        .unwrap()
+        .downcast::<SpeechDenoiserData>()
+        .unwrap();
+    assert_eq!(data.model_frames, 1);
+    assert!((0.0..=1.0).contains(&data.vad_probability));
+    assert!(
+        data.band_gains
+            .iter()
+            .all(|gain| gain.is_finite() && (0.0..=1.0).contains(gain))
+    );
 }
 
 #[test]

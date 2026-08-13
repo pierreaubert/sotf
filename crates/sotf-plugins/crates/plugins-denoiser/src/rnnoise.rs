@@ -1,10 +1,25 @@
 const RNNOISE_FRAME_SIZE: usize = 480;
-const LINKED_STEREO_COHERENCE_THRESHOLD: f32 = 0.75;
 const BYPASS_CROSSFADE_SAMPLES: usize = RNNOISE_FRAME_SIZE;
-/// Maximum fraction of a new detector gain applied at one 10 ms model frame.
-/// Keeping this frame-level (rather than sample-level) avoids image-changing
-/// gain modulation while preventing cancellation-prone stereo from pumping.
-const LINKED_STEREO_GAIN_SMOOTHING: f32 = 0.2;
+pub const RNNOISE_BAND_COUNT: usize = nnnoiseless::DENOISE_BAND_COUNT;
+
+/// Fixed-size, bounded monitoring snapshot for the most recently completed
+/// RNNoise model frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RnnoiseAnalyzerData {
+    pub band_gains: [f32; RNNOISE_BAND_COUNT],
+    pub vad_probability: f32,
+    pub model_frames: u64,
+}
+
+impl Default for RnnoiseAnalyzerData {
+    fn default() -> Self {
+        Self {
+            band_gains: [1.0; RNNOISE_BAND_COUNT],
+            vad_probability: 0.0,
+            model_frames: 0,
+        }
+    }
+}
 
 /// RNNoise speech-denoising backend.
 ///
@@ -15,6 +30,10 @@ const LINKED_STEREO_GAIN_SMOOTHING: f32 = 0.2;
 /// - A pre-seeded 480-sample output queue provides a constant startup delay.
 pub struct RnnoiseBackend {
     denoisers: Vec<Box<nnnoiseless::DenoiseState>>,
+    /// Stereo-only neural detector. Channel states apply this detector's
+    /// common band gains and therefore never make independent spatial
+    /// decisions.
+    stereo_detector: Option<Box<nnnoiseless::DenoiseState>>,
     channels: usize,
     sample_rate: u32,
     accum_buffers: Vec<Vec<f32>>,
@@ -32,10 +51,7 @@ pub struct RnnoiseBackend {
     /// Avoids stack growth inside the real-time audio callback.
     scratch_input: Vec<Vec<f32>>,
     scratch_output: Vec<Vec<f32>>,
-    /// Common gain used for linked stereo.  It is smoothed across model frames
-    /// so detector changes near L/R cancellation cannot create hard amplitude
-    /// steps on both channels.
-    linked_stereo_gain: f32,
+    analyzer_data: RnnoiseAnalyzerData,
     bypass_mix: f32,
     bypass_target: f32,
     bypass_initialized: bool,
@@ -51,6 +67,7 @@ impl RnnoiseBackend {
     pub fn new() -> Self {
         Self {
             denoisers: Vec::new(),
+            stereo_detector: None,
             channels: 0,
             sample_rate: 48000,
             accum_buffers: Vec::new(),
@@ -61,7 +78,7 @@ impl RnnoiseBackend {
             accum_fill: 0,
             scratch_input: Vec::new(),
             scratch_output: Vec::new(),
-            linked_stereo_gain: 1.0,
+            analyzer_data: RnnoiseAnalyzerData::default(),
             bypass_mix: 0.0,
             bypass_target: 0.0,
             bypass_initialized: false,
@@ -90,6 +107,7 @@ impl RnnoiseBackend {
         self.denoisers = (0..channels)
             .map(|_| nnnoiseless::DenoiseState::new())
             .collect::<Vec<_>>();
+        self.stereo_detector = (channels == 2).then(nnnoiseless::DenoiseState::new);
         self.accum_buffers = vec![vec![0.0; RNNOISE_FRAME_SIZE]; channels];
         // Ring buffer: 4× frame size so even back-to-back full frames never
         // wrap back onto unread data before the reader catches up.
@@ -104,7 +122,7 @@ impl RnnoiseBackend {
         self.output_write_pos = RNNOISE_FRAME_SIZE;
         self.output_read_pos = 0;
         self.accum_fill = 0;
-        self.linked_stereo_gain = 1.0;
+        self.analyzer_data = RnnoiseAnalyzerData::default();
         self.bypass_mix = 0.0;
         self.bypass_target = 0.0;
         self.bypass_initialized = false;
@@ -159,89 +177,37 @@ impl RnnoiseBackend {
                 }
 
                 if ch_count == 2 {
-                    let mut input_power_sum = 0.0f32;
-                    let mut output_power_sum = 0.0f32;
-                    // Use a mono detector only when the stereo signal is
-                    // sufficiently coherent.  The normalized coherence is
-                    // one for identical channels, zero for anti-phase, and
-                    // one half for a hard-panned signal.
-                    let mut mono_input_power_sum = 0.0f32;
-                    let mut stereo_input_power_sum = 0.0f32;
-                    for i in 0..RNNOISE_FRAME_SIZE {
-                        let mono = (self.accum_buffers[0][i] + self.accum_buffers[1][i]) * 0.5;
-                        self.scratch_input[0][i] = mono * 32768.0;
-                        mono_input_power_sum += mono * mono;
-                        stereo_input_power_sum += self.accum_buffers[0][i]
-                            * self.accum_buffers[0][i]
-                            + self.accum_buffers[1][i] * self.accum_buffers[1][i];
-                    }
+                    // Stereo policy: form one polarity-aware, energy-normalized
+                    // detector signal so anti-phase and hard-panned content
+                    // cannot disappear. The detector's smoothed 22-band model
+                    // gains are then applied identically to the original left
+                    // and right channels. No channel-specific neural decision
+                    // can alter inter-channel phase or level relationships.
+                    prepare_linked_stereo_detector(&self.accum_buffers, &mut self.scratch_input[0]);
+                    let analysis = self
+                        .stereo_detector
+                        .as_mut()
+                        .expect("stereo detector is prepared during initialization")
+                        .process_frame_with_analysis(
+                            &mut self.scratch_output[0],
+                            &self.scratch_input[0],
+                        );
+                    self.publish_analysis(analysis);
 
-                    let coherence = if stereo_input_power_sum > 1e-10 {
-                        (2.0 * mono_input_power_sum / stereo_input_power_sum).clamp(0.0, 1.0)
-                    } else {
-                        1.0
-                    };
-
-                    if coherence >= LINKED_STEREO_COHERENCE_THRESHOLD {
-                        // Coherent stereo: process one detector and apply
-                        // its frame-level gain to both channels.
-                        self.denoisers[0]
-                            .process_frame(&mut self.scratch_output[0], &self.scratch_input[0]);
-                        for i in 0..RNNOISE_FRAME_SIZE {
-                            let mono_out = self.scratch_output[0][i] / 32768.0;
-                            let ring_size = self.output_buffers[0].len();
-                            self.output_buffers[0][(self.output_write_pos + i) % ring_size] =
-                                self.accum_buffers[0][i];
-                            self.output_buffers[1][(self.output_write_pos + i) % ring_size] =
-                                self.accum_buffers[1][i];
-                            output_power_sum += mono_out * mono_out;
+                    for ch in 0..2 {
+                        self.scratch_input[ch].copy_from_slice(&self.accum_buffers[ch]);
+                        for sample in &mut self.scratch_input[ch] {
+                            *sample *= 32768.0;
                         }
-                        let gain = self.update_linked_stereo_gain(linked_stereo_gain(
-                            mono_input_power_sum,
-                            output_power_sum,
-                        ));
-                        for i in 0..RNNOISE_FRAME_SIZE {
-                            let ring_size = self.output_buffers[0].len();
-                            self.output_buffers[0][(self.output_write_pos + i) % ring_size] *= gain;
-                            self.output_buffers[1][(self.output_write_pos + i) % ring_size] *= gain;
-                        }
-                    } else {
-                        // Anti-phase, hard-panned, and otherwise wide
-                        // material can cancel in a mono detector.  Run
-                        // independent detectors to obtain a stable shared
-                        // frame gain, then apply that gain to the original
-                        // channels so the stereo image is not altered.
-                        for ch in 0..2 {
-                            self.scratch_input[ch].copy_from_slice(&self.accum_buffers[ch]);
-                            for sample in &mut self.scratch_input[ch] {
-                                *sample *= 32768.0;
-                            }
-                            self.denoisers[ch].process_frame(
-                                &mut self.scratch_output[ch],
-                                &self.scratch_input[ch],
-                            );
-                            for sample in &mut self.scratch_output[ch] {
-                                *sample /= 32768.0;
-                            }
-                            input_power_sum += self.accum_buffers[ch]
-                                .iter()
-                                .map(|sample| sample * sample)
-                                .sum::<f32>();
-                            output_power_sum += self.scratch_output[ch]
-                                .iter()
-                                .map(|sample| sample * sample)
-                                .sum::<f32>();
-                        }
-                        let gain = self.update_linked_stereo_gain(linked_stereo_gain(
-                            input_power_sum,
-                            output_power_sum,
-                        ));
-                        for i in 0..RNNOISE_FRAME_SIZE {
-                            let ring_size = self.output_buffers[0].len();
-                            self.output_buffers[0][(self.output_write_pos + i) % ring_size] =
-                                self.accum_buffers[0][i] * gain;
-                            self.output_buffers[1][(self.output_write_pos + i) % ring_size] =
-                                self.accum_buffers[1][i] * gain;
+                        self.denoisers[ch].process_frame_with_band_gains(
+                            &mut self.scratch_output[ch],
+                            &self.scratch_input[ch],
+                            &analysis.band_gains,
+                        );
+                        let ring_size = self.output_buffers[ch].len();
+                        for (i, &sample) in self.scratch_output[ch].iter().enumerate() {
+                            self.output_buffers[ch][(self.output_write_pos + i) % ring_size] =
+                                sample / 32768.0;
                         }
                     }
                 } else {
@@ -252,8 +218,11 @@ impl RnnoiseBackend {
                             *s *= 32768.0;
                         }
 
-                        self.denoisers[ch]
-                            .process_frame(&mut self.scratch_output[ch], &self.scratch_input[ch]);
+                        let analysis = self.denoisers[ch].process_frame_with_analysis(
+                            &mut self.scratch_output[ch],
+                            &self.scratch_input[ch],
+                        );
+                        self.publish_analysis(analysis);
 
                         for s in &mut self.scratch_output[ch] {
                             *s /= 32768.0;
@@ -282,7 +251,13 @@ impl RnnoiseBackend {
                 for ch in 0..ch_count {
                     let wet = self.output_buffers[ch][read];
                     let dry = self.dry_output_buffers[ch][read];
-                    buffer[frame * channels + ch] = wet + self.bypass_mix * (dry - wet);
+                    buffer[frame * channels + ch] = if self.bypass_mix >= 1.0 {
+                        dry
+                    } else if self.bypass_mix <= 0.0 {
+                        wet
+                    } else {
+                        wet + self.bypass_mix * (dry - wet)
+                    };
                 }
             }
             self.output_read_pos += to_write;
@@ -310,6 +285,9 @@ impl RnnoiseBackend {
         for denoiser in &mut self.denoisers {
             denoiser.reset();
         }
+        if let Some(detector) = &mut self.stereo_detector {
+            detector.reset();
+        }
         for buf in &mut self.accum_buffers {
             buf.fill(0.0);
         }
@@ -328,7 +306,7 @@ impl RnnoiseBackend {
         self.output_write_pos = RNNOISE_FRAME_SIZE;
         self.output_read_pos = 0;
         self.accum_fill = 0;
-        self.linked_stereo_gain = 1.0;
+        self.analyzer_data = RnnoiseAnalyzerData::default();
         self.bypass_mix = 0.0;
         self.bypass_target = 0.0;
         self.bypass_initialized = false;
@@ -343,16 +321,29 @@ impl RnnoiseBackend {
         RNNOISE_FRAME_SIZE
     }
 
-    fn update_linked_stereo_gain(&mut self, target: f32) -> f32 {
-        let target = if target.is_finite() {
-            target.clamp(0.0, 1.0)
+    pub fn analyzer_data(&self) -> RnnoiseAnalyzerData {
+        self.analyzer_data
+    }
+
+    fn publish_analysis(&mut self, analysis: nnnoiseless::DenoiseFrameAnalysis) {
+        for (published, model) in self
+            .analyzer_data
+            .band_gains
+            .iter_mut()
+            .zip(analysis.band_gains)
+        {
+            *published = if model.is_finite() {
+                model.clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+        }
+        self.analyzer_data.vad_probability = if analysis.vad_probability.is_finite() {
+            analysis.vad_probability.clamp(0.0, 1.0)
         } else {
-            self.linked_stereo_gain
+            0.0
         };
-        self.linked_stereo_gain +=
-            LINKED_STEREO_GAIN_SMOOTHING * (target - self.linked_stereo_gain);
-        self.linked_stereo_gain = self.linked_stereo_gain.clamp(0.0, 1.0);
-        self.linked_stereo_gain
+        self.analyzer_data.model_frames = self.analyzer_data.model_frames.saturating_add(1);
     }
 
     fn advance_bypass_mix(&mut self) {
@@ -365,18 +356,37 @@ impl RnnoiseBackend {
     }
 }
 
-fn linked_stereo_gain(mono_in: f32, mono_out: f32) -> f32 {
-    if mono_in <= 1e-10 || mono_out <= 0.0 || !mono_in.is_finite() || !mono_out.is_finite() {
-        return 0.0;
+fn prepare_linked_stereo_detector(accum: &[Vec<f32>], detector: &mut [f32]) {
+    let mut left_energy = 0.0_f32;
+    let mut right_energy = 0.0_f32;
+    let mut cross = 0.0_f32;
+    for (&left, &right) in accum[0].iter().zip(&accum[1]) {
+        left_energy += left * left;
+        right_energy += right * right;
+        cross += left * right;
     }
-    (mono_out / mono_in).sqrt().clamp(0.0, 1.0)
+    let polarity = if cross < 0.0 { -1.0 } else { 1.0 };
+    let mut combined_energy = 0.0_f32;
+    for (&left, &right) in accum[0].iter().zip(&accum[1]) {
+        let combined = left + polarity * right;
+        combined_energy += combined * combined;
+    }
+    let target_energy = 0.5 * (left_energy + right_energy);
+    let scale = if combined_energy > 1.0e-20 {
+        (target_energy / combined_energy).sqrt()
+    } else {
+        0.0
+    };
+    for ((sample, &left), &right) in detector.iter_mut().zip(&accum[0]).zip(&accum[1]) {
+        *sample = ((left + polarity * right) * scale).clamp(-1.0, 1.0) * 32768.0;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn assert_common_gain_preserves_stereo(input: &[f32]) {
+    fn assert_linked_spectral_processing_preserves_stereo(input: &[f32]) {
         let mut backend = RnnoiseBackend::new();
         backend.initialize(48000, 2).unwrap();
         let mut first = input.to_vec();
@@ -384,22 +394,40 @@ mod tests {
         let mut output = vec![0.0; RNNOISE_FRAME_SIZE * 2];
         backend.process(&mut output, RNNOISE_FRAME_SIZE, 2, false);
 
-        let input_energy: f32 = input.iter().map(|sample| sample * sample).sum();
-        let gain = input
+        // The detector and common-gain application must be invariant to an
+        // L/R channel swap. This directly rejects independent or
+        // channel-biased suppression decisions without assuming a broadband
+        // scalar gain (the exact defect this implementation removes).
+        let mut swapped_input = input.to_vec();
+        for frame in swapped_input.chunks_exact_mut(2) {
+            frame.swap(0, 1);
+        }
+        let mut swapped_backend = RnnoiseBackend::new();
+        swapped_backend.initialize(48000, 2).unwrap();
+        swapped_backend.process(&mut swapped_input, RNNOISE_FRAME_SIZE, 2, false);
+        let mut swapped_output = vec![0.0; RNNOISE_FRAME_SIZE * 2];
+        swapped_backend.process(&mut swapped_output, RNNOISE_FRAME_SIZE, 2, false);
+        for frame in swapped_output.chunks_exact_mut(2) {
+            frame.swap(0, 1);
+        }
+        let max_swap_error = output
             .iter()
-            .zip(&output)
-            .map(|(dry, wet)| dry * wet)
-            .sum::<f32>()
-            / input_energy;
-        assert!((0.0..=1.0).contains(&gain), "invalid linked gain: {gain}");
-        let max_residual = input
-            .iter()
-            .zip(&output)
-            .map(|(dry, wet)| (wet - gain * dry).abs())
+            .zip(&swapped_output)
+            .map(|(direct, swapped)| (direct - swapped).abs())
             .fold(0.0_f32, f32::max);
         assert!(
-            max_residual < 1e-5,
-            "linked processing changed the stereo image: residual={max_residual}"
+            max_swap_error < 1.0e-6,
+            "linked processing is channel-biased: swap error={max_swap_error}"
+        );
+        let data = backend.analyzer_data();
+        let swapped_data = swapped_backend.analyzer_data();
+        assert_eq!(data, swapped_data);
+        assert_eq!(data.model_frames, 2);
+        assert!((0.0..=1.0).contains(&data.vad_probability));
+        assert!(
+            data.band_gains
+                .iter()
+                .all(|gain| gain.is_finite() && (0.0..=1.0).contains(gain))
         );
     }
 
@@ -553,29 +581,56 @@ mod tests {
     }
 
     #[test]
-    fn linked_stereo_gain_is_finite_and_bounded() {
-        assert_eq!(linked_stereo_gain(0.0, 1.0), 0.0);
-        assert_eq!(linked_stereo_gain(1e-12, 1.0), 0.0);
-        assert_eq!(linked_stereo_gain(1.0, 4.0), 1.0);
-        assert_eq!(linked_stereo_gain(4.0, 1.0), 0.5);
-        assert_eq!(linked_stereo_gain(1.0, f32::NAN), 0.0);
+    fn model_gains_and_vad_are_bounded_for_voiced_and_noise_frames() {
+        for noise in [false, true] {
+            let mut backend = RnnoiseBackend::new();
+            backend.initialize(48000, 1).unwrap();
+            let mut rng = 0x1234_5678_u32;
+            for frame_index in 0..8 {
+                let mut frame = vec![0.0; RNNOISE_FRAME_SIZE];
+                for (index, sample) in frame.iter_mut().enumerate() {
+                    *sample = if noise {
+                        rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                        (rng as f32 / u32::MAX as f32 - 0.5) * 0.35
+                    } else {
+                        let phase = (frame_index * RNNOISE_FRAME_SIZE + index) as f32
+                            * 2.0
+                            * std::f32::consts::PI
+                            * 180.0
+                            / 48_000.0;
+                        0.25 * phase.sin() + 0.08 * (2.0 * phase).sin()
+                    };
+                }
+                backend.process(&mut frame, RNNOISE_FRAME_SIZE, 1, false);
+                let data = backend.analyzer_data();
+                assert_eq!(data.model_frames, (frame_index + 1) as u64);
+                assert!(data.vad_probability.is_finite());
+                assert!((0.0..=1.0).contains(&data.vad_probability));
+                assert!(
+                    data.band_gains
+                        .iter()
+                        .all(|gain| gain.is_finite() && (0.0..=1.0).contains(gain))
+                );
+            }
+        }
     }
 
     #[test]
-    fn linked_stereo_gain_changes_are_smoothed_between_frames() {
-        let mut backend = RnnoiseBackend::new();
-        backend.initialize(48000, 2).unwrap();
-
-        // A near-cancelled stereo frame can make the detector's target gain
-        // change substantially from one 10 ms model frame to the next.  The
-        // common gain must ramp rather than imposing a full-scale step on both
-        // channels, which would turn the cancellation-prone signal into
-        // audible amplitude modulation.
-        let first = backend.update_linked_stereo_gain(0.0);
-        assert!(first > 0.0 && first < 1.0);
-        let second = backend.update_linked_stereo_gain(1.0);
-        assert!(second > first && second < 1.0);
-        assert!((second - first) <= LINKED_STEREO_GAIN_SMOOTHING + 1e-6);
+    fn externally_applied_band_gains_cannot_request_amplification() {
+        let mut unity = nnnoiseless::DenoiseState::new();
+        let mut oversized = nnnoiseless::DenoiseState::new();
+        let input: Vec<f32> = (0..RNNOISE_FRAME_SIZE)
+            .map(|index| (index as f32 * 0.073).sin() * 8_000.0)
+            .collect();
+        let mut unity_output = [0.0; RNNOISE_FRAME_SIZE];
+        let mut oversized_output = [0.0; RNNOISE_FRAME_SIZE];
+        unity.process_frame_with_band_gains(&mut unity_output, &input, &[1.0; RNNOISE_BAND_COUNT]);
+        oversized.process_frame_with_band_gains(
+            &mut oversized_output,
+            &input,
+            &[2.0; RNNOISE_BAND_COUNT],
+        );
+        assert_eq!(oversized_output, unity_output);
     }
 
     #[test]
@@ -624,7 +679,7 @@ mod tests {
             input[2 * frame] = phase.sin() * 0.35;
             input[2 * frame + 1] = phase.cos() * 0.35;
         }
-        assert_common_gain_preserves_stereo(&input);
+        assert_linked_spectral_processing_preserves_stereo(&input);
     }
 
     #[test]
@@ -640,7 +695,7 @@ mod tests {
             input[2 * frame] = (left_state as f32 / u32::MAX as f32 - 0.5) * 0.7;
             input[2 * frame + 1] = (right_state as f32 / u32::MAX as f32 - 0.5) * 0.7;
         }
-        assert_common_gain_preserves_stereo(&input);
+        assert_linked_spectral_processing_preserves_stereo(&input);
     }
 
     #[test]

@@ -6,6 +6,12 @@
 
 Neural speech-focused denoiser (RNNoise-derived) optimized for voice and dialogue cleanup.
 
+At 48 kHz, mono uses RNNoise's native synthesis. Stereo uses one
+polarity-aware, energy-normalized detector and applies the same 22 bounded,
+smoothed model gains to both original channels. Arbitrary callback partitions
+retain a constant 480-sample latency. @code{get_data()} exposes fixed-size model
+gain and VAD diagnostics without making an external-corpus quality claim.
+
 @menu
 * speech-denoiser Plugin Parameters::
 * speech-denoiser Plugin Developer Guide::
@@ -38,4 +44,3 @@ All parameters reach the audio thread through the host's @code{rebuild_cached_pa
 @file{crates/sotf-plugins/crates/sotf-plugin-speech-denoiser/}
 
 Run the unit tests with @code{cargo test -p sotf-plugin-speech-denoiser}.
-
