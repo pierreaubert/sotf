@@ -1,3 +1,44 @@
+# 0.5.29
+
+- Make LR multiway splitting phase coherent: every emitted band now traverses
+  every Linkwitz-Riley split, and recombination is verified across the audio
+  band rather than only at DC.
+- Preserve stable crossover parameter identities by rejecting frequency
+  crossings instead of sorting and silently rebinding automation lanes.
+- Keep the 16-sample coefficient update phase across callback boundaries so
+  smoothed automation is callback-partition invariant.
+- Treat per-channel cutoff and routing changes as structural after initialize;
+  they require a graph rebuild instead of hard-resetting live filters.
+- Expose the compiled topology's exact runtime schema, use the crate version in
+  plugin metadata, and classify FIR processing as convolution cost.
+
+# 0.5.28
+
+## Fixes
+
+- Reject live FIR cutoff, extra-cutoff, and tap-count changes after
+  initialization. These changes rebuild convolution histories and can change
+  the graph's latency, so callers must rebuild the compiled graph instead of
+  allocating/resetting DSP state from the control path.
+- Reject per-channel cutoff writes at or above the current sample-rate Nyquist
+  guard instead of silently clamping the requested value to a different
+  operating frequency.
+
+# 0.5.27
+
+## Fixes
+
+- Construction now enforces one to four bands, unique finite positive cutoff
+  frequencies below the initial Nyquist limit, nonzero channels, and bounded
+  overflow-safe odd FIR tap counts.
+- Mode changes that would alter output channel layout are rejected and require
+  a graph rebuild; lowpass/highpass changes remain safe because their port
+  layout is identical.
+- Processing uses checked frame/channel products and exact input/output buffer
+  validation before indexing or advancing filter state.
+- Initialization rejects zero sample rate and cutoffs invalid for the new
+  Nyquist limit instead of silently changing the configured topology.
+
 # 0.5.26
 
 ## Fixes
@@ -167,3 +208,6 @@
 
 - Massive update to plugins, see individual markdown plan for details (wave 3)
 - Massive update to plugins, see individual markdown plan for details
+# 0.5.30
+
+- Mark crossover topology type structural in host-visible metadata, matching its rebuild-only setter.

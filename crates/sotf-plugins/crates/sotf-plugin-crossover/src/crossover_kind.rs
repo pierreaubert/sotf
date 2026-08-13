@@ -7,6 +7,13 @@ pub(super) enum CrossoverKind {
 }
 
 impl CrossoverKind {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Lr24 => "LR24",
+            Self::LinearPhase => "LinearPhase",
+        }
+    }
+
     pub(super) fn parse(crossover_type: &str) -> Result<Self, String> {
         if crossover_type.eq_ignore_ascii_case("lr24") || crossover_type.eq_ignore_ascii_case("lr4")
         {

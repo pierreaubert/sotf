@@ -318,15 +318,47 @@ fn test_crossover_mode_parameter() {
     p.initialize(48000).unwrap();
     assert_eq!(p.output_channels(), 1);
 
-    p.set_parameter(
-        ParameterId::from("mode"),
-        ParameterValue::String("both".to_string()),
-    )
-    .unwrap();
-    assert_eq!(p.output_channels(), 2);
+    assert!(
+        p.set_parameter(
+            ParameterId::from("mode"),
+            ParameterValue::String("both".to_string()),
+        )
+        .is_err()
+    );
+    assert_eq!(p.output_channels(), 1);
 
     let val = p.get_parameter(&ParameterId::from("mode"));
-    assert_eq!(val, Some(ParameterValue::String("both".to_string())));
+    assert_eq!(val, Some(ParameterValue::String("lowpass".to_string())));
+}
+
+#[test]
+fn rejects_more_than_four_bands_and_invalid_frequencies() {
+    assert!(
+        CrossoverPlugin::new_multiway(1, "LR24", 100.0, "both", &[500.0, 2_000.0, 8_000.0])
+            .is_err()
+    );
+    for frequency in [0.0, -1.0, f64::NAN, f64::INFINITY, 24_000.0] {
+        assert!(CrossoverPlugin::new(1, "LR24", frequency, "both").is_err());
+    }
+    assert!(CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[500.0]).is_err());
+    assert!(CrossoverPlugin::new(0, "LR24", 500.0, "both").is_err());
+}
+
+#[test]
+fn process_rejects_wrong_buffer_lengths() {
+    let mut plugin = CrossoverPlugin::new(2, "LR24", 1_000.0, "both").unwrap();
+    plugin.initialize(48_000).unwrap();
+    let context = ProcessContext::new(48_000, 4);
+    for input_len in [7, 9] {
+        let input = vec![0.0; input_len];
+        let mut output = vec![0.0; 16];
+        assert!(plugin.process(&input, &mut output, &context).is_err());
+    }
+    let input = vec![0.0; 8];
+    for output_len in [15, 17] {
+        let mut output = vec![0.0; output_len];
+        assert!(plugin.process(&input, &mut output, &context).is_err());
+    }
 }
 
 /// Changing frequency_2 on a 3-way crossover should not panic and should
@@ -379,8 +411,7 @@ fn test_3way_frequency_update_no_panic() {
     );
 }
 
-/// §2.1: Setting 'frequency' to a value larger than the second crossover
-/// point must not leave all_frequencies unsorted.
+/// Stable parameter IDs must never be silently rebound by sorting.
 #[test]
 fn test_all_frequencies_remain_sorted_after_primary_update() {
     // 3-way: [500, 5000]
@@ -389,11 +420,13 @@ fn test_all_frequencies_remain_sorted_after_primary_update() {
 
     // Move primary frequency above the second point — without the fix this
     // would leave all_frequencies = [10000, 5000] (unsorted).
-    p.set_parameter(
-        ParameterId::from("frequency"),
-        ParameterValue::Float(10000.0),
-    )
-    .unwrap();
+    assert!(
+        p.set_parameter(
+            ParameterId::from("frequency"),
+            ParameterValue::Float(10000.0),
+        )
+        .is_err()
+    );
 
     // Verify the vector is still in ascending order.
     let freqs = p.all_frequencies.clone();
@@ -406,11 +439,11 @@ fn test_all_frequencies_remain_sorted_after_primary_update() {
     );
     assert_eq!(
         p.get_parameter(&ParameterId::from("frequency")),
-        Some(ParameterValue::Float(5_000.0))
+        Some(ParameterValue::Float(500.0))
     );
     assert_eq!(
         p.get_parameter(&ParameterId::from("frequency_2")),
-        Some(ParameterValue::Float(10_000.0))
+        Some(ParameterValue::Float(5_000.0))
     );
 
     // Plugin must still produce finite output.
@@ -433,11 +466,13 @@ fn test_all_frequencies_remain_sorted_after_extra_freq_update() {
 
     // Move frequency_2 below the primary — without the fix this would leave
     // all_frequencies = [500, 200] (unsorted).
-    p.set_parameter(
-        ParameterId::from("frequency_2"),
-        ParameterValue::Float(200.0),
-    )
-    .unwrap();
+    assert!(
+        p.set_parameter(
+            ParameterId::from("frequency_2"),
+            ParameterValue::Float(200.0),
+        )
+        .is_err()
+    );
 
     let freqs = p.all_frequencies.clone();
     let mut sorted = freqs.clone();
@@ -449,11 +484,11 @@ fn test_all_frequencies_remain_sorted_after_extra_freq_update() {
     );
     assert_eq!(
         p.get_parameter(&ParameterId::from("frequency")),
-        Some(ParameterValue::Float(200.0))
+        Some(ParameterValue::Float(500.0))
     );
     assert_eq!(
         p.get_parameter(&ParameterId::from("frequency_2")),
-        Some(ParameterValue::Float(500.0))
+        Some(ParameterValue::Float(5_000.0))
     );
 }
 
@@ -550,32 +585,11 @@ fn test_reset_snaps_smoothers_to_target() {
     );
 }
 
-/// §1.4: initialize() at a low sample rate must not produce NaN/Inf even
-/// when the stored frequency exceeds Nyquist.
+/// A graph must be rebuilt with valid cutoffs when its sample rate changes.
 #[test]
-fn test_initialize_clamps_frequency_to_nyquist() {
-    // At 32 kHz, Nyquist is 16 kHz. A crossover at 20 kHz exceeds it.
+fn test_initialize_rejects_frequency_above_nyquist() {
     let mut p = CrossoverPlugin::new(1, "LR24", 20000.0, "low").unwrap();
-    p.initialize(32000).unwrap();
-
-    // The effective frequency must be below Nyquist.
-    let effective = p.freq_smoother.target();
-    assert!(
-        effective < 16000.0,
-        "Frequency must be clamped below Nyquist (16 kHz) at 32 kHz sample rate, got {}",
-        effective
-    );
-
-    // Output must be finite.
-    let num_frames = 1000;
-    let input = vec![1.0f32; num_frames];
-    let mut output = vec![0.0f32; num_frames];
-    p.process(&input, &mut output, &ProcessContext::new(32000, num_frames))
-        .unwrap();
-    assert!(
-        output.iter().all(|s| s.is_finite()),
-        "Output must be finite after initialize at low sample rate"
-    );
+    assert!(p.initialize(32000).is_err());
 }
 
 #[test]
@@ -705,7 +719,6 @@ fn test_per_channel_set_get_frequency_and_mode() {
         vec![PerChannelOpMode::Lowpass, PerChannelOpMode::Highpass],
     )
     .unwrap();
-    p.initialize(48000).unwrap();
     // Update channel 0 frequency.
     p.set_parameter(
         ParameterId::from("channel_frequency_0"),
@@ -726,35 +739,25 @@ fn test_per_channel_set_get_frequency_and_mode() {
         .get_parameter(&ParameterId::from("channel_mode_1"))
         .unwrap();
     assert_eq!(got, ParameterValue::String("passthrough".to_string()));
+    p.initialize(48000).unwrap();
+    assert!(
+        p.set_parameter(
+            ParameterId::from("channel_frequency_0"),
+            ParameterValue::Float(300.0),
+        )
+        .is_err()
+    );
 }
 
 #[test]
-fn test_per_channel_initialize_clamps_above_nyquist_into_stored_values() {
+fn test_per_channel_initialize_rejects_above_nyquist() {
     let mut p = CrossoverPlugin::new_per_channel(
         "LR24",
         vec![10_000.0, 20_000.0],
         vec![PerChannelOpMode::Lowpass, PerChannelOpMode::Lowpass],
     )
     .unwrap();
-    // Initialize at 32 kHz: Nyquist limit ~15840. Channel 1 (20kHz) clamps.
-    p.initialize(32000).unwrap();
-    let ch0 = p
-        .get_parameter(&ParameterId::from("channel_frequency_0"))
-        .unwrap();
-    let ch1 = p
-        .get_parameter(&ParameterId::from("channel_frequency_1"))
-        .unwrap();
-    assert_eq!(ch0, ParameterValue::Float(10_000.0));
-    // ch1 should reflect the clamped value, not the original 20 kHz.
-    match ch1 {
-        ParameterValue::Float(v) => {
-            assert!(
-                v < 20_000.0 && v > 15_000.0,
-                "ch1 frequency should be clamped to just below Nyquist, got {v}"
-            );
-        }
-        other => panic!("expected Float, got {other:?}"),
-    }
+    assert!(p.initialize(32000).is_err());
 }
 
 #[test]
@@ -796,13 +799,13 @@ fn test_per_channel_rejects_global_frequency_and_mode_writes() {
         .is_err(),
         "global mode write must be rejected in per-channel mode"
     );
-    // Per-channel writes still work.
+    // Per-channel writes are structural once initialized.
     assert!(
         p.set_parameter(
             ParameterId::from("channel_frequency_0"),
             ParameterValue::Float(150.0)
         )
-        .is_ok()
+        .is_err()
     );
 }
 
@@ -967,4 +970,18 @@ fn test_per_channel_from_params_fills_missing_modes_with_default() {
 fn test_per_channel_mode_from_str_invalid_errors() {
     assert!(PerChannelOpMode::from_str("notamode").is_err());
     assert!(PerChannelOpMode::from_str("").is_err());
+}
+
+#[test]
+fn crossover_type_is_structural_in_host_metadata() {
+    let plugin = CrossoverPlugin::new(2, "lr24", 1_000.0, "lowpass").unwrap();
+    let parameter = plugin
+        .parameters()
+        .into_iter()
+        .find(|parameter| parameter.id.as_str() == "type")
+        .expect("type parameter");
+    assert_eq!(
+        parameter.update_mode,
+        sotf_host::param_specs::UpdateMode::Structural
+    );
 }

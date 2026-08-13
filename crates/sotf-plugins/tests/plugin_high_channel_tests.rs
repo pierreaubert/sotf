@@ -50,7 +50,7 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
             "sofa_file": "",
         }),
         "crossover" => serde_json::json!({
-            "type": "lr4",
+            "type": "LR24",
             "frequency": 1000.0,
             "output": "lowpass",
         }),
@@ -73,7 +73,7 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
         "band_split" => serde_json::json!({
             "num_bands": 2,
             "frequency": 1000.0,
-            "type": "lr4",
+            "type": "LR24",
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -150,14 +150,11 @@ fn multi_channel_capable_plugins() -> Vec<&'static str> {
         "fletcher_munson",
         "denoiser",
         "wiener_denoiser",
-        "rnnoise",
-        "rnnoise_denoiser",
         "hiss_reducer",
         "hiss",
         "declick",
         "transient_repair",
         "pnd",
-        "varispeed",
         "channel_mute_solo",
         "loudness_monitor",
         "spectrum_analyzer",

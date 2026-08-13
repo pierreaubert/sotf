@@ -20,7 +20,7 @@ pub struct CrossoverPluginParams {
     #[serde(default)]
     pub channel_frequencies_hz: Vec<f32>,
     /// Per-channel mode for each channel in per-channel mode: "lowpass",
-    /// "highpass", or "mute" (channel outputs silence). Must match
+    /// "highpass", "mute" (channel outputs silence), or "passthrough". Must match
     /// `channel_frequencies_hz.len()` when both are non-empty.
     #[serde(default)]
     pub channel_modes: Vec<String>,

@@ -1,7 +1,7 @@
 //! Integration tests for sotf-plugin-crossover exercising the public `Plugin` trait.
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::plugin::{Plugin, PluginCostClass, ProcessContext};
 use sotf_plugin_crossover::{CrossoverPlugin, CrossoverPluginParams, PerChannelOpMode};
 
 const SR: u32 = 48000;
@@ -15,7 +15,7 @@ fn info_is_reported() {
     let plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
     let info = plugin.info();
     assert_eq!(info.name, "Crossover");
-    assert_eq!(info.version, "3.0.0");
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(info.author, "SotF");
     assert!(!info.description.is_empty());
 }
@@ -133,18 +133,67 @@ fn extra_frequency_roundtrip() {
 }
 
 #[test]
-fn fir_taps_roundtrip() {
+fn fir_taps_live_update_requires_graph_rebuild() {
     let mut plugin = CrossoverPlugin::new(1, "FIR", 1000.0, "low").unwrap();
     plugin.initialize(SR).unwrap();
 
-    plugin
-        .set_parameter(ParameterId::from("fir_taps"), ParameterValue::Int(101))
-        .unwrap();
+    let result = plugin.set_parameter(ParameterId::from("fir_taps"), ParameterValue::Int(101));
+    assert!(
+        result.is_err(),
+        "changing FIR length after initialization must require a graph rebuild"
+    );
     let got = plugin
         .get_parameter(&ParameterId::from("fir_taps"))
         .and_then(|v| v.as_int())
         .unwrap();
-    assert_eq!(got, 101);
+    assert_eq!(got, 1025);
+}
+
+#[test]
+fn fir_frequency_live_update_requires_graph_rebuild() {
+    let mut plugin = CrossoverPlugin::new(1, "FIR", 1000.0, "low").unwrap();
+    plugin.initialize(SR).unwrap();
+
+    let result = plugin.set_parameter(
+        ParameterId::from("frequency"),
+        ParameterValue::Float(2000.0),
+    );
+    assert!(
+        result.is_err(),
+        "changing FIR cutoff after initialization must require a graph rebuild"
+    );
+    assert_eq!(
+        plugin
+            .get_parameter(&ParameterId::from("frequency"))
+            .and_then(|v| v.as_float()),
+        Some(1000.0)
+    );
+}
+
+#[test]
+fn per_channel_live_cutoff_rejects_values_above_current_nyquist() {
+    let mut plugin = CrossoverPlugin::new_per_channel(
+        "LR24",
+        vec![1000.0],
+        vec![sotf_plugin_crossover::PerChannelOpMode::Lowpass],
+    )
+    .unwrap();
+    plugin.initialize(32_000).unwrap();
+
+    let result = plugin.set_parameter(
+        ParameterId::from("channel_frequency_0"),
+        ParameterValue::Float(16_000.0),
+    );
+    assert!(
+        result.is_err(),
+        "a live per-channel cutoff at/above the current Nyquist guard must be rejected"
+    );
+    assert_eq!(
+        plugin
+            .get_parameter(&ParameterId::from("channel_frequency_0"))
+            .and_then(|v| v.as_float()),
+        Some(1000.0)
+    );
 }
 
 #[test]
@@ -210,8 +259,6 @@ fn per_channel_frequency_roundtrip() {
         vec![PerChannelOpMode::Lowpass, PerChannelOpMode::Highpass],
     )
     .unwrap();
-    plugin.initialize(SR).unwrap();
-
     plugin
         .set_parameter(
             ParameterId::from("channel_frequency_1"),
@@ -223,6 +270,126 @@ fn per_channel_frequency_roundtrip() {
         .and_then(|v| v.as_float())
         .unwrap();
     assert!((got - 3500.0).abs() < 1e-3);
+}
+
+#[test]
+fn initialized_per_channel_controls_require_graph_rebuild() {
+    let mut plugin =
+        CrossoverPlugin::new_per_channel("LR24", vec![200.0], vec![PerChannelOpMode::Lowpass])
+            .unwrap();
+    plugin.initialize(SR).unwrap();
+    for (id, value) in [
+        ("channel_frequency_0", ParameterValue::Float(350.0)),
+        ("channel_mode_0", ParameterValue::String("mute".into())),
+    ] {
+        let error = plugin
+            .set_parameter(ParameterId::from(id), value)
+            .unwrap_err();
+        assert!(error.contains("rebuild"), "unexpected error: {error}");
+    }
+}
+
+#[test]
+fn multiway_frequency_crossing_is_rejected_without_rebinding_ids() {
+    let mut plugin = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[2_000.0]).unwrap();
+    plugin.initialize(SR).unwrap();
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("frequency"),
+                ParameterValue::Float(3_000.0),
+            )
+            .is_err()
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("frequency")),
+        Some(ParameterValue::Float(500.0))
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("frequency_2")),
+        Some(ParameterValue::Float(2_000.0))
+    );
+}
+
+fn render_partitioned(partitions: &[usize]) -> Vec<f32> {
+    let mut plugin = CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[2_000.0]).unwrap();
+    plugin.initialize(SR).unwrap();
+    plugin
+        .set_parameter(ParameterId::from("frequency"), ParameterValue::Float(800.0))
+        .unwrap();
+    let total: usize = partitions.iter().sum();
+    let input: Vec<f32> = (0..total)
+        .map(|frame| (frame as f32 * 0.071).sin() * 0.25)
+        .collect();
+    let mut output = Vec::with_capacity(total * 3);
+    let mut offset = 0;
+    for &frames in partitions {
+        let mut block = vec![0.0; frames * 3];
+        plugin
+            .process(&input[offset..offset + frames], &mut block, &ctx(frames))
+            .unwrap();
+        output.extend(block);
+        offset += frames;
+    }
+    output
+}
+
+#[test]
+fn smoothed_multiway_updates_are_callback_partition_invariant() {
+    let contiguous = render_partitioned(&[257]);
+    let partitioned = render_partitioned(&[3, 1, 17, 29, 64, 7, 83, 53]);
+    assert_eq!(contiguous.len(), partitioned.len());
+    let max_error = contiguous
+        .iter()
+        .zip(&partitioned)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(max_error < 1.0e-6, "partition error {max_error}");
+}
+
+#[test]
+fn compile_metadata_distinguishes_iir_and_fir_cost() {
+    let lr = CrossoverPlugin::new_multiway(2, "LR24", 500.0, "both", &[2_000.0]).unwrap();
+    let fir = CrossoverPlugin::new_multiway(2, "FIR", 500.0, "both", &[2_000.0]).unwrap();
+    assert_eq!(lr.compile_metadata().cost_class, PluginCostClass::Iir);
+    assert_eq!(
+        fir.compile_metadata().cost_class,
+        PluginCostClass::Convolution
+    );
+    assert!(!lr.compile_metadata().boundary);
+    assert!(fir.compile_metadata().boundary);
+}
+
+#[test]
+fn lr_multiway_recombination_is_allpass_at_every_test_frequency() {
+    for frequency_hz in [80.0_f32, 300.0, 700.0, 1_500.0, 3_500.0, 9_000.0] {
+        let mut plugin =
+            CrossoverPlugin::new_multiway(1, "LR24", 500.0, "both", &[2_000.0, 6_000.0]).unwrap();
+        plugin.initialize(SR).unwrap();
+        let frames = 16_384;
+        let input: Vec<f32> = (0..frames)
+            .map(|frame| {
+                (std::f32::consts::TAU * frequency_hz * frame as f32 / SR as f32).sin() * 0.25
+            })
+            .collect();
+        let mut split = vec![0.0; frames * 4];
+        plugin.process(&input, &mut split, &ctx(frames)).unwrap();
+        let start = frames / 2;
+        let input_rms =
+            (input[start..].iter().map(|x| x * x).sum::<f32>() / (frames - start) as f32).sqrt();
+        let output_rms = (split[start * 4..]
+            .chunks_exact(4)
+            .map(|bands| bands.iter().sum::<f32>())
+            .map(|x| x * x)
+            .sum::<f32>()
+            / (frames - start) as f32)
+            .sqrt();
+        let ratio = output_rms / input_rms;
+        assert!(
+            (ratio - 1.0).abs() < 0.01,
+            "{frequency_hz} Hz recombination ratio {ratio}"
+        );
+    }
 }
 
 #[test]
@@ -306,4 +473,40 @@ fn parameter_list_contains_frequency_and_mode() {
         .collect();
     assert!(ids.contains(&"frequency".to_string()));
     assert!(ids.contains(&"mode".to_string()));
+}
+
+#[test]
+fn runtime_schema_matches_compiled_topology() {
+    let regular = CrossoverPlugin::new_multiway(1, "FIR", 500.0, "both", &[2_000.0]).unwrap();
+    let ids: Vec<String> = regular
+        .parameters()
+        .into_iter()
+        .map(|p| p.id.0.to_string())
+        .collect();
+    assert_eq!(
+        ids,
+        ["type", "frequency", "mode", "frequency_2", "fir_taps"]
+    );
+
+    let per_channel = CrossoverPlugin::new_per_channel(
+        "LR24",
+        vec![200.0, 4000.0],
+        vec![PerChannelOpMode::Lowpass, PerChannelOpMode::Highpass],
+    )
+    .unwrap();
+    let ids: Vec<String> = per_channel
+        .parameters()
+        .into_iter()
+        .map(|p| p.id.0.to_string())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "type",
+            "channel_frequency_0",
+            "channel_mode_0",
+            "channel_frequency_1",
+            "channel_mode_1",
+        ]
+    );
 }

@@ -1,6 +1,6 @@
 use sotf_host::plugin::{Plugin, ProcessContext};
-use sotf_host::{CountingAlloc, run_standard_tests};
-use sotf_plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
+use sotf_host::{CountingAlloc, assert_no_allocs, run_standard_tests};
+use sotf_plugin_crossover::{CrossoverPlugin, CrossoverPluginParams, PerChannelOpMode};
 use std::f32::consts::PI;
 
 #[global_allocator]
@@ -60,6 +60,29 @@ fn main() {
 
     // Run standard QA tests
     run_standard_tests(&mut plugin, "CrossoverPlugin");
+
+    println!("\n[Test 2] Complex steady topologies");
+    for mut topology in [
+        CrossoverPlugin::new_multiway(2, "LR24", 300.0, "both", &[1_200.0, 5_000.0]).unwrap(),
+        CrossoverPlugin::new_multiway(2, "FIR", 300.0, "both", &[1_200.0, 5_000.0]).unwrap(),
+        CrossoverPlugin::new_per_channel(
+            "LR24",
+            vec![120.0, 2_500.0],
+            vec![PerChannelOpMode::Lowpass, PerChannelOpMode::Highpass],
+        )
+        .unwrap(),
+    ] {
+        topology.initialize(sample_rate).unwrap();
+        let input = vec![0.1; 256 * topology.input_channels()];
+        let mut output = vec![0.0; 256 * topology.output_channels()];
+        assert_no_allocs("complex crossover topology", || {
+            topology
+                .process(&input, &mut output, &ProcessContext::new(sample_rate, 256))
+                .unwrap();
+        });
+        assert!(output.iter().all(|sample| sample.is_finite()));
+    }
+    println!("  LR four-way, FIR four-way, and per-channel: PASS");
 
     println!("\n[ALL PASS] Crossover QA Complete.");
 }
