@@ -4,7 +4,11 @@ use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use clap_sys::audio_buffer::clap_audio_buffer;
 use clap_sys::entry::clap_plugin_entry;
 use clap_sys::events::{
-    CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_IS_LIVE, CLAP_EVENT_PARAM_VALUE, clap_event_param_value,
+    CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_IS_LIVE, CLAP_EVENT_MIDI, CLAP_EVENT_PARAM_VALUE,
+    CLAP_TRANSPORT_HAS_BEATS_TIMELINE, CLAP_TRANSPORT_HAS_SECONDS_TIMELINE,
+    CLAP_TRANSPORT_HAS_TEMPO, CLAP_TRANSPORT_HAS_TIME_SIGNATURE, CLAP_TRANSPORT_IS_LOOP_ACTIVE,
+    CLAP_TRANSPORT_IS_PLAYING, CLAP_TRANSPORT_IS_RECORDING, clap_event_midi,
+    clap_event_param_value, clap_event_transport,
 };
 use clap_sys::events::{clap_event_header, clap_input_events, clap_output_events};
 use clap_sys::ext::audio_ports::{
@@ -17,6 +21,7 @@ use clap_sys::ext::params::{
 };
 use clap_sys::ext::state::{CLAP_EXT_STATE, clap_plugin_state};
 use clap_sys::factory::plugin_factory::{CLAP_PLUGIN_FACTORY_ID, clap_plugin_factory};
+use clap_sys::fixedpoint::{CLAP_BEATTIME_FACTOR, CLAP_SECTIME_FACTOR};
 use clap_sys::host::clap_host;
 use clap_sys::plugin::{clap_plugin, clap_plugin_descriptor};
 use clap_sys::process::{CLAP_PROCESS_ERROR, clap_process};
@@ -27,9 +32,9 @@ use std::collections::HashMap;
 use std::ffi::{CStr, c_char, c_void};
 use std::path::{Path, PathBuf};
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-const MAX_FRAMES_PER_BLOCK: usize = 65_536;
 const MAX_EXPOSED_PARAMETERS: u32 = 16_384;
 
 #[derive(Clone, Copy)]
@@ -44,6 +49,19 @@ struct ClapParameterBinding {
     clap_id: u32,
     cookie: *mut c_void,
     kind: ClapParameterKind,
+}
+
+#[derive(Default)]
+struct ClapHostRequests {
+    restart: AtomicBool,
+    process: AtomicBool,
+    callback: AtomicBool,
+}
+
+struct ClapInputEventLists<'a> {
+    parameters: &'a [clap_event_param_value],
+    automation: &'a [clap_event_param_value],
+    midi: &'a [clap_event_midi],
 }
 
 struct ClapLibrary {
@@ -158,6 +176,7 @@ impl ClapLibrary {
 pub(super) struct ClapBackend {
     _library: Arc<ClapLibrary>,
     host: Box<clap_host>,
+    host_requests: Box<ClapHostRequests>,
     plugin: *const clap_plugin,
     metadata: NativePluginMetadata,
     input_storage: Vec<f32>,
@@ -167,6 +186,9 @@ pub(super) struct ClapBackend {
     parameters: Vec<Parameter>,
     parameter_bindings: Vec<ClapParameterBinding>,
     pending_parameter_events: Vec<clap_event_param_value>,
+    automation_events: Vec<clap_event_param_value>,
+    midi_events: Vec<clap_event_midi>,
+    max_block_frames: usize,
     steady_time: i64,
     active: bool,
     processing: bool,
@@ -224,12 +246,19 @@ impl Drop for ClapLifecycleGuard {
 }
 
 impl ClapBackend {
-    pub(super) fn load(descriptor: &PluginDescriptor, sample_rate: u32) -> Result<Self, String> {
+    pub(super) fn load(
+        descriptor: &PluginDescriptor,
+        sample_rate: u32,
+        max_block_frames: usize,
+    ) -> Result<Self, String> {
         let library_path = resolve_dynamic_library_path(descriptor)?;
         let library = ClapLibrary::load(&library_path)?;
+        let host_requests = Box::<ClapHostRequests>::default();
         let host = Box::new(clap_host {
             clap_version: CLAP_VERSION,
-            host_data: ptr::null_mut(),
+            host_data: (&*host_requests as *const ClapHostRequests)
+                .cast_mut()
+                .cast(),
             name: c"SOTF".as_ptr(),
             vendor: c"spinorama.org".as_ptr(),
             url: c"https://spinorama.org".as_ptr(),
@@ -285,7 +314,14 @@ impl ClapBackend {
         // yet been exposed or used by another thread. `lifecycle` records each
         // completed transition so every error path unwinds correctly.
         let (input_channels, output_channels) = unsafe {
-            Self::initialize_instance(plugin, &metadata, descriptor, sample_rate, &mut lifecycle)?
+            Self::initialize_instance(
+                plugin,
+                &metadata,
+                descriptor,
+                sample_rate,
+                max_block_frames,
+                &mut lifecycle,
+            )?
         };
 
         let mut metadata = metadata;
@@ -298,15 +334,19 @@ impl ClapBackend {
         let mut backend = Self {
             _library: library,
             host,
+            host_requests,
             plugin,
             metadata,
-            input_storage: vec![0.0; input_channels.saturating_mul(MAX_FRAMES_PER_BLOCK)],
-            output_storage: vec![0.0; output_channels.saturating_mul(MAX_FRAMES_PER_BLOCK)],
+            input_storage: vec![0.0; input_channels.saturating_mul(max_block_frames)],
+            output_storage: vec![0.0; output_channels.saturating_mul(max_block_frames)],
             input_ptrs: Vec::with_capacity(input_channels),
             output_ptrs: Vec::with_capacity(output_channels),
             parameters,
             parameter_bindings,
             pending_parameter_events: Vec::with_capacity(pending_event_capacity),
+            automation_events: Vec::with_capacity(1024),
+            midi_events: Vec::with_capacity(1024),
+            max_block_frames,
             steady_time: 0,
             active: true,
             processing: true,
@@ -321,6 +361,7 @@ impl ClapBackend {
         metadata: &NativePluginMetadata,
         requested: &PluginDescriptor,
         sample_rate: u32,
+        max_block_frames: usize,
         lifecycle: &mut ClapLifecycleGuard,
     ) -> Result<(usize, usize), String> {
         // SAFETY: The caller guarantees `plugin` came from the live CLAP
@@ -340,15 +381,10 @@ impl ClapBackend {
             let activate = (*plugin).activate.ok_or_else(|| {
                 format!("CLAP plugin '{}' has no activate callback", metadata.name)
             })?;
-            if !activate(
-                plugin,
-                f64::from(sample_rate),
-                1,
-                MAX_FRAMES_PER_BLOCK as u32,
-            ) {
+            if !activate(plugin, f64::from(sample_rate), 1, max_block_frames as u32) {
                 return Err(format!(
-                    "CLAP plugin '{}' rejected {} Hz activation with block range 1..={MAX_FRAMES_PER_BLOCK}",
-                    metadata.name, sample_rate
+                    "CLAP plugin '{}' rejected {} Hz activation with block range 1..={max_block_frames}",
+                    metadata.name, sample_rate,
                 ));
             }
             lifecycle.active = true;
@@ -372,12 +408,12 @@ impl ClapBackend {
     fn rebuild_channel_pointers(&mut self) {
         self.input_ptrs.clear();
         for channel in 0..self.metadata.input_channels {
-            // SAFETY: Every channel owns a disjoint MAX_FRAMES_PER_BLOCK slice
+            // SAFETY: Every channel owns a disjoint negotiated-size slice
             // in the fixed-capacity storage, which is never resized afterwards.
             self.input_ptrs.push(unsafe {
                 self.input_storage
                     .as_mut_ptr()
-                    .add(channel * MAX_FRAMES_PER_BLOCK)
+                    .add(channel * self.max_block_frames)
             });
         }
         self.output_ptrs.clear();
@@ -386,7 +422,7 @@ impl ClapBackend {
             self.output_ptrs.push(unsafe {
                 self.output_storage
                     .as_mut_ptr()
-                    .add(channel * MAX_FRAMES_PER_BLOCK)
+                    .add(channel * self.max_block_frames)
             });
         }
     }
@@ -491,14 +527,15 @@ impl NativeExternalPluginBackend for ClapBackend {
         &mut self,
         input: &[f32],
         output: &mut [f32],
-        frames: usize,
         input_channels: usize,
         output_channels: usize,
+        context: &crate::plugin::ProcessContext,
     ) -> Result<(), String> {
-        if frames > MAX_FRAMES_PER_BLOCK {
+        let frames = context.num_frames;
+        if frames > self.max_block_frames {
             return Err(format!(
-                "CLAP plugin '{}' received {frames} frames, exceeding its activated maximum {MAX_FRAMES_PER_BLOCK}",
-                self.metadata.name
+                "CLAP plugin '{}' received {frames} frames, exceeding its activated maximum {}",
+                self.metadata.name, self.max_block_frames,
             ));
         }
         if input_channels != self.metadata.input_channels
@@ -512,14 +549,86 @@ impl NativeExternalPluginBackend for ClapBackend {
 
         for frame in 0..frames {
             for channel in 0..input_channels {
-                self.input_storage[channel * MAX_FRAMES_PER_BLOCK + frame] =
+                self.input_storage[channel * self.max_block_frames + frame] =
                     input[frame * input_channels + channel];
             }
         }
         for channel in 0..output_channels {
             self.output_storage
-                [channel * MAX_FRAMES_PER_BLOCK..channel * MAX_FRAMES_PER_BLOCK + frames]
+                [channel * self.max_block_frames..channel * self.max_block_frames + frames]
                 .fill(0.0);
+        }
+
+        self.midi_events.clear();
+        self.automation_events.clear();
+        if context.parameter_events.len() > self.automation_events.capacity() {
+            return Err(format!(
+                "CLAP plugin '{}' received {} automation events, exceeding the realtime capacity {}",
+                self.metadata.name,
+                context.parameter_events.len(),
+                self.automation_events.capacity()
+            ));
+        }
+        for event in context.parameter_events {
+            if event.sample_offset >= frames {
+                return Err(format!(
+                    "CLAP plugin '{}' received automation offset {} outside a {frames}-frame block",
+                    self.metadata.name, event.sample_offset
+                ));
+            }
+            let binding = self
+                .parameter_bindings
+                .iter()
+                .find(|binding| binding.host_id == event.parameter_id)
+                .ok_or_else(|| {
+                    format!(
+                        "CLAP plugin '{}' has no automated parameter '{}'",
+                        self.metadata.name, event.parameter_id
+                    )
+                })?;
+            self.automation_events.push(clap_event_param_value {
+                header: clap_event_header {
+                    size: std::mem::size_of::<clap_event_param_value>() as u32,
+                    time: event.sample_offset as u32,
+                    space_id: CLAP_CORE_EVENT_SPACE_ID,
+                    type_: CLAP_EVENT_PARAM_VALUE,
+                    flags: CLAP_EVENT_IS_LIVE,
+                },
+                param_id: binding.clap_id,
+                cookie: binding.cookie,
+                note_id: -1,
+                port_index: -1,
+                channel: -1,
+                key: -1,
+                value: parameter_value_as_f64(&event.value),
+            });
+        }
+        if context.midi_events.len() > self.midi_events.capacity() {
+            return Err(format!(
+                "CLAP plugin '{}' received {} MIDI events, exceeding the realtime capacity {}",
+                self.metadata.name,
+                context.midi_events.len(),
+                self.midi_events.capacity()
+            ));
+        }
+        for event in context.midi_events {
+            if event.sample_offset >= frames || event.message.len == 0 {
+                return Err(format!(
+                    "CLAP plugin '{}' received MIDI offset {} outside a {frames}-frame block",
+                    self.metadata.name, event.sample_offset
+                ));
+            }
+            self.midi_events.push(clap_event_midi {
+                header: clap_event_header {
+                    size: std::mem::size_of::<clap_event_midi>() as u32,
+                    time: event.sample_offset as u32,
+                    space_id: CLAP_CORE_EVENT_SPACE_ID,
+                    type_: CLAP_EVENT_MIDI,
+                    flags: CLAP_EVENT_IS_LIVE,
+                },
+                port_index: 0,
+                data: event.message.data,
+            });
         }
 
         let input_buffer = clap_audio_buffer {
@@ -536,21 +645,27 @@ impl NativeExternalPluginBackend for ClapBackend {
             latency: 0,
             constant_mask: 0,
         };
+        let event_lists = ClapInputEventLists {
+            parameters: &self.pending_parameter_events,
+            automation: &self.automation_events,
+            midi: &self.midi_events,
+        };
         let input_events = clap_input_events {
-            ctx: (&self.pending_parameter_events as *const Vec<clap_event_param_value>)
+            ctx: (&event_lists as *const ClapInputEventLists)
                 .cast_mut()
                 .cast(),
-            size: Some(parameter_event_count),
-            get: Some(parameter_event_get),
+            size: Some(input_event_count),
+            get: Some(input_event_get),
         };
         let output_events = clap_output_events {
             ctx: ptr::null_mut(),
             try_push: Some(discard_output_event),
         };
+        let transport = clap_transport(context);
         let process = clap_process {
             steady_time: self.steady_time,
             frames_count: frames as u32,
-            transport: ptr::null(),
+            transport: &transport,
             audio_inputs: if input_channels == 0 {
                 ptr::null()
             } else {
@@ -580,6 +695,17 @@ impl NativeExternalPluginBackend for ClapBackend {
             callback(self.plugin, &process)
         };
         self.pending_parameter_events.clear();
+        self.automation_events.clear();
+        self.midi_events.clear();
+        if self.host_requests.restart.swap(false, Ordering::AcqRel) {
+            return Err(format!(
+                "CLAP plugin '{}' requested a host restart/graph rebuild",
+                self.metadata.name
+            ));
+        }
+        let _requested_tail_process = self.host_requests.process.swap(false, Ordering::AcqRel);
+        let _requested_main_thread_callback =
+            self.host_requests.callback.swap(false, Ordering::AcqRel);
         if status == CLAP_PROCESS_ERROR {
             output[..frames * output_channels].fill(0.0);
             return Err(format!(
@@ -591,7 +717,7 @@ impl NativeExternalPluginBackend for ClapBackend {
         for frame in 0..frames {
             for channel in 0..output_channels {
                 output[frame * output_channels + channel] =
-                    self.output_storage[channel * MAX_FRAMES_PER_BLOCK + frame];
+                    self.output_storage[channel * self.max_block_frames + frame];
             }
         }
         self.steady_time = self.steady_time.saturating_add(frames as i64);
@@ -1007,23 +1133,49 @@ unsafe extern "C" fn host_get_extension(
     ptr::null()
 }
 
-unsafe extern "C" fn host_request_restart(_host: *const clap_host) {}
-unsafe extern "C" fn host_request_process(_host: *const clap_host) {}
-unsafe extern "C" fn host_request_callback(_host: *const clap_host) {}
+unsafe fn host_requests(host: *const clap_host) -> Option<&'static ClapHostRequests> {
+    if host.is_null() {
+        return None;
+    }
+    // SAFETY: `host_data` points at the backend-owned request flags for the
+    // entire CLAP instance lifetime.
+    unsafe { ((*host).host_data as *const ClapHostRequests).as_ref() }
+}
 
-unsafe extern "C" fn parameter_event_count(list: *const clap_input_events) -> u32 {
+unsafe extern "C" fn host_request_restart(host: *const clap_host) {
+    if let Some(requests) = unsafe { host_requests(host) } {
+        requests.restart.store(true, Ordering::Release);
+    }
+}
+unsafe extern "C" fn host_request_process(host: *const clap_host) {
+    if let Some(requests) = unsafe { host_requests(host) } {
+        requests.process.store(true, Ordering::Release);
+    }
+}
+unsafe extern "C" fn host_request_callback(host: *const clap_host) {
+    if let Some(requests) = unsafe { host_requests(host) } {
+        requests.callback.store(true, Ordering::Release);
+    }
+}
+
+unsafe extern "C" fn input_event_count(list: *const clap_input_events) -> u32 {
     if list.is_null() {
         return 0;
     }
     // SAFETY: Process creates `ctx` from a live event Vec for the duration of
     // the plugin callback.
     unsafe {
-        let events = &*((*list).ctx.cast::<Vec<clap_event_param_value>>());
-        events.len().min(u32::MAX as usize) as u32
+        let events = &*((*list).ctx.cast::<ClapInputEventLists>());
+        events
+            .parameters
+            .len()
+            .saturating_add(events.automation.len())
+            .saturating_add(events.midi.len())
+            .min(u32::MAX as usize) as u32
     }
 }
 
-unsafe extern "C" fn parameter_event_get(
+unsafe extern "C" fn input_event_get(
     list: *const clap_input_events,
     index: u32,
 ) -> *const clap_event_header {
@@ -1032,10 +1184,80 @@ unsafe extern "C" fn parameter_event_get(
     }
     // SAFETY: Same event-list lifetime invariant as `parameter_event_count`.
     unsafe {
-        let events = &*((*list).ctx.cast::<Vec<clap_event_param_value>>());
-        events
-            .get(index as usize)
-            .map_or(ptr::null(), |event| &event.header)
+        let events = &*((*list).ctx.cast::<ClapInputEventLists>());
+        let index = index as usize;
+        if let Some(event) = events.parameters.get(index) {
+            &event.header
+        } else if let Some(event) = events
+            .automation
+            .get(index.saturating_sub(events.parameters.len()))
+        {
+            &event.header
+        } else {
+            let parameter_count = events
+                .parameters
+                .len()
+                .saturating_add(events.automation.len());
+            events
+                .midi
+                .get(index.saturating_sub(parameter_count))
+                .map_or(ptr::null(), |event| &event.header)
+        }
+    }
+}
+
+fn clap_transport(context: &crate::plugin::ProcessContext) -> clap_event_transport {
+    let transport = context.transport;
+    let mut flags = CLAP_TRANSPORT_HAS_TEMPO
+        | CLAP_TRANSPORT_HAS_BEATS_TIMELINE
+        | CLAP_TRANSPORT_HAS_SECONDS_TIMELINE
+        | CLAP_TRANSPORT_HAS_TIME_SIGNATURE;
+    if transport.playing {
+        flags |= CLAP_TRANSPORT_IS_PLAYING;
+    }
+    if transport.recording {
+        flags |= CLAP_TRANSPORT_IS_RECORDING;
+    }
+    if transport.looping {
+        flags |= CLAP_TRANSPORT_IS_LOOP_ACTIVE;
+    }
+    let samples_to_seconds = |sample: u64| {
+        (sample as f64 / f64::from(context.sample_rate) * CLAP_SECTIME_FACTOR as f64) as i64
+    };
+    let samples_to_beats = |sample: u64| {
+        (sample as f64 / f64::from(context.sample_rate) * transport.bpm / 60.0
+            * CLAP_BEATTIME_FACTOR as f64) as i64
+    };
+    let (loop_start_beats, loop_end_beats, loop_start_seconds, loop_end_seconds) =
+        transport.loop_range.map_or((0, 0, 0, 0), |range| {
+            (
+                samples_to_beats(range.start_sample),
+                samples_to_beats(range.end_sample),
+                samples_to_seconds(range.start_sample),
+                samples_to_seconds(range.end_sample),
+            )
+        });
+    clap_event_transport {
+        header: clap_event_header {
+            size: std::mem::size_of::<clap_event_transport>() as u32,
+            time: 0,
+            space_id: CLAP_CORE_EVENT_SPACE_ID,
+            type_: 0,
+            flags: 0,
+        },
+        flags,
+        song_pos_beats: (transport.ppq_position * CLAP_BEATTIME_FACTOR as f64) as i64,
+        song_pos_seconds: samples_to_seconds(transport.sample_position),
+        tempo: transport.bpm,
+        tempo_inc: 0.0,
+        loop_start_beats,
+        loop_end_beats,
+        loop_start_seconds,
+        loop_end_seconds,
+        bar_start: 0,
+        bar_number: 0,
+        tsig_num: u16::from(transport.time_signature.numerator),
+        tsig_denom: u16::from(transport.time_signature.denominator),
     }
 }
 
@@ -1129,6 +1351,7 @@ unsafe extern "C" fn state_read(
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+    use crate::plugin::{LoopRange, ProcessContext, TransportInfo};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static NEXT_EVENT: AtomicUsize = AtomicUsize::new(0);
@@ -1214,6 +1437,66 @@ mod lifecycle_tests {
         // this callback-table validation.
         let error = unsafe { validate_clap_lifecycle_callbacks(&plugin, "test") }.unwrap_err();
         assert!(error.contains("no deactivate callback"), "{error}");
+    }
+
+    #[test]
+    fn clap_event_list_preserves_nonzero_midi_offset_and_transport() {
+        let midi = [clap_event_midi {
+            header: clap_event_header {
+                size: std::mem::size_of::<clap_event_midi>() as u32,
+                time: 37,
+                space_id: CLAP_CORE_EVENT_SPACE_ID,
+                type_: CLAP_EVENT_MIDI,
+                flags: 0,
+            },
+            port_index: 0,
+            data: [0x90, 60, 100],
+        }];
+        let lists = ClapInputEventLists {
+            parameters: &[],
+            automation: &[],
+            midi: &midi,
+        };
+        let list = clap_input_events {
+            ctx: (&lists as *const ClapInputEventLists).cast_mut().cast(),
+            size: Some(input_event_count),
+            get: Some(input_event_get),
+        };
+        assert_eq!(unsafe { input_event_count(&list) }, 1);
+        assert_eq!(unsafe { (*input_event_get(&list, 0)).time }, 37);
+
+        let transport = TransportInfo::at_sample(48_000, 48_000)
+            .with_tempo(90.0, 48_000)
+            .with_loop_range(LoopRange::new(24_000, 72_000));
+        let translated = clap_transport(&ProcessContext::new(48_000, 64).with_transport(transport));
+        assert_eq!(translated.tempo, 90.0);
+        assert_eq!(translated.song_pos_seconds, CLAP_SECTIME_FACTOR);
+        assert_ne!(translated.flags & CLAP_TRANSPORT_IS_LOOP_ACTIVE, 0);
+    }
+
+    #[test]
+    fn clap_host_callbacks_publish_requests() {
+        let requests = Box::<ClapHostRequests>::default();
+        let host = clap_host {
+            clap_version: CLAP_VERSION,
+            host_data: (&*requests as *const ClapHostRequests).cast_mut().cast(),
+            name: ptr::null(),
+            vendor: ptr::null(),
+            url: ptr::null(),
+            version: ptr::null(),
+            get_extension: None,
+            request_restart: None,
+            request_process: None,
+            request_callback: None,
+        };
+        unsafe {
+            host_request_restart(&host);
+            host_request_process(&host);
+            host_request_callback(&host);
+        }
+        assert!(requests.restart.load(Ordering::Acquire));
+        assert!(requests.process.load(Ordering::Acquire));
+        assert!(requests.callback.load(Ordering::Acquire));
     }
 
     #[test]

@@ -5,12 +5,14 @@ use crate::external_plugin::{
     plan_external_plugin_hosting,
 };
 use crate::external_plugin_host::{ExternalPluginHostBlockStatus, ExternalPluginHostProxy};
+use crate::external_plugin_ipc::{PluginIpcControlRequest, PluginIpcControlResponse};
 use crate::external_plugin_ipc::{PluginIpcLayout, PluginSandboxRuntimeStatus};
 use crate::external_plugin_process::{ExternalPluginProcessEvent, ExternalPluginProcessSupervisor};
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
 };
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -22,6 +24,7 @@ pub struct IsolatedExternalPlugin {
     pub(super) supervisor: Option<ExternalPluginProcessSupervisor>,
     pub(super) input_channels: usize,
     pub(super) output_channels: usize,
+    pub(super) latency_samples: usize,
     pub(super) launch_error: Option<String>,
     pub(super) consecutive_block_failures: u32,
     pub(super) max_consecutive_block_failures: u32,
@@ -29,6 +32,9 @@ pub struct IsolatedExternalPlugin {
     pub(super) quarantine_reason: Option<String>,
     pub(super) opaque_state: Vec<u8>,
     pub(super) state_file_path: Option<PathBuf>,
+    pub(super) parameters: Vec<Parameter>,
+    pub(super) parameter_values: HashMap<ParameterId, ParameterValue>,
+    pub(super) control_timeout: Duration,
 }
 
 impl IsolatedExternalPlugin {
@@ -39,6 +45,12 @@ impl IsolatedExternalPlugin {
     ) -> Result<Self, String> {
         if sample_rate == 0 {
             return Err("sample rate must be positive".into());
+        }
+        if descriptor.audio_outputs == 0 {
+            return Err(format!(
+                "isolated external plugin '{}' has unprobed channel metadata; probe the native plugin before allocating IPC",
+                descriptor.name
+            ));
         }
         if let Some(state) = config.initial_state.as_ref() {
             state.validate()?;
@@ -71,13 +83,16 @@ impl IsolatedExternalPlugin {
         let proxy = ExternalPluginHostProxy::new(layout, config.deadline)?;
         let descriptor_json = serde_json::to_string(&descriptor)
             .map_err(|err| format!("failed to serialize external plugin descriptor: {err}"))?;
-        let state_file_path = if let Some(state) = config.initial_state.as_ref() {
-            let path = proxy.shared_path().with_extension("state.json");
-            write_initial_state_file(&path, state)?;
-            Some(path)
-        } else {
-            None
-        };
+        let path = proxy.shared_path().with_extension("state.json");
+        let launch_state = config.initial_state.clone().unwrap_or_else(|| {
+            ExternalPluginState::new(
+                descriptor.clone(),
+                ExternalPluginSandboxMode::Isolated,
+                Vec::new(),
+            )
+        });
+        write_initial_state_file(&path, &launch_state)?;
+        let state_file_path = Some(path);
         let sandbox_args = match &config.capability_sandbox_policy {
             Some(policy) => policy.command_args_for_backend(config.sandbox_launch_backend)?,
             None => config.sandbox_policy.command_args(),
@@ -107,6 +122,7 @@ impl IsolatedExternalPlugin {
             supervisor: Some(supervisor),
             input_channels,
             output_channels,
+            latency_samples: 0,
             quarantined: launch_error.is_some(),
             launch_error,
             consecutive_block_failures: 0,
@@ -118,12 +134,29 @@ impl IsolatedExternalPlugin {
                 .map(|state| state.opaque_state.clone())
                 .unwrap_or_default(),
             state_file_path,
+            parameters: Vec::new(),
+            parameter_values: HashMap::new(),
+            control_timeout: config.worker_startup_timeout,
         };
 
+        if let Some(error) = plugin.launch_error.take() {
+            if let Some(supervisor) = plugin.supervisor.as_mut() {
+                let _ = supervisor.terminate();
+            }
+            return Err(format!(
+                "failed to launch isolated external plugin '{}': {error}",
+                plugin.descriptor.name
+            ));
+        }
+
         if config.start_worker
-            && plugin.launch_error.is_none()
-            && let Err(mut error) =
-                plugin.wait_for_worker_latency_metadata(config.worker_startup_timeout)
+            && let Err(mut error) = plugin
+                .wait_for_worker_latency_metadata(config.worker_startup_timeout)
+                .and_then(|latency| {
+                    plugin.proxy.configure_fallback_latency(latency)?;
+                    plugin.latency_samples = latency;
+                    Ok(latency)
+                })
         {
             if let Some(supervisor) = plugin.supervisor.as_mut() {
                 if let Ok(Some(ExternalPluginProcessEvent::Exited { status })) = supervisor.poll() {
@@ -138,8 +171,30 @@ impl IsolatedExternalPlugin {
                 }
                 let _ = supervisor.terminate();
             }
-            plugin.launch_error = Some(error);
-            plugin.quarantined = true;
+            return Err(error);
+        }
+
+        if config.start_worker {
+            match plugin.proxy.request_control(
+                &PluginIpcControlRequest::Describe,
+                config.worker_startup_timeout,
+            )? {
+                PluginIpcControlResponse::Description { parameters } => {
+                    plugin.parameter_values = parameters
+                        .iter()
+                        .map(|parameter| (parameter.id.clone(), parameter.default_value.clone()))
+                        .collect();
+                    plugin.proxy.configure_parameters(
+                        parameters
+                            .iter()
+                            .map(|parameter| parameter.id.clone())
+                            .collect(),
+                    );
+                    plugin.parameters = parameters;
+                }
+                PluginIpcControlResponse::Error(error) => return Err(error),
+                _ => return Err("external-plugin worker returned invalid description".to_string()),
+            }
         }
 
         Ok(plugin)
@@ -163,6 +218,28 @@ impl IsolatedExternalPlugin {
             ExternalPluginSandboxMode::Isolated,
             self.opaque_state.clone(),
         )
+    }
+
+    pub fn capture_worker_state(&mut self) -> Result<ExternalPluginState, String> {
+        let worker_running = match self.supervisor.as_mut() {
+            Some(supervisor) => supervisor.is_running()?,
+            None => false,
+        };
+        if worker_running {
+            match self
+                .proxy
+                .request_control(&PluginIpcControlRequest::SaveState, self.control_timeout)?
+            {
+                PluginIpcControlResponse::State(state) => self.opaque_state = state,
+                PluginIpcControlResponse::Error(error) => return Err(error),
+                _ => return Err("external-plugin worker returned invalid state response".into()),
+            }
+        }
+        let state = self.placeholder_state();
+        if let Some(path) = self.state_file_path.as_ref() {
+            write_initial_state_file(path, &state)?;
+        }
+        Ok(state)
     }
 
     pub fn from_placeholder_state(
@@ -309,32 +386,13 @@ impl IsolatedExternalPlugin {
         Ok(())
     }
 
-    pub(super) fn write_fallback(&self, input: &[f32], output: &mut [f32], frames: usize) -> usize {
-        let output_len = frames
-            .saturating_mul(self.output_channels)
-            .min(output.len());
-        output[..output_len].fill(0.0);
-
-        if self.input_channels == 0 || self.output_channels == 0 {
-            return frames;
-        }
-
-        let copy_channels = self.input_channels.min(self.output_channels);
-        for frame in 0..frames {
-            let src_base = frame.saturating_mul(self.input_channels);
-            let dst_base = frame.saturating_mul(self.output_channels);
-            if src_base >= input.len() || dst_base >= output_len {
-                break;
-            }
-
-            let src_end = (src_base + copy_channels).min(input.len());
-            let dst_end = (dst_base + copy_channels).min(output_len);
-            let copied = (src_end - src_base).min(dst_end - dst_base);
-            output[dst_base..dst_base + copied]
-                .copy_from_slice(&input[src_base..src_base + copied]);
-        }
-
-        frames
+    pub(super) fn write_fallback(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        frames: usize,
+    ) -> usize {
+        self.proxy.process_fallback(input, output, frames)
     }
 
     pub(super) fn record_block_status(&mut self, status: ExternalPluginHostBlockStatus) {
@@ -429,22 +487,44 @@ impl Plugin for IsolatedExternalPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        self.worker_reported_latency_samples().unwrap_or(0)
+        self.latency_samples
+            .max(self.worker_reported_latency_samples().unwrap_or(0))
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        Vec::new()
+        self.parameters.clone()
     }
 
-    fn set_parameter(&mut self, id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
-        Err(format!(
-            "isolated external plugin '{}' does not expose parameter '{id}' yet",
-            self.descriptor.name
-        ))
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        let parameter = self
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == id)
+            .ok_or_else(|| {
+                format!(
+                    "isolated external plugin '{}' has no parameter '{id}'",
+                    self.descriptor.name
+                )
+            })?;
+        parameter.validate(&value)?;
+        match self.proxy.request_control(
+            &PluginIpcControlRequest::Set {
+                id: id.clone(),
+                value: value.clone(),
+            },
+            self.control_timeout,
+        )? {
+            PluginIpcControlResponse::Ack => {
+                self.parameter_values.insert(id, value);
+                Ok(())
+            }
+            PluginIpcControlResponse::Error(error) => Err(error),
+            _ => Err("external-plugin worker returned invalid parameter response".into()),
+        }
     }
 
-    fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
-        None
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        self.parameter_values.get(id).cloned()
     }
 
     fn process(
@@ -460,7 +540,7 @@ impl Plugin for IsolatedExternalPlugin {
 
         let (frames, status) = self
             .proxy
-            .process_block(input, output, context.num_frames)
+            .process_block_with_context(input, output, context)
             .map_err(|err| format!("isolated external plugin processing failed: {err}"))?;
         self.record_block_status(status);
 

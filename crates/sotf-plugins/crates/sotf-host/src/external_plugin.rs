@@ -56,6 +56,7 @@ pub struct ExternalPlugin {
 }
 
 impl ExternalPlugin {
+    pub const DEFAULT_MAX_BLOCK_FRAMES: usize = 8192;
     /// Create a new external plugin wrapper from a descriptor.
     ///
     /// Native backend selection is feature-gated by format:
@@ -63,34 +64,63 @@ impl ExternalPlugin {
     /// - VST3: `external-plugin-vst3`
     /// - AU: `external-plugin-au`
     ///
-    /// If a backend is unavailable at compile-time, we fall back to
-    /// deterministic passthrough behavior.
+    /// A missing format backend is a construction error. A runnable graph must
+    /// never silently replace an external processor with dry passthrough.
     pub fn new(descriptor: &PluginDescriptor, sample_rate: u32) -> Result<Self, String> {
+        Self::new_with_max_block_frames(descriptor, sample_rate, Self::DEFAULT_MAX_BLOCK_FRAMES)
+    }
+
+    pub fn new_with_max_block_frames(
+        descriptor: &PluginDescriptor,
+        sample_rate: u32,
+        max_block_frames: usize,
+    ) -> Result<Self, String> {
         if sample_rate == 0 {
             return Err("sample rate must be positive".into());
         }
+        if max_block_frames == 0 {
+            return Err("maximum block frame count must be positive".into());
+        }
+        if max_block_frames > i32::MAX as usize {
+            return Err("maximum block frame count exceeds native plugin ABI limits".into());
+        }
 
-        descriptor.validate()?;
+        if descriptor.audio_outputs == 0 {
+            descriptor.validate_for_native_probe()?;
+        } else {
+            descriptor.validate()?;
+        }
         let hosting_plan = plan_external_plugin_hosting(descriptor);
-        let native_backend =
-            try_load_dynamic_backend(descriptor, hosting_plan.backend, sample_rate)?;
+        if hosting_plan.backend == ExternalHostingBackend::Passthrough {
+            return Err(hosting_plan.reason.unwrap_or_else(|| {
+                format!(
+                    "external plugin '{}' has no available native backend",
+                    descriptor.name
+                )
+            }));
+        }
+        let native_backend = try_load_dynamic_backend(
+            descriptor,
+            hosting_plan.backend,
+            sample_rate,
+            max_block_frames,
+        )?;
+        let native_backend = native_backend.ok_or_else(|| {
+            format!(
+                "external plugin '{}' did not create a native backend",
+                descriptor.name
+            )
+        })?;
         let mut resolved_descriptor = descriptor.clone();
-        let (input_channels, output_channels) = native_backend
-            .as_ref()
-            .map(|backend| {
-                let metadata = backend.metadata();
-                resolved_descriptor.id.clone_from(&metadata.id);
-                resolved_descriptor.name.clone_from(&metadata.name);
-                resolved_descriptor.vendor.clone_from(&metadata.vendor);
-                resolved_descriptor.version.clone_from(&metadata.version);
-                resolved_descriptor.audio_inputs = metadata.input_channels;
-                resolved_descriptor.audio_outputs = metadata.output_channels;
-                (metadata.input_channels, metadata.output_channels)
-            })
-            .unwrap_or((descriptor.audio_inputs, descriptor.audio_outputs.max(1)));
-        let parameters = native_backend
-            .as_ref()
-            .map_or_else(Vec::new, |backend| backend.parameters());
+        let metadata = native_backend.metadata();
+        resolved_descriptor.id.clone_from(&metadata.id);
+        resolved_descriptor.name.clone_from(&metadata.name);
+        resolved_descriptor.vendor.clone_from(&metadata.vendor);
+        resolved_descriptor.version.clone_from(&metadata.version);
+        resolved_descriptor.audio_inputs = metadata.input_channels;
+        resolved_descriptor.audio_outputs = metadata.output_channels;
+        let (input_channels, output_channels) = (metadata.input_channels, metadata.output_channels);
+        let parameters = native_backend.parameters();
 
         Ok(Self {
             descriptor: resolved_descriptor,
@@ -101,7 +131,7 @@ impl ExternalPlugin {
             hosting_backend: hosting_plan.backend,
             restore_error: None,
             opaque_state: Vec::new(),
-            native_backend,
+            native_backend: Some(native_backend),
         })
     }
 
@@ -136,6 +166,18 @@ impl ExternalPlugin {
         state: &ExternalPluginState,
         sample_rate: u32,
     ) -> Result<Self, String> {
+        Self::from_placeholder_state_with_max_block_frames(
+            state,
+            sample_rate,
+            Self::DEFAULT_MAX_BLOCK_FRAMES,
+        )
+    }
+
+    pub fn from_placeholder_state_with_max_block_frames(
+        state: &ExternalPluginState,
+        sample_rate: u32,
+        max_block_frames: usize,
+    ) -> Result<Self, String> {
         if sample_rate == 0 {
             return Err("sample rate must be positive".into());
         }
@@ -146,38 +188,18 @@ impl ExternalPlugin {
                 state.sandbox_mode
             ));
         }
-        let mut plugin = match Self::new(&state.descriptor, sample_rate) {
-            Ok(plugin) => plugin,
-            Err(err) => Self::unavailable_placeholder(state.descriptor.clone(), sample_rate, err),
-        };
+        let mut plugin =
+            Self::new_with_max_block_frames(&state.descriptor, sample_rate, max_block_frames)?;
         plugin.opaque_state = state.opaque_state.clone();
         if let Some(backend) = plugin.native_backend.as_mut()
             && let Err(error) = backend.load_state(&state.opaque_state)
         {
-            let mut unavailable =
-                Self::unavailable_placeholder(state.descriptor.clone(), sample_rate, error);
-            unavailable.opaque_state = state.opaque_state.clone();
-            return Ok(unavailable);
+            return Err(format!(
+                "failed to restore external plugin '{}': {error}",
+                state.descriptor.name
+            ));
         }
         Ok(plugin)
-    }
-
-    fn unavailable_placeholder(
-        descriptor: PluginDescriptor,
-        sample_rate: u32,
-        restore_error: String,
-    ) -> Self {
-        Self {
-            input_channels: descriptor.audio_inputs,
-            output_channels: descriptor.audio_outputs.max(1),
-            descriptor,
-            sample_rate,
-            parameters: Vec::new(),
-            hosting_backend: ExternalHostingBackend::Passthrough,
-            restore_error: Some(restore_error),
-            opaque_state: Vec::new(),
-            native_backend: None,
-        }
     }
 
     pub fn to_placeholder_preset(
@@ -215,30 +237,6 @@ impl ExternalPlugin {
         ctx.num_frames.saturating_mul(self.output_channels)
     }
 
-    fn process_passthrough(
-        &self,
-        input: &[f32],
-        output: &mut [f32],
-        ctx: &ProcessContext,
-    ) -> usize {
-        for sample in output.iter_mut().take(self.expected_output_len(ctx)) {
-            *sample = 0.0;
-        }
-
-        if self.input_channels == 0 {
-            return ctx.num_frames;
-        }
-
-        let copy_channels = self.output_channels.min(self.input_channels);
-        for frame in 0..ctx.num_frames {
-            let src_base = frame.saturating_mul(self.input_channels);
-            let dst_base = frame.saturating_mul(self.output_channels);
-            output[dst_base..dst_base + copy_channels]
-                .copy_from_slice(&input[src_base..src_base + copy_channels]);
-        }
-        ctx.num_frames
-    }
-
     fn process_native(
         &mut self,
         input: &[f32],
@@ -254,9 +252,9 @@ impl ExternalPlugin {
         backend.process(
             input,
             output,
-            ctx.num_frames,
             self.input_channels,
             self.output_channels,
+            ctx,
         )?;
         Ok(ctx.num_frames)
     }
@@ -321,6 +319,21 @@ impl Plugin for ExternalPlugin {
         self.native_backend.as_ref()?.get_parameter(id)
     }
 
+    fn save_opaque_state(&self) -> PluginResult<Vec<u8>> {
+        self.native_backend
+            .as_ref()
+            .ok_or_else(|| "external plugin has no native backend".to_string())?
+            .save_state()
+            .map(|state| state.unwrap_or_default())
+    }
+
+    fn load_opaque_state(&mut self, state: &[u8]) -> PluginResult<()> {
+        self.native_backend
+            .as_mut()
+            .ok_or_else(|| "external plugin has no native backend".to_string())?
+            .load_state(state)
+    }
+
     fn process(
         &mut self,
         input: &[f32],
@@ -350,7 +363,10 @@ impl Plugin for ExternalPlugin {
         }
 
         match self.hosting_backend {
-            ExternalHostingBackend::Passthrough => Ok(self.process_passthrough(input, output, ctx)),
+            ExternalHostingBackend::Passthrough => Err(format!(
+                "external plugin '{}' cannot process without a native backend",
+                self.descriptor.name
+            )),
             ExternalHostingBackend::Clap
             | ExternalHostingBackend::Vst3
             | ExternalHostingBackend::AudioUnit => self.process_native(input, output, ctx),
@@ -397,12 +413,20 @@ impl SerializablePlugin for ExternalPlugin {
             )));
         }
 
-        let replacement =
-            try_load_dynamic_backend(&self.descriptor, self.hosting_backend, self.sample_rate)?;
-        if let Some(mut replacement) = replacement {
-            replacement.load_state(&state.opaque_state)?;
-            self.native_backend = Some(replacement);
-        }
+        let replacement = try_load_dynamic_backend(
+            &self.descriptor,
+            self.hosting_backend,
+            self.sample_rate,
+            Self::DEFAULT_MAX_BLOCK_FRAMES,
+        )?;
+        let mut replacement = replacement.ok_or_else(|| {
+            PluginError::InvalidConfiguration(format!(
+                "external plugin '{}' has no available native backend",
+                self.descriptor.name
+            ))
+        })?;
+        replacement.load_state(&state.opaque_state)?;
+        self.native_backend = Some(replacement);
         self.opaque_state = state.opaque_state;
 
         Ok(())

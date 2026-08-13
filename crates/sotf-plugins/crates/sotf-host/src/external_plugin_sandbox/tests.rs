@@ -6,6 +6,7 @@ use super::plugin_sandbox_authorization_grant::PluginSandboxAuthorizationGrant;
 use super::plugin_sandbox_child_process_grant::PluginSandboxChildProcessGrant;
 use super::plugin_sandbox_launch_backend::PluginSandboxLaunchBackend;
 use super::plugin_sandbox_network_grant::PluginSandboxNetworkGrant;
+use super::plugin_sandbox_permission::PluginSandboxPermission;
 use super::plugin_sandbox_policy::PluginSandboxPolicy;
 use super::plugin_sandbox_policy_adapter_issue::PluginSandboxPolicyAdapterIssue;
 use super::plugin_sandbox_policy_support_issue::PluginSandboxPolicySupportIssue;
@@ -382,4 +383,21 @@ fn disabled_policy_skips_support_diagnostics() {
             })
             .is_empty()
     );
+}
+
+#[test]
+fn permission_satisfaction_rejects_parent_traversal() {
+    let granted = PluginSandboxPermission::ReadPath {
+        path: PathBuf::from("/tmp/plugin-data"),
+    };
+
+    assert!(!granted.satisfies(&PluginSandboxPermission::ReadPath {
+        path: PathBuf::from("/tmp/plugin-data/../protected"),
+    }));
+    assert!(!granted.satisfies(&PluginSandboxPermission::ReadPath {
+        path: PathBuf::from("/tmp/plugin-data/child/../../protected"),
+    }));
+    assert!(granted.satisfies(&PluginSandboxPermission::ReadPath {
+        path: PathBuf::from("/tmp/plugin-data/child"),
+    }));
 }

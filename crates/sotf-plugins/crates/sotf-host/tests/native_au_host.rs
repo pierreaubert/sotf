@@ -3,7 +3,7 @@
 use sotf_host::external_plugin::{
     ExternalHostingBackend, ExternalPlugin, PluginDescriptor, PluginFormat, PluginScanStatus,
 };
-use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::plugin::{ParameterEvent, Plugin, ProcessContext, TransportInfo};
 use sotf_host::serialization::SerializablePlugin;
 use std::path::PathBuf;
 
@@ -41,14 +41,17 @@ fn native_apple_audio_unit_renders_audio() {
     plugin
         .set_parameter(mix.id.clone(), dry.clone())
         .expect("set AUDelay dry/wet mix");
-    assert_eq!(plugin.get_parameter(&mix.id), Some(dry));
+    assert_eq!(plugin.get_parameter(&mix.id), Some(dry.clone()));
 
     let frames = 127;
     let input = (0..frames * 2)
         .map(|sample| (sample as f32 / (frames * 2) as f32) * 0.5 - 0.25)
         .collect::<Vec<_>>();
     let mut output = vec![f32::NAN; input.len()];
-    let context = ProcessContext::new(48_000, frames);
+    let automation = [ParameterEvent::new(31, mix.id.clone(), dry.clone())];
+    let context = ProcessContext::new(48_000, frames)
+        .with_transport(TransportInfo::at_sample(123_456, 48_000).with_tempo(91.0, 48_000))
+        .with_parameter_events(&automation);
     assert_eq!(
         plugin.process(&input, &mut output, &context).unwrap(),
         frames

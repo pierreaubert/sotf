@@ -291,8 +291,12 @@ impl PluginScanner {
             version: "Unknown".into(),
             format,
             path,
-            audio_inputs: 2,
-            audio_outputs: 2,
+            // Filesystem discovery cannot know bus layouts. Zero is the
+            // explicit "unprobed" sentinel; native loading replaces it with
+            // ABI metadata, while isolated hosting rejects it before IPC is
+            // allocated.
+            audio_inputs: 0,
+            audio_outputs: 0,
             is_instrument: false,
             categories: Vec::new(),
             scan_status: self.scan_status_for_format(format),

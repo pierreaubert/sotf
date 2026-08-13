@@ -36,21 +36,31 @@ pub struct PluginDescriptor {
 }
 
 impl PluginDescriptor {
+    pub(super) fn validate_for_native_probe(&self) -> Result<(), String> {
+        self.validate_path_and_format()
+    }
+
     /// Validate that this descriptor can be used to load an audio plugin.
     ///
     /// This is public so UI/state layers can reject stale scan results before
     /// they are committed to a rack or graph.
     pub fn validate(&self) -> Result<(), String> {
-        if !self.path.exists() {
-            return Err(format!(
-                "plugin path does not exist: {}",
-                self.path.display()
-            ));
-        }
+        self.validate_path_and_format()?;
 
         if self.audio_outputs == 0 {
             return Err(format!(
                 "plugin {} has zero output channels",
+                self.path.display()
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn validate_path_and_format(&self) -> Result<(), String> {
+        if !self.path.exists() {
+            return Err(format!(
+                "plugin path does not exist: {}",
                 self.path.display()
             ));
         }

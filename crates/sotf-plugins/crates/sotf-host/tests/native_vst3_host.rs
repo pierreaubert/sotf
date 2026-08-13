@@ -3,7 +3,9 @@
 use sotf_host::external_plugin::{
     ExternalHostingBackend, ExternalPlugin, PluginDescriptor, PluginFormat, PluginScanStatus,
 };
-use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::plugin::{
+    MidiEvent, MidiMessage, ParameterEvent, Plugin, ProcessContext, TransportInfo,
+};
 use sotf_host::serialization::SerializablePlugin;
 use std::path::PathBuf;
 
@@ -58,7 +60,15 @@ fn native_vst3_gain_processes_audio() {
         .map(|sample| (sample as f32 / (frames * 2) as f32) * 0.5 - 0.25)
         .collect::<Vec<_>>();
     let mut output = vec![f32::NAN; input.len()];
-    let context = ProcessContext::new(48_000, frames);
+    let midi = [MidiEvent::new(17, MidiMessage::note_on(0, 60, 100))];
+    let automation = [ParameterEvent::new(
+        83,
+        gain.id.clone(),
+        gain.default_value.clone(),
+    )];
+    let context = ProcessContext::new(48_000, frames)
+        .with_transport(TransportInfo::at_sample(96_000, 48_000).with_tempo(75.0, 48_000))
+        .with_all_events(&midi, &[], &automation);
     assert_eq!(
         plugin.process(&input, &mut output, &context).unwrap(),
         frames

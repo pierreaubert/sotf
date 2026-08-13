@@ -7,6 +7,8 @@
 //! between shared memory and private plugin buffers; unknown plugins must never
 //! receive direct pointers into this mapping.
 
+use crate::parameters::{Parameter, ParameterId, ParameterValue};
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU32, AtomicU64};
 
 mod clamp;
@@ -52,5 +54,63 @@ struct PluginIpcHeader {
     worker_sequence: AtomicU64,
     host_state: AtomicU32,
     worker_state: AtomicU32,
+    midi_event_count: AtomicU32,
+    parameter_event_count: AtomicU32,
+    transport_flags: AtomicU32,
+    transport_sample_position: AtomicU64,
+    transport_bpm_bits: AtomicU64,
+    transport_ppq_bits: AtomicU64,
+    transport_time_signature: AtomicU32,
+    _pad1: AtomicU32,
+    transport_loop_start: AtomicU64,
+    transport_loop_end: AtomicU64,
+    control_sequence: AtomicU64,
+    control_worker_sequence: AtomicU64,
+    control_state: AtomicU32,
+    control_request_len: AtomicU32,
+    control_response_len: AtomicU32,
+    control_status: AtomicU32,
     reserved: [AtomicU32; 6],
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum PluginIpcControlRequest {
+    Describe,
+    Set {
+        id: ParameterId,
+        value: ParameterValue,
+    },
+    Get {
+        id: ParameterId,
+    },
+    SaveState,
+    LoadState {
+        state: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum PluginIpcControlResponse {
+    Description { parameters: Vec<Parameter> },
+    Value(Option<ParameterValue>),
+    State(Vec<u8>),
+    Ack,
+    Error(String),
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct PluginIpcMidiEvent {
+    sample_offset: u32,
+    data: [u8; 3],
+    len: u8,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub(crate) struct PluginIpcParameterEvent {
+    pub(crate) sample_offset: u32,
+    pub(crate) parameter_index: u32,
+    pub(crate) value_tag: u32,
+    pub(crate) value_bits: u32,
 }

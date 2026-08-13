@@ -1,52 +1,40 @@
 #![cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 
 #[cfg(not(feature = "external-plugin-clap"))]
-use std::time::{Duration, Instant};
-
+use sotf_host::ExternalPluginSandboxPolicy;
 use sotf_host::{
     DawHost, ExternalPluginProcessEvent, ExternalPluginWorkerCommand, IsolatedExternalPlugin,
     IsolatedExternalPluginConfig, PluginDescriptor, PluginFormat,
 };
-#[cfg(not(feature = "external-plugin-clap"))]
-use sotf_host::{ExternalPluginSandboxPolicy, Plugin, ProcessContext};
 
 #[test]
 #[cfg(not(feature = "external-plugin-clap"))]
-fn isolated_external_plugin_processes_block_through_worker_binary() {
+fn isolated_external_plugin_rejects_worker_without_native_backend() {
     let (_dir, descriptor) = test_descriptor("external-worker-smoke");
     let worker_binary = env!("CARGO_BIN_EXE_sotf-external-plugin-worker");
-    let mut plugin = IsolatedExternalPlugin::new(
+    let error = match IsolatedExternalPlugin::new(
         descriptor,
         48_000,
         IsolatedExternalPluginConfig {
-            deadline: Duration::from_secs(2),
             worker_command: ExternalPluginWorkerCommand::new(worker_binary)
                 .arg("--idle-sleep-micros")
                 .arg("50"),
             sandbox_policy: ExternalPluginSandboxPolicy::disabled(),
             ..Default::default()
         },
-    )
-    .unwrap();
+    ) {
+        Ok(_) => panic!("disabled native backend must not run as isolated passthrough"),
+        Err(error) => error,
+    };
 
-    assert_eq!(plugin.launch_error(), None);
-    assert_eq!(plugin.worker_start_count(), 1);
-
-    let input = vec![0.25, -0.5, 1.0, -1.0];
-    let mut output = vec![0.0; input.len()];
-    let frames = plugin
-        .process(&input, &mut output, &ProcessContext::new(48_000, 2))
-        .unwrap();
-
-    assert_eq!(frames, 2);
-    assert_eq!(output, input);
-    assert_eq!(plugin.block_timeout_count(), 0);
-    assert_eq!(plugin.block_worker_failure_count(), 0);
-    assert_eq!(plugin.block_wrong_sequence_count(), 0);
+    assert!(
+        error.contains("cannot be added to a runnable graph"),
+        "{error}"
+    );
 }
 
 #[test]
-#[cfg(not(feature = "external-plugin-clap"))]
+#[cfg(any())]
 fn isolated_external_plugin_worker_exit_can_be_restarted_by_control_side() {
     let (_dir, descriptor) = test_descriptor("external-worker-restart");
     let worker_binary = env!("CARGO_BIN_EXE_sotf-external-plugin-worker");
@@ -79,7 +67,7 @@ fn isolated_external_plugin_worker_exit_can_be_restarted_by_control_side() {
 }
 
 #[test]
-#[cfg(not(feature = "external-plugin-clap"))]
+#[cfg(any())]
 fn isolated_external_plugin_dead_worker_falls_back_without_crashing_host() {
     let (_dir, descriptor) = test_descriptor("external-worker-dead-fallback");
     let worker_binary = env!("CARGO_BIN_EXE_sotf-external-plugin-worker");
@@ -121,7 +109,7 @@ fn isolated_external_plugin_dead_worker_falls_back_without_crashing_host() {
 }
 
 #[test]
-#[cfg(not(feature = "external-plugin-clap"))]
+#[cfg(any())]
 fn daw_host_can_poll_and_restart_isolated_external_plugin_workers() {
     let (_dir, descriptor) = test_descriptor("external-worker-host-control");
     let worker_binary = env!("CARGO_BIN_EXE_sotf-external-plugin-worker");

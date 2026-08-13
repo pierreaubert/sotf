@@ -27,7 +27,7 @@ pub fn plan_external_plugin_hosting(descriptor: &PluginDescriptor) -> ExternalPl
         None
     } else {
         Some(format!(
-            "{} native hosting feature '{}' is disabled; '{}' will run as deterministic passthrough",
+            "{} native hosting feature '{}' is disabled; '{}' cannot be added to a runnable graph",
             format_label(descriptor.format),
             feature,
             descriptor.name
@@ -74,13 +74,18 @@ pub(super) fn try_load_dynamic_backend(
     descriptor: &PluginDescriptor,
     backend: ExternalHostingBackend,
     sample_rate: u32,
+    max_block_frames: usize,
 ) -> Result<Option<Box<dyn NativeExternalPluginBackend>>, String> {
     match backend {
         ExternalHostingBackend::Passthrough => Ok(None),
-        ExternalHostingBackend::Clap => load_clap_backend(descriptor, sample_rate).map(Some),
-        ExternalHostingBackend::Vst3 => load_vst3_backend(descriptor, sample_rate).map(Some),
+        ExternalHostingBackend::Clap => {
+            load_clap_backend(descriptor, sample_rate, max_block_frames).map(Some)
+        }
+        ExternalHostingBackend::Vst3 => {
+            load_vst3_backend(descriptor, sample_rate, max_block_frames).map(Some)
+        }
         ExternalHostingBackend::AudioUnit => {
-            load_audio_unit_backend(descriptor, sample_rate).map(Some)
+            load_audio_unit_backend(descriptor, sample_rate, max_block_frames).map(Some)
         }
     }
 }

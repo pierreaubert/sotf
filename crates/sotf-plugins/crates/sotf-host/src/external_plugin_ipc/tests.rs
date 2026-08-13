@@ -1,6 +1,9 @@
+use super::PluginIpcParameterEvent;
+use super::consts::{MAX_PLUGIN_IPC_MIDI_EVENTS, MAX_PLUGIN_IPC_PARAMETER_EVENTS};
 use super::plugin_ipc_layout::PluginIpcLayout;
 use super::plugin_ipc_state::PluginIpcState;
 use super::secure_plugin_shared_memory::SecurePluginSharedMemory;
+use crate::plugin::{MidiEvent, MidiMessage, ParameterEvent};
 use crate::plugin::{Plugin, ProcessContext};
 
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
@@ -112,14 +115,15 @@ fn test_worker_processes_request_through_private_buffers() {
         channels: 2,
         factor: 2.0,
     };
-    let mut input_scratch = Vec::new();
-    let mut output_scratch = Vec::new();
+    let mut input_scratch = vec![0.0; 128 * 2];
+    let mut output_scratch = vec![0.0; 128 * 2];
     let frames = worker_shared
         .process_worker_request(
             &mut plugin,
             request,
             &mut input_scratch,
             &mut output_scratch,
+            &ProcessContext::new(48_000, 2),
         )
         .unwrap();
 
@@ -128,6 +132,78 @@ fn test_worker_processes_request_through_private_buffers() {
     assert_eq!(host_shared.copy_worker_output(&mut output).unwrap(), 2);
     assert_eq!(output, vec![0.5, -1.0, 2.0, -2.0]);
     assert_eq!(host_shared.worker_sequence(), 42);
+}
+
+#[test]
+fn event_rings_preserve_offsets_values_and_reject_overflow() {
+    let layout = PluginIpcLayout::new(48_000, 64, 1, 1).unwrap();
+    let mut host = SecurePluginSharedMemory::create(layout).unwrap();
+    let worker = SecurePluginSharedMemory::open_existing(host.path()).unwrap();
+    let midi = [
+        MidiEvent::new(0, MidiMessage::note_on(1, 60, 100)),
+        MidiEvent::new(63, MidiMessage::note_off(1, 60, 0)),
+    ];
+    let context = ProcessContext::new(48_000, 64).with_midi_events(&midi);
+    let encoded = [
+        PluginIpcParameterEvent {
+            sample_offset: 7,
+            parameter_index: 0,
+            value_tag: 0,
+            value_bits: 0.25_f32.to_bits(),
+        },
+        PluginIpcParameterEvent {
+            sample_offset: 61,
+            parameter_index: 1,
+            value_tag: 2,
+            value_bits: 1,
+        },
+    ];
+    host.publish_host_block_with_events(9, 64, &[0.0; 64], &context, &encoded)
+        .unwrap();
+
+    let mut midi_out = Vec::with_capacity(MAX_PLUGIN_IPC_MIDI_EVENTS);
+    worker.read_host_context(64, &mut midi_out).unwrap();
+    assert_eq!(midi_out, midi);
+    let parameters = [
+        Parameter::new_float("gain", "Gain", 0.0, -1.0, 1.0),
+        Parameter::new_bool("enabled", "Enabled", false),
+    ];
+    let mut parameter_out = Vec::<ParameterEvent>::with_capacity(MAX_PLUGIN_IPC_PARAMETER_EVENTS);
+    worker
+        .read_parameter_events(64, &parameters, &mut parameter_out)
+        .unwrap();
+    assert_eq!(parameter_out[0].sample_offset, 7);
+    assert_eq!(parameter_out[0].parameter_id.as_str(), "gain");
+    assert_eq!(parameter_out[0].value, ParameterValue::Float(0.25));
+    assert_eq!(parameter_out[1].sample_offset, 61);
+    assert_eq!(parameter_out[1].parameter_id.as_str(), "enabled");
+    assert_eq!(parameter_out[1].value, ParameterValue::Bool(true));
+
+    host.clear_block();
+    let too_many_midi =
+        vec![MidiEvent::new(0, MidiMessage::note_on(0, 60, 1)); MAX_PLUGIN_IPC_MIDI_EVENTS + 1];
+    let overflow_context = ProcessContext::new(48_000, 64).with_midi_events(&too_many_midi);
+    assert!(
+        host.publish_host_block_with_events(10, 64, &[0.0; 64], &overflow_context, &[])
+            .unwrap_err()
+            .to_string()
+            .contains("MIDI events")
+    );
+
+    let too_many_parameters =
+        vec![PluginIpcParameterEvent::default(); MAX_PLUGIN_IPC_PARAMETER_EVENTS + 1];
+    assert!(
+        host.publish_host_block_with_events(
+            11,
+            64,
+            &[0.0; 64],
+            &ProcessContext::new(48_000, 64),
+            &too_many_parameters
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("parameter events")
+    );
 }
 
 #[test]

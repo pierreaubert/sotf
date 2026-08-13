@@ -1,8 +1,12 @@
 use super::PluginIpcHeader;
+use super::PluginIpcMidiEvent;
 #[cfg(unix)]
 use super::clamp::clamp_file_permissions;
 #[cfg(windows)]
 use super::clamp::clamp_file_permissions;
+use super::consts::MAX_PLUGIN_IPC_MIDI_EVENTS;
+use super::consts::MAX_PLUGIN_IPC_PARAMETER_EVENTS;
+use super::consts::PLUGIN_IPC_CONTROL_BYTES;
 use super::ensure::create_session_dir;
 #[cfg(unix)]
 use super::ensure::ensure_secure_parent_dir;
@@ -17,7 +21,9 @@ use super::open::open_new_shared_memory_file;
 #[cfg(windows)]
 use super::open::open_new_shared_memory_file;
 use super::plugin_ipc_header::audio_base_offset;
+use super::plugin_ipc_header::control_base_offset;
 use super::plugin_ipc_header::header_from_mmap;
+use super::plugin_ipc_header::parameter_event_base_offset;
 use super::plugin_ipc_layout::PluginIpcLayout;
 use super::plugin_ipc_layout::total_size;
 use super::plugin_ipc_state::PluginIpcState;
@@ -25,7 +31,11 @@ use super::plugin_sandbox_backend_code::PluginSandboxBackendCode;
 use super::plugin_sandbox_status_code::PluginSandboxStatusCode;
 use super::types::PluginIpcRequest;
 use super::types::PluginSandboxRuntimeStatus;
-use crate::plugin::{Plugin, ProcessContext};
+use super::{PluginIpcControlRequest, PluginIpcControlResponse, PluginIpcParameterEvent};
+use crate::parameters::{Parameter, ParameterValue};
+use crate::plugin::{
+    LoopRange, MidiEvent, MidiMessage, ParameterEvent, Plugin, ProcessContext, TransportInfo,
+};
 use memmap2::{MmapMut, MmapOptions};
 use std::fs::File;
 use std::io;
@@ -45,6 +55,105 @@ pub struct SecurePluginSharedMemory {
 }
 
 impl SecurePluginSharedMemory {
+    pub fn publish_control_request(
+        &mut self,
+        sequence: u64,
+        request: &PluginIpcControlRequest,
+    ) -> io::Result<()> {
+        let bytes = serde_json::to_vec(request)
+            .map_err(|error| invalid_input(format!("invalid control request: {error}")))?;
+        if bytes.len() > PLUGIN_IPC_CONTROL_BYTES {
+            return Err(invalid_input(
+                "external-plugin control request is too large",
+            ));
+        }
+        let offset = control_base_offset();
+        self.mmap.as_mut().expect("mapping is present")[offset..offset + bytes.len()]
+            .copy_from_slice(&bytes);
+        let header = self.header();
+        header
+            .control_request_len
+            .store(bytes.len() as u32, Ordering::Release);
+        header.control_response_len.store(0, Ordering::Release);
+        header.control_status.store(0, Ordering::Release);
+        header.control_sequence.store(sequence, Ordering::Release);
+        header.control_state.store(1, Ordering::Release);
+        Ok(())
+    }
+
+    pub fn take_control_request(&self) -> io::Result<Option<(u64, PluginIpcControlRequest)>> {
+        let header = self.header();
+        if header.control_state.load(Ordering::Acquire) != 1 {
+            return Ok(None);
+        }
+        let sequence = header.control_sequence.load(Ordering::Acquire);
+        if header.control_worker_sequence.load(Ordering::Acquire) == sequence {
+            return Ok(None);
+        }
+        let len = header.control_request_len.load(Ordering::Acquire) as usize;
+        if len > PLUGIN_IPC_CONTROL_BYTES {
+            return Err(invalid_data(
+                "invalid external-plugin control request length",
+            ));
+        }
+        let offset = control_base_offset();
+        let request = serde_json::from_slice(
+            &self.mmap.as_ref().expect("mapping is present")[offset..offset + len],
+        )
+        .map_err(|error| invalid_data(format!("invalid control request JSON: {error}")))?;
+        Ok(Some((sequence, request)))
+    }
+
+    pub fn publish_control_response(
+        &mut self,
+        sequence: u64,
+        response: &PluginIpcControlResponse,
+    ) -> io::Result<()> {
+        let bytes = serde_json::to_vec(response)
+            .map_err(|error| invalid_input(format!("invalid control response: {error}")))?;
+        if bytes.len() > PLUGIN_IPC_CONTROL_BYTES {
+            return Err(invalid_input(
+                "external-plugin control response is too large",
+            ));
+        }
+        let offset = control_base_offset();
+        self.mmap.as_mut().expect("mapping is present")[offset..offset + bytes.len()]
+            .copy_from_slice(&bytes);
+        let header = self.header();
+        header
+            .control_response_len
+            .store(bytes.len() as u32, Ordering::Release);
+        header
+            .control_worker_sequence
+            .store(sequence, Ordering::Release);
+        header.control_state.store(2, Ordering::Release);
+        Ok(())
+    }
+
+    pub fn take_control_response(
+        &self,
+        sequence: u64,
+    ) -> io::Result<Option<PluginIpcControlResponse>> {
+        let header = self.header();
+        if header.control_state.load(Ordering::Acquire) != 2
+            || header.control_worker_sequence.load(Ordering::Acquire) != sequence
+        {
+            return Ok(None);
+        }
+        let len = header.control_response_len.load(Ordering::Acquire) as usize;
+        if len > PLUGIN_IPC_CONTROL_BYTES {
+            return Err(invalid_data(
+                "invalid external-plugin control response length",
+            ));
+        }
+        let offset = control_base_offset();
+        let response = serde_json::from_slice(
+            &self.mmap.as_ref().expect("mapping is present")[offset..offset + len],
+        )
+        .map_err(|error| invalid_data(format!("invalid control response JSON: {error}")))?;
+        header.control_state.store(0, Ordering::Release);
+        Ok(Some(response))
+    }
     pub fn create(layout: PluginIpcLayout) -> io::Result<Self> {
         let session_dir = create_session_dir()?;
         let path = session_dir.join("audio-plugin-ipc.shm");
@@ -179,7 +288,47 @@ impl SecurePluginSharedMemory {
         frames: usize,
         input: &[f32],
     ) -> io::Result<()> {
+        self.publish_host_block_with_context(
+            sequence,
+            frames,
+            input,
+            &ProcessContext::new(self.layout.sample_rate, frames),
+        )
+    }
+
+    pub fn publish_host_block_with_context(
+        &mut self,
+        sequence: u64,
+        frames: usize,
+        input: &[f32],
+        context: &ProcessContext,
+    ) -> io::Result<()> {
+        self.publish_host_block_with_events(sequence, frames, input, context, &[])
+    }
+
+    pub(crate) fn publish_host_block_with_events(
+        &mut self,
+        sequence: u64,
+        frames: usize,
+        input: &[f32],
+        context: &ProcessContext,
+        parameter_events: &[PluginIpcParameterEvent],
+    ) -> io::Result<()> {
         self.validate_frame_count(frames)?;
+        if context.sample_rate != self.layout.sample_rate || context.num_frames != frames {
+            return Err(invalid_input(
+                "external-plugin process context does not match IPC block layout",
+            ));
+        }
+        if context.midi_events.len() > MAX_PLUGIN_IPC_MIDI_EVENTS {
+            return Err(invalid_input(format!(
+                "external-plugin block has {} MIDI events, maximum is {MAX_PLUGIN_IPC_MIDI_EVENTS}",
+                context.midi_events.len()
+            )));
+        }
+        if parameter_events.len() > MAX_PLUGIN_IPC_PARAMETER_EVENTS {
+            return Err(invalid_input("too many external-plugin parameter events"));
+        }
         let expected_input = frames
             .checked_mul(self.layout.input_channels as usize)
             .ok_or_else(|| invalid_input("input frame count overflow"))?;
@@ -198,7 +347,79 @@ impl SecurePluginSharedMemory {
         shared_input[..expected_input].copy_from_slice(&input[..expected_input]);
         shared_output[..output_samples].fill(0.0);
 
+        let midi_ptr = unsafe {
+            self.mmap
+                .as_mut()
+                .expect("mapping is present")
+                .as_mut_ptr()
+                .add(std::mem::size_of::<PluginIpcHeader>())
+                .cast::<PluginIpcMidiEvent>()
+        };
+        for (index, event) in context.midi_events.iter().enumerate() {
+            if event.sample_offset >= frames {
+                return Err(invalid_input(format!(
+                    "MIDI event offset {} is outside {frames}-frame block",
+                    event.sample_offset
+                )));
+            }
+            unsafe {
+                *midi_ptr.add(index) = PluginIpcMidiEvent {
+                    sample_offset: event.sample_offset as u32,
+                    data: event.message.data,
+                    len: event.message.len,
+                };
+            }
+        }
+        let parameter_ptr = unsafe {
+            self.mmap
+                .as_mut()
+                .expect("mapping is present")
+                .as_mut_ptr()
+                .add(parameter_event_base_offset())
+                .cast::<PluginIpcParameterEvent>()
+        };
+        for (index, event) in parameter_events.iter().enumerate() {
+            if event.sample_offset as usize >= frames {
+                return Err(invalid_input("parameter event offset is outside block"));
+            }
+            unsafe { *parameter_ptr.add(index) = *event };
+        }
+
         let header = self.header();
+        let transport = context.transport;
+        let mut transport_flags = u32::from(transport.playing);
+        transport_flags |= u32::from(transport.recording) << 1;
+        transport_flags |= u32::from(transport.looping) << 2;
+        header
+            .midi_event_count
+            .store(context.midi_events.len() as u32, Ordering::Release);
+        header
+            .parameter_event_count
+            .store(parameter_events.len() as u32, Ordering::Release);
+        header
+            .transport_flags
+            .store(transport_flags, Ordering::Release);
+        header
+            .transport_sample_position
+            .store(transport.sample_position, Ordering::Release);
+        header
+            .transport_bpm_bits
+            .store(transport.bpm.to_bits(), Ordering::Release);
+        header
+            .transport_ppq_bits
+            .store(transport.ppq_position.to_bits(), Ordering::Release);
+        header.transport_time_signature.store(
+            (u32::from(transport.time_signature.numerator) << 16)
+                | u32::from(transport.time_signature.denominator),
+            Ordering::Release,
+        );
+        let (loop_start, loop_end) = transport.loop_range.map_or((u64::MAX, u64::MAX), |range| {
+            (range.start_sample, range.end_sample)
+        });
+        header
+            .transport_loop_start
+            .store(loop_start, Ordering::Release);
+        header.transport_loop_end.store(loop_end, Ordering::Release);
         header.processed_frames.store(0, Ordering::Release);
         header.status_code.store(0, Ordering::Release);
         header.block_frames.store(frames as u32, Ordering::Release);
@@ -209,6 +430,103 @@ impl SecurePluginSharedMemory {
         header
             .host_state
             .store(PluginIpcState::HostReady as u32, Ordering::Release);
+        Ok(())
+    }
+
+    pub fn read_host_context(
+        &self,
+        frames: usize,
+        midi_scratch: &mut Vec<MidiEvent>,
+    ) -> io::Result<TransportInfo> {
+        let header = self.header();
+        let count = header.midi_event_count.load(Ordering::Acquire) as usize;
+        if count > MAX_PLUGIN_IPC_MIDI_EVENTS || count > midi_scratch.capacity() {
+            return Err(invalid_data("invalid external-plugin MIDI event count"));
+        }
+        midi_scratch.clear();
+        let midi_ptr = unsafe {
+            self.mmap
+                .as_ref()
+                .expect("mapping is present")
+                .as_ptr()
+                .add(std::mem::size_of::<PluginIpcHeader>())
+                .cast::<PluginIpcMidiEvent>()
+        };
+        for index in 0..count {
+            let event = unsafe { *midi_ptr.add(index) };
+            if event.sample_offset as usize >= frames || event.len > 3 {
+                return Err(invalid_data("invalid external-plugin MIDI event"));
+            }
+            midi_scratch.push(MidiEvent::new(
+                event.sample_offset as usize,
+                MidiMessage::new(event.data, event.len),
+            ));
+        }
+        let flags = header.transport_flags.load(Ordering::Acquire);
+        let signature = header.transport_time_signature.load(Ordering::Acquire);
+        let loop_start = header.transport_loop_start.load(Ordering::Acquire);
+        let loop_end = header.transport_loop_end.load(Ordering::Acquire);
+        let loop_range = if loop_start == u64::MAX || loop_end == u64::MAX {
+            None
+        } else {
+            LoopRange::new(loop_start, loop_end)
+        };
+        Ok(TransportInfo {
+            playing: flags & 1 != 0,
+            recording: flags & 2 != 0,
+            looping: flags & 4 != 0,
+            sample_position: header.transport_sample_position.load(Ordering::Acquire),
+            bpm: f64::from_bits(header.transport_bpm_bits.load(Ordering::Acquire)),
+            time_signature: crate::plugin::TimeSignature {
+                numerator: (signature >> 16) as u8,
+                denominator: signature as u8,
+            },
+            ppq_position: f64::from_bits(header.transport_ppq_bits.load(Ordering::Acquire)),
+            loop_range,
+        })
+    }
+
+    pub fn read_parameter_events(
+        &self,
+        frames: usize,
+        parameters: &[Parameter],
+        scratch: &mut Vec<ParameterEvent>,
+    ) -> io::Result<()> {
+        let count = self.header().parameter_event_count.load(Ordering::Acquire) as usize;
+        if count > MAX_PLUGIN_IPC_PARAMETER_EVENTS || count > scratch.capacity() {
+            return Err(invalid_data(
+                "invalid external-plugin parameter event count",
+            ));
+        }
+        scratch.clear();
+        let ptr = unsafe {
+            self.mmap
+                .as_ref()
+                .expect("mapping is present")
+                .as_ptr()
+                .add(parameter_event_base_offset())
+                .cast::<PluginIpcParameterEvent>()
+        };
+        for index in 0..count {
+            let event = unsafe { *ptr.add(index) };
+            let parameter = parameters
+                .get(event.parameter_index as usize)
+                .ok_or_else(|| invalid_data("invalid external-plugin parameter index"))?;
+            if event.sample_offset as usize >= frames {
+                return Err(invalid_data("invalid external-plugin parameter offset"));
+            }
+            let value = match event.value_tag {
+                0 => ParameterValue::Float(f32::from_bits(event.value_bits)),
+                1 => ParameterValue::Int(event.value_bits as i32),
+                2 => ParameterValue::Bool(event.value_bits != 0),
+                _ => return Err(invalid_data("invalid external-plugin parameter value tag")),
+            };
+            scratch.push(ParameterEvent::new(
+                event.sample_offset as usize,
+                parameter.id.clone(),
+                value,
+            ));
+        }
         Ok(())
     }
 
@@ -259,8 +577,9 @@ impl SecurePluginSharedMemory {
         &mut self,
         plugin: &mut dyn Plugin,
         request: PluginIpcRequest,
-        input_scratch: &mut Vec<f32>,
-        output_scratch: &mut Vec<f32>,
+        input_scratch: &mut [f32],
+        output_scratch: &mut [f32],
+        context: &ProcessContext,
     ) -> io::Result<usize> {
         self.validate_frame_count(request.frames)?;
         if request.sequence != self.host_sequence() {
@@ -269,17 +588,21 @@ impl SecurePluginSharedMemory {
 
         let input_samples = request.frames * self.layout.input_channels as usize;
         let output_samples = request.frames * self.layout.output_channels as usize;
-        input_scratch.resize(input_samples, 0.0);
-        output_scratch.resize(output_samples, 0.0);
-        output_scratch.fill(0.0);
-        input_scratch.copy_from_slice(&self.input_slice()[..input_samples]);
+        if input_scratch.len() < input_samples || output_scratch.len() < output_samples {
+            return Err(invalid_input(
+                "external-plugin worker scratch is smaller than the negotiated layout",
+            ));
+        }
+        output_scratch[..output_samples].fill(0.0);
+        input_scratch[..input_samples].copy_from_slice(&self.input_slice()[..input_samples]);
 
-        let context = ProcessContext::new(self.layout.sample_rate, request.frames);
-        self.suspend_access_for_plugin_call();
         let process_result = catch_unwind(AssertUnwindSafe(|| {
-            plugin.process(&input_scratch[..], &mut output_scratch[..], &context)
+            plugin.process(
+                &input_scratch[..input_samples],
+                &mut output_scratch[..output_samples],
+                context,
+            )
         }));
-        self.restore_access_after_plugin_call()?;
 
         let frames = match process_result {
             Ok(Ok(frames)) => {
@@ -312,41 +635,6 @@ impl SecurePluginSharedMemory {
             .copy_from_slice(&output_scratch[..output_samples]);
         self.publish_worker_ready(request.sequence, frames)?;
         Ok(frames)
-    }
-
-    pub(super) fn suspend_access_for_plugin_call(&mut self) {
-        self.mmap.take();
-        self.file.take();
-    }
-
-    pub(super) fn restore_access_after_plugin_call(&mut self) -> io::Result<()> {
-        if self.file.is_some() && self.mmap.is_some() {
-            return Ok(());
-        }
-
-        let file = open_existing_shared_memory_file(&self.path)?;
-        let size = file.metadata()?.len() as usize;
-        if size < audio_base_offset() {
-            return Err(invalid_data("external-plugin IPC mapping is too small"));
-        }
-
-        // SAFETY: The descriptor is revalidated before exposing header or audio
-        // slices after the unknown plugin call returns.
-        let mmap = unsafe { MmapOptions::new().len(size).map_mut(&file)? };
-        let header = header_from_mmap(&mmap)?;
-        let layout = header.read_layout()?;
-        if layout != self.layout {
-            return Err(invalid_data("external-plugin IPC layout changed"));
-        }
-        if size < total_size(layout)? {
-            return Err(invalid_data(
-                "external-plugin IPC mapping has truncated body",
-            ));
-        }
-
-        self.file = Some(file);
-        self.mmap = Some(mmap);
-        Ok(())
     }
 
     pub fn publish_worker_ready(&self, sequence: u64, frames: usize) -> io::Result<()> {

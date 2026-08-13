@@ -3,6 +3,7 @@ use super::external_hosting_backend::plan_external_plugin_hosting;
 use super::external_hosting_backend::select_hosting_backend;
 use super::external_plugin_state::ExternalPluginState;
 use super::misc::EXTERNAL_PLUGIN_PRESET_ID;
+use super::native_backend::{NativeExternalPluginBackend, NativePluginMetadata};
 use super::plugin::plugin_format_capabilities;
 use super::plugin_descriptor::PluginDescriptor;
 use super::plugin_format::PluginFormat;
@@ -12,6 +13,7 @@ use super::types::ExternalHostingBackend;
 use super::types::ExternalPluginSandboxMode;
 use super::types::PluginScanStatus;
 use super::types::PluginScanStatusMode;
+use crate::assert_no_allocs;
 use crate::error::PluginError;
 use crate::parameters::{ParameterId, ParameterValue};
 use crate::plugin::{Plugin, ProcessContext};
@@ -23,11 +25,97 @@ use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn unavailable_test_plugin(descriptor: &PluginDescriptor, sample_rate: u32) -> ExternalPlugin {
-    ExternalPlugin::unavailable_placeholder(
-        descriptor.clone(),
+    ExternalPlugin {
+        descriptor: descriptor.clone(),
+        input_channels: descriptor.audio_inputs,
+        output_channels: descriptor.audio_outputs.max(1),
         sample_rate,
-        "intentional test placeholder".to_string(),
-    )
+        parameters: Vec::new(),
+        hosting_backend: ExternalHostingBackend::Passthrough,
+        restore_error: Some("intentional non-runnable test placeholder".to_string()),
+        opaque_state: Vec::new(),
+        native_backend: None,
+    }
+}
+
+struct NegotiatedMaxBackend {
+    metadata: NativePluginMetadata,
+    max_block_frames: usize,
+}
+
+impl NativeExternalPluginBackend for NegotiatedMaxBackend {
+    fn metadata(&self) -> &NativePluginMetadata {
+        &self.metadata
+    }
+
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        input_channels: usize,
+        output_channels: usize,
+        context: &ProcessContext,
+    ) -> Result<(), String> {
+        if context.num_frames > self.max_block_frames {
+            return Err("negotiated maximum exceeded".into());
+        }
+        let input_samples = context.num_frames * input_channels;
+        let output_samples = context.num_frames * output_channels;
+        output[..output_samples].fill(0.0);
+        let copied = input_samples.min(output_samples);
+        output[..copied].copy_from_slice(&input[..copied]);
+        Ok(())
+    }
+}
+
+#[test]
+fn negotiated_maximum_native_block_is_allocation_free() {
+    let max_block_frames = 8_192;
+    let descriptor = PluginDescriptor {
+        id: "test.negotiated-max".into(),
+        name: "Negotiated Max".into(),
+        vendor: "Test".into(),
+        version: "1.0".into(),
+        format: PluginFormat::Clap,
+        path: PathBuf::from("/tmp/negotiated-max.clap"),
+        audio_inputs: 2,
+        audio_outputs: 2,
+        is_instrument: false,
+        categories: vec![],
+        scan_status: PluginScanStatus::Discovered,
+    };
+    let metadata = NativePluginMetadata {
+        id: descriptor.id.clone(),
+        name: descriptor.name.clone(),
+        vendor: descriptor.vendor.clone(),
+        version: descriptor.version.clone(),
+        input_channels: 2,
+        output_channels: 2,
+    };
+    let mut plugin = ExternalPlugin {
+        descriptor,
+        input_channels: 2,
+        output_channels: 2,
+        sample_rate: 48_000,
+        parameters: Vec::new(),
+        hosting_backend: ExternalHostingBackend::Clap,
+        restore_error: None,
+        opaque_state: Vec::new(),
+        native_backend: Some(Box::new(NegotiatedMaxBackend {
+            metadata,
+            max_block_frames,
+        })),
+    };
+    let input = vec![0.25_f32; max_block_frames * 2];
+    let mut output = vec![0.0_f32; max_block_frames * 2];
+    let context = ProcessContext::new(48_000, max_block_frames);
+    plugin.process(&input, &mut output, &context).unwrap();
+    assert_no_allocs("external native negotiated maximum", || {
+        for _ in 0..8 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+    });
+    assert_eq!(output, input);
 }
 
 #[test]
@@ -56,6 +144,8 @@ fn test_plugin_scanner_scan_path_single_bundle() {
     assert_eq!(scanner.plugins.len(), 1);
     assert_eq!(scanner.plugins[0].format, PluginFormat::Clap);
     assert_eq!(scanner.plugins[0].name, "scan-path-single");
+    assert_eq!(scanner.plugins[0].audio_inputs, 0);
+    assert_eq!(scanner.plugins[0].audio_outputs, 0);
 }
 
 #[test]
@@ -89,7 +179,7 @@ fn test_plugin_scanner_scan_path_rejects_format_mismatch() {
 }
 
 #[test]
-fn test_external_plugin_passthrough() {
+fn test_external_plugin_non_runnable_placeholder_rejects_processing() {
     let mut tmp_path = env::temp_dir();
     tmp_path.push(format!(
         "sotf-external-plugin-fake-{}",
@@ -121,15 +211,60 @@ fn test_external_plugin_passthrough() {
     let mut output = vec![0.0f32; 2048];
     let ctx = ProcessContext::new(48000, 1024);
 
-    let frames = plugin.process(&input, &mut output, &ctx).unwrap();
-    assert_eq!(frames, 1024);
-    // Passthrough: first matching channels should match input
-    for i in 0..2048 {
-        assert!((output[i] - input[i]).abs() < 1e-6);
-    }
+    let error = plugin.process(&input, &mut output, &ctx).unwrap_err();
+    assert!(error.contains("cannot process without a native backend"));
 
     fs::remove_file(plugin_path).unwrap();
     fs::remove_dir_all(tmp_path).unwrap();
+}
+
+#[test]
+fn test_external_plugin_new_never_silently_bypasses_unavailable_backend() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("unavailable.clap");
+    fs::write(&path, b"not a native plugin").unwrap();
+    let descriptor = PluginDescriptor {
+        id: "test.unavailable".into(),
+        name: "Unavailable".into(),
+        vendor: "Test".into(),
+        version: "1.0".into(),
+        format: PluginFormat::Clap,
+        path,
+        audio_inputs: 2,
+        audio_outputs: 2,
+        is_instrument: false,
+        categories: vec![],
+        scan_status: PluginScanStatus::Discovered,
+    };
+
+    let error = match ExternalPlugin::new(&descriptor, 48_000) {
+        Ok(_) => panic!("unavailable backend must not become a runnable bypass"),
+        Err(error) => error,
+    };
+    assert!(!error.is_empty());
+}
+
+#[test]
+fn test_external_plugin_rejects_invalid_negotiated_block_contract() {
+    let descriptor = PluginDescriptor {
+        id: "test.block-contract".into(),
+        name: "Block Contract".into(),
+        vendor: "Test".into(),
+        version: "1.0".into(),
+        format: PluginFormat::Clap,
+        path: PathBuf::from("/tmp/block-contract.clap"),
+        audio_inputs: 2,
+        audio_outputs: 2,
+        is_instrument: false,
+        categories: vec![],
+        scan_status: PluginScanStatus::Discovered,
+    };
+
+    let error = match ExternalPlugin::new_with_max_block_frames(&descriptor, 48_000, 0) {
+        Ok(_) => panic!("zero-sized block contract must be rejected"),
+        Err(error) => error,
+    };
+    assert!(error.contains("maximum block frame count must be positive"));
 }
 
 #[test]
@@ -283,7 +418,7 @@ fn test_external_plugin_hosting_plan_reports_feature_gate() {
             plan.reason
                 .as_deref()
                 .unwrap()
-                .contains("deterministic passthrough")
+                .contains("cannot be added to a runnable graph")
         );
     } else {
         assert!(plan.native_backend_available);
@@ -357,10 +492,13 @@ fn test_external_plugin_placeholder_state_round_trips() {
 
     let json = serde_json::to_string(&state).unwrap();
     let decoded: ExternalPluginState = serde_json::from_str(&json).unwrap();
-    let restored = ExternalPlugin::from_placeholder_state(&decoded, 48_000).unwrap();
+    let restore_error = match ExternalPlugin::from_placeholder_state(&decoded, 48_000) {
+        Ok(_) => panic!("stub plugin must not restore as a runnable processor"),
+        Err(error) => error,
+    };
 
     assert_eq!(decoded, state);
-    assert_eq!(restored.descriptor(), &desc);
+    assert!(!restore_error.is_empty());
     assert_eq!(decoded.sandbox_mode, ExternalPluginSandboxMode::InProcess);
     assert_eq!(decoded.opaque_state, vec![1, 2, 3, 4]);
 
@@ -376,7 +514,7 @@ fn test_external_plugin_placeholder_state_round_trips() {
 }
 
 #[test]
-fn test_external_plugin_placeholder_state_restores_missing_plugin_as_unavailable() {
+fn test_external_plugin_placeholder_state_rejects_missing_plugin() {
     let missing_path = env::temp_dir().join(format!(
         "sotf-external-plugin-missing-{}.clap",
         SystemTime::now()
@@ -403,27 +541,13 @@ fn test_external_plugin_placeholder_state_restores_missing_plugin_as_unavailable
         vec![1, 2, 3],
     );
 
-    let mut restored = ExternalPlugin::from_placeholder_state(&state, 48_000).unwrap();
-
-    assert_eq!(restored.descriptor(), &desc);
-    assert_eq!(
-        restored.hosting_backend(),
-        ExternalHostingBackend::Passthrough
-    );
+    let error = match ExternalPlugin::from_placeholder_state(&state, 48_000) {
+        Ok(_) => panic!("missing plugin must not restore as a runnable processor"),
+        Err(error) => error,
+    };
     assert!(
-        restored
-            .restore_error()
-            .unwrap()
-            .contains("plugin path does not exist")
+        error.contains("plugin path does not exist") || error.contains("native hosting feature")
     );
-
-    let input = vec![0.25, -0.5, 1.0, -1.0];
-    let mut output = vec![0.0; input.len()];
-    let frames = restored
-        .process(&input, &mut output, &ProcessContext::new(48_000, 2))
-        .unwrap();
-    assert_eq!(frames, 2);
-    assert_eq!(output, input);
 }
 
 #[test]
@@ -463,7 +587,7 @@ fn test_external_plugin_serializable_preset_round_trips_placeholder_state() {
         ExternalPluginSandboxMode::InProcess
     );
     assert!(restored_state.opaque_state.is_empty());
-    SerializablePlugin::deserialize(&mut plugin, &preset).unwrap();
+    assert!(SerializablePlugin::deserialize(&mut plugin, &preset).is_err());
 
     let mut isolated_state = restored_state;
     isolated_state.sandbox_mode = ExternalPluginSandboxMode::Isolated;

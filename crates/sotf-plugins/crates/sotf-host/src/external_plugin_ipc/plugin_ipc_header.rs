@@ -1,4 +1,7 @@
 use super::PluginIpcHeader;
+use super::consts::MAX_PLUGIN_IPC_MIDI_EVENTS;
+use super::consts::MAX_PLUGIN_IPC_PARAMETER_EVENTS;
+use super::consts::PLUGIN_IPC_CONTROL_BYTES;
 use super::consts::PLUGIN_IPC_MAGIC;
 use super::consts::PLUGIN_IPC_VERSION;
 use super::invalid::invalid_data;
@@ -30,6 +33,24 @@ impl PluginIpcHeader {
             .store(PluginIpcState::Idle as u32, Ordering::Release);
         self.worker_state
             .store(PluginIpcState::Idle as u32, Ordering::Release);
+        self.midi_event_count.store(0, Ordering::Release);
+        self.parameter_event_count.store(0, Ordering::Release);
+        self.transport_flags.store(0, Ordering::Release);
+        self.transport_sample_position.store(0, Ordering::Release);
+        self.transport_bpm_bits
+            .store(120.0_f64.to_bits(), Ordering::Release);
+        self.transport_ppq_bits.store(0, Ordering::Release);
+        self.transport_time_signature
+            .store((4_u32 << 16) | 4, Ordering::Release);
+        self._pad1.store(0, Ordering::Release);
+        self.transport_loop_start.store(u64::MAX, Ordering::Release);
+        self.transport_loop_end.store(u64::MAX, Ordering::Release);
+        self.control_sequence.store(0, Ordering::Release);
+        self.control_worker_sequence.store(0, Ordering::Release);
+        self.control_state.store(0, Ordering::Release);
+        self.control_request_len.store(0, Ordering::Release);
+        self.control_response_len.store(0, Ordering::Release);
+        self.control_status.store(0, Ordering::Release);
         self.reserved[0].store(PluginSandboxStatusCode::Unknown as u32, Ordering::Release);
         self.reserved[1].store(PluginSandboxBackendCode::Unknown as u32, Ordering::Release);
         self.reserved[2].store(0, Ordering::Release);
@@ -65,7 +86,22 @@ pub(super) fn header_from_mmap(mmap: &MmapMut) -> io::Result<&PluginIpcHeader> {
 
 pub(super) fn audio_base_offset() -> usize {
     align_up(
-        std::mem::size_of::<PluginIpcHeader>(),
+        std::mem::size_of::<PluginIpcHeader>()
+            + MAX_PLUGIN_IPC_MIDI_EVENTS * std::mem::size_of::<super::PluginIpcMidiEvent>()
+            + MAX_PLUGIN_IPC_PARAMETER_EVENTS
+                * std::mem::size_of::<super::PluginIpcParameterEvent>()
+            + PLUGIN_IPC_CONTROL_BYTES,
         std::mem::align_of::<f32>(),
     )
+}
+
+pub(super) fn control_base_offset() -> usize {
+    std::mem::size_of::<PluginIpcHeader>()
+        + MAX_PLUGIN_IPC_MIDI_EVENTS * std::mem::size_of::<super::PluginIpcMidiEvent>()
+        + MAX_PLUGIN_IPC_PARAMETER_EVENTS * std::mem::size_of::<super::PluginIpcParameterEvent>()
+}
+
+pub(super) fn parameter_event_base_offset() -> usize {
+    std::mem::size_of::<PluginIpcHeader>()
+        + MAX_PLUGIN_IPC_MIDI_EVENTS * std::mem::size_of::<super::PluginIpcMidiEvent>()
 }

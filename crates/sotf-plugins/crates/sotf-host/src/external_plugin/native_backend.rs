@@ -1,4 +1,5 @@
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
+use crate::plugin::ProcessContext;
 
 #[derive(Debug, Clone)]
 pub(super) struct NativePluginMetadata {
@@ -33,9 +34,9 @@ pub(super) trait NativeExternalPluginBackend: Send {
         &mut self,
         input: &[f32],
         output: &mut [f32],
-        frames: usize,
         input_channels: usize,
         output_channels: usize,
+        context: &ProcessContext,
     ) -> Result<(), String>;
 
     fn save_state(&self) -> Result<Option<Vec<u8>>, String> {

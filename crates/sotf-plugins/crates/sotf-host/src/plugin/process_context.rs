@@ -1,5 +1,6 @@
 use super::midi_event::MidiEvent;
 use super::note_expression_event::NoteExpressionEvent;
+use super::parameter_event::ParameterEvent;
 use super::transport_info::TransportInfo;
 
 /// Processing context passed to plugins.
@@ -15,6 +16,8 @@ pub struct ProcessContext<'a> {
     pub midi_events: &'a [MidiEvent],
     /// Per-note expression events scheduled within this processing block.
     pub note_expression_events: &'a [NoteExpressionEvent],
+    /// Sample-accurate host parameter changes for this block.
+    pub parameter_events: &'a [ParameterEvent],
 }
 
 impl<'a> ProcessContext<'a> {
@@ -26,6 +29,7 @@ impl<'a> ProcessContext<'a> {
             transport: TransportInfo::at_sample(0, sample_rate),
             midi_events: &[],
             note_expression_events: &[],
+            parameter_events: &[],
         }
     }
 
@@ -58,6 +62,7 @@ impl<'a> ProcessContext<'a> {
             transport: self.transport,
             midi_events,
             note_expression_events: &[],
+            parameter_events: &[],
         }
     }
 
@@ -73,6 +78,38 @@ impl<'a> ProcessContext<'a> {
             transport: self.transport,
             midi_events,
             note_expression_events,
+            parameter_events: &[],
+        }
+    }
+
+    /// Return a copy with sample-accurate parameter events.
+    pub const fn with_parameter_events<'b>(
+        self,
+        parameter_events: &'b [ParameterEvent],
+    ) -> ProcessContext<'b> {
+        ProcessContext {
+            sample_rate: self.sample_rate,
+            num_frames: self.num_frames,
+            transport: self.transport,
+            midi_events: &[],
+            note_expression_events: &[],
+            parameter_events,
+        }
+    }
+
+    pub const fn with_all_events<'b>(
+        self,
+        midi_events: &'b [MidiEvent],
+        note_expression_events: &'b [NoteExpressionEvent],
+        parameter_events: &'b [ParameterEvent],
+    ) -> ProcessContext<'b> {
+        ProcessContext {
+            sample_rate: self.sample_rate,
+            num_frames: self.num_frames,
+            transport: self.transport,
+            midi_events,
+            note_expression_events,
+            parameter_events,
         }
     }
 }

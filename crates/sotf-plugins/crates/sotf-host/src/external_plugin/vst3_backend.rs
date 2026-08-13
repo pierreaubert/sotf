@@ -15,13 +15,14 @@ use vst3_sys::base::{
 };
 use vst3_sys::utils::{SharedVstPtr, StaticVstPtr, VstPtr};
 use vst3_sys::vst::{
-    AudioBusBuffers, BusDirections, BusInfo, IAudioProcessor, IComponent, IEditController,
-    IHostApplication, IParamValueQueue, IParameterChanges, IoModes, K_SAMPLE32, MediaTypes,
-    ParameterFlags, ParameterInfo, ProcessData, ProcessModes, ProcessSetup, SpeakerArrangement,
+    AudioBusBuffers, BusDirections, BusInfo, Event, EventData, EventTypes, IAudioProcessor,
+    IComponent, IEditController, IEventList, IHostApplication, IParamValueQueue, IParameterChanges,
+    IoModes, K_SAMPLE32, LegacyMidiCCOutEvent, MediaTypes, NoteOffEvent, NoteOnEvent,
+    ParameterFlags, ParameterInfo, ProcessContext as Vst3ProcessContext, ProcessData, ProcessModes,
+    ProcessSetup, SpeakerArrangement,
 };
 use vst3_sys::{ComInterface, IID, VST3};
 
-const MAX_FRAMES_PER_BLOCK: usize = 65_536;
 const MAX_FACTORY_CLASSES: i32 = 16_384;
 const MAX_PARAMETERS: i32 = 65_536;
 
@@ -178,8 +179,10 @@ impl IBStream for Vst3MemoryStream {
 #[VST3(implements(IParamValueQueue))]
 struct Vst3ParamValueQueue {
     id: u32,
-    value: Rc<Cell<Option<f64>>>,
+    points: Rc<RefCell<Vec<(i32, f64)>>>,
 }
+
+type Vst3ParameterPoints = Rc<RefCell<Vec<(i32, f64)>>>;
 
 impl IParamValueQueue for Vst3ParamValueQueue {
     unsafe fn get_parameter_id(&self) -> u32 {
@@ -187,19 +190,23 @@ impl IParamValueQueue for Vst3ParamValueQueue {
     }
 
     unsafe fn get_point_count(&self) -> i32 {
-        i32::from(self.value.get().is_some())
+        self.points.borrow().len().min(i32::MAX as usize) as i32
     }
 
     unsafe fn get_point(&self, index: i32, sample_offset: *mut i32, value: *mut f64) -> tresult {
-        let Some(current) = self.value.get() else {
+        let Ok(index) = usize::try_from(index) else {
             return kInvalidArgument;
         };
-        if index != 0 || sample_offset.is_null() || value.is_null() {
+        let points = self.points.borrow();
+        let Some((offset, current)) = points.get(index).copied() else {
+            return kInvalidArgument;
+        };
+        if sample_offset.is_null() || value.is_null() {
             return kInvalidArgument;
         }
         // SAFETY: Both required VST3 out pointers were validated above.
         unsafe {
-            *sample_offset = 0;
+            *sample_offset = offset;
             *value = current;
         }
         kResultOk
@@ -213,14 +220,14 @@ impl IParamValueQueue for Vst3ParamValueQueue {
 #[VST3(implements(IParameterChanges))]
 struct Vst3ParameterChanges {
     queues: Vec<VstPtr<dyn IParamValueQueue>>,
-    values: Vec<Rc<Cell<Option<f64>>>>,
+    points: Vec<Vst3ParameterPoints>,
 }
 
 impl IParameterChanges for Vst3ParameterChanges {
     unsafe fn get_parameter_count(&self) -> i32 {
-        self.values
+        self.points
             .iter()
-            .filter(|value| value.get().is_some())
+            .filter(|points| !points.borrow().is_empty())
             .count() as i32
     }
 
@@ -231,8 +238,8 @@ impl IParameterChanges for Vst3ParameterChanges {
         };
         self.queues
             .iter()
-            .zip(&self.values)
-            .filter(|(_, value)| value.get().is_some())
+            .zip(&self.points)
+            .filter(|(_, points)| !points.borrow().is_empty())
             .nth(index)
             .map_or_else(
                 || {
@@ -254,6 +261,36 @@ impl IParameterChanges for Vst3ParameterChanges {
     ) -> StaticVstPtr<dyn IParamValueQueue> {
         // SAFETY: Input changes are immutable from the plugin's perspective.
         unsafe { null_static_vst_ptr() }
+    }
+}
+
+#[VST3(implements(IEventList))]
+struct Vst3InputEvents {
+    events: Rc<RefCell<Vec<Event>>>,
+}
+
+impl IEventList for Vst3InputEvents {
+    unsafe fn get_event_count(&self) -> i32 {
+        self.events.borrow().len().min(i32::MAX as usize) as i32
+    }
+
+    unsafe fn get_event(&self, index: i32, event: *mut Event) -> tresult {
+        let Ok(index) = usize::try_from(index) else {
+            return kInvalidArgument;
+        };
+        let events = self.events.borrow();
+        let Some(source) = events.get(index) else {
+            return kInvalidArgument;
+        };
+        if event.is_null() {
+            return kInvalidArgument;
+        }
+        unsafe { *event = *source };
+        kResultOk
+    }
+
+    unsafe fn add_event(&self, _event: *mut Event) -> tresult {
+        kResultFalse
     }
 }
 
@@ -329,7 +366,7 @@ struct Vst3ParameterBinding {
     host_id: ParameterId,
     vst3_id: u32,
     kind: Vst3ParameterKind,
-    pending: Rc<Cell<Option<f64>>>,
+    points: Vst3ParameterPoints,
 }
 
 pub(super) struct Vst3Backend {
@@ -342,11 +379,14 @@ pub(super) struct Vst3Backend {
     parameters: Vec<Parameter>,
     parameter_bindings: Vec<Vst3ParameterBinding>,
     parameter_changes: VstPtr<dyn IParameterChanges>,
+    input_events: VstPtr<dyn IEventList>,
+    event_storage: Rc<RefCell<Vec<Event>>>,
     metadata: NativePluginMetadata,
     input_storage: Vec<f32>,
     output_storage: Vec<f32>,
     input_ptrs: Vec<*mut f32>,
     output_ptrs: Vec<*mut f32>,
+    max_block_frames: usize,
     active: bool,
     processing: bool,
 }
@@ -532,7 +572,11 @@ fn unwind_vst3_backend_construction(
 }
 
 impl Vst3Backend {
-    pub(super) fn load(descriptor: &PluginDescriptor, sample_rate: u32) -> Result<Self, String> {
+    pub(super) fn load(
+        descriptor: &PluginDescriptor,
+        sample_rate: u32,
+        max_block_frames: usize,
+    ) -> Result<Self, String> {
         let library_path = resolve_dynamic_library_path(descriptor)?;
         let library = Vst3Library::load(&library_path)?;
 
@@ -589,6 +633,7 @@ impl Vst3Backend {
                 &host,
                 descriptor,
                 sample_rate,
+                max_block_frames,
                 &mut component_lifecycle,
             )?
         };
@@ -616,6 +661,12 @@ impl Vst3Backend {
             None => (Vec::new(), Vec::new()),
         };
         let parameter_changes = create_parameter_changes(&parameter_bindings)?;
+        let event_storage = Rc::new(RefCell::new(Vec::with_capacity(1024)));
+        let input_events = Vst3InputEvents::allocate(Rc::clone(&event_storage));
+        let input_events = unsafe {
+            VstPtr::<dyn IEventList>::owned(Box::into_raw(input_events).cast())
+                .ok_or_else(|| "failed to allocate VST3 input event list".to_string())?
+        };
         construction_lifecycle.disarm();
         drop(construction_lifecycle);
         let mut backend = Self {
@@ -628,11 +679,14 @@ impl Vst3Backend {
             parameters,
             parameter_bindings,
             parameter_changes,
+            input_events,
+            event_storage,
             metadata,
-            input_storage: vec![0.0; input_channels.saturating_mul(MAX_FRAMES_PER_BLOCK)],
-            output_storage: vec![0.0; output_channels.saturating_mul(MAX_FRAMES_PER_BLOCK)],
+            input_storage: vec![0.0; input_channels.saturating_mul(max_block_frames)],
+            output_storage: vec![0.0; output_channels.saturating_mul(max_block_frames)],
             input_ptrs: Vec::with_capacity(input_channels),
             output_ptrs: Vec::with_capacity(output_channels),
+            max_block_frames,
             active: true,
             processing: true,
         };
@@ -647,7 +701,7 @@ impl Vst3Backend {
             self.input_ptrs.push(unsafe {
                 self.input_storage
                     .as_mut_ptr()
-                    .add(channel * MAX_FRAMES_PER_BLOCK)
+                    .add(channel * self.max_block_frames)
             });
         }
         self.output_ptrs.clear();
@@ -656,7 +710,7 @@ impl Vst3Backend {
             self.output_ptrs.push(unsafe {
                 self.output_storage
                     .as_mut_ptr()
-                    .add(channel * MAX_FRAMES_PER_BLOCK)
+                    .add(channel * self.max_block_frames)
             });
         }
     }
@@ -755,7 +809,9 @@ impl NativeExternalPluginBackend for Vst3Backend {
                 "set controller parameter",
             )?;
         }
-        binding.pending.set(Some(normalized));
+        let mut points = binding.points.borrow_mut();
+        points.clear();
+        points.push((0, normalized));
         Ok(())
     }
 
@@ -767,10 +823,10 @@ impl NativeExternalPluginBackend for Vst3Backend {
         let controller = self.controller.as_ref()?;
         // SAFETY: Parameter queries and conversions are valid on the initialized
         // controller and do not retain host pointers.
-        let normalized = binding
-            .pending
-            .get()
-            .unwrap_or_else(|| unsafe { controller.get_param_normalized(binding.vst3_id) });
+        let normalized = binding.points.borrow().last().map_or_else(
+            || unsafe { controller.get_param_normalized(binding.vst3_id) },
+            |(_, value)| *value,
+        );
         let plain = unsafe { controller.normalized_param_to_plain(binding.vst3_id, normalized) };
         plain_to_parameter_value(plain, binding.kind)
     }
@@ -779,14 +835,15 @@ impl NativeExternalPluginBackend for Vst3Backend {
         &mut self,
         input: &[f32],
         output: &mut [f32],
-        frames: usize,
         input_channels: usize,
         output_channels: usize,
+        context: &crate::plugin::ProcessContext,
     ) -> Result<(), String> {
-        if frames > MAX_FRAMES_PER_BLOCK {
+        let frames = context.num_frames;
+        if frames > self.max_block_frames {
             return Err(format!(
-                "VST3 plugin '{}' received {frames} frames, exceeding its configured maximum {MAX_FRAMES_PER_BLOCK}",
-                self.metadata.name
+                "VST3 plugin '{}' received {frames} frames, exceeding its configured maximum {}",
+                self.metadata.name, self.max_block_frames,
             ));
         }
         if input_channels != self.metadata.input_channels
@@ -799,13 +856,13 @@ impl NativeExternalPluginBackend for Vst3Backend {
         }
         for frame in 0..frames {
             for channel in 0..input_channels {
-                self.input_storage[channel * MAX_FRAMES_PER_BLOCK + frame] =
+                self.input_storage[channel * self.max_block_frames + frame] =
                     input[frame * input_channels + channel];
             }
         }
         for channel in 0..output_channels {
             self.output_storage
-                [channel * MAX_FRAMES_PER_BLOCK..channel * MAX_FRAMES_PER_BLOCK + frames]
+                [channel * self.max_block_frames..channel * self.max_block_frames + frames]
                 .fill(0.0);
         }
 
@@ -819,10 +876,59 @@ impl NativeExternalPluginBackend for Vst3Backend {
             silence_flags: 0,
             buffers: self.output_ptrs.as_mut_ptr().cast(),
         };
+        if !context.parameter_events.is_empty() {
+            let controller = self.controller.as_ref().ok_or_else(|| {
+                format!(
+                    "VST3 plugin '{}' has no edit controller for automation",
+                    self.metadata.name
+                )
+            })?;
+            for event in context.parameter_events {
+                if event.sample_offset >= frames {
+                    return Err(format!(
+                        "VST3 plugin '{}' received automation offset {} outside a {frames}-frame block",
+                        self.metadata.name, event.sample_offset
+                    ));
+                }
+                let binding = self
+                    .parameter_bindings
+                    .iter()
+                    .find(|binding| binding.host_id == event.parameter_id)
+                    .ok_or_else(|| {
+                        format!(
+                            "VST3 plugin '{}' has no automated parameter '{}'",
+                            self.metadata.name, event.parameter_id
+                        )
+                    })?;
+                let plain =
+                    parameter_value_to_plain(&event.value, binding.kind).ok_or_else(|| {
+                        format!(
+                            "VST3 plugin '{}' rejected automation value for '{}'",
+                            self.metadata.name, event.parameter_id
+                        )
+                    })?;
+                let normalized = unsafe {
+                    controller
+                        .plain_param_to_normalized(binding.vst3_id, plain)
+                        .clamp(0.0, 1.0)
+                };
+                let mut points = binding.points.borrow_mut();
+                if points.len() == points.capacity() {
+                    return Err(format!(
+                        "VST3 plugin '{}' exceeded realtime automation capacity for '{}'",
+                        self.metadata.name, event.parameter_id
+                    ));
+                }
+                points.push((event.sample_offset as i32, normalized));
+            }
+        }
         let has_parameter_changes = self
             .parameter_bindings
             .iter()
-            .any(|binding| binding.pending.get().is_some());
+            .any(|binding| !binding.points.borrow().is_empty());
+        prepare_vst3_events(&self.event_storage, context, &self.metadata.name)?;
+        let has_input_events = !self.event_storage.borrow().is_empty();
+        let mut process_context = vst3_process_context(context);
         let mut data = ProcessData {
             process_mode: ProcessModes::kRealtime as i32,
             symbolic_sample_size: K_SAMPLE32,
@@ -850,9 +956,13 @@ impl NativeExternalPluginBackend for Vst3Backend {
                 unsafe { null_static_vst_ptr() }
             },
             output_param_changes: unsafe { null_static_vst_ptr() },
-            input_events: unsafe { null_static_vst_ptr() },
+            input_events: if has_input_events {
+                unsafe { static_vst_ptr(&self.input_events) }
+            } else {
+                unsafe { null_static_vst_ptr() }
+            },
             output_events: unsafe { null_static_vst_ptr() },
-            context: ptr::null_mut(),
+            context: &mut process_context,
         };
         // SAFETY: Component is active and processing, buffers are preallocated
         // and valid for `frames`, and this backend has exclusive access.
@@ -864,13 +974,14 @@ impl NativeExternalPluginBackend for Vst3Backend {
             )
         };
         for binding in &self.parameter_bindings {
-            binding.pending.set(None);
+            binding.points.borrow_mut().clear();
         }
+        self.event_storage.borrow_mut().clear();
         process_result?;
         for frame in 0..frames {
             for channel in 0..output_channels {
                 output[frame * output_channels + channel] =
-                    self.output_storage[channel * MAX_FRAMES_PER_BLOCK + frame];
+                    self.output_storage[channel * self.max_block_frames + frame];
             }
         }
         Ok(())
@@ -1107,7 +1218,7 @@ unsafe fn collect_parameters(
                 host_id: parameter_id,
                 vst3_id: info.id,
                 kind,
-                pending: Rc::new(Cell::new(None)),
+                points: Rc::new(RefCell::new(Vec::with_capacity(1024))),
             });
         }
         Ok((parameters, bindings))
@@ -1118,9 +1229,9 @@ fn create_parameter_changes(
     bindings: &[Vst3ParameterBinding],
 ) -> Result<VstPtr<dyn IParameterChanges>, String> {
     let mut queues = Vec::with_capacity(bindings.len());
-    let mut values = Vec::with_capacity(bindings.len());
+    let mut points = Vec::with_capacity(bindings.len());
     for binding in bindings {
-        let queue = Vst3ParamValueQueue::allocate(binding.vst3_id, Rc::clone(&binding.pending));
+        let queue = Vst3ParamValueQueue::allocate(binding.vst3_id, Rc::clone(&binding.points));
         // SAFETY: Ownership of each generated queue object is transferred to
         // the smart pointer retained by the changes object.
         let queue = unsafe {
@@ -1128,9 +1239,9 @@ fn create_parameter_changes(
                 .ok_or_else(|| "failed to allocate VST3 parameter queue".to_string())?
         };
         queues.push(queue);
-        values.push(Rc::clone(&binding.pending));
+        points.push(Rc::clone(&binding.points));
     }
-    let changes = Vst3ParameterChanges::allocate(queues, values);
+    let changes = Vst3ParameterChanges::allocate(queues, points);
     // SAFETY: Ownership of the generated changes object is transferred to the
     // backend smart pointer.
     unsafe {
@@ -1147,6 +1258,129 @@ fn parameter_value_to_plain(value: &ParameterValue, kind: Vst3ParameterKind) -> 
             Some(f64::from(u8::from(*value)))
         }
         _ => None,
+    }
+}
+
+fn prepare_vst3_events(
+    storage: &Rc<RefCell<Vec<Event>>>,
+    context: &crate::plugin::ProcessContext,
+    plugin_name: &str,
+) -> Result<(), String> {
+    let mut events = storage.borrow_mut();
+    events.clear();
+    if context.midi_events.len() > events.capacity() {
+        return Err(format!(
+            "VST3 plugin '{plugin_name}' received {} MIDI events, exceeding the realtime capacity {}",
+            context.midi_events.len(),
+            events.capacity()
+        ));
+    }
+    for midi in context.midi_events {
+        if midi.sample_offset >= context.num_frames {
+            return Err(format!(
+                "VST3 plugin '{plugin_name}' received MIDI offset {} outside a {}-frame block",
+                midi.sample_offset, context.num_frames
+            ));
+        }
+        let status = midi.message.data[0];
+        let channel = (status & 0x0f) as i16;
+        let event_type = status & 0xf0;
+        let (type_, event) = match event_type {
+            0x90 if midi.message.data[2] != 0 => (
+                EventTypes::kNoteOnEvent as u16,
+                EventData {
+                    note_on: NoteOnEvent {
+                        channel,
+                        pitch: i16::from(midi.message.data[1]),
+                        tuning: 0.0,
+                        velocity: f32::from(midi.message.data[2]) / 127.0,
+                        length: 0,
+                        note_id: -1,
+                    },
+                },
+            ),
+            0x80 | 0x90 => (
+                EventTypes::kNoteOffEvent as u16,
+                EventData {
+                    note_off: NoteOffEvent {
+                        channel,
+                        pitch: i16::from(midi.message.data[1]),
+                        velocity: f32::from(midi.message.data[2]) / 127.0,
+                        note_id: -1,
+                        tuning: 0.0,
+                    },
+                },
+            ),
+            0xb0 => (
+                EventTypes::kLegacyMIDICCOutEvent as u16,
+                EventData {
+                    legacy_midi_cc_out: LegacyMidiCCOutEvent {
+                        control_number: midi.message.data[1],
+                        channel: channel as i8,
+                        value: midi.message.data[2] as i8,
+                        value2: 0,
+                    },
+                },
+            ),
+            _ => {
+                return Err(format!(
+                    "VST3 plugin '{plugin_name}' cannot translate MIDI status 0x{status:02x}"
+                ));
+            }
+        };
+        let ppq = context.transport.ppq_position
+            + midi.sample_offset as f64 / f64::from(context.sample_rate) * context.transport.bpm
+                / 60.0;
+        events.push(Event {
+            bus_index: 0,
+            sample_offset: midi.sample_offset as i32,
+            ppq_position: ppq,
+            flags: 1,
+            type_,
+            event,
+        });
+    }
+    Ok(())
+}
+
+fn vst3_process_context(context: &crate::plugin::ProcessContext) -> Vst3ProcessContext {
+    const PLAYING: u32 = 1 << 1;
+    const CYCLE_ACTIVE: u32 = 1 << 2;
+    const RECORDING: u32 = 1 << 3;
+    const PROJECT_TIME_MUSIC_VALID: u32 = 1 << 9;
+    const TEMPO_VALID: u32 = 1 << 10;
+    const TIME_SIG_VALID: u32 = 1 << 11;
+    const CYCLE_VALID: u32 = 1 << 12;
+    let transport = context.transport;
+    let mut state = PROJECT_TIME_MUSIC_VALID | TEMPO_VALID | TIME_SIG_VALID;
+    if transport.playing {
+        state |= PLAYING;
+    }
+    if transport.recording {
+        state |= RECORDING;
+    }
+    if transport.looping {
+        state |= CYCLE_ACTIVE | CYCLE_VALID;
+    }
+    let (cycle_start_music, cycle_end_music) = transport.loop_range.map_or((0.0, 0.0), |range| {
+        let scale = transport.bpm / (60.0 * f64::from(context.sample_rate));
+        (
+            range.start_sample as f64 * scale,
+            range.end_sample as f64 * scale,
+        )
+    });
+    Vst3ProcessContext {
+        state,
+        sample_rate: f64::from(context.sample_rate),
+        project_time_samples: transport.sample_position.min(i64::MAX as u64) as i64,
+        continuous_time_samples: transport.sample_position.min(i64::MAX as u64) as i64,
+        project_time_music: transport.ppq_position,
+        cycle_start_music,
+        cycle_end_music,
+        tempo: transport.bpm,
+        time_sig_num: i32::from(transport.time_signature.numerator),
+        time_sig_den: i32::from(transport.time_signature.denominator),
+        ..Vst3ProcessContext::default()
     }
 }
 
@@ -1237,6 +1471,7 @@ unsafe fn initialize_component(
     host: &VstPtr<dyn IHostApplication>,
     requested: &PluginDescriptor,
     sample_rate: u32,
+    max_block_frames: usize,
     lifecycle: &mut Vst3ComponentLifecycleGuard<'_>,
 ) -> Result<(usize, usize), String> {
     // SAFETY: Caller owns all live COM interfaces and invokes the lifecycle in
@@ -1308,7 +1543,7 @@ unsafe fn initialize_component(
         let setup = ProcessSetup {
             process_mode: ProcessModes::kRealtime as i32,
             symbolic_sample_size: K_SAMPLE32,
-            max_samples_per_block: MAX_FRAMES_PER_BLOCK as i32,
+            max_samples_per_block: max_block_frames as i32,
             sample_rate: f64::from(sample_rate),
         };
         ensure_ok(
@@ -1492,10 +1727,12 @@ fn initialize_platform_module(library: &Library, path: &Path) -> Result<(), Stri
 #[cfg(test)]
 mod lifecycle_tests {
     use super::{
-        Vst3BackendConstructionState, unwind_vst3_backend_construction,
-        unwind_vst3_component_lifecycle,
+        EventTypes, Vst3BackendConstructionState, prepare_vst3_events,
+        unwind_vst3_backend_construction, unwind_vst3_component_lifecycle, vst3_process_context,
     };
+    use crate::plugin::{MidiEvent, MidiMessage, ProcessContext, TransportInfo};
     use std::cell::RefCell;
+    use std::rc::Rc;
 
     #[test]
     fn construction_guard_unwinds_processing_activation_and_initialization_in_order() {
@@ -1552,5 +1789,23 @@ mod lifecycle_tests {
                 "terminate-component",
             ]
         );
+    }
+
+    #[test]
+    fn vst3_translation_preserves_event_offset_and_transport() {
+        let storage = Rc::new(RefCell::new(Vec::with_capacity(8)));
+        let midi = [MidiEvent::new(29, MidiMessage::note_on(2, 64, 127))];
+        let transport = TransportInfo::at_sample(96_000, 48_000).with_tempo(75.0, 48_000);
+        let context = ProcessContext::new(48_000, 64)
+            .with_transport(transport)
+            .with_midi_events(&midi);
+        prepare_vst3_events(&storage, &context, "fixture").unwrap();
+        let events = storage.borrow();
+        assert_eq!(events[0].sample_offset, 29);
+        assert_eq!(events[0].type_, EventTypes::kNoteOnEvent as u16);
+        let translated = vst3_process_context(&context);
+        assert_eq!(translated.project_time_samples, 96_000);
+        assert_eq!(translated.tempo, 75.0);
+        assert_eq!(translated.time_sig_num, 4);
     }
 }

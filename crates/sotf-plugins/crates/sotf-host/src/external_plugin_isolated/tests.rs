@@ -1,14 +1,18 @@
 use super::isolated_external_plugin::IsolatedExternalPlugin;
 use super::isolated_external_plugin_config::IsolatedExternalPluginConfig;
 use super::isolated_external_plugin_config::build_worker_launch_command;
+use crate::assert_no_allocs;
 use crate::external_plugin::{
     ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor, plan_external_plugin_hosting,
 };
 use crate::external_plugin_ipc::SecurePluginSharedMemory;
+use crate::external_plugin_ipc::{PluginIpcControlRequest, PluginIpcControlResponse};
 use crate::external_plugin_process::{ExternalPluginProcessEvent, ExternalPluginWorkerCommand};
 use crate::external_plugin_sandbox::{PluginSandboxLaunchBackend, PluginSandboxPolicy};
+use crate::external_plugin_worker::ExternalPluginWorker;
 use crate::host::DawHost;
-use crate::plugin::{Plugin, ProcessContext};
+use crate::parameters::{Parameter, ParameterId, ParameterValue};
+use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use std::time::Duration;
 
 use std::path::Path;
@@ -29,6 +33,178 @@ fn descriptor() -> PluginDescriptor {
         categories: Vec::new(),
         scan_status: crate::external_plugin::PluginScanStatus::Discovered,
     }
+}
+
+struct StatefulScalePlugin {
+    value: f32,
+}
+
+impl Plugin for StatefulScalePlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Stateful Scale", "0.1", "test")
+    }
+    fn input_channels(&self) -> usize {
+        2
+    }
+    fn output_channels(&self) -> usize {
+        2
+    }
+    fn parameters(&self) -> Vec<Parameter> {
+        vec![Parameter::new_float("value", "Value", 1.0, 0.0, 4.0)]
+    }
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        if id.as_str() != "value" {
+            return Err("unknown parameter".into());
+        }
+        self.value = value
+            .as_float()
+            .ok_or_else(|| "expected float".to_string())?;
+        Ok(())
+    }
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        (id.as_str() == "value").then_some(ParameterValue::Float(self.value))
+    }
+    fn save_opaque_state(&self) -> PluginResult<Vec<u8>> {
+        Ok(self.value.to_le_bytes().to_vec())
+    }
+    fn load_opaque_state(&mut self, state: &[u8]) -> PluginResult<()> {
+        let bytes: [u8; 4] = state.try_into().map_err(|_| "invalid state".to_string())?;
+        self.value = f32::from_le_bytes(bytes);
+        Ok(())
+    }
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
+        for (source, destination) in input[..context.num_frames * 2]
+            .iter()
+            .zip(&mut output[..context.num_frames * 2])
+        {
+            *destination = *source * self.value;
+        }
+        Ok(context.num_frames)
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn isolated_control_state_and_audio_share_transport_without_stale_sidecar() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let plugin_file = tempfile::Builder::new().suffix(".clap").tempfile().unwrap();
+    let mut external_descriptor = descriptor();
+    external_descriptor.path = plugin_file.path().to_path_buf();
+    let mut plugin = IsolatedExternalPlugin::new(
+        external_descriptor,
+        48_000,
+        IsolatedExternalPluginConfig {
+            worker_command: ExternalPluginWorkerCommand::new("/bin/sleep").arg("30"),
+            start_worker: false,
+            deadline: Duration::from_millis(100),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    plugin.ensure_worker_running().unwrap();
+
+    let worker_shared =
+        SecurePluginSharedMemory::open_existing(plugin.proxy.shared_path()).unwrap();
+    let mut worker =
+        ExternalPluginWorker::new(worker_shared, Box::new(StatefulScalePlugin { value: 1.0 }))
+            .unwrap();
+    let running = Arc::new(AtomicBool::new(true));
+    let worker_running = Arc::clone(&running);
+    let worker_thread = std::thread::spawn(move || {
+        while worker_running.load(Ordering::Acquire) {
+            let _ = worker.process_one();
+            std::thread::yield_now();
+        }
+    });
+
+    let parameters = match plugin
+        .proxy
+        .request_control(&PluginIpcControlRequest::Describe, Duration::from_secs(1))
+        .unwrap()
+    {
+        PluginIpcControlResponse::Description { parameters } => parameters,
+        response => panic!("unexpected description response: {response:?}"),
+    };
+    plugin.proxy.configure_parameters(
+        parameters
+            .iter()
+            .map(|parameter| parameter.id.clone())
+            .collect(),
+    );
+    plugin.parameter_values = parameters
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter.default_value.clone()))
+        .collect();
+    plugin.parameters = parameters;
+
+    plugin
+        .set_parameter(ParameterId::from("value"), ParameterValue::Float(2.5))
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("value")),
+        Some(ParameterValue::Float(2.5))
+    );
+    let input = vec![0.4_f32; 8_192 * 2];
+    let mut output = vec![0.0_f32; 8_192 * 2];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 8_192))
+        .unwrap();
+    assert!(
+        output.iter().all(|sample| (*sample - 1.0).abs() < 1e-6),
+        "audio/control interleave timed out or used stale parameter state"
+    );
+
+    let state_bytes = match plugin
+        .proxy
+        .request_control(&PluginIpcControlRequest::SaveState, Duration::from_secs(1))
+        .unwrap()
+    {
+        PluginIpcControlResponse::State(state) => state,
+        response => panic!("unexpected state response: {response:?}"),
+    };
+    plugin.opaque_state = state_bytes;
+    if let Some(supervisor) = plugin.supervisor.as_mut() {
+        supervisor.terminate().unwrap();
+    }
+    plugin.supervisor = None;
+    let captured = plugin.capture_worker_state().unwrap();
+    assert_eq!(
+        f32::from_le_bytes(captured.opaque_state.clone().try_into().unwrap()),
+        2.5
+    );
+    let sidecar = plugin.state_file_path.as_ref().unwrap();
+    let persisted: ExternalPluginState =
+        serde_json::from_slice(&std::fs::read(sidecar).unwrap()).unwrap();
+    assert_eq!(persisted.opaque_state, captured.opaque_state);
+
+    running.store(false, Ordering::Release);
+    worker_thread.join().unwrap();
+}
+
+#[test]
+fn isolated_external_plugin_rejects_unprobed_scanner_channel_metadata() {
+    let mut descriptor = descriptor();
+    descriptor.audio_inputs = 0;
+    descriptor.audio_outputs = 0;
+    let error = match IsolatedExternalPlugin::new(
+        descriptor,
+        48_000,
+        IsolatedExternalPluginConfig {
+            start_worker: false,
+            ..Default::default()
+        },
+    ) {
+        Ok(_) => panic!("unprobed scanner metadata must not define IPC layout"),
+        Err(error) => error,
+    };
+    assert!(error.contains("unprobed channel metadata"));
 }
 
 #[test]
@@ -55,8 +231,8 @@ fn isolated_external_plugin_times_out_to_passthrough_without_worker() {
 }
 
 #[test]
-fn isolated_external_plugin_records_launch_error() {
-    let plugin = IsolatedExternalPlugin::new(
+fn isolated_external_plugin_rejects_launch_failure() {
+    let error = match IsolatedExternalPlugin::new(
         descriptor(),
         48_000,
         IsolatedExternalPluginConfig {
@@ -65,11 +241,12 @@ fn isolated_external_plugin_records_launch_error() {
             ),
             ..Default::default()
         },
-    )
-    .unwrap();
+    ) {
+        Ok(_) => panic!("launch failure must fail graph construction"),
+        Err(error) => error,
+    };
 
-    assert!(plugin.launch_error().is_some());
-    assert_eq!(plugin.worker_launch_failure_count(), 1);
+    assert!(error.contains("failed to launch isolated external plugin"));
 }
 
 #[test]
@@ -249,9 +426,12 @@ fn isolated_external_plugin_quarantines_after_repeated_block_failures() {
     );
     assert!(plugin.ensure_worker_running_event().is_err());
     output.fill(0.0);
-    plugin
-        .process(&input, &mut output, &ProcessContext::new(48_000, 2))
-        .unwrap();
+    let context = ProcessContext::new(48_000, 2);
+    assert_no_allocs("quarantined external-plugin fallback", || {
+        for _ in 0..32 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+    });
     assert_eq!(output, input);
 }
 

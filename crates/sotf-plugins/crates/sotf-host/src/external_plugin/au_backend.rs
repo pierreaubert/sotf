@@ -7,7 +7,7 @@ use objc2_audio_toolbox::{
     AudioComponentInstanceDispose, AudioComponentInstanceNew, AudioUnit, AudioUnitGetParameter,
     AudioUnitGetProperty, AudioUnitGetPropertyInfo, AudioUnitInitialize, AudioUnitParameterInfo,
     AudioUnitParameterOptions, AudioUnitParameterUnit, AudioUnitRender, AudioUnitRenderActionFlags,
-    AudioUnitSetParameter, AudioUnitSetProperty, AudioUnitUninitialize,
+    AudioUnitSetParameter, AudioUnitSetProperty, AudioUnitUninitialize, MusicDeviceMIDIEvent,
     kAudioUnitProperty_ClassInfo, kAudioUnitProperty_Latency,
     kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitProperty_ParameterInfo,
     kAudioUnitProperty_ParameterList, kAudioUnitProperty_SetRenderCallback,
@@ -29,7 +29,6 @@ use std::mem::{offset_of, size_of};
 use std::ptr::{self, NonNull};
 use std::slice;
 
-const MAX_FRAMES_PER_BLOCK: usize = 65_536;
 const MAX_COMPONENTS: usize = 16_384;
 const NO_ERR: i32 = 0;
 const INVALID_PARAMETER: i32 = -50;
@@ -108,7 +107,11 @@ struct AudioBufferListStorage {
 }
 
 impl AudioBufferListStorage {
-    fn new(channels: usize, planar_storage: &mut [f32]) -> Result<Self, String> {
+    fn new(
+        channels: usize,
+        max_block_frames: usize,
+        planar_storage: &mut [f32],
+    ) -> Result<Self, String> {
         if channels == 0 {
             return Err("AudioUnit output must contain at least one channel".to_string());
         }
@@ -129,10 +132,10 @@ impl AudioBufferListStorage {
             for (channel, buffer) in buffers.iter_mut().enumerate() {
                 *buffer = AudioBuffer {
                     mNumberChannels: 1,
-                    mDataByteSize: (MAX_FRAMES_PER_BLOCK * size_of::<f32>()) as u32,
+                    mDataByteSize: (max_block_frames * size_of::<f32>()) as u32,
                     mData: planar_storage
                         .as_mut_ptr()
-                        .add(channel * MAX_FRAMES_PER_BLOCK)
+                        .add(channel * max_block_frames)
                         .cast(),
                 };
             }
@@ -170,6 +173,7 @@ pub(super) struct AudioUnitBackend {
     sample_position: u64,
     input_storage: Vec<f32>,
     output_storage: Vec<f32>,
+    max_block_frames: usize,
     initialized: bool,
 }
 
@@ -179,7 +183,11 @@ pub(super) struct AudioUnitBackend {
 unsafe impl Send for AudioUnitBackend {}
 
 impl AudioUnitBackend {
-    pub(super) fn load(descriptor: &PluginDescriptor, sample_rate: u32) -> Result<Self, String> {
+    pub(super) fn load(
+        descriptor: &PluginDescriptor,
+        sample_rate: u32,
+        max_block_frames: usize,
+    ) -> Result<Self, String> {
         if descriptor.is_instrument || descriptor.audio_inputs == 0 {
             return Err(format!(
                 "AudioUnit '{}' is an instrument; SOTF external hosting currently supports effect Audio Units",
@@ -206,14 +214,15 @@ impl AudioUnitBackend {
 
         let input_channels = descriptor.audio_inputs;
         let output_channels = descriptor.audio_outputs.max(1);
-        let input_storage = vec![0.0; input_channels * MAX_FRAMES_PER_BLOCK];
-        let mut output_storage = vec![0.0; output_channels * MAX_FRAMES_PER_BLOCK];
+        let input_storage = vec![0.0; input_channels * max_block_frames];
+        let mut output_storage = vec![0.0; output_channels * max_block_frames];
         let mut input_state = Box::new(AudioUnitInputState {
             storage: input_storage.as_ptr(),
             channels: input_channels,
-            max_frames: MAX_FRAMES_PER_BLOCK,
+            max_frames: max_block_frames,
         });
-        let output_buffers = AudioBufferListStorage::new(output_channels, &mut output_storage)?;
+        let output_buffers =
+            AudioBufferListStorage::new(output_channels, max_block_frames, &mut output_storage)?;
 
         let setup = (|| {
             set_property(
@@ -221,7 +230,7 @@ impl AudioUnitBackend {
                 kAudioUnitProperty_MaximumFramesPerSlice,
                 kAudioUnitScope_Global,
                 0,
-                &(MAX_FRAMES_PER_BLOCK as u32),
+                &(max_block_frames as u32),
                 &descriptor.name,
                 "set maximum frames per slice",
             )?;
@@ -316,6 +325,7 @@ impl AudioUnitBackend {
             sample_position: 0,
             input_storage,
             output_storage,
+            max_block_frames,
             initialized: true,
         })
     }
@@ -383,14 +393,15 @@ impl NativeExternalPluginBackend for AudioUnitBackend {
         &mut self,
         input: &[f32],
         output: &mut [f32],
-        frames: usize,
         input_channels: usize,
         output_channels: usize,
+        context: &crate::plugin::ProcessContext,
     ) -> Result<(), String> {
-        if frames > MAX_FRAMES_PER_BLOCK {
+        let frames = context.num_frames;
+        if frames > self.max_block_frames {
             return Err(format!(
-                "AudioUnit '{}' received {frames} frames, exceeding its configured maximum {MAX_FRAMES_PER_BLOCK}",
-                self.metadata.name
+                "AudioUnit '{}' received {frames} frames, exceeding its configured maximum {}",
+                self.metadata.name, self.max_block_frames,
             ));
         }
         if input_channels != self.metadata.input_channels
@@ -401,23 +412,57 @@ impl NativeExternalPluginBackend for AudioUnitBackend {
                 self.metadata.name, self.metadata.input_channels, self.metadata.output_channels
             ));
         }
+        validate_au_event_contract(context, &self.parameter_bindings, &self.metadata.name)?;
         for frame in 0..frames {
             for channel in 0..input_channels {
-                self.input_storage[channel * MAX_FRAMES_PER_BLOCK + frame] =
+                self.input_storage[channel * self.max_block_frames + frame] =
                     input[frame * input_channels + channel];
             }
         }
         for channel in 0..output_channels {
             self.output_storage
-                [channel * MAX_FRAMES_PER_BLOCK..channel * MAX_FRAMES_PER_BLOCK + frames]
+                [channel * self.max_block_frames..channel * self.max_block_frames + frames]
                 .fill(0.0);
+        }
+        for event in context.midi_events {
+            let data = event.message.data;
+            let status = unsafe {
+                MusicDeviceMIDIEvent(
+                    self.instance,
+                    u32::from(data[0]),
+                    u32::from(data[1]),
+                    u32::from(data[2]),
+                    event.sample_offset as u32,
+                )
+            };
+            ensure_status(status, &self.metadata.name, "schedule MIDI event")?;
+        }
+        for event in context.parameter_events {
+            let binding = self
+                .parameter_bindings
+                .iter()
+                .find(|binding| binding.host_id == event.parameter_id)
+                .expect("validated AudioUnit parameter binding");
+            let plain = audio_unit_parameter_to_plain(&event.value, binding.kind)
+                .expect("validated AudioUnit automation value");
+            let status = unsafe {
+                AudioUnitSetParameter(
+                    self.instance,
+                    binding.audio_unit_id,
+                    kAudioUnitScope_Global,
+                    0,
+                    plain,
+                    event.sample_offset as u32,
+                )
+            };
+            ensure_status(status, &self.metadata.name, "schedule parameter automation")?;
         }
         self.output_buffers.set_frame_count(frames);
         let mut flags = AudioUnitRenderActionFlags(0);
         // SAFETY: AudioTimeStamp is a plain C structure; zero is valid for all
         // unused fields and the sample-time flag marks the populated field.
         let mut timestamp = unsafe { std::mem::zeroed::<AudioTimeStamp>() };
-        timestamp.mSampleTime = self.sample_position as f64;
+        timestamp.mSampleTime = au_transport_sample_time(context);
         timestamp.mFlags = AudioTimeStampFlags::SampleTimeValid;
         // SAFETY: The initialized instance synchronously invokes the retained
         // input callback and renders into the fixed output AudioBufferList.
@@ -435,10 +480,13 @@ impl NativeExternalPluginBackend for AudioUnitBackend {
         for frame in 0..frames {
             for channel in 0..output_channels {
                 output[frame * output_channels + channel] =
-                    self.output_storage[channel * MAX_FRAMES_PER_BLOCK + frame];
+                    self.output_storage[channel * self.max_block_frames + frame];
             }
         }
-        self.sample_position = self.sample_position.saturating_add(frames as u64);
+        self.sample_position = context
+            .transport
+            .sample_position
+            .saturating_add(frames as u64);
         Ok(())
     }
 
@@ -796,6 +844,49 @@ fn audio_unit_parameter_to_plain(
     }
 }
 
+fn validate_au_event_contract(
+    context: &crate::plugin::ProcessContext,
+    bindings: &[AudioUnitParameterBinding],
+    plugin_name: &str,
+) -> Result<(), String> {
+    for event in context.midi_events {
+        if event.sample_offset >= context.num_frames {
+            return Err(format!(
+                "AudioUnit '{plugin_name}' received MIDI offset {} outside a {}-frame block",
+                event.sample_offset, context.num_frames
+            ));
+        }
+    }
+    for event in context.parameter_events {
+        if event.sample_offset >= context.num_frames {
+            return Err(format!(
+                "AudioUnit '{plugin_name}' received automation offset {} outside a {}-frame block",
+                event.sample_offset, context.num_frames
+            ));
+        }
+        let binding = bindings
+            .iter()
+            .find(|binding| binding.host_id == event.parameter_id)
+            .ok_or_else(|| {
+                format!(
+                    "AudioUnit '{plugin_name}' has no automated parameter '{}'",
+                    event.parameter_id
+                )
+            })?;
+        if audio_unit_parameter_to_plain(&event.value, binding.kind).is_none() {
+            return Err(format!(
+                "AudioUnit '{plugin_name}' rejected automation value for '{}'",
+                event.parameter_id
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn au_transport_sample_time(context: &crate::plugin::ProcessContext) -> f64 {
+    context.transport.sample_position as f64
+}
+
 fn plain_to_audio_unit_parameter(
     value: f32,
     kind: AudioUnitParameterKind,
@@ -1062,5 +1153,57 @@ fn release_cf_error(error: *mut CFError) {
         unsafe {
             drop(CFRetained::<CFError>::from_raw(error));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::{MidiEvent, MidiMessage, ParameterEvent, ProcessContext, TransportInfo};
+
+    #[test]
+    fn au_event_and_transport_fixture_preserves_offsets_types_and_sample_time() {
+        let bindings = [AudioUnitParameterBinding {
+            host_id: ParameterId::from("gain"),
+            audio_unit_id: 17,
+            kind: AudioUnitParameterKind::Float,
+        }];
+        let midi = [MidiEvent::new(13, MidiMessage::note_on(2, 64, 99))];
+        let automation = [ParameterEvent::new(
+            47,
+            ParameterId::from("gain"),
+            ParameterValue::Float(0.75),
+        )];
+        let context = ProcessContext::new(48_000, 64)
+            .with_transport(TransportInfo::at_sample(123_456, 48_000).with_tempo(91.0, 48_000))
+            .with_all_events(&midi, &[], &automation);
+        validate_au_event_contract(&context, &bindings, "fixture").unwrap();
+        assert_eq!(midi[0].sample_offset, 13);
+        assert_eq!(automation[0].sample_offset, 47);
+        assert_eq!(
+            audio_unit_parameter_to_plain(&automation[0].value, bindings[0].kind),
+            Some(0.75)
+        );
+        assert_eq!(au_transport_sample_time(&context), 123_456.0);
+    }
+
+    #[test]
+    fn au_event_fixture_rejects_out_of_block_and_wrong_parameter_types() {
+        let bindings = [AudioUnitParameterBinding {
+            host_id: ParameterId::from("enabled"),
+            audio_unit_id: 3,
+            kind: AudioUnitParameterKind::Boolean,
+        }];
+        let invalid_offset = [MidiEvent::new(64, MidiMessage::note_on(0, 60, 1))];
+        let context = ProcessContext::new(48_000, 64).with_midi_events(&invalid_offset);
+        assert!(validate_au_event_contract(&context, &bindings, "fixture").is_err());
+
+        let wrong_type = [ParameterEvent::new(
+            1,
+            ParameterId::from("enabled"),
+            ParameterValue::Float(1.0),
+        )];
+        let context = ProcessContext::new(48_000, 64).with_parameter_events(&wrong_type);
+        assert!(validate_au_event_contract(&context, &bindings, "fixture").is_err());
     }
 }

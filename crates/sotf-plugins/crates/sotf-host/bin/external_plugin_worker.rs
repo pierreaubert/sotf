@@ -39,7 +39,7 @@ mod desktop {
         once: bool,
 
         /// Sleep duration when no block is ready.
-        #[arg(long, default_value_t = 1000)]
+        #[arg(long, default_value_t = 0)]
         idle_sleep_micros: u64,
 
         /// When to enter the worker sandbox.
@@ -101,6 +101,7 @@ mod desktop {
         let shared = SecurePluginSharedMemory::open_existing(&shared_memory)
             .map_err(|err| format!("failed to open shared memory: {err}"))?;
         let sample_rate = shared.layout().sample_rate;
+        let max_block_frames = shared.layout().max_frames as usize;
 
         let sandbox_policy = sandbox_policy(&args)?;
         if sandbox_policy.timing == ExternalPluginSandboxTiming::BeforePluginLoad {
@@ -115,8 +116,18 @@ mod desktop {
             .map(worker_restore_state)
             .transpose()?;
         let plugin = match worker_state.as_ref() {
-            Some(state) => ExternalPlugin::from_placeholder_state(state, sample_rate),
-            None => ExternalPlugin::new(&descriptor, sample_rate),
+            Some(state) if !state.opaque_state.is_empty() => {
+                ExternalPlugin::from_placeholder_state_with_max_block_frames(
+                    state,
+                    sample_rate,
+                    max_block_frames,
+                )
+            }
+            _ => ExternalPlugin::new_with_max_block_frames(
+                &descriptor,
+                sample_rate,
+                max_block_frames,
+            ),
         }
         .map_err(|err| format!("failed to create external plugin wrapper: {err}"))?;
 
@@ -140,11 +151,16 @@ mod desktop {
                         return Ok(());
                     }
                 }
+                ExternalPluginWorkerStep::Controlled => {}
                 ExternalPluginWorkerStep::NoRequest => {
                     if args.once {
                         return Ok(());
                     }
-                    std::thread::sleep(idle_sleep);
+                    if idle_sleep.is_zero() {
+                        std::thread::yield_now();
+                    } else {
+                        std::thread::sleep(idle_sleep);
+                    }
                 }
             }
         }
@@ -301,6 +317,12 @@ mod desktop {
         use super::*;
         use sotf_host::{ExternalPluginSandboxMode, PluginFormat};
         use std::path::Path;
+
+        #[test]
+        fn worker_default_does_not_sleep_for_one_millisecond_between_requests() {
+            let args = Args::try_parse_from(["worker", "--once"]).unwrap();
+            assert_eq!(args.idle_sleep_micros, 0);
+        }
 
         fn args_with_external_state_file(path: Option<PathBuf>) -> Args {
             Args {
