@@ -6,8 +6,9 @@
 // ============================================================================
 
 use sotf_host::db_to_linear;
+use sotf_host::host::DawHost;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::parametric_plugin::ParametricPlugin;
+use sotf_host::parametric_plugin::{ParametricPlugin, ParametricPluginAdapter};
 use sotf_host::plugin::ProcessContext;
 use sotf_plugin_gain::{GainPlugin, GainPluginParams, default_smoothing_ms};
 
@@ -255,6 +256,30 @@ fn negative_gain_attenuates_signal() {
             "sample {i}: expected {}, got {}",
             expected,
             out
+        );
+    }
+}
+
+#[test]
+fn compiled_host_reloads_static_gain_after_automation() {
+    let gain = GainPlugin::with_smoothing(2, 0.0, 0.0);
+    let mut host = DawHost::new(2, SR);
+    host.add_plugin(Box::new(ParametricPluginAdapter::new(gain)))
+        .unwrap();
+
+    let input = vec![1.0_f32; FRAMES * 2];
+    let mut output = vec![0.0_f32; input.len()];
+    host.process(&input, &mut output).unwrap();
+    assert!(output.iter().all(|sample| (*sample - 1.0).abs() < 1e-6));
+
+    host.set_plugin_parameter(0, "gain_db", ParameterValue::Float(-6.0))
+        .unwrap();
+    host.process(&input, &mut output).unwrap();
+    let expected = db_to_linear(-6.0);
+    for (index, sample) in output.iter().enumerate() {
+        assert!(
+            (*sample - expected).abs() < 1e-6,
+            "compiled sample {index} retained stale unity gain: {sample}"
         );
     }
 }

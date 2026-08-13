@@ -1,4 +1,4 @@
-# [Unreleased]
+# 0.5.9
 
 ## Verification
 
@@ -7,6 +7,11 @@
   preserves global/per-channel mode, smoother current/target, host-visible
   values, and rendered audio; validated parametric setters remain the
   error-reporting API.
+- Verify through a real compiled `DawHost` plan that changing a settled fused
+  gain through host automation reloads current compile metadata and cannot
+  retain the build-time scalar.
+- Extend the host fusion probe so the automated scalar changes while regular
+  plugin processing remains uncalled before and after the event.
 
 # 0.5.8
 

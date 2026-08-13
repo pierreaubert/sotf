@@ -363,6 +363,34 @@ fn test_compiled_linear_f32_fuses_static_gain_run() {
 }
 
 #[test]
+fn test_compiled_static_gain_automation_stays_fused_and_reloads_scalar() {
+    let process_calls = Arc::new(AtomicUsize::new(0));
+    let mut host = DawHost::new(2, 48_000);
+    host.add_plugin(Box::new(StaticGainFusionPlugin {
+        gain: 1.0,
+        process_calls: Arc::clone(&process_calls),
+    }))
+    .unwrap();
+    host.build().unwrap();
+
+    let input = vec![1.0_f32; 8];
+    let mut output = vec![0.0_f32; input.len()];
+    host.process(&input, &mut output).unwrap();
+    assert_eq!(output, input);
+    assert_eq!(process_calls.load(Ordering::Relaxed), 0);
+
+    host.set_plugin_parameter(0, "gain", crate::parameters::ParameterValue::Float(0.25))
+        .unwrap();
+    host.process(&input, &mut output).unwrap();
+    assert_eq!(output, vec![0.25; input.len()]);
+    assert_eq!(
+        process_calls.load(Ordering::Relaxed),
+        0,
+        "automation must reload the static scalar without abandoning fusion"
+    );
+}
+
+#[test]
 fn test_compiled_linear_f32_folds_static_gain_across_linear_region() {
     let process_calls = Arc::new(AtomicUsize::new(0));
     let mut g = DawHost::new(2, 48000);
@@ -862,22 +890,30 @@ impl Plugin for StaticGainFusionPlugin {
     }
 
     fn parameters(&self) -> Vec<crate::parameters::Parameter> {
-        vec![]
+        vec![crate::parameters::Parameter::new_float(
+            "gain", "Gain", self.gain, 0.0, 4.0,
+        )]
     }
 
     fn set_parameter(
         &mut self,
-        _: crate::parameters::ParameterId,
-        _: crate::parameters::ParameterValue,
+        id: crate::parameters::ParameterId,
+        value: crate::parameters::ParameterValue,
     ) -> Result<(), String> {
-        Err("none".into())
+        match (id.as_str(), value) {
+            ("gain", crate::parameters::ParameterValue::Float(gain)) => {
+                self.gain = gain;
+                Ok(())
+            }
+            _ => Err("gain expects a float".into()),
+        }
     }
 
     fn get_parameter(
         &self,
-        _: &crate::parameters::ParameterId,
+        id: &crate::parameters::ParameterId,
     ) -> Option<crate::parameters::ParameterValue> {
-        None
+        (id.as_str() == "gain").then_some(crate::parameters::ParameterValue::Float(self.gain))
     }
 
     fn compiled_static_gain(&self) -> Option<f32> {

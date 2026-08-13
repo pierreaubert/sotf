@@ -23,6 +23,11 @@
   no-ops. `invalid_infallible_global_setters_are_atomic_no_ops` proves they
   preserve global/per-channel mode, smoother current/target, cached/reported
   values, and rendered audio; the validated parametric API reports errors.
+- **Verified in 0.5.9:** a real compiled `DawHost` processes settled unity,
+  receives `gain_db = -6` through the host parameter API, and renders the next
+  block at exactly the new linear gain. The compiled plan re-queries current
+  static metadata per processing segment, so no build-time fused scalar can
+  survive automation.
 
 ## Findings
 
@@ -87,6 +92,17 @@ Choose a single plugin-version policy and update package/plugin/docs together. A
 The gain conversion is conventional (`10^(dB/20)` through the host helper), channel layout is preserved, latency is zero, and the sample loop itself allocates no memory, takes no locks, and returns `context.num_frames`. Per-channel scratch and parameter keys are preallocated. Allocation does occur when switching modes (`lib.rs:150-180`) and schema/current-value queries construct vectors/maps (`lib.rs:284-338`); the trait documents parameter application as control-thread work, so this is acceptable only if the host upholds that separation.
 
 Compile metadata correctly prevents static fusion while a global smoother is moving and for all per-channel configurations (`lib.rs:454-482`). A settled global gain is safely eligible for fusion. However, construction/state changes and render-plan compilation must remain synchronized so a fused stale gain is never retained after automation—this is primarily a host contract and deserves an integration test.
+
+**Closed in 0.5.9.** `compiled_host_reloads_static_gain_after_automation`
+constructs the public adapter inside a compiled `DawHost`, renders unity,
+updates `gain_db` through `Host::set_plugin_parameter`, and proves the next
+block uses exactly `db_to_linear(-6)`. This pins the host's dynamic metadata
+reload rather than inferring it from direct plugin processing.
+The complementary host probe
+`test_compiled_static_gain_automation_stays_fused_and_reloads_scalar` changes
+the mock's advertised scalar through queued automation and asserts that its
+regular process-call counter remains zero before and after, proving the plan
+both retains fusion and reloads the current scalar.
 
 There is no explicit bypass parameter. Positive gain intentionally can exceed full scale; clipping belongs later in the engine/output callback per repository policy. No denormal handling is needed for a simple multiplication, although the smoother should be checked to snap sufficiently close to target rather than asymptotically carrying subnormal deltas.
 

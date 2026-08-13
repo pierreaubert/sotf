@@ -10705,7 +10705,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-gain"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "proptest 1.11.0",
  "serde",
@@ -10933,7 +10933,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-xtc"
-version = "0.5.41"
+version = "0.5.42"
 dependencies = [
  "arc-swap",
  "criterion",
