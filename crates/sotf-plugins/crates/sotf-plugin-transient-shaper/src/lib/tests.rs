@@ -66,10 +66,8 @@ fn test_fallible_constructor_and_buffer_validation() {
     assert!(
         TransientShaperPlugin::try_from_params(0, TransientShaperPluginParams::default()).is_err()
     );
-    let invalid = TransientShaperPluginParams {
-        attack: f32::NAN,
-        ..Default::default()
-    };
+    let mut invalid = TransientShaperPluginParams::default();
+    invalid.attack = f32::NAN;
     assert!(TransientShaperPlugin::try_from_params(1, invalid).is_err());
 
     let mut plugin = TransientShaperPlugin::new(2);

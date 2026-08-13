@@ -81,10 +81,6 @@ pub const CATEGORIES: &[PluginCategory] = &[
         ],
     },
     PluginCategory {
-        name: "Utility",
-        plugins: &[PluginType::Dither],
-    },
-    PluginCategory {
         name: "Routing",
         plugins: &[
             PluginType::ChannelMuteSolo,
@@ -146,10 +142,5 @@ mod tests {
     #[test]
     fn crossover_stays_reachable_from_routing_category() {
         assert_eq!(category_of(&PluginType::Crossover), Some("Routing"));
-    }
-
-    #[test]
-    fn dither_stays_reachable_from_utility_category() {
-        assert_eq!(category_of(&PluginType::Dither), Some("Utility"));
     }
 }

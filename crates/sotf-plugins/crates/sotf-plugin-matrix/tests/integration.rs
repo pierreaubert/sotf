@@ -7,23 +7,11 @@
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
-use sotf_host::param_specs::UpdateMode;
 use sotf_plugin_channel_mute_solo::ChannelState;
 use sotf_plugin_matrix::MatrixPlugin;
 
 const SAMPLE_RATE: u32 = 48_000;
 const CONVERGE_FRAMES: usize = 2_048;
-
-#[test]
-fn preset_is_advertised_as_structural() {
-    let plugin = MatrixPlugin::new(2, 2);
-    let preset = plugin
-        .parameters()
-        .into_iter()
-        .find(|parameter| parameter.id.as_str() == "preset")
-        .expect("preset parameter");
-    assert_eq!(preset.update_mode, UpdateMode::Structural);
-}
 
 /// Process enough frames for gain smoothers to converge, return the last frame.
 fn last_output_frame(plugin: &mut MatrixPlugin, frames: usize) -> Vec<f32> {

@@ -20,7 +20,6 @@ use sotf_host::envelope_follower::EnvelopeFollower;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::param_specs::UpdateMode;
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::plugin::{
@@ -263,7 +262,6 @@ impl SaturationPlugin {
     pub(super) fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = vec![
             Parameter::new_string("mode", "Mode", self.mode_string())
-                .with_update_mode(UpdateMode::Structural)
                 .with_description("Saturation algorithm")
                 .with_group("Saturation")
                 .with_importance(ParameterImportance::Critical),
@@ -294,12 +292,10 @@ impl SaturationPlugin {
                 pk(SAT, "exciter_freq").min_f64() as f32,
                 pk(SAT, "exciter_freq").max_f64() as f32,
             )
-            .with_update_mode(UpdateMode::Structural)
             .with_description("Crossover frequency for exciter mode")
             .with_group("Exciter")
             .with_importance(ParameterImportance::Useful),
             Parameter::new_string("oversampling", "Oversampling", self.oversampling_string())
-                .with_update_mode(UpdateMode::Structural)
                 .with_description("Oversampling factor for alias suppression")
                 .with_group("Quality")
                 .with_importance(ParameterImportance::Useful),
@@ -352,11 +348,9 @@ impl SaturationPlugin {
             .with_group("Dynamic")
             .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("dc_blocker", "DC Block", self.dc_blocker_enabled)
-                .with_update_mode(UpdateMode::Structural)
                 .with_group("Quality")
                 .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("use_adaa", "ADAA", self.use_adaa)
-                .with_update_mode(UpdateMode::Structural)
                 .with_group("Quality")
                 .with_importance(ParameterImportance::Useful),
         ];

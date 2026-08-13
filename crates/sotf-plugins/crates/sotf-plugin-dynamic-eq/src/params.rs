@@ -27,7 +27,6 @@ pub const MAX_BANDS: usize = 8;
 pub const PARAMS: &[ParamSpec] = &[
     // Global: num_bands
     ParamSpec::int("Num Bands", "num_bands", 4, 1, 8, 1, "Bands", "Setup")
-        .structural()
         .setup()
         .doc("Number of dynamic EQ bands"),
     // Global: threshold
@@ -64,7 +63,6 @@ pub const PARAMS: &[ParamSpec] = &[
         "Unlinked",
         "Channels",
     )
-    .structural()
     .setup()
     .doc("Stereo-link detection"),
     // Global: mix

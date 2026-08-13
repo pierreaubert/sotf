@@ -1,16 +1,3 @@
-# 0.5.23
-
-## Fixes
-
-- Expose the remediated crossfade duration, head orientation, HRTF database,
-  and anthropometric parameters in the generated layout with their documented
-  control types; a dedicated regression prevents silently hiding these public
-  controls merely to satisfy layout coverage.
-- Preserve the complete Binaural settings state when player or engine graphs
-  reconstruct the plugin for a new upstream channel width, and make the CLI
-  specialize the canonical defaults instead of duplicating the settings
-  constructor.
-
 # 0.5.22
 
 ## Fixes

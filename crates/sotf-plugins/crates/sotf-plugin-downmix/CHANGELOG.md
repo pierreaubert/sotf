@@ -3,8 +3,7 @@
 ## Fixes
 
 - Require an explicit layout for ambiguous 8- and 10-channel inputs and carry
-  layout identity through engine, factory, FFI, Downmix Audio Unit setup, and
-  the player CLI's optional `--downmix-input-layout` setting.
+  layout identity through engine, factory, FFI, and Downmix Audio Unit setup.
 - Preserve the published routing coefficients exactly; Downmix no longer
   silently rescales unrelated routes. Output headroom/limiting is an explicit
   downstream responsibility.
@@ -14,9 +13,6 @@
   preallocated storage. Structural mode changes now require reconstruction.
 - Validate independent N-to-2 FFI/AU channel widths and clear all streaming and
   filter state on reset or sample-rate reinitialization.
-- Make engine defaults layout-unspecified and adapt them only to unambiguous
-  live widths; reject explicit layout/width mismatches, retain ambiguous-width
-  rejection, and preserve known upstream layout identity through engine chains.
 
 # 0.5.27
 

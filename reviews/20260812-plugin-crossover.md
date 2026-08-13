@@ -1,8 +1,5 @@
 # Crossover plugin review — 2026-08-12
 
-Follow-up 0.5.30 aligns the host-visible crossover-type update mode with the
-rebuild-only topology contract and adds a focused regression.
-
 ## Remediation status — 0.5.29 complete
 
 Remediated in 0.5.28: one-to-four-band construction limits, unique finite

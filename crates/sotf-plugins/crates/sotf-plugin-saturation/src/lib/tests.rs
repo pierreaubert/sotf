@@ -4,7 +4,6 @@ use super::saturation_plugin_params::SaturationPluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::ParameterSet;
-use sotf_host::param_specs::UpdateMode;
 use sotf_host::{CountingAlloc, assert_no_allocs};
 
 #[global_allocator]
@@ -14,19 +13,6 @@ static ALLOCATOR: CountingAlloc = CountingAlloc;
 mod make;
 #[path = "tests/misc.rs"]
 mod test_misc;
-
-#[test]
-fn topology_controls_are_advertised_as_structural() {
-    let plugin = SaturationPlugin::new(2);
-    let parameters = plugin.parameters();
-    for id in ["mode", "exciter_freq", "oversampling", "dc_blocker", "use_adaa"] {
-        let parameter = parameters
-            .iter()
-            .find(|parameter| parameter.id.as_str() == id)
-            .unwrap_or_else(|| panic!("missing {id} parameter"));
-        assert_eq!(parameter.update_mode, UpdateMode::Structural, "{id}");
-    }
-}
 
 use make::make_context;
 use make::make_sine;

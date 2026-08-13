@@ -9,13 +9,6 @@
 - Verify processed stereo frequency, Q, gain, and type transitions sample-for-sample against two
   independently stateful mono references at Off/2x/4x and whole, single-frame, and irregular
   callback partitions.
-- Preserve Auto Gain and Oversampling when player AutoEQ replaces filters or rebuilds EQ settings
-  after a channel-count change; newly generated Room EQ nodes use the intentional off/1x defaults.
-- Complete the workspace settings-lifecycle sweep: CLI, GPUI headphone/Spinorama, and TUI APO
-  builders now use explicit off/1x defaults for new EQs and preserve every global control when
-  replacing filters in an existing EQ.
-- Keep engine serialization regressions explicit about the off/1x defaults so the complete EQ
-  settings type remains constructible under test.
 
 # 0.5.72
 

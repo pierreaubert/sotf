@@ -1,6 +1,5 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
-assertion_line: 57
 expression: plan
 ---
 {
@@ -13,60 +12,52 @@ expression: plan
   "label_position": "below",
   "orientation": "horizontal",
   "knob_size": "sm",
-  "group_direction": "row",
-  "slider_height": 180.0,
-  "show_visualizations": true,
+  "group_direction": "column",
+  "slider_height": 120.0,
+  "show_visualizations": false,
   "columns_visible": [
-    "main"
+    "config",
+    "main",
+    "output"
   ],
   "columns_collapsed": [],
-  "visible_group_ids": [
-    "CONVOLUTION"
-  ],
+  "visible_group_ids": [],
   "overflow_group_ids": [],
-  "config_controls": [],
-  "main_groups": [
+  "config_controls": [
     {
-      "id": "CONVOLUTION",
-      "title": "CONVOLUTION",
-      "controls": [
-        {
-          "param_index": 0,
-          "param_name": "IR File",
-          "control_type": "file_picker",
-          "unit": "",
-          "range": null,
-          "read_only": false,
-          "enabled": true
-        },
-        {
-          "param_index": 1,
-          "param_name": "Mix",
-          "control_type": "knob",
-          "unit": "%",
-          "range": [
-            0.0,
-            1.0
-          ],
-          "read_only": false,
-          "enabled": true
-        },
-        {
-          "param_index": 2,
-          "param_name": "Gain",
-          "control_type": "knob",
-          "unit": "dB",
-          "range": [
-            -20.0,
-            20.0
-          ],
-          "read_only": false,
-          "enabled": true
-        }
-      ]
+      "param_index": 0,
+      "param_name": "IR File",
+      "control_type": "file_picker",
+      "unit": "",
+      "range": null,
+      "read_only": false
     }
   ],
-  "output_controls": [],
+  "main_groups": [],
+  "output_controls": [
+    {
+      "param_index": 1,
+      "param_name": "Mix",
+      "control_type": "knob",
+      "unit": "%",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    },
+    {
+      "param_index": 2,
+      "param_name": "Gain",
+      "control_type": "knob",
+      "unit": "dB",
+      "range": [
+        -20.0,
+        20.0
+      ],
+      "read_only": false
+    }
+  ],
   "tabs": [
     {
       "name": "Advanced",
@@ -80,8 +71,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 4,
@@ -92,8 +82,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 5,
@@ -104,8 +93,7 @@ expression: plan
             32.0,
             512.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         }
       ]
     }

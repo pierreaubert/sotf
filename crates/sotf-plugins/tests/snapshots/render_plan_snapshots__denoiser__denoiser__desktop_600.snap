@@ -38,8 +38,7 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false,
-      "enabled": true
+      "read_only": false
     }
   ],
   "main_groups": [
@@ -56,8 +55,7 @@ expression: plan
             0.0,
             40.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 1,
@@ -68,8 +66,7 @@ expression: plan
             -60.0,
             -10.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 2,
@@ -80,8 +77,7 @@ expression: plan
             0.0,
             0.99
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 11,
@@ -92,8 +88,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         }
       ]
     },
@@ -110,8 +105,7 @@ expression: plan
             0.1,
             100.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 4,
@@ -122,8 +116,7 @@ expression: plan
             10.0,
             500.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         }
       ]
     },
@@ -140,8 +133,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 18,
@@ -152,8 +144,7 @@ expression: plan
             0.5,
             6.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 19,
@@ -164,8 +155,7 @@ expression: plan
             0.001,
             0.5
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         }
       ]
     },
@@ -182,8 +172,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 21,
@@ -194,8 +183,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 22,
@@ -206,8 +194,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         }
       ]
     }
@@ -226,8 +213,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 12,
@@ -238,8 +224,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 13,
@@ -250,8 +235,7 @@ expression: plan
             0.5,
             0.999
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 14,
@@ -262,8 +246,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 15,
@@ -274,8 +257,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 16,
@@ -286,8 +268,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         }
       ]
     },
@@ -303,8 +284,7 @@ expression: plan
             0.5,
             0.99
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 8,
@@ -315,8 +295,7 @@ expression: plan
             0.1,
             0.99
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 9,
@@ -327,8 +306,7 @@ expression: plan
             10.0,
             200.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 10,
@@ -339,8 +317,7 @@ expression: plan
             1.0,
             20.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         }
       ]
     },
@@ -356,8 +333,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 24,
@@ -368,8 +344,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": false
+          "read_only": false
         }
       ]
     },
@@ -385,8 +360,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 26,
@@ -397,8 +371,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 27,
@@ -409,8 +382,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 28,
@@ -421,8 +393,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": false
+          "read_only": false
         }
       ]
     }

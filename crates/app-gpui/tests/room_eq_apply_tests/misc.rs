@@ -361,8 +361,6 @@ fn old_merge_style_apply_loses_the_two_eq_distinction() {
         max_filters: 10,
         tdf2: false,
         topology: 0.0,
-        auto_gain_enabled: false,
-        oversampling: 1.0,
     };
     let insert_idx = graph.user_plugin_insert_index();
     let node_id = graph.insert_plugin(insert_idx, &PluginType::EQ).unwrap();

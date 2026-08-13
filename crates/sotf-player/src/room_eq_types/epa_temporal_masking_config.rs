@@ -78,9 +78,13 @@ impl EpaTemporalMaskingConfig {
             enabled: self.enabled,
             weight: self.weight,
             profile: match self.profile {
-                EpaTemporalProfile::Transient => autoeq::roomeq_model::TemporalMaskingProfile::Transient,
+                EpaTemporalProfile::Transient => {
+                    autoeq::roomeq_model::TemporalMaskingProfile::Transient
+                }
                 EpaTemporalProfile::Mixed => autoeq::roomeq_model::TemporalMaskingProfile::Mixed,
-                EpaTemporalProfile::Sustained => autoeq::roomeq_model::TemporalMaskingProfile::Sustained,
+                EpaTemporalProfile::Sustained => {
+                    autoeq::roomeq_model::TemporalMaskingProfile::Sustained
+                }
             },
             ir_enabled: self.ir_enabled,
             ir_weight: self.ir_weight,

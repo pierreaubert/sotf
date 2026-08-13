@@ -24,9 +24,6 @@
   initial Plugin/Rack/Graph path construction, including plugins outside the standalone fallback.
 - **Fixed and tested:** the canonical schema now exactly matches the 16-key runtime surface,
   including band masks and structural modes; engine settings/accessors/conversion preserve them.
-  The player A/B test controller also copies explicit mask bounds into its temporary runtime graph,
-  preserves the canonical 20 Hz–20 kHz defaults across cue switches, and the CLI constructor sets
-  those defaults intentionally rather than omitting the fields.
 - **Fixed and tested:** same-source crossfades use a unity-preserving linear law. Identical paths
   remain unity throughout the sweep and inverted paths intentionally cancel at centre.
 - **Fixed and tested:** diagnostics publish at 20 Hz from elapsed frames rather than callback count;

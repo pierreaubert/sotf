@@ -2,13 +2,6 @@
 
 ## Remediation status
 
-### Metadata follow-up (0.5.12, 2026-08-13)
-
-The host-visible parameter surface now marks every topology-affecting control
-(`mode`, `exciter_freq`, `oversampling`, `dc_blocker`, and `use_adaa`) as
-structural, matching the initialized setter's graph-rebuild requirement.
-`topology_controls_are_advertised_as_structural` guards the complete contract.
-
 Closed in `0.5.11` (2026-08-13): all reported P1-P3 findings are fixed and
 covered; this review reported no P0 finding.
 

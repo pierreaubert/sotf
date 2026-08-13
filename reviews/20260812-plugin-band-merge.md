@@ -4,10 +4,6 @@
 
 Final exhaustive follow-up in version 0.5.6:
 
-- Engine-generated Band Merge configs now keep `channels` as graph topology instead
-  of emitting it into the strict runtime parameter object; a public-factory default
-  regression prevents recurrence.
-
 - Processing now requires initialization and the initialized sample rate, in
   addition to the existing exact checked buffer contract.
 - Canonical and facade preset structs reject unknown fields; public factory tests

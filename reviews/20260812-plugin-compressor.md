@@ -1,17 +1,5 @@
 # Compressor code review — 2026-08-12
 
-Follow-up 0.5.17 aligns both lookahead controls' host-visible update mode with
-their latency-changing rebuild-only contract and adds focused regression coverage.
-
-Engine integration follow-up: default Compressor configs now omit every rejected
-legacy sidechain field, with a regression that passes the generated config through
-the public DSP factory.
-
-Accessor integration follow-up: `link_channels` remains accepted only as a legacy
-preset-construction migration into 0%/100% linking. The engine no longer advertises
-it as a live DSP key because broadband Compressor intentionally exposes only the
-canonical continuous `link_amount`; regression coverage pins both sides of that contract.
-
 ## Final closure — 0.5.16
 
 All P1–P3 findings are fixed and covered by regressions:

@@ -1,8 +1,5 @@
 # Linear Phase EQ audio plugin code review — 2026-08-12
 
-Follow-up 0.5.7 aligns host-visible FIR-length and phase-mode update metadata
-with their rebuild-only setter contract and adds a focused regression.
-
 ## Final remediation status — 2026-08-12
 
 All P1–P3 findings are fixed in `0.5.6` (no P0 was reported):

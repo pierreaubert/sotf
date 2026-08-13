@@ -616,8 +616,8 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
                 "num_filters" | "fir_length" | "phase_mode" | "auto_gain" => {
                     return Err(format!(
                         "{id_str} is structural; rebuild the plugin to change it"
-                                ));
-                            }
+                    ));
+                }
                 "mix" => {
                     if let ParameterValue::Float(v) = value {
                         if !v.is_finite() || !(0.0..=1.0).contains(&v) {

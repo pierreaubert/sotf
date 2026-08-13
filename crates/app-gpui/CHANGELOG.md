@@ -1,12 +1,5 @@
 # 0.7.10 (unreleased)
 
-## Dither plugin presentation
-
-- Expose Dither through the generated plugin-view registry and Plugin Graph as
-  a stereo-preserving Utility processor, with a stable accent, waveform icon,
-  short name, and localized descriptions in English, French, German, and
-  Spanish. Focused component coverage pins registry and presentation metadata.
-
 ## Signal path visibility
 
 - Footer and Plugin Graph now display source/output sample rates, a resampling (SRC) indicator, and an engine-health warning pill from the read-only `SignalPath` model.

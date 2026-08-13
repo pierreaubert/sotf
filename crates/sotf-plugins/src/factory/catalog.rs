@@ -629,7 +629,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
                 description: "stereo to configured enhancement layout",
                 default_output: PluginDefaultChannelOutput::Fixed(6),
             },
-            PluginLatencyModel::PluginReported("reflection and FDN configuration"),
+            PluginLatencyModel::Zero,
             "sotf_plugin_aae::params::PARAMS",
             Generated,
             true,
@@ -1004,21 +1004,21 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
     ),
     entry!(
         "pnd",
-        ["pnd"],
+        ["pnd", "varispeed"],
         Processor,
         builtin_metadata!(
             "sotf-plugin-pnd",
-            "PND Pitch Motion Monitor",
+            "PND Varispeed",
             Alpha,
             PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
             PluginChannelOutputModel::PreservesInput,
-            PluginLatencyModel::Zero,
+            PluginLatencyModel::FrameBased("phase-vocoder analysis frame"),
             "sotf_plugin_pnd::params::PARAMS",
             Generated,
             true,
         ),
         zero_alloc_evidence(
-            "sotf-plugin-pnd identifiability, exact two-minute passthrough, amplitude/noise robustness, transactional queue, zero-allocation reset, zero-latency, malformed-state, and block-partition tests"
+            "sotf-plugin-pnd stable-tone near-unity, known-drift correction, phase-vocoder transition, smoothing, latency, reset, and block-size tests"
         )
     ),
     entry!(
@@ -1181,13 +1181,13 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             Beta,
             PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
             PluginChannelOutputModel::InputTimesBands,
-            PluginLatencyModel::PluginReported("crossover topology and band count"),
+            PluginLatencyModel::Zero,
             "sotf_plugin_band_split::params::PARAMS",
             Generated,
             true,
         ),
         zero_alloc_evidence(
-            "sotf-plugin-band-split two/three/four-band DC reconstruction, crossover spacing, smoothing, routing, and split/merge high-layout round trips"
+            "sotf-plugin-band-split independent LR24/LR48 response, impulse phase/magnitude, noise reconstruction, control-rate automation, partition invariance, zero-allocation setters, multiband/sample-rate, and 12-channel isolation tests"
         )
     ),
     entry!(

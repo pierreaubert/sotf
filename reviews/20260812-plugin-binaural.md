@@ -1,8 +1,8 @@
 # Binaural audio plugin code review — 2026-08-12
 
-## Remediation status — 0.5.23 complete
+## Remediation status — 0.5.22 complete
 
-Fixed across `0.5.20` through `0.5.23`:
+Fixed across `0.5.20` through `0.5.22`:
 
 - VBAP uses the correct barycentric sign and unit-sum affine interpolation;
   exact vertex/edge/centroid and constant-field regressions cover both defects.
@@ -27,13 +27,6 @@ Fixed across `0.5.20` through `0.5.23`:
   processing operates on hop partitions instead of shifting an FFT frame.
 - Runtime SOFA replacement is transactional and the rebound worker converges to
   the current target after backpressure or dataset changes.
-- The remediated crossfade, head-tracking, HRTF-database, and anthropometric
-  parameters are present as visible controls in the generated layout, with a
-  regression that checks their documented control type and surface.
-- Player and engine graph channel-width reconstruction preserve every Binaural
-  setting while changing only `input_channels`; exhaustive regressions cover
-  the complete settings variant, and the CLI now customizes the canonical
-  default rather than maintaining a lossy duplicate constructor.
 
 All P0-P3 findings are resolved; no remediation remains deferred.
 
@@ -43,12 +36,6 @@ Verification after remediation:
 - `cargo test -p sotf-plugins --offline binaural_catalog_and_factory_share_exact_layout_contract` — passed.
 - `cargo test -p sotf-plugins --offline --test realtime_allocation_tests test_binaural_zero_alloc` — passed.
 - `cargo check -p sotf-engine --offline` — passed.
-- `cargo test -p sotf-engine binaural_reconstruction_after_external_preserves_every_non_channel_setting --lib --locked` — passed.
-- `cargo test -p sotf-player binaural_channel_reconstruction_preserves_all_non_channel_settings --test plugin_chain_tests --locked` — passed.
-- `cargo check -p sotf-player --locked` — passed.
-- `cargo check -p app-cli --locked` — Binaural constructor compiles; the crate
-  remains blocked by unrelated stale Loudness Compensation, EQ, AB Compare,
-  and Downmix constructors.
 - `cargo clippy -p sotf-plugin-binaural --all-targets --offline -- -W warnings` — no
   Binaural warnings (shared `sotf-host` warnings remain).
 

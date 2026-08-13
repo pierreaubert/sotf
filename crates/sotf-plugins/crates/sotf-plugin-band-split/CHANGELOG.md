@@ -13,7 +13,6 @@
   isolation, reset, malformed-context, and worst-case deadline coverage.
 - Reject unknown persisted fields/crossover types and require initialized,
   sample-rate-matched processing.
-- Keep engine channel topology in the graph contract rather than serializing it as an unknown Band Split runtime parameter.
 
 # 0.5.4
 

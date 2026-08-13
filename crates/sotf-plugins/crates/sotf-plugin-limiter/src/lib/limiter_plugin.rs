@@ -4,7 +4,7 @@ use super::types::LimiterPluginParams;
 use crate::params::PARAMS as LM;
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::{UpdateMode, find_by_key as pk};
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::plugin::{
@@ -314,7 +314,6 @@ impl LimiterPlugin {
             )
             .with_description("Structural predictive lookahead / host latency (ms)")
             .with_group("Timing")
-            .with_update_mode(UpdateMode::Structural)
             .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("soft", "Soft", self.soft)
                 .with_description("Use a one-dB gain-computer knee")

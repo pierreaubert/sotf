@@ -88,25 +88,9 @@ pub fn upsert_named_room_eq_plugins(
     // Step 2: name-keyed upsert helper. Tracks new nodes by stable
     // GraphNodeId so inserts that shift sibling positions don't leave us
     // writing settings into a neighbouring plugin.
-    let upsert_eq = |graph: &mut PluginGraph, mut settings: PluginSettings, name: &str| {
+    let upsert_eq = |graph: &mut PluginGraph, settings: PluginSettings, name: &str| {
         if let Some(idx) = graph.find_plugin_index_by_name(name) {
             if let Some(p) = graph.get_plugin_mut(idx) {
-                if let (
-                    PluginSettings::EQ {
-                        auto_gain_enabled: existing_auto_gain,
-                        oversampling: existing_oversampling,
-                        ..
-                    },
-                    PluginSettings::EQ {
-                        auto_gain_enabled,
-                        oversampling,
-                        ..
-                    },
-                ) = (&p.settings, &mut settings)
-                {
-                    *auto_gain_enabled = *existing_auto_gain;
-                    *oversampling = *existing_oversampling;
-                }
                 p.settings = settings;
                 p.name = Some(name.to_string());
                 log::info!("Updated existing '{}' EQ at index {}", name, idx);

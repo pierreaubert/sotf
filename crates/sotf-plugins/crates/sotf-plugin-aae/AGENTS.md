@@ -38,3 +38,7 @@ cargo run -p sotf-plugin-aae --features qa --bin qa-aae
 - Implements `Plugin` (not `ParametricInPlacePlugin`): output channel count differs from input (stereo → 5.0–9.1.6).
 - VBAP routing depends on the active speaker layout from `sotf-host::speaker_config`.
 - Pre-allocate FDN/delay-line buffers in `build()`; never resize on the audio path.
+- AAE is zero-latency through its immediate direct path. Room preset and output
+  layout are structural; rebuild rather than mutate them live.
+- The LFE effects send is LR4-low-passed at 120 Hz and is not complementary
+  bass management. Spatial rows must never route ER/FDN energy into LFE.

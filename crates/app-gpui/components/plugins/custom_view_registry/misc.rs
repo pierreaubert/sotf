@@ -42,7 +42,6 @@ pub fn plugin_type_key(settings: &PluginSettings) -> &'static str {
         PluginSettings::DeEsser { .. } => "de_esser",
         PluginSettings::TransientShaper { .. } => "transient_shaper",
         PluginSettings::Saturation { .. } => "saturation",
-        PluginSettings::Dither { .. } => "dither",
         PluginSettings::DynamicEq { .. } => "dynamic_eq",
         PluginSettings::LinearPhaseEq { .. } => "linear_phase_eq",
         PluginSettings::SpectralCompressor { .. } => "spectral_compressor",

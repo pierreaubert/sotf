@@ -4662,48 +4662,6 @@ fn every_app_plugin_has_gpui_and_simple_parameter_surfaces() {
 }
 
 #[test]
-fn dither_has_complete_gpui_registry_shell_and_localized_metadata() {
-    use sotf_audio_player_gpui::components::plugins::ui_plugin_shell::{
-        plugin_accent_color, plugin_icon, plugin_short_name,
-    };
-    use sotf_audio_player_gpui::i18n::PluginCommonTranslations;
-
-    let settings = PluginSettings::default_for(&PluginType::Dither).unwrap();
-    assert_eq!(plugin_type_key(&settings), "dither");
-
-    let theme = Theme::dark();
-    assert_eq!(
-        plugin_accent_color(&PluginType::Dither, &theme),
-        theme.plugin_palette.plugin_colors.gain
-    );
-    assert_eq!(
-        plugin_icon(&PluginType::Dither, false, false),
-        IconName::AudioWaveform
-    );
-    assert_eq!(
-        plugin_short_name(&PluginType::Dither, false, false, false),
-        "Dither"
-    );
-
-    let descriptions = Language::all()
-        .iter()
-        .map(|language| {
-            PluginCommonTranslations::for_language(*language).description(&PluginType::Dither)
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(descriptions.len(), 4);
-    assert!(
-        descriptions
-            .iter()
-            .all(|description| !description.trim().is_empty())
-    );
-    assert_eq!(
-        descriptions.iter().copied().collect::<BTreeSet<_>>().len(),
-        4
-    );
-}
-
-#[test]
 fn both_midi_controller_layouts_expose_the_same_plugin_parameters() {
     let controllers = [xone_k2_layout(), lcxl_layout()];
 

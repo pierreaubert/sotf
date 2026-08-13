@@ -12,7 +12,7 @@ use sotf_host::auto_makeup::MeasuredMakeup;
 use sotf_host::lookahead::LookaheadBuffer;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_bridge;
-use sotf_host::param_specs::{UpdateMode, find_by_key as pk};
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
@@ -559,8 +559,7 @@ impl MultibandCompressorPlugin {
                 0.0,
                 20.0,
             )
-            .with_group("Timing")
-            .with_update_mode(UpdateMode::Structural),
+            .with_group("Timing"),
         );
 
         // Per-band dynamics (not covered by GLOBAL_PARAMS)

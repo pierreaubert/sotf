@@ -1,12 +1,3 @@
-# 0.5.8
-
-## Testing
-
-- Strengthen the two-path transfer-threshold regression to prove that ten
-  consecutive candidate blocks do not promote the background path. This
-  exercises the behavior that the previous five-block threshold got wrong
-  instead of merely checking the configured threshold and process success.
-
 # 0.5.7
 
 ## Correctness and DSP

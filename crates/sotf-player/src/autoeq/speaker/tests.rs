@@ -270,8 +270,8 @@ fn test_speaker_opt_result_from_autoeq() {
     writeln!(measurement_file, "frequency,spl\n20,80\n100,85\n1000,90")
         .expect("write measurement fixture");
     let measurement_path = measurement_file.path().to_path_buf();
-    let measurement = autoeq::read::read_record_from_csv(&measurement_path)
-        .expect("load measurement fixture");
+    let measurement =
+        autoeq::read::read_record_from_csv(&measurement_path).expect("load measurement fixture");
     let lineage = autoeq::OptimizationLineage {
         input: measurement.clone(),
         normalized_input: measurement.clone(),

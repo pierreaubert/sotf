@@ -5,25 +5,11 @@ use super::dynamic_eq_plugin::DynamicEqPlugin;
 use super::dynamic_eq_plugin_params::DynamicEqPluginParams;
 use super::misc::bandpass_edges;
 use super::params::MAX_BANDS;
-use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 
 mod misc;
-
-#[test]
-fn rebuild_only_global_parameters_are_structural_in_host_metadata() {
-    let plugin = DynamicEqPlugin::new(2);
-    for id in ["num_bands", "link_channels"] {
-        let parameter = plugin
-            .parameters()
-            .into_iter()
-            .find(|parameter| parameter.id.as_str() == id)
-            .unwrap_or_else(|| panic!("missing {id}"));
-        assert_eq!(parameter.update_mode, UpdateMode::Structural, "{id}");
-    }
-}
 
 #[test]
 fn test_parameter_roundtrip() {
@@ -52,16 +38,16 @@ fn test_parameter_roundtrip() {
     assert_eq!(val, Some(ParameterValue::Float(0.5)));
 
     assert!(
-    plugin
-        .set_parameter(
-            ParameterId::from("link_channels"),
+        plugin
+            .set_parameter(
+                ParameterId::from("link_channels"),
                 ParameterValue::Bool(false)
-        )
+            )
             .is_err()
     );
     assert!(
-    plugin
-        .set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(6))
+        plugin
+            .set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(6))
             .is_err()
     );
 }
@@ -540,8 +526,8 @@ fn test_set_parameter_band_solo() {
     let mut plugin = DynamicEqPlugin::new(1);
     plugin.initialize(48000).unwrap();
     assert!(
-    plugin
-        .set_parameter(ParameterId::from("band_0_solo"), ParameterValue::Bool(true))
+        plugin
+            .set_parameter(ParameterId::from("band_0_solo"), ParameterValue::Bool(true))
             .is_err()
     );
 }
@@ -551,11 +537,11 @@ fn test_set_parameter_band_active() {
     let mut plugin = DynamicEqPlugin::new(1);
     plugin.initialize(48000).unwrap();
     assert!(
-    plugin
-        .set_parameter(
-            ParameterId::from("band_0_active"),
-            ParameterValue::Bool(false),
-        )
+        plugin
+            .set_parameter(
+                ParameterId::from("band_0_active"),
+                ParameterValue::Bool(false),
+            )
             .is_err()
     );
 }
@@ -566,11 +552,11 @@ fn test_set_parameter_band_frequency_alias() {
     plugin.initialize(48000).unwrap();
     let original = plugin.bands[0].frequency;
     assert!(
-    plugin
-        .set_parameter(
-            ParameterId::from("band_0_frequency"),
-            ParameterValue::Float(500.0),
-        )
+        plugin
+            .set_parameter(
+                ParameterId::from("band_0_frequency"),
+                ParameterValue::Float(500.0),
+            )
             .is_err()
     );
     assert_eq!(plugin.bands[0].frequency, original);

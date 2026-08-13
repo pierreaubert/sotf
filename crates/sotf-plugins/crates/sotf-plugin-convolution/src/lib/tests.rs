@@ -311,8 +311,8 @@ fn resampled_ir_delta_at_tail_preserves_the_last_response() {
     for (source_rate, target_rate) in [(44_100, 48_000), (48_000, 44_100), (96_000, 48_000)] {
         let source_len = 4097;
         let output = resampled_delta(source_rate, target_rate, source_len, source_len - 1);
-        let expected_index = ((source_len - 1) as f64 * target_rate as f64 / source_rate as f64)
-            .round() as usize;
+        let expected_index =
+            ((source_len - 1) as f64 * target_rate as f64 / source_rate as f64).round() as usize;
         let search_start = expected_index.saturating_sub(8);
         let search_end = (expected_index + 9).min(output.len());
         let local_peak = output[search_start..search_end]
@@ -328,8 +328,7 @@ fn resampled_ir_delta_at_tail_preserves_the_last_response() {
             output.len()
         );
         assert!(
-            output[expected_index.min(output.len() - 1)].abs() > 0.01
-                || local_peak.1 > 0.2,
+            output[expected_index.min(output.len() - 1)].abs() > 0.01 || local_peak.1 > 0.2,
             "tail response should remain centered near its nominal target position: rate {source_rate}->{target_rate}, expected={expected_index}, peak={local_peak:?}"
         );
     }

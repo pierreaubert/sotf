@@ -17,6 +17,7 @@ fuzzer_output
 
 # dont let claude and friends change git config
 /.git/config
+.git-index-*
 
 # marketing/product/insights ...
 /product

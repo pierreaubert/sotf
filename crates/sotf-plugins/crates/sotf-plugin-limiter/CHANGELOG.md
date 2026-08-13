@@ -123,6 +123,3 @@
 - Fixed catastrophic CPU waste in feed-forward lookahead scan: replaced O(lookahead_len × channels) per-sample scan with amortized O(1) running-max update.
 - Fixed 32-channel hard cap: `ch_peaks` now dynamically sized to `channels`, so all channels are analyzed.
 - Fixed ISP correction decay operating in wrong domain: decay now happens in linear gain space before converting back to dB, matching the release time constant.
-# 0.5.15
-
-- Mark latency-changing lookahead structural in host-visible metadata, matching its rebuild-only setter.

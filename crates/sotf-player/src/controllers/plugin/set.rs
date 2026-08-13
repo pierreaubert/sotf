@@ -410,8 +410,6 @@ mod tests {
             max_filters: 10,
             tdf2: false,
             topology: 0.0,
-            auto_gain_enabled: false,
-            oversampling: 1.0,
         };
         let mut changed = false;
 
@@ -439,8 +437,6 @@ mod tests {
             max_filters: 10,
             tdf2: false,
             topology: 0.0,
-            auto_gain_enabled: false,
-            oversampling: 1.0,
         };
         let mut changed = false;
 
@@ -462,8 +458,6 @@ mod tests {
             max_filters: 10,
             tdf2: false,
             topology: 0.0,
-            auto_gain_enabled: false,
-            oversampling: 1.0,
         };
         let mut changed = false;
 
@@ -492,8 +486,6 @@ mod tests {
             max_filters: 10,
             tdf2: false,
             topology: 0.0,
-            auto_gain_enabled: false,
-            oversampling: 1.0,
         };
         let mut changed = false;
 
@@ -514,8 +506,6 @@ mod tests {
             max_filters: 10,
             tdf2: false,
             topology: 0.0,
-            auto_gain_enabled: false,
-            oversampling: 1.0,
         };
         let mut changed = false;
 
@@ -540,8 +530,6 @@ mod tests {
             max_filters: 10,
             tdf2: false,
             topology: 0.0,
-            auto_gain_enabled: false,
-            oversampling: 1.0,
         };
         let mut changed = false;
 

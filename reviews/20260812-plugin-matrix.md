@@ -1,11 +1,5 @@
 # Matrix plugin code review
 
-## Metadata follow-up (0.5.93, 2026-08-13)
-
-Preset selection is now advertised as structural, matching its routing-table
-rebuild behavior. `preset_is_advertised_as_structural` guards the host-visible
-contract.
-
 ## Remediation status
 
 Verified and remediated on branch `fix/20260812-plugin-review-findings`. Every P1–P3 finding below is now covered by a deterministic regression test; no Matrix P0 finding was reported.

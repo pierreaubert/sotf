@@ -42,8 +42,7 @@ use sotf_audio::plugins::EqFilterTopology;
 use sotf_audio_player::{EQFilter, PluginSettings};
 use sotf_audio_player_midi::mapping::MidiOverlay;
 use sotf_plugins::param_specs::{
-    eq::BAND_TEMPLATE as EQ, find_by_key as pk,
-    linear_phase_eq::PARAMS as LP_PARAMS,
+    eq::BAND_TEMPLATE as EQ, find_by_key as pk, linear_phase_eq::PARAMS as LP_PARAMS,
 };
 use std::cell::RefCell;
 use std::rc::Rc;

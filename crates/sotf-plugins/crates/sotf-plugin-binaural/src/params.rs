@@ -119,35 +119,18 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             ControlSpec::knob(2),        // externalization
             ControlSpec::knob(3),        // near_field_strength
             ControlSpec::selector(4),    // crossfade_mode
-            ControlSpec::knob(9),        // crossfade_ms
         ],
     )],
     output: &[],
-    tabs: &[
-        TabSpec {
-            name: "Reverb",
-            controls: &[
-                ControlSpec::toggle(5), // late_reverb_enabled
-                ControlSpec::knob(6).enabled_when(ParamCondition::bool(5, true)), // mix
-                ControlSpec::knob(7).enabled_when(ParamCondition::bool(5, true)), // rt60
-                ControlSpec::knob(8).enabled_when(ParamCondition::bool(5, true)), // damping
-            ],
-        },
-        TabSpec {
-            name: "Tracking",
-            controls: &[
-                ControlSpec::knob(10), // head_yaw_deg
-                ControlSpec::knob(11), // head_pitch_deg
-                ControlSpec::knob(12), // head_roll_deg
-                ControlSpec::knob(14), // head_width_cm
-                ControlSpec::knob(15), // ear_height_cm
-            ],
-        },
-        TabSpec {
-            name: "Setup",
-            controls: &[ControlSpec::file_picker(13)], // hrtf_database_dir
-        },
-    ],
+    tabs: &[TabSpec {
+        name: "Reverb",
+        controls: &[
+            ControlSpec::toggle(5), // late_reverb_enabled
+            ControlSpec::knob(6).enabled_when(ParamCondition::bool(5, true)), // mix
+            ControlSpec::knob(7).enabled_when(ParamCondition::bool(5, true)), // rt60
+            ControlSpec::knob(8).enabled_when(ParamCondition::bool(5, true)), // damping
+        ],
+    }],
     visualizations: &[],
     column_constraints: &[
         ColumnConstraint::config(180.0, 0.5),
@@ -314,50 +297,6 @@ impl PluginParamDef for Params {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn review_parameters_are_visible_with_documented_controls() {
-        let expected = [
-            (9, "main", ControlType::Knob),
-            (10, "Tracking", ControlType::Knob),
-            (11, "Tracking", ControlType::Knob),
-            (12, "Tracking", ControlType::Knob),
-            (13, "Setup", ControlType::FilePicker),
-            (14, "Tracking", ControlType::Knob),
-            (15, "Tracking", ControlType::Knob),
-        ];
-
-        for (param_index, expected_surface, expected_type) in expected {
-            let mut matches =
-                LAYOUT
-                    .main
-                    .iter()
-                    .flat_map(|group| group.controls.iter().map(|control| ("main", control)))
-                    .chain(LAYOUT.tabs.iter().flat_map(|tab| {
-                        tab.controls.iter().map(move |control| (tab.name, control))
-                    }))
-                    .filter(|(_, control)| control.param_index == param_index);
-            let (surface, control) = matches.next().unwrap_or_else(|| {
-                panic!(
-                    "{} is missing from the layout",
-                    PARAMS[param_index].engine_key
-                )
-            });
-
-            assert_eq!(surface, expected_surface);
-            assert_eq!(control.control_type, expected_type);
-            assert!(
-                !control.hidden,
-                "{} is a public UI parameter, not a chrome-owned hidden parameter",
-                PARAMS[param_index].engine_key
-            );
-            assert!(
-                matches.next().is_none(),
-                "{} must have exactly one layout control",
-                PARAMS[param_index].engine_key
-            );
-        }
-    }
 
     #[test]
     fn param_index_coverage() {

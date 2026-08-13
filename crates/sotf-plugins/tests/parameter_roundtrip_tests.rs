@@ -91,9 +91,8 @@ fn default_params(plugin_type: &str) -> serde_json::Value {
             "matrix": [1.0, 0.0, 0.0, 1.0],
         }),
         "band_split" => serde_json::json!({
-            "num_bands": 2,
-            "frequency": 1000.0,
-            "type": "LR24",
+            "bands": 2,
+            "crossover_frequencies": [1000.0],
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -177,6 +176,12 @@ const PARAMETER_EXCEPTIONS: &[ParameterException] = &[
         parameter_id: "beamformer_type",
         contract: ExceptionContract::ConditionalSetter,
         reason: "algorithm topology requires a graph rebuild",
+    },
+    ParameterException {
+        plugin_type: "matrix",
+        parameter_id: "channel_states",
+        contract: ExceptionContract::ReadOnly,
+        reason: "bulk channel state requires a channel-sized payload",
     },
     ParameterException {
         plugin_type: "denoiser",

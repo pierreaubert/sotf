@@ -1,11 +1,3 @@
-# 0.5.12
-
-## Fixes
-
-- Advertise mode, Exciter crossover, oversampling, DC blocker, and ADAA as
-  structural controls, matching the initialized plugin's graph-rebuild-only
-  setter contract.
-
 # 0.5.11
 
 ## Fixes (2026-08-12 review closure)

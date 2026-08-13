@@ -1,0 +1,133 @@
+---
+source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 59
+expression: plan
+---
+{
+  "plugin_type": "delay",
+  "width": 390.0,
+  "design_language": "neutral",
+  "corner_radius_md": 8.0,
+  "min_touch_target": 32.0,
+  "toggle_variant": "capsule",
+  "label_position": "below",
+  "orientation": "vertical",
+  "knob_size": "xs",
+  "group_direction": "column",
+  "slider_height": 120.0,
+  "show_visualizations": false,
+  "columns_visible": [
+    "main"
+  ],
+  "columns_collapsed": [
+    "output"
+  ],
+  "visible_group_ids": [
+    "primary"
+  ],
+  "overflow_group_ids": [],
+  "config_controls": [],
+  "main_groups": [
+    {
+      "id": "primary",
+      "title": "",
+      "controls": [
+        {
+          "param_index": 0,
+          "param_name": "Delay",
+          "control_type": "vertical_slider",
+          "unit": "ms",
+          "range": [
+            0.0,
+            5000.0
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 1,
+          "param_name": "Feedback",
+          "control_type": "vertical_slider",
+          "unit": "",
+          "range": [
+            -0.95,
+            0.95
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 5,
+          "param_name": "Allpass Coeff",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            0.0,
+            0.99
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 6,
+          "param_name": "Allpass Feedback",
+          "control_type": "toggle",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false,
+          "enabled": true
+        }
+      ]
+    }
+  ],
+  "output_controls": [
+    {
+      "param_index": 2,
+      "param_name": "Mix",
+      "control_type": "knob",
+      "unit": "%",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false,
+      "enabled": true
+    }
+  ],
+  "tabs": [
+    {
+      "name": "Modulation",
+      "controls": [
+        {
+          "param_index": 3,
+          "param_name": "LFO Rate",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            0.0,
+            20.0
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 4,
+          "param_name": "LFO Depth",
+          "control_type": "knob",
+          "unit": "ms",
+          "range": [
+            0.0,
+            10.0
+          ],
+          "read_only": false,
+          "enabled": true
+        }
+      ]
+    }
+  ],
+  "viz_slots": [],
+  "dynamic_sections": []
+}

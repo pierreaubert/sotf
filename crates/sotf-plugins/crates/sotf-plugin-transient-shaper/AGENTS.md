@@ -23,4 +23,5 @@ cargo test -p sotf-plugin-transient-shaper
 - Based on the SPL Transient Designer approach
 - Separates transient (attack) from sustain using envelope detection
 - Attack and sustain can be independently boosted or cut
-- Threshold-independent — works on the signal shape, not level
+- Shape-based above a smoothly automated sensitivity gate
+- Linked across channels so shaping preserves the stereo/multichannel image

@@ -116,22 +116,7 @@ impl PndAnalyzer {
         let bin_hz = self.sample_rate as f32 / self.fft_size as f32;
         self.peak_scratch.clear();
 
-        // Derive the gate from this frame instead of raw FFT units. The old
-        // fixed 0.001 threshold changed behavior with channel gain, window
-        // normalization, and FFT size. Four times the spectrum RMS rejects a
-        // flat noise floor; the relative peak floor retains quiet tonal
-        // partials without admitting numerical residue.
-        let mut spectrum_peak = 0.0_f32;
-        let mut spectrum_power = 0.0_f32;
-        for bin in &self.fft.freq_buffer {
-            let power = bin.norm_sqr();
-            spectrum_peak = spectrum_peak.max(power.sqrt());
-            spectrum_power += power;
-        }
-        let spectrum_rms = (spectrum_power / self.fft.spectrum_size as f32).sqrt();
-        let threshold = (4.0 * spectrum_rms)
-            .max(spectrum_peak * 1.0e-3)
-            .max(f32::MIN_POSITIVE);
+        let threshold = 0.001; // ~-60dB
         for i in 1..self.fft.spectrum_size - 1 {
             let mag_prev = self.fft.freq_buffer[i - 1].norm();
             let mag_curr = self.fft.freq_buffer[i].norm();
@@ -386,62 +371,6 @@ mod tests {
             (drift - 1.0).abs() < 0.01,
             "Stable 440Hz tone should produce drift ~1.0, got {drift}"
         );
-    }
-
-    #[test]
-    fn peak_detection_is_invariant_to_signal_level() {
-        fn analyze_at_level(level: f32) -> (f32, usize, f32) {
-            let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
-            let samples: Vec<f32> = (0..48_000)
-                .map(|i| {
-                    let phase = 2.0 * std::f32::consts::PI * i as f32 / 48_000.0;
-                    level * ((440.0 * phase).sin() + 0.5 * (880.0 * phase).sin())
-                })
-                .collect();
-            let drift = analyzer.analyze(&samples);
-            (drift, analyzer.total_peaks(), analyzer.confidence())
-        }
-
-        let loud = analyze_at_level(0.5);
-        let quiet = analyze_at_level(1.0e-7);
-        assert_eq!(quiet.1, loud.1, "quiet={quiet:?}, loud={loud:?}");
-        assert!(quiet.1 >= 2, "expected both controlled partials: {quiet:?}");
-        assert!((quiet.0 - loud.0).abs() < 1e-5);
-        assert!((quiet.2 - loud.2).abs() < 1e-5);
-    }
-
-    #[test]
-    fn broadband_noise_does_not_create_a_confident_drift_observation() {
-        let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
-        let mut state = 0x1234_5678_u32;
-        let noise: Vec<f32> = (0..48_000)
-            .map(|_| {
-                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-                (state as i32) as f32 / i32::MAX as f32 * 0.1
-            })
-            .collect();
-        let drift = analyzer.analyze(&noise);
-        assert!((drift - 1.0).abs() < 1e-6, "drift={drift}");
-        assert!(
-            analyzer.confidence() < 0.5,
-            "confidence={}",
-            analyzer.confidence()
-        );
-    }
-
-    #[test]
-    fn silence_to_low_tone_transition_recovers_without_stale_drift() {
-        let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
-        analyzer.analyze(&vec![0.0; 4096]);
-        let tone: Vec<f32> = (0..48_000)
-            .map(|i| {
-                let phase = 2.0 * std::f32::consts::PI * i as f32 / 48_000.0;
-                0.4 * ((62.5 * phase).sin() + 0.4 * (125.0 * phase).sin())
-            })
-            .collect();
-        let drift = analyzer.analyze(&tone);
-        assert!((drift - 1.0).abs() < 0.01, "drift={drift}");
-        assert!(analyzer.total_peaks() >= 2);
     }
 
     #[test]

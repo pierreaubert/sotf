@@ -838,12 +838,7 @@ impl ConvolutionPlugin {
             SequentialSliceOfVecs::new_mut(&mut output_channels, num_channels, output_capacity)
                 .map_err(|e| format!("Output adapter error: {e}"))?;
         let (_, written) = resampler
-            .process_all_into_buffer(
-                &input_adapter,
-                &mut output_adapter,
-                source_len,
-                None,
-            )
+            .process_all_into_buffer(&input_adapter, &mut output_adapter, source_len, None)
             .map_err(|e| format!("Resampling error: {e}"))?;
 
         for channel in &mut output_channels {

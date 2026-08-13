@@ -1,14 +1,3 @@
-# 0.5.6
-
-## Fixes
-
-- Preserved canonical AutoGain position, headroom policy, and SPL calibration
-  state in CLI rack/traditional builders; Fletcher-Munson compatibility now
-  explicitly enters calibrated Auto mode.
-- Marked the legacy `auto_gain_enabled` parameter as a hidden layout
-  compatibility alias while keeping `auto_gain_position` as the sole visible,
-  canonical AutoGain control.
-
 # 0.5.5
 
 ## Fixes

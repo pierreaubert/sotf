@@ -724,8 +724,8 @@ fn test_icon_size_to_rems_matches_px_at_base_rem() {
 #[test]
 fn test_save_and_load_config_persists_language_and_tutorial_flag() {
     use sotf_audio_player::config::set_config_dir_override;
-    use sotf_audio_player_gpui::i18n::Language;
     use sotf_audio_player_gpui::app::state::ui::LayoutState;
+    use sotf_audio_player_gpui::i18n::Language;
     use sotf_audio_player_gpui::{App, Config};
 
     let dir = std::env::temp_dir().join(format!("sotf-config-test-{}", std::process::id()));

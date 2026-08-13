@@ -2,15 +2,7 @@
 
 ## Remediation status
 
-All P1–P2 findings are closed in version 0.5.6, with focused regression coverage.
-The legacy `auto_gain_enabled` schema entry is now explicitly referenced by a
-hidden compatibility control, so layout coverage remains complete without
-rendering a second AutoGain state beside canonical `auto_gain_position`.
-CLI rack and traditional builders now also populate the canonical position,
-headroom, and calibration fields explicitly. Manual mode derives Disabled/Post
-position from its legacy AutoGain flag while preserving uncalibrated,
-reference-preserving defaults; Fletcher-Munson compatibility enters calibrated
-Auto mode without enabling hidden normalization or AutoGain.
+All P1–P2 findings are closed in version 0.5.5, with focused regression coverage.
 The ISO bank is now jointly fitted and error-bounded, reference preservation is
 the default explicit level policy, filter/mode updates crossfade, Auto requires a
 measured SPL calibration, and coefficient preparation never runs in the callback.

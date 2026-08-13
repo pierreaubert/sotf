@@ -843,7 +843,7 @@ fn phase_alignment_preserves_ordinary_mix_bin_magnitude() {
         plugin.input_buffer[5 * FFT_SIZE + frame] = (phase - 0.8).sin();
     }
     plugin.process_fft_block();
-    let bin = 1200 * FFT_SIZE / 48_000;
+    let bin = (1200 * FFT_SIZE / 48_000) as usize;
     let aligned_magnitude = plugin.out_freq_l[bin].norm();
 
     plugin.phase_coherence = false;

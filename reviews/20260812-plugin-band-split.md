@@ -4,10 +4,6 @@
 
 All P1–P2 findings are closed; this review reported no P0 or P3 finding.
 
-Engine integration follow-up: Band Split retains channel topology in its settings
-and graph contract but no longer emits `channels` into the plugin's strict runtime
-parameter object. A public-factory regression covers the default config.
-
 - Construction, initialization, factory state, and live automation share finite,
   range, Nyquist, strict-order, channel-count, and crossover-type validation.
   Invalid changes are rejected transactionally with focused neighbor-crossing,

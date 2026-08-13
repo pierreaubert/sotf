@@ -50,7 +50,7 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
             "sofa_file": "",
         }),
         "crossover" => serde_json::json!({
-            "type": "LR24",
+            "type": "lr4",
             "frequency": 1000.0,
             "output": "lowpass",
         }),
@@ -73,7 +73,7 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
         "band_split" => serde_json::json!({
             "num_bands": 2,
             "frequency": 1000.0,
-            "type": "LR24",
+            "type": "lr4",
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -150,11 +150,14 @@ fn multi_channel_capable_plugins() -> Vec<&'static str> {
         "fletcher_munson",
         "denoiser",
         "wiener_denoiser",
+        "rnnoise",
+        "rnnoise_denoiser",
         "hiss_reducer",
         "hiss",
         "declick",
         "transient_repair",
         "pnd",
+        "varispeed",
         "channel_mute_solo",
         "loudness_monitor",
         "spectrum_analyzer",
@@ -386,6 +389,8 @@ fn mono_to_stereo_from_1ch_is_finite() {
         SAMPLE_RATE,
     )
     .expect("mono_to_stereo should instantiate for 1ch input");
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
     assert_eq!(plugin.input_channels(), 1);
     assert_eq!(plugin.output_channels(), 2);
 
@@ -410,7 +415,6 @@ fn mono_to_stereo_from_1ch_is_finite() {
             ParameterValue::Bool(false),
         )
         .unwrap();
-    plugin.initialize(SAMPLE_RATE).unwrap();
 
     // FFT_SIZE is 2048 inside the plugin; 16x gives the latency buffer time to
     // fill and the smoother time to settle.
@@ -451,7 +455,7 @@ fn factory_reports_exact_channel_layouts_for_channel_changing_plugins() {
         ),
         (
             "band_split",
-            serde_json::json!({"num_bands": 2, "frequency": 1000.0, "type": "LR24"}),
+            serde_json::json!({"num_bands": 2, "frequency": 1000.0, "type": "lr4"}),
             3,
             6,
         ),
@@ -1009,6 +1013,7 @@ fn latency_reporting_plugins() -> Vec<(&'static str, serde_json::Value)> {
         ("limiter", default_params("limiter", 2)),
         ("convolution", default_params("convolution", 2)),
         ("upmixer", default_params("upmixer", 2)),
+        ("mono_to_stereo", default_params("mono_to_stereo", 1)),
         (
             "multiband_expander",
             serde_json::json!({"lookahead_ms": 5.0}),
@@ -1021,6 +1026,7 @@ fn latency_reporting_plugins() -> Vec<(&'static str, serde_json::Value)> {
         ),
         ("denoiser", default_params("denoiser", 2)),
         ("speech_denoiser", serde_json::json!({"enabled": false})),
+        ("pnd", default_params("pnd", 2)),
         ("binaural_decoder", default_params("binaural_decoder", 2)),
         ("downmix", default_params("downmix", 2)),
         ("xtc", default_params("xtc", 2)),
@@ -1099,6 +1105,7 @@ fn zero_latency_plugin_configurations() -> Vec<(&'static str, serde_json::Value)
         ("fletcher_munson", default_params("fletcher_munson", 2)),
         ("crossfeed", default_params("crossfeed", 2)),
         ("hiss_reducer", default_params("hiss_reducer", 2)),
+        ("declick", default_params("declick", 2)),
         (
             "ambisonics_decoder",
             default_params("ambisonics_decoder", 4),
@@ -1176,14 +1183,15 @@ fn reported_latency_matches_streamed_impulse_peak() {
     // zero-latency-head modes. Resampler latency is expressed in output-rate
     // frames and has dedicated rubato/chunking tests, so neither belongs in this
     // same-rate impulse-peak probe.
-    for (plugin_type, params) in latency_reporting_plugins()
-        .into_iter()
-        .filter(|(plugin_type, _)| {
-            !matches!(
-                *plugin_type,
-                "convolution" | "resampler" | "binaural_decoder" | "mono_to_stereo"
-            )
-        })
+    for (plugin_type, params) in
+        latency_reporting_plugins()
+            .into_iter()
+            .filter(|(plugin_type, _)| {
+                !matches!(
+                    *plugin_type,
+                    "convolution" | "resampler" | "binaural_decoder" | "mono_to_stereo"
+                )
+            })
     {
         let channels = required_input_channels(plugin_type).unwrap_or(2);
         let result = (|| {

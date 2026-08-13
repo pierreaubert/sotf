@@ -154,8 +154,6 @@ pub(super) fn simulate_save_to_rack(
             max_filters: 10,
             tdf2: false,
             topology: 0.0,
-            auto_gain_enabled: false,
-            oversampling: 1.0,
         };
 
         if let Some(eq_idx) = graph.find_plugin_index(&PluginType::EQ) {

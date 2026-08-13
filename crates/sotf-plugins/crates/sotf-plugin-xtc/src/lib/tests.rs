@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::load::load_roomeq_recommended_filters;
-use crate::types::{PendingFilterUpdate, RetiredXtcState};
+use crate::types::PendingFilterUpdate;
 use filters::{
     compute_beta_condition_number, compute_geometry_cache, compute_xtc_filters_full,
     head_shadowing_brown_duda, head_shadowing_complex, head_shadowing_for_plant,
@@ -2469,14 +2469,8 @@ fn validation_rejects_non_finite_measurements() {
 }
 
 #[test]
-fn async_filter_automation_coalesces_and_publishes_the_final_generation_off_thread() {
+fn async_filter_automation_uses_one_coalescing_worker() {
     let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
-    let frames = 512;
-    let input = vec![0.0; frames * 2];
-    let mut output = vec![0.0; frames * 2];
-    let context = ProcessContext::new(48_000, frames);
-    plugin.process(&input, &mut output, &context).unwrap();
-
     for value in 0..100 {
         plugin
             .set_parameter(
@@ -2485,65 +2479,13 @@ fn async_filter_automation_coalesces_and_publishes_the_final_generation_off_thre
             )
             .unwrap();
     }
-
-    let requested_generation = plugin
-        .filter_state
-        .filter_update_generation
-        .load(Ordering::Acquire);
-    assert_eq!(requested_generation, 100);
-    let final_params = plugin.params.clone();
-    let expected = compute_xtc_filters_full(&final_params, 48_000, plugin.fft.fft_size / 2 + 1);
-
-    let mut published = None;
-    for _ in 0..1_000 {
-        if let Some(update) = plugin.filter_state.pending_filter_update.load_full()
-            && update.generation == requested_generation
-        {
-            published = Some(update);
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-    let published = published.expect("coalescing worker did not publish the final request");
+    std::thread::sleep(std::time::Duration::from_millis(20));
     assert_eq!(
         plugin
             .filter_state
             .filter_worker_launches
             .load(Ordering::Relaxed),
         1
-    );
-    assert!(
-        published
-            .filters
-            .filter_ll
-            .iter()
-            .zip(&expected.filter_ll)
-            .all(|(actual, expected)| (*actual - *expected).norm() < 1.0e-6),
-        "published filters do not correspond to the final automation value"
-    );
-
-    let previous = plugin.filter_state.filters.load_full();
-    let previous_weak = Arc::downgrade(&previous);
-    drop(previous);
-    assert_no_allocs("XTC worker publication and crossfade", || {
-        for _ in 0..64 {
-            plugin.process(&input, &mut output, &context).unwrap();
-        }
-    });
-    assert_eq!(
-        plugin.filter_state.cached_current_filters.filter_ll,
-        expected.filter_ll
-    );
-
-    for _ in 0..500 {
-        if previous_weak.upgrade().is_none() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-    assert!(
-        previous_weak.upgrade().is_none(),
-        "superseded filters were not reclaimed off the callback thread"
     );
 }
 
@@ -2587,207 +2529,6 @@ fn same_width_filter_adoption_allocates_and_deallocates_nothing() {
     assert_no_allocs("XTC same-width update adoption", || {
         plugin.adopt_pending_filters();
     });
-}
-
-#[test]
-fn post_enable_room_ir_failure_does_not_publish_reflection_free_filters() {
-    let path = std::env::temp_dir().join(format!(
-        "xtc-room-ir-async-failure-{}.wav",
-        std::process::id()
-    ));
-    write_pcm16_wav(&path, 256);
-
-    let mut params = XtcPluginParams::default();
-    params.room_ir_file = Some(path.to_string_lossy().into_owned());
-    params.room_reflections_enabled = true;
-    let mut plugin = XtcPlugin::new(params, 48_000).unwrap();
-    let before = plugin.filter_state.filters.load_full();
-    std::fs::remove_file(&path).unwrap();
-
-    plugin
-        .set_parameter(
-            ParameterId::from("speaker_angle_deg"),
-            ParameterValue::Float(31.0),
-        )
-        .unwrap();
-    for _ in 0..200 {
-        if !plugin
-            .filter_state
-            .filter_worker_running
-            .load(Ordering::Acquire)
-        {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-
-    assert!(
-        plugin
-            .filter_state
-            .pending_filter_update
-            .load_full()
-            .is_none()
-    );
-    assert!(Arc::ptr_eq(
-        &before,
-        &plugin.filter_state.filters.load_full()
-    ));
-    assert!(
-        plugin
-            .last_filter_update_error()
-            .is_some_and(|(generation, error)| generation > 0 && !error.is_empty()),
-        "post-enable room IR failure must remain observable"
-    );
-}
-
-#[test]
-fn wrong_width_pending_update_is_rejected_before_publication() {
-    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
-    let generation = 1;
-    plugin
-        .filter_state
-        .filter_update_generation
-        .store(generation, Ordering::Release);
-    let before = plugin.filter_state.filters.load_full();
-    let bins = plugin.fft.fft_size / 2 + 1;
-    let zero = vec![Complex::new(0.0, 0.0); bins];
-    let wrong_width = Arc::new(filters::XtcFilters {
-        filter_ll: zero.clone(),
-        filter_lr: zero.clone(),
-        filter_rl: None,
-        filter_rr: None,
-        is_symmetric: true,
-        speaker_filters: Some(vec![
-            [zero.clone(), zero.clone()],
-            [zero.clone(), zero.clone()],
-            [zero.clone(), zero],
-        ]),
-    });
-    plugin
-        .filter_state
-        .pending_filter_update
-        .store(Some(Arc::new(PendingFilterUpdate {
-            generation,
-            filters: wrong_width,
-            hrtf_transfer_functions: None,
-            room_reflection_cache: None,
-            room_params_hash: 0,
-        })));
-
-    plugin.adopt_pending_filters();
-
-    assert!(Arc::ptr_eq(
-        &before,
-        &plugin.filter_state.filters.load_full()
-    ));
-    assert!(Arc::ptr_eq(
-        &before,
-        &plugin.filter_state.cached_current_filters
-    ));
-    assert!(plugin.filter_state.prev_filters.is_none());
-}
-
-#[test]
-fn completed_crossfade_filters_are_destroyed_by_background_reclaimer() {
-    *LAST_FILTER_RECLAIM_THREAD
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
-    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
-    let old = Arc::new(compute_xtc_filters_full(
-        &XtcPluginParams::default(),
-        48_000,
-        plugin.fft.fft_size / 2 + 1,
-    ));
-    let weak = Arc::downgrade(&old);
-    plugin.filter_state.prev_filters = Some(old);
-    plugin.filter_state.crossfade_progress = 0.0;
-    plugin.filter_state.progress_per_hop = 1.0;
-
-    plugin.process_stft_frame();
-
-    for _ in 0..200 {
-        if weak.upgrade().is_none() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-    assert!(
-        weak.upgrade().is_none(),
-        "retired filters were not reclaimed"
-    );
-    assert_eq!(
-        LAST_FILTER_RECLAIM_THREAD
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .as_deref(),
-        Some("xtc-filter-reclaimer")
-    );
-}
-
-#[test]
-fn saturated_reclaimer_retains_bounded_ownership_without_leaking() {
-    *LAST_FILTER_RECLAIM_THREAD
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
-    PAUSE_FILTER_RECLAIMER.store(true, Ordering::Release);
-    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
-    let bins = plugin.fft.fft_size / 2 + 1;
-    let mut retired = Vec::new();
-
-    // Let the reclaimer receive and hold one item, then fill its eight queue
-    // slots and the plugin's single retry slot.
-    let first = Arc::new(compute_xtc_filters_full(
-        &XtcPluginParams::default(),
-        48_000,
-        bins,
-    ));
-    retired.push(Arc::downgrade(&first));
-    plugin.retire_state_off_audio_thread(RetiredXtcState::Filters(first));
-    for _ in 0..200 {
-        if LAST_FILTER_RECLAIM_THREAD
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .is_some()
-        {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-    for _ in 0..9 {
-        let filters = Arc::new(compute_xtc_filters_full(
-            &XtcPluginParams::default(),
-            48_000,
-            bins,
-        ));
-        retired.push(Arc::downgrade(&filters));
-        plugin.retire_state_off_audio_thread(RetiredXtcState::Filters(filters));
-    }
-    assert!(plugin.filter_state.retired_filter_retry.is_some());
-
-    // Saturation applies backpressure: ownership of an additional snapshot is
-    // not consumed until the fixed retry slot can be flushed.
-    let extra = Arc::new(compute_xtc_filters_full(
-        &XtcPluginParams::default(),
-        48_000,
-        bins,
-    ));
-    let extra_weak = Arc::downgrade(&extra);
-    assert!(!plugin.flush_retired_filter_retry());
-    assert!(extra_weak.upgrade().is_some());
-
-    PAUSE_FILTER_RECLAIMER.store(false, Ordering::Release);
-    for _ in 0..500 {
-        if plugin.flush_retired_filter_retry()
-            && retired.iter().all(|filters| filters.upgrade().is_none())
-        {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
-    assert!(plugin.filter_state.retired_filter_retry.is_none());
-    assert!(retired.iter().all(|filters| filters.upgrade().is_none()));
-    drop(extra);
-    assert!(extra_weak.upgrade().is_none());
 }
 
 fn write_pcm16_wav(path: &std::path::Path, frames: usize) {

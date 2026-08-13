@@ -106,6 +106,3 @@
 - Process blocks larger than the FFT size by chunking them through the overlap-add path.
 - Avoid silently passing oversized blocks through dry while still reporting FIR latency.
 - Add regression coverage that verifies large blocks are processed.
-# 0.5.7
-
-- Mark FIR length and phase mode structural in host-visible metadata, matching their rebuild-only setters.

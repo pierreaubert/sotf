@@ -88,52 +88,6 @@ fn test_adjust_eq_parameters() {
 }
 
 #[test]
-fn load_apo_preserves_eq_global_controls() {
-    let mut app = App::new(Theme::default(), false);
-    let plugin_idx = app.plugin_rack.graph.add_plugin(&PluginType::EQ).unwrap();
-    app.plugin_rack.selected_index = plugin_idx;
-
-    let plugin = app.plugin_rack.graph.get_plugin_mut(plugin_idx).unwrap();
-    let PluginSettings::EQ {
-        auto_gain_enabled,
-        oversampling,
-        tdf2,
-        topology,
-        ..
-    } = &mut plugin.settings
-    else {
-        panic!("expected EQ settings");
-    };
-    *auto_gain_enabled = true;
-    *oversampling = 4.0;
-    *tdf2 = true;
-    *topology = 1.0;
-
-    let apo = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(apo.path(), "Filter 1: ON PK Fc 1000 Hz Gain -3 dB Q 1.2\n").unwrap();
-    app.plugin_rack.apo_input = apo.path().to_string_lossy().into_owned();
-    app.load_apo_file().unwrap();
-
-    let plugin = app.plugin_rack.graph.get_plugin(plugin_idx).unwrap();
-    let PluginSettings::EQ {
-        filters,
-        auto_gain_enabled,
-        oversampling,
-        tdf2,
-        topology,
-        ..
-    } = &plugin.settings
-    else {
-        panic!("expected EQ settings");
-    };
-    assert_eq!(filters.len(), 1);
-    assert!(*auto_gain_enabled);
-    assert_eq!(*oversampling, 4.0);
-    assert!(*tdf2);
-    assert_eq!(*topology, 1.0);
-}
-
-#[test]
 fn test_adjust_upmixer_parameters() {
     let mut app = App::new(Theme::default(), false);
     let plugin_idx = app

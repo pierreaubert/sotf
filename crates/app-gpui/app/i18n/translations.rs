@@ -4860,9 +4860,6 @@ impl PluginCommonTranslations {
                 PluginType::Saturation => {
                     "Add controlled harmonic colour with saturation or exciter modes."
                 }
-                PluginType::Dither => {
-                    "Reduce quantization distortion with TPDF dither and optional noise shaping."
-                }
                 PluginType::DynamicEq => "Apply frequency-selective compression and expansion.",
                 PluginType::LinearPhaseEq => {
                     "Apply parametric EQ as linear or minimum-phase FIR convolution."
@@ -4949,9 +4946,6 @@ impl PluginCommonTranslations {
                 PluginType::TransientShaper => "Réglez l’attaque et le maintien des transitoires.",
                 PluginType::Saturation => {
                     "Ajoutez une coloration harmonique contrôlée ou de l’excitation."
-                }
-                PluginType::Dither => {
-                    "Réduisez la distorsion de quantification avec un dithering TPDF et un façonnage de bruit optionnel."
                 }
                 PluginType::DynamicEq => {
                     "Appliquez compression et expansion de façon sélective en fréquence."
@@ -5052,9 +5046,6 @@ impl PluginCommonTranslations {
                 PluginType::Saturation => {
                     "Fügen Sie kontrollierte harmonische Färbung oder Anregung hinzu."
                 }
-                PluginType::Dither => {
-                    "Verringern Sie Quantisierungsverzerrungen mit TPDF-Dither und optionaler Rauschformung."
-                }
                 PluginType::DynamicEq => {
                     "Wenden Sie frequenzselektive Kompression und Expansion an."
                 }
@@ -5141,9 +5132,6 @@ impl PluginCommonTranslations {
                 }
                 PluginType::Saturation => {
                     "Añada color armónico controlado con saturación o excitación."
-                }
-                PluginType::Dither => {
-                    "Reduzca la distorsión de cuantificación con dither TPDF y modelado de ruido opcional."
                 }
                 PluginType::DynamicEq => {
                     "Aplique compresión y expansión selectivas por frecuencia."

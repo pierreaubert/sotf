@@ -1,8 +1,8 @@
 //! Universal plugin factory for all SOTF audio plugins.
 
-use sotf_host::{ParameterId, ParameterValue, ParametricPlugin, ParametricPluginAdapter};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePluginAdapter;
 use sotf_host::plugin::Plugin;
+use sotf_host::{ParameterId, ParameterValue, ParametricPlugin, ParametricPluginAdapter};
 
 fn create_nested_plugin(
     plugin_type: &str,
@@ -47,9 +47,7 @@ pub fn create_plugin(
                     ParameterValue::Int(topology as i32),
                 )?;
             }
-            if let Some(oversampling) = json
-                .get("oversampling")
-                .and_then(serde_json::Value::as_f64)
+            if let Some(oversampling) = json.get("oversampling").and_then(serde_json::Value::as_f64)
             {
                 plugin.parametric_set_parameter(
                     ParameterId::from("oversampling"),
@@ -274,9 +272,8 @@ pub fn create_plugin(
         "MonoToStereo" | "mono_to_stereo" => {
             let params: sotf_plugin_mono_to_stereo::MonoToStereoPluginParams =
                 parse_params(config_json)?;
-            let plugin = sotf_plugin_mono_to_stereo::MonoToStereoPlugin::try_from_params(
-                channels, params,
-            )?;
+            let plugin =
+                sotf_plugin_mono_to_stereo::MonoToStereoPlugin::try_from_params(channels, params)?;
             Ok(Box::new(plugin))
         }
 
@@ -603,16 +600,21 @@ mod tests {
             r#"{"num_mics":2,"steer_angle_deg":200.0}"#,
             r#"{"num_mics":2,"beamformer_type":"unknown"}"#,
         ] {
-            assert!(create_plugin("Beamformer", 2, 48_000, config).is_err(), "{config}");
+            assert!(
+                create_plugin("Beamformer", 2, 48_000, config).is_err(),
+                "{config}"
+            );
         }
         assert!(create_plugin("Beamformer", 4, 48_000, r#"{"num_mics":2}"#).is_err());
-        assert!(create_plugin(
-            "Beamformer",
-            2,
-            48_000,
-            r#"{"num_mics":2,"beamformer_type":"GSC"}"#,
-        )
-        .is_ok());
+        assert!(
+            create_plugin(
+                "Beamformer",
+                2,
+                48_000,
+                r#"{"num_mics":2,"beamformer_type":"GSC"}"#,
+            )
+            .is_ok()
+        );
     }
 
     #[test]

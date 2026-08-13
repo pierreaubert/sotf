@@ -2,6 +2,7 @@ use super::analysis::PndAnalyzer;
 pub use super::config::PndPluginParams;
 use super::consts::CORRECTION_STRENGTH_SMOOTH_MS;
 use super::consts::PV_FFT_SIZE;
+use super::consts::PV_HOP_SIZE;
 use super::consts::RESAMPLER_CHUNK_SIZE;
 use super::phase_vocoder::PhaseVocoder;
 use super::types::PndData;
@@ -19,8 +20,6 @@ use sotf_host::simd::{deinterleave_stereo, interleave_stereo};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::sync::Arc;
-
-const MAX_PND_CHANNELS: usize = 64;
 
 pub struct PndPlugin {
     // Configuration
@@ -200,11 +199,6 @@ impl PndPlugin {
         if channels == 0 {
             return Err("PND requires at least one channel".to_string());
         }
-        if channels > MAX_PND_CHANNELS {
-            return Err(format!(
-                "PND supports at most {MAX_PND_CHANNELS} channels, got {channels}"
-            ));
-        }
         for (name, value) in [
             ("correction_strength", params.correction_strength),
             ("analysis_window_ms", params.analysis_window_ms),
@@ -222,12 +216,6 @@ impl PndPlugin {
                     spec.max_f64()
                 ));
             }
-        }
-        if params.phase_vocoder {
-            return Err(
-                "PND phase_vocoder mode is unsupported until its spectral remapping and latency contracts are validated"
-                    .to_string(),
-            );
         }
 
         let mut plugin = Self::new(channels);
@@ -397,68 +385,6 @@ impl PndPlugin {
         Ok(nf)
     }
 
-    /// Reference-free monitoring path. Absolute pitch or clock error is not
-    /// identifiable from adjacent spectra, and variable-duration SRC cannot
-    /// satisfy a fixed-frame insert contract. Keep the observable analysis,
-    /// but preserve the programme sample-for-sample until the host supplies an
-    /// explicit clock/pilot reference and an asynchronous render boundary.
-    fn process_monitoring(&mut self, input: &[f32], output: &mut [f32], num_frames: usize) {
-        output.copy_from_slice(input);
-        let capacity = self.planar_input.first().map_or(0, Vec::len);
-        if capacity == 0 || self.analyzers.is_empty() {
-            return;
-        }
-
-        let mut frame_offset = 0;
-        let mut drift_ratio = 1.0_f32;
-        let mut confidence = 0.0_f32;
-        while frame_offset < num_frames {
-            let chunk_frames = (num_frames - frame_offset).min(capacity);
-            for channel in 0..self.channels {
-                for frame in 0..chunk_frames {
-                    self.planar_input[channel][frame] =
-                        input[(frame_offset + frame) * self.channels + channel];
-                }
-            }
-
-            if self.multi_channel_analysis && self.analyzers.len() > 1 {
-                let count = self.analyzers.len().min(self.channels);
-                for (channel, analyzer) in self.analyzers.iter_mut().enumerate().take(count) {
-                    let drift = analyzer.analyze(&self.planar_input[channel][..chunk_frames]);
-                    self.channel_consensus_scratch[channel] = (drift, analyzer.confidence());
-                }
-                (drift_ratio, confidence) = weighted_channel_consensus(
-                    &mut self.channel_consensus_scratch[..count],
-                    self.confidence_threshold,
-                );
-            } else {
-                drift_ratio = self.analyzers[0].analyze(&self.planar_input[0][..chunk_frames]);
-                confidence = self.analyzers[0].confidence();
-            }
-            frame_offset += chunk_frames;
-        }
-
-        self.last_drift_ratio = f64::from(drift_ratio);
-        self.current_ratio = 1.0;
-        self.cache_update_counter += 1;
-        if self.cache_update_counter >= 10 {
-            self.cache_update_counter = 0;
-            let total_matched = self
-                .analyzers
-                .iter()
-                .map(PndAnalyzer::matched_partials)
-                .sum();
-            let total_peaks = self.analyzers.iter().map(PndAnalyzer::total_peaks).sum();
-            self.cache.update(|data| {
-                data.drift_ratio = f64::from(drift_ratio);
-                data.correction_ratio = 1.0;
-                data.confidence = confidence;
-                data.matched_partials = total_matched;
-                data.total_peaks = total_peaks;
-            });
-        }
-    }
-
     pub(super) fn init_resampler(&mut self) -> PluginResult<()> {
         let resampler = Async::<f32>::new_poly(
             1.0, // Initial ratio
@@ -573,6 +499,10 @@ impl PndPlugin {
             .set_resample_ratio(final_ratio, true)
             .map_err(|e| format!("{:?}", e))?;
 
+        // Update read position (Circular)
+        self.input_ring_read_pos = (self.input_ring_read_pos + chunk_samples) % cap_in;
+        self.input_ring_count -= chunk_samples;
+
         // 5. Resample
         let max_output_frames = resampler.output_frames_max();
         debug_assert!(
@@ -603,11 +533,6 @@ impl PndPlugin {
                 "Resampler output chunk ({out_samples} samples) exceeds prepared ring ({cap_out})"
             ));
         }
-        // Commit the queue only after every fallible SRC operation and the
-        // prepared output-capacity check have succeeded. On error, the input
-        // chunk remains available for an explicit retry or reset.
-        self.input_ring_read_pos = (self.input_ring_read_pos + chunk_samples) % cap_in;
-        self.input_ring_count -= chunk_samples;
         // A fixed-frame host cannot wait for a variable-rate SRC. Keep the
         // queue bounded by discarding the oldest complete frames when a
         // sustained correction produces faster than the callback consumes.
@@ -713,8 +638,8 @@ fn weighted_channel_consensus(
 
 impl Plugin for PndPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Pitch Motion Monitor", env!("CARGO_PKG_VERSION"), "SotF")
-            .with_description("Reference-free polyphonic pitch-motion monitoring")
+        PluginInfo::new("Pitch Drift Corrector", "0.2.0", "SotF")
+            .with_description("Polyphonic note detection and varispeed correction")
     }
 
     fn input_channels(&self) -> usize {
@@ -796,13 +721,10 @@ impl Plugin for PndPlugin {
             let v = value
                 .as_bool()
                 .unwrap_or(pk(PD, "phase_vocoder").default_bool());
-            if v {
-                return Err(
-                    "PND phase_vocoder mode is unsupported until its spectral remapping and latency contracts are validated"
-                        .to_string(),
-                );
-            }
             self.phase_vocoder = v;
+            if v && self.vocoder.is_none() {
+                self.vocoder = Some(PhaseVocoder::new(self.channels));
+            }
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -827,9 +749,6 @@ impl Plugin for PndPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
-        if sample_rate == 0 {
-            return Err("PND sample rate must be non-zero".to_string());
-        }
         self.sample_rate = sample_rate;
         self.init_resampler()?;
         self.init_analyzers();
@@ -916,11 +835,6 @@ impl Plugin for PndPlugin {
 
         if self.phase_vocoder {
             return self.process_phase_vocoder(input, output, context);
-        }
-
-        if self.correction_strength == 0.0 {
-            self.process_monitoring(input, output, num_frames);
-            return Ok(num_frames);
         }
 
         let input_space = self.input_ring.len().saturating_sub(self.input_ring_count);
@@ -1030,20 +944,22 @@ impl Plugin for PndPlugin {
         self.output_ring_count = 0;
         self.correction_strength_smoother
             .reset(self.correction_strength);
-        if let Some(resampler) = &mut self.resampler {
-            resampler.reset();
-        }
+        // Re-create the resampler to flush rubato's internal delay lines.
+        // Errors are ignored here (init_resampler only fails if parameters are
+        // out of range, which cannot change between initialize() and reset()).
+        let _ = self.init_resampler();
         if let Some(v) = &mut self.vocoder {
             v.reset();
         }
     }
 
     fn latency_samples(&self) -> usize {
-        // The fixed-frame wrapper emits corresponding dry input whenever its
-        // variable-rate queue has no frame ready, so no fixed positive delay
-        // can be compensated by the host. Unsupported phase-vocoder state is
-        // rejected at construction.
-        0
+        if self.phase_vocoder {
+            // Phase vocoder latency: one full FFT frame plus one hop of overlap-add.
+            PV_FFT_SIZE + PV_HOP_SIZE
+        } else {
+            RESAMPLER_CHUNK_SIZE
+        }
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {

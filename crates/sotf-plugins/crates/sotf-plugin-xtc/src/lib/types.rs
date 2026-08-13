@@ -11,11 +11,6 @@ pub(super) struct PendingFilterUpdate {
     pub(super) room_params_hash: u64,
 }
 
-pub(super) enum RetiredXtcState {
-    Filters(Arc<XtcFilters>),
-    Pending(Arc<PendingFilterUpdate>),
-}
-
 pub(super) struct FilterUpdateRequest {
     pub(super) generation: u64,
     pub(super) params: super::config::XtcPluginParams,

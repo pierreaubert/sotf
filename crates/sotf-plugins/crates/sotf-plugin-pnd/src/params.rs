@@ -20,17 +20,17 @@ use sotf_host::plugin_params::PluginParamDef;
 
 pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::float(
-        "Correction (Unavailable)",
+        "Correction",
         "correction_strength",
+        1.0,
         0.0,
-        0.0,
-        0.0,
-        0.0,
+        2.0,
+        0.05,
         "",
         "General",
     )
     .scaled(100.0)
-    .doc("Reserved; reference-free fixed-frame correction is unsupported"),
+    .doc("Pitch correction strength"),
     ParamSpec::float(
         "Analysis Window",
         "analysis_window_ms",
@@ -71,15 +71,10 @@ pub const PARAMS: &[ParamSpec] = &[
         "Correction",
     )
     .doc("Min detection confidence to apply"),
-    ParamSpec::bool_param(
-        "Phase Vocoder (Unavailable)",
-        "phase_vocoder",
-        false,
-        "Correction",
-    )
-    .structural()
-    .setup()
-    .doc("Reserved until a validated spectral shifter is implemented"),
+    ParamSpec::bool_param("Phase Vocoder", "phase_vocoder", false, "Correction")
+        .structural()
+        .setup()
+        .doc("Use phase vocoder for correction"),
 ];
 
 // ============================================================================
@@ -87,23 +82,27 @@ pub const PARAMS: &[ParamSpec] = &[
 // ============================================================================
 
 pub const LAYOUT: PluginLayout = PluginLayout {
-    // Compatibility-only controls remain in PARAMS for old presets but are
-    // intentionally unavailable. Hidden references keep schema/layout audits
-    // honest without exposing unsupported correction DSP.
-    config: &[
-        ControlSpec::knob(0).hide(),
-        ControlSpec::toggle(5).hide(),
+    config: &[],
+    main: &[
+        ControlGroup::new(
+            "CORRECTION",
+            "CORRECTION",
+            &[
+                ControlSpec::knob(0),   // correction_strength
+                ControlSpec::knob(4),   // confidence_threshold
+                ControlSpec::toggle(5), // phase_vocoder
+            ],
+        ),
+        ControlGroup::new(
+            "ANALYSIS",
+            "ANALYSIS",
+            &[
+                ControlSpec::knob(1),   // analysis_window_ms
+                ControlSpec::knob(2),   // drift_smoothing
+                ControlSpec::toggle(3), // multi_channel_analysis
+            ],
+        ),
     ],
-    main: &[ControlGroup::new(
-        "ANALYSIS",
-        "ANALYSIS",
-        &[
-            ControlSpec::knob(1),   // analysis_window_ms
-            ControlSpec::knob(2),   // drift_smoothing
-            ControlSpec::toggle(3), // multi_channel_analysis
-            ControlSpec::knob(4),   // confidence_threshold
-        ],
-    )],
     output: &[],
     tabs: &[],
     visualizations: &[],

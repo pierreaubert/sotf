@@ -31,7 +31,6 @@ use super::misc::get_speaker_config_channels;
 use super::parse::parse_channel_mapping;
 use super::parse::parse_crossfeed_mode;
 use super::parse::parse_crossfeed_preset;
-use super::types::DownmixArgs;
 use super::types::PluginArgs;
 use math_audio_iir_fir::Biquad;
 use sotf_audio::LoudnessCompensation;
@@ -45,76 +44,6 @@ use sotf_audio::{AudioEngineManager, PluginConfig, StreamingState};
 use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
-
-pub(super) fn manual_loudness_settings(
-    loudness: Option<&LoudnessCompensation>,
-    auto_gain_params: (bool, f32, f32),
-) -> PluginSettings {
-    let (auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms) = auto_gain_params;
-    let (low_gain, high_gain, mid_enabled, mid_gain) = loudness
-        .map(|lc| (lc.low_boost, lc.high_boost, true, 3.0))
-        .unwrap_or((0.0, 0.0, false, 0.0));
-
-    PluginSettings::LoudnessCompensation {
-        low_freq: 100.0,
-        low_gain,
-        high_freq: 10000.0,
-        high_gain,
-        mid_enabled,
-        mid_freq: 3000.0,
-        mid_gain,
-        mid_q: 0.707,
-        auto_gain_enabled,
-        auto_gain_max_db: auto_gain_max_db as f64,
-        auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
-        mode: 0,
-        playback_level_db: 70.0,
-        reference_level_db: 83.0,
-        playback_volume_db: 0.0,
-        auto_gain_position: usize::from(auto_gain_enabled) * 2,
-        headroom_normalized: false,
-        auto_calibrated: false,
-    }
-}
-
-pub(super) fn fletcher_munson_loudness_settings(reference_level_offset_db: f64) -> PluginSettings {
-    PluginSettings::LoudnessCompensation {
-        low_freq: 100.0,
-        low_gain: 6.0,
-        high_freq: 10000.0,
-        high_gain: 6.0,
-        mid_enabled: true,
-        mid_freq: 3000.0,
-        mid_gain: 3.0,
-        mid_q: 0.707,
-        auto_gain_enabled: false,
-        auto_gain_max_db: 12.0,
-        auto_gain_smoothing_ms: 100.0,
-        mode: 2,
-        playback_level_db: 70.0,
-        reference_level_db: 83.0 + reference_level_offset_db,
-        playback_volume_db: 0.0,
-        auto_gain_position: 0,
-        headroom_normalized: false,
-        auto_calibrated: true,
-    }
-}
-
-pub(super) fn downmix_settings(input_channels: usize, args: &DownmixArgs) -> PluginSettings {
-    PluginSettings::Downmix {
-        input_channels,
-        input_layout: args.input_layout.clone(),
-        center_gain_db: f64::from(args.center_gain_db),
-        surround_gain_db: f64::from(args.surround_gain_db),
-        height_gain_db: f64::from(args.height_gain_db),
-        lfe_gain_db: f64::from(args.lfe_gain_db),
-        phase_coherence: args.phase_coherence,
-        phase_blend_low_hz: f64::from(args.phase_blend_low_hz),
-        phase_blend_high_hz: f64::from(args.phase_blend_high_hz),
-        itu_mode: args.itu_mode,
-        matrix_ltrt: false,
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn play_stream(
@@ -485,29 +414,43 @@ pub(super) fn build_rack_mode_plugins(
 
                 let idx = chain.add_plugin(&PluginType::BinauralDecoder)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
-                    let PluginSettings::BinauralDecoder {
-                        sofa_file: configured_sofa_file,
-                        input_channels: configured_input_channels,
-                        externalization,
-                        near_field_strength,
-                        ..
-                    } = &mut plugin.settings
-                    else {
-                        unreachable!("BinauralDecoder default produced a different plugin type");
+                    plugin.settings = PluginSettings::BinauralDecoder {
+                        sofa_file: sofa_path.to_string_lossy().to_string(),
+                        input_channels,
+                        externalization: plugins.binaural.externalization as f64,
+                        near_field_strength: plugins.binaural.near_field as f64,
+                        crossfade_mode: 0,
+                        late_reverb_enabled: false,
+                        late_reverb_mix: 0.3,
+                        late_reverb_rt60: 1.0,
+                        late_reverb_damping: 0.3,
                     };
-                    *configured_sofa_file = sofa_path.to_string_lossy().to_string();
-                    *configured_input_channels = input_channels;
-                    *externalization = plugins.binaural.externalization as f64;
-                    *near_field_strength = plugins.binaural.near_field as f64;
                 }
                 log::info!("Rack: Added BinauralDecoder plugin");
             }
             "loudness" | "loudness-compensation" => {
+                let (auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms) =
+                    loudness_auto_gain_params;
                 if let Some(lc) = loudness {
                     let idx = chain.add_plugin(&PluginType::LoudnessCompensation)?;
                     if let Some(plugin) = chain.get_plugin_mut(idx) {
-                        plugin.settings =
-                            manual_loudness_settings(Some(lc), loudness_auto_gain_params);
+                        plugin.settings = PluginSettings::LoudnessCompensation {
+                            low_freq: 100.0,
+                            low_gain: lc.low_boost,
+                            high_freq: 10000.0,
+                            high_gain: lc.high_boost,
+                            mid_enabled: true,
+                            mid_freq: 3000.0,
+                            mid_gain: 3.0,
+                            mid_q: 0.707,
+                            auto_gain_enabled,
+                            auto_gain_max_db: auto_gain_max_db as f64,
+                            auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
+                            mode: 0,
+                            playback_level_db: 70.0,
+                            reference_level_db: 83.0,
+                            playback_volume_db: 0.0,
+                        };
                     }
                 } else {
                     // No --loudness-compensation values supplied: use inert
@@ -515,7 +458,23 @@ pub(super) fn build_rack_mode_plugins(
                     // defaults were musically destructive and surprising.
                     let idx = chain.add_plugin(&PluginType::LoudnessCompensation)?;
                     if let Some(plugin) = chain.get_plugin_mut(idx) {
-                        plugin.settings = manual_loudness_settings(None, loudness_auto_gain_params);
+                        plugin.settings = PluginSettings::LoudnessCompensation {
+                            low_freq: 100.0,
+                            low_gain: 0.0,
+                            high_freq: 10000.0,
+                            high_gain: 0.0,
+                            mid_enabled: false,
+                            mid_freq: 3000.0,
+                            mid_gain: 0.0,
+                            mid_q: 0.707,
+                            auto_gain_enabled,
+                            auto_gain_max_db: auto_gain_max_db as f64,
+                            auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
+                            mode: 0,
+                            playback_level_db: 70.0,
+                            reference_level_db: 83.0,
+                            playback_volume_db: 0.0,
+                        };
                     }
                     let msg = "Note: `loudness` rack item used without --loudness-compensation; \
                          applying 0 dB shelves (no-op).";
@@ -528,7 +487,19 @@ pub(super) fn build_rack_mode_plugins(
                 let channels = chain.output_channels();
                 let idx = chain.add_plugin(&PluginType::EQ)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
-                    plugin.settings = rack_eq_settings(channels, filters);
+                    let eq_filters: Vec<EQFilter> = filters
+                        .iter()
+                        .map(|f| EQFilter::new(f.filter_type, f.freq, f.q, f.db_gain))
+                        .collect();
+                    plugin.settings = PluginSettings::EQ {
+                        channels,
+                        filters: eq_filters,
+                        channel_filters: None,
+                        per_channel_mode: false,
+                        max_filters: 20,
+                        tdf2: false,
+                        topology: 0.0,
+                    };
                 }
                 log::info!("Rack: Added EQ plugin with {} filters", filters.len());
             }
@@ -784,9 +755,24 @@ pub(super) fn build_rack_mode_plugins(
                 // FletcherMunson merged into LoudnessCompensation Auto mode
                 let idx = chain.add_plugin(&PluginType::LoudnessCompensation)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
-                    plugin.settings = fletcher_munson_loudness_settings(
-                        plugins.fletcher_munson.reference_level_db as f64,
-                    );
+                    plugin.settings = PluginSettings::LoudnessCompensation {
+                        low_freq: 100.0,
+                        low_gain: 6.0,
+                        high_freq: 10000.0,
+                        high_gain: 6.0,
+                        mid_enabled: true,
+                        mid_freq: 3000.0,
+                        mid_gain: 3.0,
+                        mid_q: 0.707,
+                        auto_gain_enabled: false,
+                        auto_gain_max_db: 12.0,
+                        auto_gain_smoothing_ms: 100.0,
+                        mode: 2, // Auto
+                        playback_level_db: 70.0,
+                        reference_level_db: 83.0
+                            + plugins.fletcher_munson.reference_level_db as f64,
+                        playback_volume_db: 0.0,
+                    };
                 }
                 log::info!("Rack: Added LoudnessCompensation (Auto/FM compat) plugin");
             }
@@ -850,10 +836,6 @@ pub(super) fn build_rack_mode_plugins(
                         phase_invert_a: false,
                         phase_invert_b: false,
                         difference_mode: false,
-                        // The CLI does not expose mask controls yet, so retain
-                        // the canonical full-band AB Compare defaults.
-                        band_mask_low_hz: 20.0,
-                        band_mask_high_hz: 20_000.0,
                     };
                 }
                 log::info!("Rack: Added ABCompare plugin");
@@ -885,7 +867,18 @@ pub(super) fn build_rack_mode_plugins(
                 let input_channels = chain.output_channels();
                 let idx = chain.add_plugin(&PluginType::Downmix)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
-                    plugin.settings = downmix_settings(input_channels, &plugins.downmix);
+                    plugin.settings = PluginSettings::Downmix {
+                        input_channels,
+                        center_gain_db: plugins.downmix.center_gain_db as f64,
+                        surround_gain_db: plugins.downmix.surround_gain_db as f64,
+                        height_gain_db: plugins.downmix.height_gain_db as f64,
+                        lfe_gain_db: plugins.downmix.lfe_gain_db as f64,
+                        phase_coherence: plugins.downmix.phase_coherence,
+                        phase_blend_low_hz: plugins.downmix.phase_blend_low_hz as f64,
+                        phase_blend_high_hz: plugins.downmix.phase_blend_high_hz as f64,
+                        itu_mode: false,
+                        matrix_ltrt: false,
+                    };
                 }
                 log::info!("Rack: Added Downmix plugin");
             }
@@ -1052,23 +1045,6 @@ pub(super) fn build_rack_mode_plugins(
     };
 
     Ok((plugin_configs, output_channels, actual_loudness_idx))
-}
-
-pub(super) fn rack_eq_settings(channels: usize, filters: &[Biquad]) -> PluginSettings {
-    PluginSettings::EQ {
-        channels,
-        filters: filters
-            .iter()
-            .map(|f| EQFilter::new(f.filter_type, f.freq, f.q, f.db_gain))
-            .collect(),
-        channel_filters: None,
-        per_channel_mode: false,
-        max_filters: 20,
-        tdf2: false,
-        topology: 0.0,
-        auto_gain_enabled: false,
-        oversampling: 1.0,
-    }
 }
 
 /// Build plugin chain using traditional mode (manual PluginConfig building)

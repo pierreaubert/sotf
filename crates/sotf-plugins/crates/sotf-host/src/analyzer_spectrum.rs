@@ -356,10 +356,7 @@ impl Plugin for SpectrumAnalyzerPlugin {
                 let v = value
                     .as_float()
                     .ok_or_else(|| "min_freq must be a float".to_string())?;
-                if !v.is_finite()
-                    || !(10.0..=500.0).contains(&v)
-                    || v >= self.config.max_freq
-                {
+                if !v.is_finite() || v < 10.0 || v > 500.0 || v >= self.config.max_freq {
                     return Err("min_freq must be finite, in 10..=500, and below max_freq".into());
                 }
                 if v == self.config.min_freq {
@@ -377,7 +374,8 @@ impl Plugin for SpectrumAnalyzerPlugin {
                     .ok_or_else(|| "max_freq must be a float".to_string())?;
                 let nyquist = self.sample_rate as f32 * 0.5;
                 if !v.is_finite()
-                    || !(1000.0..=22050.0).contains(&v)
+                    || v < 1000.0
+                    || v > 22050.0
                     || v > nyquist
                     || v <= self.config.min_freq
                 {
@@ -837,7 +835,9 @@ mod tests {
             assert!(data.frequencies.iter().all(|value| value.is_finite()));
             assert!(data.magnitudes.iter().all(|value| !value.is_nan()));
             assert!(
-                data.magnitudes.contains(&f32::NEG_INFINITY),
+                data.magnitudes
+                    .iter()
+                    .any(|value| *value == f32::NEG_INFINITY),
                 "expected an explicit empty band at {sample_rate} Hz"
             );
         }

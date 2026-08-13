@@ -1,6 +1,5 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
-assertion_line: 70
 expression: plan
 ---
 {
@@ -20,14 +19,14 @@ expression: plan
     "main"
   ],
   "columns_collapsed": [
-    "config"
+    "config",
+    "output"
   ],
   "visible_group_ids": [
     "DYNAMICS"
   ],
   "overflow_group_ids": [
-    "TIMING",
-    "OUTPUT"
+    "TIMING"
   ],
   "config_controls": [
     {
@@ -39,8 +38,7 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false,
-      "enabled": true
+      "read_only": false
     },
     {
       "param_index": 7,
@@ -51,8 +49,7 @@ expression: plan
         0.0,
         200.0
       ],
-      "read_only": false,
-      "enabled": true
+      "read_only": false
     },
     {
       "param_index": 8,
@@ -63,8 +60,7 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false,
-      "enabled": true
+      "read_only": false
     },
     {
       "param_index": 9,
@@ -75,8 +71,7 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false,
-      "enabled": true
+      "read_only": false
     },
     {
       "param_index": 10,
@@ -87,8 +82,7 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false,
-      "enabled": true
+      "read_only": false
     }
   ],
   "main_groups": [
@@ -105,8 +99,7 @@ expression: plan
             -80.0,
             0.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 1,
@@ -117,8 +110,7 @@ expression: plan
             1.0,
             100.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 11,
@@ -129,8 +121,7 @@ expression: plan
             0.0,
             120.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 12,
@@ -141,8 +132,7 @@ expression: plan
             0.0,
             12.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 13,
@@ -153,8 +143,7 @@ expression: plan
             0.0,
             20.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         }
       ]
     },
@@ -171,8 +160,7 @@ expression: plan
             0.1,
             50.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 3,
@@ -183,8 +171,7 @@ expression: plan
             0.0,
             1000.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 4,
@@ -195,8 +182,7 @@ expression: plan
             10.0,
             2000.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 14,
@@ -207,40 +193,32 @@ expression: plan
             0.0,
             20.0
           ],
-          "read_only": false,
-          "enabled": true
-        }
-      ]
-    },
-    {
-      "id": "OUTPUT",
-      "title": "OUTPUT",
-      "controls": [
-        {
-          "param_index": 18446744073709551615,
-          "param_name": "(meter)",
-          "control_type": "bar_meter(-30..0)",
-          "unit": "",
-          "range": null,
-          "read_only": true,
-          "enabled": false
-        },
-        {
-          "param_index": 5,
-          "param_name": "Mix",
-          "control_type": "knob",
-          "unit": "%",
-          "range": [
-            0.0,
-            1.0
-          ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         }
       ]
     }
   ],
-  "output_controls": [],
+  "output_controls": [
+    {
+      "param_index": 18446744073709551615,
+      "param_name": "(meter)",
+      "control_type": "bar_meter(-30..0)",
+      "unit": "",
+      "range": null,
+      "read_only": true
+    },
+    {
+      "param_index": 5,
+      "param_name": "Mix",
+      "control_type": "knob",
+      "unit": "%",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "read_only": false
+    }
+  ],
   "tabs": [],
   "viz_slots": [
     {

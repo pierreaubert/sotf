@@ -1,10 +1,5 @@
 # 0.5.125 (unreleased)
 
-## Plugin picker completeness
-
-- Added Dither to the canonical Utility picker category shared by player UIs,
-  with a regression that pins the cross-frontend taxonomy.
-
 ## Signal path model (QA-SOTA-004)
 
 - Added `SignalPath` and related types (`SignalPathSource`, `SignalPathPlugin`,

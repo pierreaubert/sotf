@@ -22,20 +22,6 @@ fn test_limiter_basic() {
 }
 
 #[test]
-fn lookahead_is_structural_in_host_metadata() {
-    let plugin = LimiterPlugin::new(2, -1.0, 50.0, 5.0, false);
-    let parameter = plugin
-        .parameters()
-        .into_iter()
-        .find(|parameter| parameter.id.as_str() == "lookahead")
-        .expect("lookahead parameter");
-    assert_eq!(
-        parameter.update_mode,
-        sotf_host::param_specs::UpdateMode::Structural
-    );
-}
-
-#[test]
 fn threshold_smoother_operates_in_decibels() {
     let mut plugin = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
     plugin.initialize(48_000).unwrap();

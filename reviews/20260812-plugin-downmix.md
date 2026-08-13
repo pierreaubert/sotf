@@ -9,19 +9,6 @@ Focus: correctness, algorithm quality, realtime allocation, and performance
 
 ## Remediation status
 
-Engine/factory follow-up after 0.5.28 closes a default-construction regression:
-
-- Default engine settings now leave `input_layout` unspecified so the factory
-  can adapt them to an unambiguous live chain width instead of carrying a stale
-  `5.1` identity into stereo construction.
-- Explicit layout/channel mismatches are rejected before factory adaptation,
-  and unspecified ambiguous 8/10-channel inputs remain rejected rather than
-  guessed. When an upstream engine plugin supplies a known layout such as
-  `5.1.4`, channel propagation preserves it into Downmix construction.
-- Focused engine regressions cover adaptive stereo defaults, ambiguous-width
-  rejection, explicit mismatch rejection, and valid known-layout 10-channel
-  construction.
-
 Remediated in version 0.5.27:
 
 - The P1 partition-dependent WOLA timeline now advances sample by sample behind an explicit fixed 2048-sample startup delay. Regression coverage compares one-block and highly variable partitions exactly.
@@ -37,10 +24,8 @@ Final closure in version 0.5.28:
 
 - Explicit `input_layout` now selects the routing matrix. Ambiguous 8- and
   10-channel inputs without a layout are rejected, and engine/factory/AU
-  construction carries layout identity. The player CLI preserves an explicit
-  `--downmix-input-layout` value and intentionally leaves it unspecified for
-  unambiguous channel widths. Unit coverage distinguishes 7.1 from 5.1.2
-  routing and checks the unknown-layout error and CLI builder behavior.
+  construction carries layout identity. Unit coverage distinguishes 7.1 from
+  5.1.2 routing and checks the unknown-layout error.
 - Silent global normalization was removed. Published coefficients remain exact,
   documentation states that downstream headroom/limiting is required, and a
   regression test pins unity front routes while the other gains are maximal.

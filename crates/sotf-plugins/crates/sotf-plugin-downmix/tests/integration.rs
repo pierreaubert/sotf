@@ -259,12 +259,12 @@ fn process_rejects_inexact_buffer_lengths() {
     let input = vec![0.0; 16 * 6];
     assert!(
         plugin
-            .process(&input, &mut [0.0; 31], &context)
+            .process(&input, &mut vec![0.0; 31], &context)
             .is_err()
     );
     assert!(
         plugin
-            .process(&input, &mut [0.0; 33], &context)
+            .process(&input, &mut vec![0.0; 33], &context)
             .is_err()
     );
 }

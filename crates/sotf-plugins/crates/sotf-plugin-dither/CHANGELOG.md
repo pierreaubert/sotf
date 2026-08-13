@@ -11,9 +11,6 @@
   quantization-error power from 200 Hz to 8 kHz and moves it into 16–23 kHz.
 - Register Dither in the canonical plugin catalog and facade factory, including
   its parameter schema, channel-preserving contract, and serialized settings.
-- Integrate Dither with the engine's typed plugin inventory, canonical settings
-  defaults, parameter accessors/layout, and factory configuration conversion,
-  with focused settings and runtime-parameter round-trip regressions.
 - Use wrapping arithmetic when deriving per-channel RNG seeds, preventing debug
   overflow panics at the catalog's 4/6/8/12-channel layouts.
 

@@ -17,23 +17,6 @@ fn test_mb_comp_basic() {
 }
 
 #[test]
-fn lookahead_controls_are_structural_in_host_metadata() {
-    let plugin = MultibandCompressorPlugin::new(2);
-    for id in ["lookahead_ms", "per_band_lookahead_ms"] {
-        let parameter = plugin
-            .parameters()
-            .into_iter()
-            .find(|parameter| parameter.id.as_str() == id)
-            .unwrap_or_else(|| panic!("missing {id}"));
-        assert_eq!(
-            parameter.update_mode,
-            sotf_host::param_specs::UpdateMode::Structural,
-            "{id}"
-        );
-    }
-}
-
-#[test]
 fn test_ms_mode_dry_mix_is_exact_passthrough() {
     let params = MultibandCompressorPluginParams {
         ms_mode: true,

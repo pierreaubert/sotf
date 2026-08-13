@@ -5,8 +5,6 @@
 - Add an explicit one-band broadband Compressor mode and make the canonical factory expose its matching identity and runtime schema.
 - Make lookahead and band count structural after initialization so host latency/topology metadata cannot become stale; preserve exact dry, bypass, passive, and M/S alignment.
 - Reject serialized legacy sidechain controls that have no DSP implementation and keep them out of the runtime schema.
-- Keep engine-generated default Compressor configs aligned with that strict runtime schema by omitting the rejected legacy sidechain fields.
-- Stop advertising the legacy boolean `link_channels` field as a live engine accessor; broadband Compressor exposes the canonical continuous `link_amount` control while still accepting the boolean during preset construction for compatibility.
 - Make continuous channel linking canonical, smooth crossover/dynamics/link/tilt/makeup automation sample-by-sample, and preserve preallocated tilt-filter state across writes and reset.
 - Process oversized host blocks in allocation-free 4096-frame chunks and avoid schema/string allocations in valid realtime setters.
 - Document the cascaded LR4 phase/group-delay limitation and add factory broadband, partition-equivalence, bounded-jump, swept transfer/phase/null, latency, analyzer, invalid-preset, and allocation regressions.
@@ -132,6 +130,3 @@
 - Massive update to plugins, see individual markdown plan for details (wave 3)
 - Massive update to plugins, see individual markdown plan for details (wave 2)
 - Massive update to plugins, see individual markdown plan for details
-# 0.5.17
-
-- Mark latency-changing lookahead controls structural in host-visible metadata, matching their rebuild-only setters.

@@ -3,7 +3,7 @@ source: crates/sotf-plugins/tests/render_plan_snapshots.rs
 expression: plan
 ---
 {
-  "plugin_type": "ambisonics_decoder",
+  "plugin_type": "ambisonics",
   "width": 1800.0,
   "design_language": "neutral",
   "corner_radius_md": 8.0,
@@ -33,8 +33,7 @@ expression: plan
         1.0,
         3.0
       ],
-      "read_only": false,
-      "enabled": true
+      "read_only": false
     },
     {
       "param_index": 1,
@@ -45,8 +44,7 @@ expression: plan
         0.0,
         7.0
       ],
-      "read_only": false,
-      "enabled": true
+      "read_only": false
     }
   ],
   "main_groups": [
@@ -63,8 +61,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         },
         {
           "param_index": 3,
@@ -75,8 +72,7 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false,
-          "enabled": true
+          "read_only": false
         }
       ]
     }

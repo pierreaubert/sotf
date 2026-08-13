@@ -1,11 +1,5 @@
 # 0.1.37 (unreleased)
 
-## Plugin discovery
-
-- Include Dither in the daemon's exhaustive engine wire-name and plugin-picker
-  category mappings, with a focused regression covering its canonical wire,
-  display, category, and public inventory metadata.
-
 ## Transactional systemwide DSP graphs
 
 - `load_plugin_artifact` now accepts validated engine DAG artifacts while

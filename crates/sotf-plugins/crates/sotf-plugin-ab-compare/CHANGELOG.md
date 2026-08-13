@@ -8,9 +8,7 @@
 - Injected the authoritative plugin factory before initial path construction in both the canonical
   facade and plugins bridge, including non-fallback plugin/rack regression coverage.
 - Added the missing band-mask parameters to the canonical schema, engine settings/accessors and
-  converter, and enforce exact runtime key/update-mode parity. Player A/B test sessions now retain
-  explicit mask bounds, while the CLI constructor deliberately uses the canonical 20 Hz–20 kHz
-  defaults.
+  converter, and enforce exact runtime key/update-mode parity.
 - Replaced equal-power same-source blending with a unity-preserving linear crossfade: identical
   paths stay at unity at every mix position and inverted paths cancel at centre.
 - Replaced callback-count diagnostic throttling with a 20 Hz elapsed-frame scheduler and reset it

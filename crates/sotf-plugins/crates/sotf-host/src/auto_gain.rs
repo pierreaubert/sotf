@@ -174,12 +174,12 @@ impl AutoGain {
     /// Set an optional absolute loudness target. `None` restores the original
     /// input/output matching behavior.
     pub fn set_target_lufs(&mut self, target: Option<f32>) -> Result<(), String> {
-        if let Some(value) = target
-            && (!value.is_finite() || !(-120.0..=0.0).contains(&value))
-        {
-            return Err(format!(
-                "target LUFS must be finite and in -120..=0, got {value}"
-            ));
+        if let Some(value) = target {
+            if !value.is_finite() || !(-120.0..=0.0).contains(&value) {
+                return Err(format!(
+                    "target LUFS must be finite and in -120..=0, got {value}"
+                ));
+            }
         }
         self.target_lufs = target;
         Ok(())

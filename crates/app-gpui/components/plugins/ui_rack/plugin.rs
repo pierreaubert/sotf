@@ -79,7 +79,9 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let dismiss_hint_label =
-            DialogTranslations::for_language(self.state.read(cx).app.ui_state.language).about.close;
+            DialogTranslations::for_language(self.state.read(cx).app.ui_state.language)
+                .about
+                .close;
         let theme = self.state.read(cx).app.ui_state.theme.clone();
         let current_hint = self.state.read(cx).app.tutorial.current_hint.clone();
 

@@ -476,19 +476,3 @@ fn reset_loudness_data(data: &mut LoudnessData, channels: usize, spatial: bool) 
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn declares_zero_latency_analyzer_tap_metadata() {
-        let plugin = LoudnessMonitorPlugin::new(2).unwrap();
-        let metadata = plugin.compile_metadata();
-
-        assert_eq!(metadata.cost_class, PluginCostClass::Analyzer);
-        assert_eq!(metadata.compiled_op, Some(PluginCompiledOp::AnalyzerTap));
-        assert_eq!(metadata.latency_samples, 0);
-        assert!(metadata.boundary);
-    }
-}

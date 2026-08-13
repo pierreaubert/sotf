@@ -8,7 +8,6 @@
   factory coverage for channel/band topology and gain validation.
 - Keep host-visible cached gain/mute values synchronized after successful live
   updates without rebuilding or allocating parameter schemas.
-- Keep engine channel topology in the graph contract rather than serializing it as an unknown Band Merge runtime parameter.
 - Use checked input-channel reporting and tie plugin version to crate metadata.
 
 # 0.5.5

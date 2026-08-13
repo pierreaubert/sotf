@@ -1704,13 +1704,6 @@ impl PluginGraph {
                     late_reverb_mix,
                     late_reverb_rt60,
                     late_reverb_damping,
-                    crossfade_ms,
-                    head_yaw_deg,
-                    head_pitch_deg,
-                    head_roll_deg,
-                    hrtf_database_dir,
-                    head_width_cm,
-                    ear_height_cm,
                 } if *input_channels != current_channels => {
                     updated_settings = Some(PluginSettings::BinauralDecoder {
                         sofa_file: sofa_file.clone(),
@@ -1722,13 +1715,6 @@ impl PluginGraph {
                         late_reverb_mix: *late_reverb_mix,
                         late_reverb_rt60: *late_reverb_rt60,
                         late_reverb_damping: *late_reverb_damping,
-                        crossfade_ms: *crossfade_ms,
-                        head_yaw_deg: *head_yaw_deg,
-                        head_pitch_deg: *head_pitch_deg,
-                        head_roll_deg: *head_roll_deg,
-                        hrtf_database_dir: hrtf_database_dir.clone(),
-                        head_width_cm: *head_width_cm,
-                        ear_height_cm: *ear_height_cm,
                     });
                 }
                 PluginSettings::Matrix {

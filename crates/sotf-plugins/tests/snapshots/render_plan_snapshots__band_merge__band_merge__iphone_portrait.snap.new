@@ -1,0 +1,52 @@
+---
+source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 49
+expression: plan
+---
+{
+  "plugin_type": "band_merge",
+  "width": 390.0,
+  "design_language": "neutral",
+  "corner_radius_md": 8.0,
+  "min_touch_target": 32.0,
+  "toggle_variant": "capsule",
+  "label_position": "below",
+  "orientation": "vertical",
+  "knob_size": "xs",
+  "group_direction": "column",
+  "slider_height": 120.0,
+  "show_visualizations": false,
+  "columns_visible": [
+    "main"
+  ],
+  "columns_collapsed": [],
+  "visible_group_ids": [
+    "merge-config"
+  ],
+  "overflow_group_ids": [],
+  "config_controls": [],
+  "main_groups": [
+    {
+      "id": "merge-config",
+      "title": "MERGE CONFIG",
+      "controls": [
+        {
+          "param_index": 0,
+          "param_name": "Bands",
+          "control_type": "knob",
+          "unit": "",
+          "range": [
+            2.0,
+            8.0
+          ],
+          "read_only": false,
+          "enabled": true
+        }
+      ]
+    }
+  ],
+  "output_controls": [],
+  "tabs": [],
+  "viz_slots": [],
+  "dynamic_sections": []
+}

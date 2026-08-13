@@ -606,8 +606,6 @@ fn test_insert_eq_and_configure_per_channel() {
         max_filters: 10,
         tdf2: false,
         topology: 0.0,
-        auto_gain_enabled: false,
-        oversampling: 1.0,
     };
 
     // Verify the graph is still linear
@@ -660,8 +658,6 @@ fn test_update_existing_eq_preserves_position() {
         max_filters: 10,
         tdf2: false,
         topology: 0.0,
-        auto_gain_enabled: false,
-        oversampling: 1.0,
     };
 
     // Verify position unchanged
@@ -705,8 +701,6 @@ fn test_to_plugin_configs_per_channel_eq() {
         max_filters: 10,
         tdf2: false,
         topology: 0.0,
-        auto_gain_enabled: false,
-        oversampling: 1.0,
     };
 
     let configs = g.to_plugin_configs(48000.0);
@@ -747,8 +741,6 @@ fn test_to_plugin_configs_global_eq() {
         max_filters: 10,
         tdf2: false,
         topology: 0.0,
-        auto_gain_enabled: false,
-        oversampling: 1.0,
     };
 
     let configs = g.to_plugin_configs(48000.0);
@@ -1058,18 +1050,6 @@ fn test_ascii_diagram_shows_disabled_plugins() {
 fn test_update_channel_dependent_plugins_eq_channels_propagate() {
     let mut g = PluginGraph::with_default_rack();
     let eq_id = g.add_user_plugin(&PluginType::EQ).unwrap();
-    if let Some(node) = g.nodes.get_mut(&eq_id) {
-        let PluginSettings::EQ {
-            auto_gain_enabled,
-            oversampling,
-            ..
-        } = &mut node.plugin.settings
-        else {
-            panic!("Expected EQ settings");
-        };
-        *auto_gain_enabled = true;
-        *oversampling = 4.0;
-    }
 
     // Change input to mono
     if let Some(input) = g.input_node_mut() {
@@ -1080,21 +1060,8 @@ fn test_update_channel_dependent_plugins_eq_channels_propagate() {
 
     let eq_node = g.nodes.get(&eq_id).unwrap();
     match &eq_node.plugin.settings {
-        PluginSettings::EQ {
-            channels,
-            auto_gain_enabled,
-            oversampling,
-            ..
-        } => {
+        PluginSettings::EQ { channels, .. } => {
             assert_eq!(*channels, 1, "EQ should adopt mono input channels");
-            assert!(
-                *auto_gain_enabled,
-                "channel reconstruction must preserve Auto Gain"
-            );
-            assert_eq!(
-                *oversampling, 4.0,
-                "channel reconstruction must preserve oversampling"
-            );
         }
         _ => panic!("Expected EQ settings"),
     }

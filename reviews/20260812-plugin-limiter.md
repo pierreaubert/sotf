@@ -1,8 +1,5 @@
 # Limiter code review — 2026-08-12
 
-Follow-up 0.5.15 aligns lookahead's host-visible update mode with its
-latency-changing rebuild-only contract and adds focused regression coverage.
-
 ## Remediation status — 0.5.14 complete
 
 Remediated in 0.5.13: independent per-channel envelopes and lookahead histories at

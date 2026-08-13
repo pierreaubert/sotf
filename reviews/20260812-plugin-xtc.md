@@ -93,39 +93,6 @@ Improve by splitting wrapped ring regions into contiguous slices, accumulating p
 
 All remaining P0–P3 review items are closed with focused regression coverage:
 
-### Final publication/reclamation audit (0.5.42, 2026-08-13)
-
-- Async enabled room-IR failures now produce a generation-tagged observable
-  worker error and retain the last good filters; they cannot publish a
-  reflection-free result. Covered by
-  `post_enable_room_ir_failure_does_not_publish_reflection_free_filters`.
-- Pending filter width is checked before either `ArcSwap` or the callback cache
-  is updated. Covered by
-  `wrong_width_pending_update_is_rejected_before_publication`.
-- Completed crossfade and consumed/rejected pending snapshots are handed to a
-  bounded background reclaimer, so their vectors are not destroyed on the
-  audio callback. Covered by
-  `completed_crossfade_filters_are_destroyed_by_background_reclaimer` and
-  `same_width_filter_adoption_allocates_and_deallocates_nothing`.
-
-### Saturation follow-up (0.5.43, 2026-08-13)
-
-The bounded reclaimer no longer leaks when its eight queue slots and fixed
-retry slot are occupied. Saturation now preserves ownership in that retry slot
-and defers further filter adoption or completed-crossfade retirement until a
-nonblocking retry succeeds. `saturated_reclaimer_retains_bounded_ownership_without_leaking`
-pauses the reclaimer, fills the queue and retry slot, proves an additional
-snapshot remains caller-owned, resumes reclamation, and verifies that every
-retired snapshot is destroyed off the callback with no leak.
-
-### Final async-publication evidence (0.5.44, 2026-08-13)
-
-- Rapid automation now has an end-to-end worker regression: 100 requests must
-  use one coalescing worker, publish the final requested generation, and produce
-  filters equal to an independently recomputed final model. The real worker
-  result is adopted and crossfaded under allocation counting, and the
-  superseded snapshot must be reclaimed by the background reclaimer.
-
 - Brown–Duda plant phase remains single-owner and is covered at plant/filter
   level. Shadow cutoff and slope now apply a default-preserving diffraction
   correction; tests prove each control changes the production filter response.
@@ -160,7 +127,7 @@ retired snapshot is destroyed off the callback with no leak.
   correctness defect.
 - Decisive focused regressions for these remediations are
   `room_ir_accepts_pcm16_and_rejects_implicit_long_tail_truncation`,
-  `async_filter_automation_coalesces_and_publishes_the_final_generation_off_thread`, and
+  `async_filter_automation_uses_one_coalescing_worker`, and
   `test_apply_effort_constraint_scales`. They respectively exercise generic
   integer-PCM conversion plus the explicit long-tail error, the single
   latest-request coalescing worker under 100 rapid updates, and the physical
@@ -190,5 +157,4 @@ Production code and focused regression tests were updated for the remediation.
 - `cargo test -p sotf-plugins --test realtime_allocation_tests tests::test_xtc_zero_alloc -- --exact` — passed (steady state only).
 - `cargo test -p sotf-plugins --test param_parity_tests -- --nocapture` — passed; this checks the listed shared parameter surface but does not detect omitted manually appended/structural fields, divergent defaults, or sonic no-ops.
 
-The original focused-verification limitations listed before remediation are
-superseded by the completion and publication addenda above.
+The passing suite does not invalidate the findings: no test composes Brown–Duda plus geometry against an independent phase oracle, changes output width through a compiled graph, asserts zero allocation during async adoption, propagates worker load errors, or verifies that every exposed DSP control changes the filters.

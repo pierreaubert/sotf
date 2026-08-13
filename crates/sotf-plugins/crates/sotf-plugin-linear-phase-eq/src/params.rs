@@ -38,14 +38,12 @@ pub const PARAMS: &[ParamSpec] = &[
         "",
         "EQ",
     )
-        .structural()
-        .doc("Number of EQ bands"),
+    .structural()
+    .doc("Number of EQ bands"),
     ParamSpec::choice("FIR Length", "fir_length", 1, FIR_LENGTH_OPTIONS, "Quality")
-        .structural()
         .setup()
         .doc("FIR length in taps (higher = better bass resolution, more latency)"),
     ParamSpec::choice("Phase Mode", "phase_mode", 0, PHASE_MODE_OPTIONS, "Phase")
-        .structural()
         .setup()
         .doc("FIR phase design mode"),
     ParamSpec::bool_param("Auto Gain", "auto_gain", false, "Output")

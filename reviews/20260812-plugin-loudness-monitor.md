@@ -13,20 +13,6 @@ All P0–P3 findings now have an implemented safety/compliance contract and focu
 - Both lock-free cache generations are independently preallocated and reset. Disable/re-enable cannot swap stale peaks back into publication; first process, spatial process, UI-held-cache contention, reset, disable, and re-enable remain allocation-free.
 - Direct ingestion eliminates the redundant sample ring. Spatial O(N²) work remains opt-in; analyzer-tap metadata remains zero-latency and bit-transparent.
 
-| Finding | Implemented closure | Named regression evidence |
-|---|---|---|
-| P0 ring-wrap loss | Removed the sample ring and ingest exact contiguous frames. | `test_loudness_monitor_keeps_frames_across_former_ring_wrap` |
-| P1 large-block truncation | Removed the fixed-capacity intermediate queue. | `test_loudness_monitor_does_not_truncate_blocks_larger_than_old_ring` |
-| P1 ambiguous multichannel weighting | Count-only layouts remain accepted but are explicitly published as non-compliant; mono/stereo are compliant. | `count_only_multichannel_measurement_is_explicitly_noncompliant`, `loudness_data_exposes_validity_true_peak_scope_and_integrated_window` |
-| P1 correlation semantics | Stereo and spatial paths share centered, per-frame exponentially weighted Pearson accumulation with partition-invariant updates. | `loudness_monitor_stereo_correlation_is_centered_and_partition_invariant`, `centered_pearson_ignores_dc_offsets_and_unequal_gain`, `centered_pearson_is_callback_partition_invariant` |
-| P1 true-peak scope | `true_peak_is_compliant` is true only for the verified 48 kHz FIR and false for other supported rates. | `loudness_data_exposes_validity_true_peak_scope_and_integrated_window` |
-| P1 process contract | Construction, initialization, sample rate, checked geometry, and exact buffers are validated. | `test_loudness_monitor_rejects_invalid_construction_and_initialization`, `test_loudness_monitor_validates_context_and_exact_buffer_geometry` |
-| P2 cold/reset allocation | Both cache generations and optional spatial matrices are independently preallocated and reset in place. | `test_loudness_monitor_zero_alloc`, `test_loudness_monitor_cold_process_reset_and_disable_zero_alloc`, `test_loudness_monitor_first_spatial_process_zero_alloc` |
-| P2 integrated-history claim | The bounded 3,600-second history is explicit in the published data contract. | `loudness_data_exposes_validity_true_peak_scope_and_integrated_window` |
-| P2 disable/re-enable state | Disable clears validity and measurement state; re-enable starts fresh. | `test_loudness_monitor_disable_clears_and_reenable_starts_fresh` |
-| P2 query failures | Invalid/incomplete queries publish `-inf`, `measurement_valid = false`, and monotonically increment `query_error_generation`; reset clears the generation. | `incomplete_loudness_windows_are_invalid_not_plausible_minus_120` |
-| P3 avoidable callback work | Direct ingestion removes ring copies/branches, correlation accumulation is shared, spatial O(N²) work is opt-in, and all measured callback paths are allocation-free. The generic plugin ABI remains passthrough, while compiled scheduling receives an explicit zero-latency analyzer-tap contract. | `test_loudness_monitor_performance_96khz`, `loudness_monitor_performance_matrix_scales_with_explicit_spatial_mode`, `declares_zero_latency_analyzer_tap_metadata`, plus the three allocation regressions above |
-
 ## Findings
 
 ### P0 — Ring-buffer wrap boundaries discard complete callbacks for many channel counts
@@ -55,12 +41,10 @@ Process directly or chunk the input without loss. If a bounded queue remains, si
 
 ### P1 — Multichannel loudness is wrong without an explicit channel layout
 
-**Closed in 0.5.98 by an explicit compliance boundary.** A channel count alone
-cannot prove channel roles or LFE exclusion, so count-only multichannel data is
-published with `channel_layout_is_compliant = false`; mono/stereo are marked
-compliant. `count_only_multichannel_measurement_is_explicitly_noncompliant`
-and `loudness_data_exposes_validity_true_peak_scope_and_integrated_window`
-cover both sides of the contract.
+**Deferred: broad redesign required.** Correct remediation needs a host-wide
+channel-role/layout contract and graph/factory propagation; a channel count
+alone cannot distinguish layouts. This local plugin batch does not invent a
+layout or silently claim compliance.
 
 The underlying `channel_weight` recognizes only mono/stereo, assumed 5.0 `[L,R,C,Ls,Rs]`, and assumed 5.1 `[L,R,C,LFE,Ls,Rs]`; every channel in every other width receives weight 1.0. That includes LFE in 7.1/Atmos and omits BS.1770 surround weighting. The plugin accepts only a count and advertises many standard layouts, so it cannot distinguish layouts with the same width or assign correct roles.
 
@@ -68,12 +52,10 @@ Require a channel-layout/role map and derive BS.1770 weights from roles, explici
 
 ### P1 — “Pearson correlation” is uncentered cosine similarity and is callback dependent
 
-**Fixed in 0.5.98.** Stereo and spatial correlation now share one centered,
-per-frame exponentially weighted Pearson accumulator.
-`loudness_monitor_stereo_correlation_is_centered_and_partition_invariant`,
-`centered_pearson_ignores_dc_offsets_and_unequal_gain`, and
-`centered_pearson_is_callback_partition_invariant` cover DC/gain invariance
-and callback partitioning.
+**Deferred: broad redesign required.** Stereo and matrix correlation must move
+to one shared, centered, per-sample-consistent accumulator. That changes the
+separate channel-correlation analyzer's algorithm and published behavior, so
+it is outside a local Loudness Monitor safety patch.
 
 Both stereo and matrix paths accumulate only `sum(xy)`, `sum(x²)`, and `sum(y²)` (`analyzer_loudness_monitor.rs:207-245`; `channel_correlation_monitor.rs:155-191`); neither subtracts channel means, so DC-biased or asymmetric signals do not yield Pearson r as documented. Stereo further computes one ratio per callback then averages ratios with a linear `frames/window` coefficient (`analyzer_loudness_monitor.rs:113-129`). Equal-duration quiet and loud blocks receive equal weight, the first block is accepted instantly, and partitioning the same samples changes the answer. The matrix path claims bulk decay is equivalent to per-frame decay, but decays old state once and then adds every new frame without intra-block decay (`channel_correlation_monitor.rs:121-153`), which is also block-size dependent.
 
@@ -81,11 +63,9 @@ Track exponentially weighted sums `x`, `y`, `x²`, `y²`, and `xy`, derive cente
 
 ### P1 — True-peak results are knowingly invalid away from 48 kHz but exposed as dBTP
 
-**Closed in 0.5.98 by an explicit compliance boundary.** The existing true-peak
-result remains available, but `true_peak_is_compliant` is true only at the
-verified 48 kHz reference rate and false at 44.1/88.2/96/192 kHz.
-`loudness_data_exposes_validity_true_peak_scope_and_integrated_window` verifies
-the published scope at each supported rate.
+**Deferred: math-DSP redesign required.** Compliance needs verified
+sample-rate-specific interpolation filters in `math-dsp` (and reference
+vectors), not a local wrapper approximation.
 
 The plugin always enables `Mode::TRUE_PEAK` (`analyzer_loudness_monitor.rs:68-73`). The pinned `math-dsp` implementation uses the BS.1770 48 kHz FIR table unchanged at every rate and explicitly says non-48 kHz values are only approximate (`math-dsp/src/ebur128.rs`; `consts.rs`). Yet `LoudnessData.true_peaks_dbtp` is documented without qualification and 96 kHz operation is a supported/performance-tested path.
 
@@ -122,11 +102,10 @@ Deep-initialize two independent inner buffers, pre-size both spatial states, and
 
 ### P2 — Integrated loudness is a rolling last-hour approximation, not “whole program”
 
-**Closed in 0.5.98 by correcting the data contract.** Integrated loudness is
-documented and published as a bounded 3,600-second history rather than an
-unbounded whole-program measurement.
-`loudness_data_exposes_validity_true_peak_scope_and_integrated_window` verifies
-the exposed duration.
+**Deferred: math-DSP/data-contract redesign required.** Preserving whole-program
+gating with bounded memory requires sufficient statistics or an explicit
+rolling-duration API in `math-dsp`; the wrapper cannot reconstruct discarded
+gating history.
 
 `LoudnessData` describes integrated loudness as whole-program (`analyzer.rs:225-227`), but the pinned meter caps overlapping gating blocks at 36,000 and drops the oldest after roughly one hour (`math-dsp/src/ebur128/consts.rs`, `ebu_r128.rs::complete_sub_block`). Long streams therefore change historical integrated LUFS and cannot produce standards-compliant program measurements.
 
@@ -145,11 +124,11 @@ Define whether disabled means reset, publish-disabled, or pause. At minimum expo
 
 ### P2 — Meter-query failures are converted into plausible measurements
 
-**Fixed in 0.5.98.** `LoudnessData` now carries `measurement_valid` and a
-monotonic `query_error_generation`; invalid/incomplete queries publish `-inf`
-rather than a plausible quiet measurement.
-`incomplete_loudness_windows_are_invalid_not_plausible_minus_120` verifies the
-invalid state, sentinel, and error generation.
+**Partially fixed in the 0.5.95 remediation.** Frame-ingestion failures now
+retain detailed EBU R128 context and propagate from `process` without
+publishing the failed block. Distinguishing query failures from valid silence
+still requires a versioned validity/error field in `LoudnessData`, which is a
+consumer-facing schema redesign and remains deferred.
 
 All loudness query errors become `-120.0`, all peak errors become zero, and `add_frames` erases the underlying error as `"EBU"` (`analyzer_loudness_monitor.rs:138-167`). These values are indistinguishable from very quiet valid audio and conceal the ring-alignment failure above.
 
@@ -157,31 +136,17 @@ Preserve structured error context and publish a validity/error generation alongs
 
 ### P3 — The passthrough and ring add avoidable memory bandwidth and per-sample branching
 
-**Fixed for the plugin contract in 0.5.98.** Direct contiguous ingestion removes
-the sample ring and its push/drain branching; stereo and optional spatial
-correlation share the accumulator, and spatial O(N²) analysis remains opt-in.
-`test_loudness_monitor_performance_96khz` and
-`loudness_monitor_performance_matrix_scales_with_explicit_spatial_mode` cover
-rate/channel/mode scaling, while `test_loudness_monitor_zero_alloc`,
-`test_loudness_monitor_cold_process_reset_and_disable_zero_alloc`, and
-`test_loudness_monitor_first_spatial_process_zero_alloc` cover realtime
-allocation behavior. The passthrough copy is retained for the generic plugin
-ABI; `declares_zero_latency_analyzer_tap_metadata` verifies that compiled hosts
-receive the zero-latency, bit-transparent analyzer contract. Selectable
-true-peak/integrated modes and percentile benchmarking are optional product
-extensions, not correctness requirements of the bounded contract above.
-
 Every callback copies the entire audio buffer, pushes every sample individually, drains it immediately, runs stereo correlation separately from the optional matrix, and performs full true-peak FIR work on every channel (`analyzer_loudness_monitor.rs:113-140,355-395`). At 48 kHz stereo QA reports ~0.57% CPU—acceptable, but much higher than simple analyzers—and O(channels²) spatial correlation scales sharply.
 
 Use the host's analyzer-tap semantics to avoid a redundant output copy where possible, feed contiguous input directly, fuse correlation accumulators, and allow true peak/spatial/integrated modes to be selected by consumers. Benchmark 2/8/16/32/40 channels, spatial on/off, rates through 192 kHz, and multiple block sizes with percentile callback time.
 
 ## Algorithm assessment
 
-The K-weighting, 100 ms sub-blocks, overlapping 400 ms/3 s windows, absolute/relative gating, per-channel sample peak, and 4× true-peak structure form a useful loudness meter. Its compliance boundary is now explicit: count-only multichannel layouts are non-compliant, and true peak is compliant only at the verified 48 kHz rate. Correlation is implemented as centered Pearson correlation.
+The K-weighting, 100 ms sub-blocks, overlapping 400 ms/3 s windows, absolute/relative gating, per-channel sample peak, and 4× true-peak structure form a useful loudness meter. Its compliance boundary is currently unclear: correct channel roles and sample-rate-correct true peak are essential parts of BS.1770, not optional details. Correlation should be described as an audio phase/coherence indicator if it remains uncentered, or implemented as actual centered Pearson correlation.
 
 ## Real-time allocation and performance assessment
 
-Ordinary and cold stereo processing, UI-held-cache contention, reset, disable/re-enable, and first spatial publication are allocation-free and use bounded preallocated DSP state. The redundant sample ring has been removed; direct ingestion eliminates its memory traffic and former correctness failures. Spatial correlation remains explicitly opt-in because its O(N²) cost is inherent to the full matrix.
+After warm-up, ordinary stereo processing and cache reads are allocation-free, use bounded preallocated DSP state, and pass the focused allocation suite. Cold cache publication, spatial activation, reset, and parameter mutation can allocate. The fixed ring is both unnecessary overhead and the source of correctness failures. Removing it should improve safety and speed simultaneously.
 
 ## Scope reviewed
 
@@ -197,7 +162,6 @@ Read in full: host instructions/changelog/manifest/README, `analyzer_loudness_mo
 ## Verification
 
 - `rtk cargo test -p sotf-host` — 457 tests passed; 8 ignored.
-- `rtk cargo test -p sotf-host --test test_analyzer_plugins` — includes geometry, wrap, large-block, state, compliance, centered-correlation, validity, and reset regressions.
-- `rtk cargo test -p sotf-plugins --test realtime_allocation_tests loudness_monitor` — warmed, cold/contention/reset/disable, and first-spatial zero-allocation regressions passed.
-- `rtk cargo test -p sotf-plugins --test test_loudness_monitor_perf` — 96 kHz and explicit-spatial scaling performance checks passed.
+- `rtk cargo test -p sotf-host --test test_analyzer_plugins loudness` — 3 focused loudness tests passed.
+- `rtk cargo test -p sotf-plugins --test realtime_allocation_tests test_loudness_monitor_zero_alloc` — warmed zero-allocation test passed.
 - `rtk cargo run -p sotf-host --features qa --bin qa-host` — all host QA passed; Loudness Monitor reported zero latency/allocations and processed 5 seconds in 28.65 ms (~0.57% estimated CPU), plus the 50-second steady-state check.

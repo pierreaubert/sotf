@@ -105,10 +105,8 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .doc("Dynamic saturation envelope release time"),
     ParamSpec::bool_labeled("DC Block", "dc_blocker", true, "On", "Off", "Quality")
-        .setup()
         .doc("Remove DC offset from asymmetric saturation"),
     ParamSpec::bool_labeled("ADAA", "use_adaa", true, "On", "Off", "Quality")
-        .setup()
         .doc("Antiderivative anti-aliasing when oversampling is off"),
 ];
 

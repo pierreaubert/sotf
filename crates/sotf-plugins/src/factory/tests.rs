@@ -1,5 +1,5 @@
-use super::create::create_plugin;
 use super::catalog::catalog_entry;
+use super::create::create_plugin;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use super::create::create_plugin_with_sandbox_grants;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -18,6 +18,7 @@ use crate::{
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::{ExternalPluginSandboxTiming, ExternalPluginTrust};
 use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::plugin::Plugin;
 use std::path::PathBuf;
 
 use tempfile::tempdir;
@@ -142,6 +143,54 @@ fn hiss_reducer_factory_validates_topology_rate_and_persisted_state() {
 }
 
 #[test]
+fn aec_catalog_factory_and_runtime_schema_are_canonical() {
+    let entry = catalog_entry("aec").expect("AEC catalog entry");
+    assert_eq!(entry.metadata.owning_crate, "sotf-plugin-aec");
+    assert_eq!(
+        entry.metadata.parameter_schema,
+        super::catalog::PluginParameterSchema::Static("sotf_plugin_aec::params::PARAMS")
+    );
+    assert!(create_plugin("aec", &serde_json::json!({}), 1, 48_000).is_err());
+    assert!(create_plugin("aec", &serde_json::json!({}), 3, 48_000).is_err());
+    let plugin = create_plugin(
+        "aec",
+        &serde_json::json!({
+            "echo_tail_ms": 100.0,
+            "step_size": 0.4,
+            "post_filter_enabled": false
+        }),
+        2,
+        48_000,
+    )
+    .expect("canonical factory must construct AEC");
+    assert_eq!(plugin.input_channels(), 2);
+    assert_eq!(plugin.output_channels(), 1);
+    assert_eq!(
+        plugin.get_parameter(&sotf_host::parameters::ParameterId::from("step_size")),
+        Some(sotf_host::parameters::ParameterValue::Float(0.4))
+    );
+}
+
+#[test]
+fn ambisonics_catalog_admits_every_supported_order() {
+    let entry = catalog_entry("ambisonics_decoder").unwrap();
+    assert_eq!(
+        entry.metadata.channel_layout.supported_inputs,
+        super::catalog::PluginSupportedInputLayouts::Enumerated(&[4, 9, 16])
+    );
+    for (order, channels, layout) in [(1, 4, "5.1"), (2, 9, "7.1.4"), (3, 16, "9.1.6")] {
+        let plugin = create_plugin(
+            "ambisonics_decoder",
+            &serde_json::json!({"order": order, "target_layout": layout}),
+            channels,
+            48_000,
+        )
+        .unwrap();
+        assert_eq!(plugin.input_channels(), channels);
+    }
+}
+
+#[test]
 fn dither_catalog_and_factory_are_canonical() {
     let entry = catalog_entry("dither").expect("dither catalog entry");
     assert_eq!(entry.metadata.owning_crate, "sotf-plugin-dither");
@@ -241,13 +290,9 @@ fn ambisonics_catalog_matches_factory_order_contract() {
     else {
         panic!("Ambisonics channel contract must enumerate supported HOA widths");
     };
-    assert_eq!(widths, &[4, 9, 16]);
+    assert_eq!(widths, &[4]);
 
-    for (channels, order, layout) in [
-        (4, 1, "5.1"),
-        (9, 2, "7.1.4"),
-        (16, 3, "9.1.6"),
-    ] {
+    for (channels, order, layout) in [(4, 1, "5.1")] {
         let plugin = create_plugin(
             "ambisonics_decoder",
             &serde_json::json!({
@@ -261,15 +306,15 @@ fn ambisonics_catalog_matches_factory_order_contract() {
         assert_eq!(plugin.input_channels(), channels);
     }
 
-    let mismatched_width = create_plugin(
+    let order3 = create_plugin(
         "ambisonics_decoder",
-        &serde_json::json!({"order": 2, "target_layout": "7.1.4"}),
-        4,
+        &serde_json::json!({"order": 3, "target_layout": "9.1.6"}),
+        16,
         48_000,
     );
     assert!(
-        mismatched_width.is_err(),
-        "the factory must reject a graph width that does not match the configured Ambisonics order"
+        order3.is_err(),
+        "order-3 must not be advertised until a built-in layout has 16 non-LFE feeds"
     );
 }
 
@@ -286,12 +331,7 @@ fn transient_shaper_facade_factory_validates_constructor_contract() {
         "facade factory must reject transient-shaper values outside the parameter schema"
     );
 
-    let zero_channels = create_plugin(
-        "transient_shaper",
-        &serde_json::json!({}),
-        0,
-        48_000,
-    );
+    let zero_channels = create_plugin("transient_shaper", &serde_json::json!({}), 0, 48_000);
     assert!(
         zero_channels.is_err(),
         "facade factory must reject a zero-channel transient shaper"
@@ -463,12 +503,7 @@ fn channel_mute_solo_facade_factory_validates_constructor_contract() {
         "facade factory must reject dim gain above the attenuation range"
     );
 
-    let zero_channels = create_plugin(
-        "channel_mute_solo",
-        &serde_json::json!({}),
-        0,
-        48_000,
-    );
+    let zero_channels = create_plugin("channel_mute_solo", &serde_json::json!({}), 0, 48_000);
     assert!(
         zero_channels.is_err(),
         "facade factory must reject a zero-channel mute/solo plugin"
@@ -567,7 +602,9 @@ fn binaural_catalog_and_factory_share_exact_layout_contract() {
     let entry = catalog_entry("binaural_decoder").unwrap();
     assert_eq!(
         entry.metadata.channel_layout.supported_inputs,
-        super::catalog::PluginSupportedInputLayouts::Enumerated(&[1, 2, 3, 5, 6, 8, 10, 12, 14, 16])
+        super::catalog::PluginSupportedInputLayouts::Enumerated(&[
+            1, 2, 3, 5, 6, 8, 10, 12, 14, 16
+        ])
     );
     for channels in [1, 2, 3, 5, 6, 8, 10, 12, 14, 16] {
         let plugin = create_plugin(
@@ -716,7 +753,6 @@ fn create_external_plugin_from_path() {
         "audio_outputs": 2,
         "name": "External Test",
         "format": "clap",
-        "start_worker": false,
     });
 
     let plugin = create_plugin("external", &params, 2, 48_000).unwrap();
@@ -737,7 +773,6 @@ fn create_external_plugin_from_path_string() {
             "audio_outputs": 2,
             "name": "External Test",
             "format": "clap",
-            "start_worker": false,
         }),
         2,
         48_000,
@@ -768,10 +803,7 @@ fn create_external_plugin_from_embedded_descriptor() {
 
     let plugin = create_plugin(
         "external_plugin",
-        &serde_json::json!({
-            "descriptor": descriptor,
-            "start_worker": false,
-        }),
+        &serde_json::json!({"descriptor": descriptor}),
         2,
         48_000,
     )
@@ -1306,60 +1338,18 @@ fn beamformer_factory_matches_fallible_constructor_validation() {
         serde_json::json!({"num_mics": 2, "steer_angle_deg": 200.0}),
         serde_json::json!({"num_mics": 2, "beamformer_type": "unknown"}),
     ] {
-        assert!(create_plugin("beamformer", &params, 2, 48_000).is_err(), "{params}");
+        assert!(
+            create_plugin("beamformer", &params, 2, 48_000).is_err(),
+            "{params}"
+        );
     }
-    assert!(create_plugin(
-        "beamformer",
-        &serde_json::json!({"num_mics": 2, "beamformer_type": "Superdirective"}),
-        2,
-        48_000,
-    )
-    .is_ok());
-}
-#[test]
-fn aec_catalog_factory_and_runtime_schema_are_canonical() {
-    let entry = catalog_entry("aec").expect("AEC catalog entry");
-    assert_eq!(entry.metadata.owning_crate, "sotf-plugin-aec");
-    assert_eq!(
-        entry.metadata.parameter_schema,
-        super::catalog::PluginParameterSchema::Static("sotf_plugin_aec::params::PARAMS")
-    );
-    assert!(create_plugin("aec", &serde_json::json!({}), 1, 48_000).is_err());
-    assert!(create_plugin("aec", &serde_json::json!({}), 3, 48_000).is_err());
-    let plugin = create_plugin(
-        "aec",
-        &serde_json::json!({
-            "echo_tail_ms": 100.0,
-            "step_size": 0.4,
-            "post_filter_enabled": false
-        }),
-        2,
-        48_000,
-    )
-    .expect("canonical factory must construct AEC");
-    assert_eq!(plugin.input_channels(), 2);
-    assert_eq!(plugin.output_channels(), 1);
-    assert_eq!(
-        plugin.get_parameter(&sotf_host::parameters::ParameterId::from("step_size")),
-        Some(sotf_host::parameters::ParameterValue::Float(0.4))
-    );
-}
-
-#[test]
-fn ambisonics_catalog_admits_every_supported_order() {
-    let entry = catalog_entry("ambisonics_decoder").unwrap();
-    assert_eq!(
-        entry.metadata.channel_layout.supported_inputs,
-        super::catalog::PluginSupportedInputLayouts::Enumerated(&[4, 9, 16])
-    );
-    for (order, channels, layout) in [(1, 4, "5.1"), (2, 9, "7.1.4"), (3, 16, "9.1.6")] {
-        let plugin = create_plugin(
-            "ambisonics_decoder",
-            &serde_json::json!({"order": order, "target_layout": layout}),
-            channels,
+    assert!(
+        create_plugin(
+            "beamformer",
+            &serde_json::json!({"num_mics": 2, "beamformer_type": "Superdirective"}),
+            2,
             48_000,
         )
-        .unwrap();
-        assert_eq!(plugin.input_channels(), channels);
-    }
+        .is_ok()
+    );
 }

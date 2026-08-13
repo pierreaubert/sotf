@@ -1,73 +1,33 @@
 # PND plugin review — 2026-08-12
 
-Follow-up 0.5.9 restores facade-level zero-sample-rate rejection, matching the
-documented factory contract and the plugin initialization invariant.
-Compatibility-only correction controls are now hidden layout references,
-preserving non-exposure while keeping coverage mechanically verifiable.
+## Findings
 
-## Final remediation verification — 2026-08-13
+## Remediation status — 2026-08-12
 
-All P0–P3 findings are closed in 0.5.8 by narrowing the public contract to the
-behavior that is physically observable and compatible with a fixed-frame
-insert:
-
-- P0 fixed-frame correction: PND is now an exact monitoring passthrough.
-  Non-zero `correction_strength` is outside the schema, the misleading
-  `varispeed` alias is no longer advertised, every callback returns its exact
-  input, and latency is zero. A deterministic two-minute test covers irregular
-  64/257/511/1024/1536-frame partitions with no ring growth, drop, substitution,
-  or output difference.
-- P1 identifiability: stable 440 Hz and 444.4 Hz inputs have an explicit oracle
-  requiring identical unity correction. Documentation now requires a pilot,
-  note reference, or independent source/render clock before correction can be
-  reintroduced.
-- P1 incomplete phase vocoder: activation is rejected by live setters and both
-  factory constructors. Its unsupported formant/latency claims and UI control
-  were removed rather than retaining an unvalidated spectral algorithm.
-- P1 realtime and lifecycle: structural changes remain graph-only, Rubato is
-  reset in place with a zero-allocation regression, process-rate mismatches are
-  rejected, arbitrary monitoring block sizes are chunked without allocation,
-  and runtime version metadata comes from the crate version.
-- P1 factory validation: non-finite/out-of-range state, zero channels, non-zero
-  correction, and phase-vocoder activation are rejected through the facade.
-- P2 consensus/matching: confidence-weighted channel consensus and one-to-one
-  partial matching remain covered. Peak gating is now relative to frame RMS and
-  peak magnitude rather than raw FFT units, with 0.5 versus 1e-7 level
-  invariance, broadband-noise, low-frequency, and silence-to-tone
-  regressions.
-- P2 queue atomicity: input read position/count commit only after fallible SRC
-  work and output-capacity validation; an injected capacity failure proves the
-  input transaction is retained.
-- P3 tests: formula/finite-only and impossible absolute-correction tests were
-  replaced with exact passthrough, identifiability, allocation, latency,
-  malformed-state, queue-transaction, detector robustness, and factory oracles.
-
-The legacy SRC and phase-vocoder code is unreachable from every supported
-constructor and parameter path. It is not part of the 0.5.8 public contract and
-creates no deferred obligation for this review: re-enabling correction would be
-a new feature requiring a new review.
-
-## Finding-to-test closure matrix
-
-| Original finding | 0.5.8 disposition | Named regression evidence |
-|---|---|---|
-| P0 fixed-frame persistent correction | Closed by contract rejection: correction strength is fixed at zero, the `varispeed` alias is not advertised, and monitoring copies every sample exactly with zero latency and no queue growth. | `two_minutes_of_irregular_monitoring_is_exact_passthrough`; `fixed_frame_path_reports_zero_latency`; `pnd_factory_exposes_monitoring_only_and_rejects_unsupported_modes` |
-| P1 no observable absolute reference | Closed by narrowing the output to relative pitch-motion monitoring; stable absolute offsets cannot change correction from unity. | `stable_tones_without_a_reference_are_not_treated_as_absolute_error` |
-| P1 reversed drift smoothing | Closed for the retained compatibility state: larger values advance more slowly. It cannot alter monitoring audio. | `drift_smoothing_parameter_is_monotonic_and_high_values_are_slow`; `test_drift_smoothing_param_roundtrip` |
-| P1 callback-dependent latency | Closed by exact passthrough and zero host latency; unsupported phase-vocoder state is rejected. | `fixed_frame_path_reports_zero_latency`; `two_minutes_of_irregular_monitoring_is_exact_passthrough` |
-| P1 incomplete phase vocoder | Closed by rejecting activation in direct, serialized, and facade construction paths. No supported audio path can execute it. | `phase_vocoder_mode_is_rejected_until_a_validated_shifter_exists`; `integration_phase_vocoder_state_transition`; `pnd_factory_exposes_monitoring_only_and_rejects_unsupported_modes` |
-| P1 structural setters/reset allocate | Closed: structural setters reject live changes and Rubato reset is in-place. Arbitrary monitoring blocks are analysis-chunked without resizing. | `structural_parameters_are_rejected_after_initialization`; `resampler_reset_is_in_place`; `monitoring_accepts_oversized_block_by_chunking_analysis` |
-| P1 factory parameters bypass validation | Closed through `try_from_params`, bounded channels, non-zero initialization rate, and facade rejection of unsupported modes. | `integration_try_from_params_rejects_non_finite_and_invalid_values`; `initialization_rejects_zero_sample_rate`; `pnd_factory_exposes_monitoring_only_and_rejects_unsupported_modes` |
-| P2 channel consensus / duplicate matching | Closed for correction because correction is unreachable; monitoring still uses confidence-filtered weighted consensus and one-to-one previous-peak assignment. | `peak_matching_assigns_each_previous_peak_at_most_once`; `two_minutes_of_irregular_monitoring_is_exact_passthrough` |
-| P2 level/spectrum-fragile peak gate | Closed with frame-RMS/relative-peak gating and controlled quiet, noise, low-frequency, and transition oracles. | `peak_detection_is_invariant_to_signal_level`; `broadband_noise_does_not_create_a_confident_drift_observation`; `silence_to_low_tone_transition_recovers_without_stale_drift` |
-| P2 input queue committed before SRC success | Closed transactionally: read position/count advance only after fallible SRC work and capacity checks. | `failed_chunk_does_not_consume_input_queue` |
-| P3 finite/formula-only tests | Closed by the oracle tests above plus exact buffer/rate validation. | `test_process_rejects_buffer_size_mismatch`; `process_rejects_context_sample_rate_mismatch`; all named tests above |
-
-## Archived original findings
-
-Everything below records the pre-0.5.8 implementation reviewed on 2026-08-12.
-Present-tense descriptions refer to that historical code, and its prescriptions
-are satisfied by the dispositions above; none is an open or deferred finding.
+- P1 factory validation fixed in 0.5.7: `try_from_params` applies finite,
+  schema-range, and non-zero-channel checks, and both workspace factories use
+  the fallible constructor. Malformed factory regressions are covered.
+- P1 structural realtime safety fixed in 0.5.7: analysis-window,
+  multi-channel, and phase-vocoder changes are rejected after initialization;
+  setup changes must be prepared by graph construction. This prevents live
+  analyzer/FFT/vocoder allocation and topology/latency changes.
+- P1 drift-smoothing semantics fixed in 0.5.7: the documented convention now
+  holds (larger values are slower), with a deterministic monotonic regression.
+- P2 consensus and duplicate-peak correctness fixed in 0.5.7: low-confidence
+  channels are excluded, remaining observations use confidence-weighted
+  consensus, and each previous peak can be matched once. The matching
+  invariant has a focused regression test.
+- P0 partially mitigated: bounded output-ring overflow now drops the oldest
+  complete frames, and SRC underruns use corresponding input samples rather
+  than zeros. This bounds memory and avoids silence, but it does not satisfy a
+  strict no-drop fixed-frame clock-correction contract; that architecture-level
+  redesign remains explicitly deferred.
+- P1 fixed: processing now rejects a `ProcessContext` sample-rate mismatch.
+- Verification after remediation: focused PND tests pass, including the new
+  sustained-correction and sample-rate-contract regressions. The remaining
+  findings below (reference-free drift identifiability, pitch-vocoder quality,
+  level-robust peak/SNR modeling, exact queue transaction semantics, and
+  broader algorithmic limits) remain open for a subsequent design batch.
 
 ### P0 — A persistent correction ratio cannot satisfy the fixed-frame plugin contract
 
@@ -82,6 +42,10 @@ The analyzer matches spectral peaks only against the immediately previous FFT fr
 Require an observable reference: source/render clock timestamps for device drift, a known pilot/reference pitch, user-marked notes, or a carefully estimated slow baseline explicitly limited to wow removal (which cannot correct constant offset). Separate musical partial tracking from clock estimation. Replace the biased single-tone test with identifiability tests: 440 and 444.4 Hz without a reference must receive identical unity correction, while a known pilot or simulated timestamp drift must recover the injected error.
 
 ### P1 — `drift_smoothing` implements the reverse of the documented behavior
+
+Status: fixed in 0.5.7 by `smooth_drift_ratio`; the documented larger-is-
+slower convention is now tested. A sample-rate-aware time-constant redesign
+remains deferred.
 
 Both processing paths update `current_ratio = old * (1 - alpha) + target * alpha` (`pnd_plugin.rs:292-295,466-469`). Thus `alpha=1` jumps immediately and `alpha=0.001` is highly smoothed. `USAGE.md` says higher values are “more stable” and “slower to track,” while `test_drift_smoothing_slow_correction` labels 0.99 “very high smoothing” (`src/lib/tests.rs:9-38`). That test only sees a nearly-unity target, so it does not reveal the reversal.
 
@@ -101,6 +65,10 @@ Implement a validated phase-vocoder pitch-shift design (often time-stretch plus 
 
 ### P1 — Structural parameter setters allocate and change topology/latency live
 
+Status: the realtime safety portion is fixed in 0.5.7: structural setters now
+reject changes after initialization. Off-thread rebuild/swap and
+latency-aligned crossfade remain host-level architecture work and are deferred.
+
 Although analysis window, multi-channel analysis, and phase vocoder are marked structural/setup, the public setter immediately resets analyzer histories, clears and repopulates analyzer vectors, creates FFT plans/buffers, and changes processing topology/latency (`pnd_plugin.rs:577-625`, `analysis.rs:247-259`). `reset` recreates the rubato resampler (`pnd_plugin.rs:821-840`), which also allocates. If these trait methods run on the audio thread they violate real-time safety and can click; switching back also exposes path states maintained on different timelines.
 
 Enforce graph-rebuild-only application for structural settings and allocate/plan off-thread, then swap with a latency-aligned transition. Make reset allocation-free by resetting a reusable SRC or preparing a replacement outside the callback. Add allocator-counting and discontinuity tests for reset and every parameter path, not only steady-state processing.
@@ -112,6 +80,9 @@ Enforce graph-rebuild-only application for structural settings and allocate/plan
 Validate construction through the same `ParamSpec` schema, reject unsupported channel/sample-rate configurations, and use checked size arithmetic throughout. Add malformed serde/factory tests for NaN/Inf, bounds, zero channels/rate, and allocation-size overflow.
 
 ### P2 — Multi-channel consensus can authorize the wrong correction
+
+Status: fixed in 0.5.7 by confidence-weighted consensus with low-confidence
+channel rejection. Full spatial/channel policy remains deferred.
 
 The code takes an unweighted median drift but separately averages confidence (`pnd_plugin.rs:263-283,433-454`). A confident tonal channel plus silent/noisy channels can yield a median unity drift while the average crosses the threshold, or a valid dominant channel can be rejected by low-confidence channels. Even-sized medians use the upper middle. Peak matching is also many-to-one: multiple current peaks can select the same previous peak (`analysis.rs:146-176`), inflating matched-partial count and confidence (`analysis.rs:181-185`).
 

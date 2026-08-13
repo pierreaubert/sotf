@@ -16,7 +16,7 @@ use super::load::load_roomeq_recommended_filters;
 use super::load::validate_roomeq_recommended_source;
 use super::misc::MAX_PROCESS_FRAMES;
 use super::reflections::{RoomReflectionData, build_reflection_data_ir};
-use super::types::{FilterUpdateRequest, PendingFilterUpdate, RetiredXtcState};
+use super::types::{FilterUpdateRequest, PendingFilterUpdate};
 use super::xtc_data::XtcData;
 use crate::params::PARAMS as XT;
 use arc_swap::{ArcSwap, ArcSwapOption};
@@ -35,13 +35,7 @@ use std::any::Any;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicU64, Ordering},
-    mpsc::{SyncSender, TrySendError, sync_channel},
 };
-
-#[cfg(test)]
-pub(super) static LAST_FILTER_RECLAIM_THREAD: Mutex<Option<String>> = Mutex::new(None);
-#[cfg(test)]
-pub(super) static PAUSE_FILTER_RECLAIMER: AtomicBool = AtomicBool::new(false);
 
 /// FFT / STFT configuration and shared resources.
 pub(super) struct XtcFftConfig {
@@ -116,11 +110,6 @@ pub(super) struct XtcFilterState {
     pub(super) filter_request: Arc<Mutex<Option<FilterUpdateRequest>>>,
     pub(super) filter_worker_running: Arc<AtomicBool>,
     pub(super) filter_worker_launches: Arc<AtomicU64>,
-    pub(super) last_filter_update_error: Arc<Mutex<Option<(u64, String)>>>,
-
-    filter_retire_tx: Option<SyncSender<RetiredXtcState>>,
-    filter_retire_thread: Option<std::thread::JoinHandle<()>>,
-    pub(super) retired_filter_retry: Option<RetiredXtcState>,
 
     /// Previous filter snapshot for crossfading (Block mode)
     pub(super) prev_filters: Option<Arc<XtcFilters>>,
@@ -139,15 +128,6 @@ pub(super) struct XtcFilterState {
 
     /// Hash of room-related parameters for cache invalidation (Optimization 4)
     pub(super) room_params_hash: u64,
-}
-
-impl Drop for XtcFilterState {
-    fn drop(&mut self) {
-        self.filter_retire_tx.take();
-        if let Some(thread) = self.filter_retire_thread.take() {
-            let _ = thread.join();
-        }
-    }
 }
 
 /// Overlap-add output ring buffer state.
@@ -232,17 +212,6 @@ pub struct XtcPlugin {
 impl XtcPlugin {
     const STRUCTURAL_SOURCE_ERROR: &'static str =
         "XTC source/artifact changes are structural and require rebuilding the plugin graph";
-
-    /// Most recent failure from the coalescing filter worker, tagged with the
-    /// request generation. Control/UI threads may poll this; the audio callback
-    /// never takes this mutex.
-    pub fn last_filter_update_error(&self) -> Option<(u64, String)> {
-        self.filter_state
-            .last_filter_update_error
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
-    }
     /// Validate a source configuration before exposing it through parameters.
     ///
     /// Source changes are structural: an asynchronous recompute may fail after
@@ -361,7 +330,7 @@ impl XtcPlugin {
         let room_params_hash = compute_room_params_hash(&params);
         let room_reflection_cache = if params.room_reflections_enabled {
             // Pass the pre-planned FFT to avoid re-creating the planner (Optimization 4)
-            compute_room_reflection_data(&params, sample_rate, num_bins, Some(fft_forward.clone()))?
+            compute_room_reflection_data(&params, sample_rate, num_bins, Some(fft_forward.clone()))
         } else {
             None
         };
@@ -414,30 +383,6 @@ impl XtcPlugin {
             None
         };
 
-        let (filter_retire_tx, filter_retire_rx) = sync_channel(8);
-        let filter_retire_thread = std::thread::Builder::new()
-            .name("xtc-filter-reclaimer".to_string())
-            .spawn(move || {
-                while let Ok(retired) = filter_retire_rx.recv() {
-                    #[cfg(test)]
-                    {
-                        *LAST_FILTER_RECLAIM_THREAD
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
-                            std::thread::current().name().map(str::to_owned);
-                    }
-                    #[cfg(test)]
-                    while PAUSE_FILTER_RECLAIMER.load(Ordering::Acquire) {
-                        std::thread::yield_now();
-                    }
-                    match retired {
-                        RetiredXtcState::Filters(filters) => drop(filters),
-                        RetiredXtcState::Pending(update) => drop(update),
-                    }
-                }
-            })
-            .map_err(|error| format!("Failed to start XTC filter reclaimer: {error}"))?;
-
         let mut p = Self {
             params: params.clone(),
             fft: XtcFftConfig {
@@ -480,10 +425,6 @@ impl XtcPlugin {
                 filter_request: Arc::new(Mutex::new(None)),
                 filter_worker_running: Arc::new(AtomicBool::new(false)),
                 filter_worker_launches: Arc::new(AtomicU64::new(0)),
-                last_filter_update_error: Arc::new(Mutex::new(None)),
-                filter_retire_tx: Some(filter_retire_tx),
-                filter_retire_thread: Some(filter_retire_thread),
-                retired_filter_retry: None,
                 prev_filters: None,
                 crossfade_progress: 1.0, // Start fully faded to current
                 progress_per_hop: 0.0,
@@ -688,15 +629,12 @@ impl XtcPlugin {
         if sync {
             let new_hash = compute_room_params_hash(&self.params);
             let room_data = if new_hash != self.filter_state.room_params_hash {
-                let Ok(room_data) = compute_room_reflection_data(
+                compute_room_reflection_data(
                     &self.params,
                     sample_rate,
                     num_bins,
                     Some(self.fft.fft_forward.clone()),
-                ) else {
-                    return;
-                };
-                room_data
+                )
             } else {
                 self.filter_state.room_reflection_cache.clone()
             };
@@ -785,7 +723,6 @@ impl XtcPlugin {
             let worker_launches = self.filter_state.filter_worker_launches.clone();
             let pending_filter_update = self.filter_state.pending_filter_update.clone();
             let requested_generation = self.filter_state.filter_update_generation.clone();
-            let last_filter_update_error = self.filter_state.last_filter_update_error.clone();
             let spawn_result = std::thread::Builder::new()
                 .name("xtc-filter-worker".to_string())
                 .spawn(move || {
@@ -796,26 +733,11 @@ impl XtcPlugin {
                             .unwrap_or_else(|poisoned| poisoned.into_inner())
                             .take();
                         if let Some(request) = request {
-                            match Self::compute_filter_update(&request) {
-                                Ok(update)
-                                    if requested_generation.load(Ordering::Acquire)
-                                        == request.generation =>
-                                {
-                                    *last_filter_update_error
-                                        .lock()
-                                        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
-                                    pending_filter_update.store(Some(Arc::new(update)));
-                                }
-                                Err(error)
-                                    if requested_generation.load(Ordering::Acquire)
-                                        == request.generation =>
-                                {
-                                    *last_filter_update_error
-                                        .lock()
-                                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
-                                        Some((request.generation, error));
-                                }
-                                _ => {}
+                            if let Some(update) = Self::compute_filter_update(&request)
+                                && requested_generation.load(Ordering::Acquire)
+                                    == request.generation
+                            {
+                                pending_filter_update.store(Some(Arc::new(update)));
                             }
                             continue;
                         }
@@ -841,9 +763,7 @@ impl XtcPlugin {
         }
     }
 
-    pub(super) fn compute_filter_update(
-        request: &FilterUpdateRequest,
-    ) -> Result<PendingFilterUpdate, String> {
+    fn compute_filter_update(request: &FilterUpdateRequest) -> Option<PendingFilterUpdate> {
         let params = &request.params;
         let room_params_hash = compute_room_params_hash(params);
         let room_data = compute_room_reflection_data(
@@ -851,22 +771,19 @@ impl XtcPlugin {
             request.sample_rate,
             request.num_bins,
             Some(request.fft_forward.clone()),
-        )?;
+        );
         let hrtf_data = if params.source_mode == "hrtf_file" {
-            let hrtf_path = params
-                .hrtf_file
-                .as_deref()
-                .ok_or_else(|| "source_mode='hrtf_file' requires hrtf_file".to_string())?;
-            load_hrtf_for_xtc(hrtf_path, params, request.sample_rate, request.num_bins)?
+            let hrtf_path = params.hrtf_file.as_deref()?;
+            load_hrtf_for_xtc(hrtf_path, params, request.sample_rate, request.num_bins)
+                .ok()?
                 .map(Arc::new)
         } else {
             None
         };
         let new_filters = if params.source_mode == "roomeq_recommended" {
-            let matrix_path = params.recommended_matrix_file.as_deref().ok_or_else(|| {
-                "source_mode='roomeq_recommended' requires recommended_matrix_file".to_string()
-            })?;
-            load_roomeq_recommended_filters(matrix_path, request.sample_rate, request.num_bins)?
+            let matrix_path = params.recommended_matrix_file.as_deref()?;
+            load_roomeq_recommended_filters(matrix_path, request.sample_rate, request.num_bins)
+                .ok()?
         } else {
             let cache = compute_geometry_cache(params, request.sample_rate, request.num_bins);
             compute_xtc_filters_full_with_cache_and_hrtf(
@@ -879,13 +796,9 @@ impl XtcPlugin {
             )
         };
         if new_filters.output_channels() != request.expected_output_channels {
-            return Err(format!(
-                "XTC filter update changed output width from {} to {}",
-                request.expected_output_channels,
-                new_filters.output_channels()
-            ));
+            return None;
         }
-        Ok(PendingFilterUpdate {
+        Some(PendingFilterUpdate {
             generation: request.generation,
             filters: Arc::new(new_filters),
             hrtf_transfer_functions: hrtf_data,
@@ -895,10 +808,8 @@ impl XtcPlugin {
     }
 
     pub(super) fn adopt_pending_filters(&mut self) {
-        if !self.flush_retired_filter_retry() {
-            return;
-        }
-        let Some(update) = self.filter_state.pending_filter_update.load_full() else {
+        let update = self.filter_state.pending_filter_update.load_full();
+        let Some(update) = update.as_ref() else {
             return;
         };
 
@@ -909,62 +820,24 @@ impl XtcPlugin {
                 .load(Ordering::Acquire)
         {
             self.filter_state.pending_filter_update.store(None);
-            self.retire_state_off_audio_thread(RetiredXtcState::Pending(update));
             return;
         }
 
         let previous = self.filter_state.filters.load_full();
         let previous_output_channels = previous.output_channels();
-        let next_output_channels = update.filters.output_channels();
-        if previous_output_channels != next_output_channels {
-            self.filter_state.pending_filter_update.store(None);
-            self.retire_state_off_audio_thread(RetiredXtcState::Pending(update));
-            return;
-        }
         self.filter_state.filters.store(Arc::clone(&update.filters));
         self.filter_state.cached_current_filters = Arc::clone(&update.filters);
         self.filter_state.hrtf_transfer_functions = update.hrtf_transfer_functions.clone();
         self.filter_state.room_reflection_cache = update.room_reflection_cache.clone();
         self.filter_state.room_params_hash = update.room_params_hash;
+        let next_output_channels = update.filters.output_channels();
+        if previous_output_channels != next_output_channels {
+            self.filter_state.pending_filter_update.store(None);
+            return;
+        }
         self.filter_state.prev_filters = Some(previous);
         self.filter_state.crossfade_progress = 0.0;
         self.filter_state.pending_filter_update.store(None);
-        self.retire_state_off_audio_thread(RetiredXtcState::Pending(update));
-    }
-
-    pub(super) fn flush_retired_filter_retry(&mut self) -> bool {
-        if let Some(retry) = self.filter_state.retired_filter_retry.take() {
-            match self
-                .filter_state
-                .filter_retire_tx
-                .as_ref()
-                .expect("XTC filter reclaimer exists while processing")
-                .try_send(retry)
-            {
-                Ok(()) => {}
-                Err(TrySendError::Full(retry)) | Err(TrySendError::Disconnected(retry)) => {
-                    self.filter_state.retired_filter_retry = Some(retry);
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
-    pub(super) fn retire_state_off_audio_thread(&mut self, retired: RetiredXtcState) {
-        debug_assert!(self.filter_state.retired_filter_retry.is_none());
-        match self
-            .filter_state
-            .filter_retire_tx
-            .as_ref()
-            .expect("XTC filter reclaimer exists while processing")
-            .try_send(retired)
-        {
-            Ok(()) => {}
-            Err(TrySendError::Full(retired)) | Err(TrySendError::Disconnected(retired)) => {
-                self.filter_state.retired_filter_retry = Some(retired);
-            }
-        }
     }
 
     fn reconfigure_auto_gain_for_layout(&mut self) {
@@ -1226,11 +1099,8 @@ impl XtcPlugin {
             self.filter_state.crossfade_progress = (self.filter_state.crossfade_progress
                 + self.filter_state.progress_per_hop)
                 .min(1.0);
-            if self.filter_state.crossfade_progress >= 1.0
-                && self.flush_retired_filter_retry()
-                && let Some(filters) = self.filter_state.prev_filters.take()
-            {
-                self.retire_state_off_audio_thread(RetiredXtcState::Filters(filters));
+            if self.filter_state.crossfade_progress >= 1.0 {
+                self.filter_state.prev_filters = None; // Release old filters
             }
         }
     }

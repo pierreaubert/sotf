@@ -28,20 +28,19 @@ use crate::{
     ConvolutionPlugin, ConvolutionPluginParams, CrossfeedPlugin, CrossfeedPluginParams,
     CrossoverPlugin, CrossoverPluginParams, DeEsserPlugin, DeEsserPluginParams, DeclickPlugin,
     DeclickPluginParams, DelayPlugin, DelayPluginParams, DenoiserPlugin, DenoiserPluginParams,
-    DitherPlugin, DitherPluginParams,
-    DownmixPlugin, DownmixPluginParams, DynamicEqPlugin, DynamicEqPluginParams, EqPlugin,
-    EqPluginParams, ExpanderPlugin, ExpanderPluginParams, GainPlugin, GainPluginParams, GatePlugin,
-    GatePluginParams, HissReducerPlugin, HissReducerPluginParams, LimiterPlugin,
-    LimiterPluginParams, LinearPhaseEqPlugin, LinearPhaseEqPluginParams,
-    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
-    MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams, MultibandCompressorPlugin,
-    MultibandCompressorPluginParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
-    ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin, PndPlugin, PndPluginParams,
-    ResamplerPlugin, SaturationPlugin, SaturationPluginParams, SpectralCompressorPlugin,
-    SpectralCompressorPluginParams, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
-    SpeechDenoiserPluginParams, StereoImagerPlugin, StereoImagerPluginParams,
-    TransientShaperPlugin, TransientShaperPluginParams, UpmixerPlugin, UpmixerPluginParams,
-    XtcPlugin, XtcPluginParams,
+    DitherPlugin, DitherPluginParams, DownmixPlugin, DownmixPluginParams, DynamicEqPlugin,
+    DynamicEqPluginParams, EqPlugin, EqPluginParams, ExpanderPlugin, ExpanderPluginParams,
+    GainPlugin, GainPluginParams, GatePlugin, GatePluginParams, HissReducerPlugin,
+    HissReducerPluginParams, LimiterPlugin, LimiterPluginParams, LinearPhaseEqPlugin,
+    LinearPhaseEqPluginParams, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
+    LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MonoToStereoPluginParams,
+    MultibandCompressorPlugin, MultibandCompressorPluginParams, MultibandExpanderPlugin,
+    MultibandExpanderPluginParams, ParametricInPlacePluginAdapter, ParametricPluginAdapter, Plugin,
+    PndPlugin, PndPluginParams, ResamplerPlugin, SaturationPlugin, SaturationPluginParams,
+    SpectralCompressorPlugin, SpectralCompressorPluginParams, SpectrumAnalyzerPlugin,
+    SpectrumConfig, SpeechDenoiserPlugin, SpeechDenoiserPluginParams, StereoImagerPlugin,
+    StereoImagerPluginParams, TransientShaperPlugin, TransientShaperPluginParams, UpmixerPlugin,
+    UpmixerPluginParams, XtcPlugin, XtcPluginParams,
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::{
@@ -97,7 +96,9 @@ pub fn create_plugin(
                     ParameterValue::Bool(tdf2),
                 )?;
             }
-            if let Some(topology) = parameters.get("topology").and_then(serde_json::Value::as_f64)
+            if let Some(topology) = parameters
+                .get("topology")
+                .and_then(serde_json::Value::as_f64)
             {
                 plugin.parametric_set_parameter(
                     ParameterId::from("topology"),
@@ -200,12 +201,6 @@ pub fn create_plugin(
             let mut params: DownmixPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse downmix params: {e}"))?;
             if params.input_channels != channels {
-                if let Some(layout) = params.input_layout.as_deref() {
-                    return Err(format!(
-                        "Downmix explicit input_layout '{layout}' is configured for {} channels, but current chain width is {channels}",
-                        params.input_channels
-                    ));
-                }
                 log::info!(
                     "[factory:downmix] Adapting input_channels from {} to current chain width {}",
                     params.input_channels,
@@ -257,16 +252,18 @@ pub fn create_plugin(
         "de_esser" => {
             let params: DeEsserPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse de-esser params: {e}"))?;
-            let plugin = DeEsserPlugin::try_from_params_at_sample_rate(channels, params, sample_rate)
-                .map_err(|e| format!("Invalid de-esser params: {e}"))?;
+            let plugin =
+                DeEsserPlugin::try_from_params_at_sample_rate(channels, params, sample_rate)
+                    .map_err(|e| format!("Invalid de-esser params: {e}"))?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "dynamic_eq" => {
             let params: DynamicEqPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse dynamic EQ params: {e}"))?;
-            let plugin = DynamicEqPlugin::try_from_params_at_sample_rate(channels, params, sample_rate)
-                .map_err(|e| format!("Invalid dynamic EQ params: {e}"))?;
+            let plugin =
+                DynamicEqPlugin::try_from_params_at_sample_rate(channels, params, sample_rate)
+                    .map_err(|e| format!("Invalid dynamic EQ params: {e}"))?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
@@ -381,9 +378,6 @@ pub fn create_plugin(
         }
 
         "pnd" => {
-            if sample_rate == 0 {
-                return Err("PND sample rate must be non-zero".to_string());
-            }
             let params: PndPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse PND params: {e}"))?;
             let plugin = PndPlugin::try_from_params(channels, params)?;

@@ -6,13 +6,6 @@
 
 All P0–P3 findings in this review are now fixed and regression-tested.
 
-### Test-evidence follow-up — 0.5.8
-
-- `test_two_path_transfer_threshold_not_too_aggressive` now asserts the
-  observable transfer count remains unchanged after ten consecutive candidate
-  blocks. It therefore fails the old five-block promotion behavior and closes
-  the finite-only/no-panic test weakness noted below.
-
 | Finding | Closure and regression evidence |
 |---|---|
 | P1 spectral-domain post-filter input | The dedicated pre-IFFT estimate remains covered by `last_echo_estimate_is_frequency_domain_data`. |

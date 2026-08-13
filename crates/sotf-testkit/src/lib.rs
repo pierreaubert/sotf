@@ -15,8 +15,8 @@
     reason = "test helper crate: these pedantic lints add noise without improving test fixture correctness"
 )]
 
-pub mod audio;
 pub mod assertions;
+pub mod audio;
 pub mod control;
 pub mod db;
 

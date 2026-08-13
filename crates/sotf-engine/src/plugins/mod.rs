@@ -22,7 +22,6 @@ use sotf_plugins::param_specs::crossover as crossover_specs;
 use sotf_plugins::param_specs::de_esser as de_esser_specs;
 use sotf_plugins::param_specs::declick as declick_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
-use sotf_plugins::param_specs::dither as dither_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
@@ -370,12 +369,6 @@ sotf_plugins::serde_param_default! {
     fn default_aec_echo_tail_ms() -> f64 = "echo_tail_ms";
     fn default_aec_step_size() -> f64 = "step_size";
     fn default_aec_post_filter_enabled() -> bool = "post_filter_enabled";
-}
-sotf_plugins::serde_param_default! {
-    dither_specs::PARAMS;
-    fn default_dither_bit_depth() -> usize = "bit_depth";
-    fn default_dither_noise_shaping() -> bool = "noise_shaping";
-    fn default_dither_type() -> usize = "dither_type";
 }
 sotf_plugins::serde_param_default! {
     beamformer_specs::PARAMS;

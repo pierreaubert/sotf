@@ -56,7 +56,6 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::DeEsser => theme.plugin_palette.plugin_colors.compressor,
         PluginType::TransientShaper => theme.plugin_palette.plugin_colors.compressor,
         PluginType::Saturation => theme.plugin_palette.plugin_colors.eq,
-        PluginType::Dither => theme.plugin_palette.plugin_colors.gain,
         PluginType::DynamicEq => theme.plugin_palette.plugin_colors.compressor,
         PluginType::LinearPhaseEq => theme.plugin_palette.plugin_colors.eq,
         PluginType::SpectralCompressor => theme.plugin_palette.plugin_colors.compressor,
@@ -115,7 +114,7 @@ pub fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: 
         | PluginType::Aec
         | PluginType::Beamformer => IconName::Brain,
         PluginType::ABCompare => IconName::Repeat,
-        PluginType::Saturation | PluginType::Dither => IconName::AudioWaveform,
+        PluginType::Saturation => IconName::AudioWaveform,
         PluginType::External => IconName::Plug,
     }
 }
@@ -181,7 +180,6 @@ pub fn plugin_short_name(
         PluginType::DeEsser => "De-Ess",
         PluginType::TransientShaper => "Transient",
         PluginType::Saturation => "Saturate",
-        PluginType::Dither => "Dither",
         PluginType::DynamicEq => "DynEQ",
         PluginType::LinearPhaseEq => "FIR EQ",
         PluginType::SpectralCompressor => "Spectral Compressor",

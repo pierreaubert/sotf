@@ -39,10 +39,6 @@ use std::sync::Once;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-thread_local! {
-    static COUNT_REALTIME_LOGS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 struct RealtimeLogCounter;
 
 static REALTIME_LOG_COUNTER: RealtimeLogCounter = RealtimeLogCounter;
@@ -55,11 +51,7 @@ impl log::Log for RealtimeLogCounter {
     }
 
     fn log(&self, _record: &log::Record<'_>) {
-        COUNT_REALTIME_LOGS.with(|enabled| {
-            if enabled.get() {
-                REALTIME_LOG_RECORDS.fetch_add(1, Ordering::Relaxed);
-            }
-        });
+        REALTIME_LOG_RECORDS.fetch_add(1, Ordering::Relaxed);
     }
 
     fn flush(&self) {}
@@ -527,11 +519,9 @@ fn test_band_merge_armed_diagnostic_has_no_allocations_or_logs() {
     let _ = plugin.get_parameter(&diagnostic_id);
     REALTIME_LOG_RECORDS.store(0, Ordering::Relaxed);
 
-    COUNT_REALTIME_LOGS.with(|enabled| enabled.set(true));
     assert_no_allocs("BandMergePlugin armed diagnostic", || {
         plugin.process(&input, &mut output, &context).unwrap();
     });
-    COUNT_REALTIME_LOGS.with(|enabled| enabled.set(false));
     assert_eq!(
         REALTIME_LOG_RECORDS.load(Ordering::Relaxed),
         0,

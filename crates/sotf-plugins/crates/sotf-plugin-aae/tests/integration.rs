@@ -6,8 +6,8 @@
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
-use sotf_plugin_aae::params::AaePluginParams;
 use sotf_plugin_aae::AaePlugin;
+use sotf_plugin_aae::params::AaePluginParams;
 
 fn ctx(sample_rate: u32, num_frames: usize) -> ProcessContext<'static> {
     ProcessContext::new(sample_rate, num_frames)
@@ -28,9 +28,11 @@ fn info_and_channels() {
 
     let params = plugin.parameters();
     assert!(!params.is_empty());
-    assert!(params
-        .iter()
-        .any(|p| p.id == ParameterId::from("room_size")));
+    assert!(
+        params
+            .iter()
+            .any(|p| p.id == ParameterId::from("room_size"))
+    );
 }
 
 #[test]
@@ -271,12 +273,14 @@ fn speaker_config_change_requires_graph_rebuild() {
         .unwrap_err();
     assert_eq!(plugin.output_channels(), 6);
 
-    assert!(plugin
-        .set_parameter(
-            ParameterId::from("speaker_config"),
-            ParameterValue::String("2.0".to_string()),
-        )
-        .is_err());
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("speaker_config"),
+                ParameterValue::String("2.0".to_string()),
+            )
+            .is_err()
+    );
 }
 
 #[test]

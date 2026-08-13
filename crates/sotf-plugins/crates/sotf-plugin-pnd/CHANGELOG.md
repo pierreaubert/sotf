@@ -1,15 +1,3 @@
-# 0.5.8
-
-- Narrow the public contract to reference-free pitch-motion monitoring with
-  exact fixed-frame passthrough; reject non-zero correction and the incomplete
-  phase-vocoder mode instead of dropping/substituting programme frames.
-- Make reset allocation-free with Rubato's in-place reset and make queued-input
-  commit transactional after SRC/capacity success.
-- Replace raw FFT-unit peak gating with a level-normalized RMS/relative gate.
-- Correct latency and runtime version metadata, and add identifiability,
-  two-minute irregular-partition, quiet/loud invariance, allocation, malformed
-  factory, and queue-transaction regressions.
-
 # 0.5.7
 
 - Reject malformed factory parameters (non-finite values, out-of-range values,
@@ -97,7 +85,3 @@
 - Preallocated analyzer peak/ratio scratch and max drift-history storage so analysis-window changes do not reallocate.
 - Marked analysis-window, multi-channel analysis, and phase-vocoder controls as structural/setup.
 - Fixed from_params() returning stale cached parameter values.
-# 0.5.9
-
-- Reject a zero host sample rate at facade construction, before allocating PND state.
-- Keep unavailable compatibility controls hidden but explicitly represented in the layout contract.

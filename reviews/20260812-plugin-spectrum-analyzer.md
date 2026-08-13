@@ -5,11 +5,6 @@ Scope: `SpectrumAnalyzerPlugin` DSP and analyzer cache, factory/catalog/paramete
 
 Final verification (2026-08-12): every P0-P2 finding below is closed with a focused regression. The follow-up audit corrected two flaws in the initial remediation: sample-wise maximum-channel selection was nonlinear, and cloned nested cache buffers could allocate on the first FFT. Channel aggregation is now maximum per-channel FFT-line power, cache payloads are independently preallocated, reset has a third preallocated generation, band power is Hann-ENBW normalized, and the normal GPUI path shares `Arc<[f32]>` storage without copying. The analyzer intentionally performs at most one latest-window FFT per callback; this is the tested bounded-work/freshness contract rather than an overlap analyzer.
 
-Workspace-integration follow-up (2026-08-13): both GPUI spectrum consumers now
-use the analyzer's `Arc<[f32]>` payload directly. This closes the compile-time
-consumer drift exposed by the final workspace check while preserving the
-zero-copy display contract.
-
 ## Findings
 
 ### P0 — [Fixed] The advertised VST3/CLAP Spectrum Analyzer cannot instantiate

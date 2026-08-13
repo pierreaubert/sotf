@@ -53,10 +53,6 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
         }),
         "downmix" => serde_json::json!({
             "input_channels": channels,
-            "input_layout": match channels {
-                8 => Some("7.1"),
-                _ => None,
-            },
         }),
         "binaural_decoder" => serde_json::json!({
             "input_channels": channels,
@@ -88,7 +84,7 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
         "band_split" => serde_json::json!({
             "num_bands": 2,
             "frequency": 1000.0,
-            "type": "LR24",
+            "type": "lr4",
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -100,11 +96,10 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
             "num_mics": channels,
             "mic_spacing_m": 0.05,
         }),
-        "ambisonics_decoder" => match channels {
-            9 => serde_json::json!({"order": 2, "target_layout": "7.1.4"}),
-            16 => serde_json::json!({"order": 3, "target_layout": "9.1.6"}),
-            _ => serde_json::json!({"order": 1, "target_layout": "5.1"}),
-        },
+        "ambisonics_decoder" => serde_json::json!({
+            "order": 1,
+            "target_layout": "5.1",
+        }),
         _ => serde_json::json!({}),
     }
 }
@@ -261,15 +256,13 @@ fn catalog_default_channel_output_contracts_hold() {
 
         for &channels in supported_inputs {
             let expected_output = match entry.metadata.channel_layout.output {
-                PluginChannelOutputModel::PreservesInput => Some(channels),
-                PluginChannelOutputModel::Fixed(output) => Some(output),
-                // The default applies to the plugin's canonical default
-                // configuration, not every structural configuration needed to
-                // exercise each admitted input width (for example HOA order and
-                // Ambisonics target layout).
-                PluginChannelOutputModel::Configurable { .. } => None,
-                PluginChannelOutputModel::InputTimesBands => Some(channels * 2),
-                PluginChannelOutputModel::InputDividedByBands => Some(channels / 2),
+                PluginChannelOutputModel::PreservesInput => channels,
+                PluginChannelOutputModel::Fixed(output) => output,
+                PluginChannelOutputModel::Configurable { default_output, .. } => {
+                    default_output.channels(channels)
+                }
+                PluginChannelOutputModel::InputTimesBands => channels * 2,
+                PluginChannelOutputModel::InputDividedByBands => channels / 2,
                 PluginChannelOutputModel::DescriptorDefined
                 | PluginChannelOutputModel::PlatformNegotiated => continue,
             };
@@ -279,10 +272,9 @@ fn catalog_default_channel_output_contracts_hold() {
 
             match result {
                 Ok(Ok(out_ch)) => {
-                    if expected_output.is_some_and(|expected| out_ch != expected) {
+                    if out_ch != expected_output {
                         failures.push(format!(
-                            "{plugin_type}@{channels}ch produced {out_ch} output channels instead of catalog default {}",
-                            expected_output.unwrap()
+                            "{plugin_type}@{channels}ch produced {out_ch} output channels instead of catalog default {expected_output}"
                         ));
                     }
                 }

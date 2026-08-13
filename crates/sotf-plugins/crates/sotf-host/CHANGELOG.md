@@ -1,7 +1,5 @@
 # Unreleased
 
-# 0.5.100 - 2026-08-13
-
 ## External plugin final review evidence
 
 - Add allocation-counted warmed success, timeout, quarantine, and negotiated
@@ -47,8 +45,6 @@
   callback partitioning for equal elapsed time.
 - Publish spectrum magnitudes as `Arc<[f32]>` so the default uncorrected GPUI
   path reuses analyzer storage without a per-render Vec-to-slice allocation.
-- Update both GPUI spectrum consumers to treat that payload directly as a
-  slice, avoiding the unstable and redundant `slice::as_slice` call.
 - Add focused multichannel, calibration, rate/range, large-block, reset,
   non-finite, smoothing, zero-copy UI, and cold real-time allocation regressions.
 

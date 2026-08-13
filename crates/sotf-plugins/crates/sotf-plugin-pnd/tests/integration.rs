@@ -10,8 +10,7 @@ fn integration_plugin_info_and_channels() {
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 2);
     let info = plugin.info();
-    assert_eq!(info.name, "Pitch Motion Monitor");
-    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
+    assert_eq!(info.name, "Pitch Drift Corrector");
     assert!(!info.version.is_empty());
 }
 
@@ -35,24 +34,22 @@ fn integration_parameter_roundtrip() {
     let mut plugin = PndPlugin::new(2);
     plugin.initialize(44100).unwrap();
 
-    // Correction is unavailable without a reference/clock boundary.
+    // Correction strength default should be 1.0
     let v = plugin
         .get_parameter(&ParameterId::from("correction_strength"))
         .unwrap();
-    assert_eq!(v, ParameterValue::Float(0.0));
+    assert!(matches!(v, ParameterValue::Float(x) if (x - 1.0).abs() < 1e-3));
 
-    assert!(
-        plugin
-            .set_parameter(
-                ParameterId::from("correction_strength"),
-                ParameterValue::Float(0.75),
-            )
-            .is_err()
-    );
+    plugin
+        .set_parameter(
+            ParameterId::from("correction_strength"),
+            ParameterValue::Float(0.75),
+        )
+        .unwrap();
     let v = plugin
         .get_parameter(&ParameterId::from("correction_strength"))
         .unwrap();
-    assert_eq!(v, ParameterValue::Float(0.0));
+    assert_eq!(v, ParameterValue::Float(0.75));
 }
 
 #[test]
@@ -73,7 +70,7 @@ fn integration_parameter_validation_errors() {
     );
     assert!(res.is_err());
 
-    // Any non-zero correction is unsupported by the fixed-frame monitor.
+    // Out-of-range float (range 0.0..=2.0)
     let res = plugin.set_parameter(
         ParameterId::from("correction_strength"),
         ParameterValue::Float(10.0),
@@ -91,16 +88,40 @@ fn integration_parameter_validation_errors() {
 #[test]
 fn integration_phase_vocoder_state_transition() {
     let mut plugin = PndPlugin::new(2);
-    let err = plugin
+    // Toggle phase vocoder on and off through the public parameter API.
+    plugin
         .set_parameter(
             ParameterId::from("phase_vocoder"),
             ParameterValue::Bool(true),
         )
-        .unwrap_err();
-    assert!(err.contains("unsupported"));
-    assert_eq!(
-        plugin.get_parameter(&ParameterId::from("phase_vocoder")),
-        Some(ParameterValue::Bool(false))
+        .unwrap();
+    plugin.initialize(44100).unwrap();
+    let v = plugin
+        .get_parameter(&ParameterId::from("phase_vocoder"))
+        .unwrap();
+    assert_eq!(v, ParameterValue::Bool(true));
+
+    let num_frames = 4096;
+    let mut input = vec![0.0f32; num_frames * 2];
+    for i in 0..num_frames {
+        let t = i as f32 / 44100.0;
+        let s = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5;
+        input[i * 2] = s;
+        input[i * 2 + 1] = s;
+    }
+    let mut output = vec![0.0f32; num_frames * 2];
+    let ctx = ProcessContext::new(44100, num_frames);
+    let written = plugin.process(&input, &mut output, &ctx).unwrap();
+    assert_eq!(written, num_frames);
+    assert!(output.iter().all(|s| s.is_finite()));
+
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("phase_vocoder"),
+                ParameterValue::Bool(false),
+            )
+            .is_err()
     );
 }
 
@@ -152,7 +173,7 @@ fn integration_reset_clears_state() {
     assert!(output2.iter().all(|s| s.is_finite()));
 
     // Latency should remain stable across reset.
-    assert_eq!(plugin.latency_samples(), 0);
+    assert_eq!(plugin.latency_samples(), 1024);
 }
 
 #[test]
@@ -207,12 +228,12 @@ fn integration_get_data_returns_pnd_data() {
 #[test]
 fn integration_from_params_applies_initial_state() {
     let params = PndPluginParams {
-        correction_strength: 0.0,
+        correction_strength: 0.5,
         analysis_window_ms: 200.0,
         drift_smoothing: 0.2,
         multi_channel_analysis: false,
         confidence_threshold: 0.75,
-        phase_vocoder: false,
+        phase_vocoder: true,
     };
     let plugin = PndPlugin::from_params(1, params);
     assert_eq!(plugin.input_channels(), 1);
@@ -221,30 +242,17 @@ fn integration_from_params_applies_initial_state() {
 
 #[test]
 fn integration_try_from_params_rejects_non_finite_and_invalid_values() {
-    let params = PndPluginParams {
-        drift_smoothing: f32::NAN,
-        ..PndPluginParams::default()
-    };
+    let mut params = PndPluginParams::default();
+    params.drift_smoothing = f32::NAN;
     assert!(PndPlugin::try_from_params(1, params).is_err());
 
-    let params = PndPluginParams {
-        analysis_window_ms: f32::INFINITY,
-        ..PndPluginParams::default()
-    };
+    let mut params = PndPluginParams::default();
+    params.analysis_window_ms = f32::INFINITY;
     assert!(PndPlugin::try_from_params(1, params).is_err());
 
-    let params = PndPluginParams {
-        confidence_threshold: -0.1,
-        ..PndPluginParams::default()
-    };
+    let mut params = PndPluginParams::default();
+    params.confidence_threshold = -0.1;
     assert!(PndPlugin::try_from_params(1, params).is_err());
 
     assert!(PndPlugin::try_from_params(0, PndPluginParams::default()).is_err());
-    assert!(PndPlugin::try_from_params(65, PndPluginParams::default()).is_err());
-
-    let params = PndPluginParams {
-        phase_vocoder: true,
-        ..PndPluginParams::default()
-    };
-    assert!(PndPlugin::try_from_params(1, params).is_err());
 }

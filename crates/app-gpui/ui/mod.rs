@@ -9,9 +9,9 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::theme::ThemeState as UiKitThemeState;
 use gpui_ui_kit::{CollapseDirection, NumberInput, NumberInputSize, PaneDivider, PaneDividerTheme};
+use sotf_audio::manager::StreamingState;
 use std::sync::Arc;
 use std::time::Duration;
-use sotf_audio::manager::StreamingState;
 
 include!("handle.rs");
 include!("playback.rs");

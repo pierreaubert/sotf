@@ -208,6 +208,3 @@
 
 - Massive update to plugins, see individual markdown plan for details (wave 3)
 - Massive update to plugins, see individual markdown plan for details
-# 0.5.30
-
-- Mark crossover topology type structural in host-visible metadata, matching its rebuild-only setter.

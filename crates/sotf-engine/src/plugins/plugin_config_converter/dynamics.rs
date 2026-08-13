@@ -15,9 +15,13 @@ pub fn convert_compressor(settings: &PluginSettings, _sample_rate: f64) -> Optio
         mix,
         auto_makeup,
         link_channels,
+        sidechain_hpf_hz,
+        sidechain_hpf_order,
+        detection_mode,
         lookahead_ms,
+        program_dependent_release,
         measured_auto_makeup,
-        ..
+        sidechain_external,
     } = settings
     else {
         return None;
@@ -34,8 +38,13 @@ pub fn convert_compressor(settings: &PluginSettings, _sample_rate: f64) -> Optio
             "mix": mix,
             "auto_makeup": auto_makeup,
             "link_channels": link_channels,
+            "sidechain_hpf_hz": sidechain_hpf_hz,
+            "sidechain_hpf_order": sidechain_hpf_order,
+            "detection_mode": detection_mode,
             "lookahead_ms": lookahead_ms,
+            "program_dependent_release": program_dependent_release,
             "measured_auto_makeup": measured_auto_makeup,
+            "sidechain_external": sidechain_external,
         }),
     ))
 }

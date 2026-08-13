@@ -285,8 +285,6 @@ fn settings_from_params(params: &ABComparePluginParams) -> Result<PluginSettings
         phase_invert_a: params.phase_invert_a,
         phase_invert_b: params.phase_invert_b,
         difference_mode: params.difference_mode,
-        band_mask_low_hz: f64::from(params.band_mask_low_hz),
-        band_mask_high_hz: f64::from(params.band_mask_high_hz),
     })
 }
 
@@ -353,25 +351,6 @@ mod tests {
     }
 
     #[test]
-    fn settings_preserve_explicit_band_mask_bounds() {
-        let params = ABComparePluginParams {
-            band_mask_low_hz: 137.0,
-            band_mask_high_hz: 12_345.0,
-            ..ABComparePluginParams::default()
-        };
-
-        let settings = settings_from_params(&params).unwrap();
-        assert!(matches!(
-            settings,
-            PluginSettings::ABCompare {
-                band_mask_low_hz: 137.0,
-                band_mask_high_hz: 12_345.0,
-                ..
-            }
-        ));
-    }
-
-    #[test]
     fn cue_switch_keeps_static_path_configuration() {
         let mut graph = PluginGraph::with_default_rack();
         let mut controller = AbTestController::default();
@@ -384,18 +363,10 @@ mod tests {
             PluginSettings::ABCompare {
                 path_a_config,
                 path_b_config,
-                band_mask_low_hz,
-                band_mask_high_hz,
                 ..
-            } => (
-                path_a_config.clone(),
-                path_b_config.clone(),
-                *band_mask_low_hz,
-                *band_mask_high_hz,
-            ),
+            } => (path_a_config.clone(), path_b_config.clone()),
             _ => unreachable!(),
         };
-        assert_eq!((before.2, before.3), (20.0, 20_000.0));
         let effect = controller
             .activate_cue(&mut graph, TrialCue::ReferenceA)
             .unwrap();
@@ -413,15 +384,8 @@ mod tests {
             PluginSettings::ABCompare {
                 path_a_config,
                 path_b_config,
-                band_mask_low_hz,
-                band_mask_high_hz,
                 ..
-            } => (
-                path_a_config.clone(),
-                path_b_config.clone(),
-                *band_mask_low_hz,
-                *band_mask_high_hz,
-            ),
+            } => (path_a_config.clone(), path_b_config.clone()),
             _ => unreachable!(),
         };
         assert_eq!(after, before);

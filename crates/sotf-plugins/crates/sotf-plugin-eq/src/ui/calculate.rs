@@ -33,9 +33,7 @@ pub fn calculate_response_at_freq(filters: &[EqBandView], freq: f64) -> f64 {
             }
             true
         })
-        .map(|f| {
-            band_response(f, freq)
-        })
+        .map(|f| band_response(f, freq))
         .sum()
 }
 

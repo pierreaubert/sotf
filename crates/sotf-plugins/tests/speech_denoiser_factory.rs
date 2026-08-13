@@ -12,7 +12,9 @@ fn speech_denoiser_factory_catalog_layout_and_state_are_consistent() {
         assert!(create_plugin("speech_denoiser", &serde_json::json!({}), channels, 48_000).is_ok());
     }
     for channels in [0, 3, 6, 12] {
-        assert!(create_plugin("speech_denoiser", &serde_json::json!({}), channels, 48_000).is_err());
+        assert!(
+            create_plugin("speech_denoiser", &serde_json::json!({}), channels, 48_000).is_err()
+        );
     }
     assert!(
         create_plugin(

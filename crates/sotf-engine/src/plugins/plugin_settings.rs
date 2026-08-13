@@ -135,9 +135,6 @@ use super::default_denoiser_spectral_sub_enabled;
 use super::default_denoiser_temporal_smoothing_enabled;
 use super::default_denoiser_transparency;
 use super::default_denoiser_use_captured_profile;
-use super::default_dither_bit_depth;
-use super::default_dither_noise_shaping;
-use super::default_dither_type;
 use super::default_downmix_center_gain_db;
 use super::default_downmix_height_gain_db;
 use super::default_downmix_lfe_gain_db;
@@ -341,7 +338,6 @@ use sotf_plugins::param_specs::de_esser as de_esser_specs;
 use sotf_plugins::param_specs::declick as declick_specs;
 use sotf_plugins::param_specs::delay as delay_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
-use sotf_plugins::param_specs::dither as dither_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
@@ -1292,14 +1288,6 @@ pub enum PluginSettings {
         #[serde(default = "default_delay_allpass_coeff")]
         allpass_coeff: f64,
     },
-    Dither {
-        #[serde(default = "default_dither_bit_depth")]
-        bit_depth: usize,
-        #[serde(default = "default_dither_noise_shaping")]
-        noise_shaping: bool,
-        #[serde(default = "default_dither_type")]
-        dither_type: usize,
-    },
     Aec {
         #[serde(default = "default_aec_echo_tail_ms")]
         echo_tail_ms: f64,
@@ -1526,7 +1514,6 @@ impl PluginSettings {
             Self::MonoToStereo { .. } => PluginType::MonoToStereo,
             Self::Crossfeed { .. } => PluginType::Crossfeed,
             Self::Delay { .. } => PluginType::Delay,
-            Self::Dither { .. } => PluginType::Dither,
             Self::Aec { .. } => PluginType::Aec,
             Self::Beamformer { .. } => PluginType::Beamformer,
             Self::AmbisonicsDecoder { .. } => PluginType::AmbisonicsDecoder,
@@ -2059,9 +2046,7 @@ impl PluginSettings {
                 let dw = downmix_specs::PARAMS;
                 Self::Downmix {
                     input_channels: 6, // Default to 5.1
-                    // Unspecified means "adapt to live engine metadata". Ambiguous
-                    // widths still require the chain/stream to supply a layout.
-                    input_layout: None,
+                    input_layout: Some("5.1".to_string()),
                     center_gain_db: p(dw, "center_gain_db").default_f64(),
                     surround_gain_db: p(dw, "surround_gain_db").default_f64(),
                     height_gain_db: p(dw, "height_gain_db").default_f64(),
@@ -2115,14 +2100,6 @@ impl PluginSettings {
                     lfo_depth_ms: p(d, "lfo_depth_ms").default_f64(),
                     allpass_feedback: p(d, "allpass_feedback").default_bool(),
                     allpass_coeff: p(d, "allpass_coeff").default_f64(),
-                }
-            }
-            PluginType::Dither => {
-                let d = dither_specs::PARAMS;
-                Self::Dither {
-                    bit_depth: p(d, "bit_depth").default_usize(),
-                    noise_shaping: p(d, "noise_shaping").default_bool(),
-                    dither_type: p(d, "dither_type").default_usize(),
                 }
             }
             PluginType::Aec => {

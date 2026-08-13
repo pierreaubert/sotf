@@ -1101,7 +1101,6 @@ impl PluginChain {
     /// Update channel-dependent plugins for a known source/input channel count.
     pub fn update_channel_dependent_plugins_for_input(&mut self, input_channels: usize) {
         let mut current_channels = input_channels.max(1);
-        let mut current_layout: Option<String> = None;
         self.input_channels = current_channels;
 
         for i in 0..self.plugins.len() {
@@ -1234,7 +1233,7 @@ impl PluginChain {
                 } if *input_channels != current_channels => {
                     updated_settings = Some(PluginSettings::Downmix {
                         input_channels: current_channels,
-                        input_layout: current_layout.clone(),
+                        input_layout: None,
                         center_gain_db: *center_gain_db,
                         surround_gain_db: *surround_gain_db,
                         height_gain_db: *height_gain_db,
@@ -1283,49 +1282,32 @@ impl PluginChain {
                     } => {
                         current_channels =
                             upmixer_settings_output_channels(speaker_config, *binaural_preview);
-                        current_layout = Some(if *binaural_preview {
-                            "2.0".to_string()
-                        } else {
-                            speaker_config.clone()
-                        });
                     }
                     PluginSettings::AAE { speaker_config, .. } => {
                         current_channels = upmixer_output_channels(speaker_config);
-                        current_layout = Some(speaker_config.clone());
                     }
                     PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
                         current_channels = upmixer_output_channels(target_layout);
-                        current_layout = Some(target_layout.clone());
                     }
                     PluginSettings::BinauralDecoder { .. } => {
                         current_channels = 2;
-                        current_layout = Some("2.0".to_string());
                     }
                     PluginSettings::Matrix {
                         output_channels, ..
                     } => {
                         current_channels = *output_channels;
-                        current_layout = None;
-                    }
-                    PluginSettings::External { state } => {
-                        current_channels = state.descriptor.audio_outputs;
-                        current_layout = None;
                     }
                     PluginSettings::Downmix { .. } => {
                         current_channels = 2; // Downmix always produces stereo
-                        current_layout = Some("2.0".to_string());
                     }
                     PluginSettings::MonoToStereo { .. } => {
                         current_channels = 2; // MonoToStereo always produces stereo
-                        current_layout = Some("2.0".to_string());
                     }
                     PluginSettings::BandSplit { .. } => {
                         current_channels *= 2; // Split into 2 bands
-                        current_layout = None;
                     }
                     PluginSettings::BandMerge { bands, .. } => {
                         current_channels /= if *bands > 0 { *bands } else { 2 };
-                        current_layout = None;
                     }
                     _ => {}
                 }
@@ -2265,33 +2247,6 @@ mod tests {
     }
 
     #[test]
-    fn test_update_channels_downmix_preserves_known_upstream_layout() {
-        let mut chain = chain_with_upmixer("5.1.4");
-        chain.add_plugin(&PluginType::Downmix).unwrap();
-        chain.update_channel_dependent_plugins();
-
-        assert!(matches!(
-            &chain.get_plugin(1).unwrap().settings,
-            PluginSettings::Downmix {
-                input_channels: 10,
-                input_layout: Some(layout),
-                ..
-            } if layout == "5.1.4"
-        ));
-
-        let configs = chain.to_plugin_configs(48_000.0);
-        let plugin = sotf_plugins::create_plugin(
-            &configs[1].plugin_type,
-            &configs[1].parameters,
-            10,
-            48_000,
-        )
-        .expect("known 5.1.4 identity must reach Downmix construction");
-        assert_eq!(plugin.input_channels(), 10);
-        assert_eq!(plugin.output_channels(), 2);
-    }
-
-    #[test]
     fn test_update_channels_mono_to_stereo_then_gain() {
         let mut chain = PluginChain::new();
         chain.add_plugin(&PluginType::MonoToStereo).unwrap();
@@ -2491,7 +2446,7 @@ mod tests {
     }
 
     #[test]
-    fn binaural_reconstruction_after_external_preserves_every_non_channel_setting() {
+    fn external_output_width_is_used_for_downstream_channel_conflicts() {
         let fixture = tempfile::tempdir().unwrap();
         let path = fixture.path().join("channel-flow.clap");
         std::fs::write(&path, b"fixture").unwrap();
@@ -2521,86 +2476,15 @@ mod tests {
         .unwrap();
 
         let mut chain = PluginChain::new();
+        chain.plugins.push(external);
+        chain.next_id = 1;
         chain.add_plugin(&PluginType::BinauralDecoder).unwrap();
-        let PluginSettings::BinauralDecoder {
-            sofa_file,
-            input_channels,
-            externalization,
-            near_field_strength,
-            crossfade_mode,
-            late_reverb_enabled,
-            late_reverb_mix,
-            late_reverb_rt60,
-            late_reverb_damping,
-            crossfade_ms,
-            head_yaw_deg,
-            head_pitch_deg,
-            head_roll_deg,
-            hrtf_database_dir,
-            head_width_cm,
-            ear_height_cm,
-        } = &mut chain.plugins[0].settings
+        let PluginSettings::BinauralDecoder { input_channels, .. } = &mut chain.plugins[1].settings
         else {
             unreachable!();
         };
-        *sofa_file = "engine-listener.sofa".into();
-        *input_channels = 2;
-        *externalization = 0.71;
-        *near_field_strength = 0.31;
-        *crossfade_mode = 2;
-        *late_reverb_enabled = true;
-        *late_reverb_mix = 0.41;
-        *late_reverb_rt60 = 1.61;
-        *late_reverb_damping = 0.21;
-        *crossfade_ms = 35.0;
-        *head_yaw_deg = 19.0;
-        *head_pitch_deg = -9.0;
-        *head_roll_deg = 6.0;
-        *hrtf_database_dir = "/engine/hrtf".into();
-        *head_width_cm = 17.1;
-        *ear_height_cm = 12.1;
+        *input_channels = 4;
 
-        chain.plugins.insert(0, external);
-        chain.next_id = 2;
-        chain.update_channel_dependent_plugins();
-
-        let PluginSettings::BinauralDecoder {
-            sofa_file,
-            input_channels,
-            externalization,
-            near_field_strength,
-            crossfade_mode,
-            late_reverb_enabled,
-            late_reverb_mix,
-            late_reverb_rt60,
-            late_reverb_damping,
-            crossfade_ms,
-            head_yaw_deg,
-            head_pitch_deg,
-            head_roll_deg,
-            hrtf_database_dir,
-            head_width_cm,
-            ear_height_cm,
-        } = &chain.plugins[1].settings
-        else {
-            unreachable!();
-        };
-        assert_eq!(*input_channels, 4);
-        assert_eq!(sofa_file, "engine-listener.sofa");
-        assert_eq!(*externalization, 0.71);
-        assert_eq!(*near_field_strength, 0.31);
-        assert_eq!(*crossfade_mode, 2);
-        assert!(*late_reverb_enabled);
-        assert_eq!(*late_reverb_mix, 0.41);
-        assert_eq!(*late_reverb_rt60, 1.61);
-        assert_eq!(*late_reverb_damping, 0.21);
-        assert_eq!(*crossfade_ms, 35.0);
-        assert_eq!(*head_yaw_deg, 19.0);
-        assert_eq!(*head_pitch_deg, -9.0);
-        assert_eq!(*head_roll_deg, 6.0);
-        assert_eq!(hrtf_database_dir, "/engine/hrtf");
-        assert_eq!(*head_width_cm, 17.1);
-        assert_eq!(*ear_height_cm, 12.1);
         assert!(chain.find_channel_conflicts(2).is_empty());
     }
 }

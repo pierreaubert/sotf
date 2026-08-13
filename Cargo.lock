@@ -10475,7 +10475,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-aec"
-version = "0.5.8"
+version = "0.5.7"
 dependencies = [
  "realfft",
  "rustfft 6.4.1",
@@ -10536,7 +10536,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-binaural"
-version = "0.5.23"
+version = "0.5.22"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",
@@ -10598,7 +10598,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-crossover"
-version = "0.5.30"
+version = "0.5.29"
 dependencies = [
  "proptest 1.11.0",
  "serde",
@@ -10676,7 +10676,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-dynamic-eq"
-version = "0.5.12"
+version = "0.5.11"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -10757,7 +10757,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-limiter"
-version = "0.5.15"
+version = "0.5.14"
 dependencies = [
  "math-dsp",
  "proptest 1.11.0",
@@ -10768,7 +10768,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-linear-phase-eq"
-version = "0.5.7"
+version = "0.5.6"
 dependencies = [
  "math-iir-fir",
  "num-complex 0.4.6",
@@ -10782,7 +10782,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-loudness-compensation"
-version = "0.5.6"
+version = "0.5.5"
 dependencies = [
  "criterion",
  "math-iir-fir",
@@ -10793,7 +10793,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-matrix"
-version = "0.5.93"
+version = "0.5.92"
 dependencies = [
  "log",
  "proptest 1.11.0",
@@ -10815,7 +10815,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-multiband-compressor"
-version = "0.5.17"
+version = "0.5.16"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -10838,7 +10838,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-pnd"
-version = "0.5.9"
+version = "0.5.7"
 dependencies = [
  "audioadapter-buffers",
  "hound",
@@ -10861,7 +10861,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-saturation"
-version = "0.5.12"
+version = "0.5.11"
 dependencies = [
  "math-dsp",
  "serde",
@@ -10931,7 +10931,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-xtc"
-version = "0.5.44"
+version = "0.5.41"
 dependencies = [
  "arc-swap",
  "criterion",

@@ -4,30 +4,30 @@ use crate::params::AaePluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
 
-    fn make_plugin() -> AaePlugin {
+fn make_plugin() -> AaePlugin {
     let mut p = AaePlugin::from_params(AaePluginParams::default()).unwrap();
-        p.initialize(48000).unwrap();
-        p
-    }
+    p.initialize(48000).unwrap();
+    p
+}
 
-    #[test]
-    fn test_output_channel_count() {
-        let p = make_plugin();
-        assert_eq!(p.input_channels(), 2);
-        assert_eq!(p.output_channels(), 6); // 5.1 default
-    }
+#[test]
+fn test_output_channel_count() {
+    let p = make_plugin();
+    assert_eq!(p.input_channels(), 2);
+    assert_eq!(p.output_channels(), 6); // 5.1 default
+}
 
-    #[test]
-    fn test_bypass_passes_dry() {
-        let mut p = make_plugin();
-        p.set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
-            .unwrap();
+#[test]
+fn test_bypass_passes_dry() {
+    let mut p = make_plugin();
+    p.set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
+        .unwrap();
 
     let frames = 512;
     let input: Vec<f32> = (0..frames).flat_map(|_| [0.5, -0.3]).collect();
     let mut output = vec![0.0; frames * 6];
     p.process(&input, &mut output, &ProcessContext::new(48000, frames))
-            .unwrap();
+        .unwrap();
 
     let last = (frames - 1) * 6;
     assert!((output[last] - 0.5).abs() < 1e-6, "L should pass through");
@@ -35,244 +35,244 @@ use sotf_host::plugin::{Plugin, ProcessContext};
         (output[last + 1] - (-0.3)).abs() < 1e-6,
         "R should pass through"
     );
-    }
+}
 
-    #[test]
-    fn test_silence_in_silence_out() {
-        let mut p = make_plugin();
-        let n = 1024;
-        let input = vec![0.0; n * 2];
-        let mut output = vec![0.0; n * 6];
-        p.process(&input, &mut output, &ProcessContext::new(48000, n))
-            .unwrap();
-
-        let max = output.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
-        assert!(max < 1e-6, "Silence in should give silence out, max={max}");
-    }
-
-    #[test]
-    fn test_impulse_produces_reverb() {
-        let mut p = make_plugin();
-
-        // Feed one frame of impulse then silence
-        let mut all_output = vec![0.0_f32; 0];
-
-        // Impulse frame
-        let input_impulse = vec![1.0, 1.0];
-        let mut out = vec![0.0; 6];
-        p.process(&input_impulse, &mut out, &ProcessContext::new(48000, 1))
-            .unwrap();
-        all_output.extend_from_slice(&out);
-
-        // Process 2 seconds of silence
-        let chunk = 1024;
-        let input_silence = vec![0.0; chunk * 2];
-        let mut out_chunk = vec![0.0; chunk * 6];
-        for _ in 0..(48000 * 2 / chunk) {
-            p.process(
-                &input_silence,
-                &mut out_chunk,
-                &ProcessContext::new(48000, chunk),
-            )
-            .unwrap();
-            all_output.extend_from_slice(&out_chunk);
-        }
-
-        // Check that there's signal after the pre-delay (reverb tail)
-        let pre_delay_frames = (20.0 * 0.001 * 48000.0) as usize; // 20ms default
-        let late_start = (pre_delay_frames + 1000) * 6; // well past pre-delay
-        if late_start < all_output.len() {
-            let late_energy: f32 = all_output[late_start..]
-                .iter()
-                .take(48000) // ~1 second
-                .map(|v| v * v)
-                .sum();
-            assert!(
-                late_energy > 1e-6,
-                "Should have reverb tail, late_energy={late_energy}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_no_nan_inf() {
-        let mut p = make_plugin();
-        let n = 4096;
-        let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.8).collect();
-        let mut output = vec![0.0; n * 6];
-        p.process(&input, &mut output, &ProcessContext::new(48000, n))
-            .unwrap();
-
-        for (i, v) in output.iter().enumerate() {
-            assert!(v.is_finite(), "Output[{i}] is not finite: {v}");
-        }
-    }
-
-    #[test]
-    fn test_parameter_roundtrip() {
-        let mut p = make_plugin();
-        p.set_parameter(ParameterId::from("rt60"), ParameterValue::Float(3.5))
-            .unwrap();
-        assert_eq!(
-            p.get_parameter(&ParameterId::from("rt60")),
-            Some(ParameterValue::Float(3.5))
-        );
-    }
-
-    #[test]
-    fn test_auto_gain_parameters_roundtrip_and_data() {
-        let mut p = make_plugin();
-        assert_eq!(
-            p.get_parameter(&ParameterId::from("auto_gain_enabled")),
-            Some(ParameterValue::Bool(false))
-        );
-
-        p.set_parameter(
-            ParameterId::from("auto_gain_enabled"),
-            ParameterValue::Bool(true),
-        )
-        .unwrap();
-        p.set_parameter(
-            ParameterId::from("auto_gain_max_db"),
-            ParameterValue::Float(9.0),
-        )
-        .unwrap();
-        p.set_parameter(
-            ParameterId::from("auto_gain_smoothing_ms"),
-            ParameterValue::Float(80.0),
-        )
+#[test]
+fn test_silence_in_silence_out() {
+    let mut p = make_plugin();
+    let n = 1024;
+    let input = vec![0.0; n * 2];
+    let mut output = vec![0.0; n * 6];
+    p.process(&input, &mut output, &ProcessContext::new(48000, n))
         .unwrap();
 
-        assert_eq!(
-            p.get_parameter(&ParameterId::from("auto_gain_enabled")),
-            Some(ParameterValue::Bool(true))
-        );
-        assert_eq!(
-            p.get_parameter(&ParameterId::from("auto_gain_max_db")),
-            Some(ParameterValue::Float(9.0))
-        );
-        assert_eq!(
-            p.get_parameter(&ParameterId::from("auto_gain_smoothing_ms")),
-            Some(ParameterValue::Float(80.0))
-        );
+    let max = output.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
+    assert!(max < 1e-6, "Silence in should give silence out, max={max}");
+}
 
-        let data = p.get_data().unwrap();
-        let data = data.downcast_ref::<AaeData>().unwrap();
-        assert!(data.auto_gain.enabled);
+#[test]
+fn test_impulse_produces_reverb() {
+    let mut p = make_plugin();
+
+    // Feed one frame of impulse then silence
+    let mut all_output = vec![0.0_f32; 0];
+
+    // Impulse frame
+    let input_impulse = vec![1.0, 1.0];
+    let mut out = vec![0.0; 6];
+    p.process(&input_impulse, &mut out, &ProcessContext::new(48000, 1))
+        .unwrap();
+    all_output.extend_from_slice(&out);
+
+    // Process 2 seconds of silence
+    let chunk = 1024;
+    let input_silence = vec![0.0; chunk * 2];
+    let mut out_chunk = vec![0.0; chunk * 6];
+    for _ in 0..(48000 * 2 / chunk) {
+        p.process(
+            &input_silence,
+            &mut out_chunk,
+            &ProcessContext::new(48000, chunk),
+        )
+        .unwrap();
+        all_output.extend_from_slice(&out_chunk);
     }
 
-    #[test]
-    fn test_pre_delay_is_not_reported_as_plugin_latency() {
-        let p = make_plugin();
-        assert_eq!(p.latency_samples(), 0);
-    }
-
-    #[test]
-    fn test_process_rejects_mismatched_buffers() {
-        let mut p = make_plugin();
-        let input = vec![0.0; 1];
-        let mut output = vec![0.0; 6];
-        let err = p
-            .process(&input, &mut output, &ProcessContext::new(48000, 1))
-            .unwrap_err();
-        assert!(err.contains("input size mismatch"));
-
-        let input = vec![0.0; 2];
-        let mut output = vec![0.0; 5];
-        let err = p
-            .process(&input, &mut output, &ProcessContext::new(48000, 1))
-            .unwrap_err();
-        assert!(err.contains("output size mismatch"));
-    }
-
-    #[test]
-    fn test_content_aware_dialogue_ducks_wet_signal() {
-        let mut p = make_plugin();
-        p.params.content_aware = true;
-        p.params.dialogue_attenuation_db = 12.0;
-
-        let sr = 48000.0_f32;
-        for i in 0..48000 {
-            let t = i as f32 / sr;
-            let syllable = if (t * 6.0).fract() < 0.55 { 1.0 } else { 0.12 };
-            let sample = (std::f32::consts::TAU * 180.0 * t).sin() * 0.45 * syllable;
-            p.dialogue_duck_for_frame(sample, sample);
-        }
+    // Check that there's signal after the pre-delay (reverb tail)
+    let pre_delay_frames = (20.0 * 0.001 * 48000.0) as usize; // 20ms default
+    let late_start = (pre_delay_frames + 1000) * 6; // well past pre-delay
+    if late_start < all_output.len() {
+        let late_energy: f32 = all_output[late_start..]
+            .iter()
+            .take(48000) // ~1 second
+            .map(|v| v * v)
+            .sum();
         assert!(
-            p.dialogue_duck_gain < 0.8,
-            "centered speech-like input should reduce wet gain, got {}",
-            p.dialogue_duck_gain
-        );
-
-        p.params.content_aware = false;
-        assert_eq!(p.dialogue_duck_for_frame(0.5, 0.5), 1.0);
-    }
-
-    #[test]
-    fn test_content_aware_ignores_quiet_centered_noise() {
-        let mut p = make_plugin();
-        p.params.content_aware = true;
-        p.params.dialogue_attenuation_db = 12.0;
-
-        for _ in 0..48000 {
-            p.dialogue_duck_for_frame(0.025, 0.025);
-        }
-
-        assert!(
-            p.dialogue_duck_gain > 0.95,
-            "quiet centered noise should not trigger dialogue ducking, got {}",
-            p.dialogue_duck_gain
+            late_energy > 1e-6,
+            "Should have reverb tail, late_energy={late_energy}"
         );
     }
+}
 
-    #[test]
-    fn test_content_aware_ignores_steady_centered_music() {
-        let mut p = make_plugin();
-        p.params.content_aware = true;
-        p.params.dialogue_attenuation_db = 12.0;
+#[test]
+fn test_no_nan_inf() {
+    let mut p = make_plugin();
+    let n = 4096;
+    let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.8).collect();
+    let mut output = vec![0.0; n * 6];
+    p.process(&input, &mut output, &ProcessContext::new(48000, n))
+        .unwrap();
 
-        let sr = 48000.0_f32;
-        for i in 0..144000 {
-            let t = i as f32 / sr;
-            let sample = (std::f32::consts::TAU * 220.0 * t).sin() * 0.4;
-            p.dialogue_duck_for_frame(sample, sample);
-        }
+    for (i, v) in output.iter().enumerate() {
+        assert!(v.is_finite(), "Output[{i}] is not finite: {v}");
+    }
+}
 
-        assert!(
-            p.dialogue_duck_gain > 0.9,
-            "steady centered tonal content should not keep wet gain ducked, got {}",
-            p.dialogue_duck_gain
-        );
+#[test]
+fn test_parameter_roundtrip() {
+    let mut p = make_plugin();
+    p.set_parameter(ParameterId::from("rt60"), ParameterValue::Float(3.5))
+        .unwrap();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("rt60")),
+        Some(ParameterValue::Float(3.5))
+    );
+}
+
+#[test]
+fn test_auto_gain_parameters_roundtrip_and_data() {
+    let mut p = make_plugin();
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("auto_gain_enabled")),
+        Some(ParameterValue::Bool(false))
+    );
+
+    p.set_parameter(
+        ParameterId::from("auto_gain_enabled"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    p.set_parameter(
+        ParameterId::from("auto_gain_max_db"),
+        ParameterValue::Float(9.0),
+    )
+    .unwrap();
+    p.set_parameter(
+        ParameterId::from("auto_gain_smoothing_ms"),
+        ParameterValue::Float(80.0),
+    )
+    .unwrap();
+
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("auto_gain_enabled")),
+        Some(ParameterValue::Bool(true))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("auto_gain_max_db")),
+        Some(ParameterValue::Float(9.0))
+    );
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("auto_gain_smoothing_ms")),
+        Some(ParameterValue::Float(80.0))
+    );
+
+    let data = p.get_data().unwrap();
+    let data = data.downcast_ref::<AaeData>().unwrap();
+    assert!(data.auto_gain.enabled);
+}
+
+#[test]
+fn test_pre_delay_is_not_reported_as_plugin_latency() {
+    let p = make_plugin();
+    assert_eq!(p.latency_samples(), 0);
+}
+
+#[test]
+fn test_process_rejects_mismatched_buffers() {
+    let mut p = make_plugin();
+    let input = vec![0.0; 1];
+    let mut output = vec![0.0; 6];
+    let err = p
+        .process(&input, &mut output, &ProcessContext::new(48000, 1))
+        .unwrap_err();
+    assert!(err.contains("input size mismatch"));
+
+    let input = vec![0.0; 2];
+    let mut output = vec![0.0; 5];
+    let err = p
+        .process(&input, &mut output, &ProcessContext::new(48000, 1))
+        .unwrap_err();
+    assert!(err.contains("output size mismatch"));
+}
+
+#[test]
+fn test_content_aware_dialogue_ducks_wet_signal() {
+    let mut p = make_plugin();
+    p.params.content_aware = true;
+    p.params.dialogue_attenuation_db = 12.0;
+
+    let sr = 48000.0_f32;
+    for i in 0..48000 {
+        let t = i as f32 / sr;
+        let syllable = if (t * 6.0).fract() < 0.55 { 1.0 } else { 0.12 };
+        let sample = (std::f32::consts::TAU * 180.0 * t).sin() * 0.45 * syllable;
+        p.dialogue_duck_for_frame(sample, sample);
+    }
+    assert!(
+        p.dialogue_duck_gain < 0.8,
+        "centered speech-like input should reduce wet gain, got {}",
+        p.dialogue_duck_gain
+    );
+
+    p.params.content_aware = false;
+    assert_eq!(p.dialogue_duck_for_frame(0.5, 0.5), 1.0);
+}
+
+#[test]
+fn test_content_aware_ignores_quiet_centered_noise() {
+    let mut p = make_plugin();
+    p.params.content_aware = true;
+    p.params.dialogue_attenuation_db = 12.0;
+
+    for _ in 0..48000 {
+        p.dialogue_duck_for_frame(0.025, 0.025);
     }
 
-    #[test]
-    fn test_content_aware_holds_through_sustained_centered_voice() {
-        let mut p = make_plugin();
-        p.params.content_aware = true;
-        p.params.dialogue_attenuation_db = 12.0;
+    assert!(
+        p.dialogue_duck_gain > 0.95,
+        "quiet centered noise should not trigger dialogue ducking, got {}",
+        p.dialogue_duck_gain
+    );
+}
 
-        let sr = 48000.0_f32;
-        for i in 0..9600 {
-            let t = i as f32 / sr;
-            let syllable = if (t * 7.0).fract() < 0.5 { 1.0 } else { 0.2 };
-            let sample = (std::f32::consts::TAU * 190.0 * t).sin() * 0.45 * syllable;
-            p.dialogue_duck_for_frame(sample, sample);
-        }
-        let ducked_after_modulation = p.dialogue_duck_gain;
+#[test]
+fn test_content_aware_ignores_steady_centered_music() {
+    let mut p = make_plugin();
+    p.params.content_aware = true;
+    p.params.dialogue_attenuation_db = 12.0;
 
-        for i in 0..19200 {
-            let t = i as f32 / sr;
-            let sample = (std::f32::consts::TAU * 190.0 * t).sin() * 0.32;
-            p.dialogue_duck_for_frame(sample, sample);
-        }
-
-        assert!(
-            ducked_after_modulation < 0.9 && p.dialogue_duck_gain < 0.8,
-            "sustained centered voice should stay ducked after syllabic onset, before={} after={}",
-            ducked_after_modulation,
-            p.dialogue_duck_gain
-        );
+    let sr = 48000.0_f32;
+    for i in 0..144000 {
+        let t = i as f32 / sr;
+        let sample = (std::f32::consts::TAU * 220.0 * t).sin() * 0.4;
+        p.dialogue_duck_for_frame(sample, sample);
     }
+
+    assert!(
+        p.dialogue_duck_gain > 0.9,
+        "steady centered tonal content should not keep wet gain ducked, got {}",
+        p.dialogue_duck_gain
+    );
+}
+
+#[test]
+fn test_content_aware_holds_through_sustained_centered_voice() {
+    let mut p = make_plugin();
+    p.params.content_aware = true;
+    p.params.dialogue_attenuation_db = 12.0;
+
+    let sr = 48000.0_f32;
+    for i in 0..9600 {
+        let t = i as f32 / sr;
+        let syllable = if (t * 7.0).fract() < 0.5 { 1.0 } else { 0.2 };
+        let sample = (std::f32::consts::TAU * 190.0 * t).sin() * 0.45 * syllable;
+        p.dialogue_duck_for_frame(sample, sample);
+    }
+    let ducked_after_modulation = p.dialogue_duck_gain;
+
+    for i in 0..19200 {
+        let t = i as f32 / sr;
+        let sample = (std::f32::consts::TAU * 190.0 * t).sin() * 0.32;
+        p.dialogue_duck_for_frame(sample, sample);
+    }
+
+    assert!(
+        ducked_after_modulation < 0.9 && p.dialogue_duck_gain < 0.8,
+        "sustained centered voice should stay ducked after syllabic onset, before={} after={}",
+        ducked_after_modulation,
+        p.dialogue_duck_gain
+    );
+}
 
 #[test]
 fn test_dialogue_detector_accepts_panned_voice_and_rejects_impulses() {
@@ -308,11 +308,11 @@ fn test_dialogue_detector_accepts_panned_voice_and_rejects_impulses() {
     );
 }
 
-    #[test]
-    fn test_room_and_routing_parameter_changes_do_not_break_processing() {
-        let mut p = make_plugin();
-        p.set_parameter(ParameterId::from("room_size"), ParameterValue::Float(3.0))
-            .unwrap();
+#[test]
+fn test_room_and_routing_parameter_changes_do_not_break_processing() {
+    let mut p = make_plugin();
+    p.set_parameter(ParameterId::from("room_size"), ParameterValue::Float(3.0))
+        .unwrap();
     let error = p
         .set_parameter(
             ParameterId::from("room_preset"),
@@ -320,94 +320,94 @@ fn test_dialogue_detector_accepts_panned_voice_and_rejects_impulses() {
         )
         .unwrap_err();
     assert!(error.contains("rebuild"));
-        p.set_parameter(ParameterId::from("envelopment"), ParameterValue::Float(1.0))
-            .unwrap();
-        p.set_parameter(
-            ParameterId::from("height_amount"),
-            ParameterValue::Float(1.0),
-        )
+    p.set_parameter(ParameterId::from("envelopment"), ParameterValue::Float(1.0))
+        .unwrap();
+    p.set_parameter(
+        ParameterId::from("height_amount"),
+        ParameterValue::Float(1.0),
+    )
+    .unwrap();
+
+    let n = 512;
+    let input = vec![0.1; n * 2];
+    let mut output = vec![0.0; n * 6];
+    p.process(&input, &mut output, &ProcessContext::new(48000, n))
+        .unwrap();
+    assert!(output.iter().all(|v| v.is_finite()));
+}
+
+#[test]
+fn test_solo_early() {
+    let mut p = make_plugin();
+    p.set_parameter(ParameterId::from("solo_early"), ParameterValue::Bool(true))
         .unwrap();
 
-        let n = 512;
-        let input = vec![0.1; n * 2];
-        let mut output = vec![0.0; n * 6];
-        p.process(&input, &mut output, &ProcessContext::new(48000, n))
-            .unwrap();
-        assert!(output.iter().all(|v| v.is_finite()));
-    }
+    let n = 4096;
+    let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
+    let mut output = vec![0.0; n * 6];
+    p.process(&input, &mut output, &ProcessContext::new(48000, n))
+        .unwrap();
 
-    #[test]
-    fn test_solo_early() {
-        let mut p = make_plugin();
-        p.set_parameter(ParameterId::from("solo_early"), ParameterValue::Bool(true))
-            .unwrap();
+    // Should produce some output (ER only)
+    let energy: f32 = output.iter().map(|v| v * v).sum();
+    // Energy should be non-zero (ER taps produce output)
+    // Note: with pre-delay, the first few frames may be silent
+    assert!(energy.is_finite());
+}
 
-        let n = 4096;
-        let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
-        let mut output = vec![0.0; n * 6];
-        p.process(&input, &mut output, &ProcessContext::new(48000, n))
-            .unwrap();
+#[test]
+fn test_reset_clears_state() {
+    let mut p = make_plugin();
 
-        // Should produce some output (ER only)
-        let energy: f32 = output.iter().map(|v| v * v).sum();
-        // Energy should be non-zero (ER taps produce output)
-        // Note: with pre-delay, the first few frames may be silent
-        assert!(energy.is_finite());
-    }
+    // Feed some signal
+    let n = 2048;
+    let input: Vec<f32> = (0..n * 2).map(|_| 0.5).collect();
+    let mut output = vec![0.0; n * 6];
+    p.process(&input, &mut output, &ProcessContext::new(48000, n))
+        .unwrap();
 
-    #[test]
-    fn test_reset_clears_state() {
-        let mut p = make_plugin();
+    p.reset();
 
-        // Feed some signal
-        let n = 2048;
-        let input: Vec<f32> = (0..n * 2).map(|_| 0.5).collect();
-        let mut output = vec![0.0; n * 6];
-        p.process(&input, &mut output, &ProcessContext::new(48000, n))
-            .unwrap();
+    // After reset, silence in should give silence out
+    let input_silent = vec![0.0; n * 2];
+    let mut output2 = vec![0.0; n * 6];
+    p.process(&input_silent, &mut output2, &ProcessContext::new(48000, n))
+        .unwrap();
 
-        p.reset();
+    let max = output2.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
+    assert!(max < 1e-6, "After reset, should be silent, max={max}");
+}
 
-        // After reset, silence in should give silence out
-        let input_silent = vec![0.0; n * 2];
-        let mut output2 = vec![0.0; n * 6];
-        p.process(&input_silent, &mut output2, &ProcessContext::new(48000, n))
-            .unwrap();
+#[test]
+fn test_output_safety_limit_preserves_channel_ratios() {
+    let mut p = make_plugin();
+    let mut output = vec![2.0, 1.0, -0.5, 0.25, 0.0, -1.0];
 
-        let max = output2.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
-        assert!(max < 1e-6, "After reset, should be silent, max={max}");
-    }
+    p.apply_output_safety_limit(&mut output, 1, 6);
 
-    #[test]
-    fn test_output_safety_limit_preserves_channel_ratios() {
-        let mut p = make_plugin();
-        let mut output = vec![2.0, 1.0, -0.5, 0.25, 0.0, -1.0];
+    assert!((output[0] - 1.0).abs() < 1e-6);
+    assert!((output[1] - 0.5).abs() < 1e-6);
+    assert!((output[2] + 0.25).abs() < 1e-6);
+    assert!((output[5] + 0.5).abs() < 1e-6);
+}
 
-        p.apply_output_safety_limit(&mut output, 1, 6);
+#[test]
+fn test_output_energy_bounded() {
+    // With default params, output energy should not exceed 2× input energy.
+    let mut p = make_plugin();
+    let n = 4096;
+    let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
+    let mut output = vec![0.0; n * 6];
+    p.process(&input, &mut output, &ProcessContext::new(48000, n))
+        .unwrap();
 
-        assert!((output[0] - 1.0).abs() < 1e-6);
-        assert!((output[1] - 0.5).abs() < 1e-6);
-        assert!((output[2] + 0.25).abs() < 1e-6);
-        assert!((output[5] + 0.5).abs() < 1e-6);
-    }
+    let input_energy: f32 = input.iter().map(|v| v * v).sum();
+    let output_energy: f32 = output.iter().map(|v| v * v).sum();
 
-    #[test]
-    fn test_output_energy_bounded() {
-        // With default params, output energy should not exceed 2× input energy.
-        let mut p = make_plugin();
-        let n = 4096;
-        let input: Vec<f32> = (0..n * 2).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
-        let mut output = vec![0.0; n * 6];
-        p.process(&input, &mut output, &ProcessContext::new(48000, n))
-            .unwrap();
-
-        let input_energy: f32 = input.iter().map(|v| v * v).sum();
-        let output_energy: f32 = output.iter().map(|v| v * v).sum();
-
-        // Output has 6 channels vs 2 input channels, so per-channel energy can be lower
-        // but total should be bounded. With dry=0.5, er=0.3, late=0.2, should be < 2×
-        assert!(
-            output_energy < input_energy * 3.0,
-            "Output energy {output_energy} should be < 3× input energy {input_energy}"
-        );
-    }
+    // Output has 6 channels vs 2 input channels, so per-channel energy can be lower
+    // but total should be bounded. With dry=0.5, er=0.3, late=0.2, should be < 2×
+    assert!(
+        output_energy < input_energy * 3.0,
+        "Output energy {output_energy} should be < 3× input energy {input_energy}"
+    );
+}

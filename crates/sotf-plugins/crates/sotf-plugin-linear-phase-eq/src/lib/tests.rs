@@ -31,7 +31,7 @@ fn test_reducing_num_filters_removes_band_from_design_and_schema() {
     plugin.num_filters = 1;
     plugin.rebuild_cached_parameters();
     assert!(
-    plugin
+        plugin
             .get_parameter(&ParameterId::from("band_4_gain"))
             .is_none()
     );
@@ -198,8 +198,8 @@ fn test_overlap_buffers_match_fir_tail_length() {
     }
 
     assert!(
-    plugin
-        .set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(3))
+        plugin
+            .set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(3))
             .is_err()
     );
 }
@@ -244,11 +244,11 @@ fn test_parameter_roundtrip() {
     }
 
     assert!(
-    plugin
-        .set_parameter(
-            ParameterId::from("band_0_freq"),
+        plugin
+            .set_parameter(
+                ParameterId::from("band_0_freq"),
                 ParameterValue::Float(2000.0)
-        )
+            )
             .is_err()
     );
 }
@@ -649,21 +649,4 @@ fn test_initialize_same_sample_rate_no_rebuild() {
     plugin.fir_dirty = false;
     plugin.initialize(48000).unwrap();
     assert!(!plugin.fir_dirty);
-}
-
-#[test]
-fn rebuild_only_quality_controls_are_structural_in_host_metadata() {
-    let plugin = LinearPhaseEqPlugin::new(1, 48000);
-    for id in ["fir_length", "phase_mode"] {
-        let parameter = plugin
-            .parameters()
-            .into_iter()
-            .find(|parameter| parameter.id.as_str() == id)
-            .unwrap_or_else(|| panic!("missing {id}"));
-        assert_eq!(
-            parameter.update_mode,
-            sotf_host::param_specs::UpdateMode::Structural,
-            "{id}"
-        );
-    }
 }

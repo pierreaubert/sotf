@@ -1,9 +1,5 @@
 # Dynamic EQ plugin code review — 2026-08-12
 
-Follow-up 0.5.12: host-visible metadata now marks `num_bands` and `link_channels`
-structural, matching their state-preserving live-setter rejection; a focused
-regression prevents the schema and runtime contract from drifting again.
-
 ## Final remediation status — 2026-08-12
 
 All P1–P3 findings are fixed in `0.5.11` (no P0 was reported):
@@ -100,13 +96,6 @@ Read every one of the 16 indexed plugin-owned files without omission: `AGENTS.md
 Also checked active compilation and public wiring in the facade `Cargo.toml`/exports, main and bridge factories, factory catalog metadata, parameter adapter and `RealTimeCache` host contracts, the shared `DynamicsCore` gain/envelope implementation, engine `PluginSettings` conversion/preset serialization, the custom GPUI Dynamic EQ controls/monitoring, factory/parameter/allocation callers, and TokenSave test-risk/panic-site results. The crate is actively compiled and registered as the canonical `dynamic_eq` processor. No production source was changed.
 
 ## Existing strengths
-
-Player/host integration follow-up: the UI-to-engine mapper now explicitly
-delegates every encoded Dynamic EQ band row to the dedicated dynamic-band
-adjust/set path. Its regression oracle follows the canonical host schema:
-structural `num_bands` and `link_channels` do not emit zero-dropout updates,
-realtime global threshold/mix do, and both structural and realtime band rows
-remain outside the generic global-index mapper.
 
 - Dry-buffer sidechain detection prevents earlier EQ bands from contaminating later detectors.
 - Per-band filters, dynamics cores, monitoring storage, and block scratch are preallocated; the valid processing path is zero-allocation and lock-free.

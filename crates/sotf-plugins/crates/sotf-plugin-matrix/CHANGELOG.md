@@ -1,10 +1,3 @@
-# 0.5.93
-
-## Fixes
-
-- Mark preset selection as structural in host-visible metadata, matching its
-  routing-table rebuild contract.
-
 # 0.5.92
 
 ## Fixes

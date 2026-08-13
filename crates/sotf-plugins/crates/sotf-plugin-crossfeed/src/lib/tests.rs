@@ -1332,10 +1332,8 @@ fn autogain_target_lufs_changes_compensation() {
 
 #[test]
 fn autogain_target_lufs_updates_the_helper() {
-    let params = CrossfeedPluginParams {
-        autogain_enabled: true,
-        ..Default::default()
-    };
+    let mut params = CrossfeedPluginParams::default();
+    params.autogain_enabled = true;
     let mut plugin = CrossfeedPlugin::new(params).unwrap();
     plugin.initialize(48_000).unwrap();
     plugin

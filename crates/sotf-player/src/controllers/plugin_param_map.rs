@@ -113,10 +113,6 @@ pub fn param_index_to_engine_param(
 
             Some((id, val_str))
         }
-        // Dynamic EQ's encoded band rows are applied through the dedicated
-        // adjust/set path, which validates the dynamic band schema and rebuild
-        // semantics. Never reinterpret them as global ParamSpec indices.
-        PluginSettings::DynamicEq { .. } if param_idx >= 100 => None,
         // Generic: all other plugins derive mapping from ParamSpec arrays.
         _ => settings.engine_param_at(param_idx),
     }
@@ -300,8 +296,8 @@ mod tests {
     }
 
     #[test]
-    fn param_index_to_engine_param_dynamic_eq_honors_update_contracts() {
-        // DynamicEq band-level params are handled by adjust/set, not this mapper.
+    fn param_index_to_engine_param_dynamic_eq_band_level_returns_none() {
+        // DynamicEq band-level params are handled by adjust/set, not this mapper
         let settings = PluginSettings::DynamicEq {
             num_bands: 1.0,
             threshold: -20.0,
@@ -322,25 +318,7 @@ mod tests {
             }],
         };
 
-        // num_bands and link_channels rebuild topology and must not be sent as
-        // zero-dropout updates.
-        assert_eq!(param_index_to_engine_param(&settings, 0), None);
-        assert_eq!(param_index_to_engine_param(&settings, 6), None);
-
-        // Realtime globals still use the canonical host schema.
-        assert_eq!(
-            param_index_to_engine_param(&settings, 1),
-            Some(("threshold".to_string(), "-20.0".to_string()))
-        );
-        assert_eq!(
-            param_index_to_engine_param(&settings, 7),
-            Some(("mix".to_string(), "1.0".to_string()))
-        );
-
-        // Encoded band rows are intentionally delegated to the dynamic-band
-        // setter regardless of whether the band field itself is structural or
-        // realtime.
+        assert!(param_index_to_engine_param(&settings, 0).is_some());
         assert!(param_index_to_engine_param(&settings, 100).is_none());
-        assert!(param_index_to_engine_param(&settings, 103).is_none());
     }
 }

@@ -633,7 +633,9 @@ mod tests {
         let mut left_state = 0x1234_5678_u32;
         let mut right_state = 0x9abc_def0_u32;
         for frame in 0..RNNOISE_FRAME_SIZE {
-            left_state = left_state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            left_state = left_state
+                .wrapping_mul(1_664_525)
+                .wrapping_add(1_013_904_223);
             right_state = right_state.wrapping_mul(22_695_477).wrapping_add(1);
             input[2 * frame] = (left_state as f32 / u32::MAX as f32 - 0.5) * 0.7;
             input[2 * frame + 1] = (right_state as f32 / u32::MAX as f32 - 0.5) * 0.7;
@@ -820,7 +822,10 @@ mod tests {
         let mut first = vec![0.5f32; RNNOISE_FRAME_SIZE];
         backend.process(&mut first, RNNOISE_FRAME_SIZE, 1, true);
         for (i, &s) in first.iter().enumerate() {
-            assert_eq!(s, 0.0, "startup-latency sample {i} should be zero in bypass");
+            assert_eq!(
+                s, 0.0,
+                "startup-latency sample {i} should be zero in bypass"
+            );
         }
 
         // The next block carries the first frame through unchanged (bypass).

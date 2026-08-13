@@ -971,17 +971,3 @@ fn test_per_channel_mode_from_str_invalid_errors() {
     assert!(PerChannelOpMode::from_str("notamode").is_err());
     assert!(PerChannelOpMode::from_str("").is_err());
 }
-
-#[test]
-fn crossover_type_is_structural_in_host_metadata() {
-    let plugin = CrossoverPlugin::new(2, "lr24", 1_000.0, "lowpass").unwrap();
-    let parameter = plugin
-        .parameters()
-        .into_iter()
-        .find(|parameter| parameter.id.as_str() == "type")
-        .expect("type parameter");
-    assert_eq!(
-        parameter.update_mode,
-        sotf_host::param_specs::UpdateMode::Structural
-    );
-}

@@ -296,33 +296,13 @@ fn incomplete_loudness_windows_are_invalid_not_plausible_minus_120() {
     plugin
         .process(&input, &mut output, &ProcessContext::new(48_000, 256))
         .unwrap();
-    let first_generation = {
-        let data = plugin.get_data().unwrap();
-        let data = data.downcast_ref::<LoudnessData>().unwrap();
-        assert!(!data.measurement_valid);
-        assert!(data.query_error_generation > 0);
-        assert!(data.momentary_lufs.is_infinite() && data.momentary_lufs.is_sign_negative());
-        assert!(data.shortterm_lufs.is_infinite() && data.shortterm_lufs.is_sign_negative());
-        assert!(data.integrated_lufs.is_infinite() && data.integrated_lufs.is_sign_negative());
-        data.query_error_generation
-    };
-
-    plugin
-        .process(&input, &mut output, &ProcessContext::new(48_000, 256))
-        .unwrap();
-    let second_generation = plugin
-        .get_data()
-        .unwrap()
-        .downcast_ref::<LoudnessData>()
-        .unwrap()
-        .query_error_generation;
-    assert!(second_generation > first_generation);
-
-    plugin.reset();
-    let reset_data = plugin.get_data().unwrap();
-    let reset_data = reset_data.downcast_ref::<LoudnessData>().unwrap();
-    assert_eq!(reset_data.query_error_generation, 0);
-    assert!(!reset_data.measurement_valid);
+    let data = plugin.get_data().unwrap();
+    let data = data.downcast_ref::<LoudnessData>().unwrap();
+    assert!(!data.measurement_valid);
+    assert!(data.query_error_generation > 0);
+    assert!(data.momentary_lufs.is_infinite() && data.momentary_lufs.is_sign_negative());
+    assert!(data.shortterm_lufs.is_infinite() && data.shortterm_lufs.is_sign_negative());
+    assert!(data.integrated_lufs.is_infinite() && data.integrated_lufs.is_sign_negative());
 }
 
 #[test]

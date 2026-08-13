@@ -83,9 +83,8 @@ fn default_params(plugin_type: &str) -> serde_json::Value {
             "matrix": [1.0, 0.0, 0.0, 1.0],
         }),
         "band_split" => serde_json::json!({
-            "num_bands": 2,
-            "frequency": 1000.0,
-            "type": "LR24",
+            "bands": 2,
+            "crossover_frequencies": [1000.0],
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -194,6 +193,26 @@ const EXPECTED_SET_REJECTIONS: &[(&str, &str, &str)] = &[
         "reconstruction_error_db",
         "parameter is reported but not accepted by set_parameter",
     ),
+    (
+        "convolution",
+        "use_nupc",
+        "structural parameter changed through a host rebuild",
+    ),
+    (
+        "convolution",
+        "zero_latency_head",
+        "structural parameter changed through a host rebuild",
+    ),
+    (
+        "convolution",
+        "head_taps",
+        "structural parameter changed through a host rebuild",
+    ),
+    (
+        "beamformer",
+        "beamformer_type",
+        "structural algorithm selection changed through a host rebuild",
+    ),
 ];
 
 /// Parameters that accept a no-op setter but reject a changed value while the
@@ -248,9 +267,6 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
         };
 
         for param in plugin.parameters() {
-            if param.update_mode != UpdateMode::Realtime {
-                continue;
-            }
             let id = ParameterId::from(param.id.as_str());
             if let Some(value) = plugin.get_parameter(&id)
                 && let Err(err) = plugin.set_parameter(id, value)

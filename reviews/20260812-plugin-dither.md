@@ -15,23 +15,6 @@ Follow-up in 0.5.12 closes the remaining review findings:
   sample rate initialization, and parameter restoration. Catalog-wide channel
   probing additionally exposed and fixed debug overflow in per-channel RNG seed
   derivation for widths above stereo.
-- The engine now includes Dither in its typed plugin inventory, settings and
-  canonical defaults, declarative parameter accessors/layout, and settings-to-
-  factory configuration conversion. Focused regressions cover non-default JSON
-  preservation, factory construction, and all three runtime parameter updates.
-- The systemwide daemon now maps the typed Dither variant to the canonical
-  `dither` engine wire name and exposes it in the Utility picker category.
-  `dither_has_canonical_daemon_wire_and_picker_metadata` pins the wire name,
-  display name, category, and public plugin inventory membership.
-- GPUI now recognizes Dither in the generated-view registry, Plugin Graph,
-  plugin shell, and all four localized description tables. The focused
-  `dither_has_complete_gpui_registry_shell_and_localized_metadata` regression
-  pins its registry key, utility accent, icon, short name, and nonempty distinct
-  translations.
-- The player-level canonical picker inventory now places Dither in a Utility
-  category, matching the systemwide daemon and GPUI presentation. The dedicated
-  `dither_stays_reachable_from_utility_category` regression pins that taxonomy,
-  while the catalog-wide coverage test prevents future public plugin omissions.
 - The former total-error smoke check is supplemented by a deterministic,
   averaged Hann-windowed FFT/PSD regression. It requires a measured reduction
   from 200 Hz–8 kHz and a measured increase from 16–23 kHz.

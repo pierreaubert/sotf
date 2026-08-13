@@ -224,13 +224,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         .visible_when(ParamCondition::choice(11, 0)),
     ],
     output: &[
-        // Serialized/automation compatibility only. `auto_gain_position` is
-        // the canonical three-state control; keep the old boolean referenced
-        // for layout coverage without rendering a second, divergent control.
-        ControlSpec::toggle(8).hide(), // legacy auto_gain_enabled alias
-        ControlSpec::selector(15),     // auto_gain_position
-        ControlSpec::knob(9),          // auto_gain_max_db
-        ControlSpec::knob(10),         // auto_gain_smoothing_ms
+        ControlSpec::selector(15), // auto_gain_position
+        ControlSpec::knob(9),      // auto_gain_max_db
+        ControlSpec::knob(10),     // auto_gain_smoothing_ms
     ],
     tabs: &[],
     visualizations: &[],
@@ -462,36 +458,6 @@ mod tests {
         assert!(
             p.param_value(PARAMS.len()).is_none(),
             "param_value beyond PARAMS.len() should return None"
-        );
-    }
-
-    #[test]
-    fn legacy_auto_gain_boolean_is_covered_but_not_rendered() {
-        let legacy_enabled = pk(PARAMS, "auto_gain_enabled");
-        assert_eq!(legacy_enabled.name, "Auto Gain");
-
-        let legacy_controls: Vec<_> = LAYOUT
-            .output
-            .iter()
-            .filter(|control| control.param_index == 8)
-            .collect();
-        assert_eq!(legacy_controls.len(), 1);
-        assert!(
-            legacy_controls[0].hidden,
-            "the compatibility boolean must not compete with auto_gain_position"
-        );
-
-        let canonical_controls: Vec<_> = LAYOUT
-            .output
-            .iter()
-            .filter(|control| control.param_index == 15)
-            .collect();
-        assert_eq!(canonical_controls.len(), 1);
-        assert!(!canonical_controls[0].hidden);
-        assert!(
-            LAYOUT
-                .validate_coverage(PARAMS, "loudness_compensation")
-                .is_empty()
         );
     }
 
