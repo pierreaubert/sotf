@@ -115,6 +115,9 @@
 - Fixed attack/release coefficients computed without zero-guard (now clamps to 0.01 ms min)
 
 ### saturation
+- Added an append-only, bounded Asymmetric waveshaper with controlled even
+  harmonics, existing host oversampling, and DC/THD/alias/partition/stereo/
+  allocation regression coverage; existing preset mode indices are unchanged.
 - **CRITICAL**: Fixed block-constant drive/mix/output-gain smoothers (now uses per-sample linear ramps)
 - **CRITICAL**: Fixed Tube-mode ADAA using wrong nonlinearity when tone ≠ 1.0 (now falls back to direct tube() when tone differs)
 

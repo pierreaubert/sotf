@@ -70,6 +70,30 @@ fn continuous_bulk_automation_does_not_allocate_or_rebuild_metadata() {
 }
 
 #[test]
+fn asymmetric_processing_does_not_allocate() {
+    let mut plugin = SaturationPlugin::from_params(
+        2,
+        SaturationPluginParams {
+            mode: "Asymmetric".into(),
+            drive: 7.0,
+            tone: 2.0,
+            oversampling: "4x".into(),
+            mix: 1.0,
+            dc_blocker_enabled: true,
+            use_adaa: false,
+            ..Default::default()
+        },
+    );
+    plugin.initialize(48_000).unwrap();
+    let mut buffer = vec![0.25; 2_048];
+    let context = make_context(1_024);
+    plugin.process_in_place(&mut buffer, &context).unwrap();
+    assert_no_allocs("Saturation Asymmetric process", || {
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+    });
+}
+
+#[test]
 fn structural_bulk_update_is_atomic_after_initialization() {
     let mut plugin = SaturationPlugin::new(1);
     plugin.initialize(48_000).unwrap();

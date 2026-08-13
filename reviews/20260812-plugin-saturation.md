@@ -2,8 +2,18 @@
 
 ## Remediation status
 
-Closed in `0.5.11` (2026-08-13): all reported P1-P3 findings are fixed and
-covered; this review reported no P0 finding.
+Closed in `0.5.12` (2026-08-13): all reported P1-P3 findings, including the
+retained higher-fidelity model gap, are fixed and covered; this review reported
+no P0 finding.
+
+- **Retained model gap:** appended `Asymmetric` at mode index 4 without
+  reindexing legacy presets. The model is a DC-centred, independently
+  rail-normalized bias-shifted tanh family whose Tone control maps bias from
+  0.08 to 0.40. It is explicitly a bounded memoryless waveshaper, not a claim
+  of physical diode/triode emulation. It uses existing host oversampling and
+  adds no realtime allocation or per-channel state. Independent oracle, DC,
+  THD, alias, callback-partition, stereo-isolation, allocation, factory,
+  engine, and player-schema regressions define the contract.
 
 - **Signal composition and automation:** dynamic drive now feeds exactly one
   selected topology, including the Exciter high band, and drive/mix/gain
@@ -130,6 +140,12 @@ Reset each smoother to its current target/value according to the host reset cont
 The parameter schema describes Tube tone as an “even/odd balance” (`saturation_plugin.rs:256-265`), but the reviewed tube function is odd-symmetric and therefore cannot generate even harmonics from a symmetric input. Tape is a memoryless sigmoid rather than a tape model with hysteresis, bias, head bump, frequency-dependent saturation, or level-dependent dynamics. These may be useful waveshapers, but the naming/documentation overstates the algorithms.
 
 Either rename/document them as static tube- and tape-flavoured waveshapers, or implement controlled asymmetry for even harmonics and a modest stateful tape model. Add harmonic-distribution tests and reference plots over drive/tone, plus level/frequency sweeps if the stronger emulation claims remain.
+
+**Remediation:** Tube and Tape remain truthfully documented static curves. The
+append-only Asymmetric mode supplies controlled even harmonics using the
+explicit normalized transfer function documented above, without stronger
+analog-emulation claims. Its independent oracle and DC/THD sweeps lock down the
+mathematical rather than circuit-emulation contract.
 
 ### P2 — Scratch sizing consumes far more memory than real-time blocks require
 

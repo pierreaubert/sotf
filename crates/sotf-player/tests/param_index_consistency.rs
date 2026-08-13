@@ -115,6 +115,19 @@ fn test_roundtrip_all_plugins() {
     }
 }
 
+#[test]
+fn saturation_appends_asymmetric_choice_without_reindexing_presets() {
+    let specs = default(&PluginType::Saturation).param_specs();
+    let mode = specs.iter().find(|spec| spec.engine_key == "mode").unwrap();
+    let ParamType::Choice { labels, .. } = mode.param_type else {
+        panic!("saturation mode must remain a choice")
+    };
+    assert_eq!(
+        labels,
+        &["Soft Clip", "Tube", "Tape", "Exciter", "Asymmetric"]
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Count: param_specs().len() == number of valid param_value() indices
 // ---------------------------------------------------------------------------

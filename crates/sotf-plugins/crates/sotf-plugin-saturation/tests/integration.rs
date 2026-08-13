@@ -108,7 +108,7 @@ fn drive_automation_is_callback_partition_invariant_for_every_topology() {
         .collect();
     let partitions = [1, 17, 3, 64, 5, 127, 2, 251, 31, 509, 7, 89];
 
-    for mode in ["Soft Clip", "Tube", "Tape", "Exciter"] {
+    for mode in ["Soft Clip", "Tube", "Tape", "Exciter", "Asymmetric"] {
         for oversampling in ["Off", "2x", "4x"] {
             let make_plugin = || {
                 let mut plugin = SaturationPlugin::from_params(
@@ -207,7 +207,7 @@ fn dynamic_control_survives_every_mode_and_actual_host_oversampling_factor() {
         output
     }
 
-    for mode in ["Soft Clip", "Tube", "Tape", "Exciter"] {
+    for mode in ["Soft Clip", "Tube", "Tape", "Exciter", "Asymmetric"] {
         for factor in [1, 2, 4] {
             let static_output = render(mode, factor, 0.0);
             let dynamic_output = render(mode, factor, 1.0);
@@ -232,7 +232,7 @@ fn four_x_host_oversampling_reduces_out_of_band_harmonic_aliases() {
         let inner = SaturationPlugin::from_params(
             1,
             SaturationPluginParams {
-                mode: "Soft Clip".to_string(),
+                mode: "Asymmetric".to_string(),
                 drive: 12.0,
                 oversampling: if factor == 4 { "4x" } else { "Off" }.to_string(),
                 mix: 1.0,
@@ -278,6 +278,149 @@ fn four_x_host_oversampling_reduces_out_of_band_harmonic_aliases() {
     assert!(
         oversampled_alias < direct_alias * 0.5,
         "4x host oversampling did not sufficiently reject aliases: direct={direct_alias}, 4x={oversampled_alias}"
+    );
+}
+
+#[test]
+fn asymmetric_mode_matches_independent_normalized_curve_oracle() {
+    fn oracle(x: f32, drive: f32, tone: f32) -> f32 {
+        let bias = 0.08 + 0.16 * (tone - 1.0).clamp(0.0, 2.0);
+        let bias_tanh = bias.tanh();
+        let centered = (x * drive + bias).tanh() - bias_tanh;
+        if centered >= 0.0 {
+            centered / (1.0 - bias_tanh)
+        } else {
+            centered / (1.0 + bias_tanh)
+        }
+    }
+
+    let drive = 3.5;
+    let tone = 2.25;
+    let mut plugin = SaturationPlugin::from_params(
+        1,
+        SaturationPluginParams {
+            mode: "Asymmetric".into(),
+            drive,
+            tone,
+            oversampling: "Off".into(),
+            mix: 1.0,
+            dc_blocker_enabled: false,
+            use_adaa: false,
+            ..Default::default()
+        },
+    );
+    plugin.initialize(SR).unwrap();
+    let input = [-1.0, -0.5, -0.125, 0.0, 0.125, 0.5, 1.0];
+    let mut output = input;
+    let frames = output.len();
+    plugin.process_in_place(&mut output, &ctx(frames)).unwrap();
+
+    for (actual, input) in output.into_iter().zip(input) {
+        let expected = oracle(input, drive, tone);
+        assert!(
+            (actual - expected).abs() < 2e-6,
+            "asymmetric oracle mismatch for {input}: actual={actual}, expected={expected}"
+        );
+        assert!(actual.abs() <= 1.0);
+    }
+}
+
+#[test]
+fn asymmetric_even_harmonics_and_dc_blocker_have_measured_contracts() {
+    fn render(dc_blocker_enabled: bool) -> Vec<f32> {
+        let mut plugin = SaturationPlugin::from_params(
+            1,
+            SaturationPluginParams {
+                mode: "Asymmetric".into(),
+                drive: 5.0,
+                tone: 2.5,
+                oversampling: "Off".into(),
+                mix: 1.0,
+                dc_blocker_enabled,
+                use_adaa: false,
+                ..Default::default()
+            },
+        );
+        plugin.initialize(SR).unwrap();
+        let mut output = sine(1_000.0, SR as usize, 0.5);
+        let frames = output.len();
+        plugin.process_in_place(&mut output, &ctx(frames)).unwrap();
+        output
+    }
+
+    fn mean(samples: &[f32]) -> f32 {
+        samples.iter().sum::<f32>() / samples.len() as f32
+    }
+
+    fn magnitude(samples: &[f32], frequency: f32) -> f32 {
+        let (real, imag) =
+            samples
+                .iter()
+                .enumerate()
+                .fold((0.0_f32, 0.0_f32), |(real, imag), (index, sample)| {
+                    let phase = 2.0 * std::f32::consts::PI * frequency * index as f32 / SR as f32;
+                    (real + sample * phase.cos(), imag - sample * phase.sin())
+                });
+        2.0 * real.hypot(imag) / samples.len() as f32
+    }
+
+    let raw = render(false);
+    let blocked = render(true);
+    let raw_tail = &raw[SR as usize / 2..];
+    let blocked_tail = &blocked[SR as usize / 2..];
+    let raw_dc = mean(raw_tail).abs();
+    let blocked_dc = mean(blocked_tail).abs();
+    assert!(
+        raw_dc > 1e-3,
+        "asymmetric curve should expose measurable programme DC"
+    );
+    assert!(
+        blocked_dc < raw_dc * 0.1,
+        "DC blocker insufficient: raw={raw_dc}, blocked={blocked_dc}"
+    );
+
+    let fundamental = magnitude(raw_tail, 1_000.0);
+    let second = magnitude(raw_tail, 2_000.0);
+    let third = magnitude(raw_tail, 3_000.0);
+    let thd = second.hypot(third) / fundamental;
+    assert!(
+        second > 1e-3,
+        "asymmetric curve must generate even harmonics"
+    );
+    assert!((0.01..1.0).contains(&thd), "unexpected THD ratio: {thd}");
+}
+
+#[test]
+fn asymmetric_stereo_channels_are_independent() {
+    let frames = 2_048;
+    let mut plugin = SaturationPlugin::from_params(
+        2,
+        SaturationPluginParams {
+            mode: "Asymmetric".into(),
+            drive: 8.0,
+            tone: 2.0,
+            oversampling: "Off".into(),
+            mix: 1.0,
+            dc_blocker_enabled: false,
+            use_adaa: false,
+            ..Default::default()
+        },
+    );
+    plugin.initialize(SR).unwrap();
+    let mut buffer = vec![0.0; frames * 2];
+    for frame in 0..frames {
+        buffer[frame * 2] =
+            0.5 * (2.0 * std::f32::consts::PI * 997.0 * frame as f32 / SR as f32).sin();
+    }
+    plugin.process_in_place(&mut buffer, &ctx(frames)).unwrap();
+    assert!(buffer.iter().step_by(2).any(|sample| sample.abs() > 0.1));
+    assert!(
+        buffer
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .all(|sample| *sample == 0.0),
+        "silent right channel leaked from left"
     );
 }
 

@@ -11,7 +11,7 @@ fn main() {
     let inner = SaturationPlugin::from_params(
         2,
         SaturationPluginParams {
-            mode: "Exciter".to_string(),
+            mode: "Asymmetric".to_string(),
             drive: 10.0,
             oversampling: "4x".to_string(),
             dynamic_amount: 0.75,
@@ -43,5 +43,10 @@ fn main() {
     }
     let cpu = start.elapsed().as_secs_f64() / (1_000.0 * 1024.0 / 48_000.0) * 100.0;
     assert!(output.iter().all(|sample| sample.is_finite()));
-    println!("Saturation composed 4x path: {cpu:.2}% CPU, zero callback allocations");
+    let left_mean = output.iter().step_by(2).sum::<f32>() / 1024.0;
+    let right_mean = output.iter().skip(1).step_by(2).sum::<f32>() / 1024.0;
+    assert!(left_mean.is_finite() && right_mean.is_finite());
+    println!(
+        "Saturation Asymmetric stereo 4x path: {cpu:.2}% CPU, zero callback allocations, DC L/R={left_mean:.6}/{right_mean:.6}"
+    );
 }

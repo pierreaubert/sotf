@@ -10863,7 +10863,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-saturation"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "math-dsp",
  "serde",

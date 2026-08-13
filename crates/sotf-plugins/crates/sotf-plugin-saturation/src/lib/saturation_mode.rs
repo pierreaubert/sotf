@@ -1,3 +1,4 @@
+use super::misc::asymmetric;
 use super::misc::soft_clip;
 use super::misc::tape;
 use super::misc::tube;
@@ -8,6 +9,7 @@ pub enum SaturationMode {
     Tube = 1,
     Tape = 2,
     Exciter = 3,
+    Asymmetric = 4,
 }
 
 impl SaturationMode {
@@ -17,6 +19,7 @@ impl SaturationMode {
             1 => Self::Tube,
             2 => Self::Tape,
             3 => Self::Exciter,
+            4 => Self::Asymmetric,
             _ => Self::SoftClip,
         }
     }
@@ -27,6 +30,7 @@ impl SaturationMode {
             Self::Tube => "Tube",
             Self::Tape => "Tape",
             Self::Exciter => "Exciter",
+            Self::Asymmetric => "Asymmetric",
         }
     }
 }
@@ -40,5 +44,6 @@ pub(super) fn saturate(sample: f32, mode: SaturationMode, drive: f32, tone: f32)
         SaturationMode::Tube => tube(sample, drive, tone),
         SaturationMode::Tape => tape(sample, drive),
         SaturationMode::Exciter => sample, // handled separately
+        SaturationMode::Asymmetric => asymmetric(sample, drive, tone),
     }
 }

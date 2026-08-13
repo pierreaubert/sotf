@@ -513,3 +513,21 @@ pub fn convert_ab_compare(settings: &PluginSettings, _sample_rate: f64) -> Optio
         }),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugins::plugin_type::PluginType;
+
+    #[test]
+    fn saturation_appended_mode_reaches_engine_config() {
+        let mut settings = PluginSettings::default_for(&PluginType::Saturation).unwrap();
+        let PluginSettings::Saturation { mode, .. } = &mut settings else {
+            unreachable!()
+        };
+        *mode = 4.0;
+
+        let config = convert_saturation(&settings, 48_000.0).unwrap();
+        assert_eq!(config.parameters["mode"], "Asymmetric");
+    }
+}

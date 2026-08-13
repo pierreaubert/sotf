@@ -1,3 +1,17 @@
+# 0.5.12
+
+## New (retained 2026-08-12 review follow-up)
+
+- Added the append-only `Asymmetric` mode at preset index 4. It is an explicit
+  DC-centred, rail-normalized bias-shifted tanh family; Tone controls bias and
+  therefore even-harmonic balance. It is intentionally documented as a
+  bounded memoryless waveshaper, not physical diode or triode emulation.
+- The model uses the existing host-owned Off/2x/4x oversampling contract and
+  adds no process-time state or allocation.
+- Added an independent transfer-function oracle and measured DC-blocker, THD,
+  4x alias-rejection, callback-partition, stereo-isolation, factory, engine,
+  player-schema, and callback-allocation coverage.
+
 # 0.5.11
 
 ## Fixes (2026-08-12 review closure)

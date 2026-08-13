@@ -844,7 +844,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             true,
         ),
         zero_alloc_evidence(
-            "sotf-plugin-saturation transfer-mode, symmetry, oversampling, auto-gain, dry transparency, and bounded-output tests"
+            "sotf-plugin-saturation transfer-mode, symmetry, DC, THD, oversampling alias, stereo isolation, allocation, dry transparency, and bounded-output tests"
         )
     ),
     entry!(

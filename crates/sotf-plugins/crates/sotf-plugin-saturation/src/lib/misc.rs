@@ -34,3 +34,23 @@ pub(super) fn tape(x: f32, drive: f32) -> f32 {
     let driven = x * drive;
     driven.signum() * (1.0 - (-driven.abs() * 2.0).exp()) * 0.5
 }
+
+/// Explicit asymmetric, memoryless saturation family.
+///
+/// This is a DC-centred, rail-normalized, bias-shifted tanh curve rather than a
+/// physical diode or triode circuit model. `tone` maps to a fixed bias in
+/// `[0.08, 0.40]`; the unequal positive and negative small-signal slopes create
+/// controlled even harmonics. Both rails converge to exactly +/-1 and zero
+/// input maps to zero, leaving any programme-dependent DC for the optional DC
+/// blocker to remove.
+#[inline(always)]
+pub(super) fn asymmetric(x: f32, drive: f32, tone: f32) -> f32 {
+    let bias = 0.08 + 0.16 * (tone - 1.0).clamp(0.0, 2.0);
+    let bias_tanh = bias.tanh();
+    let centered = (x * drive + bias).tanh() - bias_tanh;
+    if centered >= 0.0 {
+        centered / (1.0 - bias_tanh)
+    } else {
+        centered / (1.0 + bias_tanh)
+    }
+}

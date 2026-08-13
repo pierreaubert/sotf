@@ -15,6 +15,33 @@ use std::collections::HashSet;
 const SAMPLE_RATE: u32 = 48_000;
 
 #[test]
+fn saturation_factory_accepts_appended_asymmetric_mode() {
+    let mut plugin = create_plugin(
+        "saturation",
+        &serde_json::json!({
+            "mode": "Asymmetric",
+            "drive": 5.0,
+            "tone": 2.0,
+            "oversampling": "Off",
+            "mix": 1.0,
+            "dc_blocker_enabled": false,
+            "use_adaa": false
+        }),
+        2,
+        SAMPLE_RATE,
+    )
+    .unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    let input = [0.25, -0.25, -0.5, 0.5];
+    let mut output = [0.0; 4];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(SAMPLE_RATE, 2))
+        .unwrap();
+    assert!(output.iter().all(|sample| sample.is_finite()));
+    assert_ne!(output, input);
+}
+
+#[test]
 fn loudness_factory_accepts_explicit_speaker_config_and_layout_json() {
     let mut from_config = create_plugin(
         "loudness_monitor",

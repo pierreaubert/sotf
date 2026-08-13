@@ -18,7 +18,8 @@ use sotf_host::plugin_params::PluginParamDef;
 // Mode Constants
 // ============================================================================
 
-pub const MODES: &[&str] = &["Soft Clip", "Tube", "Tape", "Exciter"];
+// Keep serialized preset indices stable: new modes are append-only.
+pub const MODES: &[&str] = &["Soft Clip", "Tube", "Tape", "Exciter", "Asymmetric"];
 pub const OVERSAMPLING_OPTIONS: &[&str] = &["Off", "2x", "4x"];
 
 // ============================================================================
@@ -32,7 +33,7 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::float("Drive", "drive", 2.0, 1.0, 20.0, 0.1, "", "Saturation")
         .doc("Saturation intensity"),
     ParamSpec::float("Tone", "tone", 1.5, 1.0, 3.0, 0.1, "", "Saturation")
-        .doc("Static waveshaper knee/exponent; Tube remains odd-symmetric"),
+        .doc("Static waveshaper knee/exponent or Asymmetric-mode bias"),
     ParamSpec::float(
         "Exciter Freq",
         "exciter_freq",
@@ -392,5 +393,15 @@ mod tests {
 
         assert!(!p.dc_blocker);
         assert!(p.use_adaa);
+    }
+
+    #[test]
+    fn mode_indices_are_append_only() {
+        assert_eq!(
+            MODES,
+            &["Soft Clip", "Tube", "Tape", "Exciter", "Asymmetric"]
+        );
+        let legacy: Params = serde_json::from_value(serde_json::json!({"mode": 3.0})).unwrap();
+        assert_eq!(legacy.mode, 3.0);
     }
 }

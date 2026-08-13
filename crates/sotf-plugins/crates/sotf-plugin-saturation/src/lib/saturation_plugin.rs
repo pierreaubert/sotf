@@ -6,6 +6,7 @@ use super::default::default_tone;
 use super::misc::DEFAULT_BUF_SIZE;
 use super::misc::MAX_BLOCK_FRAMES;
 use super::misc::MAX_CHANNELS;
+use super::misc::asymmetric;
 use super::misc::soft_clip;
 use super::misc::tape;
 use super::misc::tube;
@@ -161,6 +162,7 @@ impl SaturationPlugin {
             "Tube" | "tube" => SaturationMode::Tube,
             "Tape" | "tape" => SaturationMode::Tape,
             "Exciter" | "exciter" => SaturationMode::Exciter,
+            "Asymmetric" | "asymmetric" => SaturationMode::Asymmetric,
             _ => SaturationMode::SoftClip,
         };
 
@@ -207,7 +209,16 @@ impl SaturationPlugin {
         }
         if !matches!(
             params.mode.as_str(),
-            "Soft Clip" | "soft_clip" | "Tube" | "tube" | "Tape" | "tape" | "Exciter" | "exciter"
+            "Soft Clip"
+                | "soft_clip"
+                | "Tube"
+                | "tube"
+                | "Tape"
+                | "tape"
+                | "Exciter"
+                | "exciter"
+                | "Asymmetric"
+                | "asymmetric"
         ) {
             return Err(format!("Unknown saturation mode: {}", params.mode));
         }
@@ -282,7 +293,7 @@ impl SaturationPlugin {
                 pk(SAT, "tone").min_f64() as f32,
                 pk(SAT, "tone").max_f64() as f32,
             )
-            .with_description("Static waveshaper knee/exponent; Tube remains odd-symmetric")
+            .with_description("Static waveshaper knee/exponent or Asymmetric-mode bias")
             .with_group("Saturation")
             .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
@@ -522,6 +533,8 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                         | "tape"
                         | "Exciter"
                         | "exciter"
+                        | "Asymmetric"
+                        | "asymmetric"
                 ) {
                     return Err(format!("Unknown saturation mode: {mode}"));
                 }
@@ -546,6 +559,7 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                             "Tube" | "tube" => SaturationMode::Tube,
                             "Tape" | "tape" => SaturationMode::Tape,
                             "Exciter" | "exciter" => SaturationMode::Exciter,
+                            "Asymmetric" | "asymmetric" => SaturationMode::Asymmetric,
                             _ => self.mode,
                         };
                         mode != self.mode
@@ -590,6 +604,7 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                         "Tube" | "tube" => SaturationMode::Tube,
                         "Tape" | "tape" => SaturationMode::Tape,
                         "Exciter" | "exciter" => SaturationMode::Exciter,
+                        "Asymmetric" | "asymmetric" => SaturationMode::Asymmetric,
                         _ => SaturationMode::SoftClip,
                     }
                 } else if let Some(v) = value.as_float() {
@@ -859,6 +874,9 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                             buffer[idx] = tape(buffer[idx], frame_drive);
                         }
                         SaturationMode::Exciter => {} // handled above
+                        SaturationMode::Asymmetric => {
+                            buffer[idx] = asymmetric(buffer[idx], frame_drive, tone);
+                        }
                     }
                 }
             }
