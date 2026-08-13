@@ -2,7 +2,7 @@ use sotf_host::plugin::ProcessContext;
 use sotf_host::{
     CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, run_standard_tests,
 };
-use sotf_plugin_crossfeed::{CrossfeedPlugin, CrossfeedPluginParams};
+use sotf_plugin_crossfeed::{CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams};
 
 #[global_allocator]
 static A: CountingAlloc = CountingAlloc;
@@ -11,6 +11,7 @@ fn main() {
     let sample_rate = 48000;
     let params = CrossfeedPluginParams {
         max_block_frames: 48_000,
+        mode: CrossfeedMode::Hrtf,
         ..Default::default()
     };
 

@@ -1,9 +1,12 @@
 ---
 title: "Crossfeed"
-description: "Headphone crossfeed that simulates speaker spacing. Supports Bauer, Meier, and multiband algorithms."
+description: "Headphone crossfeed with Bauer, Meier, multiband, and compact HRTF algorithms."
 ---
 
-Headphone crossfeed that simulates speaker spacing. Supports Bauer, Meier, and multiband algorithms.
+Headphone crossfeed that simulates speaker spacing. HRTF mode uses a fixed
+700 Hz head-shadow low-pass, 0.25 ms base ITD, and -9 dB cross-ear path with
+equal near-ear subtraction. It preserves mono fold and reports zero latency;
+it is not a personalized or measured SOFA renderer.
 
 ## Parameters
 
@@ -12,8 +15,8 @@ Headphone crossfeed that simulates speaker spacing. Supports Bauer, Meier, and m
 
 | Parameter | Type | Range | Default | Unit | Description |
 |-----------|------|-------|---------|------|-------------|
-| Mode | Choice (Disable, Bauer, Meier, Multiband) | 4 options | Multiband | - | Crossfeed algorithm selection |
-| Preset | Choice (Default, Cmoy, Meier, Mb, Off) | 5 options | Default | - | Load preset parameter values |
+| Mode | Choice (Disable, Bauer, Meier, Multiband, HRTF) | 5 options | Multiband | - | Crossfeed algorithm selection |
+| Preset | Choice (Default, Cmoy, Meier, Mb, Off, HRTF) | 6 options | Default | - | Load preset parameter values |
 | Enabled | Bool | On / Off | On | - | Enable crossfeed processing |
 | Mix | Float | 0 .. 1 | 1 | % | Dry/wet blend |
 | ITD Delay | Float | 0 .. 1 | 0 | ms | Interaural time difference |

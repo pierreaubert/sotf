@@ -355,6 +355,7 @@ pub(super) fn adjust_plugin_param(
                 CrossfeedPreset::Meier,
                 CrossfeedPreset::Mb,
                 CrossfeedPreset::Off,
+                CrossfeedPreset::Hrtf,
             ];
             let current = presets.iter().position(|pr| pr == preset).unwrap_or(0);
             let next = if delta > 0.0 {

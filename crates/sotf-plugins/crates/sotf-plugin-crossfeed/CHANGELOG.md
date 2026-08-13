@@ -1,3 +1,12 @@
+# 0.5.14
+
+## Features (2026-08-13 retained review gap)
+
+- Add a compact parametric HRTF mode with documented head-shadow, ITD,
+  cross-ear gain, zero-latency, and exact mono-fold contracts.
+- Cover hard-pan bleed, anti-phase stability, mono folding, callback partition
+  invariance, reported latency, and realtime allocation behavior.
+
 # 0.5.13
 
 ## Fixes (2026-08-12 review closure)

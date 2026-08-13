@@ -975,6 +975,7 @@ impl TuiEditablePlugin for PluginSettings {
                     CrossfeedPreset::Meier,
                     CrossfeedPreset::Mb,
                     CrossfeedPreset::Off,
+                    CrossfeedPreset::Hrtf,
                 ];
                 let current = presets.iter().position(|p| p == preset).unwrap_or(0);
                 let next = if delta > 0.0 {

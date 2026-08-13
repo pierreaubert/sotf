@@ -20,9 +20,10 @@ pub(super) fn parse_crossfeed_mode(mode: &str) -> Result<CrossfeedMode, String> 
         "bauer" => Ok(CrossfeedMode::Bauer),
         "meier" => Ok(CrossfeedMode::Meier),
         "multiband" | "mb" => Ok(CrossfeedMode::Mb),
+        "hrtf" => Ok(CrossfeedMode::Hrtf),
         "off" => Ok(CrossfeedMode::Off),
         _ => Err(format!(
-            "Invalid crossfeed mode '{}'. Valid: bauer, meier, multiband/mb, off",
+            "Invalid crossfeed mode '{}'. Valid: bauer, meier, multiband/mb, hrtf, off",
             mode
         )),
     }
@@ -35,8 +36,9 @@ pub(super) fn parse_crossfeed_preset(preset: &str) -> Result<CrossfeedPreset, St
         "meier" => Ok(CrossfeedPreset::Meier),
         "multiband" | "mb" => Ok(CrossfeedPreset::Mb),
         "off" => Ok(CrossfeedPreset::Off),
+        "hrtf" => Ok(CrossfeedPreset::Hrtf),
         _ => Err(format!(
-            "Invalid crossfeed preset '{}'. Valid: default, cmoy, meier, multiband/mb, off",
+            "Invalid crossfeed preset '{}'. Valid: default, cmoy, meier, multiband/mb, hrtf, off",
             preset
         )),
     }

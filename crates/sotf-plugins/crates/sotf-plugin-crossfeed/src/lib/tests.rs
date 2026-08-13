@@ -23,6 +23,7 @@ fn test_yaw_only_itd_advances_delay_for_every_algorithm() {
         CrossfeedMode::Bauer,
         CrossfeedMode::Meier,
         CrossfeedMode::Mb,
+        CrossfeedMode::Hrtf,
     ] {
         let params = CrossfeedPluginParams {
             mode,
@@ -113,6 +114,7 @@ fn test_public_preset_selection_applies_complete_preset() {
         (2, CrossfeedPreset::Meier),
         (3, CrossfeedPreset::Mb),
         (4, CrossfeedPreset::Off),
+        (5, CrossfeedPreset::Hrtf),
     ];
     for (index, preset) in cases {
         let mut plugin = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
@@ -142,6 +144,7 @@ fn public_presets_converge_to_fresh_reference_audio() {
         (2, CrossfeedPreset::Meier),
         (3, CrossfeedPreset::Mb),
         (4, CrossfeedPreset::Off),
+        (5, CrossfeedPreset::Hrtf),
     ] {
         let mut selected = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
         selected.initialize(SR).unwrap();
@@ -1472,4 +1475,79 @@ fn test_process_in_place_mix_zero_passthrough() {
             inp
         );
     }
+}
+
+fn render_hrtf(input: &[f32], partitions: &[usize]) -> Vec<f32> {
+    let frames = input.len() / 2;
+    let params = CrossfeedPluginParams {
+        mode: CrossfeedMode::Hrtf,
+        mix: 1.0,
+        ..Default::default()
+    };
+    let mut plugin = CrossfeedPlugin::new(params).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let mut output = Vec::with_capacity(input.len());
+    let mut frame = 0;
+    let mut part = 0;
+    while frame < frames {
+        let count = partitions[part % partitions.len()].min(frames - frame);
+        let mut block = input[frame * 2..(frame + count) * 2].to_vec();
+        plugin
+            .process_in_place(&mut block, &ProcessContext::new(48_000, count))
+            .unwrap();
+        output.extend_from_slice(&block);
+        frame += count;
+        part += 1;
+    }
+    output
+}
+
+#[test]
+fn hrtf_hard_pan_bleeds_after_interaural_delay_and_reports_zero_latency() {
+    let mut input = vec![0.0; 256 * 2];
+    input[0] = 1.0;
+    let output = render_hrtf(&input, &[256]);
+    let first_right = (0..256).find(|&i| output[i * 2 + 1].abs() > 1e-6).unwrap();
+    assert!((11..=14).contains(&first_right), "onset={first_right}");
+    assert!(output.iter().all(|sample| sample.is_finite()));
+
+    let mut plugin = CrossfeedPlugin::new(CrossfeedPluginParams {
+        mode: CrossfeedMode::Hrtf,
+        ..Default::default()
+    })
+    .unwrap();
+    plugin.initialize(48_000).unwrap();
+    assert_eq!(plugin.latency_samples(), 0);
+}
+
+#[test]
+fn hrtf_preserves_mono_fold_and_bounds_antiphase_input() {
+    let input: Vec<f32> = (0..4096)
+        .flat_map(|i| {
+            let sample = (std::f32::consts::TAU * 220.0 * i as f32 / 48_000.0).sin() * 0.4;
+            [sample, -sample]
+        })
+        .collect();
+    let output = render_hrtf(&input, &[4096]);
+    for (source, rendered) in input.chunks_exact(2).zip(output.chunks_exact(2)) {
+        assert!(((source[0] + source[1]) - (rendered[0] + rendered[1])).abs() < 1e-6);
+    }
+    let peak = output
+        .iter()
+        .map(|sample| sample.abs())
+        .fold(0.0_f32, f32::max);
+    assert!(peak < 0.8, "anti-phase peak={peak}");
+}
+
+#[test]
+fn hrtf_render_is_partition_invariant() {
+    let input: Vec<f32> = (0..4096)
+        .flat_map(|i| {
+            let phase = std::f32::consts::TAU * 347.0 * i as f32 / 48_000.0;
+            [phase.sin() * 0.4, (phase * 0.73).cos() * 0.2]
+        })
+        .collect();
+    let one = render_hrtf(&input, &[4096]);
+    let varied = render_hrtf(&input, &[1, 7, 31, 64, 3, 127]);
+    assert_eq!(one, varied);
 }

@@ -1,5 +1,12 @@
 # Crossfeed plugin review — 2026-08-12
 
+Retained quality follow-up implemented in 0.5.14: a conservative parametric
+HRTF mode uses a 700 Hz head shadow, 0.25 ms base ITD, and -9 dB cross-ear
+path. Equal near-ear subtraction preserves mono fold exactly and the dry path
+keeps reported latency at zero. Hard-pan, anti-phase, mono-fold, partition,
+latency, and allocation tests define the contract. This mode is explicitly not
+a personalized or measured SOFA renderer.
+
 ## Remediation status — 2026-08-12
 
 Implemented in `sotf-plugin-crossfeed` 0.5.11:

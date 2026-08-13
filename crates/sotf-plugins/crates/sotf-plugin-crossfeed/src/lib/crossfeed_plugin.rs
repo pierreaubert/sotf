@@ -22,6 +22,9 @@ const BAUER_FILTER_TRANSITION_SAMPLES: usize = 128;
 // Treating it as exactly zero avoids a residual crossfeed path while retaining
 // a normal float range for hosts and presets.
 const MB_FEED_OFF_DB: f32 = -60.0;
+const HRTF_SHADOW_CUTOFF_HZ: f64 = 700.0;
+const HRTF_BASE_ITD_MS: f32 = 0.25;
+const HRTF_CROSSFEED_GAIN: f32 = 0.354_813_4; // -9 dB
 
 pub struct CrossfeedPlugin {
     pub(super) sample_rate: u32,
@@ -38,6 +41,10 @@ pub struct CrossfeedPlugin {
     pub(super) meier_lpf_r: Biquad,
     pub(super) meier_allpass_l: Biquad,
     pub(super) meier_allpass_r: Biquad,
+
+    // Compact parametric far-ear HRTF: head-shadow low-pass per cross-ear path.
+    pub(super) hrtf_shadow_l: Biquad,
+    pub(super) hrtf_shadow_r: Biquad,
 
     // Multiband: true LR4 crossover (3-band: low/mid/high)
     pub(super) mb_low_l: Lr4Crossover<f32>,
@@ -119,6 +126,20 @@ impl CrossfeedPlugin {
                 1000.0,
                 sr as f64,
                 0.5,
+                0.0,
+            ),
+            hrtf_shadow_l: Biquad::new(
+                math_audio_iir_fir::BiquadFilterType::Lowpass,
+                HRTF_SHADOW_CUTOFF_HZ,
+                sr as f64,
+                0.707,
+                0.0,
+            ),
+            hrtf_shadow_r: Biquad::new(
+                math_audio_iir_fir::BiquadFilterType::Lowpass,
+                HRTF_SHADOW_CUTOFF_HZ,
+                sr as f64,
+                0.707,
                 0.0,
             ),
 
@@ -285,6 +306,7 @@ impl CrossfeedPlugin {
                     1 => CrossfeedMode::Bauer,
                     2 => CrossfeedMode::Meier,
                     3 => CrossfeedMode::Mb,
+                    4 => CrossfeedMode::Hrtf,
                     _ => CrossfeedMode::Off,
                 };
             }
@@ -295,6 +317,7 @@ impl CrossfeedPlugin {
                     2 => CrossfeedPreset::Meier,
                     3 => CrossfeedPreset::Mb,
                     4 => CrossfeedPreset::Off,
+                    5 => CrossfeedPreset::Hrtf,
                     _ => CrossfeedPreset::Default,
                 };
             }
@@ -437,6 +460,20 @@ impl CrossfeedPlugin {
             0.5,
             0.0,
         );
+        self.hrtf_shadow_l = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::Lowpass,
+            HRTF_SHADOW_CUTOFF_HZ,
+            sr,
+            0.707,
+            0.0,
+        );
+        self.hrtf_shadow_r = Biquad::new(
+            math_audio_iir_fir::BiquadFilterType::Lowpass,
+            HRTF_SHADOW_CUTOFF_HZ,
+            sr,
+            0.707,
+            0.0,
+        );
     }
 
     pub(super) fn update_mb_filters(&mut self) {
@@ -462,11 +499,18 @@ impl CrossfeedPlugin {
     /// allocation-free while making the delay trajectory independent of the
     /// host callback partition.
     #[inline(always)]
-    fn advance_itd(&mut self) {
+    fn advance_itd_with_base(&mut self, base_itd_ms: f32) {
         let smoothed_yaw = self.yaw_smoother.advance();
         let (itd_l, itd_r) = compute_differential_itd_ms(smoothed_yaw, self.params.itd_delay_ms);
+        let itd_l = (itd_l + base_itd_ms).min(1.0);
+        let itd_r = (itd_r + base_itd_ms).min(1.0);
         self.itd_delay_l.set_delay(itd_l, self.sample_rate);
         self.itd_delay_r.set_delay(itd_r, self.sample_rate);
+    }
+
+    #[inline(always)]
+    fn advance_itd(&mut self) {
+        self.advance_itd_with_base(0.0);
     }
 
     #[inline(always)]
@@ -532,6 +576,23 @@ impl CrossfeedPlugin {
             self.wet_r[i] = norm_l * low_r + norm_m * mid_r + norm_h * high_r + cross_l;
         }
     }
+
+    /// Compact parametric HRTF crossfeed. A 700 Hz head-shadow low-pass and
+    /// 0.25 ms interaural path feed the opposite ear at -9 dB. Removing the
+    /// same contribution from the near ear preserves L+R sample-for-sample.
+    /// The undelayed dry path makes the plugin latency zero.
+    #[inline(always)]
+    pub(super) fn process_hrtf(&mut self, nf: usize) {
+        for i in 0..nf {
+            let mut left_to_right = self.hrtf_shadow_l.process(self.dry_l[i] as f64) as f32;
+            let mut right_to_left = self.hrtf_shadow_r.process(self.dry_r[i] as f64) as f32;
+            self.advance_itd_with_base(HRTF_BASE_ITD_MS);
+            left_to_right = self.itd_delay_l.process(left_to_right) * HRTF_CROSSFEED_GAIN;
+            right_to_left = self.itd_delay_r.process(right_to_left) * HRTF_CROSSFEED_GAIN;
+            self.wet_l[i] = self.dry_l[i] - left_to_right + right_to_left;
+            self.wet_r[i] = self.dry_r[i] + left_to_right - right_to_left;
+        }
+    }
 }
 
 impl ParametricInPlacePlugin for CrossfeedPlugin {
@@ -541,6 +602,7 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
             CrossfeedMode::Bauer => "Bauer",
             CrossfeedMode::Meier => "Meier",
             CrossfeedMode::Mb => "Multiband",
+            CrossfeedMode::Hrtf => "HRTF",
         };
         PluginInfo::new("Crossfeed", env!("CARGO_PKG_VERSION"), "SotF")
             .with_description(format!("Headphone crossfeed ({})", mode_str))
@@ -607,6 +669,7 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
                 2 => CrossfeedPreset::Meier,
                 3 => CrossfeedPreset::Mb,
                 4 => CrossfeedPreset::Off,
+                5 => CrossfeedPreset::Hrtf,
                 _ => return Err(format!("invalid crossfeed preset index: {index}")),
             };
             let max_block_frames = candidate.max_block_frames;
@@ -731,6 +794,7 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
                 2 => CrossfeedPreset::Meier,
                 3 => CrossfeedPreset::Mb,
                 4 => CrossfeedPreset::Off,
+                5 => CrossfeedPreset::Hrtf,
                 _ => return Err(format!("invalid crossfeed preset index: {index}")),
             };
             let max_block_frames = candidate.max_block_frames;
@@ -827,6 +891,8 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
         self.meier_lpf_r.reset();
         self.meier_allpass_l.reset();
         self.meier_allpass_r.reset();
+        self.hrtf_shadow_l.reset();
+        self.hrtf_shadow_r.reset();
         self.mb_low_l.reset();
         self.mb_high_l.reset();
         self.mb_low_r.reset();
@@ -892,6 +958,7 @@ impl ParametricInPlacePlugin for CrossfeedPlugin {
             CrossfeedMode::Bauer => self.process_bauer(nf),
             CrossfeedMode::Meier => self.process_meier(nf),
             CrossfeedMode::Mb => self.process_mb(nf),
+            CrossfeedMode::Hrtf => self.process_hrtf(nf),
             _ => {
                 self.wet_l[..nf].copy_from_slice(&self.dry_l[..nf]);
                 self.wet_r[..nf].copy_from_slice(&self.dry_r[..nf]);

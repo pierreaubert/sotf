@@ -6,6 +6,17 @@ A headphone crossfeed plugin that blends a portion of each stereo channel into t
 
 ## Features
 
+### Compact HRTF contract
+
+HRTF mode is a deliberately fixed parametric far-ear model. Each source is
+shaped by a 700 Hz, Q=0.707 head-shadow low-pass, delayed by a 0.25 ms
+interaural path plus the public ITD/yaw controls (capped at the plugin's 1 ms
+delay-line limit), and transferred at -9 dB.
+The identical contribution is removed from the near ear and added to the far
+ear, preserving `L + R` sample-for-sample. The direct path is undelayed, so
+reported latency is zero. This is not a personalized or measured SOFA HRTF
+and makes no pinna/elevation claim.
+
 ### Crossfeed Modes
 
 Three algorithms for different listening preferences:

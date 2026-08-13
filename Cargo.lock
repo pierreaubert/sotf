@@ -10588,7 +10588,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-crossfeed"
-version = "0.5.13"
+version = "0.5.14"
 dependencies = [
  "math-dsp",
  "math-iir-fir",

@@ -30,7 +30,7 @@ custom
 
 | Element | Control | Notes |
 |---------|---------|-------|
-| Mode | ButtonSet (Bauer / Meier / Multiband / Disable) | Pill-button group, mutually exclusive |
+| Mode | ButtonSet (Bauer / Meier / Multiband / HRTF / Disable) | Pill-button group, mutually exclusive |
 
 ## Main (Center, conditional on mode)
 
@@ -60,6 +60,12 @@ custom
 ### Disable Mode
 
 No parameters shown. Plugin passes audio through unchanged.
+
+### HRTF Mode
+
+Uses the fixed compact parametric HRTF contract documented in `USAGE.md`.
+The public ITD and head-yaw controls remain active; no mode-specific controls
+are required.
 
 ## Output (Right Column)
 

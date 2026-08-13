@@ -141,6 +141,10 @@ impl CrossfeedPluginParams {
                 mb_high_feed_db: 3.0,
                 ..Default::default()
             },
+            CrossfeedPreset::Hrtf => Self {
+                mode: CrossfeedMode::Hrtf,
+                ..Default::default()
+            },
         };
         params.preset = preset;
         params

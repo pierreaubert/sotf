@@ -37,6 +37,7 @@ pub(super) fn index_to_crossfeed_mode(index: f64) -> CrossfeedMode {
         1 => CrossfeedMode::Bauer,
         2 => CrossfeedMode::Meier,
         3 => CrossfeedMode::Mb,
+        4 => CrossfeedMode::Hrtf,
         _ => CrossfeedMode::Off,
     }
 }
@@ -48,6 +49,7 @@ pub(super) fn index_to_crossfeed_preset(index: f64) -> CrossfeedPreset {
         2 => CrossfeedPreset::Meier,
         3 => CrossfeedPreset::Mb,
         4 => CrossfeedPreset::Off,
+        5 => CrossfeedPreset::Hrtf,
         _ => CrossfeedPreset::Default,
     }
 }

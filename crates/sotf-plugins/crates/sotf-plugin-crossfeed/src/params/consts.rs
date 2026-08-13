@@ -1,9 +1,9 @@
 use sotf_host::param_specs::ParamSpec;
 use sotf_host::plugin_layout::*;
 
-pub const MODE_LABELS: &[&str] = &["Disable", "Bauer", "Meier", "Multiband"];
+pub const MODE_LABELS: &[&str] = &["Disable", "Bauer", "Meier", "Multiband", "HRTF"];
 
-pub const PRESET_LABELS: &[&str] = &["Default", "Cmoy", "Meier", "Mb", "Off"];
+pub const PRESET_LABELS: &[&str] = &["Default", "Cmoy", "Meier", "Mb", "Off", "HRTF"];
 
 pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::choice("Mode", "crossfeed_mode", 3, MODE_LABELS, "General")

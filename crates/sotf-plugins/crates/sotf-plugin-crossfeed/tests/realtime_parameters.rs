@@ -1,5 +1,5 @@
 use sotf_host::ParametricInPlacePlugin;
-use sotf_host::{CountingAlloc, ParameterId, ParameterValue, assert_no_allocs};
+use sotf_host::{CountingAlloc, ParameterId, ParameterValue, ProcessContext, assert_no_allocs};
 use sotf_plugin_crossfeed::{CrossfeedPlugin, CrossfeedPluginParams};
 
 #[global_allocator]
@@ -42,4 +42,19 @@ fn realtime_parameter_updates_and_reset_do_not_allocate() {
         });
     }
     assert_no_allocs("Crossfeed reset", || plugin.reset());
+}
+
+#[test]
+fn hrtf_processing_does_not_allocate() {
+    let mut params = CrossfeedPluginParams::default();
+    params.mode = sotf_plugin_crossfeed::CrossfeedMode::Hrtf;
+    let mut plugin = CrossfeedPlugin::new(params).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let mut buffer = vec![0.0; 256 * 2];
+    buffer[0] = 1.0;
+    assert_no_allocs("Crossfeed HRTF processing", || {
+        plugin
+            .process_in_place(&mut buffer, &ProcessContext::new(48_000, 256))
+            .unwrap();
+    });
 }

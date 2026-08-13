@@ -364,6 +364,7 @@ pub fn set_plugin_param_value(
                 CrossfeedPreset::Meier,
                 CrossfeedPreset::Mb,
                 CrossfeedPreset::Off,
+                CrossfeedPreset::Hrtf,
             ];
             let idx = (value as usize).min(presets.len() - 1);
             *preset = presets[idx];

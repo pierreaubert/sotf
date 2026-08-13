@@ -7,6 +7,8 @@ pub enum CrossfeedMode {
     Bauer,
     Meier,
     Mb,
+    /// Compact parametric HRTF crossfeed with head-shadow filtering and ITD.
+    Hrtf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -17,4 +19,5 @@ pub enum CrossfeedPreset {
     Meier,
     Mb,
     Off,
+    Hrtf,
 }
