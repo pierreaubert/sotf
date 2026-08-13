@@ -8,8 +8,6 @@ pub mod superdirective;
 mod beamformer_plugin;
 #[path = "lib/beamformer_plugin_params.rs"]
 mod beamformer_plugin_params;
-#[path = "lib/default.rs"]
-mod default;
 #[path = "lib/misc.rs"]
 mod misc;
 #[cfg(test)]

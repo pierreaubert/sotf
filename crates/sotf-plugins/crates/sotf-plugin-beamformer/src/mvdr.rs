@@ -29,10 +29,13 @@ pub struct MvdrBeamformer {
     diag_load: f32,
     /// Smoothing factor for covariance estimation
     alpha: f32,
-    /// Energy threshold for noise detection (public for testing)
-    pub noise_threshold: f32,
+    /// Maximum coherent look-direction energy fraction still treated as noise.
+    pub target_presence_threshold: f32,
     /// Frame counter for initial learning period
     frame_count: usize,
+    weights_dirty: bool,
+    #[cfg(test)]
+    pub weight_solve_count: usize,
     /// Pre-allocated weight buffer: [bin][mic]
     pub weights_buf: Vec<Vec<Complex<f32>>>,
     /// Pre-allocated beamformed output buffer: [bin]
@@ -70,8 +73,11 @@ impl MvdrBeamformer {
             noise_cov,
             diag_load: 0.01,
             alpha: 0.95,
-            noise_threshold: 0.01,
+            target_presence_threshold: 0.65,
             frame_count: 0,
+            weights_dirty: true,
+            #[cfg(test)]
+            weight_solve_count: 0,
             weights_buf: vec![vec![Complex::new(0.0, 0.0); num_mics]; spectrum_size],
             output_buf: vec![Complex::new(0.0, 0.0); spectrum_size],
             scratch_r_loaded: [Complex::new(0.0, 0.0); MAX_MICS * MAX_MICS],
@@ -84,26 +90,32 @@ impl MvdrBeamformer {
     /// Update noise covariance estimate from input frame.
     ///
     /// Zero allocations: uses inline math on the flat noise_cov buffer.
-    pub fn update_noise_covariance(&mut self, stft_channels: &[Vec<Complex<f32>>]) {
+    pub fn update_noise_covariance(
+        &mut self,
+        stft_channels: &[Vec<Complex<f32>>],
+        steering: &[Vec<Complex<f32>>],
+    ) -> bool {
         let m = self.num_mics.min(stft_channels.len());
-
-        // Energy-based noise detection: average energy across all channels so
-        // that a quiet mic 0 while other mics are active does not misclassify
-        // target frames as noise (bug §1.6).  The unconditional 20-frame
-        // learning period is removed because it contaminates the covariance
-        // with the target signal whenever the source is active at startup
-        // (bug §1.7).
-        let total_energy: f32 = stft_channels[..m]
-            .iter()
-            .map(|ch| ch.iter().map(|c| c.norm_sqr()).sum::<f32>())
-            .sum::<f32>()
-            / (self.spectrum_size * m) as f32;
-
-        let is_noise = total_energy < self.noise_threshold;
+        let bins = self.spectrum_size.min(steering.len());
+        let mut total_energy = 0.0_f32;
+        let mut look_energy = 0.0_f32;
+        for k in 0..bins {
+            let mut projection = Complex::new(0.0, 0.0);
+            for mic in 0..m {
+                let sample = stft_channels[mic].get(k).copied().unwrap_or_default();
+                total_energy += sample.norm_sqr();
+                if let Some(direction) = steering[k].get(mic) {
+                    projection += direction.conj() * sample;
+                }
+            }
+            look_energy += projection.norm_sqr() / m as f32;
+        }
+        let coherent_fraction = look_energy / total_energy.max(1e-20);
+        let is_noise = total_energy <= 1e-20 || coherent_fraction < self.target_presence_threshold;
         self.frame_count += 1;
 
         if !is_noise {
-            return;
+            return false;
         }
 
         let alpha = self.alpha;
@@ -145,12 +157,18 @@ impl MvdrBeamformer {
                 );
             }
         }
+        self.weights_dirty = true;
+        true
     }
 
     /// Compute MVDR weights for all bins.
     ///
     /// Zero allocations: uses fixed-size scratch buffers for all matrix math.
     pub fn compute_weights(&mut self, steering: &[Vec<Complex<f32>>]) -> &[Vec<Complex<f32>>] {
+        #[cfg(test)]
+        {
+            self.weight_solve_count += 1;
+        }
         let m = self.num_mics;
         let mm = m * m;
 
@@ -172,19 +190,10 @@ impl MvdrBeamformer {
                 self.scratch_r_loaded[i * m + i] += Complex::new(sigma, 0.0);
             }
 
-            // Invert R_loaded in-place using Gauss-Jordan on scratch buffers
-            let invertible = self.invert_matrix(m);
-
-            if invertible {
-                // r_inv_d = R^{-1} * d
-                for i in 0..m {
-                    let mut sum = Complex::new(0.0, 0.0);
-                    for j in 0..m {
-                        sum += self.scratch_r_inv[i * m + j] * d_vec[j];
-                    }
-                    self.scratch_r_inv_d[i] = sum;
-                }
-
+            // Hermitian positive-definite Cholesky solve. This computes
+            // R^-1 d directly, avoiding both an explicit inverse and the
+            // extra O(M^3) inverse materialization.
+            if self.solve_loaded_hpd(d_vec, m) {
                 // denom = d^H * r_inv_d (scalar)
                 let mut denom = Complex::new(0.0, 0.0);
                 for i in 0..m {
@@ -197,77 +206,56 @@ impl MvdrBeamformer {
                         self.weights_buf[k][i] = self.scratch_r_inv_d[i] / denom;
                     }
                 } else {
-                    self.weights_buf[k].fill(Complex::new(1.0 / m as f32, 0.0));
+                    write_steered_delay_and_sum(&mut self.weights_buf[k], d_vec);
                 }
             } else {
-                // Fallback to delay-and-sum (uniform weights)
-                self.weights_buf[k].fill(Complex::new(1.0 / m as f32, 0.0));
+                write_steered_delay_and_sum(&mut self.weights_buf[k], d_vec);
             }
         }
+        self.weights_dirty = false;
         &self.weights_buf
     }
 
-    /// Gauss-Jordan inversion of scratch_r_loaded into scratch_r_inv.
-    /// Returns false if the matrix is singular.
-    fn invert_matrix(&mut self, m: usize) -> bool {
-        // Initialize scratch_r_inv as identity
-        for i in 0..m {
-            for j in 0..m {
-                self.scratch_r_inv[i * m + j] = if i == j {
-                    Complex::new(1.0, 0.0)
-                } else {
-                    Complex::new(0.0, 0.0)
-                };
-            }
-        }
+    pub fn weights_dirty(&self) -> bool {
+        self.weights_dirty
+    }
 
-        // Gauss-Jordan elimination with partial pivoting
-        for col in 0..m {
-            // Find pivot (largest magnitude in column)
-            let mut max_mag = self.scratch_r_loaded[col * m + col].norm_sqr();
-            let mut pivot_row = col;
-            for row in (col + 1)..m {
-                let mag = self.scratch_r_loaded[row * m + col].norm_sqr();
-                if mag > max_mag {
-                    max_mag = mag;
-                    pivot_row = row;
+    fn solve_loaded_hpd(&mut self, rhs: &[Complex<f32>], m: usize) -> bool {
+        self.scratch_r_inv[..m * m].fill(Complex::new(0.0, 0.0));
+        for row in 0..m {
+            for col in 0..=row {
+                let mut value = self.scratch_r_loaded[row * m + col];
+                for k in 0..col {
+                    value -=
+                        self.scratch_r_inv[row * m + k] * self.scratch_r_inv[col * m + k].conj();
                 }
-            }
-
-            if max_mag < 1e-30 {
-                return false; // Singular
-            }
-
-            // Swap rows if needed
-            if pivot_row != col {
-                for j in 0..m {
-                    self.scratch_r_loaded.swap(col * m + j, pivot_row * m + j);
-                    self.scratch_r_inv.swap(col * m + j, pivot_row * m + j);
-                }
-            }
-
-            // Scale pivot row
-            let pivot = self.scratch_r_loaded[col * m + col];
-            let inv_pivot = Complex::new(1.0, 0.0) / pivot;
-            for j in 0..m {
-                self.scratch_r_loaded[col * m + j] *= inv_pivot;
-                self.scratch_r_inv[col * m + j] *= inv_pivot;
-            }
-
-            // Eliminate column in all other rows
-            for row in 0..m {
                 if row == col {
-                    continue;
-                }
-                let factor = self.scratch_r_loaded[row * m + col];
-                for j in 0..m {
-                    self.scratch_r_loaded[row * m + j] -=
-                        factor * self.scratch_r_loaded[col * m + j];
-                    self.scratch_r_inv[row * m + j] -= factor * self.scratch_r_inv[col * m + j];
+                    if !value.re.is_finite() || value.re <= 1e-20 || value.im.abs() > 1e-3 {
+                        return false;
+                    }
+                    self.scratch_r_inv[row * m + col] = Complex::new(value.re.sqrt(), 0.0);
+                } else {
+                    self.scratch_r_inv[row * m + col] = value / self.scratch_r_inv[col * m + col];
                 }
             }
         }
 
+        // Forward solve L y = d; reuse the first M loaded scratch cells for y.
+        for row in 0..m {
+            let mut value = rhs[row];
+            for col in 0..row {
+                value -= self.scratch_r_inv[row * m + col] * self.scratch_r_loaded[col];
+            }
+            self.scratch_r_loaded[row] = value / self.scratch_r_inv[row * m + row];
+        }
+        // Back solve L^H x = y.
+        for row in (0..m).rev() {
+            let mut value = self.scratch_r_loaded[row];
+            for col in row + 1..m {
+                value -= self.scratch_r_inv[col * m + row].conj() * self.scratch_r_inv_d[col];
+            }
+            self.scratch_r_inv_d[row] = value / self.scratch_r_inv[row * m + row];
+        }
         true
     }
 
@@ -310,10 +298,18 @@ impl MvdrBeamformer {
             }
         }
         self.frame_count = 0;
+        self.weights_dirty = true;
         for w in &mut self.weights_buf {
             w.fill(Complex::new(0.0, 0.0));
         }
         self.output_buf.fill(Complex::new(0.0, 0.0));
+    }
+}
+
+fn write_steered_delay_and_sum(dest: &mut [Complex<f32>], steering: &[Complex<f32>]) {
+    let scale = 1.0 / steering.len().max(1) as f32;
+    for (weight, direction) in dest.iter_mut().zip(steering) {
+        *weight = *direction * scale;
     }
 }
 
@@ -374,5 +370,33 @@ mod tests {
         bf.frame_count = 100;
         bf.reset();
         assert_eq!(bf.frame_count, 0);
+    }
+
+    #[test]
+    fn singular_fallback_is_steered_and_distortionless() {
+        let steering = [vec![Complex::new(1.0, 0.0), Complex::new(0.0, -1.0)]];
+        let mut weights = vec![Complex::new(0.0, 0.0); 2];
+        write_steered_delay_and_sum(&mut weights, &steering[0]);
+        let response = weights[0].conj() * steering[0][0] + weights[1].conj() * steering[0][1];
+        assert!((response - Complex::new(1.0, 0.0)).norm() < 1e-6);
+        assert!(
+            weights[1].im.abs() > 0.1,
+            "fallback must retain steering phase"
+        );
+    }
+
+    #[test]
+    fn target_presence_estimator_is_scale_invariant_and_marks_noise_dirty() {
+        let mut bf = MvdrBeamformer::new(2, 2);
+        let steering = vec![vec![Complex::new(1.0, 0.0); 2]; 2];
+        for amplitude in [0.001, 1.0, 100.0] {
+            let target = vec![vec![Complex::new(amplitude, 0.0); 2]; 2];
+            assert!(!bf.update_noise_covariance(&target, &steering));
+        }
+        let diffuse = vec![
+            vec![Complex::new(1.0, 0.0); 2],
+            vec![Complex::new(0.0, 1.0); 2],
+        ];
+        assert!(bf.update_noise_covariance(&diffuse, &steering));
     }
 }

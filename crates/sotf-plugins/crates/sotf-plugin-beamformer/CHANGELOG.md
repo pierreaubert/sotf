@@ -1,3 +1,40 @@
+# 0.5.4
+
+## Complete 2026-08-12 review remediation
+
+- Make all public/factory/bridge construction fallible and validate microphone
+  count, channel agreement, finite geometry, steering range, and algorithm.
+- Serialize algorithm state with canonical names while accepting legacy numeric
+  state during migration.
+- Treat both array steering and algorithm selection as structural graph state,
+  eliminating allocation, FFT planning, GSC replacement, and clicks from live
+  setters.
+- Replace MVDR's absolute-level gate with a scale-invariant look-direction
+  target-presence estimator; covariance updates now return a dirty flag and
+  unchanged frames skip all matrix solves.
+- Preserve steering phase in MVDR and superdirective delay-and-sum fallbacks.
+- Add target-dominance protection to GSC adaptation, quantitative target
+  leakage/distortion and interference-rejection tests, malformed-state parity,
+  canonical-state migration tests, and maximum-layout callback deadline QA.
+- Align the 0° broadside / ±90° endfire convention, plugin metadata, README,
+  crate version, and review evidence.
+
+# 0.5.3
+
+## Fixes
+
+- Schedule consecutive STFT synthesis frames on an independent hop-advanced
+  overlap-add cursor and drain causally, preserving the declared 512-sample
+  latency for every host block partition.
+- Correct GSC fractional-delay interpolation to use the next older sample and
+  feed the blocking matrix from the same delay-aligned microphone vector.
+- Report GSC steering-compensation latency instead of zero.
+- Reject live changes to the structural beamformer algorithm.
+- Validate audio buffer lengths and callback sample rate before mutating state;
+  reset adaptive/STFT/OLA state on sample-rate initialization.
+- Validate microphone count, spacing, steering angle, and algorithm at
+  construction boundaries.
+
 # 0.5.2
 
 ## Fixes

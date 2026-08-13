@@ -9,6 +9,7 @@
 //! Adding a parameter: add to PARAMS, add field to Params, add match arms.
 //! Nothing else needs to change.
 
+use crate::types::BeamformerType;
 use serde::{Deserialize, Serialize};
 use sotf_host::param_specs::{ParamSpec, find_by_key as pk};
 use sotf_host::plugin_layout::*;
@@ -46,6 +47,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "\u{b0}",
         "General",
     )
+    .structural()
     .doc("Beam steering direction"),
     ParamSpec::choice(
         "Algorithm",
@@ -99,24 +101,64 @@ pub struct Params {
     #[serde(default = "d_num_mics")]
     pub num_mics: usize,
     #[serde(default = "d_mic_spacing_cm")]
-    pub mic_spacing_cm: f64,
+    pub mic_spacing_cm: f32,
     #[serde(default = "d_steer_angle_deg")]
-    pub steer_angle_deg: f64,
+    pub steer_angle_deg: f32,
     #[serde(default = "d_beamformer_type")]
-    pub beamformer_type: String,
+    #[serde(with = "beamformer_type_serde")]
+    pub beamformer_type: usize,
 }
 
 fn d_num_mics() -> usize {
     pk(PARAMS, "num_mics").default_usize()
 }
-fn d_mic_spacing_cm() -> f64 {
-    pk(PARAMS, "mic_spacing_cm").default_f64()
+fn d_mic_spacing_cm() -> f32 {
+    pk(PARAMS, "mic_spacing_cm").default_f64() as f32
 }
-fn d_steer_angle_deg() -> f64 {
-    pk(PARAMS, "steer_angle_deg").default_f64()
+fn d_steer_angle_deg() -> f32 {
+    pk(PARAMS, "steer_angle_deg").default_f64() as f32
 }
-fn d_beamformer_type() -> String {
-    BEAMFORMER_TYPES[0].to_string()
+fn d_beamformer_type() -> usize {
+    0
+}
+
+mod beamformer_type_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &usize, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(match value {
+            0 => "MVDR",
+            1 => "Superdirective",
+            2 => "GSC",
+            _ => "Invalid",
+        })
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<usize, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Index(usize),
+            Name(String),
+        }
+        match Repr::deserialize(deserializer)? {
+            Repr::Index(index) => Ok(index),
+            Repr::Name(name) => match name.to_ascii_lowercase().as_str() {
+                "mvdr" => Ok(0),
+                "superdirective" => Ok(1),
+                "gsc" => Ok(2),
+                _ => Err(serde::de::Error::custom(format!(
+                    "unknown beamformer_type '{name}'"
+                ))),
+            },
+        }
+    }
 }
 
 impl Default for Params {
@@ -143,15 +185,9 @@ impl PluginParamDef for Params {
     fn param_value(&self, index: usize) -> Option<f64> {
         match index {
             0 => Some(self.num_mics as f64),
-            1 => Some(self.mic_spacing_cm),
-            2 => Some(self.steer_angle_deg),
-            3 => {
-                let idx = BEAMFORMER_TYPES
-                    .iter()
-                    .position(|&t| t == self.beamformer_type)
-                    .unwrap_or(0);
-                Some(idx as f64)
-            }
+            1 => Some(self.mic_spacing_cm as f64),
+            2 => Some(self.steer_angle_deg as f64),
+            3 => Some(self.beamformer_type as f64),
             _ => None,
         }
     }
@@ -159,13 +195,20 @@ impl PluginParamDef for Params {
     fn set_param_value(&mut self, index: usize, value: f64) {
         match index {
             0 => self.num_mics = value as usize,
-            1 => self.mic_spacing_cm = value,
-            2 => self.steer_angle_deg = value,
-            3 => {
-                let idx = (value as usize).min(BEAMFORMER_TYPES.len() - 1);
-                self.beamformer_type = BEAMFORMER_TYPES[idx].to_string();
-            }
+            1 => self.mic_spacing_cm = value as f32,
+            2 => self.steer_angle_deg = value as f32,
+            3 => self.beamformer_type = (value as usize).min(BEAMFORMER_TYPES.len() - 1),
             _ => {}
+        }
+    }
+}
+
+impl Params {
+    pub(crate) fn to_beamformer_type(&self) -> BeamformerType {
+        match self.beamformer_type {
+            0 => BeamformerType::Mvdr,
+            1 => BeamformerType::Superdirective,
+            _ => BeamformerType::Gsc,
         }
     }
 }
@@ -209,11 +252,30 @@ mod tests {
     fn deserialize_empty_json_uses_defaults() {
         let p: Params = serde_json::from_str("{}").unwrap();
         assert_eq!(p.num_mics, pk(PARAMS, "num_mics").default_usize());
-        assert_eq!(p.mic_spacing_cm, pk(PARAMS, "mic_spacing_cm").default_f64());
+        assert_eq!(
+            p.mic_spacing_cm,
+            pk(PARAMS, "mic_spacing_cm").default_f64() as f32
+        );
         assert_eq!(
             p.steer_angle_deg,
-            pk(PARAMS, "steer_angle_deg").default_f64()
+            pk(PARAMS, "steer_angle_deg").default_f64() as f32
         );
-        assert_eq!(p.beamformer_type, BEAMFORMER_TYPES[0]);
+        assert_eq!(p.beamformer_type, 0);
+    }
+
+    #[test]
+    fn runtime_and_ui_state_share_canonical_algorithm_serde() {
+        let params = Params {
+            beamformer_type: 2,
+            ..Default::default()
+        };
+        let value = serde_json::to_value(&params).unwrap();
+        assert_eq!(value["beamformer_type"], "GSC");
+
+        let migrated: Params = serde_json::from_value(serde_json::json!({
+            "beamformer_type": 1
+        }))
+        .unwrap();
+        assert_eq!(migrated.beamformer_type, 1);
     }
 }

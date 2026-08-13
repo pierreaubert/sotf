@@ -20,7 +20,12 @@ pub fn convert_beamformer(settings: &PluginSettings, _sample_rate: f64) -> Optio
             "num_mics": num_mics,
             "mic_spacing_cm": *mic_spacing_cm as f32,
             "steer_angle_deg": *steer_angle_deg as f32,
-            "beamformer_type": beamformer_type,
+            "beamformer_type": match beamformer_type {
+                0 => "MVDR",
+                1 => "Superdirective",
+                2 => "GSC",
+                _ => "Invalid",
+            },
         }),
     ))
 }

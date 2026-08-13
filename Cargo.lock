@@ -10523,10 +10523,11 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-beamformer"
-version = "0.5.1"
+version = "0.5.4"
 dependencies = [
  "math-dsp",
  "nalgebra 0.33.3",
+ "plugins-spatial",
  "realfft",
  "rustfft 6.4.1",
  "serde",

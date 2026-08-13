@@ -92,7 +92,7 @@ impl SuperdirectiveBeamformer {
                     // Returning here avoids the confusing path where d.clone()
                     // accidentally produced the same result through cancellation.
                     None => {
-                        return vec![Complex::new(1.0 / m as f32, 0.0); m];
+                        return steered_delay_and_sum(&steering[k]);
                     }
                 };
 
@@ -103,7 +103,7 @@ impl SuperdirectiveBeamformer {
                     let w = &gamma_inv_d / denom;
                     (0..m).map(|i| w[(i, 0)]).collect()
                 } else {
-                    vec![Complex::new(1.0 / m as f32, 0.0); m]
+                    steered_delay_and_sum(&steering[k])
                 }
             })
             .collect();
@@ -141,6 +141,14 @@ impl SuperdirectiveBeamformer {
     pub fn spectrum_size(&self) -> usize {
         self.spectrum_size
     }
+}
+
+fn steered_delay_and_sum(steering: &[Complex<f32>]) -> Vec<Complex<f32>> {
+    let scale = 1.0 / steering.len().max(1) as f32;
+    steering
+        .iter()
+        .map(|direction| *direction * scale)
+        .collect()
 }
 
 impl std::fmt::Debug for SuperdirectiveBeamformer {
@@ -205,5 +213,13 @@ mod tests {
         for c in output {
             assert!(c.re.is_finite() && c.im.is_finite());
         }
+    }
+
+    #[test]
+    fn steered_fallback_preserves_look_direction() {
+        let d = [Complex::new(1.0, 0.0), Complex::new(0.0, -1.0)];
+        let weights = steered_delay_and_sum(&d);
+        let response: Complex<f32> = weights.iter().zip(d).map(|(w, x)| w.conj() * x).sum();
+        assert!((response - Complex::new(1.0, 0.0)).norm() < 1e-6);
     }
 }

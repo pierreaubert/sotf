@@ -8,7 +8,7 @@ use sotf_plugin_beamformer::{BeamformerPlugin, BeamformerPluginParams};
 
 #[test]
 fn construct_default() {
-    let plugin = BeamformerPlugin::new(2, 48000);
+    let plugin = BeamformerPlugin::new(2, 48000).unwrap();
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 1);
     assert_eq!(plugin.info().name, "Beamformer");
@@ -22,7 +22,7 @@ fn construct_from_params() {
         steer_angle_deg: 45.0,
         beamformer_type: 1,
     };
-    let plugin = BeamformerPlugin::from_params(48000, params);
+    let plugin = BeamformerPlugin::from_params(48000, params).unwrap();
     assert_eq!(plugin.input_channels(), 4);
     assert_eq!(plugin.output_channels(), 1);
     assert_eq!(
@@ -31,13 +31,13 @@ fn construct_from_params() {
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("beamformer_type")),
-        Some(ParameterValue::Int(1))
+        Some(ParameterValue::String("Superdirective".into()))
     );
 }
 
 #[test]
 fn parameters_listed_by_trait() {
-    let plugin = BeamformerPlugin::new(2, 48000);
+    let plugin = BeamformerPlugin::new(2, 48000).unwrap();
     let params = plugin.parameters();
     let ids: Vec<_> = params.iter().map(|p| p.id.as_str()).collect();
     assert!(ids.contains(&"steer_angle_deg"));
@@ -45,32 +45,34 @@ fn parameters_listed_by_trait() {
 }
 
 #[test]
-fn parameter_get_set_roundtrip() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+fn structural_parameters_require_rebuild() {
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
 
     plugin
         .set_parameter(
             ParameterId::from("steer_angle_deg"),
             ParameterValue::Float(30.0),
         )
-        .unwrap();
+        .unwrap_err();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("steer_angle_deg")),
-        Some(ParameterValue::Float(30.0))
+        Some(ParameterValue::Float(0.0))
     );
 
-    plugin
-        .set_parameter(ParameterId::from("beamformer_type"), ParameterValue::Int(2))
-        .unwrap();
-    assert_eq!(
-        plugin.get_parameter(&ParameterId::from("beamformer_type")),
-        Some(ParameterValue::Int(2))
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("beamformer_type"),
+                ParameterValue::String("GSC".into()),
+            )
+            .unwrap_err()
+            .contains("structural")
     );
 }
 
 #[test]
 fn steer_angle_out_of_range_is_rejected() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     let result = plugin.set_parameter(
         ParameterId::from("steer_angle_deg"),
         ParameterValue::Float(270.0),
@@ -83,7 +85,7 @@ fn steer_angle_out_of_range_is_rejected() {
 
 #[test]
 fn invalid_parameter_type_rejected() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     let result = plugin.set_parameter(
         ParameterId::from("steer_angle_deg"),
         ParameterValue::String("north".into()),
@@ -93,14 +95,14 @@ fn invalid_parameter_type_rejected() {
 
 #[test]
 fn unknown_parameter_rejected() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     let result = plugin.set_parameter(ParameterId::from("gain_db"), ParameterValue::Float(6.0));
     assert!(result.is_err());
 }
 
 #[test]
 fn process_mvdr() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.initialize(48000).unwrap();
 
     let num_frames = 512;
@@ -117,10 +119,16 @@ fn process_mvdr() {
 
 #[test]
 fn process_superdirective() {
-    let mut plugin = BeamformerPlugin::new(4, 48000);
-    plugin
-        .set_parameter(ParameterId::from("beamformer_type"), ParameterValue::Int(1))
-        .unwrap();
+    let mut plugin = BeamformerPlugin::from_params(
+        48_000,
+        BeamformerPluginParams {
+            num_mics: 4,
+            mic_spacing_cm: 5.0,
+            steer_angle_deg: 0.0,
+            beamformer_type: 1,
+        },
+    )
+    .unwrap();
     plugin.initialize(48000).unwrap();
 
     let num_frames = 512;
@@ -135,10 +143,16 @@ fn process_superdirective() {
 
 #[test]
 fn process_gsc() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
-    plugin
-        .set_parameter(ParameterId::from("beamformer_type"), ParameterValue::Int(2))
-        .unwrap();
+    let mut plugin = BeamformerPlugin::from_params(
+        48_000,
+        BeamformerPluginParams {
+            num_mics: 2,
+            mic_spacing_cm: 5.0,
+            steer_angle_deg: 0.0,
+            beamformer_type: 2,
+        },
+    )
+    .unwrap();
     plugin.initialize(48000).unwrap();
 
     let num_frames = 256;
@@ -152,8 +166,8 @@ fn process_gsc() {
 }
 
 #[test]
-fn switching_type_mid_stream_is_allowed() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+fn beamformer_type_is_structural() {
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.initialize(48000).unwrap();
 
     let num_frames = 256;
@@ -163,22 +177,18 @@ fn switching_type_mid_stream_is_allowed() {
 
     plugin.process(&input, &mut output, &ctx).unwrap();
 
-    plugin
-        .set_parameter(ParameterId::from("beamformer_type"), ParameterValue::Int(1))
-        .unwrap();
-    plugin.process(&input, &mut output, &ctx).unwrap();
-
-    plugin
-        .set_parameter(ParameterId::from("beamformer_type"), ParameterValue::Int(2))
-        .unwrap();
-    plugin.process(&input, &mut output, &ctx).unwrap();
-
-    assert!(output.iter().all(|s| s.is_finite()));
+    let error = plugin
+        .set_parameter(
+            ParameterId::from("beamformer_type"),
+            ParameterValue::String("Superdirective".into()),
+        )
+        .unwrap_err();
+    assert!(error.contains("structural"));
 }
 
 #[test]
 fn reset_then_process_again() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.initialize(48000).unwrap();
 
     let num_frames = 512;
@@ -196,18 +206,25 @@ fn reset_then_process_again() {
 
 #[test]
 fn latency_depends_on_type() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let plugin = BeamformerPlugin::new(2, 48000).unwrap();
     assert!(plugin.latency_samples() > 0); // MVDR default
 
-    plugin
-        .set_parameter(ParameterId::from("beamformer_type"), ParameterValue::Int(2))
-        .unwrap();
-    assert_eq!(plugin.latency_samples(), 0);
+    let gsc = BeamformerPlugin::from_params(
+        48_000,
+        BeamformerPluginParams {
+            num_mics: 2,
+            mic_spacing_cm: 5.0,
+            steer_angle_deg: 90.0,
+            beamformer_type: 2,
+        },
+    )
+    .unwrap();
+    assert!(gsc.latency_samples() > 0);
 }
 
 #[test]
 fn initialize_changes_sample_rate() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.initialize(96000).unwrap();
     // Public API does not expose sample_rate, but process should still succeed
     let num_frames = 256;
@@ -220,7 +237,7 @@ fn initialize_changes_sample_rate() {
 
 #[test]
 fn process_silence_is_finite() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.initialize(48000).unwrap();
 
     let num_frames = 256;

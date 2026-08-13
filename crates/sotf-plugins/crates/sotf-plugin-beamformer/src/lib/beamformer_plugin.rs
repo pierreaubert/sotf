@@ -7,6 +7,8 @@ use crate::steering::{ArrayGeometry, compute_all_steering_vectors, compute_steer
 use crate::superdirective::SuperdirectiveBeamformer;
 use math_audio_dsp::stft::RealFftProcessor;
 use nalgebra::Complex;
+use plugins_spatial::validate_interleaved_io;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
@@ -51,11 +53,18 @@ pub struct BeamformerPlugin {
     /// Parameters
     pub(super) param_steer_angle: ParameterId,
     pub(super) param_type: ParameterId,
+    pub(super) param_num_mics: ParameterId,
+    pub(super) param_mic_spacing: ParameterId,
     pub(super) cached_parameters: Vec<Parameter>,
 }
 
 impl BeamformerPlugin {
-    pub fn new(num_mics: usize, sample_rate: u32) -> Self {
+    pub fn new(num_mics: usize, sample_rate: u32) -> PluginResult<Self> {
+        if !(2..=8).contains(&num_mics) {
+            return Err(format!(
+                "Beamformer requires 2..=8 microphones, got {num_mics}"
+            ));
+        }
         let spectrum_size = FFT_SIZE / 2 + 1;
         let geometry = ArrayGeometry::Linear {
             num_mics,
@@ -92,27 +101,72 @@ impl BeamformerPlugin {
             gsc_samples: vec![0.0; num_mics],
             window,
             stft_filled: false,
-            ola_write_pos: 0,
+            // The first synthesis frame is emitted after exactly FFT_SIZE
+            // samples of startup latency.
+            ola_write_pos: FFT_SIZE,
             param_steer_angle: ParameterId::from("steer_angle_deg"),
             param_type: ParameterId::from("beamformer_type"),
+            param_num_mics: ParameterId::from("num_mics"),
+            param_mic_spacing: ParameterId::from("mic_spacing_cm"),
             cached_parameters: Vec::new(),
         };
         p.rebuild_cached_parameters();
-        p
+        Ok(p)
     }
 
-    pub fn from_params(sample_rate: u32, params: BeamformerPluginParams) -> Self {
-        let mut plugin = Self::new(params.num_mics, sample_rate);
+    pub fn from_params(sample_rate: u32, params: BeamformerPluginParams) -> PluginResult<Self> {
+        if !(2..=8).contains(&params.num_mics) {
+            return Err(format!(
+                "Beamformer requires 2..=8 microphones, got {}",
+                params.num_mics
+            ));
+        }
+        if !params.mic_spacing_cm.is_finite() || !(1.0..=50.0).contains(&params.mic_spacing_cm) {
+            return Err(format!(
+                "Beamformer microphone spacing must be finite in 1..=50 cm, got {}",
+                params.mic_spacing_cm
+            ));
+        }
+        if !params.steer_angle_deg.is_finite()
+            || !(-180.0..=180.0).contains(&params.steer_angle_deg)
+        {
+            return Err(format!(
+                "Beamformer steering angle must be finite in -180..=180 degrees, got {}",
+                params.steer_angle_deg
+            ));
+        }
+        if params.beamformer_type > 2 {
+            return Err(format!(
+                "Unknown Beamformer algorithm {}",
+                params.beamformer_type
+            ));
+        }
+        let mut plugin = Self::new(params.num_mics, sample_rate)?;
         plugin.mic_spacing_cm = params.mic_spacing_cm;
         plugin.steer_angle_deg = params.steer_angle_deg;
         plugin.beamformer_type = params.to_beamformer_type();
         plugin.update_steering();
         plugin.rebuild_cached_parameters();
-        plugin
+        Ok(plugin)
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = vec![
+            Parameter::new_int("num_mics", "Microphones", self.num_mics as i32, 2, 8)
+                .with_group("Array")
+                .with_importance(ParameterImportance::Critical)
+                .with_update_mode(UpdateMode::Structural),
+            Parameter::new_float(
+                "mic_spacing_cm",
+                "Mic Spacing",
+                self.mic_spacing_cm,
+                1.0,
+                50.0,
+            )
+            .with_unit("cm")
+            .with_group("Array")
+            .with_importance(ParameterImportance::Critical)
+            .with_update_mode(UpdateMode::Structural),
             Parameter::new_float(
                 "steer_angle_deg",
                 "Steer Angle",
@@ -122,17 +176,22 @@ impl BeamformerPlugin {
             )
             .with_description("Steering direction in degrees")
             .with_group("Beamformer")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_int(
+            .with_importance(ParameterImportance::Critical)
+            .with_update_mode(UpdateMode::Structural),
+            Parameter::new_string(
                 "beamformer_type",
                 "Algorithm",
-                self.beamformer_type as i32,
-                0,
-                2,
+                match self.beamformer_type {
+                    BeamformerType::Mvdr => "MVDR",
+                    BeamformerType::Superdirective => "Superdirective",
+                    BeamformerType::Gsc => "GSC",
+                }
+                .to_string(),
             )
-            .with_description("0=MVDR, 1=Superdirective, 2=GSC")
+            .with_description("MVDR, Superdirective, or GSC")
             .with_group("Beamformer")
-            .with_importance(ParameterImportance::Critical),
+            .with_importance(ParameterImportance::Critical)
+            .with_update_mode(UpdateMode::Structural),
         ];
     }
 
@@ -166,7 +225,7 @@ impl BeamformerPlugin {
 
 impl Plugin for BeamformerPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Beamformer", "1.0.0", "Sotf")
+        PluginInfo::new("Beamformer", env!("CARGO_PKG_VERSION"), "Sotf")
             .with_description("MVDR / Superdirective / GSC Beamformer")
     }
 
@@ -188,29 +247,34 @@ impl Plugin for BeamformerPlugin {
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
-        if id == self.param_steer_angle {
-            self.steer_angle_deg = value.as_float().unwrap_or(0.0).clamp(-180.0, 180.0);
-            self.update_steering();
-            self.rebuild_cached_parameters();
+        if id == self.param_steer_angle || id == self.param_num_mics || id == self.param_mic_spacing
+        {
+            Err(format!(
+                "{id} is structural; rebuild the plugin host to change it"
+            ))
         } else if id == self.param_type {
-            let t = value.as_int().unwrap_or(0);
-            self.beamformer_type = match t {
-                0 => BeamformerType::Mvdr,
-                1 => BeamformerType::Superdirective,
-                _ => BeamformerType::Gsc,
-            };
-            self.rebuild_cached_parameters();
+            Err("beamformer_type is structural; rebuild the plugin host to change it".into())
         } else {
-            return Err(format!("Unknown parameter: {id}"));
+            Err(format!("Unknown parameter: {id}"))
         }
-        Ok(())
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id == &self.param_steer_angle {
             Some(ParameterValue::Float(self.steer_angle_deg))
         } else if id == &self.param_type {
-            Some(ParameterValue::Int(self.beamformer_type as i32))
+            Some(ParameterValue::String(
+                match self.beamformer_type {
+                    BeamformerType::Mvdr => "MVDR",
+                    BeamformerType::Superdirective => "Superdirective",
+                    BeamformerType::Gsc => "GSC",
+                }
+                .to_string(),
+            ))
+        } else if id == &self.param_num_mics {
+            Some(ParameterValue::Int(self.num_mics as i32))
+        } else if id == &self.param_mic_spacing {
+            Some(ParameterValue::Float(self.mic_spacing_cm))
         } else {
             None
         }
@@ -219,6 +283,7 @@ impl Plugin for BeamformerPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.update_steering();
+        self.reset();
         Ok(())
     }
 
@@ -231,7 +296,7 @@ impl Plugin for BeamformerPlugin {
         }
         self.ola_buffer.fill(0.0);
         self.ola_read_pos = 0;
-        self.ola_write_pos = 0;
+        self.ola_write_pos = FFT_SIZE;
         self.stft_filled = false;
     }
 
@@ -245,6 +310,20 @@ impl Plugin for BeamformerPlugin {
         let hop = FFT_SIZE / 2;
         let spectrum_size = FFT_SIZE / 2 + 1;
         let ola_len = self.ola_buffer.len();
+        validate_interleaved_io(
+            "Beamformer",
+            nf,
+            self.num_mics,
+            1,
+            input.len(),
+            output.len(),
+        )?;
+        if context.sample_rate != self.sample_rate {
+            return Err(format!(
+                "Beamformer sample-rate mismatch: initialized at {} Hz, context is {} Hz",
+                self.sample_rate, context.sample_rate
+            ));
+        }
 
         match self.beamformer_type {
             BeamformerType::Gsc => {
@@ -268,6 +347,13 @@ impl Plugin for BeamformerPlugin {
                 // `input_fill >= FFT_SIZE`, not `>= hop` — the bug was that
                 // it triggered every sample once input_fill first reached hop.
                 for i in 0..nf {
+                    // Drain before ingesting this timeline sample. A frame that
+                    // completes below can therefore only become audible on the
+                    // following sample, enforcing the declared FFT_SIZE latency.
+                    output[i] = self.ola_buffer[self.ola_read_pos];
+                    self.ola_buffer[self.ola_read_pos] = 0.0;
+                    self.ola_read_pos = (self.ola_read_pos + 1) % ola_len;
+
                     // Deinterleave one sample per channel into the accumulator
                     for ch in 0..self.num_mics {
                         self.input_buffers[ch][self.input_fill] = input[i * self.num_mics + ch];
@@ -289,8 +375,13 @@ impl Plugin for BeamformerPlugin {
                         // Beamform — result lands in fft.freq_buffer
                         match self.beamformer_type {
                             BeamformerType::Mvdr => {
-                                self.mvdr.update_noise_covariance(&self.stft_channels);
-                                self.mvdr.compute_weights(&self.steering_vectors);
+                                let covariance_dirty = self.mvdr.update_noise_covariance(
+                                    &self.stft_channels,
+                                    &self.steering_vectors,
+                                );
+                                if covariance_dirty || self.mvdr.weights_dirty() {
+                                    self.mvdr.compute_weights(&self.steering_vectors);
+                                }
                                 let beamformed = self.mvdr.apply_weights_into(&self.stft_channels);
                                 self.fft.freq_buffer[..spectrum_size].copy_from_slice(beamformed);
                             }
@@ -319,7 +410,7 @@ impl Plugin for BeamformerPlugin {
                         // head never catches the read head for any practical block.
                         let scale = 1.0 / FFT_SIZE as f32;
                         for j in 0..FFT_SIZE {
-                            let pos = (self.ola_read_pos + j) % ola_len;
+                            let pos = (self.ola_write_pos + j) % ola_len;
                             self.ola_buffer[pos] +=
                                 self.fft.time_buffer[j] * self.window[j] * scale;
                         }
@@ -332,17 +423,8 @@ impl Plugin for BeamformerPlugin {
                         }
                         // Carried-over samples fill positions [0..FFT_SIZE-hop]
                         self.input_fill = FFT_SIZE - hop;
+                        self.ola_write_pos = (self.ola_write_pos + hop) % ola_len;
                     }
-                }
-
-                // Drain exactly `nf` samples from the OLA accumulator.
-                // Any position not yet written by synthesis contains 0.0 (zeroed on
-                // reset / initial allocation), so output is valid silence until the
-                // first frame arrives.
-                for out in &mut output[..nf] {
-                    *out = self.ola_buffer[self.ola_read_pos];
-                    self.ola_buffer[self.ola_read_pos] = 0.0; // clear after reading
-                    self.ola_read_pos = (self.ola_read_pos + 1) % ola_len;
                 }
             }
         }
@@ -352,7 +434,7 @@ impl Plugin for BeamformerPlugin {
 
     fn latency_samples(&self) -> usize {
         match self.beamformer_type {
-            BeamformerType::Gsc => 0,
+            BeamformerType::Gsc => self.gsc.latency_samples(),
             // First output samples appear after one full FFT_SIZE of input has
             // accumulated. The OLA read pointer advances in lock-step with the
             // input, so output lags by FFT_SIZE samples.

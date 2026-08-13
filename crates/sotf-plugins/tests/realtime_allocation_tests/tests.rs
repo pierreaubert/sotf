@@ -1032,7 +1032,7 @@ fn test_hiss_reducer_zero_alloc() {
 #[test]
 #[serial]
 fn test_aec_zero_alloc() {
-    let mut plugin = AecPlugin::from_params(SAMPLE_RATE, AecPluginParams::default());
+    let mut plugin = AecPlugin::from_params(SAMPLE_RATE, AecPluginParams::default()).unwrap();
     assert_plugin_process_zero_alloc("AecPlugin::process", &mut plugin, BUFFER_SIZE);
 }
 
@@ -1040,13 +1040,16 @@ fn test_aec_zero_alloc() {
 #[serial]
 fn test_beamformer_zero_alloc() {
     for mode in [0, 2] {
-        let mut plugin = BeamformerPlugin::new(2, SAMPLE_RATE);
-        plugin
-            .set_parameter(
-                sotf_plugins::ParameterId::from("beamformer_type"),
-                sotf_plugins::ParameterValue::Int(mode),
-            )
-            .unwrap();
+        let mut plugin = BeamformerPlugin::from_params(
+            SAMPLE_RATE,
+            sotf_plugins::BeamformerPluginParams {
+                num_mics: 2,
+                mic_spacing_cm: 5.0,
+                steer_angle_deg: 0.0,
+                beamformer_type: mode,
+            },
+        )
+        .unwrap();
         let name = if mode == 0 {
             "BeamformerPlugin::MVDR::process"
         } else {

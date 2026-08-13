@@ -26,3 +26,6 @@ cargo test -p sotf-plugin-beamformer
 - Plugin trait — changes channel count (multi-mic input → mono/stereo output)
 - Multiple beamforming algorithms: MVDR, superdirective, GSC
 - Steering vectors define the look direction
+- Coordinate convention: 0° broadside, ±90° endfire for the linear x-axis array.
+- Microphone geometry, steering angle, and algorithm are structural. Rebuild;
+  do not allocate or replace adaptive state in a live setter.

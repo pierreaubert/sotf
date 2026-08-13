@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-beamformer"
 description = "SOTF Beamformer plugin - MVDR, superdirective, and GSC beamformers"
-version = "0.5.1"
+version = "0.5.4"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -23,6 +23,7 @@ required-features = ["qa"]
 
 [dependencies]
 sotf-host = { workspace = true }
+plugins-spatial = { workspace = true }
 nalgebra = { workspace = true }
 realfft = { workspace = true }
 rustfft = { workspace = true }

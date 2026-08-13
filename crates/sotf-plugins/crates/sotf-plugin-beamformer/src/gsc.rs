@@ -29,6 +29,8 @@ pub struct GscBeamformer {
     delta: f32,
     /// Pre-allocated scratch for reference signals (avoids per-sample allocation)
     reference_scratch: Vec<f32>,
+    /// Delay-aligned microphone samples shared by the fixed and blocking paths.
+    aligned_samples: Vec<f32>,
     /// Per-mic delay lines for fractional delay compensation
     delay_lines: Vec<Vec<f32>>,
     delay_write_pos: usize,
@@ -94,6 +96,7 @@ impl GscBeamformer {
             mu,
             delta: 1e-6,
             reference_scratch: vec![0.0; num_refs],
+            aligned_samples: vec![0.0; num_mics],
             delay_lines,
             delay_write_pos: 0,
             max_delay_samples: max_delay,
@@ -126,9 +129,12 @@ impl GscBeamformer {
             let frac = delay - delay.floor();
             let buf_len = self.delay_lines[i].len();
             let idx0 = (self.delay_write_pos + buf_len - int_delay) % buf_len;
-            let idx1 = (idx0 + 1) % buf_len;
+            // Fractional delay lies between the integer-delayed sample and
+            // the next older sample in ring time.
+            let idx1 = (idx0 + buf_len - 1) % buf_len;
             let delayed_sample =
                 self.delay_lines[i][idx0] * (1.0 - frac) + self.delay_lines[i][idx1] * frac;
+            self.aligned_samples[i] = delayed_sample;
             fbf_output += delayed_sample * self.fbf_weights[i];
         }
 
@@ -140,7 +146,7 @@ impl GscBeamformer {
         self.reference_scratch[..num_refs].fill(0.0);
         for (r, row) in self.blocking_matrix.iter().enumerate() {
             for i in 0..m {
-                self.reference_scratch[r] += row[i] * mic_samples[i];
+                self.reference_scratch[r] += row[i] * self.aligned_samples[i];
             }
         }
         let references = &self.reference_scratch[..num_refs];
@@ -175,16 +181,20 @@ impl GscBeamformer {
         let error = fbf_output - noise_estimate;
 
         // NLMS weight update: w += μ * e * u / (||u||² + δ)
-        let step = self.mu * error / total_ref_power;
-        for r in 0..num_refs {
-            let mut buf_idx = self.ref_write_pos;
-            for j in 0..self.filter_length {
-                self.adaptive_weights[r][j] += step * self.reference_buffers[r][buf_idx];
-                buf_idx = if buf_idx == 0 {
-                    self.filter_length - 1
-                } else {
-                    buf_idx - 1
-                };
+        let instantaneous_reference_power: f32 = references.iter().map(|value| value * value).sum();
+        let target_dominant = instantaneous_reference_power < fbf_output * fbf_output * 0.01;
+        if !target_dominant {
+            let step = self.mu * error / total_ref_power;
+            for r in 0..num_refs {
+                let mut buf_idx = self.ref_write_pos;
+                for j in 0..self.filter_length {
+                    self.adaptive_weights[r][j] += step * self.reference_buffers[r][buf_idx];
+                    buf_idx = if buf_idx == 0 {
+                        self.filter_length - 1
+                    } else {
+                        buf_idx - 1
+                    };
+                }
             }
         }
 
@@ -207,6 +217,15 @@ impl GscBeamformer {
         }
         self.ref_write_pos = 0;
         self.delay_write_pos = 0;
+    }
+
+    /// Common steering-compensation latency in whole samples.
+    pub fn latency_samples(&self) -> usize {
+        self.steering_delays
+            .iter()
+            .copied()
+            .fold(0.0_f32, f32::max)
+            .ceil() as usize
     }
 }
 
@@ -237,8 +256,9 @@ mod tests {
         let mut gsc = GscBeamformer::new(2, &[0.0, 0.0], 32, 0.05);
 
         // Simulate: target from broadside (same on both mics) + noise from side (opposite phase)
-        let num_samples = 2000;
+        let num_samples = 20_000;
         let mut error_power = 0.0f32;
+        let mut raw_error_power = 0.0f32;
 
         for i in 0..num_samples {
             let t = i as f32 / 48000.0;
@@ -254,11 +274,15 @@ mod tests {
             // Measure in last quarter (after convergence)
             if i >= num_samples * 3 / 4 {
                 error_power += (output - target).powi(2);
+                raw_error_power += noise.powi(2);
             }
         }
 
         // The GSC should improve the output compared to raw microphone
-        assert!(error_power.is_finite(), "Error power should be finite");
+        assert!(
+            error_power < raw_error_power * 0.2,
+            "GSC must improve target-referenced error by at least 7 dB: output={error_power}, raw={raw_error_power}"
+        );
     }
 
     #[test]
@@ -328,6 +352,80 @@ mod tests {
                     "GSC delay compensation failed at t={t}: expected {expected}, got {output}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn fractional_delay_uses_next_older_sample() {
+        let mut gsc = GscBeamformer::new(2, &[1.5, 0.0], 16, 0.0);
+        for t in 0..100 {
+            let mic0 = t as f32;
+            let mic1 = t as f32 - 1.5;
+            let output = gsc.process_sample(&[mic0, mic1]);
+            if t >= 4 {
+                assert!((output - mic1).abs() < 1.0e-5, "t={t}: {output} != {mic1}");
+                assert!(
+                    gsc.reference_scratch
+                        .iter()
+                        .all(|value| value.abs() < 1.0e-5),
+                    "aligned look source leaked into blocking references: {:?}",
+                    gsc.reference_scratch
+                );
+            }
+        }
+        assert_eq!(gsc.latency_samples(), 2);
+    }
+
+    #[test]
+    fn target_plane_waves_are_distortionless_across_angles() {
+        use crate::steering::{ArrayGeometry, compute_steering_delays};
+
+        let geometry = ArrayGeometry::Linear {
+            num_mics: 4,
+            spacing_m: 0.05,
+        };
+        let sample_rate = 48_000.0;
+        let frequency = 700.0;
+        for angle in [0.0, 30.0, 60.0, 90.0] {
+            let compensation = compute_steering_delays(&geometry, angle, 0.0, sample_rate);
+            let common_delay = compensation.iter().copied().fold(0.0_f32, f32::max);
+            let propagation: Vec<f32> = compensation
+                .iter()
+                .map(|delay| common_delay - delay)
+                .collect();
+            let mut gsc = GscBeamformer::new(4, &compensation, 32, 0.03);
+            let mut signal_energy = 0.0_f32;
+            let mut error_energy = 0.0_f32;
+            let mut reference_energy = 0.0_f32;
+            for frame in 0..20_000 {
+                let samples: Vec<f32> = propagation
+                    .iter()
+                    .map(|delay| {
+                        (std::f32::consts::TAU * frequency * (frame as f32 - delay) / sample_rate)
+                            .sin()
+                    })
+                    .collect();
+                let output = gsc.process_sample(&samples);
+                if frame > 2_000 {
+                    let expected =
+                        (std::f32::consts::TAU * frequency * (frame as f32 - common_delay)
+                            / sample_rate)
+                            .sin();
+                    signal_energy += expected * expected;
+                    error_energy += (output - expected).powi(2);
+                    reference_energy += gsc.reference_scratch.iter().map(|x| x * x).sum::<f32>();
+                }
+            }
+            assert!(
+                error_energy / signal_energy < 1e-3,
+                "angle={angle}, normalized error={}",
+                error_energy / signal_energy
+            );
+            assert!(
+                reference_energy / signal_energy < 1e-4,
+                "angle={angle}, target leakage={}",
+                reference_energy / signal_energy
+            );
         }
     }
 }

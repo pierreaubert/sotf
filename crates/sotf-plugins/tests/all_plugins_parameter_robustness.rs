@@ -83,8 +83,9 @@ fn default_params(plugin_type: &str) -> serde_json::Value {
             "matrix": [1.0, 0.0, 0.0, 1.0],
         }),
         "band_split" => serde_json::json!({
-            "bands": 2,
-            "crossover_frequencies": [1000.0],
+            "num_bands": 2,
+            "frequency": 1000.0,
+            "type": "LR24",
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -124,7 +125,11 @@ fn process_plugin(plugin: &mut Box<dyn Plugin>, channels: usize) {
 fn process_initialized_plugin(plugin: &mut Box<dyn Plugin>, channels: usize) -> Result<(), String> {
     let input = interleaved_sine(channels, FRAMES, 440.0);
     let output_channels = plugin.output_channels();
-    let mut output = vec![0.0f32; output_channels * FRAMES];
+    // Variable-rate plugins can need more storage than one output frame per
+    // input frame. Ask the plugin for its bounded capacity; fixed-rate
+    // plugins continue to receive an exact frame-sized buffer.
+    let output_frames = plugin.output_frames_for_input(FRAMES).max(FRAMES);
+    let mut output = vec![0.0f32; output_channels * output_frames];
     plugin.process(
         &input,
         &mut output,
@@ -189,20 +194,31 @@ const EXPECTED_SET_REJECTIONS: &[(&str, &str, &str)] = &[
         "reconstruction_error_db",
         "parameter is reported but not accepted by set_parameter",
     ),
+];
+
+/// Parameters that accept a no-op setter but reject a changed value while the
+/// live instance is initialized. They must not be exercised by the realtime
+/// update matrix; the host changes them by recreating the plugin.
+const EXPECTED_LIVE_UPDATE_REJECTIONS: &[(&str, &str, &str)] = &[
     (
-        "convolution",
-        "use_nupc",
-        "structural parameter changed through a host rebuild",
+        "spectral_compressor",
+        "fft_size",
+        "structural FFT size changed through a host rebuild",
     ),
     (
-        "convolution",
-        "zero_latency_head",
-        "structural parameter changed through a host rebuild",
+        "spectrum_analyzer",
+        "num_bins",
+        "setup-only display shape changed by recreating the analyzer",
     ),
     (
-        "convolution",
-        "head_taps",
-        "structural parameter changed through a host rebuild",
+        "spectrum_analyzer",
+        "min_freq",
+        "setup-only frequency bounds changed by recreating the analyzer",
+    ),
+    (
+        "spectrum_analyzer",
+        "max_freq",
+        "setup-only frequency bounds changed by recreating the analyzer",
     ),
 ];
 
@@ -232,6 +248,9 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
         };
 
         for param in plugin.parameters() {
+            if param.update_mode != UpdateMode::Realtime {
+                continue;
+            }
             let id = ParameterId::from(param.id.as_str());
             if let Some(value) = plugin.get_parameter(&id)
                 && let Err(err) = plugin.set_parameter(id, value)
@@ -301,6 +320,9 @@ fn all_realtime_numeric_and_boolean_parameters_tolerate_rapid_updates() {
         for parameter in plugin.parameters() {
             if parameter.update_mode != UpdateMode::Realtime
                 || EXPECTED_SET_REJECTIONS
+                    .iter()
+                    .any(|(kind, id, _)| *kind == plugin_type && *id == parameter.id.as_str())
+                || EXPECTED_LIVE_UPDATE_REJECTIONS
                     .iter()
                     .any(|(kind, id, _)| *kind == plugin_type && *id == parameter.id.as_str())
             {

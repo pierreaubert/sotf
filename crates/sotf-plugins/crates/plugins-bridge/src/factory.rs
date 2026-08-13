@@ -425,6 +425,43 @@ mod tests {
     }
 
     #[test]
+    fn ab_compare_bridge_builds_initial_path_with_authoritative_factory() {
+        let config = serde_json::json!({
+            "path_a": {
+                "type": "Plugin",
+                "plugin_type": "expander",
+                "parameters": {}
+            },
+            "path_b": {
+                "type": "Rack",
+                "plugins": [{"plugin_type": "hiss_reducer", "parameters": {}}]
+            },
+            "auto_gain_enabled": false
+        })
+        .to_string();
+        let mut plugin = create_plugin("ABCompare", 2, 48_000, &config)
+            .expect("bridge factory must be available during initial nested path construction");
+        plugin.initialize(48_000).unwrap();
+        let input = vec![0.0_f32; 256 * 2];
+        let mut output = vec![1.0_f32; input.len()];
+        assert_eq!(
+            plugin
+                .process(&input, &mut output, &ProcessContext::new(48_000, 256))
+                .unwrap(),
+            256
+        );
+        assert!(output.iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
+    fn matrix_factory_preserves_configured_nonsquare_routing() {
+        let config = r#"{"input_channels":2,"output_channels":1,"matrix":[0.5,0.5]}"#;
+        let plugin = create_plugin("Matrix", 2, 48_000, config).unwrap();
+        assert_eq!(plugin.input_channels(), 2);
+        assert_eq!(plugin.output_channels(), 1);
+    }
+
+    #[test]
     fn test_create_newly_wired_plugins() {
         for plugin_type in ["BandSplit", "BandMerge", "AEC", "Beamformer"] {
             let result = create_plugin(plugin_type, 2, 48000, "{}");
@@ -436,6 +473,79 @@ mod tests {
             let mut plugin = result.unwrap();
             assert!(plugin.initialize(48000).is_ok());
         }
+    }
+
+    #[test]
+    fn beamformer_bridge_returns_errors_for_malformed_state() {
+        for config in [
+            r#"{"num_mics":1}"#,
+            r#"{"num_mics":2,"mic_spacing_cm":100.0}"#,
+            r#"{"num_mics":2,"steer_angle_deg":200.0}"#,
+            r#"{"num_mics":2,"beamformer_type":"unknown"}"#,
+        ] {
+            assert!(create_plugin("Beamformer", 2, 48_000, config).is_err(), "{config}");
+        }
+        assert!(create_plugin("Beamformer", 4, 48_000, r#"{"num_mics":2}"#).is_err());
+        assert!(create_plugin(
+            "Beamformer",
+            2,
+            48_000,
+            r#"{"num_mics":2,"beamformer_type":"GSC"}"#,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn aec_bridge_enforces_canonical_bus_layout_and_ranges() {
+        assert!(create_plugin("AEC", 1, 48_000, "{}").is_err());
+        assert!(create_plugin("AEC", 3, 48_000, "{}").is_err());
+        assert!(create_plugin("AEC", 2, 48_000, r#"{"step_size":1.2}"#).is_err());
+        let plugin = create_plugin(
+            "AEC",
+            2,
+            48_000,
+            r#"{"echo_tail_ms":100.0,"step_size":0.4,"post_filter_enabled":false}"#,
+        )
+        .expect("valid canonical AEC state");
+        assert_eq!(plugin.input_channels(), 2);
+        assert_eq!(plugin.output_channels(), 1);
+    }
+
+    #[test]
+    fn ambisonics_bridge_enforces_every_order_width() {
+        for (order, channels, layout) in [(1, 4, "5.1"), (2, 9, "7.1.4"), (3, 16, "9.1.6")] {
+            let config = serde_json::json!({"order": order, "target_layout": layout}).to_string();
+            let plugin = create_plugin("AmbisonicsDecoder", channels, 48_000, &config).unwrap();
+            assert_eq!(plugin.input_channels(), channels);
+            assert!(create_plugin("AmbisonicsDecoder", channels - 1, 48_000, &config).is_err());
+        }
+    }
+
+    #[test]
+    fn aae_bridge_rejects_invalid_restored_state_without_panicking() {
+        assert!(create_plugin("AAE", 2, 48_000, r#"{"speaker_config":"2.0"}"#).is_err());
+        assert!(create_plugin("AAE", 2, 48_000, r#"{"input_diffusion":2.0}"#).is_err());
+        assert!(
+            create_plugin("AAE", 2, 48_000, r#"{"solo_early":true,"solo_late":true}"#,).is_err()
+        );
+    }
+
+    #[test]
+    fn spectrum_analyzer_aliases_initialize_process_and_publish_data() {
+        for plugin_type in ["SpectrumAnalyzer", "spectrum_analyzer"] {
+            let mut plugin = create_plugin(plugin_type, 2, 48_000, "{}").unwrap();
+            plugin.initialize(48_000).unwrap();
+            let input = vec![0.0; 4096 * 2];
+            let mut output = vec![1.0; input.len()];
+            let frames = plugin
+                .process(&input, &mut output, &ProcessContext::new(48_000, 4096))
+                .unwrap();
+            assert_eq!(frames, 4096);
+            assert_eq!(output, input);
+            let data = plugin.get_data().expect("SpectrumData");
+            assert!(data.downcast_ref::<sotf_host::SpectrumData>().is_some());
+        }
+        assert!(available_plugin_types().contains(&"SpectrumAnalyzer"));
     }
 
     #[test]

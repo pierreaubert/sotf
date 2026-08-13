@@ -6,26 +6,67 @@ use sotf_host::plugin::{Plugin, ProcessContext};
 
 #[test]
 fn test_beamformer_plugin_creation() {
-    let plugin = BeamformerPlugin::new(2, 48000);
+    let plugin = BeamformerPlugin::new(2, 48000).unwrap();
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 1);
 }
 
 #[test]
 fn test_beamformer_parameters() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin
         .set_parameter(
             ParameterId::from("steer_angle_deg"),
             ParameterValue::Float(45.0),
         )
-        .unwrap();
-    assert_eq!(plugin.steer_angle_deg, 45.0);
+        .unwrap_err();
+    assert_eq!(plugin.steer_angle_deg, 0.0);
+}
+
+#[test]
+fn steering_is_structural_and_does_not_rebuild_live_state() {
+    let mut plugin = BeamformerPlugin::new(2, 48_000).unwrap();
+    let steering_ptr = plugin.steering_vectors.as_ptr();
+    let error = plugin
+        .set_parameter(
+            ParameterId::from("steer_angle_deg"),
+            ParameterValue::Float(45.0),
+        )
+        .unwrap_err();
+    assert!(error.contains("structural"));
+    assert_eq!(plugin.steering_vectors.as_ptr(), steering_ptr);
+    assert_eq!(plugin.steer_angle_deg, 0.0);
+}
+
+#[test]
+fn malformed_construction_returns_errors() {
+    use super::beamformer_plugin_params::BeamformerPluginParams;
+    for params in [
+        BeamformerPluginParams {
+            num_mics: 1,
+            ..Default::default()
+        },
+        BeamformerPluginParams {
+            mic_spacing_cm: f32::NAN,
+            ..Default::default()
+        },
+        BeamformerPluginParams {
+            steer_angle_deg: f32::INFINITY,
+            ..Default::default()
+        },
+        BeamformerPluginParams {
+            beamformer_type: 3,
+            ..Default::default()
+        },
+    ] {
+        assert!(BeamformerPlugin::from_params(48_000, params).is_err());
+    }
+    assert!(BeamformerPlugin::new(1, 48_000).is_err());
 }
 
 #[test]
 fn test_beamformer_gsc_process() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.beamformer_type = BeamformerType::Gsc;
 
     let context = ProcessContext::new(48000, 256);
@@ -38,7 +79,7 @@ fn test_beamformer_gsc_process() {
 
 #[test]
 fn test_beamformer_mvdr_process() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.beamformer_type = BeamformerType::Mvdr;
 
     let context = ProcessContext::new(48000, 512);
@@ -51,7 +92,7 @@ fn test_beamformer_mvdr_process() {
 
 #[test]
 fn test_beamformer_superdirective_process() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.beamformer_type = BeamformerType::Superdirective;
 
     let context = ProcessContext::new(48000, 512);
@@ -70,7 +111,7 @@ fn test_beamformer_superdirective_process() {
 /// that the output is finite and not all-zero after enough input.
 #[test]
 fn test_stft_trigger_fires_at_fft_size_not_hop() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.beamformer_type = BeamformerType::Mvdr;
 
     let hop = FFT_SIZE / 2;
@@ -102,7 +143,7 @@ fn test_stft_trigger_fires_at_fft_size_not_hop() {
 /// the output oscillates between near-zero and spiky values at the hop rate.
 #[test]
 fn test_stft_ola_output_not_silent() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.beamformer_type = BeamformerType::Mvdr;
 
     let nf = 512usize;
@@ -145,7 +186,6 @@ fn test_mvdr_noise_detection_uses_all_channels() {
 
     let spectrum_size = 4usize;
     let mut bf = MvdrBeamformer::new(2, spectrum_size);
-    bf.noise_threshold = 0.001;
 
     // Channel 0 is silent, channel 1 has high energy
     let stft: Vec<Vec<Complex<f32>>> = vec![
@@ -153,7 +193,8 @@ fn test_mvdr_noise_detection_uses_all_channels() {
         vec![Complex::new(10.0, 0.0); spectrum_size], // mic 1: loud
     ];
 
-    // Call once; with the fix the high energy on mic 1 should prevent update
+    // A single-channel interferer is incoherent with the look direction and
+    // must be learned regardless of absolute level.
     let cov_before: Vec<_> = (0..spectrum_size)
         .map(|k| {
             // diagonal of cov for bin k
@@ -162,7 +203,8 @@ fn test_mvdr_noise_detection_uses_all_channels() {
         })
         .collect();
 
-    bf.update_noise_covariance(&stft);
+    let steering = vec![vec![nalgebra::Complex::new(1.0, 0.0); 2]; spectrum_size];
+    assert!(bf.update_noise_covariance(&stft, &steering));
 
     let cov_after: Vec<_> = (0..spectrum_size)
         .map(|k| {
@@ -171,18 +213,18 @@ fn test_mvdr_noise_detection_uses_all_channels() {
         })
         .collect();
 
-    // Covariance should NOT have been updated (high energy → not noise)
+    // Covariance must update using energy from mic 1, not only mic 0.
     for k in 0..spectrum_size {
-        assert_eq!(
+        assert_ne!(
             cov_before[k], cov_after[k],
-            "bin {k}: covariance was incorrectly updated during high-energy frame"
+            "bin {k}: covariance ignored a loud interferer on mic 1"
         );
     }
 }
 
 #[test]
 fn test_mvdr_process_uses_preallocated_weight_application() {
-    let mut plugin = BeamformerPlugin::new(2, 48000);
+    let mut plugin = BeamformerPlugin::new(2, 48000).unwrap();
     plugin.beamformer_type = BeamformerType::Mvdr;
 
     let nf = FFT_SIZE * 2;
@@ -202,4 +244,143 @@ fn test_mvdr_process_uses_preallocated_weight_application() {
         "MVDR preallocated output buffer should be populated by process()"
     );
     assert!(output.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn mvdr_skips_weight_solves_when_covariance_is_unchanged() {
+    let mut plugin = BeamformerPlugin::new(2, 48_000).unwrap();
+    let frames = 4096;
+    let input: Vec<f32> = (0..frames)
+        .flat_map(|frame| {
+            let sample = (std::f32::consts::TAU * 700.0 * frame as f32 / 48_000.0).sin();
+            [sample, sample]
+        })
+        .collect();
+    let mut output = vec![0.0; frames];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, frames))
+        .unwrap();
+    assert_eq!(plugin.mvdr.weight_solve_count, 1);
+}
+
+fn render_superdirective(block_sizes: &[usize], input_frames: usize) -> Vec<f32> {
+    let mut plugin = BeamformerPlugin::from_params(
+        48_000,
+        super::beamformer_plugin_params::BeamformerPluginParams {
+            num_mics: 2,
+            mic_spacing_cm: 5.0,
+            steer_angle_deg: 0.0,
+            beamformer_type: 1,
+        },
+    )
+    .unwrap();
+    plugin.initialize(48_000).unwrap();
+    let total = input_frames + FFT_SIZE * 2;
+    let mut stream = vec![0.0; total * 2];
+    for frame in 0..input_frames {
+        let sample = (std::f32::consts::TAU * 997.0 * frame as f32 / 48_000.0).sin() * 0.25;
+        stream[frame * 2] = sample;
+        stream[frame * 2 + 1] = sample;
+    }
+    let mut rendered = Vec::with_capacity(total);
+    let mut position = 0;
+    let mut block_index = 0;
+    while position < total {
+        let frames = block_sizes[block_index % block_sizes.len()].min(total - position);
+        let mut output = vec![0.0; frames];
+        plugin
+            .process(
+                &stream[position * 2..(position + frames) * 2],
+                &mut output,
+                &ProcessContext::new(48_000, frames),
+            )
+            .unwrap();
+        rendered.extend(output);
+        position += frames;
+        block_index += 1;
+    }
+    rendered
+}
+
+#[test]
+fn stft_output_is_causal_and_block_partition_invariant() {
+    let reference = render_superdirective(&[64], 4096);
+    assert!(reference[..FFT_SIZE].iter().all(|sample| *sample == 0.0));
+    assert!(
+        reference[FFT_SIZE..]
+            .iter()
+            .any(|sample| sample.abs() > 1.0e-6)
+    );
+
+    for blocks in [&[127][..], &[256], &[512], &[1024], &[63, 257, 19, 511]] {
+        let candidate = render_superdirective(blocks, 4096);
+        assert_eq!(candidate.len(), reference.len());
+        for (index, (actual, expected)) in candidate.iter().zip(&reference).enumerate() {
+            assert!(
+                (actual - expected).abs() < 1.0e-6,
+                "block split {blocks:?}, sample {index}: {actual} != {expected}"
+            );
+        }
+    }
+}
+
+#[test]
+fn process_validates_buffers_and_sample_rate_before_mutating_state() {
+    let mut plugin = BeamformerPlugin::new(2, 48_000).unwrap();
+    let fill = plugin.input_fill;
+    let mut output = vec![0.0; 16];
+    assert!(
+        plugin
+            .process(&[0.0; 31], &mut output, &ProcessContext::new(48_000, 16))
+            .is_err()
+    );
+    assert_eq!(plugin.input_fill, fill);
+    assert!(
+        plugin
+            .process(
+                &[0.0; 32],
+                &mut output[..15],
+                &ProcessContext::new(48_000, 16)
+            )
+            .is_err()
+    );
+    assert_eq!(plugin.input_fill, fill);
+    assert!(
+        plugin
+            .process(&[0.0; 32], &mut output, &ProcessContext::new(44_100, 16))
+            .is_err()
+    );
+    assert_eq!(plugin.input_fill, fill);
+}
+
+#[test]
+fn sample_rate_reinitialization_discards_old_grid_and_pending_audio() {
+    let mut reused = BeamformerPlugin::new(2, 48_000).unwrap();
+    let signal = vec![0.5; FFT_SIZE * 4];
+    let mut output = vec![0.0; FFT_SIZE * 2];
+    reused
+        .process(
+            &signal,
+            &mut output,
+            &ProcessContext::new(48_000, FFT_SIZE * 2),
+        )
+        .unwrap();
+
+    for sample_rate in [96_000, 44_100] {
+        reused.initialize(sample_rate).unwrap();
+        let mut fresh = BeamformerPlugin::new(2, sample_rate).unwrap();
+        fresh.initialize(sample_rate).unwrap();
+        let silence = vec![0.0; FFT_SIZE * 2];
+        let mut reused_output = vec![f32::NAN; FFT_SIZE];
+        let mut fresh_output = vec![f32::NAN; FFT_SIZE];
+        let context = ProcessContext::new(sample_rate, FFT_SIZE);
+        reused
+            .process(&silence, &mut reused_output, &context)
+            .unwrap();
+        fresh
+            .process(&silence, &mut fresh_output, &context)
+            .unwrap();
+        assert_eq!(reused_output, fresh_output);
+        assert!(reused_output.iter().all(|sample| *sample == 0.0));
+    }
 }

@@ -425,9 +425,12 @@ pub fn create_plugin(
         "ab_compare" => {
             let params: ABComparePluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse A/B compare params: {e}"))?;
-            let mut plugin = ABComparePlugin::from_params(channels, params)?;
-            // Inject the shared factory so sub-racks support all plugin types
-            plugin.set_plugin_factory(create_plugin);
+            let mut plugin = ABComparePlugin::from_params_with_factory(
+                channels,
+                sample_rate,
+                params,
+                create_plugin,
+            )?;
             plugin.initialize(sample_rate)?;
             Ok(Box::new(plugin))
         }
@@ -440,7 +443,7 @@ pub fn create_plugin(
             }
             let params: AecPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse AEC params: {e}"))?;
-            let plugin = AecPlugin::from_params(sample_rate, params);
+            let plugin = AecPlugin::from_params(sample_rate, params)?;
             Ok(Box::new(plugin))
         }
 
@@ -460,7 +463,7 @@ pub fn create_plugin(
                     params.num_mics
                 ));
             }
-            let plugin = BeamformerPlugin::from_params(sample_rate, params);
+            let plugin = BeamformerPlugin::from_params(sample_rate, params)?;
             Ok(Box::new(plugin))
         }
 

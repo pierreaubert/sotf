@@ -1013,7 +1013,6 @@ fn latency_reporting_plugins() -> Vec<(&'static str, serde_json::Value)> {
         ("limiter", default_params("limiter", 2)),
         ("convolution", default_params("convolution", 2)),
         ("upmixer", default_params("upmixer", 2)),
-        ("mono_to_stereo", default_params("mono_to_stereo", 1)),
         (
             "multiband_expander",
             serde_json::json!({"lookahead_ms": 5.0}),
@@ -1026,10 +1025,8 @@ fn latency_reporting_plugins() -> Vec<(&'static str, serde_json::Value)> {
         ),
         ("denoiser", default_params("denoiser", 2)),
         ("speech_denoiser", serde_json::json!({"enabled": false})),
-        ("pnd", default_params("pnd", 2)),
         ("binaural_decoder", default_params("binaural_decoder", 2)),
         ("downmix", default_params("downmix", 2)),
-        ("resampler", default_params("resampler", 2)),
         ("xtc", default_params("xtc", 2)),
         ("aec", default_params("aec", 2)),
         ("beamformer", default_params("beamformer", 2)),
@@ -1099,7 +1096,6 @@ fn zero_latency_plugin_configurations() -> Vec<(&'static str, serde_json::Value)
         ("dynamic_eq", default_params("dynamic_eq", 2)),
         ("stereo_imager", default_params("stereo_imager", 2)),
         ("transient_shaper", default_params("transient_shaper", 2)),
-        ("saturation", default_params("saturation", 2)),
         (
             "loudness_compensation",
             default_params("loudness_compensation", 2),
@@ -1107,7 +1103,6 @@ fn zero_latency_plugin_configurations() -> Vec<(&'static str, serde_json::Value)
         ("fletcher_munson", default_params("fletcher_munson", 2)),
         ("crossfeed", default_params("crossfeed", 2)),
         ("hiss_reducer", default_params("hiss_reducer", 2)),
-        ("declick", default_params("declick", 2)),
         (
             "ambisonics_decoder",
             default_params("ambisonics_decoder", 4),

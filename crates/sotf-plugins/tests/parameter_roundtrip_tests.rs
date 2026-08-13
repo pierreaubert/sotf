@@ -189,7 +189,19 @@ fn documented_parameter_exceptions_are_exact_and_enforced() {
         let id = parameter.id.clone();
 
         match exception.contract {
-            ExceptionContract::ConditionalSetter | ExceptionContract::ReadOnly => {
+            ExceptionContract::ConditionalSetter => {
+                let current = plugin
+                    .get_parameter(&id)
+                    .expect("parameter must be readable");
+                let changed = deterministic_value(&parameter, Some(&current));
+                assert!(
+                    plugin.set_parameter(id, changed).is_err(),
+                    "{}/{} unexpectedly became directly writable",
+                    exception.plugin_type,
+                    exception.parameter_id
+                );
+            }
+            ExceptionContract::ReadOnly => {
                 let current = plugin
                     .get_parameter(&id)
                     .expect("parameter must be readable");
@@ -199,15 +211,6 @@ fn documented_parameter_exceptions_are_exact_and_enforced() {
                     exception.plugin_type,
                     exception.parameter_id
                 );
-            }
-            ExceptionContract::RequiresProcessFixture => {
-                let current = plugin.get_parameter(&id);
-                let value = deterministic_value(&parameter, current.as_ref());
-                plugin.set_parameter(id.clone(), value.clone()).unwrap();
-                let restored = plugin
-                    .get_parameter(&id)
-                    .expect("parameter must be readable");
-                assert_values_equal(&value, &restored);
             }
             ExceptionContract::Trigger => {
                 plugin

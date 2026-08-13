@@ -71,9 +71,9 @@ const SPEED_OF_SOUND: f32 = 343.0; // m/s at 20°C
 /// * `freq_hz` - Frequency in Hz
 /// * `geometry` - Microphone array geometry
 /// * `azimuth_deg` - Steering azimuth angle in degrees.
-///   Convention: for a linear array along the x-axis, 0° is **endfire**
-///   (wave travels along the array axis) and 90° is **broadside** (wave
-///   arrives perpendicular to the array).
+///   Convention: for a linear array along the x-axis, 0° is **broadside**
+///   (wave arrives perpendicular to the array) and ±90° is **endfire**
+///   (wave travels along the array axis).
 /// * `elevation_deg` - Steering elevation angle in degrees (0° = horizontal)
 ///
 /// # Returns
