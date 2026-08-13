@@ -385,7 +385,8 @@ pub use sotf_host::{
 pub use sotf_host::simd::enable_ftz_daz;
 pub use sotf_host::sofa::{HrtfData, SofaFile, SourcePosition};
 pub use sotf_host::speaker_config::{
-    SpeakerPosition, get_meter_groups, get_meter_groups_by_channels, get_speaker_config_by_channels,
+    ChannelAssignment, ChannelLayout, ChannelRole, SpeakerPosition, get_meter_groups,
+    get_meter_groups_by_channels, get_speaker_config_by_channels,
 };
 
 pub type PluginHost = DawHost;

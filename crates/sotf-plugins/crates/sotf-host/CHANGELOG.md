@@ -1,5 +1,19 @@
 # Unreleased
 
+## Explicit channel layouts and BS.1770 weighting
+
+- Add a validated, serializable `ChannelLayout`/`ChannelRole` contract with
+  unique indexed role assignments derived exactly from known `SpeakerConfig`
+  values; ambiguous multichannel counts remain explicitly non-compliant.
+- Apply role-based BS.1770 energy weights independent of physical order and
+  exclude LFE while preserving raw per-channel sample and true peaks.
+- Keep explicit-layout processing allocation-free with bounded preallocated
+  weighting scratch, and accept `channel_layout` or `speaker_config` through
+  the plugin factory with strict conflict and width validation.
+- Cover reordered 5.1 equivalence, LFE-only exclusion, 7.1/7.1.4/9.1.6
+  compliance, malformed layouts, factory parsing, and first-process realtime
+  allocation behavior.
+
 ## Strict realtime block validation
 
 - Require exact interleaved input/output lengths and finite input samples in

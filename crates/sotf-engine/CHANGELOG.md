@@ -3,6 +3,14 @@
 - Carry PND's optional absolute pilot/reference frequency through typed engine
   settings, defaults, parameter accessors, and plugin configuration conversion.
 
+## Loudness analyzer channel layouts
+
+- Pass a known output speaker configuration to output loudness analyzers after
+  upmix, AAE, ambisonics decode, binaural decode, downmix, or mono-to-stereo.
+- Keep the input analyzer count-only and invalidate layout knowledge after
+  arbitrary matrix, band-split, or band-merge routing instead of guessing
+  channel roles.
+
 # 1.0.30 (unreleased)
 
 ## Release QA

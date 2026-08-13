@@ -7,11 +7,82 @@
 // through multiple factory-created plugins.
 
 use sotf_plugins::{
-    DawHost, PluginHost, create_plugin, is_supported_plugin_type, supported_plugin_types,
+    DawHost, LoudnessData, PluginHost, ProcessContext, create_plugin, is_supported_plugin_type,
+    supported_plugin_types,
 };
 use std::collections::HashSet;
 
 const SAMPLE_RATE: u32 = 48_000;
+
+#[test]
+fn loudness_factory_accepts_explicit_speaker_config_and_layout_json() {
+    let mut from_config = create_plugin(
+        "loudness_monitor",
+        &serde_json::json!({"speaker_config": "7.1.4"}),
+        12,
+        SAMPLE_RATE,
+    )
+    .unwrap();
+    from_config.initialize(SAMPLE_RATE).unwrap();
+    from_config
+        .process(
+            &[0.0; 12],
+            &mut [0.0; 12],
+            &ProcessContext::new(SAMPLE_RATE, 1),
+        )
+        .unwrap();
+    let data = from_config.get_data().unwrap();
+    assert!(
+        data.downcast_ref::<LoudnessData>()
+            .unwrap()
+            .channel_layout_is_compliant
+    );
+
+    let explicit = serde_json::json!({
+        "channel_layout": {"channels": [
+            {"index": 0, "role": "front_right"},
+            {"index": 1, "role": "front_left"}
+        ]}
+    });
+    assert!(create_plugin("loudness_monitor", &explicit, 2, SAMPLE_RATE).is_ok());
+}
+
+#[test]
+fn loudness_factory_rejects_unknown_conflicting_and_wrong_width_layouts() {
+    assert!(
+        create_plugin(
+            "loudness_monitor",
+            &serde_json::json!({"speaker_config": "not-a-layout"}),
+            6,
+            SAMPLE_RATE,
+        )
+        .is_err()
+    );
+    assert!(
+        create_plugin(
+            "loudness_monitor",
+            &serde_json::json!({"speaker_config": "7.1.4"}),
+            8,
+            SAMPLE_RATE,
+        )
+        .is_err()
+    );
+    assert!(
+        create_plugin(
+            "loudness_monitor",
+            &serde_json::json!({
+                "speaker_config": "2.0",
+                "channel_layout": {"channels": [
+                    {"index": 0, "role": "front_left"},
+                    {"index": 1, "role": "front_center"}
+                ]}
+            }),
+            2,
+            SAMPLE_RATE,
+        )
+        .is_err()
+    );
+}
 
 // ----------------------------------------------------------------------------
 // Factory registration

@@ -518,12 +518,21 @@ impl PluginChain {
             .position(|p| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor));
 
         for (idx, plugin) in self.plugins.iter().enumerate() {
-            if let Some(config) = plugin.to_plugin_config(sample_rate) {
+            if let Some(mut config) = plugin.to_plugin_config(sample_rate) {
                 match plugin.plugin_type() {
                     PluginType::LoudnessMonitor => {
                         if Some(idx) == first_permanent_loudness_idx {
                             input_monitor = Some(config);
                         } else {
+                            // Only attach a layout when the preceding graph
+                            // establishes one explicitly. The input monitor
+                            // and chains containing an arbitrary matrix/split
+                            // remain count-only rather than guessing roles.
+                            if let Some(speaker_config) = self.known_speaker_config_at_index(idx) {
+                                config.parameters = serde_json::json!({
+                                    "speaker_config": speaker_config,
+                                });
+                            }
                             analyzer_plugins.push(config);
                         }
                     }
@@ -547,6 +556,52 @@ impl PluginChain {
         result.extend(processing_plugins);
         result.extend(analyzer_plugins);
         result
+    }
+
+    fn known_speaker_config_at_index(&self, target_index: usize) -> Option<String> {
+        let mut config = None;
+        for (index, plugin) in self.plugins.iter().enumerate() {
+            if index >= target_index {
+                break;
+            }
+            if !plugin.enabled || plugin.suspended {
+                continue;
+            }
+            match &plugin.settings {
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    output:
+                        UpmixerOutputSettings {
+                            binaural_preview, ..
+                        },
+                    ..
+                } => {
+                    config = Some(if *binaural_preview {
+                        "2.0".to_string()
+                    } else {
+                        speaker_config.clone()
+                    });
+                }
+                PluginSettings::AAE { speaker_config, .. } => {
+                    config = Some(speaker_config.clone());
+                }
+                PluginSettings::AmbisonicsDecoder { target_layout, .. } => {
+                    config = Some(target_layout.clone());
+                }
+                PluginSettings::BinauralDecoder { .. }
+                | PluginSettings::Downmix { .. }
+                | PluginSettings::MonoToStereo { .. } => {
+                    config = Some("2.0".to_string());
+                }
+                // These can reorder, duplicate, or reinterpret channels, so
+                // a preceding speaker layout is no longer authoritative.
+                PluginSettings::Matrix { .. }
+                | PluginSettings::BandSplit { .. }
+                | PluginSettings::BandMerge { .. } => config = None,
+                _ => {}
+            }
+        }
+        config
     }
 
     /// Get the speaker configuration ID from the last enabled upmixer/binaural decoder
@@ -1630,6 +1685,43 @@ mod tests {
         assert_eq!(configs[0].plugin_type, "loudness_monitor"); // input monitor
         assert_eq!(configs[1].plugin_type, "matrix"); // processing
         assert_eq!(configs[2].plugin_type, "loudness_monitor"); // output monitor
+        assert_eq!(configs[0].parameters, serde_json::json!({}));
+        assert_eq!(configs[2].parameters, serde_json::json!({}));
+    }
+
+    #[test]
+    fn output_loudness_config_receives_only_a_known_explicit_layout() {
+        let mut chain = PluginChain::new();
+        chain
+            .add_permanent_plugin(&PluginType::LoudnessMonitor)
+            .unwrap();
+        chain.add_plugin(&PluginType::Upmixer).unwrap();
+        if let PluginSettings::Upmixer { speaker_config, .. } = &mut chain.plugins[1].settings {
+            *speaker_config = "7.1.4".to_string();
+        } else {
+            panic!("expected upmixer settings");
+        }
+        chain
+            .add_permanent_plugin(&PluginType::LoudnessMonitor)
+            .unwrap();
+
+        let configs = chain.to_plugin_configs(48_000.0);
+        assert_eq!(configs[0].parameters, serde_json::json!({}));
+        assert_eq!(
+            configs.last().unwrap().parameters,
+            serde_json::json!({"speaker_config": "7.1.4"})
+        );
+
+        let output_index = chain
+            .plugins
+            .iter()
+            .rposition(|plugin| matches!(plugin.plugin_type(), PluginType::LoudnessMonitor))
+            .unwrap();
+        chain
+            .insert_plugin(output_index, &PluginType::Matrix)
+            .unwrap();
+        let configs = chain.to_plugin_configs(48_000.0);
+        assert_eq!(configs.last().unwrap().parameters, serde_json::json!({}));
     }
 
     #[test]

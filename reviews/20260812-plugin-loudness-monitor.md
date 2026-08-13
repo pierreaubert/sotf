@@ -1,5 +1,42 @@
 # Loudness Monitor plugin review — 2026-08-12
 
+## Explicit layout closure — sotf-host 0.5.102 / sotf-engine 1.0.31
+
+The retained multichannel-layout gap is now closed:
+
+- `ChannelLayout` serializes an explicit set of indexed `ChannelRole`
+  assignments and rejects zero width, missing/out-of-range/duplicate indices,
+  duplicate roles, and audio-width mismatch. Every published `SpeakerConfig`
+  converts without inferring a layout from channel count.
+- Explicit layouts apply BS.1770 energy weights by semantic role, independent
+  of physical order. LFE contributes no loudness energy but still contributes
+  raw sample/true-peak telemetry. Count-only mono/stereo remains compliant;
+  count-only multichannel remains operational and explicitly non-compliant.
+- The factory accepts either a serialized `channel_layout` or a known
+  `speaker_config`, rejects conflicts/unknown IDs/width mismatch, and engine
+  output analyzers receive a configuration only while the preceding chain has
+  a provably known layout. Input and post-matrix/split/merge analyzers do not
+  guess.
+- The wrapper uses a separate raw peak meter and a preallocated, bounded
+  role-weighted loudness stream because the pinned `math-dsp::EbuR128` does not
+  expose custom weights. Processing remains allocation-free.
+
+Focused tests cover reordered 5.1 equivalence, LFE-only exclusion with retained
+peak, explicit 7.1/7.1.4/9.1.6 compliance, malformed layouts, JSON/factory
+validation, engine propagation/invalidation, and cold explicit-layout callback
+allocation.
+
+Verification:
+
+- `cargo test -p sotf-host --lib --offline` — 419 passed.
+- `cargo test -p sotf-host --test test_analyzer_plugins --offline` — passed.
+- `cargo test -p sotf-plugins --test factory_integration_tests loudness_factory --offline` — passed.
+- `cargo test -p sotf-plugins --test realtime_allocation_tests test_explicit_layout_loudness_monitor_first_process_zero_alloc --offline` — passed.
+- `cargo test -p sotf-engine plugins::chain::plugin_chain::tests --lib --offline` — 57 passed.
+- `cargo check -p sotf-host -p sotf-plugins -p sotf-engine --offline` — passed.
+- Strict all-target Clippy reached only pre-existing warnings in
+  `analyzer_spectrum.rs` and `auto_gain.rs`; no warning arose from this change.
+
 ## Final closure — sotf-host 0.5.98
 
 All P0–P3 findings now have an implemented safety/compliance contract and focused regression coverage:
@@ -41,10 +78,11 @@ Process directly or chunk the input without loss. If a bounded queue remains, si
 
 ### P1 — Multichannel loudness is wrong without an explicit channel layout
 
-**Deferred: broad redesign required.** Correct remediation needs a host-wide
-channel-role/layout contract and graph/factory propagation; a channel count
-alone cannot distinguish layouts. This local plugin batch does not invent a
-layout or silently claim compliance.
+**Fixed in the 0.5.102 / engine 1.0.31 remediation.** The host now exposes an
+explicit validated role map, the factory and known-output engine path propagate
+it, and the meter applies role weights through an allocation-free wrapper.
+Ambiguous count-only multichannel construction is deliberately still marked
+non-compliant rather than assigned a guessed layout.
 
 The underlying `channel_weight` recognizes only mono/stereo, assumed 5.0 `[L,R,C,Ls,Rs]`, and assumed 5.1 `[L,R,C,LFE,Ls,Rs]`; every channel in every other width receives weight 1.0. That includes LFE in 7.1/Atmos and omits BS.1770 surround weighting. The plugin accepts only a count and advertises many standard layouts, so it cannot distinguish layouts with the same width or assign correct roles.
 

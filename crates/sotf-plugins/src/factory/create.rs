@@ -47,7 +47,9 @@ use crate::{
     ExternalPluginWorkerCommand, IsolatedExternalPlugin, PluginSandboxGrantStore,
     PluginSandboxLaunchBackend,
 };
-use sotf_host::{ParameterId, ParameterValue, ParametricInPlacePlugin, ParametricPlugin};
+use sotf_host::{
+    ChannelLayout, ParameterId, ParameterValue, ParametricInPlacePlugin, ParametricPlugin,
+};
 use std::path::PathBuf;
 
 /// Create a plugin instance from its type string and JSON parameters.
@@ -416,8 +418,46 @@ pub fn create_plugin(
         }
 
         "loudness_monitor" => {
-            let plugin = LoudnessMonitorPlugin::new(channels)
-                .map_err(|e| format!("Failed to create loudness monitor: {e}"))?;
+            let explicit_layout = match (
+                parameters.get("channel_layout"),
+                parameters.get("speaker_config"),
+            ) {
+                (Some(layout), None) => Some(
+                    serde_json::from_value::<ChannelLayout>(layout.clone())
+                        .map_err(|e| format!("Invalid loudness channel_layout: {e}"))?,
+                ),
+                (None, Some(config_id)) => {
+                    let config_id = config_id.as_str().ok_or_else(|| {
+                        "loudness speaker_config must be a configuration ID string".to_string()
+                    })?;
+                    let config = sotf_host::speaker_config::get_speaker_config(config_id)
+                        .ok_or_else(|| format!("Unknown loudness speaker_config: {config_id}"))?;
+                    Some(ChannelLayout::from_speaker_config(config)?)
+                }
+                (Some(layout), Some(config_id)) => {
+                    let layout = serde_json::from_value::<ChannelLayout>(layout.clone())
+                        .map_err(|e| format!("Invalid loudness channel_layout: {e}"))?;
+                    let config_id = config_id.as_str().ok_or_else(|| {
+                        "loudness speaker_config must be a configuration ID string".to_string()
+                    })?;
+                    let config = sotf_host::speaker_config::get_speaker_config(config_id)
+                        .ok_or_else(|| format!("Unknown loudness speaker_config: {config_id}"))?;
+                    let config_layout = ChannelLayout::from_speaker_config(config)?;
+                    if layout != config_layout {
+                        return Err(
+                            "loudness channel_layout conflicts with speaker_config".to_string()
+                        );
+                    }
+                    Some(layout)
+                }
+                (None, None) => None,
+            };
+            let plugin = if let Some(layout) = explicit_layout {
+                LoudnessMonitorPlugin::new_with_layout(channels, layout)
+            } else {
+                LoudnessMonitorPlugin::new(channels)
+            }
+            .map_err(|e| format!("Failed to create loudness monitor: {e}"))?;
             Ok(Box::new(plugin))
         }
 

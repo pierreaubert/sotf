@@ -163,7 +163,8 @@ pub use test_utils::{
 
 pub use sofa::{HrtfData, SofaFile, SourcePosition};
 pub use speaker_config::{
-    SpeakerPosition, get_meter_groups, get_meter_groups_by_channels, get_speaker_config_by_channels,
+    ChannelAssignment, ChannelLayout, ChannelRole, SpeakerPosition, get_meter_groups,
+    get_meter_groups_by_channels, get_speaker_config_by_channels,
 };
 
 pub type PluginHost = DawHost;

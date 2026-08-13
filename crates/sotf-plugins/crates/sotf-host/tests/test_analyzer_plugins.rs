@@ -6,9 +6,180 @@
 // producing audio output.
 
 use sotf_host::{
-    LoudnessData, LoudnessMonitorPlugin, ParameterId, ParameterValue, Plugin, ProcessContext,
-    SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumData,
+    ChannelAssignment, ChannelLayout, ChannelRole, LoudnessData, LoudnessMonitorPlugin,
+    ParameterId, ParameterValue, Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig,
+    SpectrumData,
 };
+
+fn explicit_5_1(order: [ChannelRole; 6]) -> ChannelLayout {
+    ChannelLayout::new(
+        order
+            .into_iter()
+            .enumerate()
+            .map(|(index, role)| ChannelAssignment { index, role })
+            .collect(),
+    )
+    .unwrap()
+}
+
+fn render_loudness(layout: ChannelLayout, role_samples: &[(ChannelRole, f32)]) -> LoudnessData {
+    let channels = layout.channels.len();
+    let frames = 48_000 * 4;
+    let mut plugin = LoudnessMonitorPlugin::with_channel_layout(layout).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let mut input = vec![0.0; frames * channels];
+    for (frame_index, frame) in input.chunks_exact_mut(channels).enumerate() {
+        let polarity = if frame_index.is_multiple_of(2) {
+            1.0
+        } else {
+            -1.0
+        };
+        for (role, value) in role_samples {
+            let index = plugin
+                .channel_layout()
+                .unwrap()
+                .channels
+                .iter()
+                .find(|assignment| assignment.role == *role)
+                .unwrap()
+                .index;
+            frame[index] = *value * polarity;
+        }
+    }
+    let mut output = vec![0.0; input.len()];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, frames))
+        .unwrap();
+    plugin
+        .get_data()
+        .unwrap()
+        .downcast_ref::<LoudnessData>()
+        .unwrap()
+        .clone()
+}
+
+#[test]
+fn explicit_5_1_loudness_is_independent_of_physical_channel_order() {
+    use ChannelRole::*;
+    let canonical = explicit_5_1([FrontLeft, FrontRight, FrontCenter, Lfe, SideLeft, SideRight]);
+    let reordered = explicit_5_1([Lfe, SideRight, FrontCenter, FrontLeft, SideLeft, FrontRight]);
+    let signal = [
+        (FrontLeft, 0.05),
+        (FrontRight, 0.08),
+        (FrontCenter, 0.11),
+        (Lfe, 0.9),
+        (SideLeft, 0.14),
+        (SideRight, 0.17),
+    ];
+    let a = render_loudness(canonical, &signal);
+    let b = render_loudness(reordered, &signal);
+    assert!(a.channel_layout_is_compliant && b.channel_layout_is_compliant);
+    assert!((a.momentary_lufs - b.momentary_lufs).abs() < 1.0e-9);
+    assert!((a.shortterm_lufs - b.shortterm_lufs).abs() < 1.0e-9);
+    assert!((a.integrated_lufs - b.integrated_lufs).abs() < 1.0e-9);
+}
+
+#[test]
+fn explicit_layout_excludes_lfe_from_bs1770_loudness_but_keeps_peak() {
+    use ChannelRole::*;
+    let data = render_loudness(
+        explicit_5_1([FrontLeft, FrontRight, FrontCenter, Lfe, SideLeft, SideRight]),
+        &[(Lfe, 0.8)],
+    );
+    assert_eq!(data.momentary_lufs, f64::NEG_INFINITY);
+    assert_eq!(data.shortterm_lufs, f64::NEG_INFINITY);
+    assert_eq!(data.integrated_lufs, f64::NEG_INFINITY);
+    assert!((data.peak - 0.8).abs() < 1.0e-6);
+    assert!(data.channel_layout_is_compliant);
+}
+
+#[test]
+fn explicit_layout_applies_the_bs1770_surround_energy_coefficient() {
+    use ChannelRole::*;
+    let layout = explicit_5_1([FrontLeft, FrontRight, FrontCenter, Lfe, SideLeft, SideRight]);
+    let front = render_loudness(layout.clone(), &[(FrontLeft, 0.1)]);
+    let surround = render_loudness(layout, &[(SideLeft, 0.1)]);
+    let expected_delta = 10.0 * 1.41_f64.log10();
+    let momentary_delta = surround.momentary_lufs - front.momentary_lufs;
+    let integrated_delta = surround.integrated_lufs - front.integrated_lufs;
+    assert!(
+        (momentary_delta - expected_delta).abs() < 2.0e-5,
+        "momentary delta {momentary_delta}, expected {expected_delta}"
+    );
+    assert!(
+        (integrated_delta - expected_delta).abs() < 2.0e-5,
+        "integrated delta {integrated_delta}, expected {expected_delta}"
+    );
+}
+
+#[test]
+fn explicit_large_layouts_are_compliant_and_count_only_multichannel_is_not() {
+    for id in ["7.1", "7.1.4", "9.1.6"] {
+        let layout = ChannelLayout::from_speaker_config(
+            sotf_host::speaker_config::get_speaker_config(id).unwrap(),
+        )
+        .unwrap();
+        let channels = layout.channels.len();
+        let mut plugin = LoudnessMonitorPlugin::with_channel_layout(layout).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let input = vec![0.0; channels];
+        let mut output = vec![0.0; channels];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 1))
+            .unwrap();
+        let data = plugin.get_data().unwrap();
+        assert!(
+            data.downcast_ref::<LoudnessData>()
+                .unwrap()
+                .channel_layout_is_compliant,
+            "{id}"
+        );
+    }
+
+    let mut ambiguous = LoudnessMonitorPlugin::new(8).unwrap();
+    ambiguous.initialize(48_000).unwrap();
+    ambiguous
+        .process(&[0.0; 8], &mut [0.0; 8], &ProcessContext::new(48_000, 1))
+        .unwrap();
+    let data = ambiguous.get_data().unwrap();
+    assert!(
+        !data
+            .downcast_ref::<LoudnessData>()
+            .unwrap()
+            .channel_layout_is_compliant
+    );
+}
+
+#[test]
+fn loudness_monitor_rejects_malformed_or_width_mismatched_layouts() {
+    use ChannelRole::*;
+    let malformed = ChannelLayout {
+        channels: vec![
+            ChannelAssignment {
+                index: 0,
+                role: FrontLeft,
+            },
+            ChannelAssignment {
+                index: 0,
+                role: FrontRight,
+            },
+        ],
+    };
+    assert!(LoudnessMonitorPlugin::with_channel_layout(malformed).is_err());
+
+    let stereo = ChannelLayout::new(vec![
+        ChannelAssignment {
+            index: 0,
+            role: FrontLeft,
+        },
+        ChannelAssignment {
+            index: 1,
+            role: FrontRight,
+        },
+    ])
+    .unwrap();
+    assert!(LoudnessMonitorPlugin::new_with_layout(6, stereo).is_err());
+}
 
 #[test]
 fn test_loudness_monitor_rejects_invalid_construction_and_initialization() {

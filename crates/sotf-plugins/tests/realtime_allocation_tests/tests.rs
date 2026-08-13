@@ -16,10 +16,10 @@ use sotf_plugin_ambisonics::{AmbisonicsDecoderConfig, AmbisonicsDecoderPlugin};
 use sotf_plugins::{
     ABComparePlugin, AaePlugin, AaePluginParams, AecPlugin, AecPluginParams, AutoGain,
     AutoGainParams, BandMergePlugin, BandSplitPlugin, BeamformerPlugin, BinauralDecoderPlugin,
-    ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedMode, CrossfeedPlugin,
-    CrossfeedPluginParams, CrossoverPlugin, DeEsserPlugin, DeclickPlugin, DelayPlugin,
-    DenoiserPlugin, DownmixPlugin, DownmixPluginParams, DynamicEqPlugin, EqPlugin, ExpanderPlugin,
-    GainPlugin, GatePlugin, HissReducerPlugin, IsolatedExternalPlugin,
+    ChannelLayout, ChannelMuteSoloPlugin, CompressorPlugin, ConvolutionPlugin, CrossfeedMode,
+    CrossfeedPlugin, CrossfeedPluginParams, CrossoverPlugin, DeEsserPlugin, DeclickPlugin,
+    DelayPlugin, DenoiserPlugin, DownmixPlugin, DownmixPluginParams, DynamicEqPlugin, EqPlugin,
+    ExpanderPlugin, GainPlugin, GatePlugin, HissReducerPlugin, IsolatedExternalPlugin,
     IsolatedExternalPluginConfig, LimiterPlugin, LinearPhaseEqPlugin, LoudnessCompensationPlugin,
     LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
     MultibandExpanderPlugin, ParameterId, ParameterValue, ParametricInPlacePlugin,
@@ -1002,6 +1002,28 @@ fn test_loudness_monitor_first_spatial_process_zero_alloc() {
     assert_no_allocs("LoudnessMonitorPlugin first spatial process", || {
         plugin.process(&input, &mut output, &ctx).unwrap();
     });
+}
+
+#[test]
+#[serial]
+fn test_explicit_layout_loudness_monitor_first_process_zero_alloc() {
+    let layout = ChannelLayout::from_speaker_config(
+        sotf_plugins::speaker_config::get_speaker_config("7.1.4").unwrap(),
+    )
+    .unwrap();
+    let mut plugin = LoudnessMonitorPlugin::with_channel_layout(layout).unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let input = generate_test_buffer(BUFFER_SIZE, 12);
+    let mut output = vec![0.0f32; BUFFER_SIZE * 12];
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+
+    assert_no_allocs(
+        "explicit-layout LoudnessMonitorPlugin first process",
+        || {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        },
+    );
 }
 
 #[test]

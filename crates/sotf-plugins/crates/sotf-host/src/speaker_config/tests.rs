@@ -6,6 +6,7 @@ use super::misc::normalize_gains_l2;
 use super::source_position::SourcePosition;
 use super::source_position::compute_vbap_matrix;
 use super::speaker_position::SpeakerPosition;
+use super::types::{ChannelAssignment, ChannelLayout, ChannelRole};
 
 #[test]
 fn test_speaker_position_to_cartesian_matches_inline_math() {
@@ -364,4 +365,73 @@ fn test_normalize_gains_l2_zero_input_is_noop() {
     let mut g = vec![0.0_f32, 0.0, 0.0];
     normalize_gains_l2(&mut g);
     assert!(g.iter().all(|v| *v == 0.0));
+}
+
+#[test]
+fn explicit_channel_layouts_cover_every_published_speaker_config() {
+    for id in get_available_configs() {
+        let config = get_speaker_config(id).unwrap();
+        let layout = ChannelLayout::from_speaker_config(config).unwrap();
+        layout.validate_for_width(config.total_channels).unwrap();
+        assert_eq!(layout.role_at(config.total_channels), None);
+        for speaker in config.speakers {
+            assert_eq!(layout.role_at(speaker.channel).is_some(), true, "{id}");
+            assert_eq!(
+                layout.role_at(speaker.channel) == Some(ChannelRole::Lfe),
+                speaker.is_lfe,
+                "{id} channel {}",
+                speaker.channel
+            );
+        }
+
+        let json = serde_json::to_value(&layout).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ChannelLayout>(json).unwrap(),
+            layout
+        );
+    }
+}
+
+#[test]
+fn explicit_channel_layout_rejects_duplicate_indices_roles_and_width_mismatch() {
+    let duplicate_index = ChannelLayout {
+        channels: vec![
+            ChannelAssignment {
+                index: 0,
+                role: ChannelRole::FrontLeft,
+            },
+            ChannelAssignment {
+                index: 0,
+                role: ChannelRole::FrontRight,
+            },
+        ],
+    };
+    assert!(duplicate_index.validate_for_width(2).is_err());
+
+    let duplicate_role = ChannelLayout {
+        channels: vec![
+            ChannelAssignment {
+                index: 0,
+                role: ChannelRole::FrontLeft,
+            },
+            ChannelAssignment {
+                index: 1,
+                role: ChannelRole::FrontLeft,
+            },
+        ],
+    };
+    assert!(duplicate_role.validate_for_width(2).is_err());
+
+    let stereo = ChannelLayout::from_speaker_config(get_speaker_config("2.0").unwrap()).unwrap();
+    assert!(stereo.validate_for_width(6).is_err());
+}
+
+#[test]
+fn bs1770_role_weights_distinguish_front_surround_height_and_lfe() {
+    assert_eq!(ChannelRole::FrontLeft.bs1770_weight(), 1.0);
+    assert_eq!(ChannelRole::WideRight.bs1770_weight(), 1.0);
+    assert_eq!(ChannelRole::TopMiddleLeft.bs1770_weight(), 1.0);
+    assert_eq!(ChannelRole::SideLeft.bs1770_weight(), 1.41);
+    assert_eq!(ChannelRole::BackRight.bs1770_weight(), 1.41);
+    assert_eq!(ChannelRole::Lfe.bs1770_weight(), 0.0);
 }

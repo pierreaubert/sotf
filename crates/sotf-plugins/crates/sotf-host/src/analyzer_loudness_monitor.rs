@@ -9,6 +9,7 @@ use crate::plugin::{
     Plugin, PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
     ProcessContext,
 };
+use crate::speaker_config::ChannelLayout;
 use math_audio_dsp::ebur128::{EbuR128, Mode};
 use math_audio_dsp::fast_math::fast_log10;
 use serde::{Deserialize, Serialize};
@@ -25,8 +26,15 @@ pub struct LoudnessInfo {
 
 pub struct LoudnessMonitor {
     ebur128: EbuR128,
+    /// Raw, unscaled meter used only for sample/true peaks when an explicit
+    /// layout requires role-dependent loudness scaling.
+    peak_meter: Option<EbuR128>,
     channels: u32,
     sample_rate: u32,
+    channel_layout: Option<ChannelLayout>,
+    loudness_channels: usize,
+    loudness_gains: Vec<f32>,
+    weighted_scratch: Vec<f32>,
     /// When true, also maintain a full inter-channel Pearson r matrix and
     /// write it into `LoudnessData.correlation_matrix` on each update.
     /// Off by default — only the output-side LoudnessMonitor that feeds the
@@ -53,22 +61,77 @@ pub struct LoudnessMonitor {
 
 impl LoudnessMonitor {
     pub fn new(channels: u32, sr: u32) -> Result<Self, String> {
+        Self::new_inner(channels, sr, None)
+    }
+
+    pub fn new_with_layout(
+        channels: u32,
+        sr: u32,
+        channel_layout: ChannelLayout,
+    ) -> Result<Self, String> {
+        Self::new_inner(channels, sr, Some(channel_layout))
+    }
+
+    fn new_inner(
+        channels: u32,
+        sr: u32,
+        channel_layout: Option<ChannelLayout>,
+    ) -> Result<Self, String> {
         if channels == 0 {
             return Err("loudness monitor requires at least one channel".to_string());
         }
         if sr == 0 {
             return Err("loudness monitor sample rate must be non-zero".to_string());
         }
-        let ebur = EbuR128::new(
-            channels,
-            sr,
-            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK | Mode::TRUE_PEAK,
-        )
-        .map_err(|e| format!("{:?}", e))?;
+        if let Some(layout) = &channel_layout {
+            layout.validate_for_width(channels as usize)?;
+        }
+        // math-dsp's 5/6-channel meters embed a fixed assumed order. Use a
+        // seven-channel unity-weight meter for explicit 5.0/5.1 layouts, then
+        // supply role weights through sample scaling. Other widths already
+        // have unity internal weights.
+        let loudness_channels = if channel_layout.is_some() && matches!(channels, 5 | 6) {
+            7
+        } else {
+            channels as usize
+        };
+        let loudness_mode = if channel_layout.is_some() {
+            Mode::M | Mode::S | Mode::I
+        } else {
+            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK | Mode::TRUE_PEAK
+        };
+        let ebur = EbuR128::new(loudness_channels as u32, sr, loudness_mode)
+            .map_err(|e| format!("{:?}", e))?;
+        let peak_meter = channel_layout
+            .as_ref()
+            .map(|_| EbuR128::new(channels, sr, Mode::SAMPLE_PEAK | Mode::TRUE_PEAK))
+            .transpose()
+            .map_err(|e| format!("{e:?}"))?;
+        let loudness_gains = channel_layout
+            .as_ref()
+            .map(|layout| {
+                (0..channels as usize)
+                    .map(|index| {
+                        layout
+                            .role_at(index)
+                            .expect("validated channel layout covers every index")
+                            .bs1770_weight()
+                            .sqrt()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         Ok(Self {
             ebur128: ebur,
+            peak_meter,
             channels,
             sample_rate: sr,
+            channel_layout,
+            loudness_channels,
+            loudness_gains,
+            // Fixed-size chunking keeps arbitrary callback sizes allocation
+            // free while bounding control-time scratch allocation.
+            weighted_scratch: vec![0.0; loudness_channels * 256],
             spatial_enabled: false,
             correlation_matrix: ChannelCorrelationMonitor::new(channels as usize, sr),
             matrix_scratch: crate::analyzer::CorrelationData::new(channels as usize),
@@ -77,6 +140,10 @@ impl LoudnessMonitor {
             query_error_generation: 0,
             frames_seen: 0,
         })
+    }
+
+    pub fn channel_layout(&self) -> Option<&ChannelLayout> {
+        self.channel_layout.as_ref()
     }
 
     /// Enable / disable the inter-channel Pearson r matrix.
@@ -119,9 +186,33 @@ impl LoudnessMonitor {
             self.correlation_matrix.add_frames(samples);
         }
 
-        self.ebur128
-            .add_frames_f32(samples)
-            .map_err(|error| format!("EBU R128 add_frames failed: {error:?}"))?;
+        if let Some(peak_meter) = &mut self.peak_meter {
+            peak_meter
+                .add_frames_f32(samples)
+                .map_err(|error| format!("EBU R128 peak add_frames failed: {error:?}"))?;
+            let input_channels = self.channels as usize;
+            for input in samples.chunks(256 * input_channels) {
+                let frames = input.len() / input_channels;
+                let scratch_len = frames * self.loudness_channels;
+                let scratch = &mut self.weighted_scratch[..scratch_len];
+                scratch.fill(0.0);
+                for (input_frame, output_frame) in input
+                    .chunks_exact(input_channels)
+                    .zip(scratch.chunks_exact_mut(self.loudness_channels))
+                {
+                    for channel in 0..input_channels {
+                        output_frame[channel] = input_frame[channel] * self.loudness_gains[channel];
+                    }
+                }
+                self.ebur128
+                    .add_frames_f32(scratch)
+                    .map_err(|error| format!("EBU R128 loudness add_frames failed: {error:?}"))?;
+            }
+        } else {
+            self.ebur128
+                .add_frames_f32(samples)
+                .map_err(|error| format!("EBU R128 add_frames failed: {error:?}"))?;
+        }
         self.frames_seen = self
             .frames_seen
             .saturating_add((samples.len() / self.channels as usize) as u64);
@@ -152,8 +243,9 @@ impl LoudnessMonitor {
         let tps = &mut self.true_peaks_buf[..nc];
 
         for ch in 0..nc {
-            let sample_peak = self.ebur128.prev_sample_peak(ch as u32);
-            let true_peak = self.ebur128.prev_true_peak(ch as u32);
+            let peak_meter = self.peak_meter.as_mut().unwrap_or(&mut self.ebur128);
+            let sample_peak = peak_meter.prev_sample_peak(ch as u32);
+            let true_peak = peak_meter.prev_true_peak(ch as u32);
             valid &= sample_peak.is_ok() && true_peak.is_ok();
             peaks[ch] = sample_peak.unwrap_or(0.0);
             let tp_linear = true_peak.unwrap_or(0.0);
@@ -174,7 +266,7 @@ impl LoudnessMonitor {
         }
         d.measurement_valid = valid;
         d.measurement_enabled = true;
-        d.channel_layout_is_compliant = self.channels <= 2;
+        d.channel_layout_is_compliant = self.channel_layout.is_some() || self.channels <= 2;
         d.query_error_generation = self.query_error_generation;
         d.true_peak_is_compliant = self.sample_rate == 48_000;
         d.integrated_window_seconds = 3_600;
@@ -212,6 +304,9 @@ impl LoudnessMonitor {
 
     pub fn reset(&mut self) -> Result<(), String> {
         self.ebur128.reset();
+        if let Some(peak_meter) = &mut self.peak_meter {
+            peak_meter.reset();
+        }
         self.correlation_matrix.reset();
         self.query_error_generation = 0;
         self.frames_seen = 0;
@@ -226,17 +321,44 @@ pub struct LoudnessMonitorPlugin {
     enabled: bool,
     cache: RealTimeCache<LoudnessData>,
     monitor: LoudnessMonitor,
+    channel_layout: Option<ChannelLayout>,
     cached_parameters: Vec<Parameter>,
 }
 
 impl LoudnessMonitorPlugin {
     pub fn new(num_channels: usize) -> Result<Self, String> {
+        Self::new_inner(num_channels, None)
+    }
+
+    pub fn with_channel_layout(channel_layout: ChannelLayout) -> Result<Self, String> {
+        Self::new_inner(channel_layout.channels.len(), Some(channel_layout))
+    }
+
+    pub fn new_with_layout(
+        num_channels: usize,
+        channel_layout: ChannelLayout,
+    ) -> Result<Self, String> {
+        Self::new_inner(num_channels, Some(channel_layout))
+    }
+
+    fn new_inner(
+        num_channels: usize,
+        channel_layout: Option<ChannelLayout>,
+    ) -> Result<Self, String> {
         if num_channels == 0 {
             return Err("loudness monitor requires at least one channel".to_string());
         }
+        if let Some(layout) = &channel_layout {
+            layout.validate_for_width(num_channels)?;
+        }
         let sr = 48000;
-        let monitor = LoudnessMonitor::new(num_channels as u32, sr)?;
-        let cache = new_loudness_cache(num_channels, false);
+        let monitor = if let Some(layout) = &channel_layout {
+            LoudnessMonitor::new_with_layout(num_channels as u32, sr, layout.clone())?
+        } else {
+            LoudnessMonitor::new(num_channels as u32, sr)?
+        };
+        let layout_compliant = channel_layout.is_some() || num_channels <= 2;
+        let cache = new_loudness_cache(num_channels, false, layout_compliant);
         let mut p = Self {
             num_channels,
             sample_rate: sr,
@@ -244,10 +366,15 @@ impl LoudnessMonitorPlugin {
             enabled: true,
             cache,
             monitor,
+            channel_layout,
             cached_parameters: Vec::new(),
         };
         p.rebuild_cached_parameters();
         Ok(p)
+    }
+
+    pub fn channel_layout(&self) -> Option<&ChannelLayout> {
+        self.channel_layout.as_ref()
     }
 
     fn rebuild_cached_parameters(&mut self) {
@@ -261,8 +388,14 @@ impl LoudnessMonitorPlugin {
         // Reset both cache slots. Updating only the published half lets a
         // subsequent enable/update swap stale pre-reset measurements back in.
         for _ in 0..2 {
-            self.cache
-                .update(|data| reset_loudness_data(data, channels, spatial));
+            self.cache.update(|data| {
+                reset_loudness_data(
+                    data,
+                    channels,
+                    spatial,
+                    self.channel_layout.is_some() || channels <= 2,
+                )
+            });
         }
         Ok(())
     }
@@ -277,7 +410,11 @@ impl LoudnessMonitorPlugin {
         self.monitor.set_spatial_enabled(enabled);
         // Enabling spatial data is a control-thread structural operation.
         // Rebuild both cache slots now so the first audio callback only copies.
-        self.cache = new_loudness_cache(self.num_channels, enabled);
+        self.cache = new_loudness_cache(
+            self.num_channels,
+            enabled,
+            self.channel_layout.is_some() || self.num_channels <= 2,
+        );
     }
 
     /// Builder-style helper.
@@ -352,9 +489,17 @@ impl Plugin for LoudnessMonitorPlugin {
         // that opted in once don't silently lose the matrix after a sample-
         // rate or channel-count change.
         let spatial = self.monitor.spatial_enabled();
-        self.monitor = LoudnessMonitor::new(self.num_channels as u32, sr)?;
+        self.monitor = if let Some(layout) = &self.channel_layout {
+            LoudnessMonitor::new_with_layout(self.num_channels as u32, sr, layout.clone())?
+        } else {
+            LoudnessMonitor::new(self.num_channels as u32, sr)?
+        };
         self.monitor.set_spatial_enabled(spatial);
-        self.cache = new_loudness_cache(self.num_channels, spatial);
+        self.cache = new_loudness_cache(
+            self.num_channels,
+            spatial,
+            self.channel_layout.is_some() || self.num_channels <= 2,
+        );
         self.cache
             .update(|data| data.measurement_enabled = self.enabled);
         self.initialized = true;
@@ -367,8 +512,14 @@ impl Plugin for LoudnessMonitorPlugin {
         let channels = self.num_channels;
         let spatial = self.monitor.spatial_enabled();
         for _ in 0..2 {
-            self.cache
-                .update(|data| reset_loudness_data(data, channels, spatial));
+            self.cache.update(|data| {
+                reset_loudness_data(
+                    data,
+                    channels,
+                    spatial,
+                    self.channel_layout.is_some() || channels <= 2,
+                )
+            });
         }
     }
     fn process(
@@ -433,26 +584,36 @@ impl Plugin for LoudnessMonitorPlugin {
     }
 }
 
-fn new_loudness_data(channels: usize, spatial: bool) -> LoudnessData {
+fn new_loudness_data(channels: usize, spatial: bool, layout_compliant: bool) -> LoudnessData {
     let mut data = LoudnessData::new(channels);
+    data.channel_layout_is_compliant = layout_compliant;
     if spatial {
         data.update_correlation_matrix(&vec![0.0; channels.saturating_mul(channels)]);
     }
     data
 }
 
-fn new_loudness_cache(channels: usize, spatial: bool) -> RealTimeCache<LoudnessData> {
+fn new_loudness_cache(
+    channels: usize,
+    spatial: bool,
+    layout_compliant: bool,
+) -> RealTimeCache<LoudnessData> {
     RealTimeCache::new_pair(
-        new_loudness_data(channels, spatial),
-        new_loudness_data(channels, spatial),
+        new_loudness_data(channels, spatial, layout_compliant),
+        new_loudness_data(channels, spatial, layout_compliant),
     )
 }
 
-fn reset_loudness_data(data: &mut LoudnessData, channels: usize, spatial: bool) {
+fn reset_loudness_data(
+    data: &mut LoudnessData,
+    channels: usize,
+    spatial: bool,
+    layout_compliant: bool,
+) {
     data.measurement_valid = false;
     data.query_error_generation = 0;
     data.measurement_enabled = false;
-    data.channel_layout_is_compliant = channels <= 2;
+    data.channel_layout_is_compliant = layout_compliant;
     data.momentary_lufs = f64::NEG_INFINITY;
     data.shortterm_lufs = f64::NEG_INFINITY;
     data.integrated_lufs = f64::NEG_INFINITY;
