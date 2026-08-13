@@ -8,7 +8,7 @@
 // preservation, coherence computation, transient detection, HR overlay).
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use sotf_host::{Plugin, ProcessContext};
+use sotf_host::{ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugin_upmixer::UpmixerPlugin;
 use std::hint::black_box;
 use std::time::Duration;
@@ -93,6 +93,67 @@ fn create_upmixer(fft_size: usize, speaker_config: &str) -> UpmixerPlugin {
         false, // enable_subharmonic_synth
         0.5,   // subharmonic_gain
     )
+}
+
+fn create_multi_source_upmixer(fft_size: usize, speaker_config: &str) -> UpmixerPlugin {
+    let mut upmixer = create_upmixer(fft_size, speaker_config);
+    upmixer
+        .set_parameter(
+            ParameterId::from("multi_source_extraction"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    upmixer
+}
+
+/// Benchmark end-to-end processing with the channel x bin secondary-source
+/// panning path enabled.
+///
+/// The process block is two FFT lengths so every timed iteration executes four
+/// 50%-overlapped analysis/panning/synthesis hops. The matrix covers every
+/// supported surround layout and the production FFT-size range.
+fn bench_multi_source_processing_matrix(c: &mut Criterion) {
+    let mut group = c.benchmark_group("upmixer_multi_source_processing_matrix");
+    group.warm_up_time(Duration::from_millis(500));
+    group.measurement_time(Duration::from_secs(1));
+    group.sample_size(20);
+
+    let sample_rate = 48_000;
+    let layouts = [
+        "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6",
+    ];
+    let fft_sizes = [512usize, 1024, 2048, 4096];
+
+    for &layout in &layouts {
+        for &fft_size in &fft_sizes {
+            let block_size = fft_size * 2;
+            group.throughput(Throughput::Elements((block_size * 2) as u64));
+            group.bench_with_input(
+                BenchmarkId::new(layout, fft_size),
+                &(layout, fft_size, block_size),
+                |b, &(layout, fft_size, block_size)| {
+                    let mut upmixer = create_multi_source_upmixer(fft_size, layout);
+                    upmixer.initialize(sample_rate).unwrap();
+                    let input = generate_realistic_input(block_size, sample_rate, false);
+                    let mut output = vec![0.0f32; block_size * upmixer.output_channels()];
+                    let context = ProcessContext::new(sample_rate, block_size);
+                    warmup_plugin(&mut upmixer, &input, &mut output, &context, 8);
+
+                    b.iter(|| {
+                        upmixer
+                            .process(
+                                black_box(&input),
+                                black_box(&mut output),
+                                black_box(&context),
+                            )
+                            .unwrap();
+                    });
+                },
+            );
+        }
+    }
+
+    group.finish();
 }
 
 /// Benchmark processing for 5.1 configuration over various block sizes
@@ -261,6 +322,7 @@ fn bench_upmixer_production_config(c: &mut Criterion) {
 
 criterion_group!(
     benches,
+    bench_multi_source_processing_matrix,
     bench_upmixer_5_1_block_sizes,
     bench_upmixer_configs,
     bench_upmixer_fft_sizes,

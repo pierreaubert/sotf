@@ -44,9 +44,28 @@ Implemented in `sotf-plugin-upmixer` 0.5.122:
   `concurrent_publication_and_reset_never_expose_a_stale_generation` regression runs a publisher,
   resetter, and reader concurrently for 100,000 publications and 20,000 resets.
 
+Verified in `sotf-plugin-upmixer` 0.5.123:
+
+- **Reference policy:** latency-aligned steady-state total output energy stays within -4 to +2 dB
+  of stereo input energy for correlated, anti-correlated, quadrature, and deterministic independent
+  signals in 5.1 and worst-case 9.1.6 with multi-source extraction enabled. The same render is
+  numerically equivalent across monolithic and irregular host block partitions.
+- **Realtime safety:** the allocation test now exercises multi-source extraction at the worst-case
+  advertised 9.1.6 / FFT 4096 configuration. The denormal regression now constructs true IEEE-754
+  subnormal inputs by bit pattern and verifies callback-thread FTZ/DAZ produces only zero or normal
+  output.
+- **End-to-end multi-source profile:** Criterion now covers every advertised speaker layout at FFT
+  sizes 512, 1024, 2048, and 4096 with four analysis/panning/synthesis hops per iteration. On an
+  Apple M4 Pro (macOS 26.5.2, rustc 1.97.1), the local 9.1.6 / FFT 4096 baseline was 1.200–1.220 ms.
+  A temporary loop-unswitch of the block-invariant `multi_source_extraction` condition measured
+  1.218–1.241 ms; the intervals overlap and the exploratory candidate was not retained. The final
+  unchanged kernel remeasured at 1.207–1.219 ms. Command:
+  `cargo bench -p sotf-plugin-upmixer --bench upmixer-benchmark -- upmixer_multi_source_processing_matrix/9.1.6/4096`.
+
 **Review date:** 2026-08-12  
 **Crate:** `crates/sotf-plugins/crates/sotf-plugin-upmixer`  
-**Status:** remediated through 0.5.122; every P0-P3 finding has focused regression coverage.
+**Status:** remediated through 0.5.123; every confirmed P0-P3 finding has focused regression
+coverage, and the retained panning/energy recommendations now have reference and benchmark evidence.
 
 ## Confirmed defects
 

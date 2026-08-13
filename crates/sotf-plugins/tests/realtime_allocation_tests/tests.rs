@@ -179,8 +179,14 @@ fn test_compressor_zero_alloc() {
 #[serial]
 fn test_upmixer_zero_alloc() {
     let mut plugin = UpmixerPlugin::new(
-        2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        4096, "9.1.6", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
     );
+    plugin
+        .set_parameter(
+            ParameterId::from("multi_source_extraction"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);

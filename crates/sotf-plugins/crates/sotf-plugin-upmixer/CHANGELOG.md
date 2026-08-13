@@ -1,3 +1,16 @@
+# 0.5.123
+
+## Verification
+
+- Define a latency-aligned, steady-state reconstruction-energy policy for correlated,
+  anti-correlated, quadrature, and independent stereo in 5.1 and 9.1.6 with multi-source
+  extraction enabled.
+- Verify multi-source rendering is numerically equivalent across irregular host block partitions
+  and remains allocation-free at 9.1.6 / FFT 4096. Exercise callback-thread FTZ/DAZ with true
+  IEEE-754 subnormal bit patterns instead of merely low-amplitude normal samples.
+- Add an end-to-end multi-source processing benchmark matrix covering every advertised layout and
+  FFT sizes 512–4096. A local exploratory branch-hoisted candidate was not retained.
+
 # 0.5.122
 
 ## Verification

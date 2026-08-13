@@ -440,27 +440,41 @@ fn test_upmixer_denormal_flushing() {
     let fft_size = 2048;
     let sample_rate = 44100;
 
+    // Start the callback worker before initialize() changes the parent thread's
+    // FP control state, then hand it the initialized plugin through the channel.
+    let (callback_tx, callback_rx) = std::sync::mpsc::sync_channel(1);
+    let callback = std::thread::spawn(move || {
+        let (mut plugin, input): (UpmixerPlugin, Vec<f32>) = callback_rx.recv().unwrap();
+        let num_samples = input.len() / 2;
+        let output_channels = plugin.output_channels();
+        let mut output = vec![0.0; num_samples * output_channels];
+        let context = sotf_host::ProcessContext::new(sample_rate, num_samples);
+        plugin.process(&input, &mut output, &context).unwrap();
+        output
+    });
+
     let mut plugin = UpmixerPlugin::new(
         fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
     );
     plugin.initialize(sample_rate).unwrap();
 
-    // Create very low amplitude input (below denormal threshold)
+    // Construct subnormals by bit pattern so the test input remains subnormal
+    // even when initialization has already enabled FTZ/DAZ on this thread.
     let num_samples = 8192;
     let mut input = vec![0.0; num_samples * 2];
-
+    let subnormal = f32::from_bits(1);
     for i in 0..num_samples {
-        let t = i as f32 / sample_rate as f32;
-        // Extremely low amplitude signal (1e-35 is in denormal range)
-        let signal = 1e-35 * (2.0 * std::f32::consts::PI * 1000.0 * t).sin();
+        let signal = if i % 2 == 0 { subnormal } else { -subnormal };
         input[i * 2] = signal;
         input[i * 2 + 1] = signal;
     }
+    assert!(input.iter().all(|sample| {
+        let magnitude = sample.abs();
+        magnitude > 0.0 && magnitude < f32::MIN_POSITIVE
+    }));
 
-    let output_channels = 6;
-    let mut output = vec![0.0; num_samples * output_channels];
-    let context = sotf_host::ProcessContext::new(sample_rate, num_samples);
-    plugin.process(&input, &mut output, &context).unwrap();
+    callback_tx.send((plugin, input)).unwrap();
+    let output = callback.join().unwrap();
 
     // Count true f32 subnormal samples. Values below 1e-30 are still normal
     // f32 samples, so the denormal check must use the IEEE normal boundary.

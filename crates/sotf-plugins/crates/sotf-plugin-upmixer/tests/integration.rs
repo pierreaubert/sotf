@@ -376,46 +376,143 @@ fn upmixer_rejects_non_finite_input_without_poisoning_following_audio() {
 
 #[test]
 fn multi_source_reconstruction_has_a_bounded_energy_budget_for_stereo_extremes() {
-    const FRAMES: usize = 8192;
-    for scenario in ["correlated", "anti_phase", "quadrature", "independent"] {
+    const WARMUP_FRAMES: usize = 8192;
+    const MEASURE_FRAMES: usize = 8192;
+    for layout in ["5.1", "9.1.6"] {
+        for scenario in ["correlated", "anti_phase", "quadrature", "independent"] {
+            let mut params = UpmixerPluginParams::default();
+            params.core.speaker_config = layout.to_string();
+            params.spectral.multi_source_extraction = true;
+            let mut plugin = UpmixerPlugin::from_params(params);
+            plugin.initialize(48_000).unwrap();
+            let channels = plugin.output_channels();
+            let latency = plugin.latency_samples();
+            let total_frames = WARMUP_FRAMES + MEASURE_FRAMES + latency;
+            let mut input = vec![0.0_f32; total_frames * 2];
+            let mut noise_left = 0x1234_5678_u32;
+            let mut noise_right = 0x9abc_def0_u32;
+            for frame in 0..total_frames {
+                let phase = frame as f32 * std::f32::consts::TAU * 997.0 / 48_000.0;
+                let (left, right) = match scenario {
+                    "correlated" => {
+                        let sample = phase.sin() * 0.25;
+                        (sample, sample)
+                    }
+                    "anti_phase" => {
+                        let sample = phase.sin() * 0.25;
+                        (sample, -sample)
+                    }
+                    "quadrature" => (phase.sin() * 0.25, phase.cos() * 0.25),
+                    _ => {
+                        noise_left = noise_left
+                            .wrapping_mul(1_664_525)
+                            .wrapping_add(1_013_904_223);
+                        noise_right = noise_right.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                        (
+                            (noise_left as f32 / u32::MAX as f32 - 0.5) * 0.5,
+                            (noise_right as f32 / u32::MAX as f32 - 0.5) * 0.5,
+                        )
+                    }
+                };
+                input[frame * 2] = left;
+                input[frame * 2 + 1] = right;
+            }
+
+            let mut output = vec![0.0_f32; total_frames * channels];
+            plugin
+                .process(
+                    &input,
+                    &mut output,
+                    &ProcessContext::new(48_000, total_frames),
+                )
+                .unwrap();
+            assert!(
+                output.iter().all(|sample| sample.is_finite()),
+                "{layout}/{scenario}"
+            );
+            let input_start = WARMUP_FRAMES * 2;
+            let input_end = (WARMUP_FRAMES + MEASURE_FRAMES) * 2;
+            let output_start = (WARMUP_FRAMES + latency) * channels;
+            let output_end = (WARMUP_FRAMES + latency + MEASURE_FRAMES) * channels;
+            let input_energy: f32 = input[input_start..input_end]
+                .iter()
+                .map(|sample| sample * sample)
+                .sum();
+            let output_energy: f32 = output[output_start..output_end]
+                .iter()
+                .map(|sample| sample * sample)
+                .sum();
+            let energy_delta_db = 10.0 * (output_energy / input_energy).log10();
+            assert!(
+                (-4.0..=2.0).contains(&energy_delta_db),
+                "{layout}/{scenario} exceeded the latency-aligned reconstruction policy: \
+                 input={input_energy}, output={output_energy}, delta={energy_delta_db:.3} dB"
+            );
+        }
+    }
+}
+
+#[test]
+fn multi_source_render_is_equivalent_across_host_block_partitions() {
+    const FRAMES: usize = 12_317;
+    let mut input = vec![0.0_f32; FRAMES * 2];
+    let mut left_state = 0x3141_5926_u32;
+    let mut right_state = 0x2718_2818_u32;
+    for frame in 0..FRAMES {
+        left_state = left_state
+            .wrapping_mul(1_664_525)
+            .wrapping_add(1_013_904_223);
+        right_state = right_state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        input[frame * 2] = (left_state as f32 / u32::MAX as f32 - 0.5) * 0.3;
+        input[frame * 2 + 1] = (right_state as f32 / u32::MAX as f32 - 0.5) * 0.3;
+    }
+
+    let make_plugin = || {
         let mut params = UpmixerPluginParams::default();
         params.spectral.multi_source_extraction = true;
         let mut plugin = UpmixerPlugin::from_params(params);
         plugin.initialize(48_000).unwrap();
-        let channels = plugin.output_channels();
-        let mut input = vec![0.0_f32; FRAMES * 2];
-        let mut noise_state = 0x1234_5678_u32;
-        for frame in 0..FRAMES {
-            let phase = frame as f32 * std::f32::consts::TAU * 997.0 / 48_000.0;
-            let left = phase.sin() * 0.25;
-            let right = match scenario {
-                "correlated" => left,
-                "anti_phase" => -left,
-                "quadrature" => phase.cos() * 0.25,
-                _ => {
-                    noise_state = noise_state
-                        .wrapping_mul(1_664_525)
-                        .wrapping_add(1_013_904_223);
-                    (noise_state as f32 / u32::MAX as f32 - 0.5) * 0.5
-                }
-            };
-            input[frame * 2] = left;
-            input[frame * 2 + 1] = right;
-        }
-
-        let mut output = vec![0.0_f32; FRAMES * channels];
         plugin
-            .process(&input, &mut output, &ProcessContext::new(48_000, FRAMES))
+    };
+
+    let mut whole = make_plugin();
+    let channels = whole.output_channels();
+    let mut whole_output = vec![0.0_f32; FRAMES * channels];
+    whole
+        .process(
+            &input,
+            &mut whole_output,
+            &ProcessContext::new(48_000, FRAMES),
+        )
+        .unwrap();
+
+    let mut partitioned = make_plugin();
+    let mut partitioned_output = vec![0.0_f32; FRAMES * channels];
+    let mut frame = 0;
+    for block_frames in [1usize, 257, 1024, 31, 4096].into_iter().cycle() {
+        if frame == FRAMES {
+            break;
+        }
+        let block_frames = block_frames.min(FRAMES - frame);
+        partitioned
+            .process(
+                &input[frame * 2..(frame + block_frames) * 2],
+                &mut partitioned_output[frame * channels..(frame + block_frames) * channels],
+                &ProcessContext::new(48_000, block_frames),
+            )
             .unwrap();
-        assert!(output.iter().all(|sample| sample.is_finite()), "{scenario}");
-        let input_energy: f32 = input.iter().map(|sample| sample * sample).sum();
-        let output_energy: f32 = output.iter().map(|sample| sample * sample).sum();
-        assert!(output_energy > 0.0, "{scenario} unexpectedly silent");
-        assert!(
-            output_energy <= input_energy * channels as f32 * 2.0,
-            "{scenario} exceeded reconstruction budget: input={input_energy}, output={output_energy}"
-        );
+        frame += block_frames;
     }
+
+    let max_delta = whole_output
+        .iter()
+        .zip(&partitioned_output)
+        .map(|(whole, partitioned)| (whole - partitioned).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_delta <= 2e-5,
+        "multi-source output changed with host partitioning: max delta {max_delta}"
+    );
 }
 
 #[test]
