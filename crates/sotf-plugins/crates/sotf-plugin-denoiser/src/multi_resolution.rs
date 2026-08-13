@@ -138,9 +138,19 @@ pub(super) struct MultiResState {
     mcra_alpha_p: f32,
     mcra_l: usize,
     mcra_delta: f32,
+
+    #[cfg(test)]
+    force_fft_error: bool,
 }
 
 impl MultiResState {
+    pub fn set_mcra_parameters(&mut self, alpha_s: f32, alpha_p: f32, window: usize, delta: f32) {
+        self.mcra_alpha_s = alpha_s;
+        self.mcra_alpha_p = alpha_p;
+        self.mcra_l = window;
+        self.mcra_delta = delta;
+    }
+
     pub fn new(
         num_channels: usize,
         mcra_alpha_s: f32,
@@ -162,6 +172,8 @@ impl MultiResState {
             mcra_alpha_p,
             mcra_l,
             mcra_delta,
+            #[cfg(test)]
+            force_fft_error: false,
         }
     }
 
@@ -183,7 +195,7 @@ impl MultiResState {
         num_channels: usize,
         reduction_linear: f32,
         floor_linear: f32,
-    ) {
+    ) -> Result<(), &'static str> {
         let block_samples = SMALL_FFT_SIZE * num_channels;
         let mut pos = 0;
 
@@ -197,9 +209,10 @@ impl MultiResState {
             pos += to_copy;
 
             while self.input_buffer_fill >= block_samples {
-                self.process_small_block(num_channels, reduction_linear, floor_linear);
+                self.process_small_block(num_channels, reduction_linear, floor_linear)?;
             }
         }
+        Ok(())
     }
 
     fn process_small_block(
@@ -207,7 +220,7 @@ impl MultiResState {
         num_channels: usize,
         reduction_linear: f32,
         floor_linear: f32,
-    ) {
+    ) -> Result<(), &'static str> {
         let small_fft_size = SMALL_FFT_SIZE;
         let hop_size = small_fft_size / 2;
         let spectrum_size = small_fft_size / 2 + 1;
@@ -224,10 +237,14 @@ impl MultiResState {
                 state.time_domain[i] =
                     self.temp_input_block[i * num_channels + ch] * state.window[i];
             }
+            #[cfg(test)]
+            if self.force_fft_error {
+                return Err("small FFT forward failed");
+            }
             state
                 .fft_forward
                 .process(&mut state.time_domain, &mut state.freq_domain)
-                .expect("small FFT forward failed");
+                .map_err(|_| "small FFT forward failed")?;
         }
 
         // Shift input buffer left by hop_size (consume processed overlap)
@@ -337,6 +354,12 @@ impl MultiResState {
             const FLUX_SMOOTH: f32 = 0.5;
             self.flux_weight = FLUX_SMOOTH * self.flux_weight + (1.0 - FLUX_SMOOTH) * raw_weight;
         }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn force_fft_error_for_test(&mut self, enabled: bool) {
+        self.force_fft_error = enabled;
     }
 
     /// Combine small-FFT gains with large-FFT gains.

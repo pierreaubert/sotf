@@ -47,6 +47,187 @@ fn test_denoiser_from_params() {
 }
 
 #[test]
+fn test_try_from_params_rejects_invalid_configuration() {
+    let mut params = DenoiserPluginParams::default();
+    params.mcra_alpha_s = f32::NAN;
+    assert!(DenoiserPlugin::try_from_params(2, params).is_err());
+
+    let mut params = DenoiserPluginParams::default();
+    params.mcra_l = 1;
+    assert!(DenoiserPlugin::try_from_params(2, params).is_err());
+
+    assert!(DenoiserPlugin::try_from_params(0, DenoiserPluginParams::default()).is_err());
+}
+
+#[test]
+fn noise_profile_learning_is_one_second_in_both_fft_modes() {
+    for sample_rate in [44_100_u32, 48_000, 96_000] {
+        for low_latency in [false, true] {
+            let mut plugin = DenoiserPlugin::new(1, low_latency);
+            plugin.initialize(sample_rate).unwrap();
+            let captured_seconds = plugin.noise_profile.learning_frames_target as f64
+                * plugin.config.hop_size as f64
+                / sample_rate as f64;
+            assert!(
+                (1.0..=1.025).contains(&captured_seconds),
+                "{sample_rate} Hz low_latency={low_latency} captured {captured_seconds:.6} s"
+            );
+        }
+    }
+}
+
+#[test]
+fn captured_profile_requested_and_effective_states_are_distinct() {
+    let mut plugin = DenoiserPlugin::new(1, false);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("use_captured_profile"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    plugin.update_cached_data();
+    let data = plugin
+        .get_data()
+        .unwrap()
+        .downcast::<DenoiserData>()
+        .unwrap();
+    assert!(plugin.noise_profile.use_captured_profile);
+    assert!(!data.using_captured_profile, "no profile exists yet");
+    drop(data);
+
+    plugin.start_learning();
+    plugin.noise_profile.learning_frames_target = 2;
+    plugin.fft.freq_domain[0].fill(rustfft::num_complex::Complex::new(2.0, 0.0));
+    plugin.accumulate_noise_frame();
+    plugin.accumulate_noise_frame();
+    plugin.update_cached_data();
+    let data = plugin
+        .get_data()
+        .unwrap()
+        .downcast::<DenoiserData>()
+        .unwrap();
+    assert!(data.has_captured_profile && data.using_captured_profile);
+    drop(data);
+
+    plugin.clear_noise_profile();
+    plugin.update_cached_data();
+    let data = plugin
+        .get_data()
+        .unwrap()
+        .downcast::<DenoiserData>()
+        .unwrap();
+    assert!(!data.has_captured_profile && !data.using_captured_profile);
+
+    let mut restored = DenoiserPluginParams::default();
+    restored.use_captured_profile = true;
+    let mut restored = DenoiserPlugin::from_params(1, restored);
+    restored.update_cached_data();
+    let data = restored
+        .get_data()
+        .unwrap()
+        .downcast::<DenoiserData>()
+        .unwrap();
+    assert!(
+        !data.using_captured_profile,
+        "profiles are not serialized in presets"
+    );
+}
+
+#[test]
+fn multires_fft_failure_is_returned_and_state_is_resettable() {
+    let mut state = super::multi_resolution::MultiResState::new(1, 0.9, 0.7, 50, 5.0);
+    state.force_fft_error_for_test(true);
+    let samples = vec![0.0; super::multi_resolution::SMALL_FFT_SIZE];
+    assert_eq!(
+        state.feed_and_process(&samples, 1, 10.0, 0.1),
+        Err("small FFT forward failed")
+    );
+    state.reset();
+    state.force_fft_error_for_test(false);
+    assert!(state.feed_and_process(&samples, 1, 10.0, 0.1).is_ok());
+}
+
+#[test]
+fn documented_fractional_percentages_deserialize_without_clamping() {
+    let params: DenoiserPluginParams =
+        serde_json::from_str(r#"{"smoothing":0.70,"transparency":0.80,"formant_strength":0.50}"#)
+            .unwrap();
+    let plugin = DenoiserPlugin::try_from_params(2, params).unwrap();
+    assert!((plugin.params.smoothing - 0.70).abs() < f32::EPSILON);
+    assert!((plugin.params.transparency - 0.80).abs() < f32::EPSILON);
+    assert!((plugin.auxiliary.formant_preserver.strength - 0.50).abs() < f32::EPSILON);
+}
+
+#[test]
+fn test_structural_modes_cannot_change_live_topology() {
+    let mut plugin = DenoiserPlugin::new(2, false);
+    let fft_size = plugin.config.fft_size;
+    let latency = plugin.latency_samples();
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("low_latency"), ParameterValue::Bool(true),)
+            .is_err()
+    );
+    assert_eq!(plugin.config.fft_size, fft_size);
+    assert_eq!(plugin.latency_samples(), latency);
+    assert!(!plugin.params.low_latency);
+
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("multi_resolution"),
+                ParameterValue::Bool(true),
+            )
+            .is_err()
+    );
+    assert!(plugin.multi_res.multi_res_state.is_none());
+}
+
+#[test]
+fn multires_output_is_host_block_invariant() {
+    let total_frames = 12_288;
+    let mut source = vec![0.0f32; total_frames];
+    for (i, sample) in source.iter_mut().enumerate() {
+        let tone = (i as f32 * 0.137).sin() * 0.2;
+        let burst = if (3070..3330).contains(&i) { 0.7 } else { 0.0 };
+        *sample = tone + burst;
+    }
+
+    let render = |block_size: usize| {
+        let mut params = DenoiserPluginParams::default();
+        params.multi_resolution = true;
+        params.reduction_db = 12.0;
+        let mut plugin = DenoiserPlugin::from_params(1, params);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+        let mut output = Vec::with_capacity(total_frames);
+        for chunk in source.chunks(block_size) {
+            let mut block = chunk.to_vec();
+            plugin
+                .process_in_place(&mut block, &ProcessContext::new(SAMPLE_RATE, chunk.len()))
+                .unwrap();
+            output.extend(block);
+        }
+        output
+    };
+
+    let reference = render(257);
+    for block_size in [64, 512, 2048, 4096] {
+        let output = render(block_size);
+        let max_diff = reference
+            .iter()
+            .zip(&output)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_diff < 1e-5,
+            "block size {block_size} changed output by {max_diff}"
+        );
+    }
+}
+
+#[test]
 fn test_hann_window() {
     let window = sotf_host::stft_common::generate_hann_window(8);
     assert_eq!(window.len(), 8);
@@ -597,27 +778,21 @@ fn test_multi_resolution_mode() {
         "Multi-resolution mode should produce non-zero output"
     );
 
-    // Also verify we can toggle it off via set_parameter without panicking
-    plugin
-        .parametric_set_parameter(
-            ParameterId::from("multi_resolution"),
-            ParameterValue::Bool(false),
-        )
-        .unwrap();
-    let got_off = plugin.parametric_get_parameter(&ParameterId::from("multi_resolution"));
-    assert_eq!(got_off, Some(ParameterValue::Bool(false)));
+    // Structural topology changes must be handled by graph replacement.
+    assert!(
+        plugin
+            .parametric_set_parameter(
+                ParameterId::from("multi_resolution"),
+                ParameterValue::Bool(false),
+            )
+            .is_err()
+    );
+    assert_eq!(
+        plugin.parametric_get_parameter(&ParameterId::from("multi_resolution")),
+        Some(ParameterValue::Bool(true))
+    );
 
-    // And toggle back on
-    plugin
-        .parametric_set_parameter(
-            ParameterId::from("multi_resolution"),
-            ParameterValue::Bool(true),
-        )
-        .unwrap();
-    let got_on = plugin.parametric_get_parameter(&ParameterId::from("multi_resolution"));
-    assert_eq!(got_on, Some(ParameterValue::Bool(true)));
-
-    // Process another block with it re-enabled
+    // Processing remains valid after the rejected topology change.
     let mut input2 = make_noisy_signal(num_frames, 2, -10.0, -30.0);
     plugin.process_in_place(&mut input2, &context).unwrap();
     let sum2: f32 = input2.iter().map(|x| x.abs()).sum();
@@ -1098,7 +1273,7 @@ fn test_fft_returns_result() {
 
     let input = vec![0.5f32; plugin.config.fft_size * plugin.config.channels];
 
-    let fwd = plugin.apply_window_and_forward_fft(&input);
+    let fwd = super::fft::apply_window_and_forward_fft(&plugin.config, &mut plugin.fft, &input);
     assert!(fwd.is_ok(), "FFT forward should return Ok on valid input");
 
     let inv = plugin.apply_gains_and_inverse_fft();

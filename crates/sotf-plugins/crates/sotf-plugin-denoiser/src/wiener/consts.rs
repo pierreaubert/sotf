@@ -1,5 +1,6 @@
 use super::super::DenoiserPlugin;
 use math_audio_dsp::fast_math::fast_log10;
+use rustfft::num_complex::Complex;
 
 /// Number of cepstral coefficients to keep (controls envelope smoothness).
 /// 30 coefficients is a classic choice that captures F1–F4 formants for speech.
@@ -147,18 +148,22 @@ impl DenoiserPlugin {
             }
         }
 
-        // Spatial denoising (after all per-channel passes complete)
-        // Applied to both channels simultaneously using inter-channel coherence
+        // Spatial denoising (after all per-channel passes complete). Standard
+        // 5.1/7.1 centre and LFE channels are intentionally excluded.
         if self.params.spatial_denoise && self.config.channels >= 2 {
             let strength = self.params.spatial_strength;
-            for k in 0..self.config.spectrum_size {
-                let coherence = self.compute_spatial_coherence(k);
-                let incoherence = 1.0 - coherence;
-                let extra_reduction = incoherence * strength * 0.3;
-                self.gains.smoothed_gain[0][k] =
-                    (self.gains.smoothed_gain[0][k] - extra_reduction).max(floor_linear);
-                self.gains.smoothed_gain[1][k] =
-                    (self.gains.smoothed_gain[1][k] - extra_reduction).max(floor_linear);
+            for pair_index in 0..self.spatial.channel_pairs.len() {
+                let (channel_a, channel_b) = self.spatial.channel_pairs[pair_index];
+                for k in 0..self.config.spectrum_size {
+                    let coherence = self.compute_spatial_coherence(pair_index, k);
+                    let extra_reduction = (1.0 - coherence) * strength * 0.3;
+                    self.gains.smoothed_gain[channel_a][k] =
+                        (self.gains.smoothed_gain[channel_a][k] - extra_reduction)
+                            .max(floor_linear);
+                    self.gains.smoothed_gain[channel_b][k] =
+                        (self.gains.smoothed_gain[channel_b][k] - extra_reduction)
+                            .max(floor_linear);
+                }
             }
         }
 
@@ -210,27 +215,40 @@ impl DenoiserPlugin {
         // Last element stays unchanged
     }
 
-    pub(crate) fn compute_spatial_coherence(&mut self, k: usize) -> f32 {
-        let p0 = self.get_power_at_bin(0, k);
-        let p1 = self.get_power_at_bin(1, k);
+    pub(crate) fn compute_spatial_coherence(&mut self, pair_index: usize, k: usize) -> f32 {
+        let (channel_a, channel_b) = self.spatial.channel_pairs[pair_index];
+        let p0 = self.get_power_at_bin(channel_a, k);
+        let p1 = self.get_power_at_bin(channel_b, k);
 
         if p0 < SPATIAL_POWER_THRESHOLD || p1 < SPATIAL_POWER_THRESHOLD {
+            self.spatial.spatial_cross[pair_index][k] = Complex::new(0.0, 0.0);
+            self.spatial.spatial_power_a[pair_index][k] = 0.0;
+            self.spatial.spatial_power_b[pair_index][k] = 0.0;
+            self.spatial.spatial_coherence[pair_index][k] = 1.0;
             return 1.0;
         }
 
-        let instant_cross = self.fft.freq_domain[0][k] * self.fft.freq_domain[1][k].conj();
-        let cross_state = &mut self.spatial.spatial_cross[k];
-        if cross_state.re == 0.0 && cross_state.im == 0.0 {
+        let instant_cross =
+            self.fft.freq_domain[channel_a][k] * self.fft.freq_domain[channel_b][k].conj();
+        let cross_state = &mut self.spatial.spatial_cross[pair_index][k];
+        let power_a = &mut self.spatial.spatial_power_a[pair_index][k];
+        let power_b = &mut self.spatial.spatial_power_b[pair_index][k];
+        if *power_a == 0.0 || *power_b == 0.0 {
             *cross_state = instant_cross;
+            *power_a = p0;
+            *power_b = p1;
         } else {
             cross_state.re = cross_state.re * SPATIAL_COHERENCE_ALPHA
                 + (1.0 - SPATIAL_COHERENCE_ALPHA) * instant_cross.re;
             cross_state.im = cross_state.im * SPATIAL_COHERENCE_ALPHA
                 + (1.0 - SPATIAL_COHERENCE_ALPHA) * instant_cross.im;
+            *power_a = *power_a * SPATIAL_COHERENCE_ALPHA + (1.0 - SPATIAL_COHERENCE_ALPHA) * p0;
+            *power_b = *power_b * SPATIAL_COHERENCE_ALPHA + (1.0 - SPATIAL_COHERENCE_ALPHA) * p1;
         }
-        let raw = (cross_state.re * cross_state.re + cross_state.im * cross_state.im) / (p0 * p1);
+        let raw = (cross_state.re * cross_state.re + cross_state.im * cross_state.im)
+            / (*power_a * *power_b).max(SPATIAL_POWER_THRESHOLD);
 
-        let coherence = &mut self.spatial.spatial_coherence[k];
+        let coherence = &mut self.spatial.spatial_coherence[pair_index][k];
         *coherence = raw.clamp(0.0, 1.0);
         *coherence
     }

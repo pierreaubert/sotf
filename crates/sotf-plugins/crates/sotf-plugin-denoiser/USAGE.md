@@ -48,7 +48,7 @@ RNNoise speech cleanup, focused high-frequency hiss reduction, and click/transie
 | Formant Strength | 0 to 100 | 50 | Strength of formant peak protection |
 | Multi-Resolution | On/Off | Off | Blend small and large FFT denoising paths |
 | Harmonic/Percussive | On/Off | Off | Treat tonal and transient/percussive regions differently |
-| Spatial Denoise | On/Off | Off | Apply multichannel spatial denoising |
+| Spatial Denoise | On/Off | Off | Apply pairwise coherence denoising; centre/LFE are excluded in 5.1/7.1 |
 | Spatial Strength | 0 to 100 | 50 | Spatial denoising intensity |
 
 ### Spectral Subtraction
@@ -67,6 +67,10 @@ RNNoise speech cleanup, focused high-frequency hiss reduction, and click/transie
 | Use | Apply the captured noise profile instead of MCRA estimation |
 | Clear | Discard the captured noise profile and revert to automatic estimation |
 
+Learning runs for approximately one second regardless of sample rate or FFT mode. “Use” may be
+requested before a profile exists, but monitoring reports it active only when captured data is
+actually available. Captured spectra are runtime state and are not stored in presets.
+
 ## Demos
 
 ### Removing Background Hum
@@ -77,7 +81,7 @@ RNNoise speech cleanup, focused high-frequency hiss reduction, and click/transie
 {
   "reduction_db": 20.0,
   "floor_db": -40.0,
-  "smoothing": 70.0,
+  "smoothing": 0.70,
   "attack_ms": 5.0,
   "release_ms": 50.0
 }
@@ -91,8 +95,8 @@ RNNoise speech cleanup, focused high-frequency hiss reduction, and click/transie
 {
   "reduction_db": 6.0,
   "floor_db": -50.0,
-  "smoothing": 60.0,
-  "transparency": 80.0,
+  "smoothing": 0.60,
+  "transparency": 0.80,
   "psychoacoustic_masking": true,
   "formant_preservation": true
 }
@@ -106,7 +110,7 @@ RNNoise speech cleanup, focused high-frequency hiss reduction, and click/transie
 {
   "reduction_db": 24.0,
   "floor_db": -32.0,
-  "smoothing": 55.0,
+  "smoothing": 0.55,
   "spectral_smoothing_enabled": true,
   "temporal_smoothing_enabled": true,
   "multi_resolution": true
@@ -120,8 +124,8 @@ RNNoise speech cleanup, focused high-frequency hiss reduction, and click/transie
 {
   "reduction_db": 6.0,
   "floor_db": -50.0,
-  "smoothing": 60.0,
-  "transparency": 80.0
+  "smoothing": 0.60,
+  "transparency": 0.80
 }
 ```
 
@@ -130,8 +134,8 @@ RNNoise speech cleanup, focused high-frequency hiss reduction, and click/transie
 {
   "reduction_db": 12.0,
   "floor_db": -40.0,
-  "smoothing": 50.0,
-  "transparency": 70.0
+  "smoothing": 0.50,
+  "transparency": 0.70
 }
 ```
 
@@ -140,8 +144,8 @@ RNNoise speech cleanup, focused high-frequency hiss reduction, and click/transie
 {
   "reduction_db": 25.0,
   "floor_db": -30.0,
-  "smoothing": 40.0,
-  "transparency": 50.0,
+  "smoothing": 0.40,
+  "transparency": 0.50,
   "spectral_smoothing_enabled": true,
   "temporal_smoothing_enabled": true
 }

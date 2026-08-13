@@ -10640,7 +10640,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-denoiser"
-version = "0.5.5"
+version = "0.5.8"
 dependencies = [
  "hound",
  "math-dsp",

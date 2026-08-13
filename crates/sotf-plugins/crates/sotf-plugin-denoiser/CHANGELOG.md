@@ -1,3 +1,41 @@
+# 0.5.8
+
+## Fixes
+
+- Spatial magnitude-squared coherence now smooths both auto-power spectra with the same
+  time constant as the complex cross-spectrum. Silence explicitly resets the estimator.
+- Spatial processing now has a documented channel contract: stereo/front, side, and rear pairs
+  are processed in standard 5.1/7.1 layouts; unmatched centre and LFE channels are untouched.
+- Noise-profile capture derives its frame target from sample rate and STFT hop, keeping capture
+  duration at approximately one second in both 512- and 2048-point modes.
+- Small-FFT failures propagate through the plugin result instead of panicking on the audio path.
+- QA now covers zero-allocation processing and callback timing across mono, stereo, 5.1, 7.1,
+  both FFT sizes, regular/irregular callback sizes, and default/all-optional-mode configurations.
+
+## Tests
+
+- Added amplitude-modulated coherence, multichannel topology/LFE, profile state-machine,
+  multi-rate capture-duration, small-FFT fault-injection, and documentation-value regressions.
+
+# 0.5.7
+
+## Fixes
+
+- Removed the unsafe aliased slice in the FFT path by passing explicitly disjoint configuration,
+  FFT state, and input scratch to the forward transform helper.
+- Added fallible construction validation for all serialized numeric controls and channel count;
+  both plugin factories now reject invalid presets before allocating DSP state.
+- Low-latency and multi-resolution topology controls now reject live changes instead of reporting
+  a mode that does not match the allocated FFT state and latency.
+- Multi-resolution analysis now advances only to each matching large-frame boundary, making output
+  independent of host callback partitioning and preventing future-sample analysis.
+- Live MCRA control changes now update both large- and small-FFT estimators.
+- Monitoring reports captured-profile use only when a profile actually exists.
+
+## Tests
+
+- Added invalid-construction, structural-topology, and multi-resolution block-invariance regressions.
+
 # 0.5.6
 
 ## Bug fixes

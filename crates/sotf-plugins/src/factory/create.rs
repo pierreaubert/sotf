@@ -294,35 +294,39 @@ pub fn create_plugin(
         "denoiser" => {
             let params: DenoiserPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse denoiser params: {e}"))?;
-            let plugin = DenoiserPlugin::from_params(channels, params);
+            let plugin = DenoiserPlugin::try_from_params(channels, params)?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "speech_denoiser" => {
             let params: SpeechDenoiserPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse speech denoiser params: {e}"))?;
-            let plugin = SpeechDenoiserPlugin::from_params(channels, params);
+            let plugin = SpeechDenoiserPlugin::try_from_params(channels, params)?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "hiss_reducer" => {
             let params: HissReducerPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse hiss reducer params: {e}"))?;
-            let plugin = HissReducerPlugin::from_params(channels, params);
+            let plugin =
+                HissReducerPlugin::try_from_params_at_sample_rate(channels, sample_rate, params)?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "declick" => {
             let params: DeclickPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse declick params: {e}"))?;
-            let plugin = DeclickPlugin::from_params(channels, params);
+            let plugin = DeclickPlugin::from_params(channels, sample_rate, params)?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "pnd" => {
+            if sample_rate == 0 {
+                return Err("PND sample rate must be non-zero".to_string());
+            }
             let params: PndPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse PND params: {e}"))?;
-            let plugin = PndPlugin::from_params(channels, params);
+            let plugin = PndPlugin::try_from_params(channels, params)?;
             Ok(Box::new(plugin))
         }
 
@@ -335,7 +339,7 @@ pub fn create_plugin(
                     params.input_channels
                 ));
             }
-            let plugin = BinauralDecoderPlugin::from_params(params);
+            let plugin = BinauralDecoderPlugin::try_from_params(params)?;
             Ok(Box::new(plugin))
         }
 
@@ -352,7 +356,8 @@ pub fn create_plugin(
         "channel_mute_solo" => {
             let params: ChannelMuteSoloParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse channel_mute_solo params: {e}"))?;
-            let plugin = ChannelMuteSoloPlugin::from_params(channels, params);
+            let plugin = ChannelMuteSoloPlugin::try_from_params(channels, params)
+                .map_err(|e| format!("Failed to create channel mute/solo plugin: {e}"))?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
@@ -369,8 +374,9 @@ pub fn create_plugin(
                 serde_json::from_value(parameters.clone())
                     .map_err(|e| format!("Failed to parse spectrum analyzer params: {e}"))?
             };
-            let plugin = SpectrumAnalyzerPlugin::with_config(channels, config)
-                .map_err(|e| format!("Failed to create spectrum analyzer: {e}"))?;
+            let plugin =
+                SpectrumAnalyzerPlugin::with_config_at_sample_rate(channels, sample_rate, config)
+                    .map_err(|e| format!("Failed to create spectrum analyzer: {e}"))?;
             Ok(Box::new(plugin))
         }
 

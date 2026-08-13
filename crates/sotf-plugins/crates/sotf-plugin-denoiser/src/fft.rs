@@ -2,32 +2,33 @@
 // FFT Operations for Denoiser
 // ============================================================================
 
-use super::DenoiserPlugin;
-impl DenoiserPlugin {
-    /// Apply window and forward FFT for all channels
-    /// Input: interleaved audio [L0, R0, L1, R1, ...]
-    /// Output: freq_domain buffers are filled with complex spectrum
-    pub(super) fn apply_window_and_forward_fft(&mut self, input: &[f32]) -> Result<(), String> {
-        // Optimization: De-interleave and window in a cache-friendly order
-        // We iterate time (i) then channels (ch) to read 'input' linearly
-        for i in 0..self.config.fft_size {
-            let window_val = self.fft.window[i];
-            for ch in 0..self.config.channels {
-                let idx = i * self.config.channels + ch;
-                self.fft.time_domain[ch][i] = input[idx] * window_val;
-            }
-        }
+use super::{DenoiserConfig, DenoiserFft, DenoiserPlugin};
 
-        // Perform Forward FFT (Real -> Complex) for all channels
-        for ch in 0..self.config.channels {
-            self.fft
-                .fft_forward
-                .process(&mut self.fft.time_domain[ch], &mut self.fft.freq_domain[ch])
-                .map_err(|e| format!("FFT forward failed: {:?}", e))?;
+/// Apply the analysis window and forward FFT using explicitly disjoint state.
+/// Keeping this helper outside `DenoiserPlugin` avoids aliasing a slice inside
+/// the plugin while also borrowing the whole plugin mutably.
+pub(super) fn apply_window_and_forward_fft(
+    config: &DenoiserConfig,
+    fft: &mut DenoiserFft,
+    input: &[f32],
+) -> Result<(), String> {
+    for i in 0..config.fft_size {
+        let window_val = fft.window[i];
+        for ch in 0..config.channels {
+            let idx = i * config.channels + ch;
+            fft.time_domain[ch][i] = input[idx] * window_val;
         }
-        Ok(())
     }
 
+    for ch in 0..config.channels {
+        fft.fft_forward
+            .process(&mut fft.time_domain[ch], &mut fft.freq_domain[ch])
+            .map_err(|e| format!("FFT forward failed: {e:?}"))?;
+    }
+    Ok(())
+}
+
+impl DenoiserPlugin {
     /// Apply Wiener gains and perform inverse FFT for all channels
     /// Output: time_out_channels buffers are filled with processed samples
     pub(super) fn apply_gains_and_inverse_fft(&mut self) -> Result<(), String> {

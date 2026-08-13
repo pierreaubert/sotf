@@ -220,16 +220,15 @@ fn test_spatial_coherence_uses_complex_cross_term() {
     let mut decorrelated_sum = 0.0;
 
     // Strongly coherent case: identical complex bins each frame.
-    plugin.spatial.spatial_coherence.fill(1.0);
-    plugin
-        .spatial
-        .spatial_cross
-        .fill(rustfft::num_complex::Complex::new(0.0, 0.0));
+    plugin.spatial.spatial_coherence[0].fill(1.0);
+    plugin.spatial.spatial_cross[0].fill(rustfft::num_complex::Complex::new(0.0, 0.0));
+    plugin.spatial.spatial_power_a[0].fill(0.0);
+    plugin.spatial.spatial_power_b[0].fill(0.0);
     for frame in 0..12 {
         let angle = frame as f32 * 0.0;
         plugin.fft.freq_domain[0][k] = rustfft::num_complex::Complex::new(angle.cos(), angle.sin());
         plugin.fft.freq_domain[1][k] = plugin.fft.freq_domain[0][k];
-        coherent_sum += plugin.compute_spatial_coherence(k);
+        coherent_sum += plugin.compute_spatial_coherence(0, k);
     }
     coherent_sum /= 12.0;
     assert!(
@@ -239,16 +238,15 @@ fn test_spatial_coherence_uses_complex_cross_term() {
 
     // Decorrelated case: rapidly rotating relative phase; average complex cross
     // should cancel toward 0 even though magnitudes stay the same.
-    plugin.spatial.spatial_coherence.fill(1.0);
-    plugin
-        .spatial
-        .spatial_cross
-        .fill(rustfft::num_complex::Complex::new(0.0, 0.0));
+    plugin.spatial.spatial_coherence[0].fill(1.0);
+    plugin.spatial.spatial_cross[0].fill(rustfft::num_complex::Complex::new(0.0, 0.0));
+    plugin.spatial.spatial_power_a[0].fill(0.0);
+    plugin.spatial.spatial_power_b[0].fill(0.0);
     for frame in 0..12 {
         let phase = (frame as f32) * 0.7;
         plugin.fft.freq_domain[0][k] = rustfft::num_complex::Complex::new(1.0, 0.0);
         plugin.fft.freq_domain[1][k] = rustfft::num_complex::Complex::new(phase.cos(), phase.sin());
-        decorrelated_sum += plugin.compute_spatial_coherence(k);
+        decorrelated_sum += plugin.compute_spatial_coherence(0, k);
     }
     decorrelated_sum /= 12.0;
     assert!(
@@ -259,6 +257,75 @@ fn test_spatial_coherence_uses_complex_cross_term() {
     assert!(
         coherent_sum > decorrelated_sum,
         "Complex coherence should distinguish coherent vs. decorrelated bins"
+    );
+}
+
+#[test]
+fn spatial_coherence_uses_matched_power_smoothing() {
+    let mut plugin = DenoiserPlugin::new(2, true);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    let k = 12;
+    for frame in 0..32 {
+        let amplitude = [0.1_f32, 1.0, 0.25, 2.0][frame % 4];
+        let phase = frame as f32 * 0.31;
+        let value =
+            rustfft::num_complex::Complex::new(amplitude * phase.cos(), amplitude * phase.sin());
+        plugin.fft.freq_domain[0][k] = value;
+        plugin.fft.freq_domain[1][k] = value * 0.25;
+        let coherence = plugin.compute_spatial_coherence(0, k);
+        assert!(
+            coherence > 0.99,
+            "coherent amplitude modulation must remain coherent: {coherence}"
+        );
+    }
+
+    plugin.fft.freq_domain[0][k] = rustfft::num_complex::Complex::new(0.0, 0.0);
+    plugin.fft.freq_domain[1][k] = rustfft::num_complex::Complex::new(0.0, 0.0);
+    assert_eq!(plugin.compute_spatial_coherence(0, k), 1.0);
+    assert_eq!(plugin.spatial.spatial_power_a[0][k], 0.0);
+    assert_eq!(plugin.spatial.spatial_power_b[0][k], 0.0);
+}
+
+#[test]
+fn spatial_topology_covers_surround_pairs_and_excludes_center_lfe() {
+    assert_eq!(
+        DenoiserPlugin::new(3, false).spatial.channel_pairs,
+        vec![(0, 1)]
+    );
+    assert_eq!(
+        DenoiserPlugin::new(6, false).spatial.channel_pairs,
+        vec![(0, 1), (4, 5)]
+    );
+    assert_eq!(
+        DenoiserPlugin::new(8, false).spatial.channel_pairs,
+        vec![(0, 1), (4, 5), (6, 7)]
+    );
+
+    let mut plugin = DenoiserPlugin::new(6, false);
+    let k = 20;
+    for frame in 0..24 {
+        plugin.fft.freq_domain[0][k] = rustfft::num_complex::Complex::new(1.0, 0.0);
+        plugin.fft.freq_domain[1][k] = rustfft::num_complex::Complex::new(1.0, 0.0);
+        let phase = frame as f32 * 1.17;
+        plugin.fft.freq_domain[4][k] = rustfft::num_complex::Complex::new(1.0, 0.0);
+        plugin.fft.freq_domain[5][k] = rustfft::num_complex::Complex::new(phase.cos(), phase.sin());
+        let front = plugin.compute_spatial_coherence(0, k);
+        let surround = plugin.compute_spatial_coherence(1, k);
+        if frame == 23 {
+            assert!(front > 0.99, "coherent fronts should be preserved");
+            assert!(
+                surround < 0.4,
+                "decorrelated surrounds should be reduced: {surround}"
+            );
+        }
+    }
+    assert!(
+        !plugin
+            .spatial
+            .channel_pairs
+            .iter()
+            .any(|&(a, b)| a == 3 || b == 3),
+        "LFE must never participate in coherence processing"
     );
 }
 

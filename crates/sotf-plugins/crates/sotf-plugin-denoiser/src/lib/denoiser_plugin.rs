@@ -121,8 +121,13 @@ pub(super) struct DenoiserSpectralSub {
 
 /// Spatial denoising state.
 pub(super) struct DenoiserSpatial {
-    pub spatial_coherence: Vec<f32>, // Smoothed MSC coherence estimate per bin
-    pub spatial_cross: Vec<Complex<f32>>, // Averaged complex cross-spectrum estimate per bin
+    /// Channel pairs eligible for spatial processing. Standard 5.1/7.1 layouts
+    /// pair fronts and surround pairs while leaving centre and LFE untouched.
+    pub channel_pairs: Vec<(usize, usize)>,
+    pub spatial_coherence: Vec<Vec<f32>>,      // [pair][bin]
+    pub spatial_cross: Vec<Vec<Complex<f32>>>, // E[Xa * conj(Xb)] [pair][bin]
+    pub spatial_power_a: Vec<Vec<f32>>,        // E[|Xa|²] [pair][bin]
+    pub spatial_power_b: Vec<Vec<f32>>,        // E[|Xb|²] [pair][bin]
 }
 
 /// Harmonic/percussive separation state.
@@ -193,6 +198,20 @@ pub struct DenoiserPlugin {
 }
 
 impl DenoiserPlugin {
+    fn spatial_channel_pairs(channels: usize) -> Vec<(usize, usize)> {
+        match channels {
+            0 | 1 => Vec::new(),
+            2 | 3 => vec![(0, 1)],
+            // SMPTE-style 5.1: FL, FR, FC, LFE, SL, SR.
+            6 => vec![(0, 1), (4, 5)],
+            // SMPTE-style 7.1: FL, FR, FC, LFE, SL, SR, BL, BR.
+            8 => vec![(0, 1), (4, 5), (6, 7)],
+            _ => (0..channels / 2)
+                .map(|pair| (pair * 2, pair * 2 + 1))
+                .collect(),
+        }
+    }
+
     /// Create a new denoiser plugin
     pub fn new(channels: usize, low_latency: bool) -> Self {
         // Choose FFT size based on latency mode
@@ -312,7 +331,7 @@ impl DenoiserPlugin {
                 noise_profile_storage: vec![vec![0.0_f32; spectrum_size]; channels],
                 learning_accumulator: vec![vec![0.0_f32; spectrum_size]; channels],
                 learning_frames_count: 0,
-                learning_frames_target: crate::params::LEARN_FRAMES,
+                learning_frames_target: 44100_usize.div_ceil(hop_size),
                 is_learning: false,
             },
 
@@ -344,9 +363,19 @@ impl DenoiserPlugin {
                 spectral_sub_beta: pk(DN, "spectral_sub_beta").default_f32(),
             },
 
-            spatial: DenoiserSpatial {
-                spatial_coherence: vec![1.0_f32; spectrum_size],
-                spatial_cross: vec![Complex::new(1.0_f32, 0.0_f32); spectrum_size],
+            spatial: {
+                let channel_pairs = Self::spatial_channel_pairs(channels);
+                let pair_count = channel_pairs.len();
+                DenoiserSpatial {
+                    channel_pairs,
+                    spatial_coherence: vec![vec![1.0_f32; spectrum_size]; pair_count],
+                    spatial_cross: vec![
+                        vec![Complex::new(0.0_f32, 0.0_f32); spectrum_size];
+                        pair_count
+                    ],
+                    spatial_power_a: vec![vec![0.0_f32; spectrum_size]; pair_count],
+                    spatial_power_b: vec![vec![0.0_f32; spectrum_size]; pair_count],
+                }
             },
 
             tonal_transient: DenoiserTonalTransient {
@@ -530,6 +559,42 @@ impl DenoiserPlugin {
 
     /// Create a new denoiser plugin from configuration parameters
     pub fn from_params(channels: usize, params: DenoiserPluginParams) -> Self {
+        Self::try_from_params(channels, params).expect("valid denoiser configuration")
+    }
+
+    pub fn try_from_params(channels: usize, params: DenoiserPluginParams) -> PluginResult<Self> {
+        if channels == 0 {
+            return Err("Denoiser requires at least one channel".to_string());
+        }
+        macro_rules! validate_float {
+            ($field:ident, $key:literal) => {{
+                let value = params.$field;
+                let spec = pk(DN, $key);
+                if !value.is_finite()
+                    || value < spec.min_f64() as f32
+                    || value > spec.max_f64() as f32
+                {
+                    return Err(format!("Invalid denoiser {}: {value}", $key));
+                }
+            }};
+        }
+        validate_float!(reduction_db, "reduction_db");
+        validate_float!(floor_db, "floor_db");
+        validate_float!(smoothing, "smoothing");
+        validate_float!(attack_ms, "attack_ms");
+        validate_float!(release_ms, "release_ms");
+        validate_float!(mcra_alpha_s, "mcra_alpha_s");
+        validate_float!(mcra_alpha_p, "mcra_alpha_p");
+        validate_float!(mcra_delta, "mcra_delta");
+        validate_float!(transparency, "transparency");
+        validate_float!(dd_alpha, "dd_alpha");
+        validate_float!(spectral_sub_alpha, "spectral_sub_alpha");
+        validate_float!(spectral_sub_beta, "spectral_sub_beta");
+        validate_float!(formant_strength, "formant_strength");
+        let mcra_l = pk(DN, "mcra_l");
+        if params.mcra_l < mcra_l.min_f64() as usize || params.mcra_l > mcra_l.max_f64() as usize {
+            return Err(format!("Invalid denoiser mcra_l: {}", params.mcra_l));
+        }
         let mut plugin = Self::new(channels, params.low_latency);
 
         plugin.params.reduction_db = params.reduction_db.clamp(
@@ -556,7 +621,7 @@ impl DenoiserPlugin {
 
         plugin.mcra.mcra_alpha_s = params.mcra_alpha_s;
         plugin.mcra.mcra_alpha_p = params.mcra_alpha_p;
-        plugin.mcra.mcra_l = params.mcra_l.max(1);
+        plugin.mcra.mcra_l = params.mcra_l;
         plugin.mcra.mcra_delta = params.mcra_delta;
 
         plugin.params.transparency = params.transparency.clamp(
@@ -605,7 +670,7 @@ impl DenoiserPlugin {
         }
 
         plugin.rebuild_cached_parameters();
-        plugin
+        Ok(plugin)
     }
 
     pub(super) fn prepared_in_place_frames_for_fft(fft_size: usize) -> usize {
@@ -633,11 +698,11 @@ impl DenoiserPlugin {
             .take(block_samples)
             .zip(self.io.input_buffer.iter().take(block_samples))
             .for_each(|(dst, src)| *dst = *src);
-        // Safe because the pointer remains valid for `block_samples` and is only
-        // read while `self` is borrowed mutably for this FFT call.
-        let input_ptr = self.io.temp_input_block.as_ptr();
-        let input_block = unsafe { std::slice::from_raw_parts(input_ptr, block_samples) };
-        self.apply_window_and_forward_fft(input_block)?;
+        super::fft::apply_window_and_forward_fft(
+            &self.config,
+            &mut self.fft,
+            &self.io.temp_input_block[..block_samples],
+        )?;
 
         // Shift input buffer (remove processed samples, keeping hop_size overlap)
         let shift_samples = self.config.hop_size * self.config.channels;
@@ -698,7 +763,8 @@ impl DenoiserPlugin {
         let is_learn = self.noise_profile.is_learning;
         let has_prof = self.noise_profile.has_noise_profile;
         let progress = self.learning_progress();
-        let using_prof = self.noise_profile.use_captured_profile;
+        let using_prof =
+            self.noise_profile.use_captured_profile && self.noise_profile.has_noise_profile;
 
         let nf_buf = &self.ui.cached_noise_floor_buf;
         let snr_buf = &self.ui.cached_snr_buf;
@@ -805,6 +871,24 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
     }
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        for (id, value) in &values {
+            if id.as_str() == "low_latency" {
+                let requested = value
+                    .as_bool()
+                    .ok_or_else(|| "low_latency requires a boolean".to_string())?;
+                if requested != self.params.low_latency {
+                    return Err("low_latency is structural; recreate the denoiser".to_string());
+                }
+            }
+            if id.as_str() == "multi_resolution" {
+                let requested = value
+                    .as_bool()
+                    .ok_or_else(|| "multi_resolution requires a boolean".to_string())?;
+                if requested != self.multi_res.multi_resolution {
+                    return Err("multi_resolution is structural; recreate the denoiser".to_string());
+                }
+            }
+        }
         for (id, value) in values {
             let idx = param_bridge::set_parameter(DN, &id, &value, |i, v| {
                 self.set_param_value(i, v);
@@ -828,6 +912,16 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
                     // attack_ms or release_ms -> recompute envelope coefficients
                     self.update_envelope_coefficients();
                 }
+                7..=10 => {
+                    if let Some(ref mut state) = self.multi_res.multi_res_state {
+                        state.set_mcra_parameters(
+                            self.mcra.mcra_alpha_s,
+                            self.mcra.mcra_alpha_p,
+                            self.mcra.mcra_l,
+                            self.mcra.mcra_delta,
+                        );
+                    }
+                }
                 20
                     // learn_noise (trigger param)
                     if value.as_bool().unwrap_or(false) => {
@@ -838,20 +932,6 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
                     if value.as_bool().unwrap_or(false) => {
                         self.clear_noise_profile();
                     }
-                25 => {
-                    // multi_resolution -> allocate/deallocate state
-                    if self.multi_res.multi_resolution && self.multi_res.multi_res_state.is_none() {
-                        self.multi_res.multi_res_state = Some(super::multi_resolution::MultiResState::new(
-                            self.config.channels,
-                            self.mcra.mcra_alpha_s,
-                            self.mcra.mcra_alpha_p,
-                            self.mcra.mcra_l,
-                            self.mcra.mcra_delta,
-                        ));
-                    } else if !self.multi_res.multi_resolution {
-                        self.multi_res.multi_res_state = None;
-                    }
-                }
                 _ => {}
             }
         }
@@ -871,6 +951,8 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.config.sample_rate = sample_rate;
+        self.noise_profile.learning_frames_target =
+            (sample_rate as usize).div_ceil(self.config.hop_size).max(1);
         self.update_envelope_coefficients();
         self.precompute_bark_mapping();
 
@@ -912,10 +994,18 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
         // Reset formant preserver working buffers
         self.auxiliary.formant_preserver.log_mag_scratch.fill(0.0);
         self.auxiliary.formant_preserver.envelope.fill(0.0);
-        self.spatial.spatial_coherence.fill(1.0);
-        self.spatial
-            .spatial_cross
-            .fill(Complex::new(1.0_f32, 0.0_f32));
+        for coherence in &mut self.spatial.spatial_coherence {
+            coherence.fill(1.0);
+        }
+        for cross in &mut self.spatial.spatial_cross {
+            cross.fill(Complex::new(0.0_f32, 0.0_f32));
+        }
+        for power in &mut self.spatial.spatial_power_a {
+            power.fill(0.0);
+        }
+        for power in &mut self.spatial.spatial_power_b {
+            power.fill(0.0);
+        }
 
         // Reset multi-resolution state
         if let Some(ref mut mrs) = self.multi_res.multi_res_state {
@@ -976,26 +1066,24 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
         // Loop to handle cases where input exceeds remaining buffer space:
         // process FFT blocks to free space, then continue accumulating.
         //
-        // When multi-resolution is enabled we simultaneously feed the same raw
-        // samples into the small-FFT accumulator.  We do this first so that the
-        // small-FFT gains are ready when process_fft_block() is called below.
-        if self.multi_res.multi_res_state.is_some() {
-            // Feed the whole input block into the small-FFT path before
-            // the main loop starts.  `feed_and_process` is self-contained
-            // and does not touch `buffer` after reading — safe to call here.
-            let reduction = self.coeffs.reduction_linear;
-            let floor = self.coeffs.floor_linear;
-            let channels = self.config.channels;
-            if let Some(ref mut mrs) = self.multi_res.multi_res_state {
-                mrs.feed_and_process(&buffer[..total_samples], channels, reduction, floor);
-            }
-        }
-
         let mut input_pos: usize = 0;
         while input_pos < total_samples {
             let space_available = self.io.input_buffer.len() - self.io.input_buffer_fill;
             let remaining_input = total_samples - input_pos;
-            let samples_to_copy = remaining_input.min(space_available);
+            // Stop exactly at each large-FFT boundary so the small analyzer is
+            // never advanced with future samples before that large frame runs.
+            let until_frame = block_samples - self.io.input_buffer_fill;
+            let samples_to_copy = remaining_input.min(space_available).min(until_frame);
+
+            if let Some(ref mut mrs) = self.multi_res.multi_res_state {
+                mrs.feed_and_process(
+                    &buffer[input_pos..input_pos + samples_to_copy],
+                    self.config.channels,
+                    self.coeffs.reduction_linear,
+                    self.coeffs.floor_linear,
+                )
+                .map_err(str::to_string)?;
+            }
 
             self.io.input_buffer
                 [self.io.input_buffer_fill..self.io.input_buffer_fill + samples_to_copy]

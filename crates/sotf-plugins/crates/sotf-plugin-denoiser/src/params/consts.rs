@@ -1,8 +1,6 @@
 use sotf_host::param_specs::ParamSpec;
 use sotf_host::plugin_layout::*;
 
-pub const LEARN_FRAMES: usize = 50;
-
 pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::float(
         "Reduction",
