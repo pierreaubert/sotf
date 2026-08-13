@@ -7,6 +7,7 @@ use crate::params::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GatePluginParams {
     #[serde(default = "default_threshold_db")]
     pub threshold_db: f32,
@@ -42,6 +43,28 @@ pub struct GatePluginParams {
     /// Lookahead delay in ms (0 = off, max 20ms). Delays audio so gain is computed from non-delayed signal.
     #[serde(default = "default_lookahead_ms")]
     pub lookahead_ms: f32,
+}
+
+impl Default for GatePluginParams {
+    fn default() -> Self {
+        Self {
+            threshold_db: default_threshold_db(),
+            ratio: default_ratio(),
+            attack_ms: default_attack_ms(),
+            hold_ms: default_hold_ms(),
+            release_ms: default_release_ms(),
+            mix: default_mix(),
+            link_channels: default_link_channels(),
+            sidechain_hpf_hz: default_sidechain_hpf_hz(),
+            sidechain_hpf_order: default_sidechain_hpf_order(),
+            detection_mode: default_detection_mode(),
+            sidechain_external: default_sidechain_external(),
+            range_db: default_range_db(),
+            hysteresis_db: default_hysteresis_db(),
+            knee_db: default_knee_db(),
+            lookahead_ms: default_lookahead_ms(),
+        }
+    }
 }
 
 #[cfg(test)]

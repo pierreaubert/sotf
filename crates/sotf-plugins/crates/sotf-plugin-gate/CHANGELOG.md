@@ -1,3 +1,49 @@
+# 0.5.11
+
+## Complete review remediation
+
+- Make construction and preset loading fallible and reject zero channels,
+  non-finite/out-of-range values, invalid choices, and unknown preset fields.
+- Require initialization, a matching process sample rate, and an exact checked
+  interleaved buffer length; sanitize non-finite programme and detector samples
+  before they can enter filter, detector, envelope, or lookahead state.
+- Treat channel linking, sidechain topology/detection, external sidechain mode,
+  and lookahead as graph-rebuild parameters. Exact no-op structural writes are
+  accepted, while actual live changes fail transactionally.
+- Make realtime setters and reset allocation-free, clamp active hold counters
+  when Hold decreases, and reset smoothers, diagnostics, filters, detectors,
+  lookahead, and scratch state deterministically.
+- Keep external sidechain samples read-only and flush only interleaved programme
+  samples. Publish immutable, independently owned diagnostic snapshots at a
+  sample-derived 30 Hz cadence.
+- Derive plugin version/defaults/ranges from crate metadata and `ParamSpec`, and
+  add lifecycle, buffer, factory, metadata, range, cache, reset, and allocation
+  regressions.
+
+# 0.5.10
+
+## Fixes
+
+- Mark the sidechain HPF order parameter as structural so its metadata matches
+  the runtime setter, which rejects topology changes after initialization.
+
+# 0.5.9
+
+## Review follow-up
+
+- Keep linked-channel diagnostic attenuation aligned with the envelope applied to every output channel.
+- Add regression coverage for distinct per-channel input levels, attenuation snapshots, and the finite `range_db=0` safety ceiling.
+
+# 0.5.8
+
+## Review remediation
+
+- Treat `range_db=0` as unlimited attenuation with a finite numerical ceiling.
+- Validate factory parameters and reject invalid timing, modes, orders, NaN, and zero-channel instances.
+- Reject live topology/latency changes that require graph recompilation.
+- Publish independent input-level and attenuation diagnostics, at a sample-rate-derived cadence.
+- Reset sidechain filter state in place to avoid lifecycle allocations; use checked buffer arithmetic.
+
 # 0.5.7
 
 ## Fixes

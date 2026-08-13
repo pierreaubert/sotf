@@ -60,6 +60,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Channels",
     )
     .setup()
+    .structural()
     .doc("Stereo-link detector for L/R"),
     ParamSpec::float(
         "Sidechain HPF",
@@ -72,6 +73,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Sidechain",
     )
     .setup()
+    .structural()
     .doc("High-pass on detector input"),
     ParamSpec::choice(
         "HPF Order",
@@ -80,6 +82,7 @@ pub const PARAMS: &[ParamSpec] = &[
         HPF_ORDERS,
         "Sidechain",
     )
+    .structural()
     .setup()
     .doc("Sidechain HPF filter order"),
     ParamSpec::choice(
@@ -90,6 +93,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Sidechain",
     )
     .setup()
+    .structural()
     .doc("Level detection mode"),
     ParamSpec::bool_labeled(
         "Ext Sidechain",
@@ -127,6 +131,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "ms",
         "Timing",
     )
+    .structural()
     .doc("Pre-delay for transient catching"),
 ];
 
@@ -424,6 +429,7 @@ impl PluginParamDef for Params {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sotf_host::param_specs::UpdateMode;
 
     #[test]
     fn param_index_coverage() {
@@ -487,5 +493,14 @@ mod tests {
         assert_eq!(p.hysteresis_db, pk(PARAMS, "hysteresis_db").default_f64());
         assert_eq!(p.knee_db, pk(PARAMS, "knee_db").default_f64());
         assert_eq!(p.lookahead_ms, pk(PARAMS, "lookahead_ms").default_f64());
+    }
+
+    #[test]
+    fn sidechain_hpf_order_requires_structural_rebuild() {
+        assert_eq!(
+            pk(PARAMS, "sidechain_hpf_order").update_mode,
+            UpdateMode::Structural,
+            "HPF order changes the detector filter topology and cannot be realtime-automated"
+        );
     }
 }

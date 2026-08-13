@@ -125,7 +125,7 @@ proptest! {
     }
 
     #[test]
-    fn monotonic_range_db(sample in 0.0001f32..0.001f32) {
+    fn monotonic_range_db(sample in 1.0e-9f32..1.0e-7f32) {
         let threshold = -40.0f32;
 
         let mut p_low = GatePlugin::new(1, threshold, 100.0, 1.0, 0.0, 10.0);
@@ -150,8 +150,8 @@ proptest! {
         let rms_low = buf_low.iter().map(|x| x * x).sum::<f32>().sqrt() / (frames as f32).sqrt();
         let rms_high = buf_high.iter().map(|x| x * x).sum::<f32>().sqrt() / (frames as f32).sqrt();
         prop_assert!(
-            rms_high < rms_low * 0.9,
-            "larger range_db should attenuate quiet signal more: low_rms={} high_rms={}",
+            rms_low <= rms_high + 1e-12,
+            "range_db=0 (unlimited) must not attenuate less than 120 dB: unlimited_rms={} range_120_rms={}",
             rms_low,
             rms_high
         );

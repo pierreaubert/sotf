@@ -39,6 +39,28 @@ Controls the gate's response speed. Fast attack opens the gate quickly to preser
 | Mix | 0 to 100 | 100 | % | Dry/wet blend. Allows parallel gating |
 | Link Channels | Linked/Unlinked | Linked | — | Linked: gate opens/closes for all channels together |
 | Sidechain HPF | 0 to 200 | 0 | Hz | High-pass filter on detector. Prevents low rumble from holding gate open |
+| HPF Order | 2nd / 4th | 2nd | — | Detector HPF slope; structural |
+| Detection | Peak / RMS | Peak | — | Detector model; structural |
+| External Sidechain | Off / On | Off | — | Uses a matching detector channel after each frame's programme channels; structural |
+| Range | 0 to 120 | 80 | dB | Maximum attenuation; 0 means unlimited with a finite 240 dB ceiling |
+| Hysteresis | 0 to 12 | 4 | dB | Difference between opening and closing thresholds |
+| Lookahead | 0 to 20 | 0 | ms | Programme delay for transient detection; structural latency |
+
+### Host and realtime contract
+
+- Initialize before the first callback. The process context must retain that
+  sample rate and the buffer must contain exactly `num_frames * input_channels()`
+  interleaved samples; checked arithmetic errors are reported.
+- `link_channels`, sidechain HPF frequency/order, detection mode, external
+  sidechain mode, and lookahead require graph replacement. Writing the current
+  value is an accepted no-op; actual live changes are rejected transactionally.
+- External-sidechain samples are read-only. Non-finite programme or detector
+  samples are interpreted as silence before filters, detectors, and delay state.
+- Processing, realtime parameter setters, and reset allocate no memory. Reset
+  deterministically clears envelopes, hold state, smoothers, detectors, filters,
+  delay lines, diagnostic counters, and scratch storage.
+- Monitoring snapshots are immutable after publication and update at a
+  sample-derived 30 Hz cadence independent of callback partitioning.
 
 ## Demos
 

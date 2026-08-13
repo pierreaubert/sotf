@@ -73,12 +73,12 @@ fn test_attack_controls_gate_open_speed() {
     }
     let ctx = ProcessContext::new(sr, total);
 
-    // Experiment A: slow attack = 100 ms
-    let mut gate_a = make_gate(100.0, 1.0);
+    // Experiment A: slow attack = 50 ms (the public parameter maximum)
+    let mut gate_a = make_gate(50.0, 10.0);
     gate_a.process_in_place(&mut buf_a, &ctx).unwrap();
 
     // Experiment B: fast attack = 1 ms
-    let mut gate_b = make_gate(1.0, 1.0);
+    let mut gate_b = make_gate(1.0, 10.0);
     gate_b.process_in_place(&mut buf_b, &ctx).unwrap();
 
     // Check gain at 5ms into the loud section (240 samples after transition).

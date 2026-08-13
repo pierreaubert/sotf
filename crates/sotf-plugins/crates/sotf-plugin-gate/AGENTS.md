@@ -20,12 +20,12 @@ Data flow: Input -> optional sidechain HPF (Butterworth) -> level detection (pea
 
 ## Key Public API
 
-- `GatePlugin::new(channels) -> Self` -- Default construction (`lib.rs`)
-- `GatePlugin::from_params(channels, params) -> Self` -- From JSON config (`lib.rs`)
-- Exposes `GateData` via `analyzer_data()` for UI monitoring
+- `GatePlugin::try_new(...) -> Result<Self, String>` -- validated construction
+- `GatePlugin::try_from_params(channels, params) -> Result<Self, String>` -- validated preset construction
+- Exposes immutable `GateData` snapshots through `get_data()` for UI monitoring
 - Implements `ParametricInPlacePlugin` trait
 
-**Parameters:** `threshold` (-80 to 0 dB), `ratio` (1:1 to 100:1), `attack` (0.01-100 ms), `hold` (0-500 ms), `release` (1-5000 ms), `mix` (0-1), `link_channels` (bool), `sidechain_hpf_hz`, `sidechain_hpf_order` (6/12/18/24 dB/oct), `detection_mode` (peak/rms), `sidechain_external` (bool), `range_db` (max attenuation cap), `hysteresis_db`, `knee_db`, `lookahead_ms` (0-20 ms).
+**Parameters:** `threshold` (-80 to 0 dB), `ratio` (1:1 to 100:1), `attack` (0.1-50 ms), `hold` (0-1000 ms), `release` (10-2000 ms), `mix` (0-1), `link_channels` (bool), `sidechain_hpf_hz` (0-200 Hz), `sidechain_hpf_order` (2nd/4th), `detection_mode` (Peak/RMS), `sidechain_external` (bool), `range_db` (0-120 dB; zero means unlimited), `hysteresis_db` (0-12 dB), `knee_db` (0-20 dB), `lookahead_ms` (0-20 ms).
 
 ## Testing
 
@@ -35,9 +35,13 @@ cargo test -p sotf-plugin-gate
 
 ## Important Notes
 
-- Sidechain HPF uses Butterworth filters from `math-iir-fir` (`peq_butterworth_highpass`). Order options: 6, 12, 18, 24 dB/oct.
+- Sidechain HPF uses Butterworth filters from `math-iir-fir` (`peq_butterworth_highpass`). Order options are 2nd (-12 dB/oct) and 4th (-24 dB/oct).
 - Lookahead delays audio but not the sidechain, allowing the gate to "see ahead" and open before transients arrive. Max 20ms.
 - Hysteresis creates separate open/close thresholds to prevent chattering: close threshold = threshold - hysteresis_db.
 - Range limits maximum attenuation (0 = unlimited, default 80 dB).
 - Uses fast math (`fast_log10`, `fast_pow10`) from `math-dsp` for performance.
 - FTZ/DAZ enabled and denormals flushed post-processing.
+- Call `initialize()` before processing. Every callback must match its sample rate and exact checked interleaved buffer size.
+- Link mode, HPF frequency/order, detection mode, external-sidechain mode, and lookahead are structural and require graph rebuild; exact runtime no-ops are allowed.
+- Programme processing, realtime setters, and reset allocate nothing. Non-finite programme/sidechain values are treated as silence before reaching state.
+- Diagnostics publish on a sample-derived 30 Hz cadence and held snapshots remain immutable.

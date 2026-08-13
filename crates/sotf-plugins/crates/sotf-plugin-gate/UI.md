@@ -32,6 +32,9 @@ custom
 |-----------|-----------|---------|----------|-------|
 | Link Channels | link_channels | Toggle (Linked/Unlinked) | — | Labeled toggle switch |
 | Sidechain HPF | sidechain_hpf_hz | Knob | s | Display range 40–160 Hz in UI, full range 0–200 Hz |
+| HPF Order | sidechain_hpf_order | Selector (2nd/4th) | — | Structural; rebuild graph |
+| Detection | detection_mode | Selector (Peak/RMS) | — | Structural; rebuild graph |
+| External Sidechain | sidechain_external | Toggle | — | Structural; doubles input width |
 
 Width: 100px fixed
 
@@ -45,6 +48,9 @@ Two sub-sections side by side: DYNAMICS (left) and TIMING (right), with Gate Sta
 |-----------|-----------|---------|----------|-------|
 | Threshold | threshold | Vertical slider with ticks | t | -80 to 0 dB |
 | Ratio | ratio | Vertical slider with ticks | r | 1:1 to 100:1 |
+| Range | range_db | Vertical slider with ticks | — | 0–120 dB; 0 means unlimited (240 dB finite ceiling) |
+| Hysteresis | hysteresis_db | Vertical slider with ticks | — | 0–12 dB |
+| Knee | knee_db | Vertical slider with ticks | — | 0–20 dB |
 
 Slider height: 180px
 
@@ -55,6 +61,7 @@ Slider height: 180px
 | Attack | attack | Vertical slider with ticks | a | 0.1 to 50 ms |
 | Hold | hold | Vertical slider with ticks | h | 0 to 1000 ms |
 | Release | release | Vertical slider with ticks | e | 10 to 2000 ms |
+| Lookahead | lookahead_ms | Knob | — | 0–20 ms; structural latency change |
 
 Slider height: 180px
 

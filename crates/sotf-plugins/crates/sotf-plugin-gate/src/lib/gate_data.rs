@@ -26,8 +26,13 @@ impl GateData {
         }
     }
 
-    pub fn update(&mut self, is_open: bool, attenuation: &[f32]) {
+    pub fn update(&mut self, is_open: bool, input_levels: &[f32], attenuation: &[f32]) {
         self.is_open = is_open;
+        if let Some(mut_input) = Arc::get_mut(&mut self.input_levels_db)
+            && mut_input.len() == input_levels.len()
+        {
+            mut_input.copy_from_slice(input_levels);
+        }
         if let Some(mut_att) = Arc::get_mut(&mut self.attenuation_db)
             && mut_att.len() == attenuation.len()
         {

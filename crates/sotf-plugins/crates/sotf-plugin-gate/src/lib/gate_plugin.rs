@@ -3,11 +3,12 @@ use super::consts::EPSILON;
 use super::consts::MAX_LOOKAHEAD_MS;
 use super::gate_data::GateData;
 use super::types::GatePluginParams;
-use crate::params::{PARAMS as GT, default_range_db};
+use crate::params::{DETECTION_MODES, HPF_ORDERS, PARAMS as GT, default_range_db};
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use math_audio_iir_fir::{Biquad, peq_butterworth_highpass};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_bridge;
+use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::plugin::{
@@ -56,13 +57,57 @@ pub struct GatePlugin {
     pub(super) envelope: Vec<f32>,
     /// Instantaneous input levels in dB for monitoring
     pub(super) monitoring_levels: Vec<f32>,
+    /// Attenuation levels kept separate from the input-level diagnostic scratch.
+    pub(super) attenuation_scratch: Vec<f32>,
     pub(super) cache: RealTimeCache<GateData>,
-    pub(super) cache_update_counter: usize,
+    pub(super) diagnostic_samples: usize,
+    pub(super) diagnostic_interval_samples: usize,
+    pub(super) initialized: bool,
     pub(super) cached_parameters: Vec<sotf_host::parameters::Parameter>,
 }
 
 impl GatePlugin {
+    pub fn try_new(
+        channels: usize,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        hold_ms: f32,
+        release_ms: f32,
+    ) -> Result<Self, String> {
+        Self::try_from_params(
+            channels,
+            GatePluginParams {
+                threshold_db,
+                ratio,
+                attack_ms,
+                hold_ms,
+                release_ms,
+                ..GatePluginParams::default()
+            },
+        )
+    }
+
     pub fn new(
+        channels: usize,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        hold_ms: f32,
+        release_ms: f32,
+    ) -> Self {
+        Self::try_new(
+            channels,
+            threshold_db,
+            ratio,
+            attack_ms,
+            hold_ms,
+            release_ms,
+        )
+        .expect("invalid Gate parameters")
+    }
+
+    fn new_validated(
         channels: usize,
         threshold_db: f32,
         ratio: f32,
@@ -105,8 +150,11 @@ impl GatePlugin {
                 .collect(),
             threshold_smoother: Smoother::new(threshold_db, 5.0, sr),
             mix_smoother: Smoother::new(1.0, 5.0, sr),
-            cache: RealTimeCache::new(GateData::new(channels)),
-            cache_update_counter: 0,
+            attenuation_scratch: vec![0.0; channels],
+            cache: RealTimeCache::new_pair(GateData::new(channels), GateData::new(channels)),
+            diagnostic_samples: 0,
+            diagnostic_interval_samples: sr as usize / 30,
+            initialized: false,
             cached_parameters: Vec::new(),
         };
         p.rebuild_cached_parameters();
@@ -163,8 +211,62 @@ impl GatePlugin {
         self.cached_parameters = param_bridge::build_parameters(GT, |i| self.param_value(i));
     }
 
-    pub fn from_params(channels: usize, params: GatePluginParams) -> Self {
-        let mut p = Self::new(
+    /// Construct from serialized parameters after validating the complete
+    /// parameter contract.  Factory callers should use this fallible entry
+    /// point so malformed JSON cannot create NaNs or invalid timing constants.
+    pub fn try_from_params(channels: usize, params: GatePluginParams) -> Result<Self, String> {
+        if channels == 0 {
+            return Err("Gate requires at least one channel".into());
+        }
+        if params.sidechain_external && channels.checked_mul(2).is_none() {
+            return Err("Gate external-sidechain channel count overflows usize".into());
+        }
+        fn finite_spec(name: &str, key: &str, value: f32) -> Result<(), String> {
+            let spec = pk(GT, key);
+            let min = spec.min_f64() as f32;
+            let max = spec.max_f64() as f32;
+            if value.is_finite() && (min..=max).contains(&value) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Gate parameter {name} must be finite and in [{min}, {max}], got {value}"
+                ))
+            }
+        }
+        finite_spec("threshold_db", "threshold", params.threshold_db)?;
+        finite_spec("ratio", "ratio", params.ratio)?;
+        finite_spec("attack_ms", "attack", params.attack_ms)?;
+        finite_spec("hold_ms", "hold", params.hold_ms)?;
+        finite_spec("release_ms", "release", params.release_ms)?;
+        finite_spec("mix", "mix", params.mix)?;
+        finite_spec(
+            "sidechain_hpf_hz",
+            "sidechain_hpf_hz",
+            params.sidechain_hpf_hz,
+        )?;
+        finite_spec("range_db", "range_db", params.range_db)?;
+        finite_spec("hysteresis_db", "hysteresis_db", params.hysteresis_db)?;
+        finite_spec("knee_db", "knee_db", params.knee_db)?;
+        finite_spec("lookahead_ms", "lookahead_ms", params.lookahead_ms)?;
+        if !HPF_ORDERS
+            .iter()
+            .any(|v| v.eq_ignore_ascii_case(&params.sidechain_hpf_order))
+        {
+            return Err(format!(
+                "Unknown Gate HPF order: {}",
+                params.sidechain_hpf_order
+            ));
+        }
+        if !DETECTION_MODES
+            .iter()
+            .any(|v| v.eq_ignore_ascii_case(&params.detection_mode))
+        {
+            return Err(format!(
+                "Unknown Gate detection mode: {}",
+                params.detection_mode
+            ));
+        }
+        let mut p = Self::new_validated(
             channels,
             params.threshold_db,
             params.ratio,
@@ -172,22 +274,17 @@ impl GatePlugin {
             params.hold_ms,
             params.release_ms,
         );
-        p.mix = params.mix.clamp(0.0, 1.0);
+        p.mix = params.mix;
         p.mix_smoother.reset(p.mix);
         p.link_channels = params.link_channels;
-        p.sidechain_hpf_hz = params.sidechain_hpf_hz.max(0.0);
+        p.sidechain_hpf_hz = params.sidechain_hpf_hz;
 
         // HPF order
-        p.sidechain_hpf_order_index = match params.sidechain_hpf_order.as_str() {
-            "4th" => 1,
-            _ => 0, // "2nd" or any unknown
-        };
+        p.sidechain_hpf_order_index =
+            usize::from(params.sidechain_hpf_order.eq_ignore_ascii_case("4th"));
 
         // Detection mode
-        p.detection_mode_index = match params.detection_mode.as_str() {
-            "rms" => 1,
-            _ => 0, // "peak" or any unknown
-        };
+        p.detection_mode_index = usize::from(params.detection_mode.eq_ignore_ascii_case("rms"));
         if p.detection_mode_index == 1 {
             let mode = DetectionMode::Rms { window_ms: 10.0 };
             for det in &mut p.level_detectors {
@@ -198,18 +295,27 @@ impl GatePlugin {
         // External sidechain
         p.sidechain_external = params.sidechain_external;
 
-        p.range_db = params.range_db.max(0.0);
-        p.hysteresis_db = params.hysteresis_db.max(0.0);
-        p.knee_db = params.knee_db.max(0.0);
-        p.lookahead_ms = params.lookahead_ms.clamp(0.0, MAX_LOOKAHEAD_MS);
+        p.range_db = params.range_db;
+        p.hysteresis_db = params.hysteresis_db;
+        p.knee_db = params.knee_db;
+        p.lookahead_ms = params.lookahead_ms;
         p.update_hold_samples();
         p.update_lookahead_delay();
         p.rebuild_cached_parameters();
-        p
+        Ok(p)
+    }
+
+    /// Compatibility constructor for existing in-process callers.  New
+    /// factory/configuration paths must use [`try_from_params`].
+    pub fn from_params(channels: usize, params: GatePluginParams) -> Self {
+        Self::try_from_params(channels, params).expect("invalid GatePluginParams")
     }
 
     pub(super) fn update_hold_samples(&mut self) {
         self.hold_samples = (self.hold_ms * 0.001 * self.sample_rate as f32).round() as usize;
+        for counter in &mut self.hold_counter {
+            *counter = (*counter).min(self.hold_samples);
+        }
     }
 
     pub(super) fn update_lookahead_delay(&mut self) {
@@ -254,8 +360,13 @@ impl GatePlugin {
             kf * kf * (knee / 2.0) * slope
         };
 
-        // Cap attenuation at range_db
-        atten.min(self.range_db.max(0.0))
+        // A zero range is documented as unlimited. Keep a finite ceiling to
+        // avoid inf/NaN propagation when processing denormal/invalid input.
+        if self.range_db > 0.0 {
+            atten.min(self.range_db)
+        } else {
+            atten.min(240.0)
+        }
     }
 
     pub(super) fn update_coefficients(&mut self) {
@@ -304,11 +415,227 @@ impl GatePlugin {
         }
         x as f32
     }
+
+    fn migrate_link_state(&mut self, was_linked: bool) {
+        if self.channels == 0 {
+            return;
+        }
+        if self.link_channels && !was_linked {
+            let envelope = self.envelope.iter().copied().fold(0.0_f32, f32::max);
+            let gate_open = self.gate_open.iter().copied().any(|open| open);
+            let hold = self.hold_counter.iter().copied().max().unwrap_or(0);
+            self.envelope.fill(envelope);
+            self.gate_open.fill(gate_open);
+            self.hold_counter.fill(hold);
+        } else if !self.link_channels && was_linked {
+            let envelope = self.envelope[0];
+            let gate_open = self.gate_open[0];
+            let hold = self.hold_counter[0];
+            self.envelope.fill(envelope);
+            self.gate_open.fill(gate_open);
+            self.hold_counter.fill(hold);
+        }
+    }
+
+    fn params_snapshot(&self) -> GatePluginParams {
+        GatePluginParams {
+            threshold_db: self.threshold_db,
+            ratio: self.ratio,
+            attack_ms: self.attack_ms,
+            hold_ms: self.hold_ms,
+            release_ms: self.release_ms,
+            mix: self.mix,
+            link_channels: self.link_channels,
+            sidechain_hpf_hz: self.sidechain_hpf_hz,
+            sidechain_hpf_order: HPF_ORDERS[self.sidechain_hpf_order_index].to_string(),
+            detection_mode: DETECTION_MODES[self.detection_mode_index].to_string(),
+            sidechain_external: self.sidechain_external,
+            range_db: self.range_db,
+            hysteresis_db: self.hysteresis_db,
+            knee_db: self.knee_db,
+            lookahead_ms: self.lookahead_ms,
+        }
+    }
+
+    fn stage_parameter(
+        params: &mut GatePluginParams,
+        id: &ParameterId,
+        value: &ParameterValue,
+    ) -> PluginResult<usize> {
+        param_bridge::set_parameter(GT, id, value, |index, value| match index {
+            0 => params.threshold_db = value as f32,
+            1 => params.ratio = value as f32,
+            2 => params.attack_ms = value as f32,
+            3 => params.hold_ms = value as f32,
+            4 => params.release_ms = value as f32,
+            5 => params.mix = value as f32,
+            6 => params.link_channels = value > 0.5,
+            7 => params.sidechain_hpf_hz = value as f32,
+            8 => params.sidechain_hpf_order = HPF_ORDERS[value as usize].to_string(),
+            9 => params.detection_mode = DETECTION_MODES[value as usize].to_string(),
+            10 => params.sidechain_external = value > 0.5,
+            11 => params.range_db = value as f32,
+            12 => params.hysteresis_db = value as f32,
+            13 => params.knee_db = value as f32,
+            14 => params.lookahead_ms = value as f32,
+            _ => {}
+        })
+    }
+
+    fn structural_differs(&self, params: &GatePluginParams) -> bool {
+        self.link_channels != params.link_channels
+            || self.sidechain_hpf_hz != params.sidechain_hpf_hz
+            || !HPF_ORDERS[self.sidechain_hpf_order_index]
+                .eq_ignore_ascii_case(&params.sidechain_hpf_order)
+            || !DETECTION_MODES[self.detection_mode_index]
+                .eq_ignore_ascii_case(&params.detection_mode)
+            || self.sidechain_external != params.sidechain_external
+            || self.lookahead_ms != params.lookahead_ms
+    }
+
+    fn apply_staged_params(&mut self, params: GatePluginParams) {
+        let threshold_changed = self.threshold_db != params.threshold_db;
+        let timing_changed =
+            self.attack_ms != params.attack_ms || self.release_ms != params.release_ms;
+        let hold_changed = self.hold_ms != params.hold_ms;
+        let mix_changed = self.mix != params.mix;
+        let hpf_changed = self.sidechain_hpf_hz != params.sidechain_hpf_hz
+            || !HPF_ORDERS[self.sidechain_hpf_order_index]
+                .eq_ignore_ascii_case(&params.sidechain_hpf_order);
+        let detection_changed = !DETECTION_MODES[self.detection_mode_index]
+            .eq_ignore_ascii_case(&params.detection_mode);
+        let lookahead_changed = self.lookahead_ms != params.lookahead_ms;
+        let was_linked = self.link_channels;
+
+        self.threshold_db = params.threshold_db;
+        self.ratio = params.ratio;
+        self.attack_ms = params.attack_ms;
+        self.hold_ms = params.hold_ms;
+        self.release_ms = params.release_ms;
+        self.mix = params.mix;
+        self.link_channels = params.link_channels;
+        self.sidechain_hpf_hz = params.sidechain_hpf_hz;
+        self.sidechain_hpf_order_index = usize::from(
+            params
+                .sidechain_hpf_order
+                .eq_ignore_ascii_case(HPF_ORDERS[1]),
+        );
+        self.detection_mode_index = usize::from(
+            params
+                .detection_mode
+                .eq_ignore_ascii_case(DETECTION_MODES[1]),
+        );
+        self.sidechain_external = params.sidechain_external;
+        self.range_db = params.range_db;
+        self.hysteresis_db = params.hysteresis_db;
+        self.knee_db = params.knee_db;
+        self.lookahead_ms = params.lookahead_ms;
+
+        if threshold_changed {
+            self.threshold_smoother.set_target(self.threshold_db);
+        }
+        if timing_changed {
+            self.update_coefficients();
+        }
+        if hold_changed {
+            self.update_hold_samples();
+        }
+        if mix_changed {
+            self.mix_smoother.set_target(self.mix);
+        }
+        if hpf_changed {
+            self.rebuild_sidechain_hpf();
+        }
+        if detection_changed {
+            let mode = if self.detection_mode_index == 1 {
+                DetectionMode::Rms { window_ms: 10.0 }
+            } else {
+                DetectionMode::Peak
+            };
+            for detector in &mut self.level_detectors {
+                detector.set_mode(mode);
+            }
+        }
+        if lookahead_changed {
+            self.update_lookahead_delay();
+        }
+        if was_linked != self.link_channels {
+            self.migrate_link_state(was_linked);
+        }
+    }
+
+    fn structural_value_matches(&self, id: &ParameterId, value: &ParameterValue) -> bool {
+        match id.as_str() {
+            "link_channels" => value.as_bool() == Some(self.link_channels),
+            "sidechain_hpf_hz" => value.as_float() == Some(self.sidechain_hpf_hz),
+            "sidechain_hpf_order" => value.as_int() == Some(self.sidechain_hpf_order_index as i32),
+            "detection_mode" => value.as_int() == Some(self.detection_mode_index as i32),
+            "sidechain_external" => value.as_bool() == Some(self.sidechain_external),
+            "lookahead_ms" => value.as_float() == Some(self.lookahead_ms),
+            _ => false,
+        }
+    }
+
+    fn apply_single_parameter(
+        &mut self,
+        id: ParameterId,
+        value: ParameterValue,
+    ) -> PluginResult<()> {
+        let structural = matches!(
+            id.as_str(),
+            "link_channels"
+                | "sidechain_hpf_hz"
+                | "sidechain_hpf_order"
+                | "detection_mode"
+                | "sidechain_external"
+                | "lookahead_ms"
+        );
+        if self.initialized && structural {
+            self.cached_parameters
+                .iter()
+                .find(|parameter| parameter.id == id)
+                .ok_or_else(|| format!("Unknown parameter: {id}"))?
+                .validate(&value)
+                .map_err(|error| format!("{id}: {error}"))?;
+            if self.structural_value_matches(&id, &value) {
+                return Ok(());
+            }
+            return Err("Gate structural parameter change requires graph rebuild".into());
+        }
+
+        let was_linked = self.link_channels;
+        let index = param_bridge::set_parameter(GT, &id, &value, |index, value| {
+            self.set_param_value(index, value);
+        })?;
+        match index {
+            0 => self.threshold_smoother.set_target(self.threshold_db),
+            2 | 4 => self.update_coefficients(),
+            3 => self.update_hold_samples(),
+            5 => self.mix_smoother.set_target(self.mix),
+            7 | 8 => self.rebuild_sidechain_hpf(),
+            9 => {
+                let mode = if self.detection_mode_index == 1 {
+                    DetectionMode::Rms { window_ms: 10.0 }
+                } else {
+                    DetectionMode::Peak
+                };
+                for detector in &mut self.level_detectors {
+                    detector.set_mode(mode);
+                }
+            }
+            14 => self.update_lookahead_delay(),
+            _ => {}
+        }
+        if was_linked != self.link_channels {
+            self.migrate_link_state(was_linked);
+        }
+        Ok(())
+    }
 }
 
 impl ParametricInPlacePlugin for GatePlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Gate", "1.3.0", "SotF")
+        PluginInfo::new("Gate", env!("CARGO_PKG_VERSION"), "SotF")
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -329,7 +656,9 @@ impl ParametricInPlacePlugin for GatePlugin {
     }
     fn input_channels(&self) -> usize {
         if self.sidechain_external {
-            self.channels * 2
+            self.channels
+                .checked_mul(2)
+                .expect("validated external-sidechain channel count")
         } else {
             self.channels
         }
@@ -338,59 +667,64 @@ impl ParametricInPlacePlugin for GatePlugin {
         self.cached_parameters.clone()
     }
     fn current_values(&self) -> ParameterSet {
-        self.cached_parameters
-            .iter()
-            .map(|p| (p.id.clone(), p.default_value.clone()))
-            .collect()
+        let mut values = ParameterSet::new();
+        for parameter in &self.cached_parameters {
+            let value = match parameter.id.as_str() {
+                "threshold" => ParameterValue::Float(self.threshold_db),
+                "ratio" => ParameterValue::Float(self.ratio),
+                "attack" => ParameterValue::Float(self.attack_ms),
+                "hold" => ParameterValue::Float(self.hold_ms),
+                "release" => ParameterValue::Float(self.release_ms),
+                "mix" => ParameterValue::Float(self.mix),
+                "link_channels" => ParameterValue::Bool(self.link_channels),
+                "sidechain_hpf_hz" => ParameterValue::Float(self.sidechain_hpf_hz),
+                "sidechain_hpf_order" => ParameterValue::Int(self.sidechain_hpf_order_index as i32),
+                "detection_mode" => ParameterValue::Int(self.detection_mode_index as i32),
+                "sidechain_external" => ParameterValue::Bool(self.sidechain_external),
+                "range_db" => ParameterValue::Float(self.range_db),
+                "hysteresis_db" => ParameterValue::Float(self.hysteresis_db),
+                "knee_db" => ParameterValue::Float(self.knee_db),
+                "lookahead_ms" => ParameterValue::Float(self.lookahead_ms),
+                _ => continue,
+            };
+            values.insert(parameter.id.clone(), value);
+        }
+        values
     }
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
-        for (id, value) in values {
-            let idx = param_bridge::set_parameter(GT, &id, &value, |i, v| {
-                self.set_param_value(i, v);
-            })?;
-            // Side effects
-            match idx {
-                0 => {
-                    self.threshold_smoother.set_target(self.threshold_db);
-                } // threshold
-                2 | 4 => self.update_coefficients(), // attack or release
-                3 => self.update_hold_samples(),     // hold
-                5 => self.mix_smoother.set_target(self.mix), // mix
-                7 | 8 => self.rebuild_sidechain_hpf(), // sidechain_hpf_hz or order
-                9 => {
-                    // detection_mode
-                    let mode = if self.detection_mode_index == 1 {
-                        DetectionMode::Rms { window_ms: 10.0 }
-                    } else {
-                        DetectionMode::Peak
-                    };
-                    for det in &mut self.level_detectors {
-                        det.set_mode(mode);
-                    }
-                }
-                14 => self.update_lookahead_delay(), // lookahead_ms
-                _ => {}
-            }
+        let mut staged = self.params_snapshot();
+        for (id, value) in &values {
+            Self::stage_parameter(&mut staged, id, value)?;
         }
+        if self.initialized && self.structural_differs(&staged) {
+            return Err("Gate structural parameter change requires graph rebuild".into());
+        }
+        self.apply_staged_params(staged);
         self.rebuild_cached_parameters();
         Ok(())
     }
+
     fn parametric_set_parameter(
         &mut self,
         id: ParameterId,
         value: ParameterValue,
     ) -> PluginResult<()> {
-        let mut values = ParameterSet::new();
-        values.insert(id, value);
-        self.apply_values(values)
+        self.apply_single_parameter(id, value)
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("Gate requires a non-zero sample rate".into());
+        }
         self.sample_rate = sample_rate;
+        self.diagnostic_interval_samples = (sample_rate as usize / 30).max(1);
+        self.diagnostic_samples = 0;
         self.update_coefficients();
         self.update_hold_samples();
         self.rebuild_sidechain_hpf();
         self.threshold_smoother.set_time(5.0, sample_rate);
+        self.threshold_smoother.reset(self.threshold_db);
         self.mix_smoother.set_time(5.0, sample_rate);
+        self.mix_smoother.reset(self.mix);
 
         // Reinitialize level detectors with new sample rate
         let mode = if self.detection_mode_index == 1 {
@@ -407,14 +741,26 @@ impl ParametricInPlacePlugin for GatePlugin {
             buf.resize(max_samples, 1);
         }
         self.update_lookahead_delay();
+        self.initialized = true;
         Ok(())
     }
     fn reset(&mut self) {
         self.envelope.fill(0.0);
         self.hold_counter.fill(0);
         self.gate_open.fill(false);
-        // Rebuild biquads to reset their internal state
-        self.rebuild_sidechain_hpf();
+        self.monitoring_levels.fill(-120.0);
+        self.attenuation_scratch.fill(0.0);
+        self.diagnostic_samples = 0;
+        self.threshold_smoother.reset(self.threshold_db);
+        self.mix_smoother.reset(self.mix);
+        // Reset existing filter state in place. Rebuilding the topology here
+        // allocates and frees vectors on a lifecycle callback that may run on
+        // the realtime thread.
+        for channel in &mut self.sidechain_hpf_biquads {
+            for biquad in channel {
+                biquad.reset();
+            }
+        }
         for det in &mut self.level_detectors {
             det.reset();
         }
@@ -428,6 +774,18 @@ impl ParametricInPlacePlugin for GatePlugin {
         context: &ProcessContext,
     ) -> PluginResult<usize> {
         enable_ftz_daz();
+        if !self.initialized {
+            return Err("Gate must be initialized before processing".into());
+        }
+        if context.sample_rate != self.sample_rate {
+            return Err(format!(
+                "Gate process sample rate {} does not match initialized sample rate {}",
+                context.sample_rate, self.sample_rate
+            ));
+        }
+        if self.channels == 0 {
+            return Err("Gate cannot process with zero channels".into());
+        }
         let num_frames = context.num_frames;
         let hs = self.hold_samples;
         let use_lookahead = self.lookahead_ms > 0.0;
@@ -440,15 +798,19 @@ impl ParametricInPlacePlugin for GatePlugin {
         // When external sidechain is active, the buffer stride is channels*2
         // (audio channels followed by sidechain channels per frame).
         let stride = if use_ext_sc {
-            self.channels * 2
+            self.channels
+                .checked_mul(2)
+                .ok_or_else(|| "Gate channel stride overflow".to_string())?
         } else {
             self.channels
         };
 
         // Guard against buffer/channel-count mismatch when external sidechain is
         // toggled without rebuilding the plugin with the doubled input width.
-        let expected_len = num_frames * stride;
-        if buffer.len() < expected_len {
+        let expected_len = num_frames
+            .checked_mul(stride)
+            .ok_or_else(|| "Gate buffer size overflow".to_string())?;
+        if buffer.len() != expected_len {
             return Err(format!(
                 "gate process buffer length {} does not match expected {} for {} channels (external_sidechain={})",
                 buffer.len(),
@@ -469,7 +831,12 @@ impl ParametricInPlacePlugin for GatePlugin {
                 let mut det = 0.0f32;
                 for ch in 0..self.channels {
                     let sc_idx = frame_start + sc_offset + ch;
-                    let filtered = self.apply_sidechain_filter(ch, buffer[sc_idx]);
+                    let sidechain = if buffer[sc_idx].is_finite() {
+                        buffer[sc_idx]
+                    } else {
+                        0.0
+                    };
+                    let filtered = self.apply_sidechain_filter(ch, sidechain);
                     let level = self.detect_level(ch, filtered);
                     det = det.max(level);
                     // Update monitoring
@@ -509,11 +876,16 @@ impl ParametricInPlacePlugin for GatePlugin {
 
                 for ch in 0..self.channels {
                     let idx = frame_start + ch;
+                    let input = if buffer[idx].is_finite() {
+                        buffer[idx]
+                    } else {
+                        0.0
+                    };
                     if use_lookahead {
-                        let delayed = self.lookahead_buffers[ch].push(buffer[idx]);
+                        let delayed = self.lookahead_buffers[ch].push(input);
                         buffer[idx] = delayed * gain;
                     } else {
-                        buffer[idx] *= gain;
+                        buffer[idx] = input * gain;
                     }
                 }
             }
@@ -528,7 +900,12 @@ impl ParametricInPlacePlugin for GatePlugin {
                 for ch in 0..self.channels {
                     let idx = frame_start + ch;
                     let sc_idx = frame_start + sc_offset + ch;
-                    let filtered = self.apply_sidechain_filter(ch, buffer[sc_idx]);
+                    let sidechain = if buffer[sc_idx].is_finite() {
+                        buffer[sc_idx]
+                    } else {
+                        0.0
+                    };
+                    let filtered = self.apply_sidechain_filter(ch, sidechain);
                     let level_abs = self.detect_level(ch, filtered);
                     self.monitoring_levels[ch] =
                         DB_CONVERSION_FACTOR * fast_log10(level_abs.max(EPSILON));
@@ -563,20 +940,25 @@ impl ParametricInPlacePlugin for GatePlugin {
                     self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
                     let gain =
                         (1.0 - mix) + mix * fast_pow10(-self.envelope[ch] / DB_CONVERSION_FACTOR);
+                    let input = if buffer[idx].is_finite() {
+                        buffer[idx]
+                    } else {
+                        0.0
+                    };
                     if use_lookahead {
-                        let delayed = self.lookahead_buffers[ch].push(buffer[idx]);
+                        let delayed = self.lookahead_buffers[ch].push(input);
                         buffer[idx] = delayed * gain;
                     } else {
-                        buffer[idx] *= gain;
+                        buffer[idx] = input * gain;
                     }
                 }
             }
         }
 
         // Update diagnostic cache (throttled)
-        self.cache_update_counter += 1;
-        if self.cache_update_counter >= 10 {
-            self.cache_update_counter = 0;
+        self.diagnostic_samples = self.diagnostic_samples.saturating_add(num_frames);
+        if self.diagnostic_samples >= self.diagnostic_interval_samples {
+            self.diagnostic_samples %= self.diagnostic_interval_samples;
             // In linked mode only envelope[0] is updated; envelope[1..] stay at 0.0
             // (their init value), so using any() would always return true even when
             // the gate is fully closed.  Use envelope[0] as the sole authority.
@@ -586,20 +968,30 @@ impl ParametricInPlacePlugin for GatePlugin {
                 self.envelope.iter().any(|&a| a < 0.1)
             };
             if self.link_channels {
-                self.monitoring_levels.fill(self.envelope[0]);
+                // Linked processing applies the channel-0 envelope to every
+                // audio channel. Mirror that applied gain in diagnostics;
+                // exposing the unused per-channel envelope entries would
+                // incorrectly report zero attenuation on channels > 0.
+                self.attenuation_scratch.fill(self.envelope[0]);
             } else {
-                self.monitoring_levels.copy_from_slice(&self.envelope);
+                self.attenuation_scratch.copy_from_slice(&self.envelope);
             }
             self.cache.update(|d| {
-                d.update(is_open, &self.monitoring_levels);
+                d.update(is_open, &self.monitoring_levels, &self.attenuation_scratch);
             });
         }
 
         // Only flush denormals in the audio output region.  When external sidechain
         // is active the buffer is wider (stride = channels * 2): writing to the
         // sidechain half is harmless but inconsistent with read-only sidechain usage.
-        let audio_len = num_frames * self.channels;
-        flush_denormals_inplace(&mut buffer[..audio_len]);
+        if use_ext_sc {
+            for frame in 0..num_frames {
+                let audio_start = frame * stride;
+                flush_denormals_inplace(&mut buffer[audio_start..audio_start + self.channels]);
+            }
+        } else {
+            flush_denormals_inplace(buffer);
+        }
         Ok(num_frames)
     }
     fn latency_samples(&self) -> usize {

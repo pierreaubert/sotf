@@ -81,6 +81,14 @@ fn initialize_and_reset() {
 #[test]
 fn parameter_roundtrip() {
     let mut plugin = GatePlugin::new(1, -40.0, 10.0, 1.0, 10.0, 100.0);
+    let link_id = ParameterId::from("link_channels");
+    plugin
+        .parametric_set_parameter(link_id.clone(), ParameterValue::Bool(false))
+        .unwrap();
+    assert_eq!(
+        plugin.parametric_get_parameter(&link_id),
+        Some(ParameterValue::Bool(false))
+    );
     plugin.initialize(SR).unwrap();
 
     let cases: Vec<(ParameterId, ParameterValue)> = vec![
@@ -90,33 +98,12 @@ fn parameter_roundtrip() {
         (ParameterId::from("hold"), ParameterValue::Float(20.0)),
         (ParameterId::from("release"), ParameterValue::Float(200.0)),
         (ParameterId::from("mix"), ParameterValue::Float(0.75)),
-        (
-            ParameterId::from("link_channels"),
-            ParameterValue::Bool(false),
-        ),
-        (
-            ParameterId::from("sidechain_hpf_hz"),
-            ParameterValue::Float(50.0),
-        ),
-        (
-            ParameterId::from("sidechain_hpf_order"),
-            ParameterValue::Int(1),
-        ),
-        (ParameterId::from("detection_mode"), ParameterValue::Int(1)),
-        (
-            ParameterId::from("sidechain_external"),
-            ParameterValue::Bool(true),
-        ),
         (ParameterId::from("range_db"), ParameterValue::Float(60.0)),
         (
             ParameterId::from("hysteresis_db"),
             ParameterValue::Float(4.0),
         ),
         (ParameterId::from("knee_db"), ParameterValue::Float(3.0)),
-        (
-            ParameterId::from("lookahead_ms"),
-            ParameterValue::Float(10.0),
-        ),
     ];
 
     for (id, value) in cases {
@@ -129,8 +116,7 @@ fn parameter_roundtrip() {
         assert_eq!(read, value, "round-trip failed for {}", id);
     }
 
-    // External sidechain changes input channel count.
-    assert_eq!(plugin.input_channels(), 2);
+    assert_eq!(plugin.input_channels(), 1);
 }
 
 #[test]
@@ -370,4 +356,6 @@ fn diagnostic_data_exposed() {
         !gate_data.is_open,
         "gate should report closed after silence"
     );
+    assert!(gate_data.input_levels_db[0] < -100.0);
+    assert!(gate_data.attenuation_db[0] > 1.0);
 }
