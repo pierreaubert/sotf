@@ -470,8 +470,8 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
             PluginChannelOutputModel::PreservesInput,
             PluginLatencyModel::PluginReported("detector and lookahead configuration"),
-            "sotf_plugin_multiband_compressor::params::SINGLE_BAND_LAYOUT",
-            Generated,
+            "runtime broadband schema (unsupported legacy sidechain controls rejected)",
+            Custom,
             true,
         ),
         zero_alloc_evidence(

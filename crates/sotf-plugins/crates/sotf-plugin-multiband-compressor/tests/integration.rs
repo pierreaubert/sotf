@@ -186,14 +186,16 @@ fn dry_mix_passthrough() {
 }
 
 #[test]
-fn changing_num_bands_works() {
+fn changing_num_bands_requires_rebuild() {
     let plugin = MultibandCompressorPlugin::new(2);
     let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
-    adapter
-        .set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(4))
-        .unwrap();
+    assert!(
+        adapter
+            .set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(4))
+            .is_err()
+    );
 
     let input = sine_buffer(2048, 2, 500.0, 48000);
     let mut output = vec![0.0_f32; input.len()];

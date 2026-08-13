@@ -12,7 +12,7 @@ use sotf_host::auto_makeup::MeasuredMakeup;
 use sotf_host::lookahead::LookaheadBuffer;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_bridge;
-use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::param_specs::{UpdateMode, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
@@ -24,6 +24,17 @@ use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::{LogSmoother, Smoother};
 use std::any::Any;
 use std::sync::Arc;
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct BandDynamicsSmoothers {
+    threshold: Smoother,
+    ratio: Smoother,
+    attack_coeff: Smoother,
+    release_coeff: Smoother,
+    knee: Smoother,
+    makeup_db: Smoother,
+    applied_tilt_db: f32,
+}
 
 pub struct MultibandCompressorPlugin {
     pub(super) channels: usize,
@@ -68,12 +79,17 @@ pub struct MultibandCompressorPlugin {
     pub(super) dry_buffer: Vec<f32>,
     pub(super) threshold_smoother: Smoother,
     pub(super) mix_smoother: Smoother,
-    /// Exact per-frame global threshold/mix values for band-major processing.
-    pub(super) automation_values: Vec<[f32; 2]>,
+    pub(super) link_smoother: Smoother,
+    pub(super) tilt_smoother: Smoother,
+    pub(super) band_smoothers: Vec<BandDynamicsSmoothers>,
+    /// Exact per-frame global threshold/mix/link/tilt values for band-major processing.
+    pub(super) automation_values: Vec<[f32; 4]>,
     pub(super) xover_smoothers: Vec<LogSmoother>,
 
     /// Per-band lookahead delay buffers (one per band, each with `channels` interleaved).
     pub(super) lookahead_buffers: Vec<LookaheadBuffer>,
+    /// Matches the wet lookahead for phase-aligned dry/wet blending.
+    pub(super) dry_lookahead_buffer: LookaheadBuffer,
     /// Per-band measured auto-makeup gain trackers.
     pub(super) measured_makeups: Vec<MeasuredMakeup>,
     /// Temporary frame buffer for lookahead processing.
@@ -87,17 +103,214 @@ pub struct MultibandCompressorPlugin {
     /// Threshold: update UI cache after this many samples (~50 ms).
     pub(super) cache_update_threshold: usize,
     pub(super) cached_parameters: Vec<Parameter>,
+    pub(super) initialized: bool,
 }
 
 impl MultibandCompressorPlugin {
+    #[inline]
+    fn envelope_coeff(time_ms: f32, sample_rate: u32) -> f32 {
+        (-1.0 / (time_ms.max(0.01) * 0.001 * sample_rate.max(1) as f32)).exp()
+    }
+
+    fn make_band_smoothers(
+        band: &BandCompressorParams,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        knee_db: f32,
+        sample_rate: u32,
+    ) -> BandDynamicsSmoothers {
+        const DYNAMICS_SMOOTH_MS: f32 = 20.0;
+        BandDynamicsSmoothers {
+            threshold: Smoother::new(
+                band.threshold_db.unwrap_or(threshold_db),
+                DYNAMICS_SMOOTH_MS,
+                sample_rate,
+            ),
+            ratio: Smoother::new(band.ratio.unwrap_or(ratio), DYNAMICS_SMOOTH_MS, sample_rate),
+            attack_coeff: Smoother::new(
+                Self::envelope_coeff(band.attack_ms.unwrap_or(attack_ms), sample_rate),
+                DYNAMICS_SMOOTH_MS,
+                sample_rate,
+            ),
+            release_coeff: Smoother::new(
+                Self::envelope_coeff(band.release_ms.unwrap_or(release_ms), sample_rate),
+                DYNAMICS_SMOOTH_MS,
+                sample_rate,
+            ),
+            knee: Smoother::new(
+                band.knee_db.unwrap_or(knee_db),
+                DYNAMICS_SMOOTH_MS,
+                sample_rate,
+            ),
+            makeup_db: Smoother::new(band.makeup_gain_db, DYNAMICS_SMOOTH_MS, sample_rate),
+            applied_tilt_db: 0.0,
+        }
+    }
+
+    /// Validate a serialized configuration before allocating DSP state.
+    ///
+    /// `with_params` is intentionally retained as the infallible constructor used by
+    /// in-process callers and tests. Factory boundaries should use this fallible
+    /// constructor so malformed presets cannot reach the IIR coefficient builder.
+    pub fn try_from_params(
+        channels: usize,
+        params: MultibandCompressorPluginParams,
+        sample_rate: u32,
+    ) -> Result<Self, String> {
+        Self::validate_params(&params, sample_rate, channels)?;
+        Ok(Self::with_params(channels, params))
+    }
+
+    fn validate_params(
+        params: &MultibandCompressorPluginParams,
+        sample_rate: u32,
+        channels: usize,
+    ) -> Result<(), String> {
+        if channels == 0 {
+            return Err("channels must be greater than zero".to_string());
+        }
+        if sample_rate == 0 {
+            return Err("sample_rate must be greater than zero".to_string());
+        }
+
+        // The legacy `Compressor` bridge intentionally requests one band. The
+        // multiband catalog still advertises two-to-five bands, but accepting
+        // one here keeps that compatibility path validated rather than bypassed.
+        let nb_min = 1usize;
+        let nb_max = pk(MC, "num_bands").max_f64() as usize;
+        if !(nb_min..=nb_max).contains(&params.num_bands) {
+            return Err(format!(
+                "num_bands must be between {nb_min} and {nb_max}, got {}",
+                params.num_bands
+            ));
+        }
+
+        fn check_range(name: &str, value: f32, min: f64, max: f64) -> Result<(), String> {
+            if !value.is_finite() || value < min as f32 || value > max as f32 {
+                return Err(format!(
+                    "{name} must be finite and between {min} and {max}, got {value}"
+                ));
+            }
+            Ok(())
+        }
+
+        let spec_range = |name: &str, value: f32, specs: &[sotf_host::param_specs::ParamSpec]| {
+            let spec = pk(specs, name);
+            check_range(name, value, spec.min_f64(), spec.max_f64())
+        };
+
+        spec_range("threshold", params.threshold_db, SC)?;
+        spec_range("ratio", params.ratio, SC)?;
+        spec_range("attack", params.attack_ms, SC)?;
+        spec_range("release", params.release_ms, SC)?;
+        spec_range("knee", params.knee_db, SC)?;
+        spec_range("mix", params.mix, SC)?;
+        spec_range("per_band_lookahead_ms", params.per_band_lookahead_ms, MC)?;
+        spec_range("sidechain_tilt_db", params.sidechain_tilt_db, MC)?;
+        spec_range("link_amount", params.link_amount, MC)?;
+
+        if let Some(value) = params.lookahead_ms {
+            spec_range("lookahead_ms", value, SC)?;
+        }
+        if let Some(value) = params.makeup_gain {
+            spec_range("makeup_gain", value, SC)?;
+        }
+        if let Some(value) = params.sidechain_hpf_hz {
+            spec_range("sidechain_hpf_hz", value, SC)?;
+        }
+
+        if let Some(order) = &params.sidechain_hpf_order
+            && !HPF_ORDERS
+                .iter()
+                .any(|expected| order.eq_ignore_ascii_case(expected))
+        {
+            return Err(format!(
+                "sidechain_hpf_order has unsupported value {order:?}"
+            ));
+        }
+        if let Some(mode) = &params.detection_mode
+            && !DETECTION_MODES
+                .iter()
+                .any(|expected| mode.eq_ignore_ascii_case(expected))
+        {
+            return Err(format!("detection_mode has unsupported value {mode:?}"));
+        }
+        if params.sidechain_hpf_hz.is_some()
+            || params.sidechain_hpf_order.is_some()
+            || params.detection_mode.is_some()
+            || params.program_dependent_release.is_some()
+            || params.sidechain_external.is_some()
+        {
+            return Err(
+                "legacy sidechain controls are unsupported; remove them instead of loading inaudible settings"
+                    .to_string(),
+            );
+        }
+
+        let defaults = [200.0_f32, 2_000.0, 8_000.0, 12_000.0];
+        let active_crossovers = params.num_bands - 1;
+        let nyquist = sample_rate as f32 * 0.5;
+        let mut previous = None;
+        for (index, default) in defaults.iter().enumerate().take(active_crossovers) {
+            let value = params
+                .crossover_frequencies
+                .get(index)
+                .copied()
+                .unwrap_or(*default);
+            // Zero is the historical "use default" sentinel used by with_params.
+            let value = if value == 0.0 { *default } else { value };
+            let name = format!("crossover_freq_{}", index + 1);
+            let spec = pk(MC, &name);
+            check_range(&name, value, spec.min_f64(), spec.max_f64())?;
+            if value >= nyquist {
+                return Err(format!(
+                    "{name} must be below Nyquist ({nyquist} Hz), got {value}"
+                ));
+            }
+            if let Some(previous) = previous
+                && value <= previous
+            {
+                return Err(format!(
+                    "crossover frequencies must be strictly ascending: {name}={value} <= {previous}"
+                ));
+            }
+            previous = Some(value);
+        }
+
+        for (band_index, band) in params.bands.iter().enumerate() {
+            if let Some(value) = band.threshold_db {
+                spec_range("threshold", value, MCB)?;
+            }
+            if let Some(value) = band.ratio {
+                spec_range("ratio", value, MCB)?;
+            }
+            if let Some(value) = band.attack_ms {
+                spec_range("attack", value, MCB)?;
+            }
+            if let Some(value) = band.release_ms {
+                spec_range("release", value, MCB)?;
+            }
+            if let Some(value) = band.knee_db {
+                spec_range("knee", value, MCB)?;
+            }
+            spec_range("makeup_gain", band.makeup_gain_db, MCB)
+                .map_err(|error| format!("band {band_index} {error}"))?;
+        }
+
+        Ok(())
+    }
+
     pub fn new(channels: usize) -> Self {
         Self::with_params(channels, Default::default())
     }
     pub fn with_params(channels: usize, params: MultibandCompressorPluginParams) -> Self {
-        let nb = params.num_bands.clamp(
-            pk(MC, "num_bands").min_f64() as usize,
-            pk(MC, "num_bands").max_f64() as usize,
-        );
+        // One band is the explicit broadband Compressor mode. The multiband UI
+        // still constrains its structural control to 2..=5.
+        let nb = params
+            .num_bands
+            .clamp(1, pk(MC, "num_bands").max_f64() as usize);
         let sr = 44100;
         let default_xfs = [200.0f32, 2000.0, 8000.0, 12000.0];
         let mut xfs = params.crossover_frequencies.clone();
@@ -161,7 +374,7 @@ impl MultibandCompressorPlugin {
 
         // lookahead_ms alias overrides per_band_lookahead_ms
         let la_ms_raw = params.lookahead_ms.unwrap_or(params.per_band_lookahead_ms);
-        let la_ms = la_ms_raw.clamp(0.0, 10.0);
+        let la_ms = la_ms_raw.clamp(0.0, 20.0);
         let lookahead_buffers = (0..nb)
             .map(|_| {
                 if la_ms > 0.0 {
@@ -172,6 +385,20 @@ impl MultibandCompressorPlugin {
             })
             .collect();
         let measured_makeups = (0..nb).map(|_| MeasuredMakeup::new(1000.0, sr)).collect();
+        let band_smoothers = band_params
+            .iter()
+            .map(|band| {
+                Self::make_band_smoothers(
+                    band,
+                    params.threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    params.knee_db,
+                    sr,
+                )
+            })
+            .collect();
 
         let mut p = Self {
             channels,
@@ -214,9 +441,17 @@ impl MultibandCompressorPlugin {
             dry_buffer: Vec::new(),
             threshold_smoother: Smoother::new(params.threshold_db, 20.0, sr),
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
+            link_smoother: Smoother::new(params.link_amount.clamp(0.0, 1.0), 20.0, sr),
+            tilt_smoother: Smoother::new(params.sidechain_tilt_db, 20.0, sr),
+            band_smoothers,
             automation_values: Vec::new(),
             xover_smoothers: xfs.iter().map(|&f| LogSmoother::new(f, 50.0, sr)).collect(),
             lookahead_buffers,
+            dry_lookahead_buffer: if la_ms > 0.0 {
+                LookaheadBuffer::from_ms(la_ms, sr, channels)
+            } else {
+                LookaheadBuffer::new(1, channels)
+            },
             measured_makeups,
             lookahead_frame_tmp: vec![0.0; channels],
             gain_reduction_flattened: vec![0.0; nb * channels],
@@ -225,6 +460,7 @@ impl MultibandCompressorPlugin {
             // Default ~50 ms @ 44100 Hz; updated in initialize() when sample rate is known.
             cache_update_threshold: (44100 * 50 / 1000),
             cached_parameters: Vec::new(),
+            initialized: false,
         };
         p.build_crossovers();
         p.update_coefficients();
@@ -274,7 +510,7 @@ impl MultibandCompressorPlugin {
             10 => self.knee_db = value as f32,            // knee
             11 => self.mix = value as f32,                // mix
             12 => self.link_channels = value > 0.5,       // link_channels
-            13 => self.per_band_lookahead_ms = (value as f32).clamp(0.0, 10.0), // per_band_lookahead_ms
+            13 => self.per_band_lookahead_ms = (value as f32).clamp(0.0, 20.0), // per_band_lookahead_ms
             14 => self.ms_mode = value > 0.5,                                   // ms_mode
             15 => self.sidechain_tilt_db = value as f32,                        // sidechain_tilt_db
             16 => self.link_amount = value as f32,                              // link_amount
@@ -313,11 +549,8 @@ impl MultibandCompressorPlugin {
             )
             .with_group("Output"),
         );
-        // NOTE: sidechain_hpf_hz, sidechain_hpf_order, detection_mode,
-        // program_dependent_release, and sidechain_external are stored in
-        // the struct for backward-compat preset loading but are NOT exposed
-        // in parameters() because their DSP implementation is stubbed out.
-        // This prevents users from toggling controls that have no effect.
+        // Unsupported legacy detector controls are deliberately absent from
+        // the runtime schema and rejected when explicitly serialized.
         params.push(
             Parameter::new_float(
                 "lookahead_ms",
@@ -326,7 +559,8 @@ impl MultibandCompressorPlugin {
                 0.0,
                 20.0,
             )
-            .with_group("Timing"),
+            .with_group("Timing")
+            .with_update_mode(UpdateMode::Structural),
         );
 
         // Per-band dynamics (not covered by GLOBAL_PARAMS)
@@ -424,44 +658,97 @@ impl MultibandCompressorPlugin {
             );
         }
 
+        if self.num_bands == 1 {
+            const BROADBAND_KEYS: &[&str] = &[
+                "threshold",
+                "ratio",
+                "attack",
+                "release",
+                "knee",
+                "mix",
+                "link_amount",
+                "lookahead_ms",
+                "makeup_gain",
+                "auto_makeup",
+                "measured_auto_makeup",
+            ];
+            params.retain(|parameter| BROADBAND_KEYS.contains(&parameter.id.as_str()));
+        }
         self.cached_parameters = params;
+    }
+
+    fn refresh_schema_before_initialization(&mut self) {
+        // Parameter metadata is structural. Runtime values are served by
+        // get_parameter/current_values, so realtime automation must not rebuild
+        // and allocate a complete schema on every write.
+        if !self.initialized {
+            self.rebuild_cached_parameters();
+        }
     }
     pub fn from_params(channels: usize, params: MultibandCompressorPluginParams) -> Self {
         Self::with_params(channels, params)
     }
 
     pub(super) fn rebuild_sidechain_tilt(&mut self) {
-        if self.sidechain_tilt_db.abs() < 0.01 || self.sample_rate == 0 {
-            self.sidechain_tilt_biquads.clear();
-            return;
+        let tilt = self.tilt_smoother.current();
+        let dimensions_match = self.sidechain_tilt_biquads.len() == self.num_bands
+            && self
+                .sidechain_tilt_biquads
+                .iter()
+                .all(|band| band.len() == self.channels);
+        if !dimensions_match {
+            self.sidechain_tilt_biquads = (0..self.num_bands)
+                .map(|_| {
+                    (0..self.channels)
+                        .map(|_| Self::new_tilt_pair(tilt, self.sample_rate))
+                        .collect()
+                })
+                .collect();
+        } else {
+            self.update_sidechain_tilt_coefficients(tilt);
         }
-        // Create per-band, per-channel tilt biquads so each band has independent state.
-        // A true tilt is a lowshelf cut + highshelf boost (or vice versa) with
-        // complementary gains so the combined response is a straight-line slope.
-        let half_tilt = self.sidechain_tilt_db as f64 * 0.5;
-        self.sidechain_tilt_biquads = (0..self.num_bands)
-            .map(|_| {
-                (0..self.channels)
-                    .map(|_| {
-                        let lowshelf = Biquad::new(
-                            BiquadFilterType::Lowshelf,
-                            1000.0,
-                            self.sample_rate as f64,
-                            0.707,
-                            -half_tilt,
-                        );
-                        let highshelf = Biquad::new(
-                            BiquadFilterType::Highshelf,
-                            1000.0,
-                            self.sample_rate as f64,
-                            0.707,
-                            half_tilt,
-                        );
-                        (lowshelf, highshelf)
-                    })
-                    .collect()
-            })
-            .collect();
+    }
+
+    fn new_tilt_pair(tilt_db: f32, sample_rate: u32) -> (Biquad, Biquad) {
+        let half_tilt = tilt_db as f64 * 0.5;
+        (
+            Biquad::new(
+                BiquadFilterType::Lowshelf,
+                1000.0,
+                sample_rate.max(1) as f64,
+                0.707,
+                -half_tilt,
+            ),
+            Biquad::new(
+                BiquadFilterType::Highshelf,
+                1000.0,
+                sample_rate.max(1) as f64,
+                0.707,
+                half_tilt,
+            ),
+        )
+    }
+
+    fn update_sidechain_tilt_coefficients(&mut self, tilt_db: f32) {
+        let half_tilt = tilt_db as f64 * 0.5;
+        for band in &mut self.sidechain_tilt_biquads {
+            for (low, high) in band {
+                low.update_params(
+                    BiquadFilterType::Lowshelf,
+                    1000.0,
+                    self.sample_rate.max(1) as f64,
+                    0.707,
+                    -half_tilt,
+                );
+                high.update_params(
+                    BiquadFilterType::Highshelf,
+                    1000.0,
+                    self.sample_rate.max(1) as f64,
+                    0.707,
+                    half_tilt,
+                );
+            }
+        }
     }
 
     pub(super) fn build_crossovers(&mut self) {
@@ -516,9 +803,30 @@ impl MultibandCompressorPlugin {
     }
 
     pub fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        let name = id.as_str();
+        // Band count determines the size and topology of all per-band state. Reject live
+        // changes before the bridge invokes the mutating setter so failure is transactional.
+        if self.initialized
+            && matches!(
+                id.as_str(),
+                "num_bands" | "per_band_lookahead_ms" | "lookahead_ms"
+            )
+        {
+            return Err(format!(
+                "{} is structural; rebuild the plugin so host latency metadata stays valid",
+                id.as_str()
+            ));
+        }
+
         // Try global params first via param_bridge
-        if let Ok(idx) =
-            param_bridge::set_parameter(MC, &id, &value, |i, v| self.set_param_value(i, v))
+        let is_runtime_alias = matches!(
+            name,
+            "makeup_gain" | "auto_makeup" | "measured_auto_makeup" | "lookahead_ms"
+        );
+        if !name.starts_with("band_")
+            && !is_runtime_alias
+            && let Ok(idx) =
+                param_bridge::set_parameter(MC, &id, &value, |i, v| self.set_param_value(i, v))
         {
             // Side effects for specific global params
             match idx {
@@ -535,6 +843,18 @@ impl MultibandCompressorPlugin {
                             attack_coeff: 0.0,
                             release_coeff: 0.0,
                         });
+                    }
+                    while self.band_smoothers.len() < nb {
+                        let band = &self.band_params[self.band_smoothers.len()];
+                        self.band_smoothers.push(Self::make_band_smoothers(
+                            band,
+                            self.threshold_db,
+                            self.ratio,
+                            self.attack_ms,
+                            self.release_ms,
+                            self.knee_db,
+                            self.sample_rate,
+                        ));
                     }
                     while self.lookahead_buffers.len() < nb {
                         self.lookahead_buffers
@@ -555,7 +875,6 @@ impl MultibandCompressorPlugin {
                     self.band_levels_db.resize(nb, -120.0);
                     self.gain_reduction_flattened
                         .resize(nb * self.channels, 0.0);
-                    self.rebuild_sidechain_tilt();
                     self.update_coefficients();
                     self.rebuild_sidechain_tilt();
                 }
@@ -576,10 +895,41 @@ impl MultibandCompressorPlugin {
                     } else {
                         self.threshold_smoother.set_target(self.threshold_db);
                     }
+                    for (band, smoother) in self.band_params.iter().zip(&mut self.band_smoothers) {
+                        if band.threshold_db.is_none() {
+                            smoother.threshold.set_target(self.threshold_db);
+                        }
+                    }
                 }
-                8 | 9 => {
-                    // attack or release changed
-                    self.update_coefficients();
+                7 => {
+                    for (band, smoother) in self.band_params.iter().zip(&mut self.band_smoothers) {
+                        if band.ratio.is_none() {
+                            smoother.ratio.set_target(self.ratio);
+                        }
+                    }
+                }
+                8 => {
+                    let target = Self::envelope_coeff(self.attack_ms, self.sample_rate);
+                    for (band, smoother) in self.band_params.iter().zip(&mut self.band_smoothers) {
+                        if band.attack_ms.is_none() {
+                            smoother.attack_coeff.set_target(target);
+                        }
+                    }
+                }
+                9 => {
+                    let target = Self::envelope_coeff(self.release_ms, self.sample_rate);
+                    for (band, smoother) in self.band_params.iter().zip(&mut self.band_smoothers) {
+                        if band.release_ms.is_none() {
+                            smoother.release_coeff.set_target(target);
+                        }
+                    }
+                }
+                10 => {
+                    for (band, smoother) in self.band_params.iter().zip(&mut self.band_smoothers) {
+                        if band.knee_db.is_none() {
+                            smoother.knee.set_target(self.knee_db);
+                        }
+                    }
                 }
                 11 => {
                     // mix changed
@@ -592,19 +942,30 @@ impl MultibandCompressorPlugin {
                             buf.set_delay_ms(self.per_band_lookahead_ms, self.sample_rate);
                         }
                     }
+                    if self.per_band_lookahead_ms > 0.0 {
+                        self.dry_lookahead_buffer
+                            .set_delay_ms(self.per_band_lookahead_ms, self.sample_rate);
+                    }
                 }
                 15 => {
                     // sidechain_tilt_db changed
-                    self.rebuild_sidechain_tilt();
+                    self.tilt_smoother.set_target(self.sidechain_tilt_db);
+                }
+                12 => {
+                    // Legacy boolean migration into the canonical continuous control.
+                    self.link_amount = if self.link_channels { 1.0 } else { 0.0 };
+                    self.link_smoother.set_target(self.link_amount);
+                }
+                16 => {
+                    self.link_smoother.set_target(self.link_amount);
                 }
                 _ => {}
             }
-            self.rebuild_cached_parameters();
+            self.refresh_schema_before_initialization();
             return Ok(());
         }
 
         // Single-band aliases: map unprefixed names to band_params[0] or stub fields
-        let name = id.as_str();
         match name {
             "makeup_gain" => {
                 let v = value
@@ -613,7 +974,10 @@ impl MultibandCompressorPlugin {
                 if let Some(bp) = self.band_params.first_mut() {
                     bp.makeup_gain_db = v;
                 }
-                self.rebuild_cached_parameters();
+                if let Some(smoother) = self.band_smoothers.first_mut() {
+                    smoother.makeup_db.set_target(v);
+                }
+                self.refresh_schema_before_initialization();
                 return Ok(());
             }
             "auto_makeup" => {
@@ -623,7 +987,7 @@ impl MultibandCompressorPlugin {
                 if let Some(bp) = self.band_params.first_mut() {
                     bp.auto_makeup = v;
                 }
-                self.rebuild_cached_parameters();
+                self.refresh_schema_before_initialization();
                 return Ok(());
             }
             "measured_auto_makeup" => {
@@ -633,7 +997,7 @@ impl MultibandCompressorPlugin {
                 if let Some(bp) = self.band_params.first_mut() {
                     bp.measured_auto_makeup = v;
                 }
-                self.rebuild_cached_parameters();
+                self.refresh_schema_before_initialization();
                 return Ok(());
             }
             // NOTE: sidechain_hpf_hz, sidechain_hpf_order, detection_mode,
@@ -645,28 +1009,31 @@ impl MultibandCompressorPlugin {
                 let v = value
                     .as_float()
                     .ok_or_else(|| "lookahead_ms must be a float".to_string())?;
-                self.per_band_lookahead_ms = v.clamp(0.0, 10.0);
+                self.per_band_lookahead_ms = v.clamp(0.0, 20.0);
                 for buf in &mut self.lookahead_buffers {
                     if self.per_band_lookahead_ms > 0.0 {
                         buf.set_delay_ms(self.per_band_lookahead_ms, self.sample_rate);
                     }
                 }
-                self.rebuild_cached_parameters();
+                if self.per_band_lookahead_ms > 0.0 {
+                    self.dry_lookahead_buffer
+                        .set_delay_ms(self.per_band_lookahead_ms, self.sample_rate);
+                }
+                self.refresh_schema_before_initialization();
                 return Ok(());
             }
             _ => {}
         }
 
         // Fall through to band-level param handling
-        if name.starts_with("band_") {
-            let parts: Vec<&str> = name.split('_').collect();
-            if parts.len() >= 3 {
-                let b_idx = parts[1]
+        if let Some(rest) = name.strip_prefix("band_") {
+            if let Some((index, field)) = rest.split_once('_') {
+                let b_idx = index
                     .parse::<usize>()
                     .map_err(|e| format!("Invalid band index: {}", e))?;
                 if b_idx < self.num_bands {
-                    let field = parts[2];
                     let bp = &mut self.band_params[b_idx];
+                    let smoothers = &mut self.band_smoothers[b_idx];
                     match field {
                         "threshold" => {
                             let v = value
@@ -674,6 +1041,7 @@ impl MultibandCompressorPlugin {
                                 .ok_or_else(|| format!("{} must be a float", name))?;
                             if v.is_finite() {
                                 bp.threshold_db = Some(v);
+                                smoothers.threshold.set_target(v);
                             }
                         }
                         "ratio" => {
@@ -682,6 +1050,7 @@ impl MultibandCompressorPlugin {
                                 .ok_or_else(|| format!("{} must be a float", name))?;
                             if v.is_finite() {
                                 bp.ratio = Some(v);
+                                smoothers.ratio.set_target(v);
                             }
                         }
                         "attack" => {
@@ -690,7 +1059,9 @@ impl MultibandCompressorPlugin {
                                 .ok_or_else(|| format!("{} must be a float", name))?;
                             if v.is_finite() {
                                 bp.attack_ms = Some(v);
-                                self.update_coefficients();
+                                smoothers
+                                    .attack_coeff
+                                    .set_target(Self::envelope_coeff(v, self.sample_rate));
                             }
                         }
                         "release" => {
@@ -699,7 +1070,9 @@ impl MultibandCompressorPlugin {
                                 .ok_or_else(|| format!("{} must be a float", name))?;
                             if v.is_finite() {
                                 bp.release_ms = Some(v);
-                                self.update_coefficients();
+                                smoothers
+                                    .release_coeff
+                                    .set_target(Self::envelope_coeff(v, self.sample_rate));
                             }
                         }
                         "makeup" => {
@@ -708,14 +1081,15 @@ impl MultibandCompressorPlugin {
                                 .ok_or_else(|| format!("{} must be a float", name))?;
                             if v.is_finite() {
                                 bp.makeup_gain_db = v;
+                                smoothers.makeup_db.set_target(v);
                             }
                         }
-                        "auto" => {
+                        "auto_makeup" => {
                             bp.auto_makeup = value
                                 .as_bool()
                                 .ok_or_else(|| format!("{} must be a boolean", name))?
                         }
-                        "measured" => {
+                        "measured_auto_makeup" => {
                             bp.measured_auto_makeup = value
                                 .as_bool()
                                 .ok_or_else(|| format!("{} must be a boolean", name))?
@@ -741,6 +1115,7 @@ impl MultibandCompressorPlugin {
                                 .ok_or_else(|| format!("{} must be a float", name))?;
                             if v.is_finite() {
                                 bp.knee_db = Some(v);
+                                smoothers.knee.set_target(v);
                             }
                         }
                         _ => return Err(format!("Unknown band field: {}", field)),
@@ -752,7 +1127,7 @@ impl MultibandCompressorPlugin {
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
-        self.rebuild_cached_parameters();
+        self.refresh_schema_before_initialization();
         Ok(())
     }
 
@@ -792,12 +1167,10 @@ impl MultibandCompressorPlugin {
             _ => {}
         }
         // Fall through to band-level params
-        if name.starts_with("band_") {
-            let parts: Vec<&str> = name.split('_').collect();
-            if parts.len() >= 3 {
-                let b_idx = parts[1].parse::<usize>().unwrap_or(0);
+        if let Some(rest) = name.strip_prefix("band_") {
+            if let Some((index, field)) = rest.split_once('_') {
+                let b_idx = index.parse::<usize>().unwrap_or(0);
                 if b_idx < self.num_bands {
-                    let field = parts[2];
                     let bp = &self.band_params[b_idx];
                     match field {
                         "threshold" => Some(ParameterValue::Float(
@@ -811,8 +1184,10 @@ impl MultibandCompressorPlugin {
                             bp.release_ms.unwrap_or(self.release_ms),
                         )),
                         "makeup" => Some(ParameterValue::Float(bp.makeup_gain_db)),
-                        "auto" => Some(ParameterValue::Bool(bp.auto_makeup)),
-                        "measured" => Some(ParameterValue::Bool(bp.measured_auto_makeup)),
+                        "auto_makeup" => Some(ParameterValue::Bool(bp.auto_makeup)),
+                        "measured_auto_makeup" => {
+                            Some(ParameterValue::Bool(bp.measured_auto_makeup))
+                        }
                         "active" => Some(ParameterValue::Bool(bp.active)),
                         "solo" => Some(ParameterValue::Bool(bp.solo)),
                         "bypass" => Some(ParameterValue::Bool(bp.bypass)),
@@ -833,8 +1208,13 @@ impl MultibandCompressorPlugin {
 
 impl ParametricInPlacePlugin for MultibandCompressorPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Multiband Compressor", "2.0.0", "Sotf")
-            .with_description("Phase-coherent multiband dynamics processor")
+        if self.num_bands == 1 {
+            PluginInfo::new("Compressor", env!("CARGO_PKG_VERSION"), "Sotf")
+                .with_description("Broadband dynamics processor")
+        } else {
+            PluginInfo::new("Multiband Compressor", env!("CARGO_PKG_VERSION"), "Sotf")
+                .with_description("Cascaded LR4 multiband dynamics processor")
+        }
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -880,8 +1260,29 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         self.build_crossovers();
         self.update_coefficients();
         self.rebuild_sidechain_tilt();
+        for smoother in &mut self.band_smoothers {
+            smoother.applied_tilt_db = self.tilt_smoother.current();
+        }
         self.threshold_smoother.set_time(20.0, sr);
         self.mix_smoother.set_time(20.0, sr);
+        self.link_smoother.set_time(20.0, sr);
+        self.tilt_smoother.set_time(20.0, sr);
+        for (band, smoother) in self.band_params.iter().zip(&mut self.band_smoothers) {
+            smoother.threshold.set_time(20.0, sr);
+            smoother.ratio.set_time(20.0, sr);
+            smoother.knee.set_time(20.0, sr);
+            smoother.makeup_db.set_time(20.0, sr);
+            smoother.attack_coeff.set_time(20.0, sr);
+            smoother.release_coeff.set_time(20.0, sr);
+            smoother.attack_coeff.reset(Self::envelope_coeff(
+                band.attack_ms.unwrap_or(self.attack_ms),
+                sr,
+            ));
+            smoother.release_coeff.reset(Self::envelope_coeff(
+                band.release_ms.unwrap_or(self.release_ms),
+                sr,
+            ));
+        }
         for s in &mut self.xover_smoothers {
             *s = LogSmoother::new(s.target(), 50.0, sr);
         }
@@ -890,10 +1291,15 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         let la_ms = self.per_band_lookahead_ms;
         for buf in &mut self.lookahead_buffers {
             if la_ms > 0.0 {
-                let max_samples = (10.0 * 0.001 * sr as f32).round() as usize;
+                let max_samples = (20.0 * 0.001 * sr as f32).round() as usize;
                 buf.resize(max_samples, self.channels);
                 buf.set_delay_ms(la_ms, sr);
             }
+        }
+        let max_samples = (20.0 * 0.001 * sr as f32).round() as usize;
+        self.dry_lookahead_buffer.resize(max_samples, self.channels);
+        if la_ms > 0.0 {
+            self.dry_lookahead_buffer.set_delay_ms(la_ms, sr);
         }
         // Reinitialize measured makeup smoothing for new sample rate
         for mm in &mut self.measured_makeups {
@@ -905,8 +1311,9 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         let stride = max_frames * self.channels;
         self.band_buffers.resize(self.num_bands * stride, 0.0);
         self.dry_buffer.resize(max_frames * self.channels, 0.0);
-        self.automation_values.resize(max_frames, [0.0; 2]);
+        self.automation_values.resize(max_frames, [0.0; 4]);
         self.lookahead_frame_tmp.resize(self.channels, 0.0);
+        self.initialized = true;
 
         Ok(())
     }
@@ -920,14 +1327,40 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         for buf in &mut self.lookahead_buffers {
             buf.reset();
         }
+        self.dry_lookahead_buffer.reset();
         for mm in &mut self.measured_makeups {
             mm.reset();
         }
-        self.rebuild_sidechain_tilt();
+        self.threshold_smoother.reset(self.threshold_db);
+        self.mix_smoother.reset(self.mix);
+        self.link_smoother.reset(self.link_amount);
+        self.tilt_smoother.reset(self.sidechain_tilt_db);
+        for (band, smoother) in self.band_params.iter().zip(&mut self.band_smoothers) {
+            smoother
+                .threshold
+                .reset(band.threshold_db.unwrap_or(self.threshold_db));
+            smoother.ratio.reset(band.ratio.unwrap_or(self.ratio));
+            smoother.knee.reset(band.knee_db.unwrap_or(self.knee_db));
+            smoother.makeup_db.reset(band.makeup_gain_db);
+            smoother.applied_tilt_db = self.sidechain_tilt_db;
+            smoother.attack_coeff.reset(Self::envelope_coeff(
+                band.attack_ms.unwrap_or(self.attack_ms),
+                self.sample_rate,
+            ));
+            smoother.release_coeff.reset(Self::envelope_coeff(
+                band.release_ms.unwrap_or(self.release_ms),
+                self.sample_rate,
+            ));
+        }
         self.band_buffers.fill(0.0);
         self.dry_buffer.fill(0.0);
-        // Reinitialize tilt biquads to clear their filter state (Biquad has no reset()).
-        self.rebuild_sidechain_tilt();
+        self.update_sidechain_tilt_coefficients(self.sidechain_tilt_db);
+        for band in &mut self.sidechain_tilt_biquads {
+            for (low, high) in band {
+                low.reset();
+                high.reset();
+            }
+        }
     }
 
     fn process_in_place(
@@ -940,15 +1373,29 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         if nf == 0 {
             return Ok(0);
         }
-        let stride = nf * self.channels;
-
-        // Real-time safety: buffers must be pre-allocated by initialize() up to 4096 frames.
-        // Allocating inside the audio callback can cause dropouts.
-        if nf > 4096 {
+        let expected_len = nf
+            .checked_mul(self.channels)
+            .ok_or_else(|| "Multiband compressor buffer length overflow".to_string())?;
+        if buffer.len() != expected_len {
             return Err(format!(
-                "Multiband compressor block size {nf} exceeds max 4096 frames"
+                "Multiband compressor expected {expected_len} samples, got {}",
+                buffer.len()
             ));
         }
+        if nf > 4096 {
+            let mut processed = 0;
+            while processed < nf {
+                let chunk_frames = (nf - processed).min(4096);
+                let sample_start = processed * self.channels;
+                let sample_end = sample_start + chunk_frames * self.channels;
+                let mut chunk_context = *context;
+                chunk_context.num_frames = chunk_frames;
+                self.process_in_place(&mut buffer[sample_start..sample_end], &chunk_context)?;
+                processed += chunk_frames;
+            }
+            return Ok(nf);
+        }
+        let stride = nf * self.channels;
         debug_assert!(
             self.dry_buffer.len() >= buffer.len(),
             "dry_buffer undersized: {} < {} (call initialize() before processing)",
@@ -963,6 +1410,17 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         );
 
         self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
+        if self.per_band_lookahead_ms > 0.0 {
+            for frame in 0..nf {
+                let offset = frame * self.channels;
+                self.lookahead_frame_tmp
+                    .copy_from_slice(&self.dry_buffer[offset..offset + self.channels]);
+                self.dry_lookahead_buffer.process_frame(
+                    &self.lookahead_frame_tmp,
+                    &mut self.dry_buffer[offset..offset + self.channels],
+                );
+            }
+        }
 
         // M/S encode: convert L/R to Mid/Side before band splitting
         let use_ms = self.ms_mode && self.channels == 2;
@@ -976,12 +1434,13 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
             }
         }
 
-        for i in 0..(self.num_bands - 1) {
-            let freq = self.xover_smoothers[i].next_n(nf);
-            self.crossover_points[i].set_frequency(freq);
-        }
-
         for frame in 0..nf {
+            // Advance crossover automation sample-by-sample so the output is
+            // independent of host block partitioning.
+            for i in 0..self.num_bands.saturating_sub(1) {
+                let freq = self.xover_smoothers[i].advance();
+                self.crossover_points[i].set_frequency(freq);
+            }
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
                 let mut rem = buffer[idx];
@@ -997,6 +1456,8 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
         for values in &mut self.automation_values[..nf] {
             values[0] = self.threshold_smoother.advance();
             values[1] = self.mix_smoother.advance();
+            values[2] = self.link_smoother.advance();
+            values[3] = self.tilt_smoother.advance();
         }
 
         let mut any_solo = false;
@@ -1024,6 +1485,17 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
 
             if is_bypassed || is_passive {
                 let off = b * stride;
+                if self.per_band_lookahead_ms > 0.0 {
+                    for frame in 0..nf {
+                        let f_off = off + frame * self.channels;
+                        self.lookahead_frame_tmp
+                            .copy_from_slice(&self.band_buffers[f_off..f_off + self.channels]);
+                        self.lookahead_buffers[b].process_frame(
+                            &self.lookahead_frame_tmp,
+                            &mut self.band_buffers[f_off..f_off + self.channels],
+                        );
+                    }
+                }
                 let mut max_abs = 0.0f32;
                 for i in 0..stride {
                     max_abs = max_abs.max(self.band_buffers[off + i].abs());
@@ -1032,59 +1504,59 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
                 continue;
             }
 
-            let threshold_override = bp.and_then(|p| p.threshold_db);
-            let makeup_threshold = threshold_override.unwrap_or(self.automation_values[nf - 1][0]);
-            let rat = bp.and_then(|p| p.ratio).unwrap_or(self.ratio);
-            let kn = bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db);
             let use_measured_makeup = bp.map(|p| p.measured_auto_makeup).unwrap_or(false);
-            let mk = if use_measured_makeup {
-                // Measured makeup: will be computed per-frame below
-                1.0
-            } else if bp.map(|p| p.auto_makeup).unwrap_or(false) {
-                let ratio = rat.max(1.0);
-                let slope = 1.0 - 1.0 / ratio;
-                let overshoot = (-makeup_threshold).max(0.0) * 0.5;
-                fast_pow10((overshoot * slope) / 20.0)
-            } else {
-                fast_pow10(bp.map(|p| p.makeup_gain_db).unwrap_or(0.0) / 20.0)
-            };
+            let use_auto_makeup = bp.map(|p| p.auto_makeup).unwrap_or(false);
 
             let use_lookahead = self.per_band_lookahead_ms > 0.0;
             let bcomp = &mut self.band_compressors[b];
+            let smoothers = &mut self.band_smoothers[b];
+            let tilt_filters = &mut self.sidechain_tilt_biquads[b];
             let off = b * stride;
             let mut band_max_abs = 0.0f32;
 
-            // Use link_amount for continuous blending (backward compat: link_channels overrides)
-            let link = if self.link_channels {
-                1.0f32
-            } else {
-                self.link_amount
-            };
-
             for frame in 0..nf {
-                let th = threshold_override.unwrap_or(self.automation_values[frame][0]);
+                let th = smoothers.threshold.advance();
+                let rat = smoothers.ratio.advance();
+                let kn = smoothers.knee.advance();
+                let attack_coeff = smoothers.attack_coeff.advance();
+                let release_coeff = smoothers.release_coeff.advance();
+                let makeup_db = smoothers.makeup_db.advance();
+                let link = self.automation_values[frame][2];
+                let tilt = self.automation_values[frame][3];
+                if (tilt - smoothers.applied_tilt_db).abs() > 1.0e-5 {
+                    let half_tilt = tilt as f64 * 0.5;
+                    for (low, high) in tilt_filters.iter_mut() {
+                        low.update_params(
+                            BiquadFilterType::Lowshelf,
+                            1000.0,
+                            self.sample_rate.max(1) as f64,
+                            0.707,
+                            -half_tilt,
+                        );
+                        high.update_params(
+                            BiquadFilterType::Highshelf,
+                            1000.0,
+                            self.sample_rate.max(1) as f64,
+                            0.707,
+                            half_tilt,
+                        );
+                    }
+                    smoothers.applied_tilt_db = tilt;
+                }
+                bcomp.attack_coeff = attack_coeff;
+                bcomp.release_coeff = release_coeff;
                 // Detect max-of-channels level for linked detection
                 // Apply per-band sidechain tilt filter if configured
-                let has_tilt = b < self.sidechain_tilt_biquads.len();
                 let mut max_det = 0.0f32;
                 if use_ms {
                     let raw = self.band_buffers[off + frame * self.channels];
-                    let filtered = if has_tilt {
-                        let (low, high) = &mut self.sidechain_tilt_biquads[b][0];
-                        high.process(low.process(raw as f64)) as f32
-                    } else {
-                        raw
-                    };
+                    let (low, high) = &mut tilt_filters[0];
+                    let filtered = high.process(low.process(raw as f64)) as f32;
                     max_det = filtered.abs();
                 } else {
-                    for ch in 0..self.channels {
+                    for (ch, (low, high)) in tilt_filters.iter_mut().enumerate() {
                         let raw = self.band_buffers[off + frame * self.channels + ch];
-                        let filtered = if has_tilt && ch < self.sidechain_tilt_biquads[b].len() {
-                            let (low, high) = &mut self.sidechain_tilt_biquads[b][ch];
-                            high.process(low.process(raw as f64)) as f32
-                        } else {
-                            raw
-                        };
+                        let filtered = high.process(low.process(raw as f64)) as f32;
                         max_det = max_det.max(filtered.abs());
                     }
                 }
@@ -1125,9 +1597,9 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
                     let tgr = Self::calculate_gain_reduction(idb, th, rat, kn);
 
                     let c = if tgr > bcomp.envelope[ch] {
-                        bcomp.attack_coeff
+                        attack_coeff
                     } else {
-                        bcomp.release_coeff
+                        release_coeff
                     };
                     bcomp.envelope[ch] = tgr + c * (bcomp.envelope[ch] - tgr);
 
@@ -1146,10 +1618,16 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
                         self.band_buffers[idx] *= makeup;
                     }
                 } else {
-                    // Non-measured makeup is already scalar; apply to all channels.
+                    let makeup = if use_auto_makeup {
+                        let slope = 1.0 - 1.0 / rat.max(1.0);
+                        let overshoot = (-th).max(0.0) * 0.5;
+                        fast_pow10((overshoot * slope) / 20.0)
+                    } else {
+                        fast_pow10(makeup_db / 20.0)
+                    };
                     for ch in 0..self.channels {
                         let idx = off + frame * self.channels + ch;
-                        self.band_buffers[idx] *= mk;
+                        self.band_buffers[idx] *= makeup;
                     }
                 }
             }
@@ -1158,24 +1636,27 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
 
         for frame in 0..nf {
             let g_mix = self.automation_values[frame][1];
-            for ch in 0..self.channels {
-                let idx = frame * self.channels + ch;
-                let mut s = 0.0f32;
-                for b in 0..self.num_bands {
-                    s += self.band_buffers[b * stride + idx];
-                }
-                buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + s * g_mix;
-            }
-        }
-
-        // M/S decode: convert Mid/Side back to L/R
-        if use_ms {
-            for frame in 0..nf {
+            if use_ms {
                 let idx = frame * 2;
-                let m = buffer[idx];
-                let s = buffer[idx + 1];
-                buffer[idx] = m + s; // L = M + S
-                buffer[idx + 1] = m - s; // R = M - S
+                let mut mid = 0.0;
+                let mut side = 0.0;
+                for b in 0..self.num_bands {
+                    mid += self.band_buffers[b * stride + idx];
+                    side += self.band_buffers[b * stride + idx + 1];
+                }
+                let wet_l = mid + side;
+                let wet_r = mid - side;
+                buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + wet_l * g_mix;
+                buffer[idx + 1] = self.dry_buffer[idx + 1] * (1.0 - g_mix) + wet_r * g_mix;
+            } else {
+                for ch in 0..self.channels {
+                    let idx = frame * self.channels + ch;
+                    let mut s = 0.0f32;
+                    for b in 0..self.num_bands {
+                        s += self.band_buffers[b * stride + idx];
+                    }
+                    buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + s * g_mix;
+                }
             }
         }
 
@@ -1223,5 +1704,13 @@ impl ParametricInPlacePlugin for MultibandCompressorPlugin {
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
+    }
+
+    fn latency_samples(&self) -> usize {
+        if self.per_band_lookahead_ms <= 0.0 {
+            0
+        } else {
+            (self.per_band_lookahead_ms * 0.001 * self.sample_rate as f32).round() as usize
+        }
     }
 }

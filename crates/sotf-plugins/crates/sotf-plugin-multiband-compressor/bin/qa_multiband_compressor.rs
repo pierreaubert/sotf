@@ -2,7 +2,7 @@ use sotf_host::parametric_plugin::ParameterSet;
 use sotf_host::plugin::ProcessContext;
 use sotf_host::{
     CountingAlloc, ParameterId, ParameterValue, ParametricInPlacePlugin,
-    ParametricInPlacePluginAdapter, measure_peak_db, run_standard_tests,
+    ParametricInPlacePluginAdapter, assert_no_allocs, measure_peak_db, run_standard_tests,
 };
 use sotf_plugin_multiband_compressor::{
     MultibandCompressorPlugin, MultibandCompressorPluginParams,
@@ -72,6 +72,59 @@ fn main() {
     let peak = measure_peak_db(&buffer);
     println!("  Muted Peak: {:.2}dB", peak);
     assert!(peak < -25.0);
+
+    // Realtime parameter changes, reset, and oversized-block chunking must all
+    // reuse storage allocated by initialize().
+    let threshold = ParameterId::from("threshold");
+    let ratio = ParameterId::from("ratio");
+    let attack = ParameterId::from("attack");
+    let release = ParameterId::from("release");
+    let knee = ParameterId::from("knee");
+    let link = ParameterId::from("link_amount");
+    let tilt = ParameterId::from("sidechain_tilt_db");
+    let crossover = ParameterId::from("crossover_freq_1");
+    let makeup = ParameterId::from("band_0_makeup");
+    let mut oversized = vec![0.1; 10_000];
+    let oversized_frames = oversized.len();
+    assert_no_allocs(
+        "multiband compressor realtime writes/reset/chunking",
+        || {
+            inner
+                .set_parameter(threshold, ParameterValue::Float(-30.0))
+                .unwrap();
+            inner
+                .set_parameter(ratio, ParameterValue::Float(8.0))
+                .unwrap();
+            inner
+                .set_parameter(attack, ParameterValue::Float(1.0))
+                .unwrap();
+            inner
+                .set_parameter(release, ParameterValue::Float(250.0))
+                .unwrap();
+            inner
+                .set_parameter(knee, ParameterValue::Float(9.0))
+                .unwrap();
+            inner
+                .set_parameter(link, ParameterValue::Float(0.4))
+                .unwrap();
+            inner
+                .set_parameter(tilt, ParameterValue::Float(4.0))
+                .unwrap();
+            inner
+                .set_parameter(crossover, ParameterValue::Float(350.0))
+                .unwrap();
+            inner
+                .set_parameter(makeup, ParameterValue::Float(3.0))
+                .unwrap();
+            inner.reset();
+            inner
+                .process_in_place(
+                    &mut oversized,
+                    &ProcessContext::new(sample_rate, oversized_frames),
+                )
+                .unwrap();
+        },
+    );
 
     // Run standard QA tests
     let mut plugin = ParametricInPlacePluginAdapter::new(inner);

@@ -1,3 +1,47 @@
+# 0.5.16
+
+## Review closure (2026-08-12)
+
+- Add an explicit one-band broadband Compressor mode and make the canonical factory expose its matching identity and runtime schema.
+- Make lookahead and band count structural after initialization so host latency/topology metadata cannot become stale; preserve exact dry, bypass, passive, and M/S alignment.
+- Reject serialized legacy sidechain controls that have no DSP implementation and keep them out of the runtime schema.
+- Keep engine-generated default Compressor configs aligned with that strict runtime schema by omitting the rejected legacy sidechain fields.
+- Stop advertising the legacy boolean `link_channels` field as a live engine accessor; broadband Compressor exposes the canonical continuous `link_amount` control while still accepting the boolean during preset construction for compatibility.
+- Make continuous channel linking canonical, smooth crossover/dynamics/link/tilt/makeup automation sample-by-sample, and preserve preallocated tilt-filter state across writes and reset.
+- Process oversized host blocks in allocation-free 4096-frame chunks and avoid schema/string allocations in valid realtime setters.
+- Document the cascaded LR4 phase/group-delay limitation and add factory broadband, partition-equivalence, bounded-jump, swept transfer/phase/null, latency, analyzer, invalid-preset, and allocation regressions.
+
+# 0.5.15
+
+## Fixes (from code review 2026-08-12)
+
+- Validate factory-supplied compressor parameters before constructing crossover and detector
+  state. Non-finite or out-of-range dynamics values, invalid sidechain choices, malformed band
+  overrides, and non-ascending or non-representable crossover frequencies are now rejected with
+  an actionable error instead of reaching IIR coefficient construction.
+- Route the main, bridge, and A/B Compare factory paths through the fallible constructor while
+  retaining the legacy one-band bridge compatibility mode.
+
+# 0.5.14
+
+## Fixes
+
+- Aligned the catalog's `compressor` entry with the runtime it constructs: this factory name is a
+  multiband-compressor compatibility alias, exposes the dynamic global/per-band schema, and uses
+  the custom multiband UI metadata. It is no longer advertised as a standalone single-band layout.
+
+# 0.5.13
+
+## Fixes (from code review 2026-08-12)
+
+- Report configured lookahead latency and phase-align dry, bypassed, and passive paths with the
+  delayed wet bands. The implementation now honors the advertised 20 ms maximum.
+- Decode the processed M/S signal before dry/wet mixing so `mix = 0` remains exact L/R passthrough.
+- Make `num_bands` structural after initialization. Live changes now fail transactionally instead
+  of reallocating state and risking stale per-band audio storage.
+- Publish live analyzer values by storing owned vectors in each realtime-cache snapshot instead of
+  nested shared `Arc`s that prevented updates.
+
 # 0.5.12
 
 ## Fixes (from code review 2026-05-16)
@@ -88,3 +132,6 @@
 - Massive update to plugins, see individual markdown plan for details (wave 3)
 - Massive update to plugins, see individual markdown plan for details (wave 2)
 - Massive update to plugins, see individual markdown plan for details
+# 0.5.17
+
+- Mark latency-changing lookahead controls structural in host-visible metadata, matching their rebuild-only setters.

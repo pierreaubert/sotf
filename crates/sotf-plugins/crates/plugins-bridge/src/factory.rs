@@ -78,13 +78,21 @@ pub fn create_plugin(
 
         "DeEsser" | "de_esser" => {
             let params: sotf_plugin_de_esser::DeEsserPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_de_esser::DeEsserPlugin::from_params(channels, params);
+            let plugin = sotf_plugin_de_esser::DeEsserPlugin::try_from_params_at_sample_rate(
+                channels,
+                params,
+                sample_rate,
+            )?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "DynamicEQ" | "dynamic_eq" => {
             let params: sotf_plugin_dynamic_eq::DynamicEqPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_dynamic_eq::DynamicEqPlugin::from_params(channels, params);
+            let plugin = sotf_plugin_dynamic_eq::DynamicEqPlugin::try_from_params_at_sample_rate(
+                channels,
+                params,
+                sample_rate,
+            )?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
@@ -97,9 +105,12 @@ pub fn create_plugin(
         "MultibandCompressor" | "multiband_compressor" => {
             let params: sotf_plugin_multiband_compressor::MultibandCompressorPluginParams =
                 parse_params(config_json)?;
-            let plugin = sotf_plugin_multiband_compressor::MultibandCompressorPlugin::from_params(
-                channels, params,
-            );
+            let plugin =
+                sotf_plugin_multiband_compressor::MultibandCompressorPlugin::try_from_params(
+                    channels,
+                    params,
+                    sample_rate,
+                )?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 

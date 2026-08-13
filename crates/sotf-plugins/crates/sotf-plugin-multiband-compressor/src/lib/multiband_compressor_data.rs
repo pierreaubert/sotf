@@ -1,47 +1,29 @@
-use std::sync::Arc;
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MultibandCompressorData {
     /// Gain reduction per band and per channel (flattened: [band0_ch0, band0_ch1, ..., band1_ch0, ...])
-    pub gain_reduction_db: Arc<Vec<f32>>,
-    pub band_levels_db: Arc<Vec<f32>>,
-    pub crossover_frequencies: Arc<Vec<f32>>,
-}
-
-impl Default for MultibandCompressorData {
-    fn default() -> Self {
-        Self {
-            gain_reduction_db: Arc::new(Vec::new()),
-            band_levels_db: Arc::new(Vec::new()),
-            crossover_frequencies: Arc::new(Vec::new()),
-        }
-    }
+    pub gain_reduction_db: Vec<f32>,
+    pub band_levels_db: Vec<f32>,
+    pub crossover_frequencies: Vec<f32>,
 }
 
 impl MultibandCompressorData {
     pub fn new(num_bands: usize, channels: usize) -> Self {
         Self {
-            gain_reduction_db: Arc::new(vec![0.0; num_bands * channels]),
-            band_levels_db: Arc::new(vec![-120.0; num_bands]),
-            crossover_frequencies: Arc::new(vec![0.0; num_bands.saturating_sub(1)]),
+            gain_reduction_db: vec![0.0; num_bands * channels],
+            band_levels_db: vec![-120.0; num_bands],
+            crossover_frequencies: vec![0.0; num_bands.saturating_sub(1)],
         }
     }
 
     pub fn update(&mut self, gains: &[f32], levels: &[f32], xovers: &[f32]) {
-        if let Some(mut_gains) = Arc::get_mut(&mut self.gain_reduction_db)
-            && mut_gains.len() == gains.len()
-        {
-            mut_gains.copy_from_slice(gains);
+        if self.gain_reduction_db.len() == gains.len() {
+            self.gain_reduction_db.copy_from_slice(gains);
         }
-        if let Some(mut_levels) = Arc::get_mut(&mut self.band_levels_db)
-            && mut_levels.len() == levels.len()
-        {
-            mut_levels.copy_from_slice(levels);
+        if self.band_levels_db.len() == levels.len() {
+            self.band_levels_db.copy_from_slice(levels);
         }
-        if let Some(mut_xovers) = Arc::get_mut(&mut self.crossover_frequencies)
-            && mut_xovers.len() == xovers.len()
-        {
-            mut_xovers.copy_from_slice(xovers);
+        if self.crossover_frequencies.len() == xovers.len() {
+            self.crossover_frequencies.copy_from_slice(xovers);
         }
     }
 }

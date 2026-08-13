@@ -1,4 +1,5 @@
 use super::band_compressor_params::BandCompressorParams;
+use super::multiband_compressor_data::MultibandCompressorData;
 use super::multiband_compressor_plugin::MultibandCompressorPlugin;
 use super::types::MultibandCompressorPluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
@@ -13,6 +14,81 @@ fn test_mb_comp_basic() {
     p.process_in_place(&mut b, &ProcessContext::new(48000, 1000))
         .unwrap();
     assert!(b[999].is_finite());
+}
+
+#[test]
+fn lookahead_controls_are_structural_in_host_metadata() {
+    let plugin = MultibandCompressorPlugin::new(2);
+    for id in ["lookahead_ms", "per_band_lookahead_ms"] {
+        let parameter = plugin
+            .parameters()
+            .into_iter()
+            .find(|parameter| parameter.id.as_str() == id)
+            .unwrap_or_else(|| panic!("missing {id}"));
+        assert_eq!(
+            parameter.update_mode,
+            sotf_host::param_specs::UpdateMode::Structural,
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn test_ms_mode_dry_mix_is_exact_passthrough() {
+    let params = MultibandCompressorPluginParams {
+        ms_mode: true,
+        mix: 0.0,
+        ..Default::default()
+    };
+    let mut plugin = MultibandCompressorPlugin::with_params(2, params);
+    plugin.initialize(48_000).unwrap();
+    let input: Vec<f32> = (0..512)
+        .flat_map(|i| [0.7 * (i as f32 * 0.1).sin(), 0.2 * (i as f32 * 0.17).cos()])
+        .collect();
+    let mut output = input.clone();
+    plugin
+        .process_in_place(&mut output, &ProcessContext::new(48_000, 512))
+        .unwrap();
+    assert_eq!(output, input);
+}
+
+#[test]
+fn test_lookahead_latency_matches_configured_delay() {
+    let params = MultibandCompressorPluginParams {
+        per_band_lookahead_ms: 20.0,
+        ..Default::default()
+    };
+    let mut plugin = MultibandCompressorPlugin::with_params(2, params);
+    plugin.initialize(48_000).unwrap();
+    assert_eq!(plugin.latency_samples(), 960);
+    assert_eq!(plugin.compile_metadata().latency_samples, 960);
+}
+
+#[test]
+fn test_cache_publishes_non_default_meter_values() {
+    let mut plugin = MultibandCompressorPlugin::new(2);
+    plugin.initialize(48_000).unwrap();
+    let mut block = vec![0.8; 2_400 * 2];
+    plugin
+        .process_in_place(&mut block, &ProcessContext::new(48_000, 2_400))
+        .unwrap();
+    let data = plugin.get_data().unwrap();
+    let data = data.downcast_ref::<MultibandCompressorData>().unwrap();
+    assert!(data.band_levels_db.iter().any(|level| *level > -100.0));
+    assert!(data.gain_reduction_db.iter().any(|gain| *gain > 0.01));
+}
+
+#[test]
+fn test_num_bands_is_structural_after_initialization() {
+    let mut plugin = MultibandCompressorPlugin::new(2);
+    plugin.initialize(48_000).unwrap();
+    let num_bands_before = plugin.num_bands;
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(4))
+            .is_err()
+    );
+    assert_eq!(plugin.num_bands, num_bands_before);
 }
 
 #[test]
@@ -177,7 +253,6 @@ fn test_crossover_frequency_change_no_discontinuity() {
 #[test]
 fn test_num_bands_rounds_not_truncates() {
     let mut p = MultibandCompressorPlugin::new(2);
-    p.initialize(48000).unwrap();
     // param_bridge converts Float → Int by truncation (cross-crate, deferred).
     // Test that the Int path rounds correctly within set_param_value: Int(3) → 3 bands.
     p.set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(3))
@@ -230,12 +305,11 @@ fn test_muted_band_meter_uses_silence_floor() {
     assert_eq!(p.band_levels_db[1], -120.0);
 }
 
-/// Fix 2.4: lookahead_ms setter must clamp to [0, 10].
+/// Lookahead is validated before initialization and becomes structural once
+/// host latency metadata has been compiled.
 #[test]
 fn test_lookahead_clamp_in_setter() {
     let mut p = MultibandCompressorPlugin::new(2);
-    p.initialize(48000).unwrap();
-    // Set to 50 ms (over the 10 ms max) via lookahead_ms alias
     p.set_parameter(
         ParameterId::from("lookahead_ms"),
         ParameterValue::Float(50.0),
@@ -244,26 +318,20 @@ fn test_lookahead_clamp_in_setter() {
     let got = p.get_parameter(&ParameterId::from("lookahead_ms")).unwrap();
     assert_eq!(
         got,
-        ParameterValue::Float(10.0),
-        "lookahead_ms 50 should be clamped to 10, got {:?}",
+        ParameterValue::Float(20.0),
+        "lookahead_ms 50 should be clamped to 20, got {:?}",
         got
     );
-
-    // Same via the global per_band_lookahead_ms param
-    p.set_parameter(
-        ParameterId::from("per_band_lookahead_ms"),
-        ParameterValue::Float(99.0),
-    )
-    .unwrap();
-    let got2 = p
-        .get_parameter(&ParameterId::from("per_band_lookahead_ms"))
-        .unwrap();
-    assert_eq!(
-        got2,
-        ParameterValue::Float(10.0),
-        "per_band_lookahead_ms 99 should be clamped to 10, got {:?}",
-        got2
-    );
+    p.initialize(48000).unwrap();
+    let before = p.latency_samples();
+    let error = p
+        .set_parameter(
+            ParameterId::from("per_band_lookahead_ms"),
+            ParameterValue::Float(5.0),
+        )
+        .unwrap_err();
+    assert!(error.contains("structural"));
+    assert_eq!(p.latency_samples(), before);
 }
 
 /// Fix 2.6 + 2.7: tilt biquads should be rebuilt when num_bands increases,
@@ -298,17 +366,13 @@ fn test_tilt_biquad_reset_and_rebuild() {
         "After reset(), silence block should produce ~0.0 output, got max_abs={max_abs}"
     );
 
-    // Verify tilt biquads are rebuilt when num_bands increases
-    p.set_parameter(ParameterId::from("num_bands"), ParameterValue::Float(3.0))
-        .unwrap();
-    // Process should not panic or produce NaN
-    let mut buf2 = vec![0.3f32; nf * 2];
-    p.process_in_place(&mut buf2, &ProcessContext::new(48000, nf))
-        .unwrap();
+    // Band count is structural after initialization and must not mutate live state.
+    let num_bands_before = p.num_bands;
     assert!(
-        buf2.iter().all(|s| s.is_finite()),
-        "After num_bands increase with tilt enabled, output must be finite"
+        p.set_parameter(ParameterId::from("num_bands"), ParameterValue::Float(3.0))
+            .is_err()
     );
+    assert_eq!(p.num_bands, num_bands_before);
 }
 
 /// Fix 1.5: per-band knee parameter must be reachable via set_parameter / get_parameter.
@@ -449,19 +513,6 @@ fn test_mb_comp_reduces_loud_signal() {
     );
 }
 
-#[test]
-fn test_rejects_oversized_blocks() {
-    let mut p = MultibandCompressorPlugin::new(1);
-    p.initialize(48000).unwrap();
-    let mut b = vec![0.5; 5000];
-    let result = p.process_in_place(&mut b, &ProcessContext::new(48000, 5000));
-    assert!(
-        result.is_err(),
-        "Should reject blocks larger than 4096 frames"
-    );
-    assert!(result.unwrap_err().contains("exceeds max 4096"));
-}
-
 /// Regression: sidechain tilt must be a true tilt (lowshelf + highshelf),
 /// not a single highshelf. A true tilt cuts lows and boosts highs (or vice
 /// versa) with a straight-line slope in dB vs log-frequency.
@@ -474,6 +525,9 @@ fn test_sidechain_tilt_is_true_tilt() {
         ParameterValue::Float(6.0),
     )
     .unwrap();
+    let mut settle = vec![0.0; 4096];
+    p.process_in_place(&mut settle, &ProcessContext::new(48_000, 4096))
+        .unwrap();
 
     assert!(
         !p.sidechain_tilt_biquads.is_empty(),
@@ -609,7 +663,10 @@ fn test_global_param_value_roundtrip() {
 fn test_set_sidechain_tilt_rebuilds_biquads() {
     let mut p = MultibandCompressorPlugin::new(2);
     p.initialize(48000).unwrap();
-    assert!(p.sidechain_tilt_biquads.is_empty());
+    let dimensions = (
+        p.sidechain_tilt_biquads.len(),
+        p.sidechain_tilt_biquads[0].len(),
+    );
 
     p.set_parameter(
         ParameterId::from("sidechain_tilt_db"),
@@ -617,8 +674,17 @@ fn test_set_sidechain_tilt_rebuilds_biquads() {
     )
     .unwrap();
 
-    assert_eq!(p.sidechain_tilt_biquads.len(), p.num_bands);
-    assert_eq!(p.sidechain_tilt_biquads[0].len(), p.channels);
+    let mut buffer = vec![0.1; 64 * 2];
+    p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 64))
+        .unwrap();
+    assert_eq!(
+        dimensions,
+        (
+            p.sidechain_tilt_biquads.len(),
+            p.sidechain_tilt_biquads[0].len()
+        )
+    );
+    assert!(p.tilt_smoother.current() > 0.0 && p.tilt_smoother.current() < 6.0);
 }
 
 #[test]
@@ -631,7 +697,6 @@ fn test_set_num_bands_rebuilds_crossovers_and_biquads() {
             ..Default::default()
         },
     );
-    p.initialize(48000).unwrap();
     assert_eq!(p.crossover_points.len(), 1);
 
     p.set_parameter(ParameterId::from("num_bands"), ParameterValue::Float(4.0))
@@ -641,6 +706,7 @@ fn test_set_num_bands_rebuilds_crossovers_and_biquads() {
     assert_eq!(p.crossover_points.len(), 3);
     assert_eq!(p.sidechain_tilt_biquads.len(), 4);
     assert_eq!(p.band_compressors.len(), 4);
+    p.initialize(48000).unwrap();
 }
 
 #[test]
@@ -844,6 +910,10 @@ fn test_set_parameter_attack_release_updates_coefficients() {
     p.set_parameter(ParameterId::from("release"), ParameterValue::Float(500.0))
         .unwrap();
 
+    let mut buffer = vec![0.1; 64 * 2];
+    p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 64))
+        .unwrap();
+
     assert_ne!(
         p.band_compressors[0].attack_coeff, old_attack,
         "attack coefficient should change"
@@ -870,7 +940,7 @@ fn test_set_parameter_mix_and_threshold_update_smoothers() {
 
 #[test]
 fn automation_values_are_independent_of_host_block_partitioning() {
-    fn render(chunks: &[usize]) -> Vec<[f32; 2]> {
+    fn render(chunks: &[usize]) -> Vec<[f32; 4]> {
         let mut plugin = MultibandCompressorPlugin::new(1);
         plugin.initialize(48_000).unwrap();
         plugin
@@ -924,16 +994,18 @@ fn test_set_parameter_per_band_lookahead_updates_buffers() {
     p.initialize(48000).unwrap();
     assert_eq!(p.lookahead_buffers[0].delay(), 480);
 
-    p.set_parameter(
-        ParameterId::from("per_band_lookahead_ms"),
-        ParameterValue::Float(5.0),
-    )
-    .unwrap();
+    let error = p
+        .set_parameter(
+            ParameterId::from("per_band_lookahead_ms"),
+            ParameterValue::Float(5.0),
+        )
+        .unwrap_err();
+    assert!(error.contains("structural"));
     for buf in &p.lookahead_buffers {
         assert_eq!(
             buf.delay(),
-            240,
-            "lookahead buffer delay should update to 5ms"
+            480,
+            "a rejected live latency change must leave delay state untouched"
         );
     }
 }
@@ -1064,6 +1136,10 @@ fn test_set_parameter_band_attack_release_updates_coefficients() {
         ParameterValue::Float(500.0),
     )
     .unwrap();
+
+    let mut buffer = vec![0.1; 64 * 2];
+    p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 64))
+        .unwrap();
 
     assert_ne!(
         p.band_compressors[0].attack_coeff, old_attack,
@@ -1677,7 +1753,7 @@ fn test_initialize_with_lookahead_rebuilds_buffers() {
     p.initialize(96000).unwrap();
     for buf in &p.lookahead_buffers {
         assert_eq!(buf.delay(), 288, "lookahead delay should be 3ms @ 96kHz");
-        assert_eq!(buf.max_delay(), 960, "max_delay should cover 10ms @ 96kHz");
+        assert_eq!(buf.max_delay(), 1920, "max_delay should cover 20ms @ 96kHz");
     }
 }
 
@@ -1774,9 +1850,9 @@ fn test_multiband_compressor_data_new() {
 fn test_multiband_compressor_data_update() {
     let mut d = super::multiband_compressor_data::MultibandCompressorData::new(2, 1);
     d.update(&[1.0, 2.0], &[-10.0, -20.0], &[500.0]);
-    assert_eq!(d.gain_reduction_db.as_ref(), &[1.0, 2.0]);
-    assert_eq!(d.band_levels_db.as_ref(), &[-10.0, -20.0]);
-    assert_eq!(d.crossover_frequencies.as_ref(), &[500.0]);
+    assert_eq!(d.gain_reduction_db.as_slice(), &[1.0, 2.0]);
+    assert_eq!(d.band_levels_db.as_slice(), &[-10.0, -20.0]);
+    assert_eq!(d.crossover_frequencies.as_slice(), &[500.0]);
 }
 
 #[test]
@@ -1970,8 +2046,11 @@ fn test_makeup_gain_applied() {
     .unwrap();
 
     let mut buf = vec![0.1f32; 512];
-    p.process_in_place(&mut buf, &ProcessContext::new(48000, 512))
-        .unwrap();
+    for _ in 0..12 {
+        buf.fill(0.1);
+        p.process_in_place(&mut buf, &ProcessContext::new(48000, 512))
+            .unwrap();
+    }
 
     let rms: f32 = (buf.iter().map(|s| s * s).sum::<f32>() / buf.len() as f32).sqrt();
     assert!(
@@ -2091,6 +2170,9 @@ fn test_set_attack_updates_coefficients() {
     let before = p.band_compressors[0].attack_coeff;
     p.set_parameter(ParameterId::from("attack"), ParameterValue::Float(1.0))
         .unwrap();
+    let mut buffer = vec![0.5; 64];
+    p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 64))
+        .unwrap();
     assert_ne!(p.band_compressors[0].attack_coeff, before);
 }
 
@@ -2100,6 +2182,9 @@ fn test_set_release_updates_coefficients() {
     p.initialize(48000).unwrap();
     let before = p.band_compressors[0].release_coeff;
     p.set_parameter(ParameterId::from("release"), ParameterValue::Float(200.0))
+        .unwrap();
+    let mut buffer = vec![0.5; 64];
+    p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 64))
         .unwrap();
     assert_ne!(p.band_compressors[0].release_coeff, before);
 }
@@ -2144,7 +2229,7 @@ fn test_link_amount_parameter_roundtrip() {
 }
 
 #[test]
-fn test_sidechain_tilt_zero_clears_biquads() {
+fn test_sidechain_tilt_zero_keeps_preallocated_biquads() {
     let mut p = MultibandCompressorPlugin::new(2);
     p.initialize(48000).unwrap();
     p.set_parameter(
@@ -2159,7 +2244,13 @@ fn test_sidechain_tilt_zero_clears_biquads() {
         ParameterValue::Float(0.0),
     )
     .unwrap();
-    assert!(p.sidechain_tilt_biquads.is_empty());
+    let mut buffer = vec![0.1; 2048 * 2];
+    for _ in 0..4 {
+        p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 2048))
+            .unwrap();
+    }
+    assert_eq!(p.sidechain_tilt_biquads.len(), p.num_bands);
+    assert!(p.tilt_smoother.current().abs() < 0.1);
 }
 
 #[test]
@@ -2227,14 +2318,358 @@ fn test_lookahead_buffers_initialized_with_zero_ms() {
 fn test_set_lookahead_ms_updates_buffers() {
     let mut p = MultibandCompressorPlugin::new(2);
     p.initialize(48000).unwrap();
-    p.set_parameter(
-        ParameterId::from("lookahead_ms"),
-        ParameterValue::Float(5.0),
-    )
-    .unwrap();
-    assert_eq!(p.per_band_lookahead_ms, 5.0);
+    let error = p
+        .set_parameter(
+            ParameterId::from("lookahead_ms"),
+            ParameterValue::Float(5.0),
+        )
+        .unwrap_err();
+    assert!(error.contains("structural"));
+    assert_eq!(p.per_band_lookahead_ms, 0.0);
     let mut buf = vec![0.2f32; 512 * 2];
     p.process_in_place(&mut buf, &ProcessContext::new(48000, 512))
         .unwrap();
     assert!(buf.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn try_from_params_rejects_invalid_global_values() {
+    let params = MultibandCompressorPluginParams {
+        ratio: 0.5,
+        ..Default::default()
+    };
+    let error = match MultibandCompressorPlugin::try_from_params(2, params, 48_000) {
+        Err(error) => error,
+        Ok(_) => panic!("factory construction must reject a ratio below the public range"),
+    };
+    assert!(error.contains("ratio"), "unexpected error: {error}");
+
+    let params = MultibandCompressorPluginParams {
+        attack_ms: f32::NAN,
+        ..Default::default()
+    };
+    let error = match MultibandCompressorPlugin::try_from_params(2, params, 48_000) {
+        Err(error) => error,
+        Ok(_) => panic!("factory construction must reject non-finite timing values"),
+    };
+    assert!(error.contains("attack"), "unexpected error: {error}");
+}
+
+#[test]
+fn try_from_params_rejects_invalid_crossover_configuration() {
+    let params = MultibandCompressorPluginParams {
+        crossover_frequencies: vec![200.0, 100.0, 8_000.0, 12_000.0],
+        ..Default::default()
+    };
+    let error = match MultibandCompressorPlugin::try_from_params(2, params, 48_000) {
+        Err(error) => error,
+        Ok(_) => panic!("factory construction must reject descending crossovers"),
+    };
+    assert!(error.contains("crossover"), "unexpected error: {error}");
+
+    let params = MultibandCompressorPluginParams {
+        crossover_frequencies: vec![400.0, 2_000.0, 8_000.0, 12_000.0],
+        ..Default::default()
+    };
+    let error = match MultibandCompressorPlugin::try_from_params(2, params, 800) {
+        Err(error) => error,
+        Ok(_) => panic!("factory construction must reject a crossover at Nyquist"),
+    };
+    assert!(error.contains("Nyquist"), "unexpected error: {error}");
+}
+#[test]
+fn broadband_mode_has_single_band_identity_and_no_crossover_schema() {
+    let params = MultibandCompressorPluginParams {
+        num_bands: 1,
+        ..Default::default()
+    };
+    let mut plugin = MultibandCompressorPlugin::try_from_params(2, params, 48_000).unwrap();
+    plugin.initialize(48_000).unwrap();
+    assert_eq!(plugin.num_bands, 1);
+    assert_eq!(plugin.info().name, "Compressor");
+    let schema = plugin.parameter_schema();
+    assert!(
+        schema
+            .iter()
+            .all(|parameter| !parameter.id.as_str().starts_with("crossover"))
+    );
+    assert!(
+        schema
+            .iter()
+            .all(|parameter| parameter.id.as_str() != "num_bands")
+    );
+}
+
+#[test]
+fn broadband_mode_matches_static_transfer_after_settling() {
+    let params = MultibandCompressorPluginParams {
+        num_bands: 1,
+        threshold_db: -20.0,
+        ratio: 4.0,
+        attack_ms: 0.1,
+        release_ms: 10.0,
+        knee_db: 0.0,
+        ..Default::default()
+    };
+    let mut plugin = MultibandCompressorPlugin::try_from_params(1, params, 48_000).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let frames = 4096;
+    let input = 10.0_f32.powf(-8.0 / 20.0);
+    let mut buffer = vec![input; frames];
+    plugin
+        .process_in_place(&mut buffer, &ProcessContext::new(48_000, frames))
+        .unwrap();
+    let expected_reduction = (-8.0 - -20.0) * (1.0 - 1.0 / 4.0);
+    let expected = input * 10.0_f32.powf(-expected_reduction / 20.0);
+    assert!((buffer[frames - 1] - expected).abs() < 0.01);
+}
+
+#[test]
+fn oversized_block_is_chunked_without_changing_state_or_output() {
+    let mut whole = MultibandCompressorPlugin::new(2);
+    let mut split = MultibandCompressorPlugin::new(2);
+    whole.initialize(48_000).unwrap();
+    split.initialize(48_000).unwrap();
+    let frames = 10_000;
+    let input: Vec<f32> = (0..frames * 2)
+        .map(|index| ((index as f32 * 0.017).sin()) * 0.4)
+        .collect();
+    let mut one_call = input.clone();
+    whole
+        .process_in_place(&mut one_call, &ProcessContext::new(48_000, frames))
+        .unwrap();
+    let mut chunked = input;
+    let mut offset = 0;
+    while offset < frames {
+        let count = (frames - offset).min(4096);
+        split
+            .process_in_place(
+                &mut chunked[offset * 2..(offset + count) * 2],
+                &ProcessContext::new(48_000, count),
+            )
+            .unwrap();
+        offset += count;
+    }
+    assert_eq!(one_call, chunked);
+}
+
+#[test]
+fn fractional_link_amount_is_canonical_and_monotonic() {
+    fn quiet_output(link: f32) -> f32 {
+        let params = MultibandCompressorPluginParams {
+            num_bands: 1,
+            threshold_db: -30.0,
+            ratio: 10.0,
+            attack_ms: 0.1,
+            release_ms: 10.0,
+            link_channels: true,
+            link_amount: link,
+            knee_db: 0.0,
+            ..Default::default()
+        };
+        let mut plugin = MultibandCompressorPlugin::try_from_params(2, params, 48_000).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let frames = 4096;
+        let mut buffer = Vec::with_capacity(frames * 2);
+        for _ in 0..frames {
+            buffer.push(0.8);
+            buffer.push(0.01);
+        }
+        plugin
+            .process_in_place(&mut buffer, &ProcessContext::new(48_000, frames))
+            .unwrap();
+        buffer[frames * 2 - 1].abs()
+    }
+    let independent = quiet_output(0.0);
+    let half = quiet_output(0.5);
+    let linked = quiet_output(1.0);
+    assert!(
+        independent > half && half > linked,
+        "{independent} {half} {linked}"
+    );
+}
+
+#[test]
+fn explicit_unsupported_legacy_sidechain_is_rejected() {
+    let params = MultibandCompressorPluginParams {
+        num_bands: 1,
+        sidechain_hpf_hz: Some(80.0),
+        ..Default::default()
+    };
+    assert!(MultibandCompressorPlugin::try_from_params(2, params, 48_000).is_err());
+}
+
+#[test]
+fn crossover_and_dynamics_automation_are_block_partition_invariant_and_bounded() {
+    fn render(chunks: &[usize]) -> Vec<f32> {
+        let params = MultibandCompressorPluginParams {
+            num_bands: 3,
+            threshold_db: -12.0,
+            ratio: 2.0,
+            attack_ms: 10.0,
+            release_ms: 80.0,
+            ..Default::default()
+        };
+        let mut plugin = MultibandCompressorPlugin::try_from_params(2, params, 48_000).unwrap();
+        plugin.initialize(48_000).unwrap();
+
+        let warmup_frames = 1024;
+        let mut warmup: Vec<f32> = (0..warmup_frames)
+            .flat_map(|frame| {
+                let t = frame as f32 / 48_000.0;
+                let sample = 0.35 * (2.0 * std::f32::consts::PI * 997.0 * t).sin();
+                [sample, sample * 0.37]
+            })
+            .collect();
+        plugin
+            .process_in_place(&mut warmup, &ProcessContext::new(48_000, warmup_frames))
+            .unwrap();
+
+        for (id, value) in [
+            ("crossover_freq_1", ParameterValue::Float(350.0)),
+            ("crossover_freq_2", ParameterValue::Float(3_500.0)),
+            ("threshold", ParameterValue::Float(-30.0)),
+            ("ratio", ParameterValue::Float(12.0)),
+            ("attack", ParameterValue::Float(0.5)),
+            ("release", ParameterValue::Float(300.0)),
+            ("knee", ParameterValue::Float(12.0)),
+            ("link_amount", ParameterValue::Float(0.25)),
+            ("sidechain_tilt_db", ParameterValue::Float(6.0)),
+            ("band_0_makeup", ParameterValue::Float(9.0)),
+        ] {
+            plugin.set_parameter(ParameterId::from(id), value).unwrap();
+        }
+
+        let mut rendered = Vec::new();
+        let mut offset = warmup_frames;
+        for &frames in chunks {
+            let mut block: Vec<f32> = (0..frames)
+                .flat_map(|frame| {
+                    let t = (offset + frame) as f32 / 48_000.0;
+                    let sample = 0.35 * (2.0 * std::f32::consts::PI * 997.0 * t).sin();
+                    [sample, sample * 0.37]
+                })
+                .collect();
+            plugin
+                .process_in_place(&mut block, &ProcessContext::new(48_000, frames))
+                .unwrap();
+            rendered.extend(block);
+            offset += frames;
+        }
+        rendered
+    }
+
+    let whole = render(&[4096]);
+    let partitioned = render(&[17, 63, 256, 1024, 2736]);
+    assert_eq!(whole.len(), partitioned.len());
+    let max_difference = whole
+        .iter()
+        .zip(&partitioned)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_difference < 2.0e-5,
+        "automation must not depend on host block partitioning, max diff={max_difference}"
+    );
+    let mut max_jump = 0.0_f32;
+    for channel in 0..2 {
+        let mut previous = whole[channel];
+        for sample in whole[channel + 2..].iter().step_by(2) {
+            max_jump = max_jump.max((*sample - previous).abs());
+            previous = *sample;
+        }
+    }
+    assert!(
+        max_jump < 0.2,
+        "smoothed crossover/dynamics automation produced an excessive sample jump: {max_jump}"
+    );
+}
+
+#[test]
+fn cascaded_lr4_reconstruction_sweep_has_bounded_transfer_and_deep_fitted_null() {
+    const SAMPLE_RATE: u32 = 48_000;
+    const SETTLE: usize = 4096;
+    const ANALYZE: usize = 4096;
+    const AMPLITUDE: f32 = 0.1;
+    // Exact analysis-bin frequencies avoid mistaking spectral leakage for a
+    // crossover reconstruction residual.
+    let frequencies = [
+        46.875_f32,
+        93.75,
+        503.90625,
+        996.09375,
+        3_000.0,
+        7_992.187_5,
+        15_000.0,
+    ];
+
+    for num_bands in 2..=5 {
+        for frequency in frequencies {
+            let params = MultibandCompressorPluginParams {
+                num_bands,
+                ratio: 1.0,
+                mix: 1.0,
+                ..Default::default()
+            };
+            let mut plugin =
+                MultibandCompressorPlugin::try_from_params(1, params, SAMPLE_RATE).unwrap();
+            plugin.initialize(SAMPLE_RATE).unwrap();
+            let total = SETTLE + ANALYZE;
+            let mut signal: Vec<f32> = (0..total)
+                .map(|frame| {
+                    (AMPLITUDE as f64
+                        * (2.0 * std::f64::consts::PI * frequency as f64 * frame as f64
+                            / SAMPLE_RATE as f64)
+                            .sin()) as f32
+                })
+                .collect();
+            plugin
+                .process_in_place(&mut signal, &ProcessContext::new(SAMPLE_RATE, total))
+                .unwrap();
+
+            let analyzed = &signal[SETTLE..];
+            let (sin_component, cos_component) = analyzed.iter().enumerate().fold(
+                (0.0_f64, 0.0_f64),
+                |(sin_sum, cos_sum), (index, &sample)| {
+                    let frame = SETTLE + index;
+                    let phase = 2.0 * std::f64::consts::PI * frequency as f64 * frame as f64
+                        / SAMPLE_RATE as f64;
+                    (
+                        sin_sum + sample as f64 * phase.sin(),
+                        cos_sum + sample as f64 * phase.cos(),
+                    )
+                },
+            );
+            let scale = 2.0 / ANALYZE as f64 / AMPLITUDE as f64;
+            let a = sin_component * scale;
+            let b = cos_component * scale;
+            let magnitude = a.hypot(b);
+            let phase = b.atan2(a);
+            assert!(
+                (0.35..=1.45).contains(&magnitude),
+                "{num_bands}-band cascaded LR4 transfer at {frequency} Hz was {magnitude:.3}"
+            );
+            assert!(phase.is_finite());
+
+            let (signal_energy, residual_energy) = analyzed.iter().enumerate().fold(
+                (0.0_f64, 0.0_f64),
+                |(signal_sum, residual_sum), (index, &sample)| {
+                    let frame = SETTLE + index;
+                    let phase = 2.0 * std::f64::consts::PI * frequency as f64 * frame as f64
+                        / SAMPLE_RATE as f64;
+                    let fitted = AMPLITUDE as f64 * (a * phase.sin() + b * phase.cos());
+                    let residual = sample as f64 - fitted;
+                    (
+                        signal_sum + (sample as f64).powi(2),
+                        residual_sum + residual.powi(2),
+                    )
+                },
+            );
+            let fitted_null_db = 10.0 * (residual_energy / signal_energy.max(1.0e-30)).log10();
+            assert!(
+                fitted_null_db < -45.0,
+                "{num_bands}-band LR4 fitted null at {frequency} Hz was only {fitted_null_db:.1} dB"
+            );
+        }
+    }
 }

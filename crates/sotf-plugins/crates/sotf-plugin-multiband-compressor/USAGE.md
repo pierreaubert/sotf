@@ -8,7 +8,7 @@ A multiband dynamic range compressor that splits the audio into 2-5 frequency ba
 
 ### Band Splitting
 
-The audio is split into frequency bands using 4th-order Linkwitz-Riley (LR4) crossover filters. Each crossover point creates a lowpass and highpass pair. The bands are processed independently and summed back for the output.
+The audio is split into frequency bands using cascaded 4th-order Linkwitz-Riley (LR4) crossover filters. Each point creates an amplitude-complementary lowpass/highpass pair. In a split with more than two bands, the branches pass through different pole sets, so their group delays are unequal; the sum is not a phase-perfect or linear-phase reconstruction.
 
 **Parameters:**
 
@@ -207,7 +207,7 @@ Each band has its own dynamics parameters that override the global settings when
 - Per-band **Bypass** lets you A/B the effect of compression on a single band.
 - Passive bands pass through uncompressed — use this to focus compression only where it's needed.
 - Crossover frequencies use smooth interpolation — you can adjust them without clicks.
-- With ratio 1:1 on all bands, the crossover should reconstruct the original signal (useful for testing).
+- With ratio 1:1 on all bands, the result exposes the cascaded crossover transfer only. Magnitude remains bounded, but phase and group delay differ from the unsplit input, especially with three or more bands.
 - Link channels for stereo content to preserve the stereo image per band.
 
 ## Signal Flow
@@ -225,4 +225,4 @@ Per-band compressor:
   Band Signal → Envelope (attack/release) → Gain × Makeup → Output
 ```
 
-Each crossover point uses two cascaded biquad filters (4th-order Linkwitz-Riley) for clean phase-coherent splitting.
+Each crossover point uses two cascaded Butterworth biquads per branch (4th-order Linkwitz-Riley). A single low/high pair is amplitude complementary; cascading successive points does not make every final band phase coherent with every other band.

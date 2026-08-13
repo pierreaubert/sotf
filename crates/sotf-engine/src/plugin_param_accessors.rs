@@ -229,7 +229,7 @@ impl_param_accessors! {
         fields: [
             threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64,
             knee_db: f64, makeup_gain_db: f64, mix: f64,
-            auto_makeup: bool, link_channels: bool, sidechain_hpf_hz: f64,
+            auto_makeup: bool, link_channels: skip, sidechain_hpf_hz: f64,
             sidechain_hpf_order: [str hpf_order_to_index, index_to_hpf_order],
             detection_mode: [str detection_mode_to_index, index_to_detection_mode],
             lookahead_ms: f64, program_dependent_release: bool, measured_auto_makeup: bool,
