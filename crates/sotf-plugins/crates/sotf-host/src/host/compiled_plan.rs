@@ -15,15 +15,6 @@ impl Default for CompiledRenderPlan {
     }
 }
 
-impl CompiledRenderPlan {
-    pub(super) fn linear_f32(&self) -> Option<&CompiledLinearPlan> {
-        match self {
-            Self::LinearF32(plan) => Some(plan),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) struct CompiledGraphPlan {
     pub(super) segments: Vec<CompiledSegment>,

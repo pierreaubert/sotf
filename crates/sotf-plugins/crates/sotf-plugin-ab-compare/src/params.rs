@@ -89,16 +89,40 @@ pub const PARAMS: &[ParamSpec] = &[
         "Mix",
     )
     .doc("A/B crossfade duration"),
-    ParamSpec::file_path("Path A Config", "path_a_config", "Configuration")
-        .doc("Plugin chain config for path A"),
-    ParamSpec::file_path("Path B Config", "path_b_config", "Configuration")
-        .doc("Plugin chain config for path B"),
     ParamSpec::bool_param("Phase Invert A", "phase_invert_a", false, "Phase")
         .doc("Invert polarity of path A"),
     ParamSpec::bool_param("Phase Invert B", "phase_invert_b", false, "Phase")
         .doc("Invert polarity of path B"),
     ParamSpec::bool_param("Difference Mode", "difference_mode", false, "Mix")
         .doc("Output A minus B difference"),
+    ParamSpec::float(
+        "Band Mask Low",
+        "band_mask_low_hz",
+        20.0,
+        20.0,
+        20_000.0,
+        1.0,
+        "Hz",
+        "Band Mask",
+    )
+    .doc("Highpass cutoff for the comparison band")
+    .structural(),
+    ParamSpec::float(
+        "Band Mask High",
+        "band_mask_high_hz",
+        20_000.0,
+        20.0,
+        20_000.0,
+        1.0,
+        "Hz",
+        "Band Mask",
+    )
+    .doc("Lowpass cutoff for the comparison band")
+    .structural(),
+    ParamSpec::file_path("Path A Config", "path_a_config", "Configuration")
+        .doc("Plugin chain config for path A"),
+    ParamSpec::file_path("Path B Config", "path_b_config", "Configuration")
+        .doc("Plugin chain config for path B"),
 ];
 
 // ============================================================================
@@ -107,8 +131,8 @@ pub const PARAMS: &[ParamSpec] = &[
 
 /// AB Compare: idx 0=mix, 1=mix_mode, 2=selected_path, 3=bypass,
 /// 4=auto_gain, 5=loudness_type, 6=max_auto_gain, 7=gain_smoothing,
-/// 8=mix_transition, 9=path_a_config, 10=path_b_config,
-/// 11=phase_invert_a, 12=phase_invert_b, 13=difference_mode
+/// 8=mix_transition, 9=phase_invert_a, 10=phase_invert_b, 11=difference_mode,
+/// 12=band_mask_low, 13=band_mask_high, 14=path_a_config, 15=path_b_config
 pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[],
     main: &[
@@ -120,7 +144,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
                 ControlSpec::button_set(1, &["Pot", "Binary"]), // mix_mode
                 ControlSpec::button_set(2, &["A", "B"]),        // selected_path
                 ControlSpec::toggle(3),                         // bypass
-                ControlSpec::toggle(13),                        // difference_mode
+                ControlSpec::toggle(11),                        // difference_mode
                 ControlSpec::knob(8),                           // mix_transition_ms
             ],
         ),
@@ -128,8 +152,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             "PHASE",
             "PHASE",
             &[
-                ControlSpec::toggle(11), // phase_invert_a
-                ControlSpec::toggle(12), // phase_invert_b
+                ControlSpec::toggle(9),  // phase_invert_a
+                ControlSpec::toggle(10), // phase_invert_b
             ],
         ),
         ControlGroup::new(
@@ -147,8 +171,10 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     tabs: &[TabSpec {
         name: "Paths",
         controls: &[
-            ControlSpec::file_picker(9),  // path_a_config
-            ControlSpec::file_picker(10), // path_b_config
+            ControlSpec::knob(12),        // band_mask_low_hz
+            ControlSpec::knob(13),        // band_mask_high_hz
+            ControlSpec::file_picker(14), // path_a_config
+            ControlSpec::file_picker(15), // path_b_config
         ],
     }],
     visualizations: &[],
@@ -197,6 +223,10 @@ pub struct Params {
     pub phase_invert_b: bool,
     #[serde(default = "d_difference_mode")]
     pub difference_mode: bool,
+    #[serde(default = "d_band_mask_low_hz")]
+    pub band_mask_low_hz: f64,
+    #[serde(default = "d_band_mask_high_hz")]
+    pub band_mask_high_hz: f64,
 }
 
 fn d_mix() -> f64 {
@@ -235,6 +265,12 @@ fn d_phase_invert_b() -> bool {
 fn d_difference_mode() -> bool {
     pk(PARAMS, "difference_mode").default_bool()
 }
+fn d_band_mask_low_hz() -> f64 {
+    pk(PARAMS, "band_mask_low_hz").default_f64()
+}
+fn d_band_mask_high_hz() -> f64 {
+    pk(PARAMS, "band_mask_high_hz").default_f64()
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -251,6 +287,8 @@ impl Default for Params {
             phase_invert_a: d_phase_invert_a(),
             phase_invert_b: d_phase_invert_b(),
             difference_mode: d_difference_mode(),
+            band_mask_low_hz: d_band_mask_low_hz(),
+            band_mask_high_hz: d_band_mask_high_hz(),
         }
     }
 }
@@ -276,11 +314,13 @@ impl PluginParamDef for Params {
             6 => Some(self.max_auto_gain_db),
             7 => Some(self.gain_smoothing_ms),
             8 => Some(self.mix_transition_ms),
-            9 => None,  // path_a_config (FilePath — handled separately)
-            10 => None, // path_b_config (FilePath — handled separately)
-            11 => Some(if self.phase_invert_a { 1.0 } else { 0.0 }),
-            12 => Some(if self.phase_invert_b { 1.0 } else { 0.0 }),
-            13 => Some(if self.difference_mode { 1.0 } else { 0.0 }),
+            9 => Some(if self.phase_invert_a { 1.0 } else { 0.0 }),
+            10 => Some(if self.phase_invert_b { 1.0 } else { 0.0 }),
+            11 => Some(if self.difference_mode { 1.0 } else { 0.0 }),
+            12 => Some(self.band_mask_low_hz),
+            13 => Some(self.band_mask_high_hz),
+            14 => None,
+            15 => None,
             _ => None,
         }
     }
@@ -296,11 +336,13 @@ impl PluginParamDef for Params {
             6 => self.max_auto_gain_db = value,
             7 => self.gain_smoothing_ms = value,
             8 => self.mix_transition_ms = value,
-            9 => {}  // path_a_config (FilePath — handled separately)
-            10 => {} // path_b_config (FilePath — handled separately)
-            11 => self.phase_invert_a = value > 0.5,
-            12 => self.phase_invert_b = value > 0.5,
-            13 => self.difference_mode = value > 0.5,
+            9 => self.phase_invert_a = value > 0.5,
+            10 => self.phase_invert_b = value > 0.5,
+            11 => self.difference_mode = value > 0.5,
+            12 => self.band_mask_low_hz = value,
+            13 => self.band_mask_high_hz = value,
+            14 => {}
+            15 => {}
             _ => {}
         }
     }
@@ -318,8 +360,8 @@ mod tests {
     fn param_index_coverage() {
         let p = Params::default();
         for i in 0..PARAMS.len() {
-            // indices 9, 10 are FilePath — return None by design
-            if i == 9 || i == 10 {
+            // indices 14, 15 are FilePath — return None by design
+            if i == 14 || i == 15 {
                 assert!(
                     p.param_value(i).is_none(),
                     "param_value({}) should return None for FilePath",
@@ -356,6 +398,8 @@ mod tests {
         assert_eq!(original.phase_invert_a, restored.phase_invert_a);
         assert_eq!(original.phase_invert_b, restored.phase_invert_b);
         assert_eq!(original.difference_mode, restored.difference_mode);
+        assert_eq!(original.band_mask_low_hz, restored.band_mask_low_hz);
+        assert_eq!(original.band_mask_high_hz, restored.band_mask_high_hz);
     }
 
     #[test]
@@ -393,6 +437,14 @@ mod tests {
         assert_eq!(
             p.difference_mode,
             pk(PARAMS, "difference_mode").default_bool()
+        );
+        assert_eq!(
+            p.band_mask_low_hz,
+            pk(PARAMS, "band_mask_low_hz").default_f64()
+        );
+        assert_eq!(
+            p.band_mask_high_hz,
+            pk(PARAMS, "band_mask_high_hz").default_f64()
         );
     }
 }

@@ -178,7 +178,7 @@ fn test_multichannel_support() {
 }
 
 #[test]
-fn test_empty_path_fast_path_matches_equal_power_mix() {
+fn test_empty_path_fast_path_preserves_unity() {
     let mut plugin = ABComparePlugin::new(2).unwrap();
     plugin.initialize(48000).unwrap();
 
@@ -188,11 +188,11 @@ fn test_empty_path_fast_path_matches_equal_power_mix() {
 
     plugin.process(&input, &mut output, &context).unwrap();
 
-    let expected = 0.25 * std::f32::consts::SQRT_2;
+    let expected = 0.25;
     for &sample in &output {
         assert!(
             (sample - expected).abs() < 1e-6,
-            "default empty A/B path should use equal-power 50/50 mix"
+            "default empty A/B path must preserve a correlated signal at unity"
         );
     }
 }
@@ -214,8 +214,7 @@ fn test_empty_path_fast_gain_is_reused_after_mix_changes() {
         .unwrap();
 
     plugin.process(&input, &mut output, &context).unwrap();
-    let expected =
-        0.5f32 * std::f32::consts::FRAC_PI_4.cos() + 0.5f32 * std::f32::consts::FRAC_PI_4.sin();
+    let expected = 0.5f32;
     for &sample in &output {
         assert!((sample - expected).abs() < 1e-6);
     }
@@ -337,26 +336,20 @@ fn test_get_data() {
 }
 
 #[test]
-fn test_runtime_path_change() {
+fn test_runtime_path_change_requires_rebuild() {
     let mut plugin = ABComparePlugin::new(2).unwrap();
     plugin.initialize(48000).unwrap();
 
     // Change path A at runtime
     let new_config =
         r#"{"type": "Plugin", "plugin_type": "gain", "parameters": {"gain_db": -12.0}}"#;
-    plugin
+    let error = plugin
         .set_parameter(
             ParameterId::from("path_a_config"),
             ParameterValue::String(new_config.to_string()),
         )
-        .unwrap();
-
-    // Verify it works
-    let input = vec![1.0; 1024 * 2];
-    let mut output = vec![0.0; 1024 * 2];
-    let context = ProcessContext::new(48000, 1024);
-
-    plugin.process(&input, &mut output, &context).unwrap();
+        .unwrap_err();
+    assert!(error.contains("structural") && error.contains("rebuild"));
 }
 
 #[test]
@@ -857,14 +850,13 @@ fn test_can_use_empty_path_fast_path() {
 fn test_recompute_empty_path_fast_gain() {
     let mut plugin = ABComparePlugin::new(2).unwrap();
     plugin.initialize(48000).unwrap();
-    let before = plugin.empty_path_fast_gain;
+    assert_eq!(plugin.empty_path_fast_gain, 1.0);
     plugin
         .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
         .unwrap();
     plugin.mix_smoother.reset(1.0);
     plugin.recompute_empty_path_fast_gain();
-    let after = plugin.empty_path_fast_gain;
-    assert!((after - before).abs() > 1e-6);
+    assert_eq!(plugin.empty_path_fast_gain, 1.0);
 }
 
 #[test]
@@ -1094,8 +1086,8 @@ fn test_process_empty_path_fast() {
         .process_empty_path_fast(&input, &mut output, 512)
         .unwrap();
 
-    // With default mix=0.0, equal-power gain is sqrt(2)/2 + sqrt(2)/2 = sqrt(2)
-    let expected = 0.5 * std::f32::consts::SQRT_2;
+    // With identical paths the unity-preserving crossfade is exactly transparent.
+    let expected = 0.5;
     for (i, &sample) in output.iter().enumerate() {
         assert!(
             (sample - expected).abs() < 1e-5,
@@ -1105,6 +1097,119 @@ fn test_process_empty_path_fast() {
             expected
         );
     }
+}
+
+#[test]
+fn runtime_structural_parameters_require_plugin_rebuild() {
+    let mut plugin = ABComparePlugin::new(2).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let latency_before = plugin.latency_samples();
+    for (id, value) in [
+        (
+            "path_a_config",
+            ParameterValue::String(
+                r#"{"type":"Plugin","plugin_type":"delay","parameters":{"delay_ms":10.0}}"#
+                    .to_string(),
+            ),
+        ),
+        (
+            "path_b_config",
+            ParameterValue::String(r#"{"type":"None"}"#.to_string()),
+        ),
+        ("band_mask_low_hz", ParameterValue::Float(200.0)),
+        ("band_mask_high_hz", ParameterValue::Float(8_000.0)),
+    ] {
+        let before = plugin.get_parameter(&ParameterId::from(id));
+        let error = plugin
+            .set_parameter(ParameterId::from(id), value)
+            .unwrap_err();
+        assert!(error.contains("structural") && error.contains("rebuild"));
+        assert_eq!(plugin.get_parameter(&ParameterId::from(id)), before);
+        assert_eq!(plugin.latency_samples(), latency_before);
+    }
+}
+
+#[test]
+fn runtime_parameter_schema_has_exact_static_key_and_update_mode_parity() {
+    let plugin = ABComparePlugin::new(2).unwrap();
+    let runtime = plugin.parameters();
+    assert_eq!(runtime.len(), crate::params::PARAMS.len());
+    for (parameter, spec) in runtime.iter().zip(crate::params::PARAMS) {
+        assert_eq!(parameter.id.as_str(), spec.engine_key);
+        assert_eq!(
+            parameter.update_mode, spec.update_mode,
+            "{}",
+            spec.engine_key
+        );
+    }
+}
+
+#[test]
+fn initialize_rejects_invalid_sample_rate_and_active_cutoff_atomically() {
+    let params = ABComparePluginParams {
+        band_mask_low_hz: 100.0,
+        band_mask_high_hz: 8_000.0,
+        ..Default::default()
+    };
+    let mut plugin = ABComparePlugin::from_params(1, params).unwrap();
+    let before_rate = plugin.sample_rate;
+    assert!(plugin.initialize(0).is_err());
+    assert_eq!(plugin.sample_rate, before_rate);
+    assert!(plugin.initialize(12_000).is_err());
+    assert_eq!(plugin.sample_rate, before_rate);
+}
+
+#[test]
+fn diagnostic_scheduler_depends_on_elapsed_frames_not_callback_count() {
+    fn render(blocks: &[usize]) -> usize {
+        let mut plugin = ABComparePlugin::new(1).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let total = 7_111;
+        let input = vec![0.1_f32; total];
+        let mut output = vec![0.0_f32; total];
+        let mut position = 0;
+        let mut block = 0;
+        while position < total {
+            let end = (position + blocks[block % blocks.len()]).min(total);
+            plugin
+                .process(
+                    &input[position..end],
+                    &mut output[position..end],
+                    &ProcessContext::new(48_000, end - position),
+                )
+                .unwrap();
+            position = end;
+            block += 1;
+        }
+        plugin.cache_update_counter
+    }
+
+    let reference = render(&[1]);
+    for blocks in [&[32][..], &[128][..], &[1_024][..], &[17, 641, 89][..]] {
+        assert_eq!(render(blocks), reference, "partition {blocks:?}");
+    }
+}
+
+#[test]
+fn unity_preserving_crossfade_cancels_inverted_identical_paths_at_center() {
+    let params = ABComparePluginParams {
+        phase_invert_b: true,
+        auto_gain_enabled: false,
+        mix: 0.0,
+        ..Default::default()
+    };
+    let mut plugin = ABComparePlugin::from_params(1, params).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let input = vec![0.25_f32; 2_048];
+    let mut output = vec![0.0_f32; input.len()];
+    plugin
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(48_000, input.len()),
+        )
+        .unwrap();
+    assert!(output[1_000..].iter().all(|sample| sample.abs() < 1.0e-6));
 }
 
 #[test]

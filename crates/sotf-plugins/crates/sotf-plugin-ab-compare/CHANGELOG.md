@@ -1,3 +1,39 @@
+# 0.5.6
+
+## Fixes
+
+- Made path configurations and band-mask cutoffs structural parameters. Runtime writes now request
+  an outer graph rebuild instead of parsing, allocating, changing latency, or replacing filters on
+  the audio/control callback boundary.
+- Injected the authoritative plugin factory before initial path construction in both the canonical
+  facade and plugins bridge, including non-fallback plugin/rack regression coverage.
+- Added the missing band-mask parameters to the canonical schema, engine settings/accessors and
+  converter, and enforce exact runtime key/update-mode parity. Player A/B test sessions now retain
+  explicit mask bounds, while the CLI constructor deliberately uses the canonical 20 Hz–20 kHz
+  defaults.
+- Replaced equal-power same-source blending with a unity-preserving linear crossfade: identical
+  paths stay at unity at every mix position and inverted paths cancel at centre.
+- Replaced callback-count diagnostic throttling with a 20 Hz elapsed-frame scheduler and reset it
+  deterministically across initialization/reset.
+- Stopped rebuilding heap-backed parameter metadata after realtime scalar changes.
+- Expanded QA to exercise real plugin/rack paths, latency compensation, active band masking, and
+  zero-allocation/performance checks at 1/2/6/12 channels.
+
+# 0.5.5
+
+## Fixes
+
+- Feed every active audio block, and only its active slice, into the persistent
+  EBU R128 loudness monitors while throttling diagnostic publication separately.
+- Preserve the plugin's reported latency in bypass with a dedicated dry delay.
+- Validate constructor state before creating smoothers, filters, nested hosts,
+  or auto-gain state; invalid path changes now preserve the prior configuration.
+- Use checked sample counts and fixed prepared buffers in the callback, returning
+  an error above the 48,000-frame realtime maximum instead of allocating.
+- Recreate band-mask filters on reset so pre-reset IIR history cannot leak into
+  the next render.
+- Align runtime gain/mix smoothing limits with the static parameter schema.
+
 # 0.5.4
 
 ## Fixes

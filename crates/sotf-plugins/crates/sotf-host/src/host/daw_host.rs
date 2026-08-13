@@ -1691,9 +1691,14 @@ impl DawHost {
         let max_of = self.output_frames_for_input(nf);
         let out_ch = self.output_channels();
         self.apply_automation_for_block(nf);
-        if let Some(plan) = self.compiled_plan.linear_f32().cloned() {
-            return self.process_compiled_linear_f32_plan(&plan, input, output, block_start_sample);
+        let compiled_plan = std::mem::take(&mut self.compiled_plan);
+        if let CompiledRenderPlan::LinearF32(ref plan) = compiled_plan {
+            let result =
+                self.process_compiled_linear_f32_plan(plan, input, output, block_start_sample);
+            self.compiled_plan = compiled_plan;
+            return result;
         }
+        self.compiled_plan = compiled_plan;
         let stage_block_start_sample = block_start_sample;
 
         // Use BufferGuard to guarantee process_buffers are returned even on early ?-return

@@ -1,11 +1,12 @@
 pub use super::config::*;
 use super::delay_line::DelayLine;
-use super::factory::build_path_from_config;
+use super::factory::{build_path_from_config, build_path_from_config_with_factory};
 use super::types::ABCompareData;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use sotf_host::host::DawHost;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
@@ -50,8 +51,7 @@ pub struct ABComparePlugin {
     pub(super) mix_transition_ms: f32,
 
     // Phase inversion
-    pub(super) phase_invert_a: bool,
-    pub(super) phase_invert_b: bool,
+    pub(super) phase_invert: [bool; 2],
 
     // Difference mode (A - B)
     pub(super) difference_mode: bool,
@@ -59,10 +59,11 @@ pub struct ABComparePlugin {
     // Latency compensation delay lines
     pub(super) delay_a: DelayLine,
     pub(super) delay_b: DelayLine,
+    /// Dry delay keeps bypass aligned with the latency reported to the host.
+    pub(super) delay_dry: DelayLine,
 
     // Internal buffers
-    pub(super) buffer_a: Vec<f32>,
-    pub(super) buffer_b: Vec<f32>,
+    pub(super) buffers: [Vec<f32>; 2],
 
     // Band mask (bandpass filter for isolating frequency range in comparison)
     pub(super) band_mask_low_hz: f32,
@@ -73,9 +74,8 @@ pub struct ABComparePlugin {
     pub(super) band_mask_lp: Vec<Biquad>,
 
     // Cached peak values
-    pub(super) last_peak_a: f64,
-    pub(super) last_peak_b: f64,
-    /// Cached equal-power gain for empty empty-path fast path.
+    pub(super) last_peaks: [f64; 2],
+    /// Cached unity-preserving gain for the empty-path fast path.
     pub(super) empty_path_fast_gain: f32,
 
     pub(super) cache: RealTimeCache<ABCompareData>,
@@ -84,6 +84,69 @@ pub struct ABComparePlugin {
 }
 
 impl ABComparePlugin {
+    const MAX_REALTIME_FRAMES: usize = 48_000;
+
+    fn validate_params(num_channels: usize, params: &ABComparePluginParams) -> Result<(), String> {
+        if num_channels == 0 {
+            return Err("A/B Compare requires at least one channel".into());
+        }
+        fn finite_range(name: &str, value: f32, min: f32, max: f32) -> Result<(), String> {
+            if value.is_finite() && (min..=max).contains(&value) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{name} must be finite and in {min}..={max}, got {value}"
+                ))
+            }
+        }
+        finite_range("mix", params.mix, -1.0, 1.0)?;
+        if !(0..=1).contains(&params.selected_path) {
+            return Err(format!(
+                "selected_path must be 0 or 1, got {}",
+                params.selected_path
+            ));
+        }
+        finite_range("gain_smoothing_ms", params.gain_smoothing_ms, 1.0, 500.0)?;
+        finite_range("max_auto_gain_db", params.max_auto_gain_db, 0.0, 24.0)?;
+        finite_range("mix_transition_ms", params.mix_transition_ms, 1.0, 500.0)?;
+        finite_range("band_mask_low_hz", params.band_mask_low_hz, 20.0, 20_000.0)?;
+        finite_range(
+            "band_mask_high_hz",
+            params.band_mask_high_hz,
+            20.0,
+            20_000.0,
+        )?;
+        if params.band_mask_low_hz >= params.band_mask_high_hz {
+            return Err("band mask low cutoff must be below high cutoff".into());
+        }
+        Ok(())
+    }
+
+    fn validate_for_sample_rate(
+        params: &ABComparePluginParams,
+        sample_rate: u32,
+    ) -> Result<(), String> {
+        if sample_rate == 0 {
+            return Err("A/B Compare sample rate must be greater than zero".into());
+        }
+        let nyquist = sample_rate as f32 * 0.5;
+        if params.band_mask_low_hz > Self::BAND_MASK_MIN_HZ + Self::BAND_MASK_EDGE_EPSILON
+            && params.band_mask_low_hz >= nyquist
+        {
+            return Err(format!(
+                "band_mask_low_hz must be below Nyquist ({nyquist} Hz)"
+            ));
+        }
+        if params.band_mask_high_hz < Self::BAND_MASK_MAX_HZ - Self::BAND_MASK_EDGE_EPSILON
+            && params.band_mask_high_hz >= nyquist
+        {
+            return Err(format!(
+                "band_mask_high_hz must be below Nyquist ({nyquist} Hz)"
+            ));
+        }
+        Ok(())
+    }
+
     /// Create a new A/B Compare plugin with default settings
     pub fn new(num_channels: usize) -> Result<Self, String> {
         Self::from_params(num_channels, ABComparePluginParams::default())
@@ -97,10 +160,38 @@ impl ABComparePlugin {
 
     /// Create from parameters
     pub fn from_params(num_channels: usize, params: ABComparePluginParams) -> Result<Self, String> {
-        let sample_rate = 48000; // Will be updated in initialize()
+        Self::from_params_internal(num_channels, 48_000, params, None)
+    }
 
-        let host_a = build_path_from_config(&params.path_a, num_channels, sample_rate)?;
-        let host_b = build_path_from_config(&params.path_b, num_channels, sample_rate)?;
+    /// Construct initial paths with the authoritative factory already installed.
+    pub fn from_params_with_factory(
+        num_channels: usize,
+        sample_rate: u32,
+        params: ABComparePluginParams,
+        factory: sotf_host::PluginFactoryFn,
+    ) -> Result<Self, String> {
+        Self::from_params_internal(num_channels, sample_rate, params, Some(factory))
+    }
+
+    fn from_params_internal(
+        num_channels: usize,
+        sample_rate: u32,
+        params: ABComparePluginParams,
+        factory: Option<sotf_host::PluginFactoryFn>,
+    ) -> Result<Self, String> {
+        Self::validate_params(num_channels, &params)?;
+        Self::validate_for_sample_rate(&params, sample_rate)?;
+
+        let host_a = if factory.is_some() {
+            build_path_from_config_with_factory(&params.path_a, num_channels, sample_rate, factory)?
+        } else {
+            build_path_from_config(&params.path_a, num_channels, sample_rate)?
+        };
+        let host_b = if factory.is_some() {
+            build_path_from_config_with_factory(&params.path_b, num_channels, sample_rate, factory)?
+        } else {
+            build_path_from_config(&params.path_b, num_channels, sample_rate)?
+        };
 
         // Create AutoGain for matching B's loudness to A's loudness
         // A's output is the "input reference", B's output is "what to compensate"
@@ -143,7 +234,7 @@ impl ABComparePlugin {
         let mut p = Self {
             num_channels,
             sample_rate,
-            plugin_factory: None,
+            plugin_factory: factory,
             host_a,
             host_b,
             path_a_config: params.path_a,
@@ -155,8 +246,7 @@ impl ABComparePlugin {
             selected_path: params.selected_path,
             bypass: params.bypass,
             mix_transition_ms: params.mix_transition_ms,
-            phase_invert_a: params.phase_invert_a,
-            phase_invert_b: params.phase_invert_b,
+            phase_invert: [params.phase_invert_a, params.phase_invert_b],
             difference_mode: params.difference_mode,
             band_mask_low_hz,
             band_mask_high_hz,
@@ -164,13 +254,15 @@ impl ABComparePlugin {
             band_mask_lp,
             delay_a: DelayLine::new(),
             delay_b: DelayLine::new(),
-            buffer_a: vec![0.0; 48000 * num_channels],
-            buffer_b: vec![0.0; 48000 * num_channels],
-            last_peak_a: 0.0,
-            last_peak_b: 0.0,
+            delay_dry: DelayLine::new(),
+            buffers: [
+                vec![0.0; Self::MAX_REALTIME_FRAMES * num_channels],
+                vec![0.0; Self::MAX_REALTIME_FRAMES * num_channels],
+            ],
+            last_peaks: [0.0; 2],
             empty_path_fast_gain: 0.0,
             cache: RealTimeCache::new(ABCompareData::default()),
-            cache_update_counter: 0,
+            cache_update_counter: (sample_rate / 20) as usize,
             cached_parameters: Vec::new(),
         };
         p.recompute_empty_path_fast_gain();
@@ -178,11 +270,9 @@ impl ABComparePlugin {
         Ok(p)
     }
 
-    /// Cache the equal-power mix gain used by the empty-path fast path.
+    /// Identical paths must remain at unity for every crossfade position.
     pub(super) fn recompute_empty_path_fast_gain(&mut self) {
-        let mix_01 = (self.mix_smoother.target() + 1.0) * 0.5;
-        let angle = mix_01 * std::f32::consts::FRAC_PI_2;
-        self.empty_path_fast_gain = angle.cos() + angle.sin();
+        self.empty_path_fast_gain = 1.0;
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
@@ -247,7 +337,7 @@ impl ABComparePlugin {
                 "gain_smoothing_ms",
                 "Gain Smoothing",
                 self.auto_gain.smoothing_ms(),
-                10.0,
+                1.0,
                 500.0,
             )
             .with_description("Auto-gain smoothing time in milliseconds")
@@ -257,17 +347,17 @@ impl ABComparePlugin {
                 "mix_transition_ms",
                 "Mix Transition",
                 self.mix_transition_ms,
-                5.0,
+                1.0,
                 500.0,
             )
             .with_description("A/B transition smoothing time in milliseconds")
             .with_group("Timing")
             .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool("phase_invert_a", "Phase Invert A", self.phase_invert_a)
+            Parameter::new_bool("phase_invert_a", "Phase Invert A", self.phase_invert[0])
                 .with_description("Invert phase of path A output (multiply by -1.0)")
                 .with_group("Mix Control")
                 .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("phase_invert_b", "Phase Invert B", self.phase_invert_b)
+            Parameter::new_bool("phase_invert_b", "Phase Invert B", self.phase_invert[1])
                 .with_description("Invert phase of path B output (multiply by -1.0)")
                 .with_group("Mix Control")
                 .with_importance(ParameterImportance::Useful),
@@ -314,30 +404,32 @@ impl ABComparePlugin {
             .with_group("Configuration")
             .with_importance(ParameterImportance::Critical),
         ];
+        sotf_host::param_bridge::apply_spec_update_modes(
+            &mut self.cached_parameters,
+            crate::params::PARAMS,
+        );
     }
 
-    /// Rebuild path A from config (uses external factory if available)
+    #[cfg(test)]
     pub(super) fn rebuild_path_a(&mut self) -> Result<(), String> {
-        self.host_a = super::factory::build_path_from_config_with_factory(
+        self.host_a = build_path_from_config_with_factory(
             &self.path_a_config,
             self.num_channels,
             self.sample_rate,
             self.plugin_factory,
         )?;
-        self.update_latency_compensation()?;
-        Ok(())
+        self.update_latency_compensation()
     }
 
-    /// Rebuild path B from config (uses external factory if available)
+    #[cfg(test)]
     pub(super) fn rebuild_path_b(&mut self) -> Result<(), String> {
-        self.host_b = super::factory::build_path_from_config_with_factory(
+        self.host_b = build_path_from_config_with_factory(
             &self.path_b_config,
             self.num_channels,
             self.sample_rate,
             self.plugin_factory,
         )?;
-        self.update_latency_compensation()?;
-        Ok(())
+        self.update_latency_compensation()
     }
 
     /// Minimum audible frequency (Hz). Band mask low values at or below this
@@ -372,8 +464,8 @@ impl ABComparePlugin {
     pub(super) fn can_use_empty_path_fast_path(&self) -> bool {
         self.has_empty_paths()
             && self.mix_mode == MixMode::Potentiometer
-            && !self.phase_invert_a
-            && !self.phase_invert_b
+            && !self.phase_invert[0]
+            && !self.phase_invert[1]
             && !self.difference_mode
             && !self.band_mask_active()
             && self.auto_gain.is_unity_gain_stable()
@@ -387,30 +479,20 @@ impl ABComparePlugin {
         output: &mut [f32],
         num_frames: usize,
     ) -> Result<(), String> {
-        self.cache_update_counter += 1;
-        let mut do_measure = false;
-        if self.cache_update_counter >= 10 || self.cache_update_counter == 1 {
-            if self.cache_update_counter >= 10 {
-                self.cache_update_counter = 0;
-            }
-            do_measure = true;
+        let do_measure = self.advance_diagnostic_scheduler(num_frames);
+
+        if self.auto_gain.is_enabled() {
+            self.auto_gain.ingest_input(input)?;
+            self.auto_gain.ingest_output(input)?;
+        }
+        if do_measure && self.auto_gain.is_enabled() {
+            self.auto_gain.refresh_input_measurement();
+            self.auto_gain.refresh_output_measurement();
+            self.last_peaks[0] = self.auto_gain.last_input_peak();
+            self.last_peaks[1] = self.auto_gain.last_output_peak();
         }
 
-        if do_measure {
-            self.auto_gain.measure_input(input)?;
-            self.auto_gain.measure_output(input)?;
-            self.last_peak_a = self.auto_gain.last_input_peak();
-            self.last_peak_b = self.auto_gain.last_output_peak();
-        }
-
-        let current_mix = self.mix_smoother.current();
-        let gain = if (current_mix - self.mix_smoother.target()).abs() < 1e-5 {
-            self.empty_path_fast_gain
-        } else {
-            let mix_01 = (current_mix + 1.0) * 0.5;
-            let angle = mix_01 * std::f32::consts::FRAC_PI_2;
-            angle.cos() + angle.sin()
-        };
+        let gain = self.empty_path_fast_gain;
 
         if (gain - 1.0).abs() < 1e-6 {
             output.copy_from_slice(input);
@@ -427,8 +509,8 @@ impl ABComparePlugin {
                 loudness_a_lufs: self.auto_gain.last_input_lufs(),
                 loudness_b_lufs: self.auto_gain.last_output_lufs(),
                 auto_gain_db: self.auto_gain.current_gain_db(),
-                peak_a: self.last_peak_a,
-                peak_b: self.last_peak_b,
+                peak_a: self.last_peaks[0],
+                peak_b: self.last_peaks[1],
                 current_mix: self.mix_smoother.current(),
                 bypass_active: self.bypass,
             };
@@ -438,6 +520,17 @@ impl ABComparePlugin {
         }
 
         Ok(())
+    }
+
+    fn advance_diagnostic_scheduler(&mut self, frames: usize) -> bool {
+        let interval = (self.sample_rate as usize / 20).max(1);
+        self.cache_update_counter = self.cache_update_counter.saturating_add(frames);
+        if self.cache_update_counter >= interval {
+            self.cache_update_counter %= interval;
+            true
+        } else {
+            false
+        }
     }
 
     /// Rebuild the bandpass filter pair for the current band mask settings.
@@ -508,6 +601,7 @@ impl ABComparePlugin {
             // remains audible rather than silently misaligning the paths.
             self.delay_a.set_delay(0, self.num_channels);
             self.delay_b.set_delay(0, self.num_channels);
+            self.delay_dry.set_delay(0, self.num_channels);
             let msg = match (err_a, err_b) {
                 (Some(a), Some(b)) => format!(
                     "Latency compensation disabled: host_a build error: {a}; host_b build error: {b}"
@@ -531,13 +625,15 @@ impl ABComparePlugin {
             self.delay_a.set_delay(lat_b - lat_a, self.num_channels);
             self.delay_b.set_delay(0, self.num_channels);
         }
+        self.delay_dry
+            .set_delay(lat_a.max(lat_b), self.num_channels);
         Ok(())
     }
 }
 
 impl Plugin for ABComparePlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("A/B Compare", "1.0.0", "SotF")
+        PluginInfo::new("A/B Compare", env!("CARGO_PKG_VERSION"), "SotF")
             .with_description("A/B comparison with automatic loudness matching")
     }
 
@@ -567,6 +663,16 @@ impl Plugin for ABComparePlugin {
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
+        if crate::params::PARAMS
+            .iter()
+            .find(|spec| spec.engine_key == id.as_str())
+            .is_some_and(|spec| spec.update_mode == UpdateMode::Structural)
+        {
+            return Err(format!(
+                "parameter '{}' is structural; rebuild the outer plugin graph to change it",
+                id.as_str()
+            ));
+        }
         match id.as_str() {
             "mix" => {
                 let v = value
@@ -636,7 +742,7 @@ impl Plugin for ABComparePlugin {
                     .as_float()
                     .ok_or_else(|| "gain_smoothing_ms must be a float".to_string())?;
                 if v.is_finite() {
-                    self.auto_gain.set_smoothing_ms(v.clamp(10.0, 500.0));
+                    self.auto_gain.set_smoothing_ms(v.clamp(1.0, 500.0));
                 }
             }
             "mix_transition_ms" => {
@@ -644,18 +750,18 @@ impl Plugin for ABComparePlugin {
                     .as_float()
                     .ok_or_else(|| "mix_transition_ms must be a float".to_string())?;
                 if v.is_finite() {
-                    self.mix_transition_ms = v.clamp(5.0, 500.0);
+                    self.mix_transition_ms = v.clamp(1.0, 500.0);
                     self.mix_smoother
                         .set_time(self.mix_transition_ms, self.sample_rate);
                 }
             }
             "phase_invert_a" => {
-                self.phase_invert_a = value
+                self.phase_invert[0] = value
                     .as_bool()
                     .ok_or_else(|| "phase_invert_a must be a boolean".to_string())?;
             }
             "phase_invert_b" => {
-                self.phase_invert_b = value
+                self.phase_invert[1] = value
                     .as_bool()
                     .ok_or_else(|| "phase_invert_b must be a boolean".to_string())?;
             }
@@ -686,21 +792,46 @@ impl Plugin for ABComparePlugin {
                 if let ParameterValue::String(json) = value {
                     let config: PathConfig = serde_json::from_str(&json)
                         .map_err(|e| format!("Invalid path A config JSON: {}", e))?;
+                    let mut candidate = super::factory::build_path_from_config_with_factory(
+                        &config,
+                        self.num_channels,
+                        self.sample_rate,
+                        self.plugin_factory,
+                    )?;
+                    candidate
+                        .build()
+                        .map_err(|e| format!("Invalid path A graph: {e}"))?;
+                    self.host_b
+                        .build()
+                        .map_err(|e| format!("Existing path B graph is invalid: {e}"))?;
+                    self.host_a = candidate;
                     self.path_a_config = config;
-                    self.rebuild_path_a()?;
+                    self.update_latency_compensation()?;
                 }
             }
             "path_b_config" => {
                 if let ParameterValue::String(json) = value {
                     let config: PathConfig = serde_json::from_str(&json)
                         .map_err(|e| format!("Invalid path B config JSON: {}", e))?;
+                    let mut candidate = super::factory::build_path_from_config_with_factory(
+                        &config,
+                        self.num_channels,
+                        self.sample_rate,
+                        self.plugin_factory,
+                    )?;
+                    candidate
+                        .build()
+                        .map_err(|e| format!("Invalid path B graph: {e}"))?;
+                    self.host_a
+                        .build()
+                        .map_err(|e| format!("Existing path A graph is invalid: {e}"))?;
+                    self.host_b = candidate;
                     self.path_b_config = config;
-                    self.rebuild_path_b()?;
+                    self.update_latency_compensation()?;
                 }
             }
             _ => return Err(format!("Unknown parameter: {}", id.0)),
         }
-        self.rebuild_cached_parameters();
         Ok(())
     }
 
@@ -721,8 +852,8 @@ impl Plugin for ABComparePlugin {
             "max_auto_gain_db" => Some(ParameterValue::Float(self.auto_gain.max_gain_db())),
             "gain_smoothing_ms" => Some(ParameterValue::Float(self.auto_gain.smoothing_ms())),
             "mix_transition_ms" => Some(ParameterValue::Float(self.mix_transition_ms)),
-            "phase_invert_a" => Some(ParameterValue::Bool(self.phase_invert_a)),
-            "phase_invert_b" => Some(ParameterValue::Bool(self.phase_invert_b)),
+            "phase_invert_a" => Some(ParameterValue::Bool(self.phase_invert[0])),
+            "phase_invert_b" => Some(ParameterValue::Bool(self.phase_invert[1])),
             "difference_mode" => Some(ParameterValue::Bool(self.difference_mode)),
             "band_mask_low_hz" => Some(ParameterValue::Float(self.band_mask_low_hz)),
             "band_mask_high_hz" => Some(ParameterValue::Float(self.band_mask_high_hz)),
@@ -737,16 +868,68 @@ impl Plugin for ABComparePlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("A/B Compare sample rate must be greater than zero".into());
+        }
+        let nyquist = sample_rate as f32 * 0.5;
+        if self.band_mask_low_hz > Self::BAND_MASK_MIN_HZ + Self::BAND_MASK_EDGE_EPSILON
+            && self.band_mask_low_hz >= nyquist
+        {
+            return Err(format!(
+                "band_mask_low_hz must be below Nyquist ({nyquist} Hz)"
+            ));
+        }
+        if self.band_mask_high_hz < Self::BAND_MASK_MAX_HZ - Self::BAND_MASK_EDGE_EPSILON
+            && self.band_mask_high_hz >= nyquist
+        {
+            return Err(format!(
+                "band_mask_high_hz must be below Nyquist ({nyquist} Hz)"
+            ));
+        }
+        // Prepare every fallible component before committing any live state.
+        let mut host_a = build_path_from_config_with_factory(
+            &self.path_a_config,
+            self.num_channels,
+            sample_rate,
+            self.plugin_factory,
+        )?;
+        let mut host_b = build_path_from_config_with_factory(
+            &self.path_b_config,
+            self.num_channels,
+            sample_rate,
+            self.plugin_factory,
+        )?;
+        host_a.build()?;
+        host_b.build()?;
+        let auto_gain = AutoGain::new(
+            self.num_channels,
+            sample_rate,
+            AutoGainParams {
+                enabled: self.auto_gain.is_enabled(),
+                loudness_type: self.auto_gain.loudness_type(),
+                max_gain_db: self.auto_gain.max_gain_db(),
+                smoothing_ms: self.auto_gain.smoothing_ms(),
+            },
+        )?;
+        let latency_a = host_a.total_latency_samples();
+        let latency_b = host_b.total_latency_samples();
+        let mut delay_a = DelayLine::new();
+        let mut delay_b = DelayLine::new();
+        let mut delay_dry = DelayLine::new();
+        if latency_a > latency_b {
+            delay_b.set_delay(latency_a - latency_b, self.num_channels);
+        } else {
+            delay_a.set_delay(latency_b - latency_a, self.num_channels);
+        }
+        delay_dry.set_delay(latency_a.max(latency_b), self.num_channels);
+
         self.sample_rate = sample_rate;
-
-        // Rebuild paths with new sample rate
-        self.rebuild_path_a()?;
-        self.rebuild_path_b()?;
-
-        // Update auto-gain sample rate
-        self.auto_gain
-            .set_sample_rate(sample_rate)
-            .map_err(|e| format!("Failed to update auto-gain sample rate: {}", e))?;
+        self.host_a = host_a;
+        self.host_b = host_b;
+        self.auto_gain = auto_gain;
+        self.delay_a = delay_a;
+        self.delay_b = delay_b;
+        self.delay_dry = delay_dry;
 
         // Reset mix smoother with new sample rate
         self.mix_smoother = Smoother::new(self.mix, self.mix_transition_ms, sample_rate);
@@ -756,13 +939,13 @@ impl Plugin for ABComparePlugin {
         self.rebuild_band_mask_filters();
 
         // Pre-allocate processing buffers for max expected frame size (avoids hot-path resize)
-        let max_buffer = 4096 * self.num_channels;
-        if self.buffer_a.len() < max_buffer {
-            self.buffer_a.resize(max_buffer, 0.0);
+        let max_buffer = Self::MAX_REALTIME_FRAMES * self.num_channels;
+        for buffer in &mut self.buffers {
+            if buffer.len() < max_buffer {
+                buffer.resize(max_buffer, 0.0);
+            }
         }
-        if self.buffer_b.len() < max_buffer {
-            self.buffer_b.resize(max_buffer, 0.0);
-        }
+        self.cache_update_counter = (sample_rate as usize / 20).max(1);
 
         Ok(())
     }
@@ -783,15 +966,18 @@ impl Plugin for ABComparePlugin {
         self.mix_smoother.reset(self.mix);
 
         // Reset peak values
-        self.last_peak_a = 0.0;
-        self.last_peak_b = 0.0;
+        self.last_peaks = [0.0; 2];
+        self.cache_update_counter = (self.sample_rate as usize / 20).max(1);
 
         // Reset band mask filters
+        self.band_mask_hp.clear();
+        self.band_mask_lp.clear();
         self.rebuild_band_mask_filters();
 
         // Clear contents without dropping pre-allocated capacity/length.
-        self.buffer_a.fill(0.0);
-        self.buffer_b.fill(0.0);
+        self.buffers[0].fill(0.0);
+        self.buffers[1].fill(0.0);
+        self.delay_dry.reset();
 
         // Update diagnostic cache immediately with reset values
         let data = ABCompareData {
@@ -814,7 +1000,10 @@ impl Plugin for ABComparePlugin {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        let expected_samples = context.num_frames * self.num_channels;
+        let expected_samples = context
+            .num_frames
+            .checked_mul(self.num_channels)
+            .ok_or_else(|| "A/B Compare block sample count overflow".to_string())?;
 
         // Verify input/output size
         if input.len() != expected_samples {
@@ -835,6 +1024,10 @@ impl Plugin for ABComparePlugin {
         // Handle bypass
         if self.bypass {
             output.copy_from_slice(input);
+            self.delay_dry.process(output);
+            self.cache.update(|data| {
+                data.bypass_active = true;
+            });
             return Ok(context.num_frames);
         }
 
@@ -843,49 +1036,46 @@ impl Plugin for ABComparePlugin {
             return Ok(context.num_frames);
         }
 
-        // Grow internal buffers if the host block size exceeds the pre-allocated
-        // capacity. This can happen with offline renderers or non-standard hosts
-        // that use blocks larger than 4096. Growing here (not in initialize())
-        // keeps the common real-time path allocation-free for expected block sizes.
-        if self.buffer_a.len() < expected_samples {
-            self.buffer_a.resize(expected_samples, 0.0);
-        }
-        if self.buffer_b.len() < expected_samples {
-            self.buffer_b.resize(expected_samples, 0.0);
+        if expected_samples > self.buffers[0].len() || expected_samples > self.buffers[1].len() {
+            return Err(format!(
+                "A/B Compare block exceeds prepared realtime capacity: {} frames (max {})",
+                context.num_frames,
+                Self::MAX_REALTIME_FRAMES
+            ));
         }
 
         // Process path A
         self.host_a
-            .process(input, &mut self.buffer_a[..expected_samples])?;
+            .process(input, &mut self.buffers[0][..expected_samples])?;
 
         // Process path B
         self.host_b
-            .process(input, &mut self.buffer_b[..expected_samples])?;
+            .process(input, &mut self.buffers[1][..expected_samples])?;
 
         // Apply latency compensation (delays the shorter path)
-        self.delay_a.process(&mut self.buffer_a[..expected_samples]);
-        self.delay_b.process(&mut self.buffer_b[..expected_samples]);
+        self.delay_a
+            .process(&mut self.buffers[0][..expected_samples]);
+        self.delay_b
+            .process(&mut self.buffers[1][..expected_samples]);
 
         // Measure loudness and peaks using AutoGain (throttled)
         // A's output is the "input reference" (what we want B to match)
         // B's output is the "output to compensate"
-        self.cache_update_counter += 1;
-        let mut do_measure = false;
-        // Measure on the first block and then every 10 blocks
-        if self.cache_update_counter >= 10 || self.cache_update_counter == 1 {
-            if self.cache_update_counter >= 10 {
-                self.cache_update_counter = 0;
-            }
-            do_measure = true;
+        let do_measure = self.advance_diagnostic_scheduler(context.num_frames);
+
+        if self.auto_gain.is_enabled() {
+            self.auto_gain
+                .ingest_input(&self.buffers[0][..expected_samples])?;
+            self.auto_gain
+                .ingest_output(&self.buffers[1][..expected_samples])?;
         }
 
-        if do_measure {
-            self.auto_gain.measure_input(&self.buffer_a)?;
-            self.auto_gain.measure_output(&self.buffer_b)?;
-
+        if do_measure && self.auto_gain.is_enabled() {
+            self.auto_gain.refresh_input_measurement();
+            self.auto_gain.refresh_output_measurement();
             // Cache peak values for get_data()
-            self.last_peak_a = self.auto_gain.last_input_peak();
-            self.last_peak_b = self.auto_gain.last_output_peak();
+            self.last_peaks[0] = self.auto_gain.last_input_peak();
+            self.last_peaks[1] = self.auto_gain.last_output_peak();
         }
 
         // Determine target mix value. Only call set_target when the desired
@@ -907,8 +1097,8 @@ impl Plugin for ABComparePlugin {
         }
 
         // Phase inversion signs
-        let sign_a: f32 = if self.phase_invert_a { -1.0 } else { 1.0 };
-        let sign_b: f32 = if self.phase_invert_b { -1.0 } else { 1.0 };
+        let sign_a: f32 = if self.phase_invert[0] { -1.0 } else { 1.0 };
+        let sign_b: f32 = if self.phase_invert[1] { -1.0 } else { 1.0 };
 
         // Process sample-by-sample
         for frame in 0..context.num_frames {
@@ -918,19 +1108,18 @@ impl Plugin for ABComparePlugin {
 
             for ch in 0..self.num_channels {
                 let idx = frame * self.num_channels + ch;
-                let sample_a = self.buffer_a[idx] * sign_a;
-                let sample_b = self.buffer_b[idx] * gain_linear * sign_b;
+                let sample_a = self.buffers[0][idx] * sign_a;
+                let sample_b = self.buffers[1][idx] * gain_linear * sign_b;
 
                 if self.difference_mode {
                     // Difference mode: output A - B
                     output[idx] = sample_a - sample_b;
                 } else {
-                    // Equal-power crossfade
+                    // Unity-preserving same-source crossfade.
                     // mix: -1 = pure A, +1 = pure B
                     let mix_01 = (current_mix + 1.0) / 2.0; // 0 = A, 1 = B
-                    let angle = mix_01 * std::f32::consts::FRAC_PI_2; // 0 to PI/2
-                    let gain_a = angle.cos();
-                    let gain_b = angle.sin();
+                    let gain_a = 1.0 - mix_01;
+                    let gain_b = mix_01;
                     output[idx] = sample_a * gain_a + sample_b * gain_b;
                 }
             }
@@ -955,8 +1144,8 @@ impl Plugin for ABComparePlugin {
                 loudness_a_lufs: self.auto_gain.last_input_lufs(),
                 loudness_b_lufs: self.auto_gain.last_output_lufs(),
                 auto_gain_db: self.auto_gain.current_gain_db(),
-                peak_a: self.last_peak_a,
-                peak_b: self.last_peak_b,
+                peak_a: self.last_peaks[0],
+                peak_b: self.last_peaks[1],
                 current_mix: self.mix_smoother.current(),
                 bypass_active: self.bypass,
             };

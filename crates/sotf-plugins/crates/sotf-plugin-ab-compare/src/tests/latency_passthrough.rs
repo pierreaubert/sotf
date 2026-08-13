@@ -145,6 +145,38 @@ fn test_latency_compensation() {
 }
 
 #[test]
+fn bypass_preserves_reported_latency() {
+    let channels = 1;
+    let latency_frames = 8;
+    let mut plugin = ABComparePlugin::new(channels).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let mut host_b = DawHost::new(channels, 48_000);
+    host_b
+        .add_plugin(Box::new(LatencyPassthrough {
+            channels,
+            latency: latency_frames,
+        }))
+        .unwrap();
+    host_b.build().unwrap();
+    plugin.host_b = host_b;
+    plugin.update_latency_compensation().unwrap();
+    plugin
+        .set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
+        .unwrap();
+
+    let mut input = vec![0.0; 32];
+    input[0] = 1.0;
+    let mut output = vec![0.0; 32];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 32))
+        .unwrap();
+
+    assert_eq!(plugin.latency_samples(), latency_frames);
+    assert!(output[..latency_frames].iter().all(|sample| *sample == 0.0));
+    assert_eq!(output[latency_frames], 1.0);
+}
+
+#[test]
 fn test_latency_compensation_reset() {
     let channels = 2;
 

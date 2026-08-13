@@ -15,6 +15,114 @@ fn generate_sine_input(num_frames: usize, num_channels: usize) -> Vec<f32> {
 }
 
 #[test]
+fn construction_rejects_invalid_numeric_state() {
+    let invalid = [f32::NAN, f32::INFINITY];
+    for value in invalid {
+        assert!(
+            ABComparePlugin::from_params(
+                2,
+                ABComparePluginParams {
+                    mix: value,
+                    ..Default::default()
+                }
+            )
+            .is_err()
+        );
+    }
+    assert!(ABComparePlugin::from_params(0, ABComparePluginParams::default()).is_err());
+    assert!(
+        ABComparePlugin::from_params(
+            2,
+            ABComparePluginParams {
+                selected_path: 2,
+                ..Default::default()
+            }
+        )
+        .is_err()
+    );
+    assert!(
+        ABComparePlugin::from_params(
+            2,
+            ABComparePluginParams {
+                max_auto_gain_db: -1.0,
+                ..Default::default()
+            }
+        )
+        .is_err()
+    );
+    assert!(
+        ABComparePlugin::from_params(
+            2,
+            ABComparePluginParams {
+                band_mask_low_hz: 10_000.0,
+                band_mask_high_hz: 1_000.0,
+                ..Default::default()
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn realtime_process_rejects_blocks_larger_than_prepared_capacity() {
+    let params = ABComparePluginParams {
+        path_b: PathConfig::Plugin {
+            plugin_type: "gain".into(),
+            parameters: serde_json::json!({"gain_db": 0.0}),
+        },
+        ..Default::default()
+    };
+    let mut plugin = ABComparePlugin::from_params(1, params).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let input = vec![0.0; 48_001];
+    let mut output = vec![0.0; 48_001];
+    assert!(
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 48_001))
+            .is_err()
+    );
+}
+
+#[test]
+fn unity_nested_path_uses_same_active_loudness_timeline_as_empty_paths() {
+    let mut fast = ABComparePlugin::new(2).unwrap();
+    fast.initialize(48_000).unwrap();
+    let mut nested = ABComparePlugin::from_params(
+        2,
+        ABComparePluginParams {
+            path_b: PathConfig::Plugin {
+                plugin_type: "gain".into(),
+                parameters: serde_json::json!({"gain_db": 0.0}),
+            },
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    nested.initialize(48_000).unwrap();
+
+    let input = generate_sine_input(128, 2);
+    let mut fast_output = vec![0.0; input.len()];
+    let mut nested_output = vec![0.0; input.len()];
+    let context = ProcessContext::new(48_000, 128);
+    for _ in 0..40 {
+        fast.process(&input, &mut fast_output, &context).unwrap();
+        nested
+            .process(&input, &mut nested_output, &context)
+            .unwrap();
+    }
+    let fast_data = fast.get_data().unwrap();
+    let nested_data = nested.get_data().unwrap();
+    let fast_data = fast_data.downcast_ref::<ABCompareData>().unwrap();
+    let nested_data = nested_data.downcast_ref::<ABCompareData>().unwrap();
+    assert!(
+        (fast_data.loudness_a_lufs - nested_data.loudness_a_lufs).abs() < 0.01,
+        "unity nested path changed active-slice loudness: {} vs {}",
+        fast_data.loudness_a_lufs,
+        nested_data.loudness_a_lufs
+    );
+}
+
+#[test]
 fn test_auto_gain_attenuates_louder_b() {
     // Path A: no processing (unity gain)
     // Path B: +6dB boost
@@ -479,7 +587,7 @@ fn test_difference_mode_a_sine_b_silence() {
         path_a: PathConfig::None, // pass-through
         path_b: PathConfig::Plugin {
             plugin_type: "gain".to_string(),
-            parameters: serde_json::json!({"gain_db": -100.0}),
+            parameters: serde_json::json!({"gain_db": -60.0}),
         },
         difference_mode: true,
         auto_gain_enabled: false,

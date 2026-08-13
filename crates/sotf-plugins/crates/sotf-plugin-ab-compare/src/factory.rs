@@ -55,7 +55,11 @@ fn create_plugin_builtin(
             let params: MultibandCompressorPluginParams =
                 serde_json::from_value(parameters.clone())
                     .map_err(|e| format!("Invalid Compressor params: {}", e))?;
-            let plugin = MultibandCompressorPlugin::from_params(num_channels, params);
+            let plugin = MultibandCompressorPlugin::try_from_params(
+                num_channels,
+                params,
+                sample_rate,
+            )?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
         "limiter" => {

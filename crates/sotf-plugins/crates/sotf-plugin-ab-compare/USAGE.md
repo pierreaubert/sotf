@@ -13,8 +13,8 @@ Fair comparison between two audio processing chains with automatic loudness matc
 | Mix | -1.0 to +1.0 | 0.0 | — | Balance between paths: -1.0 = pure A, 0.0 = 50/50, +1.0 = pure B |
 | Mix Mode | Potentiometer / Binary | Potentiometer | — | Continuous crossfade or instant A/B switch |
 | Selected Path | A / B | A | — | Active path when in Binary mode |
-| Bypass | On/Off | Off | — | Bypass both paths, output original input |
-| Transition Time | 1 to 500 | 50 | ms | Crossfade duration for mix changes (UI clamps to 5 ms minimum) |
+| Bypass | On/Off | Off | — | Bypass both paths, output latency-compensated dry input |
+| Transition Time | 1 to 500 | 50 | ms | Crossfade duration for mix changes |
 
 ### Path Configuration
 
@@ -28,6 +28,10 @@ Each path (A and B) supports three topology modes:
 | Graph | Full DAG with nodes and edges |
 
 Available plugin types for paths: EQ, Gain, Compressor, Limiter, Gate, Expander, Denoiser, Loudness Compensation, and others.
+
+The structural band mask can isolate the comparison to a passband. `Band Mask Low` ranges from
+20–20,000 Hz (default 20 Hz) and `Band Mask High` uses the same range (default 20,000 Hz); the low
+edge must remain below the high edge and active edges must be below Nyquist.
 
 ### Auto Gain (Loudness Matching)
 
@@ -143,9 +147,12 @@ Real-time data exposed for display:
 - Binary mode is best for critical A/B listening tests; Potentiometer mode is better for exploring the effect of processing.
 - The auto-gain system uses EBU R128 loudness (not peak level) for perceptually accurate matching.
 - Latency compensation ensures paths with different processing delays are time-aligned.
-- Path configs can be changed at runtime — the plugin rebuilds DawHost instances as needed.
-- In bypass mode, both processing paths are skipped entirely.
-- Equal-power crossfade prevents level dips when blending between paths.
+- Path configs and band-mask cutoffs are structural. The outer host rebuilds the complete A/B node
+  off the audio thread, recompiles latency compensation, and swaps it at a safe graph boundary.
+- In bypass mode, both processing paths are skipped; the dry signal remains delayed by the plugin's reported latency so parallel host branches stay aligned.
+- The default same-source linear crossfade preserves unity for identical A/B paths and avoids the
+  +3.01 dB centre boost of an equal-power law. Inverted paths intentionally cancel at centre.
+- Diagnostics publish on an elapsed-frame schedule (20 Hz), independent of callback partitioning.
 
 ## Signal Flow
 

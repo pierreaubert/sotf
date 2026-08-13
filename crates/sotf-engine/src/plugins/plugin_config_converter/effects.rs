@@ -462,6 +462,8 @@ pub fn convert_ab_compare(settings: &PluginSettings, _sample_rate: f64) -> Optio
         phase_invert_a,
         phase_invert_b,
         difference_mode,
+        band_mask_low_hz,
+        band_mask_high_hz,
         ..
     } = settings
     else {
@@ -496,6 +498,8 @@ pub fn convert_ab_compare(settings: &PluginSettings, _sample_rate: f64) -> Optio
             "phase_invert_a": phase_invert_a,
             "phase_invert_b": phase_invert_b,
             "difference_mode": difference_mode,
+            "band_mask_low_hz": band_mask_low_hz,
+            "band_mask_high_hz": band_mask_high_hz,
         }),
     ))
 }

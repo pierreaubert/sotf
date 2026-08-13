@@ -167,20 +167,13 @@ fn difference_mode_roundtrip() {
 
 #[test]
 fn band_mask_frequencies_roundtrip() {
-    let mut plugin = ABComparePlugin::new(1).unwrap();
+    let params = ABComparePluginParams {
+        band_mask_low_hz: 250.0,
+        band_mask_high_hz: 8_000.0,
+        ..Default::default()
+    };
+    let mut plugin = ABComparePlugin::from_params(1, params).unwrap();
     plugin.initialize(SR).unwrap();
-    plugin
-        .set_parameter(
-            ParameterId::from("band_mask_low_hz"),
-            ParameterValue::Float(250.0),
-        )
-        .unwrap();
-    plugin
-        .set_parameter(
-            ParameterId::from("band_mask_high_hz"),
-            ParameterValue::Float(8000.0),
-        )
-        .unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("band_mask_low_hz")),
         Some(ParameterValue::Float(250.0))
@@ -205,21 +198,13 @@ fn band_mask_frequencies_out_of_range_are_rejected() {
 }
 
 #[test]
-fn band_mask_frequencies_clamped_on_construction() {
+fn band_mask_frequencies_rejected_on_construction() {
     let params = ABComparePluginParams {
         band_mask_low_hz: 5.0,
         band_mask_high_hz: 50000.0,
         ..Default::default()
     };
-    let plugin = ABComparePlugin::from_params(1, params).unwrap();
-    assert_eq!(
-        plugin.get_parameter(&ParameterId::from("band_mask_low_hz")),
-        Some(ParameterValue::Float(20.0))
-    );
-    assert_eq!(
-        plugin.get_parameter(&ParameterId::from("band_mask_high_hz")),
-        Some(ParameterValue::Float(20000.0))
-    );
+    assert!(ABComparePlugin::from_params(1, params).is_err());
 }
 
 // ----------------------------------------------------------------------------
@@ -244,10 +229,10 @@ fn bypass_passes_input_through_unchanged() {
 }
 
 #[test]
-fn empty_paths_center_mix_outputs_equal_power_gain() {
+fn empty_paths_center_mix_preserves_identical_signal_unity() {
     let mut plugin = ABComparePlugin::new(1).unwrap();
     plugin.initialize(SR).unwrap();
-    // mix = 0.0 with empty paths uses the fast path: gain = cos(pi/4)+sin(pi/4)
+    // Both paths are the same signal, so every mix position must stay at unity.
     let dc = 0.5f32;
     let input = vec![dc; FRAMES];
     let mut output = vec![0.0f32; FRAMES];
@@ -255,8 +240,7 @@ fn empty_paths_center_mix_outputs_equal_power_gain() {
         .process(&input, &mut output, &ProcessContext::new(SR, FRAMES))
         .unwrap();
 
-    let expected_gain = std::f32::consts::FRAC_PI_4.cos() + std::f32::consts::FRAC_PI_4.sin();
-    let expected = dc * expected_gain;
+    let expected = dc;
     let last = output[FRAMES - 1];
     assert!(
         (last - expected).abs() < 1e-5,
@@ -353,39 +337,31 @@ fn initialize_changes_sample_rate_and_resets_smoothing() {
 // ----------------------------------------------------------------------------
 
 #[test]
-fn path_a_gain_config_roundtrip() {
+fn path_a_gain_config_requires_structural_rebuild() {
     let mut plugin = ABComparePlugin::new(1).unwrap();
     plugin.initialize(SR).unwrap();
 
     let json = r#"{"type":"Plugin","plugin_type":"gain","parameters":{"gain_db":6.0}}"#;
-    plugin
+    let error = plugin
         .set_parameter(
             ParameterId::from("path_a_config"),
             ParameterValue::String(json.to_string()),
         )
-        .unwrap();
-
-    let stored = plugin
-        .get_parameter(&ParameterId::from("path_a_config"))
-        .and_then(|v| v.as_string().map(|s| s.to_string()))
-        .unwrap();
-    assert!(stored.contains("gain"));
+        .unwrap_err();
+    assert!(error.contains("structural") && error.contains("rebuild"));
 }
 
 #[test]
-fn path_config_none_roundtrip() {
+fn path_config_none_requires_structural_rebuild() {
     let mut plugin = ABComparePlugin::new(1).unwrap();
     plugin.initialize(SR).unwrap();
-    plugin
+    let error = plugin
         .set_parameter(
             ParameterId::from("path_a_config"),
             ParameterValue::String(r#"{"type":"None"}"#.to_string()),
         )
-        .unwrap();
-    let stored = plugin
-        .get_parameter(&ParameterId::from("path_a_config"))
-        .unwrap();
-    assert!(matches!(stored, ParameterValue::String(_)));
+        .unwrap_err();
+    assert!(error.contains("structural") && error.contains("rebuild"));
 }
 
 // ----------------------------------------------------------------------------
@@ -424,7 +400,34 @@ fn invalid_path_config_json_fails() {
             ParameterValue::String("not json".to_string()),
         )
         .unwrap_err();
-    assert!(err.contains("Invalid") || err.contains("JSON"));
+    assert!(err.contains("structural") && err.contains("rebuild"));
+}
+
+#[test]
+fn failed_path_rebuild_preserves_previous_configuration() {
+    let mut plugin = ABComparePlugin::new(1).unwrap();
+    plugin.initialize(SR).unwrap();
+    let before = plugin
+        .get_parameter(&ParameterId::from("path_a_config"))
+        .unwrap();
+    let invalid = serde_json::json!({
+        "type": "Plugin",
+        "plugin_type": "plugin_that_does_not_exist",
+        "parameters": {}
+    })
+    .to_string();
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("path_a_config"),
+                ParameterValue::String(invalid),
+            )
+            .is_err()
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("path_a_config")),
+        Some(before)
+    );
 }
 
 #[test]

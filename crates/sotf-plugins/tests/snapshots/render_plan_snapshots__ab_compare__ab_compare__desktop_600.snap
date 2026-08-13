@@ -41,7 +41,8 @@ expression: plan
             -1.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 1,
@@ -52,7 +53,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 2,
@@ -63,7 +65,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 3,
@@ -74,10 +77,11 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
-          "param_index": 13,
+          "param_index": 11,
           "param_name": "Difference Mode",
           "control_type": "toggle",
           "unit": "",
@@ -85,7 +89,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 8,
@@ -96,7 +101,8 @@ expression: plan
             1.0,
             500.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     },
@@ -105,7 +111,7 @@ expression: plan
       "title": "PHASE",
       "controls": [
         {
-          "param_index": 11,
+          "param_index": 9,
           "param_name": "Phase Invert A",
           "control_type": "toggle",
           "unit": "",
@@ -113,10 +119,11 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
-          "param_index": 12,
+          "param_index": 10,
           "param_name": "Phase Invert B",
           "control_type": "toggle",
           "unit": "",
@@ -124,7 +131,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     },
@@ -141,7 +149,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 5,
@@ -152,7 +161,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 6,
@@ -163,7 +173,8 @@ expression: plan
             0.0,
             24.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 7,
@@ -174,7 +185,8 @@ expression: plan
             1.0,
             500.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     }
@@ -185,20 +197,46 @@ expression: plan
       "name": "Paths",
       "controls": [
         {
-          "param_index": 9,
+          "param_index": 12,
+          "param_name": "Band Mask Low",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            20.0,
+            20000.0
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 13,
+          "param_name": "Band Mask High",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            20.0,
+            20000.0
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 14,
           "param_name": "Path A Config",
           "control_type": "file_picker",
           "unit": "",
           "range": null,
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
-          "param_index": 10,
+          "param_index": 15,
           "param_name": "Path B Config",
           "control_type": "file_picker",
           "unit": "",
           "range": null,
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     }
