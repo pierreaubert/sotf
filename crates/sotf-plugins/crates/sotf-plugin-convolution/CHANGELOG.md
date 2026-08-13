@@ -1,3 +1,58 @@
+# 0.5.11
+
+## Fixes
+
+- Async IR requests now carry generations and expose `ConvolutionLoadStatus`; stale completions,
+  clears, rate reloads, and failed replacements cannot replace the last-known-good response.
+- IR installs use prebuilt `Arc` state, and replaced FFT/NUPC buffers plus failure strings are
+  retired on background threads. Installation and reclamation are allocation-free in callbacks.
+- Empty, loading, failed, and cleared states now delay dry audio by the advertised backend latency.
+  Active replacement and clear boundaries use a 128-sample bounded discontinuity transition.
+- UPC captures mix/gain smoothing once per input sample and carries that exact envelope with the
+  delayed output partition, eliminating retroactive and partition-boundary automation errors.
+- NUPC no longer builds an unused UPC backend. Output channels mapped to the same IR channel share
+  immutable NUPC spectra, FFT plans, and direct-head taps while retaining independent history.
+- IR loading rejects missing sample rates, empty channels, more than 32 channels, responses longer
+  than 30 seconds, and backend estimates above 512 MiB before FFT planning.
+- Construction now rejects zero channels/rate, non-finite or out-of-range mix/gain, and invalid head
+  sizes instead of silently clamping serialized configuration.
+- QA and fuzzing now load real deterministic/random IR files and exercise active UPC/NUPC paths.
+
+## Tests
+
+- Added generation/failure preservation, load status, inactive latency, callback install retirement,
+  bounded transition, exact UPC automation, active-backend deduplication, metadata/resource-limit,
+  and construction-contract regressions.
+
+# 0.5.10
+
+## Fixes
+
+- Compensated Rubato's FFT resampler startup delay and flushed its filter tail
+  through the whole-clip API before trimming to the rounded target length. IR
+  impulses now retain their absolute timing and final response energy when
+  converting between 44.1, 48, and 96 kHz sample rates.
+- Added cross-rate start- and tail-impulse regression coverage for all supported
+  rate pairs.
+
+# 0.5.9
+
+## Fixes
+
+- Corrected NUPC scheduling so every partition level retains its absolute IR
+  offset, including tails following a zero-latency time-domain head. Added
+  direct-convolution oracle tests across sparse partition boundaries.
+- Activated the previously dormant 724-line DSP regression suite.
+- Rebuilt host-visible parameters after construction and successful IR loads,
+  initialized smoothers at configured values, clamped construction inputs, and
+  aligned direct construction with the declared NUPC default.
+- Cancelled pending async loads on clear, preserved the last-known-good IR after
+  replacement failures, and reset all UPC/NUPC streaming state on installation.
+- Replaced Rayon dispatch from the audio callback with a deterministic
+  single-threaded SIMD partition accumulation loop.
+- Switched compile metadata to a conservative processing boundary because
+  smoothed parameters and IR swaps are time varying.
+
 # 0.5.8
 
 ## Fixes

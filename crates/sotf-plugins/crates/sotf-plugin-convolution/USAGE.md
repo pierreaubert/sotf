@@ -8,7 +8,9 @@ A partitioned FFT-based convolution plugin for applying impulse responses (IRs) 
 
 ### IR Loading
 
-Load a WAV file containing the impulse response. The IR is automatically partitioned into 1024-sample blocks and pre-transformed to the frequency domain for efficient real-time processing.
+Load a WAV, FLAC, or AIFF impulse response. It is resampled when needed and prepared off-thread.
+Files must carry valid sample-rate metadata and fit the 32-channel, 30-second, 512 MiB backend
+budget.
 
 **Parameters:**
 
@@ -107,12 +109,16 @@ When the IR file has multiple channels, each audio channel is convolved with the
 
 ## Tips & Best Practices
 
-- The plugin adds latency equal to the partition size (1024 samples, ~21 ms at 48 kHz).
+- UPC and normal NUPC add 1024 samples of latency (~21 ms at 48 kHz). Dry audio remains delayed by
+  the same amount while empty, loading, failed, cleared, or at mix=0. A configured time-domain NUPC
+  head reports zero latency.
 - Longer IRs require more partitions and more CPU — keep IRs under a few seconds for real-time use.
 - The IR is pre-transformed to frequency domain at load time — switching IRs is not instantaneous.
 - Use Mix at 1.0 for correction filters and lower values (0.1–0.5) for reverb effects.
 - The Gain parameter adjusts the output level — use it to compensate for IRs that are louder or quieter than unity.
-- Only WAV format IR files are supported (F32 format).
+- WAV, FLAC, and AIFF PCM IRs are supported.
+- Failed replacements preserve the last working IR. Hosts can inspect `load_status()` for
+  idle/loading/ready/failed state.
 - SIMD-optimized complex multiply-accumulate is used for the frequency-domain convolution.
 - Mono IRs are automatically applied to all channels. Multi-channel IRs require matching channel counts.
 

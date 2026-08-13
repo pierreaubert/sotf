@@ -1,16 +1,12 @@
 use super::super::convolution_plugin::ConvolutionPlugin;
 use super::super::misc::FFT_SIZE;
 use super::super::misc::PARTITION_SIZE;
-use super::super::params;
 use super::super::types::ConvolutionPluginParams;
 use super::super::types::ConvolutionState;
-use super::super::*;
-use rayon::prelude::*;
-use rubato::Resampler;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::ProcessContext;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 use std::fs;
 use std::path::Path;
@@ -74,8 +70,8 @@ fn make_plugin_with_ir(channels: usize, sample_rate: u32, ir: Vec<Vec<f32>>) -> 
         partitions,
         num_partitions,
         ir_channels,
-        fft_forward,
-        fft_inverse,
+        fft_forward: Some(fft_forward),
+        fft_inverse: Some(fft_inverse),
     })));
     plugin.fdl_flat = vec![Complex::new(0.0, 0.0); num_partitions * channels * FFT_SIZE];
     plugin.fdl_head = 0;
@@ -444,7 +440,8 @@ fn test_ir_file_parameter_loads_and_reports_path() {
 
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("ir_file")),
-        Some(ParameterValue::String(path.to_string_lossy().into_owned()))
+        Some(ParameterValue::String(String::new())),
+        "the host-visible path changes only after the new IR loads successfully"
     );
 
     // Spin until the background thread finishes loading.
@@ -458,6 +455,10 @@ fn test_ir_file_parameter_loads_and_reports_path() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert!(plugin.state.load().is_some(), "IR load should complete");
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("ir_file")),
+        Some(ParameterValue::String(path.to_string_lossy().into_owned()))
+    );
 
     fs::remove_file(path).ok();
 }
@@ -480,14 +481,20 @@ fn test_from_params_loads_nupc_engine_from_ir_file() {
         head_taps: 128,
     };
 
-    let mut plugin = ConvolutionPlugin::from_params(1, 48000, params).unwrap();
+    let mut plugin = ConvolutionPlugin::from_params(2, 48000, params).unwrap();
     assert_eq!(
         plugin.nupc_engines.len(),
-        1,
+        2,
         "from_params with use_nupc=true should build NUPC engines from the IR file"
     );
+    assert!(plugin.nupc_engines[0].shares_ir_kernel_with(&plugin.nupc_engines[1]));
+    let state = plugin.state.load();
+    let state = state.as_ref().as_ref().expect("loaded NUPC state");
+    assert!(state.partitions.is_empty());
+    assert!(state.fft_forward.is_none() && state.fft_inverse.is_none());
+    assert!(plugin.fdl_flat.is_empty());
 
-    let mut buffer = vec![1.0_f32; 64];
+    let mut buffer = vec![1.0_f32; 64 * 2];
     let ctx = ProcessContext::new(48000, 64);
     plugin.process_in_place(&mut buffer, &ctx).unwrap();
     assert!(buffer.iter().all(|sample| sample.is_finite()));

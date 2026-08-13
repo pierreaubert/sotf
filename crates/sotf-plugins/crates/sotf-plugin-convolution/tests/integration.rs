@@ -104,7 +104,7 @@ fn convolution_parameter_roundtrip() {
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("use_nupc")),
-        Some(ParameterValue::Bool(false))
+        Some(ParameterValue::Bool(true))
     );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("zero_latency_head")),
@@ -129,11 +129,11 @@ fn convolution_unknown_parameter_error() {
 }
 
 #[test]
-fn convolution_process_without_ir_passes_input() {
+fn convolution_process_without_ir_preserves_reported_latency() {
     let mut plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     plugin.initialize(44100).unwrap();
 
-    let num_frames = 128;
+    let num_frames = 2048;
     let input = vec![0.3_f32; num_frames * 2];
     let mut output = vec![0.0_f32; num_frames * 2];
     let context = ProcessContext::new(44100, num_frames);
@@ -141,10 +141,8 @@ fn convolution_process_without_ir_passes_input() {
     let frames = plugin.process(&input, &mut output, &context).unwrap();
     assert_eq!(frames, num_frames);
 
-    // With no IR loaded the plugin is a pass-through (adapter copies input).
-    for (i, o) in input.iter().zip(output.iter()) {
-        assert!((i - o).abs() < 1e-6, "expected pass-through without IR");
-    }
+    assert!(output[..1024 * 2].iter().all(|&sample| sample == 0.0));
+    assert_eq!(&output[1024 * 2..], &input[..1024 * 2]);
 }
 
 #[test]
@@ -237,35 +235,33 @@ fn convolution_reset_clears_processing_state() {
 
     plugin.reset();
 
-    // After reset, processing should return to pass-through behavior.
-    let num_frames = 128;
+    // After reset, inactive processing still preserves reported latency.
+    let num_frames = 2048;
     let input = vec![0.2_f32; num_frames * 2];
     let mut output = vec![0.0_f32; num_frames * 2];
     let context = ProcessContext::new(44100, num_frames);
     plugin.process(&input, &mut output, &context).unwrap();
 
-    for (i, o) in input.iter().zip(output.iter()) {
-        assert!((i - o).abs() < 1e-6, "expected pass-through after reset");
-    }
+    assert!(output[..1024 * 2].iter().all(|&sample| sample == 0.0));
+    assert_eq!(&output[1024 * 2..], &input[..1024 * 2]);
 }
 
 #[test]
-fn convolution_mix_zero_is_dry() {
+fn convolution_mix_zero_without_ir_is_latency_matched_dry() {
     let mut plugin = ParametricInPlacePluginAdapter::new(ConvolutionPlugin::new(2, 44100));
     plugin.initialize(44100).unwrap();
     plugin
         .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
         .unwrap();
 
-    let num_frames = 128;
+    let num_frames = 2048;
     let input = vec![0.4_f32; num_frames * 2];
     let mut output = vec![0.0_f32; num_frames * 2];
     let context = ProcessContext::new(44100, num_frames);
     plugin.process(&input, &mut output, &context).unwrap();
 
-    for (i, o) in input.iter().zip(output.iter()) {
-        assert!((i - o).abs() < 1e-6, "mix=0 should be dry pass-through");
-    }
+    assert!(output[..1024 * 2].iter().all(|&sample| sample == 0.0));
+    assert_eq!(&output[1024 * 2..], &input[..1024 * 2]);
 }
 
 #[test]

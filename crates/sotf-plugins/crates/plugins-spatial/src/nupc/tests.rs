@@ -119,3 +119,79 @@ fn test_nupc_reset() {
         );
     }
 }
+
+#[test]
+fn instantiated_channels_share_immutable_ir_kernels() {
+    let kernel = super::NupcKernel::new(&vec![0.25; 4096], 256);
+    let left = kernel.instantiate();
+    let right = kernel.instantiate();
+    assert!(left.shares_ir_kernel_with(&right));
+}
+
+fn direct_convolution(input: &[f32], ir: &[f32]) -> Vec<f32> {
+    let mut output = vec![0.0; input.len() + ir.len() - 1];
+    for (n, &sample) in input.iter().enumerate() {
+        for (k, &tap) in ir.iter().enumerate() {
+            output[n + k] += sample * tap;
+        }
+    }
+    output
+}
+
+fn assert_matches_delayed_oracle(
+    mut engine: NupcEngine,
+    input: &[f32],
+    ir: &[f32],
+    latency: usize,
+) {
+    let oracle = direct_convolution(input, ir);
+    let mut actual = vec![0.0; latency + oracle.len() + 512];
+    for (i, sample) in actual.iter_mut().enumerate() {
+        *sample = engine.process_sample(input.get(i).copied().unwrap_or(0.0));
+    }
+    for (i, expected) in oracle.iter().enumerate() {
+        let got = actual[latency + i];
+        assert!(
+            (got - expected).abs() < 2.0e-4,
+            "oracle mismatch at convolution sample {i}: got {got}, expected {expected}"
+        );
+    }
+}
+
+#[test]
+fn nupc_preserves_absolute_offsets_across_partition_levels() {
+    let min_block = 64;
+    let mut ir = vec![0.0; 1025];
+    for (index, gain) in [
+        (0, 0.5),
+        (127, -0.25),
+        (128, 0.75),
+        (511, 0.2),
+        (1024, -0.1),
+    ] {
+        ir[index] = gain;
+    }
+    let input: Vec<f32> = (0..257)
+        .map(|i| ((i * 17 % 31) as f32 - 15.0) / 31.0)
+        .collect();
+    assert_matches_delayed_oracle(NupcEngine::new(&ir, min_block), &input, &ir, min_block);
+}
+
+#[test]
+fn zero_latency_head_preserves_tail_offset() {
+    let min_block = 64;
+    let head_taps = 17;
+    let mut ir = vec![0.0; 513];
+    for (index, gain) in [(0, 0.5), (16, -0.25), (17, 0.75), (64, 0.2), (512, -0.1)] {
+        ir[index] = gain;
+    }
+    let input: Vec<f32> = (0..129)
+        .map(|i| ((i * 11 % 23) as f32 - 11.0) / 23.0)
+        .collect();
+    assert_matches_delayed_oracle(
+        NupcEngine::new_with_head(&ir, min_block, head_taps),
+        &input,
+        &ir,
+        0,
+    );
+}

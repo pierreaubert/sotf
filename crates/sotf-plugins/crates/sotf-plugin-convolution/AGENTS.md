@@ -6,9 +6,11 @@ FFT-based convolution plugin for impulse response processing, supporting uniform
 
 ```
 src/
-  lib.rs    -- ConvolutionPlugin (ParametricInPlacePlugin), ConvolutionPluginParams, ConvolutionState
-  nupc.rs   -- Non-Uniform Partitioned Convolution engine
-  params.rs -- Centralized parameter specs
+  lib/convolution_plugin.rs -- host contract, loading, UPC processing, transitions
+  lib/types.rs              -- serialized, active, completion, and retirement state
+  params.rs                 -- centralized parameter specs and generated UI layout
+
+plugins-spatial/src/nupc/ -- shared immutable NUPC kernels plus per-channel streaming histories
 ```
 
 Data flow: IR file loaded (WAV/FLAC via Symphonia, resampled via rubato if needed) -> partitioned into FFT blocks -> input accumulated in `PARTITION_SIZE` (1024) chunks -> forward FFT -> complex multiply-accumulate with IR partitions (FDL ring buffer) -> inverse FFT -> overlap-add -> mix/gain application.
@@ -41,7 +43,9 @@ cargo test -p sotf-plugin-convolution
 - The FDL (Frequency Domain Line) uses a flat ring buffer with `fdl_head` pointer to avoid `rotate_right` overhead.
 - NUPC (`nupc.rs`) uses non-uniform partition sizes for long IRs: small partitions for low latency on early reflections, larger partitions for efficiency on late reverb. Enabled by default.
 - `zero_latency_head` mode processes the first `head_taps` samples via direct time-domain convolution (no latency), with the rest using partitioned FFT. Useful for preserving transient attacks.
-- IR partitions are processed in parallel using rayon for multi-channel convolution.
+- UPC accumulation stays on the callback thread; it never dispatches through Rayon's global pool.
 - Complex multiply-accumulate uses SIMD (`complex_mul_add_simd` from sotf-host).
 - Lock-free IR swapping via `ArcSwap` allows changing IRs without blocking the audio thread.
 - Channel mapping: if IR has fewer channels than input, channels are mapped cyclically.
+- Never drop a replaced backend or error string on the callback; use the retirement queues.
+- Preserve the configured latency in inactive/loading/failed/cleared states.

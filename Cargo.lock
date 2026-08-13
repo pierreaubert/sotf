@@ -10567,7 +10567,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-convolution"
-version = "0.5.7"
+version = "0.5.11"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",

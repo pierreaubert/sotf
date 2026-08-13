@@ -1,7 +1,72 @@
-use super::partition_level::PartitionLevel;
+use super::partition_level::{PartitionKernel, PartitionLevel};
 use super::time_domain_head::TimeDomainHead;
 use super::types::plan_partitions;
 use rustfft::FftPlanner;
+use std::sync::Arc;
+
+pub struct NupcKernel {
+    levels: Vec<(Arc<PartitionKernel>, usize)>,
+    min_block: usize,
+    head_taps: Option<Arc<[f32]>>,
+}
+
+impl NupcKernel {
+    pub fn new(ir: &[f32], min_block: usize) -> Self {
+        let specs = plan_partitions(ir.len(), min_block);
+        let mut planner = FftPlanner::new();
+        let levels = specs
+            .iter()
+            .map(|spec| {
+                let output_delay = min_block + spec.offset - spec.block_size;
+                (PartitionKernel::new(spec, ir, &mut planner), output_delay)
+            })
+            .collect();
+        Self {
+            levels,
+            min_block,
+            head_taps: None,
+        }
+    }
+
+    pub fn new_with_head(ir: &[f32], min_block: usize, head_taps: usize) -> Self {
+        let head_len = head_taps.min(ir.len());
+        if head_len == 0 {
+            return Self::new(ir, min_block);
+        }
+        let tail = &ir[head_len..];
+        let specs = plan_partitions(tail.len(), min_block.min(head_len));
+        let mut planner = FftPlanner::new();
+        let levels = specs
+            .iter()
+            .map(|spec| {
+                let absolute_offset = head_len + spec.offset;
+                let output_delay = absolute_offset - spec.block_size;
+                (PartitionKernel::new(spec, tail, &mut planner), output_delay)
+            })
+            .collect();
+        Self {
+            levels,
+            min_block,
+            head_taps: Some(Arc::from(&ir[..head_len])),
+        }
+    }
+
+    pub fn instantiate(&self) -> NupcEngine {
+        NupcEngine {
+            levels: self
+                .levels
+                .iter()
+                .map(|(kernel, delay)| PartitionLevel::from_kernel(Arc::clone(kernel), *delay))
+                .collect(),
+            min_block: self.min_block,
+            td_head: self
+                .head_taps
+                .as_ref()
+                .map(|taps| TimeDomainHead::from_taps(Arc::clone(taps))),
+            td_head_len: self.head_taps.as_ref().map_or(0, |taps| taps.len()),
+        }
+    }
+}
 
 /// Non-Uniform Partitioned Convolution engine.
 ///
@@ -25,20 +90,7 @@ impl NupcEngine {
     /// * `ir` - Impulse response samples (single channel)
     /// * `min_block` - Minimum block size (determines latency)
     pub fn new(ir: &[f32], min_block: usize) -> Self {
-        let specs = plan_partitions(ir.len(), min_block);
-        let mut planner = FftPlanner::new();
-
-        let levels: Vec<PartitionLevel> = specs
-            .iter()
-            .map(|spec| PartitionLevel::new(spec, ir, &mut planner))
-            .collect();
-
-        Self {
-            levels,
-            min_block,
-            td_head: None,
-            td_head_len: 0,
-        }
+        NupcKernel::new(ir, min_block).instantiate()
     }
 
     /// Create with a time-domain head for zero-latency processing.
@@ -47,32 +99,7 @@ impl NupcEngine {
     /// (zero latency). The remaining IR is handled by the FFT levels.
     /// The FFT partition plan starts at offset `head_taps` into the IR.
     pub fn new_with_head(ir: &[f32], min_block: usize, head_taps: usize) -> Self {
-        let head_len = head_taps.min(ir.len());
-        if head_len == 0 {
-            return Self::new(ir, min_block);
-        }
-
-        let td_head = TimeDomainHead::new(ir, head_len);
-
-        // Build FFT levels for the tail (IR starting at head_len)
-        let tail = if head_len < ir.len() {
-            &ir[head_len..]
-        } else {
-            &[]
-        };
-        let specs = plan_partitions(tail.len(), min_block);
-        let mut planner = FftPlanner::new();
-        let levels: Vec<PartitionLevel> = specs
-            .iter()
-            .map(|spec| PartitionLevel::new(spec, tail, &mut planner))
-            .collect();
-
-        Self {
-            levels,
-            min_block,
-            td_head: Some(td_head),
-            td_head_len: head_len,
-        }
+        NupcKernel::new_with_head(ir, min_block, head_taps).instantiate()
     }
 
     /// Process a single sample through all partition levels.
@@ -117,6 +144,15 @@ impl NupcEngine {
     /// Get the latency in samples (= min_block).
     pub fn latency_samples(&self) -> usize {
         self.min_block
+    }
+
+    pub fn shares_ir_kernel_with(&self, other: &Self) -> bool {
+        self.levels.len() == other.levels.len()
+            && self
+                .levels
+                .iter()
+                .zip(&other.levels)
+                .all(|(a, b)| Arc::ptr_eq(&a.kernel, &b.kernel))
     }
 }
 

@@ -1,6 +1,7 @@
-use super::convolution_plugin::ConvolutionPlugin;
+use super::convolution_plugin::{ConvolutionPlugin, defer_or_forget};
 use super::types::ConvolutionPluginParams;
 use super::types::ConvolutionState;
+use super::types::{ConvolutionLoadStatus, IrLoadCompletion};
 use crate::misc::{FFT_SIZE, PARTITION_SIZE};
 use plugins_spatial::nupc;
 use rustfft::FftPlanner;
@@ -10,7 +11,231 @@ use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 use std::sync::Arc;
 
+#[test]
+fn reclamation_queue_failure_never_drops_on_the_caller() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct DropCounter(Arc<AtomicUsize>);
+    impl Drop for DropCounter {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    let drops = Arc::new(AtomicUsize::new(0));
+    let mut pending = Some(DropCounter(Arc::clone(&drops)));
+    defer_or_forget(
+        &mut pending,
+        std::sync::mpsc::TrySendError::Full(DropCounter(Arc::clone(&drops))),
+    );
+    defer_or_forget(
+        &mut pending,
+        std::sync::mpsc::TrySendError::Disconnected(DropCounter(Arc::clone(&drops))),
+    );
+    assert_eq!(drops.load(Ordering::Relaxed), 0);
+
+    drop(pending);
+    assert_eq!(drops.load(Ordering::Relaxed), 1);
+}
+
+#[path = "tests/misc.rs"]
 mod misc;
+
+#[test]
+fn from_params_rebuilds_host_visible_values() {
+    let params = ConvolutionPluginParams {
+        ir_file: String::new(),
+        mix: 0.25,
+        gain_db: 6.0,
+        use_nupc: true,
+        zero_latency_head: true,
+        head_taps: 256,
+    };
+    let plugin = ConvolutionPlugin::from_params(1, 48_000, params).unwrap();
+    let values = plugin.current_values();
+
+    assert_eq!(
+        values.get(&ParameterId::from("mix")),
+        Some(&ParameterValue::Float(0.25))
+    );
+    assert_eq!(
+        values.get(&ParameterId::from("gain_db")),
+        Some(&ParameterValue::Float(6.0))
+    );
+    assert_eq!(
+        values.get(&ParameterId::from("use_nupc")),
+        Some(&ParameterValue::Bool(true))
+    );
+    assert_eq!(
+        values.get(&ParameterId::from("zero_latency_head")),
+        Some(&ParameterValue::Bool(true))
+    );
+    assert_eq!(
+        values.get(&ParameterId::from("head_taps")),
+        Some(&ParameterValue::Int(256))
+    );
+}
+
+#[test]
+fn new_uses_the_declared_nupc_default() {
+    let plugin = ConvolutionPlugin::new(1, 48_000);
+    assert_eq!(plugin.use_nupc, crate::params::PARAMS[3].default_bool());
+}
+
+#[test]
+fn construction_rejects_every_out_of_contract_value() {
+    for params in [
+        ConvolutionPluginParams {
+            mix: f32::NAN,
+            ..ConvolutionPluginParams::default()
+        },
+        ConvolutionPluginParams {
+            mix: -0.01,
+            ..ConvolutionPluginParams::default()
+        },
+        ConvolutionPluginParams {
+            gain_db: 20.01,
+            ..ConvolutionPluginParams::default()
+        },
+        ConvolutionPluginParams {
+            head_taps: 31,
+            ..ConvolutionPluginParams::default()
+        },
+        ConvolutionPluginParams {
+            head_taps: 513,
+            ..ConvolutionPluginParams::default()
+        },
+    ] {
+        assert!(ConvolutionPlugin::from_params(1, 48_000, params).is_err());
+    }
+    assert!(ConvolutionPlugin::from_params(0, 48_000, ConvolutionPluginParams::default()).is_err());
+    assert!(ConvolutionPlugin::from_params(1, 0, ConvolutionPluginParams::default()).is_err());
+}
+
+#[test]
+fn ir_metadata_and_memory_limits_are_enforced_before_planning() {
+    assert!(ConvolutionPlugin::validate_ir_limits(&[vec![1.0]], 0, 48_000, 2, true).is_err());
+    assert!(ConvolutionPlugin::validate_ir_limits(&[], 48_000, 48_000, 2, true).is_err());
+    let too_many_channels = vec![vec![1.0]; 33];
+    assert!(
+        ConvolutionPlugin::validate_ir_limits(&too_many_channels, 48_000, 48_000, 2, true).is_err()
+    );
+    let too_long = vec![vec![0.0; 48_000 * 30 + 1]];
+    assert!(ConvolutionPlugin::validate_ir_limits(&too_long, 48_000, 48_000, 2, false).is_err());
+    let large_but_duration_valid = vec![vec![0.0; 48_000 * 30]];
+    assert!(
+        ConvolutionPlugin::validate_ir_limits(
+            &large_but_duration_valid,
+            48_000,
+            48_000,
+            128,
+            true,
+        )
+        .is_err(),
+        "channel-expanded NUPC state must respect the memory budget"
+    );
+}
+
+#[test]
+fn upc_automation_envelope_is_captured_at_input_time() {
+    let mut plugin = make_delta_ir_plugin(false, false);
+    plugin.mix.reset(1.0);
+    let mut first = vec![0.25; 100];
+    plugin
+        .process_in_place(&mut first, &ProcessContext::new(48_000, 100))
+        .unwrap();
+    plugin
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.0))
+        .unwrap();
+    let mut rest = vec![0.25; PARTITION_SIZE - 100];
+    plugin
+        .process_in_place(
+            &mut rest,
+            &ProcessContext::new(48_000, PARTITION_SIZE - 100),
+        )
+        .unwrap();
+    assert_eq!(plugin.mix_envelope[99], 1.0);
+    assert!(plugin.mix_envelope[100] < 1.0);
+    assert!(plugin.mix_envelope[100] > plugin.mix_envelope[PARTITION_SIZE - 1]);
+}
+
+#[test]
+fn stale_and_failed_async_generations_never_replace_last_known_good() {
+    let mut plugin = make_delta_ir_plugin(false, false);
+    let original_state = plugin.state.load_full();
+    plugin.desired_generation = 7;
+    plugin.load_status.store(
+        ConvolutionLoadStatus::Loading as u8,
+        std::sync::atomic::Ordering::Release,
+    );
+    let (tx, rx) = std::sync::mpsc::channel();
+    plugin.ir_load_result_rx = Some(rx);
+    tx.send(IrLoadCompletion {
+        generation: 6,
+        result: Err("stale failure".into()),
+    })
+    .unwrap();
+    let mut block = vec![0.0; 16];
+    plugin
+        .process_in_place(&mut block, &ProcessContext::new(48_000, 16))
+        .unwrap();
+    assert!(Arc::ptr_eq(&original_state, &plugin.state.load_full()));
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    plugin.ir_load_result_rx = Some(rx);
+    tx.send(IrLoadCompletion {
+        generation: 7,
+        result: Err("decode failed".into()),
+    })
+    .unwrap();
+    plugin
+        .process_in_place(&mut block, &ProcessContext::new(48_000, 16))
+        .unwrap();
+    assert_eq!(plugin.load_status(), ConvolutionLoadStatus::Failed);
+    assert!(Arc::ptr_eq(&original_state, &plugin.state.load_full()));
+}
+
+#[test]
+fn clear_transition_has_a_bounded_sample_discontinuity() {
+    let mut plugin = make_delta_ir_plugin(false, false);
+    plugin.last_output[0] = 1.0;
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("ir_file"),
+            ParameterValue::String(String::new()),
+        )
+        .unwrap();
+    let mut block = vec![0.0; 128];
+    plugin
+        .process_in_place(&mut block, &ProcessContext::new(48_000, 128))
+        .unwrap();
+    let mut previous = 1.0;
+    for sample in block {
+        assert!(
+            (sample - previous).abs() <= 1.0 / 128.0 + 1e-6,
+            "transition jumped from {previous} to {sample}"
+        );
+        previous = sample;
+    }
+    assert!(previous.abs() < 1e-6);
+}
+
+#[test]
+fn clearing_ir_cancels_pending_async_result() {
+    let mut plugin = ConvolutionPlugin::new(1, 48_000);
+    let (_tx, rx) = std::sync::mpsc::channel();
+    plugin.ir_load_result_rx = Some(rx);
+
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("ir_file"),
+            ParameterValue::String(String::new()),
+        )
+        .unwrap();
+
+    assert!(plugin.ir_load_result_rx.is_none());
+    assert!(plugin.state.load().is_none());
+}
 
 #[test]
 fn test_from_params_propagates_ir_load_errors() {
@@ -42,6 +267,72 @@ fn test_ir_file_parameter_reports_load_errors() {
 fn uniform_partitioned_convolution_reports_partition_latency() {
     let plugin = ConvolutionPlugin::new(1, 48_000);
     assert_eq!(plugin.latency_samples(), PARTITION_SIZE);
+}
+
+fn resampled_delta(
+    source_rate: u32,
+    target_rate: u32,
+    source_len: usize,
+    source_index: usize,
+) -> Vec<f32> {
+    let mut ir = vec![0.0_f32; source_len];
+    ir[source_index] = 1.0;
+    ConvolutionPlugin::resample_ir(&[ir], source_rate, target_rate)
+        .expect("delta IR should resample")
+        .into_iter()
+        .next()
+        .expect("one-channel resampling should return one channel")
+}
+
+#[test]
+fn resampled_ir_delta_at_start_has_no_rubato_startup_delay() {
+    for (source_rate, target_rate) in [(44_100, 48_000), (48_000, 44_100), (96_000, 48_000)] {
+        let output = resampled_delta(source_rate, target_rate, 4097, 0);
+        assert_eq!(
+            output.len(),
+            (4097.0 * target_rate as f64 / source_rate as f64).ceil() as usize,
+            "resampled clip length must be rounded from the source clip length"
+        );
+        let start_peak = output[..output.len().min(32)]
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+            .map(|(index, sample)| (index, sample.abs()))
+            .expect("resampled output must not be empty");
+        assert!(
+            start_peak.1 > 0.1 && start_peak.0 < 16,
+            "start impulse must remain near the start after delay compensation: rate {source_rate}->{target_rate}, peak={start_peak:?}"
+        );
+    }
+}
+
+#[test]
+fn resampled_ir_delta_at_tail_preserves_the_last_response() {
+    for (source_rate, target_rate) in [(44_100, 48_000), (48_000, 44_100), (96_000, 48_000)] {
+        let source_len = 4097;
+        let output = resampled_delta(source_rate, target_rate, source_len, source_len - 1);
+        let expected_index = ((source_len - 1) as f64 * target_rate as f64 / source_rate as f64)
+            .round() as usize;
+        let search_start = expected_index.saturating_sub(8);
+        let search_end = (expected_index + 9).min(output.len());
+        let local_peak = output[search_start..search_end]
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
+            .map(|(offset, sample)| (search_start + offset, sample.abs()))
+            .expect("tail response must be retained in the output clip");
+
+        assert!(
+            local_peak.1 > 0.05,
+            "tail impulse response was truncated during resampling: rate {source_rate}->{target_rate}, expected={expected_index}, peak={local_peak:?}, output_len={} ",
+            output.len()
+        );
+        assert!(
+            output[expected_index.min(output.len() - 1)].abs() > 0.01
+                || local_peak.1 > 0.2,
+            "tail response should remain centered near its nominal target position: rate {source_rate}->{target_rate}, expected={expected_index}, peak={local_peak:?}"
+        );
+    }
 }
 
 #[test]
@@ -78,8 +369,8 @@ fn make_delta_ir_plugin(use_nupc: bool, zero_latency_head: bool) -> ConvolutionP
         partitions: vec![vec![partition]],
         num_partitions: 1,
         ir_channels: 1,
-        fft_forward,
-        fft_inverse,
+        fft_forward: Some(fft_forward),
+        fft_inverse: Some(fft_inverse),
     })));
     plugin.fdl_flat = vec![Complex::new(0.0, 0.0); FFT_SIZE];
     plugin.fft_scratch = vec![Complex::new(0.0, 0.0); scratch_len];
@@ -234,6 +525,28 @@ fn test_set_parameter_long_ir_loads_without_process_allocations() {
         plugin.ir_load_result_rx.is_none(),
         "IR load should complete"
     );
+
+    let replacement = ConvolutionPlugin::build_ir_state(
+        ir_path.to_str().unwrap(),
+        1,
+        48_000,
+        plugin.use_nupc,
+        plugin.zero_latency_head,
+        plugin.head_taps,
+    )
+    .unwrap();
+    plugin.desired_generation += 1;
+    let generation = plugin.desired_generation;
+    let (tx, rx) = std::sync::mpsc::channel();
+    plugin.ir_load_result_rx = Some(rx);
+    tx.send(IrLoadCompletion {
+        generation,
+        result: Ok(replacement),
+    })
+    .unwrap();
+    assert_no_allocs("ConvolutionPlugin async install/retire", || {
+        plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    });
 
     assert_no_allocs("ConvolutionPlugin::process_in_place long IR", || {
         for _ in 0..100 {

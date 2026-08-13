@@ -2,9 +2,11 @@
 ///
 /// Provides zero additional latency by processing samples immediately.
 /// Used in combination with FFT-based partition levels for the IR tail.
+use std::sync::Arc;
+
 pub(super) struct TimeDomainHead {
     /// First N samples of the IR (reversed for direct convolution)
-    pub(super) ir_taps: Vec<f32>,
+    pub(super) ir_taps: Arc<[f32]>,
     /// Circular input history buffer
     pub(super) history: Vec<f32>,
     /// Write position in history
@@ -14,13 +16,8 @@ pub(super) struct TimeDomainHead {
 }
 
 impl TimeDomainHead {
-    pub(super) fn new(ir: &[f32], n_taps: usize) -> Self {
-        let n = n_taps.min(ir.len());
-        // Reverse the IR for direct convolution: y[n] = sum(h[k] * x[n-k])
-        let mut ir_taps = vec![0.0; n];
-        for (i, tap) in ir_taps.iter_mut().enumerate() {
-            *tap = ir[i];
-        }
+    pub(super) fn from_taps(ir_taps: Arc<[f32]>) -> Self {
+        let n = ir_taps.len();
         Self {
             ir_taps,
             history: vec![0.0; n],
@@ -34,7 +31,7 @@ impl TimeDomainHead {
         self.history[self.pos] = sample;
         let mut output = 0.0;
         let mut read = self.pos;
-        for &tap in &self.ir_taps {
+        for &tap in self.ir_taps.iter() {
             output += tap * self.history[read];
             if read == 0 {
                 read = self.n_taps - 1;
