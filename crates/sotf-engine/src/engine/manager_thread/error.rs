@@ -16,8 +16,6 @@ pub(super) enum ConfigError {
     ProcessingError { reason: String },
     /// Plugin host construction failed before the candidate could be applied.
     PluginBuild { diagnostic: PluginBuildDiagnostic },
-    /// Unexpected response from processing thread
-    UnexpectedResponse,
     /// Communication channel disconnected
     ChannelDisconnected,
 }
@@ -42,9 +40,6 @@ impl std::fmt::Display for ConfigError {
             }
             Self::PluginBuild { diagnostic } => {
                 write!(f, "Plugin build error: {}", diagnostic)
-            }
-            Self::UnexpectedResponse => {
-                write!(f, "Unexpected response from processing thread")
             }
             Self::ChannelDisconnected => {
                 write!(f, "Communication channel disconnected")

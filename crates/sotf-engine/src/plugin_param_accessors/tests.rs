@@ -63,16 +63,6 @@ fn validate_all_params_have_layout_coverage() {
 /// registered it in `parameters()` / `set_parameter()`, causing silent drops.
 #[test]
 fn validate_engine_keys_exist_in_dsp_plugin() {
-    let known_gaps: std::collections::HashSet<(&str, &str)> = [
-        ("Compressor", "sidechain_hpf_hz"),
-        ("Compressor", "sidechain_hpf_order"),
-        ("Compressor", "detection_mode"),
-        ("Compressor", "program_dependent_release"),
-        ("Compressor", "sidechain_external"),
-    ]
-    .into_iter()
-    .collect();
-
     let mut all_errors = Vec::new();
     for pt in PluginType::all() {
         let name = pt.name();
@@ -107,7 +97,7 @@ fn validate_engine_keys_exist_in_dsp_plugin() {
             let Some((engine_key, _)) = settings.engine_param_at(i) else {
                 continue;
             };
-            if known_gaps.contains(&(name, engine_key.as_str())) {
+            if spec.update_mode == param_specs::UpdateMode::Structural {
                 continue;
             }
             if !dsp_keys.contains(engine_key.as_str()) {

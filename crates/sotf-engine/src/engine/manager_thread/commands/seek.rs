@@ -10,12 +10,14 @@ impl ManagerCommandHandler for SeekCommand {
         let position = self.0;
         log::debug!("[Manager Thread] Seek to {:.2}s", position);
 
-        if let Err(e) = ctx.decoder.send_command(DecoderCommand::Seek(position)) {
-            return ManagerResponse::Error(e);
-        }
+        let request_id = match ctx.decoder.send_command(DecoderCommand::Seek(position)) {
+            Ok(request_id) => request_id,
+            Err(e) => return ManagerResponse::Error(e),
+        };
 
         match super::super::wait::wait_for_decoder_ack(
             ctx.decoder,
+            request_id,
             std::time::Duration::from_millis(super::super::consts::DECODER_COMMAND_TIMEOUT_MS),
         ) {
             Ok(()) => {
@@ -39,15 +41,17 @@ impl ManagerCommandHandler for SeekCommand {
                     "[Manager Thread] Seek found no active decoder; reopening current source at {:.2}s",
                     position
                 );
-                if let Err(play_err) = ctx
+                let play_request_id = match ctx
                     .decoder
                     .send_command(DecoderCommand::PlayAt(source.clone(), position))
                 {
-                    return ManagerResponse::Error(play_err);
-                }
+                    Ok(request_id) => request_id,
+                    Err(play_err) => return ManagerResponse::Error(play_err),
+                };
 
                 match super::super::wait::wait_for_decoder_ack(
                     ctx.decoder,
+                    play_request_id,
                     std::time::Duration::from_millis(
                         super::super::consts::DECODER_COMMAND_TIMEOUT_MS,
                     ),

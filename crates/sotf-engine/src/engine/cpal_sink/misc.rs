@@ -1,7 +1,6 @@
 use super::super::ThreadEvent;
 use cpal::SampleFormat;
 use rtrb::{CopyToUninit, chunks::WriteChunkUninit};
-use std::sync::mpsc::Sender;
 
 /// Max input channels for the stack-allocated downmix coefficient arrays.
 #[allow(dead_code)]
@@ -28,8 +27,12 @@ pub(super) fn should_fallback_from_virtual_default(
     requested_device.is_none() && !allow_virtual && is_virtual_output_device_name(candidate_name)
 }
 
-pub(super) fn send_thread_event(event_tx: &Sender<ThreadEvent>, event: ThreadEvent, context: &str) {
-    if let Err(e) = event_tx.send(event) {
+pub(super) fn send_thread_event(
+    event_tx: &crossbeam::channel::Sender<ThreadEvent>,
+    event: ThreadEvent,
+    context: &str,
+) {
+    if let Err(e) = event_tx.try_send(event) {
         crate::rate_limited_log!(trace, 5, "[CpalSink] Dropped event in {}: {}", context, e);
     }
 }

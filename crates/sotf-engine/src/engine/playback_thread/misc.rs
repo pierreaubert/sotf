@@ -3,7 +3,7 @@ use crate::OutputAccessStatus;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{Device, SampleFormat};
 use rtrb::{CopyToUninit, Producer, chunks::WriteChunkUninit};
-use std::sync::mpsc::{Sender, SyncSender};
+use std::sync::mpsc::SyncSender;
 
 pub(super) const SPIN_MS_RINGBUFFER: u64 = 5;
 
@@ -12,7 +12,7 @@ pub(super) const MAX_DOWNMIX_CH: usize = 32;
 
 /// Bulk-copy a slice into a ring buffer chunk using memcpy instead of per-element iteration.
 /// For 96K f32 samples this is ~2× faster than `fill_from_iter`.
-pub(super) fn write_chunk_bulk(mut chunk: WriteChunkUninit<'_, f32>, data: &[f32]) {
+pub(in crate::engine) fn write_chunk_bulk(mut chunk: WriteChunkUninit<'_, f32>, data: &[f32]) {
     let (first, second) = chunk.as_mut_slices();
     let first_len = first.len().min(data.len());
     data[..first_len].copy_to_uninit(&mut first[..first_len]);
@@ -26,11 +26,11 @@ pub(super) fn write_chunk_bulk(mut chunk: WriteChunkUninit<'_, f32>, data: &[f32
 }
 
 pub(super) fn send_playback_event(
-    event_tx: &Sender<ThreadEvent>,
+    event_tx: &crossbeam::channel::Sender<ThreadEvent>,
     event: ThreadEvent,
     context: &str,
 ) {
-    if let Err(e) = event_tx.send(event) {
+    if let Err(e) = event_tx.try_send(event) {
         crate::rate_limited_log!(
             trace,
             5,
@@ -164,7 +164,7 @@ pub(super) fn select_playback_device(
 
 #[cfg(target_os = "macos")]
 pub(super) fn set_output_access_status(
-    event_tx: &Sender<ThreadEvent>,
+    event_tx: &crossbeam::channel::Sender<ThreadEvent>,
     status: &mut OutputAccessStatus,
     new_status: OutputAccessStatus,
     context: &str,

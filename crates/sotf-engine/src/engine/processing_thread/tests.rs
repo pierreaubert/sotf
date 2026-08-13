@@ -28,6 +28,14 @@ use sotf_plugins::ExternalPluginProcessEvent;
 use sotf_plugins::IsolatedExternalPluginWorkerReport;
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use sotf_plugins::{PluginSandboxBackendCode, PluginSandboxStatusCode};
+
+fn request(command: ProcessingCommand) -> super::ProcessingRequest {
+    super::ProcessingRequest {
+        id: 1,
+        command,
+        ticket: super::ProcessingCommandTicket::new(),
+    }
+}
 use std::sync::Arc;
 
 mod misc;
@@ -247,6 +255,19 @@ fn crossfade_zero_frame_block_completes_instead_of_leaking_prev_host() {
 }
 
 #[test]
+fn same_rate_crossfade_uses_constant_power_gains() {
+    let (old_start, new_start) = ProcessingState::equal_power_crossfade_gains(0.0);
+    let (old_mid, new_mid) = ProcessingState::equal_power_crossfade_gains(0.5);
+    let (old_end, new_end) = ProcessingState::equal_power_crossfade_gains(1.0);
+
+    assert!((old_start - 1.0).abs() < 1.0e-6);
+    assert!(new_start.abs() < 1.0e-6);
+    assert!((old_mid * old_mid + new_mid * new_mid - 1.0).abs() < 1.0e-6);
+    assert!(old_end.abs() < 1.0e-6);
+    assert!((new_end - 1.0).abs() < 1.0e-6);
+}
+
+#[test]
 fn output_rate_changing_host_update_fades_through_silence_without_a_jump() {
     let sample_rate = 48_000;
     for reverse_rate_change in [false, true] {
@@ -290,7 +311,7 @@ fn output_rate_changing_host_update_fades_through_silence_without_a_jump() {
         );
         *state.host = old_host;
         let (response_tx, _response_rx) = std::sync::mpsc::channel();
-        let (event_tx, _event_rx) = std::sync::mpsc::channel();
+        let (event_tx, _event_rx) = crossbeam::channel::bounded(32);
 
         let previous_latency = state.host.total_latency_samples();
         let prepared = PreparedHostUpdate::prepare(
@@ -301,7 +322,7 @@ fn output_rate_changing_host_update_fades_through_silence_without_a_jump() {
         )
         .unwrap();
         assert!(!handle_processing_command(
-            ProcessingCommand::CommitHostUpdate(prepared),
+            request(ProcessingCommand::CommitHostUpdate(prepared)),
             &mut state,
             &response_tx,
             &event_tx,
@@ -363,10 +384,10 @@ fn same_rate_latency_change_prepares_an_aligned_crossfade() {
     )
     .unwrap();
     let (response_tx, response_rx) = std::sync::mpsc::channel();
-    let (event_tx, _event_rx) = std::sync::mpsc::channel();
+    let (event_tx, _event_rx) = crossbeam::channel::bounded(32);
 
     handle_processing_command(
-        ProcessingCommand::CommitHostUpdate(prepared),
+        request(ProcessingCommand::CommitHostUpdate(prepared)),
         &mut state,
         &response_tx,
         &event_tx,
@@ -376,7 +397,7 @@ fn same_rate_latency_change_prepares_an_aligned_crossfade() {
     assert!(!state.crossfade_through_silence);
     assert!(state.transition_delay_samples() > 0);
     assert!(matches!(
-        response_rx.recv().unwrap(),
+        response_rx.recv().unwrap().response,
         super::super::ProcessingResponse::PluginChainUpdated {
             previous_latency_samples: 0,
             latency_samples,
@@ -384,6 +405,107 @@ fn same_rate_latency_change_prepares_an_aligned_crossfade() {
             ..
         } if latency_samples > 0
     ));
+}
+
+#[test]
+fn bypass_retires_an_in_flight_crossfade() {
+    let sample_rate = 48_000;
+    let current = PluginConfig::new("gain", serde_json::json!({ "gain_db": 0.0 }));
+    let candidate = PluginConfig::new("gain", serde_json::json!({ "gain_db": -6.0 }));
+    let (mut current_host, _) = build_plugin_host(&[current], sample_rate, 2).unwrap();
+    let (mut candidate_host, _) = build_plugin_host(&[candidate], sample_rate, 2).unwrap();
+    current_host.build().unwrap();
+    candidate_host.build().unwrap();
+
+    let mut state = ProcessingState::new(
+        2,
+        sample_rate,
+        #[cfg(feature = "streaming")]
+        None,
+    );
+    *state.host = current_host;
+    let prepared = PreparedHostUpdate::prepare(candidate_host, sample_rate, 2, 0).unwrap();
+    let (response_tx, _response_rx) = std::sync::mpsc::channel();
+    let (event_tx, _event_rx) = crossbeam::channel::bounded(32);
+
+    handle_processing_command(
+        request(ProcessingCommand::CommitHostUpdate(prepared)),
+        &mut state,
+        &response_tx,
+        &event_tx,
+    );
+    assert!(state.prev_host.is_some());
+
+    handle_processing_command(
+        request(ProcessingCommand::Bypass(true)),
+        &mut state,
+        &response_tx,
+        &event_tx,
+    );
+
+    assert!(state.bypassed);
+    assert!(state.prev_host.is_none());
+    assert_eq!(state.crossfade_progress, 1.0);
+    assert_eq!(state.transition_delay_samples(), 0);
+}
+
+#[test]
+fn bypass_preserves_frames_across_channel_changing_host() {
+    let config = PluginConfig::new("upmixer", serde_json::json!({"speaker_config": "5.0"}));
+    let (mut host, _) = build_plugin_host(&[config], 48_000, 2).unwrap();
+    host.build().unwrap();
+    let mut state = ProcessingState::new(
+        2,
+        48_000,
+        #[cfg(feature = "streaming")]
+        None,
+    );
+    *state.host = host;
+    state.channels = 5;
+    state.bypassed = true;
+
+    let mut output = [99.0; 10];
+    assert_eq!(
+        state
+            .process_frame(&[1.0, 2.0, 3.0, 4.0], &mut output, 2)
+            .unwrap(),
+        2
+    );
+    assert_eq!(output, [1.0, 2.0, 0.0, 0.0, 0.0, 3.0, 4.0, 0.0, 0.0, 0.0]);
+}
+
+#[test]
+fn live_structural_parameter_is_rejected_before_mutation() {
+    let config = PluginConfig::new("upmixer", serde_json::json!({"speaker_config": "5.0"}));
+    let (mut host, _) = build_plugin_host(&[config], 48_000, 2).unwrap();
+    host.build().unwrap();
+    let mut state = ProcessingState::new(
+        2,
+        48_000,
+        #[cfg(feature = "streaming")]
+        None,
+    );
+    *state.host = host;
+    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let (event_tx, _event_rx) = crossbeam::channel::bounded(32);
+
+    handle_processing_command(
+        request(ProcessingCommand::SetParameter {
+            plugin_index: 0,
+            param_id: "speaker_config".to_string(),
+            value: "3".to_string(),
+        }),
+        &mut state,
+        &response_tx,
+        &event_tx,
+    );
+
+    assert!(matches!(
+        response_rx.recv().unwrap().response,
+        super::super::ProcessingResponse::Error(message)
+            if message.contains("requires rebuilding")
+    ));
+    assert_eq!(state.host.output_channels(), 5);
 }
 
 #[test]
@@ -406,10 +528,10 @@ fn prepared_host_update_rejects_a_stale_base_without_replacing_the_working_host(
     );
     *state.host = current_host;
     let (response_tx, response_rx) = std::sync::mpsc::channel();
-    let (event_tx, _event_rx) = std::sync::mpsc::channel();
+    let (event_tx, _event_rx) = crossbeam::channel::bounded(32);
 
     handle_processing_command(
-        ProcessingCommand::CommitHostUpdate(prepared),
+        request(ProcessingCommand::CommitHostUpdate(prepared)),
         &mut state,
         &response_tx,
         &event_tx,
@@ -417,9 +539,43 @@ fn prepared_host_update_rejects_a_stale_base_without_replacing_the_working_host(
 
     assert_eq!(state.host.total_latency_samples(), 0);
     assert!(matches!(
-        response_rx.recv().unwrap(),
+        response_rx.recv().unwrap().response,
         super::super::ProcessingResponse::Error(message)
             if message.contains("stale prepared host update")
+    ));
+}
+
+#[test]
+fn cancelled_prepared_host_update_cannot_commit() {
+    let sample_rate = 48_000;
+    let current = PluginConfig::new("gain", serde_json::json!({ "gain_db": 0.0 }));
+    let candidate = PluginConfig::new("gain", serde_json::json!({ "gain_db": -6.0 }));
+    let (mut current_host, _) = build_plugin_host(&[current], sample_rate, 2).unwrap();
+    let (mut candidate_host, _) = build_plugin_host(&[candidate], sample_rate, 2).unwrap();
+    current_host.build().unwrap();
+    candidate_host.build().unwrap();
+    let prepared = PreparedHostUpdate::prepare(candidate_host, sample_rate, 2, 0).unwrap();
+    assert!(prepared.ticket().cancel());
+
+    let mut state = ProcessingState::new(
+        2,
+        sample_rate,
+        #[cfg(feature = "streaming")]
+        None,
+    );
+    *state.host = current_host;
+    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let (event_tx, _event_rx) = crossbeam::channel::bounded(32);
+    handle_processing_command(
+        request(ProcessingCommand::CommitHostUpdate(prepared)),
+        &mut state,
+        &response_tx,
+        &event_tx,
+    );
+
+    assert!(matches!(
+        response_rx.recv().unwrap().response,
+        super::super::ProcessingResponse::Error(message) if message.contains("cancelled")
     ));
 }
 
@@ -451,7 +607,7 @@ fn processing_hot_path_uses_prepared_buffers_for_output_and_crossfade() {
 #[test]
 fn send_or_interrupt_delivers_message_when_buffer_has_space() {
     let (tx, rx) = std::sync::mpsc::sync_channel::<u32>(4);
-    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<ProcessingCommand>();
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<super::ProcessingRequest>();
 
     let handle = std::thread::spawn(move || send_or_interrupt(&tx, &cmd_rx, 42));
 
@@ -468,16 +624,16 @@ fn send_or_interrupt_returns_command_when_interrupted_during_backpressure() {
     let (tx, rx) = std::sync::mpsc::sync_channel::<u32>(1);
     tx.send(99).unwrap(); // Fill the buffer
 
-    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<ProcessingCommand>();
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<super::ProcessingRequest>();
 
     // Send a command that will be found during the backpressure retry
-    cmd_tx.send(ProcessingCommand::Stop).unwrap();
+    cmd_tx.send(request(ProcessingCommand::Stop)).unwrap();
 
     let handle = std::thread::spawn(move || send_or_interrupt(&tx, &cmd_rx, 42));
 
     let result = handle.join().expect("thread panicked");
     let (cmd, unsent_msg) = result.unwrap().expect("should have been interrupted");
-    assert!(matches!(cmd, ProcessingCommand::Stop));
+    assert!(matches!(cmd.command, ProcessingCommand::Stop));
     assert_eq!(unsent_msg.unwrap(), 42); // Message returned, not lost
     assert_eq!(rx.recv().unwrap(), 99); // Original message still in buffer
 }
@@ -485,12 +641,83 @@ fn send_or_interrupt_returns_command_when_interrupted_during_backpressure() {
 #[test]
 fn send_or_interrupt_errors_when_channel_disconnected() {
     let (tx, rx) = std::sync::mpsc::sync_channel::<u32>(4);
-    let (_cmd_tx, cmd_rx) = std::sync::mpsc::channel::<ProcessingCommand>();
+    let (_cmd_tx, cmd_rx) = std::sync::mpsc::channel::<super::ProcessingRequest>();
     drop(rx); // Disconnect the receiver
 
     let result = send_or_interrupt(&tx, &cmd_rx, 42);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("disconnected"));
+}
+
+#[test]
+fn correlated_processing_wait_buffers_unmatched_response() {
+    let (command_tx, _command_rx) = std::sync::mpsc::channel();
+    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let processing = super::ProcessingThread {
+        command_tx,
+        response_inbox: std::sync::Mutex::new(super::ProcessingResponseInbox {
+            rx: response_rx,
+            buffered: std::collections::HashMap::new(),
+            abandoned: std::collections::HashSet::new(),
+        }),
+        request_tickets: std::sync::Mutex::new(std::collections::HashMap::new()),
+        next_request_id: std::sync::atomic::AtomicU64::new(3),
+        thread_handle: None,
+        host_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+    };
+    response_tx
+        .send(super::ProcessingReply {
+            id: 1,
+            response: super::super::ProcessingResponse::Error("late".to_string()),
+        })
+        .unwrap();
+    response_tx
+        .send(super::ProcessingReply {
+            id: 2,
+            response: super::super::ProcessingResponse::Ok,
+        })
+        .unwrap();
+
+    assert!(matches!(
+        processing.try_recv_response_for(2),
+        Some(super::super::ProcessingResponse::Ok)
+    ));
+    assert!(matches!(
+        processing.try_recv_response_for(1),
+        Some(super::super::ProcessingResponse::Error(message)) if message == "late"
+    ));
+}
+
+#[test]
+fn cancelled_processing_request_is_rejected_before_mutation() {
+    let mut state = ProcessingState::new(
+        2,
+        48_000,
+        #[cfg(feature = "streaming")]
+        None,
+    );
+    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let (event_tx, _event_rx) = crossbeam::channel::bounded(32);
+    let ticket = super::ProcessingCommandTicket::new();
+    assert!(ticket.cancel());
+
+    let shutdown = handle_processing_command(
+        super::ProcessingRequest {
+            id: 7,
+            command: ProcessingCommand::Bypass(true),
+            ticket,
+        },
+        &mut state,
+        &response_tx,
+        &event_tx,
+    );
+
+    assert!(!shutdown);
+    assert!(!state.bypassed);
+    assert!(matches!(
+        response_rx.recv().unwrap().response,
+        super::super::ProcessingResponse::Error(message) if message.contains("cancelled")
+    ));
 }
 
 #[test]

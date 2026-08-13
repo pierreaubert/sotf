@@ -58,8 +58,9 @@ pub use sotf_host::{
 };
 pub use sotf_host::{
     EXTERNAL_PLUGIN_INSTANCE_ID_PARAMETER, ExternalHostingBackend, ExternalPlugin,
-    ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor, PluginFormat,
-    PluginFormatCapability, PluginScanStatus, PluginScanner, plugin_format_capabilities,
+    ExternalPluginSandboxMode, ExternalPluginState, ParameterEventSender, PluginDescriptor,
+    PluginFormat, PluginFormatCapability, PluginScanStatus, PluginScanner,
+    plugin_format_capabilities,
 };
 /// Parameter specifications: types from `sotf-host`, per-plugin definitions
 /// from individual plugin crates.

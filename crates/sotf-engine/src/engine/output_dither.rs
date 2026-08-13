@@ -48,11 +48,13 @@ impl TpdfDither {
     }
 }
 
+#[cfg(not(target_os = "ios"))]
 pub(super) trait DitheredFromF32: cpal::SizedSample {
     fn from_f32_dithered(sample: f32, dither: &mut TpdfDither, enabled: bool) -> Self;
     fn silence() -> Self;
 }
 
+#[cfg(not(target_os = "ios"))]
 macro_rules! impl_signed_dithered {
     ($ty:ty, $scale:expr) => {
         impl DitheredFromF32 for $ty {
@@ -76,6 +78,7 @@ macro_rules! impl_signed_dithered {
     };
 }
 
+#[cfg(not(target_os = "ios"))]
 macro_rules! impl_unsigned_dithered {
     ($ty:ty, $scale:expr) => {
         impl DitheredFromF32 for $ty {
@@ -99,9 +102,13 @@ macro_rules! impl_unsigned_dithered {
     };
 }
 
+#[cfg(not(target_os = "ios"))]
 impl_signed_dithered!(i16, 32_768.0f64);
+#[cfg(not(target_os = "ios"))]
 impl_signed_dithered!(i32, 2_147_483_648.0f64);
+#[cfg(not(target_os = "ios"))]
 impl_unsigned_dithered!(u16, 32_768.0f64);
+#[cfg(not(target_os = "ios"))]
 impl_unsigned_dithered!(u32, 2_147_483_648.0f64);
 
 #[cfg(test)]
@@ -154,6 +161,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_os = "ios"))]
     macro_rules! conversion_tests {
         ($name:ident, $ty:ty, $silence:expr, $scale:expr) => {
             mod $name {
@@ -212,8 +220,12 @@ mod tests {
         };
     }
 
+    #[cfg(not(target_os = "ios"))]
     conversion_tests!(i16_conversion, i16, 0i128, 32_768.0f64);
+    #[cfg(not(target_os = "ios"))]
     conversion_tests!(i32_conversion, i32, 0i128, 2_147_483_648.0f64);
+    #[cfg(not(target_os = "ios"))]
     conversion_tests!(u16_conversion, u16, 32_768i128, 32_768.0f64);
+    #[cfg(not(target_os = "ios"))]
     conversion_tests!(u32_conversion, u32, 2_147_483_648i128, 2_147_483_648.0f64);
 }

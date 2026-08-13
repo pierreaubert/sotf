@@ -1,11 +1,14 @@
 use super::consts::DSD_DECODE_CHUNK_FRAMES;
 use super::consts::DSD_TO_PCM_DECIMATION;
 use super::decimator::{ALIGNMENT_OUTPUTS, DsdPcmDecimator, SEEK_PREROLL_FRAMES};
+#[cfg(test)]
 use super::parse::parse_dsf;
+use super::source::DsdDataSource;
+use super::stream_parse::parse_dsf_file;
 use crate::decoder::core::{AudioDecoder, AudioSpec, DecodedAudio};
 use crate::decoder::error::{AudioDecoderError, AudioDecoderResult};
 use crate::decoder::formats::AudioFormat;
-use std::fs;
+use std::fs::File;
 use std::path::Path;
 
 /// DSF-to-PCM decoder used when the engine is configured to decode DSD as PCM.
@@ -16,7 +19,7 @@ use std::path::Path;
 /// playback path does not expose.
 pub struct DsfPcmDecoder {
     pub(super) spec: AudioSpec,
-    pub(super) data: Vec<u8>,
+    pub(super) data: DsdDataSource,
     pub(super) channels: usize,
     pub(super) dsd_sample_count: u64,
     pub(super) block_size_per_channel: usize,
@@ -26,37 +29,68 @@ pub struct DsfPcmDecoder {
     pub(super) decimator: DsdPcmDecimator,
     pub(super) input_scratch: Vec<f64>,
     pub(super) pcm_scratch: Vec<f32>,
+    source_byte_position: Option<u64>,
+    source_byte_scratch: Vec<u8>,
 }
 
 impl DsfPcmDecoder {
     pub fn new<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Self> {
-        let bytes = fs::read(path)?;
-        Self::from_bytes(bytes)
+        let mut file = File::open(path)?;
+        let fmt = parse_dsf_file(&mut file)?;
+        Self::from_parts(
+            fmt.sample_rate,
+            fmt.channels,
+            fmt.sample_count,
+            fmt.block_size_per_channel,
+            fmt.lsb_first,
+            DsdDataSource::file(file, fmt.data_offset, fmt.data_len),
+        )
     }
 
+    #[cfg(test)]
     pub(super) fn from_bytes(bytes: Vec<u8>) -> AudioDecoderResult<Self> {
         let fmt = parse_dsf(&bytes)?;
-        let pcm_sample_rate = fmt.sample_rate / DSD_TO_PCM_DECIMATION as u32;
-        let total_frames = Some(fmt.sample_count / DSD_TO_PCM_DECIMATION);
+        Self::from_parts(
+            fmt.sample_rate,
+            fmt.channels,
+            fmt.sample_count,
+            fmt.block_size_per_channel,
+            fmt.lsb_first,
+            DsdDataSource::memory(fmt.data),
+        )
+    }
 
-        let channels = fmt.channels as usize;
+    fn from_parts(
+        sample_rate: u32,
+        channel_count: u16,
+        sample_count: u64,
+        block_size_per_channel: usize,
+        lsb_first: bool,
+        data: DsdDataSource,
+    ) -> AudioDecoderResult<Self> {
+        let pcm_sample_rate = sample_rate / DSD_TO_PCM_DECIMATION as u32;
+        let total_frames = Some(sample_count / DSD_TO_PCM_DECIMATION);
+
+        let channels = channel_count as usize;
         let mut decoder = Self {
             spec: AudioSpec {
                 sample_rate: pcm_sample_rate,
-                channels: fmt.channels,
+                channels: channel_count,
                 bits_per_sample: 32,
                 total_frames,
             },
-            data: fmt.data,
+            data,
             channels,
-            dsd_sample_count: fmt.sample_count,
-            block_size_per_channel: fmt.block_size_per_channel,
-            lsb_first: fmt.lsb_first,
+            dsd_sample_count: sample_count,
+            block_size_per_channel,
+            lsb_first,
             source_bit_position: 0,
             pcm_position: 0,
             decimator: DsdPcmDecimator::new(channels),
             input_scratch: vec![0.0; channels],
             pcm_scratch: vec![0.0; channels],
+            source_byte_position: None,
+            source_byte_scratch: vec![0; channels],
         };
         decoder.prepare_position(0)?;
         Ok(decoder)
@@ -66,28 +100,63 @@ impl DsfPcmDecoder {
         self.dsd_sample_count / DSD_TO_PCM_DECIMATION
     }
 
-    fn channel_sample(&self, channel: usize, bit_position: u64) -> f64 {
-        dsf_sample(
-            &self.data,
-            self.channels,
-            self.block_size_per_channel,
-            self.lsb_first,
-            channel,
-            bit_position,
-            self.dsd_sample_count,
-        )
+    fn load_source_bytes(&mut self, byte_position: u64) -> AudioDecoderResult<()> {
+        if self.source_byte_position == Some(byte_position) {
+            return Ok(());
+        }
+        let byte_index_per_channel = usize::try_from(byte_position).map_err(|_| {
+            AudioDecoderError::DecodingFailed("DSF byte position is too large".to_string())
+        })?;
+        let block = byte_index_per_channel / self.block_size_per_channel;
+        let in_block = byte_index_per_channel % self.block_size_per_channel;
+        for channel in 0..self.channels {
+            let offset = block
+                .checked_mul(self.block_size_per_channel.saturating_mul(self.channels))
+                .and_then(|offset| {
+                    offset.checked_add(channel.saturating_mul(self.block_size_per_channel))
+                })
+                .and_then(|offset| offset.checked_add(in_block))
+                .ok_or_else(|| {
+                    AudioDecoderError::DecodingFailed("DSF data offset overflow".to_string())
+                })?;
+            self.data.read_exact_at(
+                u64::try_from(offset).map_err(|_| {
+                    AudioDecoderError::DecodingFailed("DSF data offset is too large".to_string())
+                })?,
+                &mut self.source_byte_scratch[channel..=channel],
+            )?;
+        }
+        self.source_byte_position = Some(byte_position);
+        Ok(())
     }
 
-    fn produce_frame(&mut self) {
+    fn produce_frame(&mut self) -> AudioDecoderResult<()> {
         loop {
-            for channel in 0..self.channels {
-                self.input_scratch[channel] =
-                    self.channel_sample(channel, self.source_bit_position);
+            if self.source_bit_position < self.dsd_sample_count {
+                let byte_position = self.source_bit_position / 8;
+                self.load_source_bytes(byte_position)?;
+                let bit = (self.source_bit_position % 8) as u32;
+                let shift = if self.lsb_first { bit } else { 7 - bit };
+                for channel in 0..self.channels {
+                    self.input_scratch[channel] =
+                        if self.source_byte_scratch[channel] & (1 << shift) != 0 {
+                            1.0
+                        } else {
+                            -1.0
+                        };
+                }
+            } else {
+                let padding = if self.source_bit_position.is_multiple_of(2) {
+                    1.0
+                } else {
+                    -1.0
+                };
+                self.input_scratch.fill(padding);
             }
             self.source_bit_position = self.source_bit_position.saturating_add(1);
             if let Some(frame) = self.decimator.push(&self.input_scratch) {
                 self.pcm_scratch.copy_from_slice(frame);
-                return;
+                return Ok(());
             }
         }
     }
@@ -98,19 +167,21 @@ impl DsfPcmDecoder {
             .checked_mul(DSD_TO_PCM_DECIMATION)
             .ok_or_else(|| AudioDecoderError::SeekFailed("DSF seek offset overflow".into()))?;
         self.decimator.reset();
+        self.source_byte_position = None;
 
         let discard = frame_position
             .checked_add(ALIGNMENT_OUTPUTS)
             .and_then(|position| position.checked_sub(start_frame))
             .ok_or_else(|| AudioDecoderError::SeekFailed("DSF seek pre-roll overflow".into()))?;
         for _ in 0..discard {
-            self.produce_frame();
+            self.produce_frame()?;
         }
         self.pcm_position = frame_position;
         Ok(())
     }
 }
 
+#[cfg(test)]
 pub(super) fn dsf_sample(
     data: &[u8],
     channels: usize,
@@ -178,7 +249,7 @@ impl AudioDecoder for DsfPcmDecoder {
         dest.samples.resize(sample_len, 0.0);
         for frame_offset in 0..frames {
             let dst = frame_offset as usize * self.channels;
-            self.produce_frame();
+            self.produce_frame()?;
             dest.samples[dst..dst + self.channels].copy_from_slice(&self.pcm_scratch);
         }
 

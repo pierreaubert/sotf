@@ -1,9 +1,5 @@
-use super::super::{
-    AudioEngineState, PlaybackCommand, PlaybackThread, PreparedHostUpdate, ProcessingCommand,
-    ProcessingThread,
-};
+use super::super::{AudioEngineState, PlaybackThread, PreparedHostUpdate, ProcessingThread};
 use super::config_update_queue::ConfigUpdateQueue;
-use super::consts::SPIN_MS_SLEEP_MANAGER;
 use super::error::ConfigError;
 use super::estimate::estimate_graph_update_timeout;
 use super::estimate::estimate_update_timeout;
@@ -16,27 +12,41 @@ use arc_swap::ArcSwap;
 use sotf_plugins::PluginHost;
 use std::sync::Arc;
 
+const HOST_BUILD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 fn build_plugin_update_host_on_worker(
     plugins: Vec<super::super::PluginConfig>,
     sample_rate: u32,
     input_channels: usize,
     oversampling_policy: EngineOversamplingPolicy,
 ) -> Result<(PluginHost, Vec<PluginBuildDiagnostic>), PluginBuildDiagnostic> {
+    let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
     std::thread::Builder::new()
         .name("sotf-plugin-host-builder".to_string())
         .spawn(move || {
-            build_plugin_host_with_policy(
+            let result = build_plugin_host_with_policy(
                 &plugins,
                 sample_rate,
                 input_channels,
                 oversampling_policy,
-            )
+            );
+            result_tx.send(result).ok();
         })
         .map_err(|e| {
             PluginBuildDiagnostic::host(format!("failed to spawn plugin host builder: {e}"))
+        })?;
+    result_rx
+        .recv_timeout(HOST_BUILD_TIMEOUT)
+        .map_err(|error| {
+            PluginBuildDiagnostic::host(match error {
+                std::sync::mpsc::RecvTimeoutError::Timeout => {
+                    format!("plugin host build timed out after {:?}", HOST_BUILD_TIMEOUT)
+                }
+                std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                    "plugin host builder panicked".to_string()
+                }
+            })
         })?
-        .join()
-        .map_err(|_| PluginBuildDiagnostic::host("plugin host builder panicked"))?
 }
 
 fn build_plugin_graph_host_on_worker(
@@ -45,21 +55,34 @@ fn build_plugin_graph_host_on_worker(
     input_channels: usize,
     oversampling_policy: EngineOversamplingPolicy,
 ) -> Result<(PluginHost, Vec<PluginBuildDiagnostic>), PluginBuildDiagnostic> {
+    let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
     std::thread::Builder::new()
         .name("sotf-plugin-graph-builder".to_string())
         .spawn(move || {
-            build_plugin_graph_host_with_policy(
+            let result = build_plugin_graph_host_with_policy(
                 &graph_config,
                 sample_rate,
                 input_channels,
                 oversampling_policy,
-            )
+            );
+            result_tx.send(result).ok();
         })
         .map_err(|e| {
             PluginBuildDiagnostic::host(format!("failed to spawn plugin graph builder: {e}"))
+        })?;
+    result_rx
+        .recv_timeout(HOST_BUILD_TIMEOUT)
+        .map_err(|error| {
+            PluginBuildDiagnostic::host(match error {
+                std::sync::mpsc::RecvTimeoutError::Timeout => format!(
+                    "plugin graph build timed out after {:?}",
+                    HOST_BUILD_TIMEOUT
+                ),
+                std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                    "plugin graph builder panicked".to_string()
+                }
+            })
         })?
-        .join()
-        .map_err(|_| PluginBuildDiagnostic::host("plugin graph builder panicked"))?
 }
 
 pub(in crate::engine::manager_thread) fn store_plugin_build_diagnostics(
@@ -71,7 +94,8 @@ pub(in crate::engine::manager_thread) fn store_plugin_build_diagnostics(
     state.store(Arc::new(new_state));
 }
 
-/// Apply a plugin update with proper synchronization and rollback on failure.
+/// Apply a plugin update with proper synchronization.
+/// A failed candidate is never committed, so the active host remains unchanged.
 /// Waits for confirmation from processing thread and updates playback thread if needed.
 #[allow(
     clippy::too_many_arguments,
@@ -91,6 +115,8 @@ pub(in crate::engine::manager_thread) fn apply_plugin_update(
     sample_rate: u32,
 
     input_channels: usize,
+
+    playback_channel_limit: usize,
 
     oversampling_policy: EngineOversamplingPolicy,
 ) -> Result<(), ConfigError> {
@@ -145,12 +171,10 @@ pub(in crate::engine::manager_thread) fn apply_plugin_update(
         diagnostic: PluginBuildDiagnostic::host(message),
     })?;
     drop(current);
-    processing
-        .send_command(ProcessingCommand::CommitHostUpdate(prepared))
-        .map_err(|_| {
-            log::error!("[Manager Thread] Failed to send CommitHostUpdate command: disconnected");
-            ConfigError::ChannelDisconnected
-        })?;
+    let (generation, request_id, ticket) = processing.send_host_update(prepared).map_err(|_| {
+        log::error!("[Manager Thread] Failed to send CommitHostUpdate command: disconnected");
+        ConfigError::ChannelDisconnected
+    })?;
 
     log::debug!(
         "[Manager Thread] apply_plugin_update: Sent CommitHostUpdate to processing thread, waiting for ACK..."
@@ -163,107 +187,63 @@ pub(in crate::engine::manager_thread) fn apply_plugin_update(
     log::debug!("[Manager Thread] Using adaptive timeout: {:?}", timeout);
 
     let start = std::time::Instant::now();
-
-    let mut loop_count = 0;
-
-    let mut _skipped_responses = 0;
-
-    while start.elapsed() < timeout {
-        loop_count += 1;
-
-        if let Some(response) = processing.try_recv_response() {
-            log::debug!(
-                "[Manager Thread] Received response from processing thread after {:?} (loop {})",
-                start.elapsed(),
-                loop_count
-            );
-
-            match &response {
-                super::super::ProcessingResponse::PluginData(_)
-                | super::super::ProcessingResponse::Ok => {
-                    _skipped_responses += 1;
-                    log::trace!(
-                        "[Manager Thread] Skipping unrelated response: {:?}",
-                        response
-                    );
-                    continue;
-                }
-
-                _ => {}
+    let (output_channels, output_sample_rate, latency_samples) =
+        match wait_for_plugin_chain_update(processing, request_id, generation, &ticket, timeout) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                config_queue.metrics.record_failure();
+                return Err(error);
             }
+        };
 
-            match response {
-                super::super::ProcessingResponse::PluginChainUpdated {
-                    output_channels,
-                    latency_samples,
-                    ..
-                } => {
-                    log::debug!(
-                        "[Manager Thread] ACK received: Plugin chain updated, output_channels={}, latency={}",
-                        output_channels,
-                        latency_samples
+    let current = state.load();
+    let old_playback_channels = current.playback_channels;
+    let old_sample_rate = current.sample_rate;
+    let playback_channels = if playback_channel_limit > 0 {
+        output_channels.min(playback_channel_limit)
+    } else {
+        output_channels
+    };
+    let mut new_state = (**current).clone();
+    drop(current);
+    let (actual_playback_channels, actual_playback_sample_rate) =
+        if playback_channels != old_playback_channels || output_sample_rate != old_sample_rate {
+            match playback.reconfigure(output_sample_rate, playback_channels) {
+                Ok(actual) => (actual.channels, actual.sample_rate),
+                Err(error) => {
+                    let reason = format!(
+                        "Plugin host committed, but playback output reconfiguration failed: {error}"
                     );
-
-                    let old_channels = state.load().num_channels;
-
-                    {
-                        let mut new_state = (**state.load()).clone();
-                        new_state.num_channels = output_channels;
-                        new_state.plugin_latency_samples = latency_samples;
-                        state.store(Arc::new(new_state));
-                    }
-
-                    if output_channels != old_channels {
-                        log::info!(
-                            "[Manager Thread] Channel count changed ({} -> {}), updating playback thread",
-                            old_channels,
-                            output_channels
-                        );
-                        playback
-                            .send_command(PlaybackCommand::UpdateChannels(output_channels))
-                            .map_err(|_| ConfigError::ChannelDisconnected)?;
-                    }
-
-                    config_queue.save_working_config(plugins);
-
-                    config_queue.metrics.record_success(start.elapsed());
-
-                    log::debug!("[Manager Thread] apply_plugin_update completed successfully");
-                    return Ok(());
-                }
-
-                super::super::ProcessingResponse::Error(e) => {
-                    log::error!("[Manager Thread] Processing thread reported error: {}", e);
-
+                    new_state.num_channels = output_channels;
+                    new_state.sample_rate = output_sample_rate;
+                    new_state.plugin_latency_samples = latency_samples;
+                    new_state.last_error = Some(reason.clone());
+                    new_state.playback_state = crate::PlaybackState::Stopped;
+                    state.store(Arc::new(new_state));
                     config_queue.metrics.record_failure();
-
-                    return Err(ConfigError::ProcessingError { reason: e });
-                }
-
-                _ => {
-                    log::error!("[Manager Thread] Unexpected response type from processing thread");
-                    return Err(ConfigError::UnexpectedResponse);
+                    return Err(ConfigError::ProcessingError { reason });
                 }
             }
-        }
+        } else {
+            (old_playback_channels, old_sample_rate)
+        };
+    new_state.num_channels = output_channels;
+    new_state.playback_channels = actual_playback_channels;
+    new_state.sample_rate = actual_playback_sample_rate;
+    new_state.plugin_latency_samples = latency_samples;
+    state.store(Arc::new(new_state));
 
-        std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
-    }
-
-    log::error!(
-        "[Manager Thread] apply_plugin_update: TIMEOUT after {} loops, {:?}",
-        loop_count,
-        start.elapsed()
-    );
-
-    Err(ConfigError::TimeoutError {
-        waited_ms: timeout.as_millis() as u64,
-    })
+    config_queue.metrics.record_success(start.elapsed());
+    Ok(())
 }
 
 /// Build a DawHost from a graph config and convert to a linear `Vec<PluginConfig>` isn't
 /// possible for graph topologies. Instead, build the host directly and send it to the
 /// processing thread. This reuses the same host-swap mechanism as `apply_plugin_update`.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "graph update coordinates the manager-owned processing and playback subsystems"
+)]
 pub(in crate::engine::manager_thread) fn apply_plugin_graph_update(
     processing: &mut ProcessingThread,
     playback: &mut PlaybackThread,
@@ -271,6 +251,7 @@ pub(in crate::engine::manager_thread) fn apply_plugin_graph_update(
     graph_config: super::super::types::PluginGraphConfig,
     sample_rate: u32,
     input_channels: usize,
+    playback_channel_limit: usize,
     oversampling_policy: EngineOversamplingPolicy,
 ) -> Result<(), ConfigError> {
     log::debug!(
@@ -310,24 +291,51 @@ pub(in crate::engine::manager_thread) fn apply_plugin_graph_update(
         diagnostic: PluginBuildDiagnostic::host(message),
     })?;
     drop(current);
-    processing
-        .send_command(ProcessingCommand::CommitHostUpdate(prepared))
+    let (generation, request_id, ticket) = processing
+        .send_host_update(prepared)
         .map_err(|_| ConfigError::ChannelDisconnected)?;
 
-    let old_channels = state.load().num_channels;
+    let current = state.load();
+    let old_playback_channels = current.playback_channels;
+    let old_sample_rate = current.sample_rate;
+    drop(current);
     let timeout = estimate_graph_update_timeout(&graph_config);
-    let (output_channels, latency_samples) = wait_for_plugin_chain_update(processing, timeout)?;
+    let (output_channels, output_sample_rate, latency_samples) =
+        wait_for_plugin_chain_update(processing, request_id, generation, &ticket, timeout)?;
+    let playback_channels = if playback_channel_limit > 0 {
+        output_channels.min(playback_channel_limit)
+    } else {
+        output_channels
+    };
 
     let mut new_state = (**state.load()).clone();
+    let (actual_playback_channels, actual_playback_sample_rate) = if playback_channels
+        != old_playback_channels
+        || output_sample_rate != old_sample_rate
+    {
+        match playback.reconfigure(output_sample_rate, playback_channels) {
+            Ok(actual) => (actual.channels, actual.sample_rate),
+            Err(error) => {
+                let reason = format!(
+                    "Plugin graph committed, but playback output reconfiguration failed: {error}"
+                );
+                new_state.num_channels = output_channels;
+                new_state.sample_rate = output_sample_rate;
+                new_state.plugin_latency_samples = latency_samples;
+                new_state.last_error = Some(reason.clone());
+                new_state.playback_state = crate::PlaybackState::Stopped;
+                state.store(Arc::new(new_state));
+                return Err(ConfigError::ProcessingError { reason });
+            }
+        }
+    } else {
+        (old_playback_channels, old_sample_rate)
+    };
     new_state.num_channels = output_channels;
+    new_state.playback_channels = actual_playback_channels;
+    new_state.sample_rate = actual_playback_sample_rate;
     new_state.plugin_latency_samples = latency_samples;
     state.store(Arc::new(new_state));
-
-    if output_channels != old_channels {
-        playback
-            .send_command(PlaybackCommand::UpdateChannels(output_channels))
-            .map_err(|_| ConfigError::ChannelDisconnected)?;
-    }
 
     Ok(())
 }
@@ -409,6 +417,7 @@ mod tests {
             &state,
             graph,
             48_000,
+            2,
             2,
             EngineOversamplingPolicy::PluginPreferred,
         )

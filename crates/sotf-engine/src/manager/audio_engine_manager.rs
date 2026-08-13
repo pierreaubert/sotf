@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+const MAX_STREAMING_EVENTS_PER_DRAIN: usize = 64;
+
 /// High-level audio streaming manager using native AudioEngine
 pub struct AudioEngineManager {
     /// Native audio engine (wrapped in ArcSwap for lock-free status/analyzer access)
@@ -39,9 +41,15 @@ pub struct AudioEngineManager {
     pub(super) last_seen_source: Mutex<Option<crate::decoder::AudioSource>>,
     /// Last stream metadata seen during event polling.
     pub(super) last_seen_stream_metadata: Mutex<Option<StreamMetadata>>,
+    /// Last engine error reported as a streaming event.
+    pub(super) last_reported_error: Mutex<Option<String>>,
 }
 
 impl AudioEngineManager {
+    pub(super) fn engine_watch_flags(&self) -> (bool, bool) {
+        (false, self.watch_signals)
+    }
+
     /// Create a new streaming manager
     pub fn new() -> Self {
         Self::with_signal_watching(false)
@@ -67,6 +75,7 @@ impl AudioEngineManager {
             allow_virtual_output: false,
             last_seen_source: Mutex::new(None),
             last_seen_stream_metadata: Mutex::new(None),
+            last_reported_error: Mutex::new(None),
         }
     }
 
@@ -239,6 +248,13 @@ impl AudioEngineManager {
             .clone()
             .ok_or_else(|| AudioDecoderError::ConfigError("No file loaded".to_string()))?;
 
+        // Release the previous device stream before probing or opening its
+        // replacement, so exclusive devices are never owned by two engines.
+        if let Err(e) = self.shutdown_engine_locked() {
+            self.set_state(StreamingState::Error);
+            return Err(e);
+        }
+
         log::debug!(
             "[AudioEngineManager] start_playback_at called: {} plugins, requested output_channels={}, position={:?}",
             plugins.len(),
@@ -257,6 +273,7 @@ impl AudioEngineManager {
         // Create engine config with preserved volume
         let volume = f32::from_bits(self.current_volume.load(Ordering::Relaxed));
         let muted = self.current_muted.load(Ordering::Relaxed);
+        let (watch_config, watch_signals) = self.engine_watch_flags();
         let config = EngineConfig {
             version: 2,
             frame_size: 1024,
@@ -269,7 +286,8 @@ impl AudioEngineManager {
             volume,
             muted,
             config_path: None,
-            watch_config: self.watch_signals, // Enable signal watching if requested
+            watch_config,
+            watch_signals,
             driver_mode: false,
             allow_virtual_output: self.allow_virtual_output,
             sink_type: Default::default(),
@@ -444,6 +462,11 @@ impl AudioEngineManager {
         let input_channels = input_channels.max(1);
         let frame_size = buffer_frames.max(1) as usize;
 
+        if let Err(e) = self.shutdown_engine_locked() {
+            self.set_state(StreamingState::Error);
+            return Err(e);
+        }
+
         log::debug!(
             "[AudioEngineManager] Starting driver playback at {}Hz, {} frames, {} input channels",
             sample_rate,
@@ -454,6 +477,7 @@ impl AudioEngineManager {
         // Create engine config for driver mode (no file source) with preserved volume
         let volume = f32::from_bits(self.current_volume.load(Ordering::Relaxed));
         let muted = self.current_muted.load(Ordering::Relaxed);
+        let (watch_config, watch_signals) = self.engine_watch_flags();
         let config = EngineConfig {
             version: 2,
             frame_size,
@@ -466,7 +490,8 @@ impl AudioEngineManager {
             volume,
             muted,
             config_path: None,
-            watch_config: self.watch_signals,
+            watch_config,
+            watch_signals,
             driver_mode: true,
             allow_virtual_output: false,
             sink_type: Default::default(),
@@ -567,45 +592,14 @@ impl AudioEngineManager {
         let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         log::debug!("[AudioEngineManager] Stopping");
 
-        let mut shutdown_error = None;
-        if let Some(mut engine_arc) = self.engine.swap(None) {
-            // shutdown() is internally thread-safe now as it just sends a command.
-            // stop() is best-effort: if it fails (e.g., decoder ACK timeout after
-            // end-of-stream), we still proceed to shutdown which joins all threads.
-            if let Some(engine) = Arc::get_mut(&mut engine_arc) {
-                if let Err(e) = engine.stop() {
-                    log::warn!(
-                        "[AudioEngineManager] stop() failed (proceeding to shutdown): {}",
-                        e
-                    );
-                }
-                if let Err(e) = engine.shutdown() {
-                    shutdown_error = Some(AudioDecoderError::IoError(e));
-                }
-            } else {
-                // Another thread is holding a reference (e.g. status polling).
-                // Send commands via the shared Arc.
-                if let Err(e) = engine_arc.stop() {
-                    log::warn!(
-                        "[AudioEngineManager] stop() failed (proceeding to shutdown): {}",
-                        e
-                    );
-                }
-                if let Err(e) = engine_arc.shutdown() {
-                    shutdown_error = Some(AudioDecoderError::IoError(e));
-                }
-            }
-        }
+        let shutdown_result = self.shutdown_engine_locked();
 
         self.set_state(StreamingState::Idle);
         *lock_recover(&self.last_seen_source, "last_seen_source") = None;
         *lock_recover(&self.last_seen_stream_metadata, "last_seen_stream_metadata") = None;
+        *lock_recover(&self.last_reported_error, "last_reported_error") = None;
 
-        if let Some(e) = shutdown_error {
-            Err(e)
-        } else {
-            Ok(())
-        }
+        shutdown_result
     }
 
     /// Seek to position in seconds
@@ -613,10 +607,20 @@ impl AudioEngineManager {
         let _guard = lock_recover(&self.cmd_mutex, "cmd_mutex");
         log::debug!("[AudioEngineManager] Seeking to {:.2}s", seconds);
 
+        let previous_state = self.get_state();
         self.set_state(StreamingState::Seeking);
 
-        if let Some(engine) = &*self.engine.load() {
-            engine.seek(seconds).map_err(AudioDecoderError::IoError)?;
+        let seek_result = if let Some(engine) = &*self.engine.load() {
+            engine.seek(seconds).map_err(AudioDecoderError::IoError)
+        } else {
+            Err(AudioDecoderError::ConfigError(
+                "No engine running".to_string(),
+            ))
+        };
+
+        if let Err(error) = seek_result {
+            self.set_state(previous_state);
+            return Err(error);
         }
 
         // Restore previous state (playing or paused)
@@ -908,10 +912,15 @@ impl AudioEngineManager {
             }
         }
 
+        if engine_state.last_error.as_deref().is_none_or(str::is_empty) {
+            *lock_recover(&self.last_reported_error, "last_reported_error") = None;
+        }
+
         if engine_state.playback_state == PlaybackState::Stopped {
             if let Some(err) = engine_state.last_error.clone()
                 && !err.is_empty()
                 && current_state != StreamingState::Idle
+                && let Some(err) = self.take_unreported_error(err)
             {
                 self.set_state(StreamingState::Error);
                 return Some(StreamingEvent::Error(err));
@@ -926,10 +935,13 @@ impl AudioEngineManager {
         None
     }
 
-    /// Drain all pending events (lock-free status check)
+    /// Drain a bounded batch of pending events (lock-free status check).
     pub fn drain_events(&self) -> Vec<StreamingEvent> {
         let mut events = Vec::new();
-        while let Some(event) = self.try_recv_event() {
+        while events.len() < MAX_STREAMING_EVENTS_PER_DRAIN {
+            let Some(event) = self.try_recv_event() else {
+                break;
+            };
             events.push(event);
         }
         events
@@ -941,6 +953,32 @@ impl AudioEngineManager {
 
     pub(super) fn set_state(&self, state: StreamingState) {
         self.state.store(state as u8, Ordering::Relaxed);
+    }
+
+    pub(super) fn take_unreported_error(&self, error: String) -> Option<String> {
+        let mut last_reported = lock_recover(&self.last_reported_error, "last_reported_error");
+        if last_reported.as_ref() == Some(&error) {
+            return None;
+        }
+        *last_reported = Some(error.clone());
+        Some(error)
+    }
+
+    /// Stop and shut down the currently installed engine while `cmd_mutex` is held.
+    fn shutdown_engine_locked(&self) -> AudioDecoderResult<()> {
+        let Some(engine_arc) = self.engine.swap(None) else {
+            return Ok(());
+        };
+
+        // stop() is best-effort: after end-of-stream the decoder may already have
+        // exited, but shutdown still needs to join the remaining threads.
+        if let Err(e) = engine_arc.stop() {
+            log::warn!(
+                "[AudioEngineManager] stop() failed (proceeding to shutdown): {}",
+                e
+            );
+        }
+        engine_arc.shutdown().map_err(AudioDecoderError::IoError)
     }
 
     /// Get current engine state (snapshot from ArcSwap, lock-free)

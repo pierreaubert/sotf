@@ -224,6 +224,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         .visible_when(ParamCondition::choice(11, 0)),
     ],
     output: &[
+        ControlSpec::toggle(8),    // auto_gain_enabled
         ControlSpec::selector(15), // auto_gain_position
         ControlSpec::knob(9),      // auto_gain_max_db
         ControlSpec::knob(10),     // auto_gain_smoothing_ms

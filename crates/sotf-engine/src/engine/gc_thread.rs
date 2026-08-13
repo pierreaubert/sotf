@@ -29,6 +29,8 @@ pub enum GcItem {
         old_path_delay: PreparedTransitionDelay,
         new_path_delay: PreparedTransitionDelay,
     },
+    /// Recycled audio storage that could not fit in a realtime-local pool.
+    Buffer(Vec<f32>),
     /// Shutdown signal
     Shutdown,
 }
@@ -47,12 +49,23 @@ impl GcThread {
         let handle = std::thread::Builder::new()
             .name("gc".to_string())
             .spawn(move || {
-                // Simply receive and drop items. The drop happens on this
-                // low-priority background thread, not the audio thread.
+                // A third-party plugin is allowed to have a broken destructor,
+                // but it must not take down the reclaimer and push every later
+                // destruction back toward the realtime pipeline.
                 while let Ok(item) = rx.recv() {
                     match item {
                         GcItem::Shutdown => break,
-                        _ => { /* item dropped here */ }
+                        item => {
+                            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                drop(item);
+                            }))
+                            .is_err()
+                            {
+                                log::error!(
+                                    "[GC Thread] A retired audio object panicked while being dropped; continuing"
+                                );
+                            }
+                        }
                     }
                 }
             })
@@ -70,8 +83,10 @@ impl GcThread {
 
     pub fn shutdown(&mut self) {
         self.sender.send(GcItem::Shutdown).ok();
-        if let Some(h) = self.handle.take() {
-            h.join().ok();
+        if let Some(handle) = self.handle.take()
+            && super::join_timeout(handle, std::time::Duration::from_secs(5)).is_err()
+        {
+            log::warn!("[GC Thread] Shutdown join timed out; thread left detached");
         }
     }
 }
@@ -91,6 +106,22 @@ mod tests {
 
     struct DropThreadPlugin {
         dropped_on: std::sync::mpsc::Sender<String>,
+    }
+
+    struct PanickingDrop;
+
+    impl Drop for PanickingDrop {
+        fn drop(&mut self) {
+            panic!("intentional destructor panic");
+        }
+    }
+
+    struct DropSignal(std::sync::mpsc::Sender<()>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.send(()).ok();
+        }
     }
 
     impl Drop for DropThreadPlugin {
@@ -150,5 +181,25 @@ mod tests {
         gc.shutdown();
 
         assert_eq!(drop_rx.recv().unwrap(), "gc");
+    }
+
+    #[test]
+    fn panicking_destructor_does_not_kill_gc_thread() {
+        let (drop_tx, drop_rx) = std::sync::mpsc::channel();
+        let mut gc = GcThread::new().unwrap();
+        gc.sender()
+            .send(GcItem::Boxed(Box::new(PanickingDrop)))
+            .unwrap();
+        gc.sender()
+            .send(GcItem::Boxed(Box::new(DropSignal(drop_tx))))
+            .unwrap();
+
+        assert!(
+            drop_rx
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .is_ok(),
+            "GC must continue receiving after a destructor panic"
+        );
+        gc.shutdown();
     }
 }

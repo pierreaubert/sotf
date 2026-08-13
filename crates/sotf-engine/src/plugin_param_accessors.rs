@@ -223,6 +223,11 @@ impl_param_accessors! {
         layout: Some(&param_specs::gain::LAYOUT),
         fields: [gain_db: f64, smoothing_ms: f64]
     },
+    Dither {
+        params: param_specs::dither::PARAMS,
+        layout: Some(&param_specs::dither::LAYOUT),
+        fields: [bit_depth: usize, noise_shaping: bool, dither_type: usize]
+    },
     Compressor {
         params: param_specs::compressor::PARAMS,
         layout: Some(&param_specs::compressor::SINGLE_BAND_LAYOUT),

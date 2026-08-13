@@ -41,28 +41,12 @@ pub fn plan_network_endpoint(config: &NetworkEndpointConfig) -> NetworkEndpointP
             NetworkEndpointStatus::Disabled,
             None,
         ),
-        NetworkEndpointMode::InputClient => {
-            #[cfg(feature = "streaming")]
-            {
-                NetworkEndpointPlan::new(
-                    config,
-                    NetworkEndpointBackend::InputClient,
-                    NetworkEndpointStatus::InputClientAvailable,
-                    Some("network input client support is compiled into this build".to_string()),
-                )
-            }
-            #[cfg(not(feature = "streaming"))]
-            {
-                NetworkEndpointPlan::new(
-                    config,
-                    NetworkEndpointBackend::InputClient,
-                    NetworkEndpointStatus::InputClientUnavailable,
-                    Some(
-                        "network input client support requires the 'streaming' feature".to_string(),
-                    ),
-                )
-            }
-        }
+        NetworkEndpointMode::InputClient => NetworkEndpointPlan::new(
+            config,
+            NetworkEndpointBackend::InputClient,
+            NetworkEndpointStatus::InputClientUnavailable,
+            Some("network input client mode is planned but not implemented".to_string()),
+        ),
         NetworkEndpointMode::HttpEndpoint => {
             #[cfg(feature = "streaming")]
             {
@@ -103,7 +87,7 @@ mod tests {
     }
 
     #[test]
-    fn input_client_reports_build_capability() {
+    fn input_client_honestly_reports_unimplemented() {
         let config = NetworkEndpointConfig {
             mode: NetworkEndpointMode::InputClient,
             ..Default::default()
@@ -111,11 +95,8 @@ mod tests {
         let plan = plan_network_endpoint(&config);
 
         assert_eq!(plan.backend, NetworkEndpointBackend::InputClient);
-        #[cfg(feature = "streaming")]
-        assert_eq!(plan.status, NetworkEndpointStatus::InputClientAvailable);
-        #[cfg(not(feature = "streaming"))]
         assert_eq!(plan.status, NetworkEndpointStatus::InputClientUnavailable);
-        assert!(plan.reason.is_some());
+        assert!(plan.reason.as_deref().unwrap().contains("not implemented"));
     }
 
     #[test]

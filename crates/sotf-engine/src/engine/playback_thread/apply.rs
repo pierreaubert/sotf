@@ -4,25 +4,31 @@ use std::sync::atomic::Ordering;
 
 /// Apply volume and mute to f32 scratch buffer without clipping the float path.
 #[inline(always)]
-pub(super) fn apply_volume(scratch: &mut [f32], state: &PlaybackState) {
+pub(super) fn apply_volume(
+    scratch: &mut [f32],
+    state: &PlaybackState,
+    channels: usize,
+    sample_rate: u32,
+) {
     let volume = f32::from_bits(state.volume.load(Ordering::Relaxed));
     let muted = state.muted.load(Ordering::Relaxed);
-
-    if muted {
-        scratch.fill(0.0);
-    } else if (volume - 1.0).abs() > 0.001 {
-        for sample in scratch.iter_mut() {
-            *sample *= volume;
-        }
-    }
+    let target = if muted { 0.0 } else { volume };
+    state
+        .volume_ramp
+        .apply(scratch, channels, sample_rate, target);
 
     accumulate_output_meter(scratch, state);
 }
 
 /// Apply volume/mute and clamp for integer hardware formats.
 #[inline(always)]
-pub(super) fn apply_volume_clamp(scratch: &mut [f32], state: &PlaybackState) {
-    apply_volume(scratch, state);
+pub(in crate::engine) fn apply_volume_clamp(
+    scratch: &mut [f32],
+    state: &PlaybackState,
+    channels: usize,
+    sample_rate: u32,
+) {
+    apply_volume(scratch, state, channels, sample_rate);
     clamp_samples(scratch);
 }
 

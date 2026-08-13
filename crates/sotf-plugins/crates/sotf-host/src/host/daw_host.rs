@@ -324,6 +324,15 @@ impl DawHost {
         }
     }
 
+    /// Synchronize the host timeline to an externally-owned transport clock.
+    ///
+    /// Embedded/DAW hosts call this at discontinuities; continuous processing
+    /// advances the position internally without any control-thread traffic.
+    pub fn set_playback_position(&mut self, sample_position: u64) {
+        self.automation_state.playback_position =
+            usize::try_from(sample_position).unwrap_or(usize::MAX);
+    }
+
     /// Take a snapshot of the current graph topology.
     /// Can be used with `ArcSwap` for lock-free graph updates from a control thread.
     pub fn topology_snapshot(&self) -> GraphTopology {
@@ -1032,6 +1041,71 @@ impl DawHost {
         self.queue_node_parameter(nid, super::super::parameters::ParameterId::from(id), val)
     }
 
+    /// Validate a host-visible parameter without mutating or queueing it.
+    /// This is a control-thread operation: querying plugin metadata may allocate.
+    pub fn validate_plugin_parameter(
+        &self,
+        index: usize,
+        id: &str,
+        value: &super::super::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        let &node_id = self
+            .chain_nodes
+            .get(index)
+            .ok_or("plugin index out of bounds")?;
+        let plugin = self
+            .plugins
+            .get(node_id)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| format!("Plugin for node {node_id} not found"))?;
+        let parameters =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| plugin.parameters()))
+                .map_err(|_| {
+                    format!("Plugin at index {index} panicked while listing parameters")
+                })?;
+        let parameter = parameters
+            .iter()
+            .find(|parameter| parameter.id.as_str() == id)
+            .ok_or_else(|| format!("Unknown parameter '{id}' for plugin index {index}"))?;
+        parameter
+            .validate(value)
+            .map_err(|reason| format!("Invalid value for parameter '{id}': {reason}"))
+    }
+
+    /// Validate a parameter for sample-accurate live automation. Structural
+    /// controls must rebuild the graph and are never safe to apply mid-block.
+    pub fn validate_automatable_plugin_parameter(
+        &self,
+        index: usize,
+        id: &str,
+        value: &super::super::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        self.validate_plugin_parameter(index, id, value)?;
+        let &node_id = self
+            .chain_nodes
+            .get(index)
+            .ok_or("plugin index out of bounds")?;
+        let plugin = self
+            .plugins
+            .get(node_id)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| format!("Plugin for node {node_id} not found"))?;
+        let parameters =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| plugin.parameters()))
+                .map_err(|_| {
+                    format!("Plugin at index {index} panicked while listing parameters")
+                })?;
+        if parameters.iter().any(|parameter| {
+            parameter.id.as_str() == id
+                && parameter.update_mode == crate::param_specs::UpdateMode::Structural
+        }) {
+            return Err(format!(
+                "Parameter {id} requires rebuilding the plugin chain"
+            ));
+        }
+        Ok(())
+    }
+
     /// Queue a parameter change for audio-thread application at `sample_offset`
     /// frames into the next `process()` call.
     pub fn set_plugin_parameter_at(
@@ -1041,6 +1115,7 @@ impl DawHost {
         val: super::super::parameters::ParameterValue,
         sample_offset: usize,
     ) -> Result<(), String> {
+        self.validate_automatable_plugin_parameter(index, id, &val)?;
         let &nid = self.chain_nodes.get(index).ok_or("oob")?;
         self.queue_node_parameter_at(
             nid,
@@ -1098,12 +1173,25 @@ impl DawHost {
     /// control/UI side. `DawHost` keeps the consumer and continues draining
     /// events in `process()`.
     pub fn take_parameter_event_sender(&mut self) -> Option<ParameterEventSender> {
+        let chain_nodes = self.chain_nodes.clone();
+        let parameters = chain_nodes
+            .iter()
+            .filter_map(|&node_id| {
+                let plugin = self.plugins.get(node_id)?.as_ref()?;
+                let parameters =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| plugin.parameters()))
+                        .ok()?;
+                Some((node_id, parameters))
+            })
+            .collect();
         self.queues
             .parameter_event_tx
             .take()
             .map(|producer| ParameterEventSender {
                 producer,
                 dropped_events: 0,
+                chain_nodes,
+                parameters,
             })
     }
 
@@ -1134,6 +1222,23 @@ impl DawHost {
         val: super::super::parameters::ParameterValue,
     ) -> Result<(), String> {
         let &nid = self.chain_nodes.get(index).ok_or("oob")?;
+        let plugin = self
+            .plugins
+            .get(nid)
+            .and_then(Option::as_ref)
+            .ok_or("plugin not found")?;
+        if plugin
+            .parameters()
+            .iter()
+            .find(|parameter| parameter.id.as_str() == id)
+            .is_some_and(|parameter| {
+                parameter.update_mode == crate::param_specs::UpdateMode::Structural
+            })
+        {
+            return Err(format!(
+                "Parameter {id} requires rebuilding the plugin chain"
+            ));
+        }
         self.apply_parameter_event(ParameterEvent {
             node_id: nid,
             param_id: super::super::parameters::ParameterId::from(id),
@@ -1801,7 +1906,7 @@ impl DawHost {
         }
 
         for event in events.drain(..) {
-            self.apply_parameter_event(event)?;
+            let _ = self.apply_parameter_event(event);
         }
         self.process_block_without_parameter_events(
             input,
@@ -1844,7 +1949,7 @@ impl DawHost {
 
         while events.last().is_some_and(|event| event.sample_offset == 0) {
             let event = events.pop().unwrap();
-            self.apply_parameter_event(event)?;
+            let _ = self.apply_parameter_event(event);
         }
 
         while frame_cursor < frames {
@@ -1871,12 +1976,12 @@ impl DawHost {
                 .is_some_and(|event| event.sample_offset <= frame_cursor)
             {
                 let event = events.pop().unwrap();
-                self.apply_parameter_event(event)?;
+                let _ = self.apply_parameter_event(event);
             }
         }
 
         while let Some(event) = events.pop() {
-            self.apply_parameter_event(event)?;
+            let _ = self.apply_parameter_event(event);
         }
 
         Ok(processed_frames)
@@ -2555,7 +2660,7 @@ impl DawHost {
         }
 
         for event in events.drain(..) {
-            self.apply_parameter_event(event)?;
+            let _ = self.apply_parameter_event(event);
         }
         self.process_f64_without_parameter_events(
             input,
@@ -2601,7 +2706,7 @@ impl DawHost {
 
         while events.last().is_some_and(|event| event.sample_offset == 0) {
             let event = events.pop().unwrap();
-            self.apply_parameter_event(event)?;
+            let _ = self.apply_parameter_event(event);
         }
 
         while frame_cursor < frames {
@@ -2628,12 +2733,12 @@ impl DawHost {
                 .is_some_and(|event| event.sample_offset <= frame_cursor)
             {
                 let event = events.pop().unwrap();
-                self.apply_parameter_event(event)?;
+                let _ = self.apply_parameter_event(event);
             }
         }
 
         while let Some(event) = events.pop() {
-            self.apply_parameter_event(event)?;
+            let _ = self.apply_parameter_event(event);
         }
 
         Ok(processed_frames)

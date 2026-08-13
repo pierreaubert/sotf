@@ -26,13 +26,15 @@ desktop and TUI players. The interesting user-facing capabilities are:
   via Symphonia; optional IAMF via feature flag.
 @item High-quality resampling via @code{rubato} for arbitrary device
   sample-rate conversion.
-@item Live config reload: drop a new config file in place and the
-  engine picks it up (SIGHUP on Unix).
+@item Optional live config reload from a watched file. Unix signal
+  watching is opt-in and is intended for standalone processes.
 @item Multi-channel recording for measurement.
 @end itemize
 
-A minimal headless invocation is the @code{sotf-server} binary; for
-embedded use, see the @ref{sotf-engine Developer Guide}.
+Applications normally construct @code{AudioEngine} through the player
+or server layers. DAWs and other hosts that own the audio callback use
+@code{EmbeddedAudioEngine}, which processes caller-owned blocks against
+an explicit external sample clock without opening a device.
 
 @node sotf-engine Developer Guide
 @section Developer Guide
@@ -46,43 +48,71 @@ Manager  ──┬──> Decoder  ──> Processing  ──> Playback (cpal)
            └──> Recorder
 @end example
 
-Each stage owns a lock-free queue. The audio callback runs on the
-playback thread; it must never allocate or lock.
+Bounded recycling queues carry audio buffers between stages. The cpal
+hardware callback is created by the playback feeder thread but normally
+runs on a backend-owned thread; neither path may allocate or lock.
 
 @subheading Key types
 
 @table @code
-@item Engine
-The pipeline owner. Constructed with @code{Engine::new(config)},
-started with @code{start()}, stopped with @code{stop()}.
-@item NodeBuffer
-Single-writer / single-reader buffer used between graph nodes. Replaces
-the old @code{Arc<Mutex<Vec<f32>>>}: no locks, no clones, slice reads.
-Note: @code{clear()} only resets @code{actual_len}; it does not zero
-memory. @code{read()} returns the full buffer when
-@code{actual_len == 0}.
+@item AudioEngine
+The real-time pipeline owner. Construct with
+@code{AudioEngine::new(EngineConfig)}, then use @code{play},
+@code{pause}, @code{seek}, @code{set_volume}, and
+@code{update_plugin_chain}. Dropping or explicitly shutting down the
+engine stops its worker threads.
+@item EmbeddedAudioEngine
+Device-free plugin engine for a DAW render callback. Use
+@code{process_at(sample_position, input, output)} for an external clock
+and @code{set_plugin_parameter_at} for sample-offset automation in the
+next block.
+@item EngineConfig
+Defines sample rate, frame and playback-buffer sizes, channels, output
+device/access policy, plugins, network endpoint, oversampling, DSD
+policy, and optional configuration watching.
 @item AudioFrame
 Owned @code{Vec<f32>} of interleaved samples for one quantum.
-@item DawHost
-Wraps @code{Arc<Mutex<Box<dyn Plugin>>>} per node; the mutex is only
-ever taken outside the audio path.
-@item ProcessBuffers
-Extracted buffer struct that lets @code{process()} hold a mutable
-borrow on its buffers and an immutable borrow on the graph topology
-via @code{Option::take()} put-back.
+@item AudioEngineManager
+Higher-level source and streaming lifecycle API used by player
+frontends.
+@item AudioDecoder
+Decoder interface implemented by file, stream, PCM, DSD, and optional
+IAMF sources.
+@item CpalSink
+Public standalone device sink. The four-thread engine also has an
+engine-owned cpal builder because recovery and telemetry differ; both
+paths share the same callback ring, gain-ramp, clamp, and dither
+contracts.
 @end table
 
 @subheading Real-time discipline (mandatory)
 
 @itemize @bullet
-@item No allocations in @code{process()}; pre-allocate in
-  @code{build()}.
+@item No allocations in @code{process()} for validated engine limits
+  (at most 8192 frames and 16 declared I/O channels); pre-allocate in
+  @code{build()}. Oversized configurations are rejected before startup.
 @item No locks per frame; cache per-frame predicates (e.g.@:
   @code{has_variable_frame_plugin}) at build time.
 @item STFT plugins return @code{context.num_frames}, not the actual
   draining count, so the ring buffer stays aligned.
 @item Output clipping (@code{sample.clamp(-1.0, 1.0)}) belongs in the
   cpal callback, not inside plugins.
+@item Volume and mute changes use a 10 ms callback-side ramp. Gain
+  advances once per interleaved frame so every channel receives the
+  same gain.
+@item Pause flushes the playback ring immediately and discards upstream
+  frames until resume. Only the hardware quantum already being rendered
+  may finish; the configured software-buffer tail is not played.
+@item Standalone @code{AudioEngine} parameter messages are
+  block-granular. @code{EmbeddedAudioEngine} exposes the plugin host's
+  sample-offset events for DAW automation. Fixed-rate, fixed-frame
+  chains split eligible blocks at event offsets; variable-rate/frame
+  chains apply queued offsets at the next safe block boundary.
+@item On macOS, CoreAudio schedules its render thread. On Linux and
+  Windows, applications must verify the selected backend's callback
+  scheduling. The playback feeder deliberately uses normal scheduling;
+  engine priority elevation applies only to processing workers, not to
+  a cpal-owned callback thread.
 @item Debug builds on macOS must keep @code{opt-level = 0}; aggressive
   optimisation breaks cpal/CoreAudio device enumeration.
 @end itemize
@@ -93,25 +123,67 @@ via @code{Option::take()} put-back.
 crates/sotf-engine/
   src/
     engine/                pipeline + threads
-    decoder/               symphonia integration, sample-rate hop
-    output/                cpal device, callback
-    recorder/              multi-channel capture
-    config/                schema + file watcher
-    analysis/              spectrum / loudness taps
+    decoder/               file/stream decoders, DSD, sample-rate hop
+    plugins/               engine plugin configuration and conversion
+    manager/               high-level playback/streaming manager
+    signal_recorder/       multi-channel measurement capture
+    timeline/              tracks, transport, automation and MIDI model
+    offline_renderer/      offline WAV rendering
+    project/               project model and timeline bridge
 @end example
 
 @subheading Build flags
 
 @itemize @bullet
-@item @code{--no-default-features} when @code{hdf5-metno-sys} is in
-  scope.
+@item Defaults: @code{streaming}, @code{hls}, and @code{iamf}.
+@item @code{streaming} enables outbound HTTP PCM streaming;
+  @code{hls} adds HLS support.
 @item @code{iamf} feature enables IAMF support.
-@item @code{hal}, @code{onnx}, @code{gpu-2d}, @code{gpu-3d} enable
-  optional integrations.
+@item @code{hal} enables the macOS systemwide HAL integration.
+@item @code{asio} enables the Windows ASIO backend.
+@item @code{playback-runtime-harness} exposes only the internal
+  allocation/fuzz harness and must not be enabled in production.
+@end itemize
+
+@subheading Embedding and global process state
+
+@code{EngineConfig::watch_config} defaults to @code{false} and controls
+only file watching. @code{EngineConfig::watch_signals} is a separate
+opt-in for process-global SIGINT, SIGTERM, and SIGHUP handlers; keep it
+disabled inside a DAW, plugin, or other host process. Standalone
+@code{AudioEngine} uses cpal device ownership.
+@code{EmbeddedAudioEngine} is the device-free host-driven API; the DAW
+owns its callback, clock, and output sink. It declares a maximum block
+size from @code{EngineConfig::frame_size}; call @code{reset_transport}
+on discontinuities and loop jumps.
+
+@subheading Additional public subsystems and status
+
+@itemize @bullet
+@item @code{timeline}, @code{offline_renderer}, and @code{project}
+  provide pull-based project rendering. They are not wired into the
+  four-thread real-time pipeline.
+@item External CLAP, VST3, and Audio Unit hosting uses isolated worker
+  processes with platform sandbox status reported by the plugin layer.
+@item Plugin delay compensation and engine oversampling policy are
+  applied while building the host chain.
+@item DSF/DFF decode to PCM is supported. Native DSD and DoP output are
+  reported as unavailable/fallback according to @code{DsdOutputMode}.
+@item The network endpoint implements outbound HTTP PCM streaming.
+  Input-client mode is planned, not implemented.
+@item iOS playback uses a real RemoteIO AudioUnit callback despite the
+  historical @code{playback_thread_stub} module name. Device discovery,
+  config watching, and runtime output reconfiguration remain limited.
 @end itemize
 
 @subheading Testing
 
 @example
-cargo test -p sotf-engine --no-default-features
+cargo test -p sotf-engine
+cargo check -p sotf-engine
+cargo clippy -p sotf-engine -- -W warnings
+
+@c Internal callback/frame allocation harness:
+cargo test -p sotf-engine --features playback-runtime-harness \
+  --test playback_runtime_allocation_tests
 @end example

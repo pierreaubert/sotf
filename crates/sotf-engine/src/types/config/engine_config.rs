@@ -45,9 +45,15 @@ pub struct EngineConfig {
     #[serde(skip)]
     pub config_path: Option<PathBuf>,
 
-    /// Watch config file and Unix signals for reload/shutdown
+    /// Watch the config file for reloads.
     #[serde(skip)]
     pub watch_config: bool,
+
+    /// Install process-global SIGINT, SIGTERM, and SIGHUP handlers.
+    /// This is a separate explicit opt-in so embedders may watch a file without
+    /// claiming signal ownership from the host application.
+    #[serde(skip)]
+    pub watch_signals: bool,
 
     /// Driver mode: audio comes from a platform audio driver (HAL, PipeWire, APO)
     /// instead of file decoder. When true, decoder thread reads from the AudioDriver.
@@ -107,11 +113,17 @@ impl Default for EngineConfig {
             muted: false,
             config_path: None,
             watch_config: false,
+            watch_signals: false,
         }
     }
 }
 
 impl EngineConfig {
+    /// Largest block supported by the allocation-free processing contract.
+    pub const MAX_FRAME_SIZE: usize = 8192;
+    /// Largest declared engine I/O layout supported without hot-path growth.
+    pub const MAX_CHANNELS: usize = 16;
+
     /// Validate values that must hold before the config reaches the engine.
     pub fn validate(&self) -> Result<(), String> {
         const LATEST_VERSION: u32 = default_engine_config_version();
@@ -125,6 +137,13 @@ impl EngineConfig {
         if self.frame_size == 0 {
             return Err("EngineConfig frame_size must be greater than 0".to_string());
         }
+        if self.frame_size > Self::MAX_FRAME_SIZE {
+            return Err(format!(
+                "EngineConfig frame_size {} exceeds allocation-free maximum {}",
+                self.frame_size,
+                Self::MAX_FRAME_SIZE
+            ));
+        }
         if self.buffer_ms == 0 {
             return Err("EngineConfig buffer_ms must be greater than 0".to_string());
         }
@@ -134,8 +153,22 @@ impl EngineConfig {
         if self.input_channels == 0 {
             return Err("EngineConfig input_channels must be greater than 0".to_string());
         }
+        if self.input_channels > Self::MAX_CHANNELS {
+            return Err(format!(
+                "EngineConfig input_channels {} exceeds allocation-free maximum {}",
+                self.input_channels,
+                Self::MAX_CHANNELS
+            ));
+        }
         if self.output_channels == 0 {
             return Err("EngineConfig output_channels must be greater than 0".to_string());
+        }
+        if self.output_channels > Self::MAX_CHANNELS {
+            return Err(format!(
+                "EngineConfig output_channels {} exceeds allocation-free maximum {}",
+                self.output_channels,
+                Self::MAX_CHANNELS
+            ));
         }
         if !self.volume.is_finite() || !(0.0..=1.0).contains(&self.volume) {
             return Err(

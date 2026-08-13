@@ -7,9 +7,67 @@ use super::misc::frames_to_sample_count;
 use super::sample_queue::SampleQueue;
 use super::types::run_decoder_thread;
 use crate::DsdOutputMode;
+use crate::decoder::{AudioSpec, DecodedAudio};
 
 use std::path::PathBuf;
 use std::time::Duration;
+
+#[test]
+fn decoder_shutdown_does_not_block_on_a_stuck_worker() {
+    let (command_tx, _command_rx) = std::sync::mpsc::channel();
+    let (_response_tx, response_rx) = std::sync::mpsc::channel();
+    let handle = std::thread::spawn(|| std::thread::sleep(Duration::from_secs(1)));
+    let mut decoder = super::DecoderThread {
+        command_tx,
+        response_inbox: std::sync::Mutex::new(super::DecoderResponseInbox {
+            rx: response_rx,
+            pending: std::collections::VecDeque::new(),
+            buffered: std::collections::HashMap::new(),
+            abandoned: std::collections::HashSet::new(),
+        }),
+        next_request_id: std::sync::atomic::AtomicU64::new(1),
+        thread_handle: Some(handle),
+    };
+
+    let started = std::time::Instant::now();
+    decoder.shutdown_with_timeout(Duration::from_millis(20));
+
+    assert!(started.elapsed() < Duration::from_millis(250));
+    assert!(decoder.thread_handle.is_none());
+}
+
+#[test]
+fn decoder_late_reply_cannot_acknowledge_a_newer_request() {
+    let (command_tx, command_rx) = std::sync::mpsc::channel();
+    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let mut decoder = super::DecoderThread {
+        command_tx,
+        response_inbox: std::sync::Mutex::new(super::DecoderResponseInbox {
+            rx: response_rx,
+            pending: std::collections::VecDeque::new(),
+            buffered: std::collections::HashMap::new(),
+            abandoned: std::collections::HashSet::new(),
+        }),
+        next_request_id: std::sync::atomic::AtomicU64::new(1),
+        thread_handle: None,
+    };
+
+    let stale_id = decoder.send_command(DecoderCommand::Pause).unwrap();
+    let live_id = decoder.send_command(DecoderCommand::Resume).unwrap();
+    assert!(matches!(command_rx.recv().unwrap(), DecoderCommand::Pause));
+    assert!(matches!(command_rx.recv().unwrap(), DecoderCommand::Resume));
+    decoder.abandon_request(stale_id);
+    response_tx
+        .send(super::super::DecoderResponse::Error("late".into()))
+        .unwrap();
+    response_tx.send(super::super::DecoderResponse::Ok).unwrap();
+
+    assert!(matches!(
+        decoder.try_recv_response_for(live_id),
+        Some(super::super::DecoderResponse::Ok)
+    ));
+    decoder.thread_handle = None;
+}
 
 #[test]
 fn send_or_interrupt_returns_unsent_message_with_interrupting_command() {
@@ -80,6 +138,29 @@ fn decoder_frame_buffer_handoff_has_no_allocation_fallback() {
         !source.contains(concat!("Err(_) => Vec::", "with_capacity(len)")),
         "decoder frame handoff must use preallocated/recycled buffers instead of allocating on recycle miss"
     );
+}
+
+#[test]
+fn exact_decoder_block_transfers_ownership_without_sample_copies() {
+    let (_recycle_tx, recycle_rx) = std::sync::mpsc::channel();
+    let mut state = DecoderState::new(recycle_rx, DsdOutputMode::Disabled);
+    let mut decoded = DecodedAudio::new(AudioSpec {
+        sample_rate: 48_000,
+        channels: 2,
+        bits_per_sample: 32,
+        total_frames: None,
+    });
+    decoded.samples = vec![0.25; 2_048];
+    let decoded_allocation = decoded.samples.as_ptr();
+    state.decode_buffer = Some(decoded);
+
+    assert!(state.queue_decoded_samples().unwrap());
+    assert_eq!(state.resampler_buffer.data.as_ptr(), decoded_allocation);
+    let frame_data = state
+        .take_exact_decoded_block(2_048)
+        .expect("exact decoded block should transfer directly");
+    assert_eq!(frame_data.as_ptr(), decoded_allocation);
+    assert!(state.resampler_buffer.is_empty());
 }
 
 #[test]
@@ -215,7 +296,7 @@ fn silent_source_fallback_uses_configured_channel_count() {
 #[test]
 fn paused_decoder_thread_exits_on_disconnected_sender() {
     let (message_tx, _message_rx) = std::sync::mpsc::sync_channel(4);
-    let (event_tx, _event_rx) = std::sync::mpsc::channel();
+    let (event_tx, _event_rx) = crossbeam::channel::bounded(32);
     let (response_tx, response_rx) = std::sync::mpsc::channel();
     let (recycle_tx, recycle_rx) = std::sync::mpsc::channel();
 

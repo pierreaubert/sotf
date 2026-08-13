@@ -89,6 +89,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Sidechain",
     )
     .setup()
+    .structural()
     .doc("High-pass on detector input"),
     ParamSpec::choice(
         "Sidechain HPF Order",
@@ -98,6 +99,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Sidechain",
     )
     .setup()
+    .structural()
     .doc("Butterworth HPF slope"),
     ParamSpec::choice(
         "Detection Mode",
@@ -107,6 +109,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Sidechain",
     )
     .setup()
+    .structural()
     .doc("Peak or RMS level detection"),
     ParamSpec::float(
         "Lookahead",
@@ -125,6 +128,7 @@ pub const PARAMS: &[ParamSpec] = &[
         false,
         "Timing",
     )
+    .structural()
     .doc("Adapts release to signal content"),
     ParamSpec::bool_param(
         "Measured Auto Makeup",

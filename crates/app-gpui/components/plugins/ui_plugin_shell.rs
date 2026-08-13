@@ -18,7 +18,7 @@ use sotf_audio_player::PluginType;
 pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
     match plugin_type {
         PluginType::EQ => theme.plugin_palette.plugin_colors.eq,
-        PluginType::Gain => theme.plugin_palette.plugin_colors.gain,
+        PluginType::Gain | PluginType::Dither => theme.plugin_palette.plugin_colors.gain,
         PluginType::AAE => theme.plugin_palette.plugin_colors.upmixer,
         PluginType::Upmixer => theme.plugin_palette.plugin_colors.upmixer,
         PluginType::Compressor => theme.plugin_palette.plugin_colors.compressor,
@@ -73,6 +73,7 @@ pub fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: 
             IconName::SlidersHorizontal
         }
         PluginType::Gain | PluginType::LoudnessCompensation => IconName::Volume2,
+        PluginType::Dither => IconName::AudioWaveform,
         PluginType::AAE | PluginType::Convolution | PluginType::Delay => IconName::Repeat,
         PluginType::Upmixer
         | PluginType::Matrix
@@ -135,6 +136,7 @@ pub fn plugin_short_name(
                 "Gain"
             }
         }
+        PluginType::Dither => "Dither",
         PluginType::AAE => "AAE Reverb",
         PluginType::Upmixer => "Upmixer",
         PluginType::Compressor => "Compressor",

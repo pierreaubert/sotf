@@ -711,6 +711,10 @@ fn test_engine_update_preserves_playback_after_channel_change() {
 
     let state = engine.get_state();
     assert_eq!(state.num_channels, 5, "Should be 5 channels after upmixer");
+    assert_eq!(
+        state.playback_channels, 2,
+        "Playback must remain capped to the configured stereo device width"
+    );
     assert_eq!(state.playback_state, PlaybackState::Playing);
 
     // Remove upmixer (back to 2ch)

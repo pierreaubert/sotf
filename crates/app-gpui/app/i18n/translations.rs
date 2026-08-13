@@ -4797,6 +4797,9 @@ impl PluginCommonTranslations {
             Language::English => match plugin_type {
                 PluginType::EQ => "Shape frequency balance with parametric filters.",
                 PluginType::Gain => "Adjust the overall signal level.",
+                PluginType::Dither => {
+                    "Decorrelate quantization error when reducing integer output bit depth."
+                }
                 PluginType::AAE => {
                     "Enhance room ambience adaptively with processing inspired by LARES."
                 }
@@ -4874,6 +4877,9 @@ impl PluginCommonTranslations {
             Language::French => match plugin_type {
                 PluginType::EQ => "Modelez l’équilibre spectral avec des filtres paramétriques.",
                 PluginType::Gain => "Réglez le niveau général du signal.",
+                PluginType::Dither => {
+                    "Décorrélez l’erreur de quantification lors de la réduction de la profondeur en bits."
+                }
                 PluginType::AAE => {
                     "Renforcez l’ambiance de la pièce avec un traitement adaptatif inspiré de LARES."
                 }
@@ -4963,6 +4969,9 @@ impl PluginCommonTranslations {
             Language::German => match plugin_type {
                 PluginType::EQ => "Formen Sie den Frequenzgang mit parametrischen Filtern.",
                 PluginType::Gain => "Passen Sie den Gesamtpegel des Signals an.",
+                PluginType::Dither => {
+                    "Dekorrelieren Sie Quantisierungsfehler beim Reduzieren der Ausgabebittiefe."
+                }
                 PluginType::AAE => {
                     "Verstärken Sie Raumatmosphäre adaptiv mit LARES-inspirierter Verarbeitung."
                 }
@@ -5062,6 +5071,9 @@ impl PluginCommonTranslations {
             Language::Spanish => match plugin_type {
                 PluginType::EQ => "Modele el equilibrio tonal con filtros paramétricos.",
                 PluginType::Gain => "Ajuste el nivel general de la señal.",
+                PluginType::Dither => {
+                    "Descorrelacione el error de cuantización al reducir la profundidad de bits de salida."
+                }
                 PluginType::AAE => {
                     "Mejore el ambiente de sala con procesamiento adaptativo inspirado en LARES."
                 }

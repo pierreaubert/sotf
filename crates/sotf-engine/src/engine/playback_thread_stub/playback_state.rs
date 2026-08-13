@@ -1,3 +1,4 @@
+use crate::engine::volume_ramp::VolumeRampState;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32};
 
@@ -5,6 +6,7 @@ pub(super) struct PlaybackState {
     pub(super) capacity: usize,
     pub(super) volume: Arc<AtomicU32>,
     pub(super) muted: Arc<AtomicBool>,
+    pub(super) volume_ramp: VolumeRampState,
     pub(super) flush_requested: Arc<AtomicBool>,
 }
 
@@ -14,6 +16,7 @@ impl PlaybackState {
             capacity,
             volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             muted: Arc::new(AtomicBool::new(false)),
+            volume_ramp: VolumeRampState::new(1.0),
             flush_requested: Arc::new(AtomicBool::new(false)),
         }
     }

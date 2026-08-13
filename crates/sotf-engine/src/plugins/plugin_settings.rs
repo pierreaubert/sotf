@@ -340,6 +340,7 @@ use sotf_plugins::param_specs::de_esser as de_esser_specs;
 use sotf_plugins::param_specs::declick as declick_specs;
 use sotf_plugins::param_specs::delay as delay_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
+use sotf_plugins::param_specs::dither as dither_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
@@ -363,6 +364,10 @@ use sotf_plugins::param_specs::stereo_imager as stereo_imager_specs;
 use sotf_plugins::param_specs::transient_shaper as transient_shaper_specs;
 use sotf_plugins::param_specs::upmixer as upmixer_specs;
 use sotf_plugins::param_specs::xtc as xtc_specs;
+
+fn default_true() -> bool {
+    true
+}
 use sotf_plugins::{
     BandCompressorParams, BandExpanderParams, CrossfeedMode, CrossfeedPreset, DynEqBandParams,
     SpectralTiltCorrection, TiltReferenceFreq,
@@ -524,6 +529,14 @@ pub enum PluginSettings {
         gain_db: f64,
         #[serde(default = "default_gain_smoothing_ms")]
         smoothing_ms: f64,
+    },
+    Dither {
+        #[serde(default)]
+        bit_depth: usize,
+        #[serde(default = "default_true")]
+        noise_shaping: bool,
+        #[serde(default)]
+        dither_type: usize,
     },
     Upmixer {
         #[serde(deserialize_with = "deserialize_speaker_config")]
@@ -1495,6 +1508,7 @@ impl PluginSettings {
         match self {
             Self::EQ { .. } => PluginType::EQ,
             Self::Gain { .. } => PluginType::Gain,
+            Self::Dither { .. } => PluginType::Dither,
             Self::Upmixer { .. } => PluginType::Upmixer,
             Self::Compressor { .. } => PluginType::Compressor,
             Self::Limiter { .. } => PluginType::Limiter,
@@ -1607,6 +1621,11 @@ impl PluginSettings {
                 channels: default_channels(),
                 gain_db: p(gain_specs::PARAMS, "gain_db").default_f64(),
                 smoothing_ms: p(gain_specs::PARAMS, "smoothing_ms").default_f64(),
+            },
+            PluginType::Dither => Self::Dither {
+                bit_depth: p(dither_specs::PARAMS, "bit_depth").default_usize(),
+                noise_shaping: p(dither_specs::PARAMS, "noise_shaping").default_bool(),
+                dither_type: p(dither_specs::PARAMS, "dither_type").default_usize(),
             },
             PluginType::Upmixer => {
                 let u = upmixer_specs::PARAMS;

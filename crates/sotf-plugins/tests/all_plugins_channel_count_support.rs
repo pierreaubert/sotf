@@ -51,9 +51,18 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
             "mix": 1.0,
             "gain_db": 0.0,
         }),
-        "downmix" => serde_json::json!({
-            "input_channels": channels,
-        }),
+        "downmix" => {
+            let input_layout = match channels {
+                // Eight channels are ambiguous (for example 7.1 versus
+                // 5.1.2), so the catalog probe must choose one explicitly.
+                8 => Some("7.1"),
+                _ => None,
+            };
+            serde_json::json!({
+                "input_channels": channels,
+                "input_layout": input_layout,
+            })
+        }
         "binaural_decoder" => serde_json::json!({
             "input_channels": channels,
             "sofa_file": "",
@@ -84,7 +93,7 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
         "band_split" => serde_json::json!({
             "num_bands": 2,
             "frequency": 1000.0,
-            "type": "lr4",
+            "type": "LR24",
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -96,10 +105,19 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
             "num_mics": channels,
             "mic_spacing_m": 0.05,
         }),
-        "ambisonics_decoder" => serde_json::json!({
-            "order": 1,
-            "target_layout": "5.1",
-        }),
+        "ambisonics_decoder" => {
+            let order = match channels {
+                9 => 2,
+                16 => 3,
+                // First order is also the rejection probe for channel widths
+                // that the catalog does not advertise.
+                _ => 1,
+            };
+            serde_json::json!({
+                "order": order,
+                "target_layout": "5.1",
+            })
+        }
         _ => serde_json::json!({}),
     }
 }

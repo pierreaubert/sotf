@@ -5,13 +5,20 @@ use sotf_audio::engine::{
 use std::sync::mpsc::{channel, sync_channel};
 use std::time::Duration;
 
+fn event_channel() -> (
+    crossbeam::channel::Sender<ThreadEvent>,
+    crossbeam::channel::Receiver<ThreadEvent>,
+) {
+    crossbeam::channel::bounded(256)
+}
+
 #[sotf_test::requires_hardware]
 #[test]
 #[serial]
 fn test_playback_thread_creation() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     // Create playback thread with BlackHole device
     let result = PlaybackThread::new(
@@ -40,7 +47,7 @@ fn test_playback_thread_creation() {
 fn test_playback_send_commands() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let playback = PlaybackThread::new(
         message_rx,
@@ -76,7 +83,7 @@ fn test_playback_send_commands() {
 fn test_playback_volume_commands() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let playback = PlaybackThread::new(
         message_rx,
@@ -107,7 +114,7 @@ fn test_playback_volume_commands() {
 fn test_playback_shutdown() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let mut playback = PlaybackThread::new(
         message_rx,
@@ -137,7 +144,7 @@ fn test_playback_shutdown() {
 fn test_playback_receives_frames() {
     super::common::skip_without_device!();
     let (message_tx, message_rx) = channel();
-    let (event_tx, event_rx) = channel();
+    let (event_tx, event_rx) = event_channel();
 
     let _playback = PlaybackThread::new(
         message_rx,
@@ -187,7 +194,7 @@ fn test_playback_receives_frames() {
 fn test_playback_detects_underrun() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
-    let (event_tx, event_rx) = channel();
+    let (event_tx, event_rx) = event_channel();
 
     let _playback = PlaybackThread::new(
         message_rx,
@@ -234,7 +241,7 @@ fn test_playback_detects_underrun() {
 fn test_playback_handles_eos() {
     super::common::skip_without_device!();
     let (message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let _playback = PlaybackThread::new(
         message_rx,
@@ -268,7 +275,7 @@ fn test_playback_handles_eos() {
 fn test_playback_handles_flush() {
     super::common::skip_without_device!();
     let (message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let _playback = PlaybackThread::new(
         message_rx,
@@ -309,7 +316,7 @@ fn test_playback_handles_flush() {
 fn test_playback_channel_update() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let playback = PlaybackThread::new(
         message_rx,
@@ -339,7 +346,7 @@ fn test_playback_channel_update() {
 fn test_playback_rapid_volume_changes() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let playback = PlaybackThread::new(
         message_rx,
@@ -370,7 +377,7 @@ fn test_playback_rapid_volume_changes() {
 fn test_playback_rapid_mute_toggle() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let playback = PlaybackThread::new(
         message_rx,
@@ -402,7 +409,7 @@ fn test_playback_rapid_mute_toggle() {
 fn test_playback_mixed_commands() {
     super::common::skip_without_device!();
     let (message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let playback = PlaybackThread::new(
         message_rx,
@@ -450,7 +457,7 @@ fn test_playback_different_sample_rates() {
 
     for &sr in &sample_rates {
         let (_message_tx, message_rx) = channel();
-        let (event_tx, _event_rx) = channel();
+        let (event_tx, _event_rx) = event_channel();
 
         let result = PlaybackThread::new(
             message_rx,
@@ -496,7 +503,7 @@ fn test_playback_different_channel_counts() {
 
     for &channels in &channel_counts {
         let (_message_tx, message_rx) = channel();
-        let (event_tx, _event_rx) = channel();
+        let (event_tx, _event_rx) = event_channel();
 
         let result = PlaybackThread::new(
             message_rx,
@@ -536,7 +543,7 @@ fn test_playback_different_channel_counts() {
 fn test_playback_drop_cleanup() {
     super::common::skip_without_device!();
     let (_message_tx, message_rx) = channel();
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = event_channel();
 
     let playback = PlaybackThread::new(
         message_rx,

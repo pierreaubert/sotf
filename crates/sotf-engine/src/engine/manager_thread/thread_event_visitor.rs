@@ -171,7 +171,7 @@ impl ThreadEventVisitor for AudioEngineStateUpdater {
     }
 
     fn playback_channels_changed(&mut self, state: &mut AudioEngineState, channels: usize) {
-        state.num_channels = channels;
+        state.playback_channels = channels;
     }
 
     fn playback_output_device_changed(&mut self, state: &mut AudioEngineState, device: String) {

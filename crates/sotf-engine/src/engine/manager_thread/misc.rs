@@ -75,6 +75,7 @@ pub(super) fn initial_engine_state_from_config(config: &EngineConfig) -> AudioEn
     AudioEngineState {
         sample_rate: config.output_sample_rate,
         num_channels: config.output_channels,
+        playback_channels: config.output_channels,
         volume: config.volume,
         muted: config.muted,
         latency_compensation_enabled: config.latency_compensation.is_enabled(),

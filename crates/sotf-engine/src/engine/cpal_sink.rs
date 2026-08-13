@@ -5,7 +5,6 @@ use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::{Producer, RingBuffer};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::mpsc::Sender;
 
 mod apply;
 mod build;
@@ -40,7 +39,7 @@ pub struct CpalSink {
     output_format: SampleFormat,
     buffer_capacity: usize,
     channels: usize,
-    event_tx: Option<Sender<ThreadEvent>>,
+    event_tx: Option<crossbeam::channel::Sender<ThreadEvent>>,
     allow_virtual_output: bool,
     stall_check: StallCheckState,
 }
@@ -67,6 +66,31 @@ impl CpalSink {
             allow_virtual_output: false,
             stall_check: StallCheckState::default(),
         }
+    }
+
+    fn validate_config(config: &SinkConfig) -> Result<(), String> {
+        if config.sample_rate == 0 {
+            return Err("CpalSink sample rate must be greater than zero".to_string());
+        }
+        if config.channels == 0 {
+            return Err("CpalSink channel count must be greater than zero".to_string());
+        }
+        if config.channels > u16::MAX as usize {
+            return Err(format!(
+                "CpalSink channel count {} exceeds the cpal limit {}",
+                config.channels,
+                u16::MAX
+            ));
+        }
+        if config.buffer_ms == 0 {
+            return Err("CpalSink buffer duration must be greater than zero".to_string());
+        }
+        let capacity =
+            playback_buffer_capacity(config.sample_rate, config.channels, config.buffer_ms);
+        if capacity == usize::MAX {
+            return Err("CpalSink buffer capacity is too large".to_string());
+        }
+        Ok(())
     }
 
     fn reset_stall_check(&self) {
@@ -163,16 +187,26 @@ impl CpalSink {
     }
 
     /// Build the cpal stream and ring buffer for the given device/config.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "stream builder receives immutable format plus preserved playback controls"
+    )]
     fn build_stream(
         device: &Device,
         config: &StreamConfig,
         logical_channels: usize,
         buffer_capacity: usize,
         output_format: SampleFormat,
-        event_tx: Sender<ThreadEvent>,
+        event_tx: crossbeam::channel::Sender<ThreadEvent>,
+        volume: f32,
+        muted: bool,
     ) -> Result<(Producer<f32>, Arc<CpalPlaybackState>, Stream), String> {
         let (producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
-        let state = Arc::new(CpalPlaybackState::new(buffer_capacity));
+        let state = Arc::new(CpalPlaybackState::new_with_controls(
+            buffer_capacity,
+            volume,
+            muted,
+        ));
 
         let stream = build_output_stream(
             device,
@@ -196,8 +230,9 @@ impl AudioSink for CpalSink {
     fn open(
         &mut self,
         config: SinkConfig,
-        event_tx: Sender<ThreadEvent>,
+        event_tx: crossbeam::channel::Sender<ThreadEvent>,
     ) -> Result<SinkOpenResult, String> {
+        Self::validate_config(&config)?;
         self.allow_virtual_output = config.allow_virtual_output;
         self.event_tx = Some(event_tx.clone());
 
@@ -234,6 +269,8 @@ impl AudioSink for CpalSink {
             buffer_capacity,
             output_format,
             event_tx.clone(),
+            1.0,
+            false,
         ) {
             Ok((producer, state, stream)) => {
                 (producer, state, stream, stream_config, output_format)
@@ -266,6 +303,8 @@ impl AudioSink for CpalSink {
                     buffer_capacity,
                     retry_format,
                     event_tx.clone(),
+                    1.0,
+                    false,
                 )?;
                 (producer, state, stream, retry_config, retry_format)
             }
@@ -357,8 +396,19 @@ impl AudioSink for CpalSink {
     }
 
     fn reconfigure(&mut self, config: SinkConfig) -> Result<SinkOpenResult, String> {
+        Self::validate_config(&config)?;
         let event_tx = self.event_tx.clone().ok_or("No event channel")?;
         let device = self.device.as_ref().ok_or("No device")?;
+        let (preserved_volume, preserved_muted) = self
+            .state
+            .as_ref()
+            .map(|state| {
+                (
+                    f32::from_bits(state.volume.load(Ordering::Relaxed)),
+                    state.muted.load(Ordering::Relaxed),
+                )
+            })
+            .unwrap_or((1.0, false));
 
         // Pause old stream
         let mut old_stream_paused = false;
@@ -400,6 +450,8 @@ impl AudioSink for CpalSink {
             buffer_capacity,
             output_format,
             event_tx.clone(),
+            preserved_volume,
+            preserved_muted,
         ) {
             Ok((producer, state, stream)) => {
                 (producer, state, stream, stream_config, output_format)
@@ -441,6 +493,8 @@ impl AudioSink for CpalSink {
                     buffer_capacity,
                     retry_format,
                     event_tx.clone(),
+                    preserved_volume,
+                    preserved_muted,
                 ) {
                     Ok((producer, state, stream)) => {
                         (producer, state, stream, retry_config, retry_format)

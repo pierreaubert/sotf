@@ -2,13 +2,13 @@ use super::create::create_decoder;
 use super::create::create_test_wav_frames;
 use super::misc::collect_decoder_until_eos;
 use sotf_audio::engine::{DecoderCommand, ThreadEvent};
-use std::sync::mpsc::{channel, sync_channel};
+use std::sync::mpsc::sync_channel;
 use std::time::Duration;
 
 #[test]
 fn test_decoder_preserves_non_resampled_final_partial_frame() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, _event_rx) = channel();
+    let (event_tx, _event_rx) = crossbeam::channel::bounded(256);
 
     let frame_size = 512;
     let total_input_frames = (frame_size * 2) + 17;
@@ -37,7 +37,7 @@ fn test_decoder_preserves_non_resampled_final_partial_frame() {
 #[test]
 fn test_decoder_gapless_preserves_tail_frames_from_both_sources() {
     let (message_tx, message_rx) = sync_channel(100);
-    let (event_tx, event_rx) = channel();
+    let (event_tx, event_rx) = crossbeam::channel::bounded(256);
 
     let frame_size = 512;
     let first_frames = (frame_size * 8) + 17;

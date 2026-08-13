@@ -5,8 +5,10 @@ use super::super::{
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use super::isolated::isolated_external_plugin_status;
 use super::misc::send_or_interrupt;
+use super::{ProcessingReply, ProcessingRequest};
 use sotf_plugins::{Host, PluginHost};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
 /// Short wait used while audio is active and the decoder queue briefly runs dry.
@@ -17,13 +19,16 @@ const IDLE_EMPTY_SLEEP_PROCESSING_MS: u64 = 1;
 /// Maximum engine block size (frames) used to pre-size processing scratch buffers.
 const MAX_ENGINE_BLOCK_FRAMES: usize = 8192;
 /// Maximum channel count used to pre-size processing scratch buffers.
-const MAX_ENGINE_CHANNELS: usize = 8;
+const MAX_ENGINE_CHANNELS: usize = crate::EngineConfig::MAX_CHANNELS;
 /// Worst-case interleaved sample count for one engine block.
 const MAX_ENGINE_SAMPLE_CAPACITY: usize = MAX_ENGINE_BLOCK_FRAMES * MAX_ENGINE_CHANNELS;
 /// Headroom for plugins that expand channels or sample rate (e.g. resamplers).
 const MAX_PROCESSING_SAMPLE_CAPACITY: usize = MAX_ENGINE_SAMPLE_CAPACITY * 2;
 /// Number of spare buffers kept on the processing thread for recycle-queue misses.
 const RECYCLE_FALLBACK_POOL_SIZE: usize = 4;
+/// The manager serializes host swaps, so reaching this limit means the GC is
+/// persistently unhealthy rather than merely one item behind.
+const MAX_PENDING_RETIREMENTS: usize = 64;
 
 /// Processing state
 pub(super) struct ProcessingState {
@@ -45,6 +50,8 @@ pub(super) struct ProcessingState {
     pub(super) gc_tx: Option<super::super::GcSender>,
     /// Retained only if the bounded GC queue is momentarily full.
     pub(super) pending_retirements: Vec<GcItem>,
+    retirement_overflowed: bool,
+    pub(super) host_generation: Arc<AtomicU64>,
     /// Number of channels
     pub(super) channels: usize,
     pub(super) bypassed: bool,
@@ -68,8 +75,6 @@ pub(super) struct ProcessingState {
     pub(super) cache_reuse_count: u64,
     /// RT diagnostics: max process_frame duration in the current reporting window
     pub(super) max_frame_duration: std::time::Duration,
-    /// RT diagnostics: last time we logged diagnostics
-    pub(super) last_rt_diag: std::time::Instant,
     /// RT diagnostics: how many frames took longer than the frame period
     pub(super) frames_over_budget: u64,
     /// RT diagnostics: how many recycle misses (fallback Vec allocation)
@@ -102,7 +107,9 @@ impl ProcessingState {
             old_path_delay: PreparedTransitionDelay::default(),
             new_path_delay: PreparedTransitionDelay::default(),
             gc_tx: None,
-            pending_retirements: Vec::with_capacity(64),
+            pending_retirements: Vec::with_capacity(MAX_PENDING_RETIREMENTS + 1),
+            retirement_overflowed: false,
+            host_generation: Arc::new(AtomicU64::new(0)),
             channels,
             bypassed: false,
             // Pre-sized for the worst-case processing block so the hot path only reuses memory.
@@ -116,7 +123,6 @@ impl ProcessingState {
             cache_fallback_count: 0,
             cache_reuse_count: 0,
             max_frame_duration: std::time::Duration::ZERO,
-            last_rt_diag: std::time::Instant::now(),
             frames_over_budget: 0,
             recycle_miss_count: 0,
             recycle_fallback_pool,
@@ -160,6 +166,13 @@ impl ProcessingState {
         (block_duration_ms / crossfade_duration_ms).min(0.5)
     }
 
+    #[inline]
+    pub(super) fn equal_power_crossfade_gains(alpha: f32) -> (f32, f32) {
+        let angle = alpha.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2;
+        let (new_gain, old_gain) = angle.sin_cos();
+        (old_gain, new_gain)
+    }
+
     pub(super) fn prepare_scratch_buffer(buffer: &mut Vec<f32>, len: usize) {
         // Grow capacity only when necessary; never shrink, so the same backing
         // allocation can be reused across frames of different sizes.
@@ -191,21 +204,105 @@ impl ProcessingState {
     fn retire(&mut self, item: GcItem) {
         self.flush_pending_retirement();
         let Some(gc_tx) = self.gc_tx.as_ref() else {
-            self.pending_retirements.push(item);
+            if self.pending_retirements.len() < MAX_PENDING_RETIREMENTS {
+                self.pending_retirements.push(item);
+            } else {
+                self.retirement_overflowed = true;
+                self.pending_retirements.push(item);
+            }
             return;
         };
         if let Err(error) = gc_tx.try_send(item) {
-            self.pending_retirements.push(error.into_inner());
+            let item = error.into_inner();
+            if self.pending_retirements.len() < MAX_PENDING_RETIREMENTS {
+                self.pending_retirements.push(item);
+            } else {
+                self.retirement_overflowed = true;
+                // Capacity includes one emergency slot. Preserve ownership;
+                // the loop fails at its next boundary and transfers all items
+                // to GC after it has left active realtime processing.
+                self.pending_retirements.push(item);
+            }
+        }
+    }
+
+    fn recycle_output_buffer_locally(&mut self, mut data: Vec<f32>) {
+        data.clear();
+        if self.recycle_fallback_pool.len() < RECYCLE_FALLBACK_POOL_SIZE {
+            self.recycle_fallback_pool.push(data);
+        } else {
+            self.retire(GcItem::Buffer(data));
+        }
+    }
+
+    fn retire_owned_state(self) {
+        let ProcessingState {
+            host,
+            prev_host,
+            old_path_delay,
+            new_path_delay,
+            gc_tx,
+            pending_retirements,
+            ..
+        } = self;
+        let mut owned = pending_retirements;
+        if let Some(previous) = prev_host {
+            owned.push(GcItem::HostTransition {
+                host: previous,
+                old_path_delay,
+                new_path_delay,
+            });
+        }
+        owned.push(GcItem::PluginHost(host));
+
+        let Some(gc_tx) = gc_tx else {
+            Self::emergency_retire(owned);
+            return;
+        };
+        let mut remaining = owned.into_iter();
+        while let Some(item) = remaining.next() {
+            if let Err(error) = gc_tx.send(item) {
+                let mut fallback = Vec::with_capacity(remaining.len() + 1);
+                fallback.push(error.0);
+                fallback.extend(remaining);
+                Self::emergency_retire(fallback);
+                return;
+            }
+        }
+    }
+
+    fn emergency_retire(items: Vec<GcItem>) {
+        let shared = std::sync::Arc::new(std::sync::Mutex::new(Some(items)));
+        let worker_items = std::sync::Arc::clone(&shared);
+        if std::thread::Builder::new()
+            .name("emergency-audio-gc".to_string())
+            .spawn(move || {
+                let items = worker_items
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .take()
+                    .unwrap_or_default();
+                for item in items {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(item)));
+                }
+            })
+            .is_err()
+        {
+            // Thread creation failure is terminal resource exhaustion. Avoid
+            // running third-party destructors on the processing thread.
+            std::mem::forget(shared);
         }
     }
 
     fn commit_host_update(
         &mut self,
         update: PreparedHostUpdate,
-    ) -> Result<(usize, usize, usize), &'static str> {
+    ) -> Result<(u64, usize, usize, usize), &'static str> {
         let current_channels = self.host.output_channels();
         let current_latency = self.host.total_latency_samples();
-        if current_channels != update.expected_output_channels
+        if (update.generation != 0
+            && update.generation != self.host_generation.load(Ordering::Acquire))
+            || current_channels != update.expected_output_channels
             || current_latency != update.expected_latency_samples
         {
             self.retire(GcItem::HostTransition {
@@ -217,6 +314,7 @@ impl ProcessingState {
         }
 
         let PreparedHostUpdate {
+            generation,
             host: new_host,
             output_channels,
             output_sample_rate,
@@ -236,6 +334,15 @@ impl ProcessingState {
                 new_path_delay,
             });
             return Err("prepared host metadata changed before commit");
+        }
+
+        if !update.ticket.try_commit() {
+            self.retire(GcItem::HostTransition {
+                host: new_host,
+                old_path_delay,
+                new_path_delay,
+            });
+            return Err("prepared host update was cancelled before commit");
         }
 
         let old_output_rate = self.host.output_sample_rate(self.sample_rate);
@@ -267,7 +374,12 @@ impl ProcessingState {
         }
         self.channels = output_channels;
         self.spare_cache_arc = Some(analyzer_cache);
-        Ok((output_channels, current_latency, latency_samples))
+        Ok((
+            generation,
+            output_channels,
+            current_latency,
+            latency_samples,
+        ))
     }
 
     /// Process a frame
@@ -279,15 +391,30 @@ impl ProcessingState {
         input_frames: usize,
     ) -> Result<usize, String> {
         self.flush_pending_retirement();
+        if self.retirement_overflowed {
+            return Err(format!(
+                "plugin retirement backlog exceeded {MAX_PENDING_RETIREMENTS} items"
+            ));
+        }
         if self.bypassed {
-            // Bypass — copy input to output. When the plugin chain changes
-            // channel count (e.g. upmixer 2ch→5ch), output is sized for the
-            // host's output_channels while input has input_channels.
-            // Copy what fits, zero-fill the rest to avoid a panic.
-            let copy_len = input.len().min(output.len());
-            output[..copy_len].copy_from_slice(&input[..copy_len]);
-            if copy_len < output.len() {
-                output[copy_len..].fill(0.0);
+            // Preserve frame boundaries when bypassing a topology-changing
+            // chain. Shared channels pass through and added outputs are silent.
+            let input_channels = self.host.input_channels();
+            let output_channels = self.host.output_channels();
+            let required = input_frames.saturating_mul(output_channels);
+            if input_channels == 0
+                || input.len() < input_frames.saturating_mul(input_channels)
+                || output.len() < required
+            {
+                return Err("bypass buffer dimensions do not match host topology".to_string());
+            }
+            output[..required].fill(0.0);
+            let shared_channels = input_channels.min(output_channels);
+            for frame in 0..input_frames {
+                let input_start = frame * input_channels;
+                let output_start = frame * output_channels;
+                output[output_start..output_start + shared_channels]
+                    .copy_from_slice(&input[input_start..input_start + shared_channels]);
             }
             return Ok(input_frames);
         }
@@ -360,7 +487,8 @@ impl ProcessingState {
                             output[index] * (2.0 * alpha - 1.0)
                         };
                     } else {
-                        output[index] = previous * (1.0 - alpha) + output[index] * alpha;
+                        let (old_gain, new_gain) = Self::equal_power_crossfade_gains(alpha);
+                        output[index] = previous * old_gain + output[index] * new_gain;
                     }
                 }
             }
@@ -389,12 +517,29 @@ impl ProcessingState {
 /// Handle a processing command
 /// Returns true if shutdown requested
 pub(super) fn handle_processing_command(
-    command: ProcessingCommand,
+    request: ProcessingRequest,
     state: &mut ProcessingState,
-    response_tx: &Sender<ProcessingResponse>,
-    event_tx: &Sender<ThreadEvent>,
+    response_tx: &Sender<ProcessingReply>,
+    event_tx: &crossbeam::channel::Sender<ThreadEvent>,
 ) -> bool {
     let _ = event_tx;
+    let ProcessingRequest {
+        id: request_id,
+        command,
+        ticket,
+    } = request;
+    let response_tx = CorrelatedResponseSender {
+        request_id,
+        inner: response_tx,
+    };
+    if !ticket.try_claim() {
+        response_tx
+            .send(ProcessingResponse::Error(format!(
+                "processing request {request_id} was cancelled before execution"
+            )))
+            .ok();
+        return false;
+    }
     match command {
         ProcessingCommand::CommitHostUpdate(update) => {
             let output_channels = update.output_channels;
@@ -403,7 +548,7 @@ pub(super) fn handle_processing_command(
                 output_channels
             );
 
-            let (output_channels, previous_latency_samples, latency_samples) =
+            let (generation, output_channels, previous_latency_samples, latency_samples) =
                 match state.commit_host_update(update) {
                     Ok(notification) => notification,
                     Err(reason) => {
@@ -415,7 +560,9 @@ pub(super) fn handle_processing_command(
                 };
             response_tx
                 .send(ProcessingResponse::PluginChainUpdated {
+                    generation,
                     output_channels,
+                    output_sample_rate: state.output_sample_rate(state.sample_rate),
                     previous_latency_samples,
                     latency_samples,
                     latency_changed: previous_latency_samples != latency_samples,
@@ -427,7 +574,7 @@ pub(super) fn handle_processing_command(
             param_id,
             value,
         } => {
-            log::info!(
+            log::trace!(
                 "[Processing Thread] Set parameter: plugin {} param {} = {}",
                 plugin_index,
                 param_id,
@@ -437,16 +584,40 @@ pub(super) fn handle_processing_command(
             // Parse string value to ParameterValue
             let param_value = sotf_plugins::ParameterValue::parse(&value);
 
+            if let Err(e) =
+                state
+                    .host
+                    .validate_plugin_parameter(plugin_index, &param_id, &param_value)
+            {
+                response_tx
+                    .send(ProcessingResponse::Error(format!(
+                        "Failed to set parameter: {e}"
+                    )))
+                    .ok();
+                return false;
+            }
+
+            // This command already runs on the processing thread between
+            // blocks. Apply it now so the acknowledgement reflects validation
+            // and the actual host state, rather than merely queue admission.
             match state
                 .host
-                .set_plugin_parameter(plugin_index, &param_id, param_value)
+                .set_plugin_parameter_immediate(plugin_index, &param_id, param_value)
             {
                 Ok(_) => {
                     log::debug!(
                         "[Processing Thread] Parameter set successfully on plugin {}",
                         plugin_index
                     );
-                    response_tx.send(ProcessingResponse::Ok).ok();
+                    let output_channels = state.host.output_channels();
+                    state.channels = output_channels;
+                    response_tx
+                        .send(ProcessingResponse::ParameterUpdated {
+                            output_channels,
+                            output_sample_rate: state.host.output_sample_rate(state.sample_rate),
+                            latency_samples: state.host.total_latency_samples(),
+                        })
+                        .ok();
                 }
                 Err(e) => {
                     log::warn!(
@@ -464,6 +635,17 @@ pub(super) fn handle_processing_command(
             }
         }
         ProcessingCommand::Bypass(bypass) => {
+            if bypass && let Some(previous) = state.prev_host.take() {
+                let old_path_delay = std::mem::take(&mut state.old_path_delay);
+                let new_path_delay = std::mem::take(&mut state.new_path_delay);
+                state.retire(GcItem::HostTransition {
+                    host: previous,
+                    old_path_delay,
+                    new_path_delay,
+                });
+                state.crossfade_progress = 1.0;
+                state.crossfade_through_silence = false;
+            }
             state.bypassed = bypass;
             log::debug!("[Processing Thread] Bypass: {}", bypass);
             response_tx.send(ProcessingResponse::Ok).ok();
@@ -489,7 +671,7 @@ pub(super) fn handle_processing_command(
                 .map(isolated_external_plugin_status)
                 .collect::<Vec<_>>();
             event_tx
-                .send(ThreadEvent::IsolatedExternalPluginWorkerStatuses(statuses))
+                .try_send(ThreadEvent::IsolatedExternalPluginWorkerStatuses(statuses))
                 .ok();
         }
         ProcessingCommand::Stop => {
@@ -507,6 +689,23 @@ pub(super) fn handle_processing_command(
         }
     }
     false
+}
+
+struct CorrelatedResponseSender<'a> {
+    request_id: u64,
+    inner: &'a Sender<ProcessingReply>,
+}
+
+impl CorrelatedResponseSender<'_> {
+    fn send(
+        &self,
+        response: ProcessingResponse,
+    ) -> Result<(), std::sync::mpsc::SendError<ProcessingReply>> {
+        self.inner.send(ProcessingReply {
+            id: self.request_id,
+            response,
+        })
+    }
 }
 
 /// Update the shared plugin-data cache with the latest analyzer results.
@@ -561,15 +760,16 @@ pub(super) fn update_plugin_data_cache(
 pub(super) fn run_processing_thread(
     decoder_rx: Receiver<DecoderMessage>,
     message_tx: SyncSender<ProcessingMessage>,
-    command_rx: Receiver<ProcessingCommand>,
-    response_tx: Sender<ProcessingResponse>,
-    event_tx: Sender<ThreadEvent>,
+    command_rx: Receiver<ProcessingRequest>,
+    response_tx: Sender<ProcessingReply>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     sample_rate: u32,
     channels: usize,
     plugin_data_cache: super::super::PluginDataCache,
     gc_tx: super::super::GcSender,
     recycle_rx: Receiver<Vec<f32>>,
     decoder_recycle_tx: SyncSender<Vec<f32>>,
+    host_generation: Arc<AtomicU64>,
     #[cfg(feature = "streaming")] network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
 ) -> Result<(), String> {
     // Enable FTZ/DAZ CPU flags to prevent denormal numbers from causing
@@ -579,6 +779,7 @@ pub(super) fn run_processing_thread(
     // Elevate thread priority for lower latency
     match super::super::rt_priority::set_realtime_priority(
         super::super::rt_priority::RtPriority::Processing,
+        None,
     ) {
         Ok(true) => log::info!("[Processing Thread] RT priority set successfully"),
         Ok(false) => log::debug!("[Processing Thread] RT priority not available on this platform"),
@@ -591,6 +792,7 @@ pub(super) fn run_processing_thread(
         #[cfg(feature = "streaming")]
         network_stream_tap,
     );
+    state.host_generation = host_generation;
     state.gc_tx = Some(gc_tx);
 
     log::info!(
@@ -603,14 +805,14 @@ pub(super) fn run_processing_thread(
 
     loop {
         // Check for commands (non-blocking)
-        if let Ok(command) = command_rx.try_recv() {
+        if let Ok(request) = command_rx.try_recv() {
             if matches!(
-                command,
+                request.command,
                 ProcessingCommand::Stop | ProcessingCommand::Shutdown
             ) {
                 decoder_stream_active = false;
             }
-            if handle_processing_command(command, &mut state, &response_tx, &event_tx) {
+            if handle_processing_command(request, &mut state, &response_tx, &event_tx) {
                 break;
             }
         }
@@ -712,12 +914,15 @@ pub(super) fn run_processing_thread(
                         };
 
                         // Use actual output frame count and sample rate (accounts for resampler)
-                        let processed_frame = super::super::AudioFrame::new(
+                        let processed_frame = super::super::AudioFrame::try_new(
                             frame_data,
                             actual_output_frames,
                             output_channels,
                             output_sample_rate,
-                        );
+                        )
+                        .map_err(|error| {
+                            format!("processing produced an invalid output frame: {error}")
+                        })?;
 
                         #[cfg(feature = "streaming")]
                         if let Some(tap) = &state.network_stream_tap {
@@ -746,6 +951,11 @@ pub(super) fn run_processing_thread(
                                     }
                                     // If channels changed, discard the stale frame
                                     if state.channels != old_channels {
+                                        if let Some(ProcessingMessage::Frame(frame)) =
+                                            pending_msg.take()
+                                        {
+                                            state.recycle_output_buffer_locally(frame.data);
+                                        }
                                         pending_msg = None;
                                     }
                                 }
@@ -754,57 +964,25 @@ pub(super) fn run_processing_thread(
                                 }
                                 Err(e) => {
                                     log::debug!("[Processing Thread] Send error: {}", e);
+                                    if let Some(ProcessingMessage::Frame(frame)) =
+                                        pending_msg.take()
+                                    {
+                                        state.recycle_output_buffer_locally(frame.data);
+                                    }
                                     break;
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        event_tx.send(ThreadEvent::ProcessingError(e)).ok();
+                        event_tx.try_send(ThreadEvent::ProcessingError(e)).ok();
                     }
                 }
                 state.process_buffer = process_buffer;
 
-                // RT diagnostics: log every 5 seconds
-                if state.last_rt_diag.elapsed() >= std::time::Duration::from_secs(5) {
-                    let total_cache = state.cache_reuse_count + state.cache_fallback_count;
-                    let fallback_pct = if total_cache > 0 {
-                        state.cache_fallback_count as f64 / total_cache as f64 * 100.0
-                    } else {
-                        0.0
-                    };
-                    log::info!(
-                        "[Processing Thread] RT_DIAG: frames={}, cache_reuse={}, cache_fallback={} ({:.1}%), \
-                         max_frame={:.2}ms, over_budget={}, recycle_miss={}",
-                        state.frame_count,
-                        state.cache_reuse_count,
-                        state.cache_fallback_count,
-                        fallback_pct,
-                        state.max_frame_duration.as_secs_f64() * 1000.0,
-                        state.frames_over_budget,
-                        state.recycle_miss_count,
-                    );
-                    // Log per-analyzer contention stats
-                    let analyzer_stats = state.host.take_analyzer_contention_stats();
-                    for (idx, contention, updates) in &analyzer_stats {
-                        if *contention > 0 && *updates > 0 {
-                            log::warn!(
-                                "[Processing Thread] RT_DIAG: analyzer[{}] contention={}/{} ({:.1}%)",
-                                idx,
-                                contention,
-                                updates,
-                                *contention as f64 / *updates as f64 * 100.0,
-                            );
-                        }
-                    }
-                    // Reset per-window counters
-                    state.cache_reuse_count = 0;
-                    state.cache_fallback_count = 0;
-                    state.max_frame_duration = std::time::Duration::ZERO;
-                    state.frames_over_budget = 0;
-                    state.recycle_miss_count = 0;
-                    state.last_rt_diag = std::time::Instant::now();
-                }
+                // Diagnostics remain counter-only on the processing thread.
+                // Formatting, logging, and analyzer-stat Vec construction are
+                // deliberately excluded from this realtime loop.
             }
             Ok(DecoderMessage::EndOfStream) => {
                 decoder_stream_active = false;
@@ -819,7 +997,7 @@ pub(super) fn run_processing_thread(
                     drain_steps += 1;
                     if drain_steps > 4096 {
                         event_tx
-                            .send(ThreadEvent::ProcessingError(
+                            .try_send(ThreadEvent::ProcessingError(
                                 "plugin drain did not converge after 4096 steps".to_string(),
                             ))
                             .ok();
@@ -831,7 +1009,7 @@ pub(super) fn run_processing_thread(
                     let drain = match state.host.drain(&mut state.process_buffer[..samples]) {
                         Ok(result) => result,
                         Err(error) => {
-                            event_tx.send(ThreadEvent::ProcessingError(error)).ok();
+                            event_tx.try_send(ThreadEvent::ProcessingError(error)).ok();
                             break;
                         }
                     };
@@ -848,12 +1026,22 @@ pub(super) fn run_processing_thread(
                             data.reserve(actual_samples - data.capacity());
                         }
                         data.extend_from_slice(&state.process_buffer[..actual_samples]);
-                        let frame = super::super::AudioFrame::new(
+                        let frame = match super::super::AudioFrame::try_new(
                             data,
                             drain.frames,
                             output_channels,
                             output_sample_rate,
-                        );
+                        ) {
+                            Ok(frame) => frame,
+                            Err(error) => {
+                                event_tx
+                                    .try_send(ThreadEvent::ProcessingError(format!(
+                                        "plugin drain produced an invalid output frame: {error}"
+                                    )))
+                                    .ok();
+                                break;
+                            }
+                        };
                         let mut pending = Some(ProcessingMessage::Frame(frame));
                         while let Some(message) = pending.take() {
                             match send_or_interrupt(&message_tx, &command_rx, message) {
@@ -870,6 +1058,9 @@ pub(super) fn run_processing_thread(
                                 }
                                 Ok(None) => {}
                                 Err(_) => {
+                                    if let Some(ProcessingMessage::Frame(frame)) = pending.take() {
+                                        state.recycle_output_buffer_locally(frame.data);
+                                    }
                                     break;
                                 }
                             }
@@ -953,7 +1144,7 @@ pub(super) fn run_processing_thread(
         } else {
             0.0
         };
-        log::warn!(
+        log::info!(
             "[Processing Thread] PLAYBACK RATE: {} frames in {:.3}s = {} effective Hz (expected {}Hz), audio_duration={:.3}s, speed_ratio={:.4}x, plugins={}",
             total_frames,
             elapsed_secs,
@@ -966,5 +1157,6 @@ pub(super) fn run_processing_thread(
     }
 
     log::debug!("[Processing Thread] Stopped");
+    state.retire_owned_state();
     Ok(())
 }

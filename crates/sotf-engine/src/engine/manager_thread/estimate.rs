@@ -23,7 +23,7 @@ pub(super) fn estimate_update_timeout(
                 // Multiple filter banks
                 200
             }
-            "EQ" => {
+            plugin_type if plugin_type.eq_ignore_ascii_case("eq") => {
                 // Count number of filters if available
                 if let Some(filters) = plugin.parameters.get("filters") {
                     if let Some(array) = filters.as_array() {

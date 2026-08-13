@@ -17,12 +17,14 @@ impl ManagerCommandHandler for QueueNextCommand {
             return ManagerResponse::Error(e);
         }
 
-        if let Err(e) = ctx.decoder.send_command(DecoderCommand::QueueNext(source)) {
-            return ManagerResponse::Error(e);
-        }
+        let request_id = match ctx.decoder.send_command(DecoderCommand::QueueNext(source)) {
+            Ok(request_id) => request_id,
+            Err(e) => return ManagerResponse::Error(e),
+        };
 
         match super::super::wait::wait_for_decoder_ack(
             ctx.decoder,
+            request_id,
             std::time::Duration::from_millis(super::super::consts::DECODER_COMMAND_TIMEOUT_MS),
         ) {
             Ok(()) => ManagerResponse::Ok,

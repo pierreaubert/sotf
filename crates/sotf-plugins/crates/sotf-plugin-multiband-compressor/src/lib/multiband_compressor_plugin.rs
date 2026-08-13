@@ -665,6 +665,7 @@ impl MultibandCompressorPlugin {
                 "release",
                 "knee",
                 "mix",
+                "link_channels",
                 "link_amount",
                 "lookahead_ms",
                 "makeup_gain",

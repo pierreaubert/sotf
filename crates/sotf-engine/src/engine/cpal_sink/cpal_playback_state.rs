@@ -1,3 +1,4 @@
+use crate::engine::volume_ramp::VolumeRampState;
 use rtrb::Consumer;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -8,6 +9,7 @@ pub(crate) struct CpalPlaybackState {
     pub capacity: usize,
     pub volume: Arc<AtomicU32>,
     pub muted: Arc<AtomicBool>,
+    pub(super) volume_ramp: VolumeRampState,
     pub flush_requested: Arc<AtomicBool>,
     pub underrun_count: Arc<AtomicU64>,
     pub last_buffer_level: Arc<AtomicU64>,
@@ -16,11 +18,18 @@ pub(crate) struct CpalPlaybackState {
 }
 
 impl CpalPlaybackState {
+    #[cfg(test)]
     pub(super) fn new(capacity: usize) -> Self {
+        Self::new_with_controls(capacity, 1.0, false)
+    }
+
+    pub(super) fn new_with_controls(capacity: usize, volume: f32, muted: bool) -> Self {
+        let effective_gain = if muted { 0.0 } else { volume };
         Self {
             capacity,
-            volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            muted: Arc::new(AtomicBool::new(false)),
+            volume: Arc::new(AtomicU32::new(volume.to_bits())),
+            muted: Arc::new(AtomicBool::new(muted)),
+            volume_ramp: VolumeRampState::new(effective_gain),
             flush_requested: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
             last_buffer_level: Arc::new(AtomicU64::new(100)),
@@ -46,9 +55,6 @@ pub(super) fn read_ring_buffer(
         {
             chunk.commit_all();
         }
-        state
-            .total_callback_samples
-            .fetch_add(available as u64, Ordering::Relaxed);
         scratch[..requested].fill(0.0);
         if consumer.slots() == 0 {
             state.flush_requested.store(false, Ordering::Relaxed);

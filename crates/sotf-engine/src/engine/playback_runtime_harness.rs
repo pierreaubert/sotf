@@ -1,6 +1,7 @@
 use super::AudioFrame;
 use super::playback_thread::{
-    FrameWriteOutcome, required_conversion_capacity, write_frame_to_ring,
+    FrameWriteOutcome, PlaybackState, apply_volume_clamp, read_ring_buffer,
+    required_conversion_capacity, write_chunk_bulk, write_frame_to_ring,
 };
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
@@ -12,6 +13,61 @@ pub struct FrameWriterHarness {
     recycle_rx: Receiver<Vec<f32>>,
     conversion_buffer: Vec<f32>,
     output_channels: usize,
+}
+
+/// Deterministic harness for the consumer/callback half of the playback ring.
+pub struct PlaybackCallbackHarness {
+    producer: Producer<f32>,
+    consumer: Consumer<f32>,
+    state: PlaybackState,
+    scratch: Vec<f32>,
+    channels: usize,
+    sample_rate: u32,
+    capacity: usize,
+}
+
+impl PlaybackCallbackHarness {
+    pub fn new(
+        capacity: usize,
+        callback_samples: usize,
+        channels: usize,
+        sample_rate: u32,
+    ) -> Self {
+        let capacity = capacity.max(callback_samples).max(1);
+        let (producer, consumer) = RingBuffer::new(capacity);
+        Self {
+            producer,
+            consumer,
+            state: PlaybackState::new(capacity),
+            scratch: vec![0.0; callback_samples],
+            channels: channels.max(1),
+            sample_rate,
+            capacity,
+        }
+    }
+
+    /// Feed and execute one callback without allocating after construction.
+    #[inline(always)]
+    pub fn process(&mut self, input: &[f32]) -> &[f32] {
+        assert_eq!(input.len(), self.scratch.len());
+        let chunk = self.producer.write_chunk_uninit(input.len()).unwrap();
+        write_chunk_bulk(chunk, input);
+        let len = self.scratch.len();
+        read_ring_buffer(
+            &mut self.consumer,
+            &mut self.scratch,
+            len,
+            &self.state,
+            self.capacity,
+        );
+        apply_volume_clamp(
+            &mut self.scratch,
+            &self.state,
+            self.channels,
+            self.sample_rate,
+        );
+        &self.scratch
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -547,7 +603,7 @@ mod tests {
     fn spawn_processing_thread(
         decoder_rx: std::sync::mpsc::Receiver<crate::engine::DecoderMessage>,
         message_tx: std::sync::mpsc::SyncSender<ProcessingMessage>,
-        event_tx: std::sync::mpsc::Sender<ThreadEvent>,
+        event_tx: crossbeam::channel::Sender<ThreadEvent>,
         sample_rate: u32,
         channels: usize,
         plugin_data_cache: crate::engine::PluginDataCache,
@@ -574,7 +630,7 @@ mod tests {
     fn spawn_processing_thread(
         decoder_rx: std::sync::mpsc::Receiver<crate::engine::DecoderMessage>,
         message_tx: std::sync::mpsc::SyncSender<ProcessingMessage>,
-        event_tx: std::sync::mpsc::Sender<ThreadEvent>,
+        event_tx: crossbeam::channel::Sender<ThreadEvent>,
         sample_rate: u32,
         channels: usize,
         plugin_data_cache: crate::engine::PluginDataCache,

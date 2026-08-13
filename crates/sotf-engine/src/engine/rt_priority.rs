@@ -8,7 +8,12 @@
 /// Priority level for audio threads.
 #[derive(Debug, Clone, Copy)]
 pub enum RtPriority {
-    /// Highest priority: time-constraint / SCHED_FIFO (playback thread)
+    /// Reserved for a backend-owned hardware callback integration. The cpal
+    /// playback feeder must not use this hard realtime policy.
+    #[allow(
+        dead_code,
+        reason = "reserved for a future callback-owned backend hook"
+    )]
     Playback,
     /// Elevated but not hard-RT (processing thread)
     Processing,
@@ -18,10 +23,13 @@ pub enum RtPriority {
 ///
 /// Returns `Ok(true)` if priority was successfully set, `Ok(false)` if the
 /// platform doesn't support it, or `Err` on failure.
-pub fn set_realtime_priority(level: RtPriority) -> Result<bool, String> {
+pub fn set_realtime_priority(
+    level: RtPriority,
+    audio_timing: Option<(u32, usize)>,
+) -> Result<bool, String> {
     #[cfg(target_os = "macos")]
     {
-        set_priority_macos(level)
+        set_priority_macos(level, audio_timing)
     }
 
     #[cfg(target_os = "linux")]
@@ -31,7 +39,7 @@ pub fn set_realtime_priority(level: RtPriority) -> Result<bool, String> {
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        let _ = level;
+        let _ = (level, audio_timing);
         Ok(false)
     }
 }
@@ -41,9 +49,12 @@ pub fn set_realtime_priority(level: RtPriority) -> Result<bool, String> {
 // ============================================================================
 
 #[cfg(target_os = "macos")]
-fn set_priority_macos(level: RtPriority) -> Result<bool, String> {
+fn set_priority_macos(
+    level: RtPriority,
+    audio_timing: Option<(u32, usize)>,
+) -> Result<bool, String> {
     match level {
-        RtPriority::Playback => match set_time_constraint_priority_macos() {
+        RtPriority::Playback => match set_time_constraint_priority_macos(audio_timing) {
             Ok(()) => {
                 log::info!("[RT Priority] macOS: set THREAD_TIME_CONSTRAINT_POLICY for playback");
                 Ok(true)
@@ -85,7 +96,7 @@ fn set_qos_priority_macos(level: RtPriority) -> Result<bool, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn set_time_constraint_priority_macos() -> Result<(), String> {
+fn set_time_constraint_priority_macos(audio_timing: Option<(u32, usize)>) -> Result<(), String> {
     use std::mem::MaybeUninit;
 
     type BooleanT = i32;
@@ -100,9 +111,10 @@ fn set_time_constraint_priority_macos() -> Result<(), String> {
     const THREAD_TIME_CONSTRAINT_POLICY: ThreadPolicyFlavorT = 2;
     const THREAD_TIME_CONSTRAINT_POLICY_COUNT: MachMsgTypeNumberT = 4;
 
-    const AUDIO_PERIOD_NS: u64 = 2_900_000;
-    const AUDIO_COMPUTATION_NS: u64 = 1_450_000;
-    const AUDIO_CONSTRAINT_NS: u64 = 2_900_000;
+    let audio_period_ns = audio_timing
+        .and_then(|(sample_rate, frame_size)| audio_period_nanos(sample_rate, frame_size))
+        .unwrap_or(2_900_000);
+    let audio_computation_ns = (audio_period_ns / 2).max(1);
 
     #[repr(C)]
     struct MachTimebaseInfoData {
@@ -140,17 +152,13 @@ fn set_time_constraint_priority_macos() -> Result<(), String> {
     let timebase = unsafe { timebase.assume_init() };
 
     let mut policy = ThreadTimeConstraintPolicyData {
-        period: nanos_to_mach_absolute_time(AUDIO_PERIOD_NS, timebase.numer, timebase.denom)?,
+        period: nanos_to_mach_absolute_time(audio_period_ns, timebase.numer, timebase.denom)?,
         computation: nanos_to_mach_absolute_time(
-            AUDIO_COMPUTATION_NS,
+            audio_computation_ns,
             timebase.numer,
             timebase.denom,
         )?,
-        constraint: nanos_to_mach_absolute_time(
-            AUDIO_CONSTRAINT_NS,
-            timebase.numer,
-            timebase.denom,
-        )?,
+        constraint: nanos_to_mach_absolute_time(audio_period_ns, timebase.numer, timebase.denom)?,
         preemptible: 1,
     };
 
@@ -177,6 +185,17 @@ fn set_time_constraint_priority_macos() -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
+fn audio_period_nanos(sample_rate: u32, frame_size: usize) -> Option<u64> {
+    if sample_rate == 0 || frame_size == 0 {
+        return None;
+    }
+    let nanos = (frame_size as u128)
+        .saturating_mul(1_000_000_000)
+        .div_ceil(sample_rate as u128);
+    u64::try_from(nanos).ok()
+}
+
+#[cfg(target_os = "macos")]
 fn nanos_to_mach_absolute_time(nanos: u64, numer: u32, denom: u32) -> Result<u32, String> {
     if numer == 0 || denom == 0 {
         return Err("invalid mach timebase ratio".to_string());
@@ -192,7 +211,7 @@ fn nanos_to_mach_absolute_time(nanos: u64, numer: u32, denom: u32) -> Result<u32
 
 #[cfg(all(test, target_os = "macos"))]
 mod macos_tests {
-    use super::nanos_to_mach_absolute_time;
+    use super::{audio_period_nanos, nanos_to_mach_absolute_time};
 
     #[test]
     fn nanos_to_mach_absolute_time_converts_and_rejects_invalid_timebase() {
@@ -201,6 +220,13 @@ mod macos_tests {
         assert_eq!(nanos_to_mach_absolute_time(1_000, 1, 2).unwrap(), 2_000);
         assert!(nanos_to_mach_absolute_time(1_000, 0, 1).is_err());
         assert!(nanos_to_mach_absolute_time(1_000, 1, 0).is_err());
+    }
+
+    #[test]
+    fn audio_period_uses_configured_frame_size_and_sample_rate() {
+        assert_eq!(audio_period_nanos(48_000, 480), Some(10_000_000));
+        assert_eq!(audio_period_nanos(44_100, 128), Some(2_902_495));
+        assert_eq!(audio_period_nanos(0, 128), None);
     }
 }
 

@@ -3,7 +3,6 @@ use super::playback_state::PlaybackState;
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::Producer;
 use std::sync::Arc;
-use std::sync::mpsc::Sender;
 
 pub(super) struct RebuiltPlaybackStream {
     pub(super) device: Device,
@@ -24,7 +23,7 @@ pub(super) struct RebuildPlaybackParams<'a> {
     pub(super) requested_channels: usize,
     pub(super) buffer_ms: u32,
     pub(super) buffer_size: cpal::BufferSize,
-    pub(super) event_tx: Sender<ThreadEvent>,
+    pub(super) event_tx: crossbeam::channel::Sender<ThreadEvent>,
     pub(super) old_state: &'a PlaybackState,
 }
 
@@ -32,5 +31,6 @@ pub(super) struct RebuildPlaybackParams<'a> {
 pub(super) enum FlushMode {
     Normal,
     DroppingUntilFlush,
+    DroppingUntilResume,
     WaitingForDrain,
 }

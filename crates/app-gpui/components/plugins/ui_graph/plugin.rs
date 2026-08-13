@@ -13,7 +13,7 @@ use sotf_audio_player::PluginType;
 pub(super) fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
     match plugin_type {
         PluginType::EQ => theme.info,
-        PluginType::Gain => theme.success,
+        PluginType::Gain | PluginType::Dither => theme.success,
         PluginType::Compressor
         | PluginType::Limiter
         | PluginType::Gate
@@ -90,6 +90,7 @@ pub(super) fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) 
         // Most plugins are 2-in, 2-out (stereo passthrough)
         PluginType::EQ
         | PluginType::Gain
+        | PluginType::Dither
         | PluginType::Compressor
         | PluginType::Limiter
         | PluginType::Gate

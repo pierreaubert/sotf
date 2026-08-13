@@ -16,6 +16,12 @@ fn test_manager_creation() {
 }
 
 #[test]
+fn signal_watching_is_forwarded_without_enabling_file_watching() {
+    let manager = AudioEngineManager::with_signal_watching(true);
+    assert_eq!(manager.engine_watch_flags(), (false, true));
+}
+
+#[test]
 fn test_state_transitions() {
     let manager = AudioEngineManager::new();
 
@@ -57,6 +63,53 @@ fn failed_load_does_not_leave_manager_loading() {
 
     assert!(result.is_err());
     assert_eq!(manager.get_state(), StreamingState::Error);
+}
+
+#[test]
+fn failed_seek_restores_previous_streaming_state() {
+    let manager = AudioEngineManager::new();
+    manager.set_state(StreamingState::Ready);
+
+    let result = manager.seek(1.0);
+
+    assert!(result.is_err());
+    assert_eq!(manager.get_state(), StreamingState::Ready);
+}
+
+#[test]
+fn identical_latched_error_is_reported_only_once() {
+    let manager = AudioEngineManager::new();
+
+    assert_eq!(
+        manager.take_unreported_error("decoder failed".to_string()),
+        Some("decoder failed".to_string())
+    );
+    assert_eq!(
+        manager.take_unreported_error("decoder failed".to_string()),
+        None
+    );
+    assert_eq!(
+        manager.take_unreported_error("device unplugged".to_string()),
+        Some("device unplugged".to_string())
+    );
+}
+
+#[test]
+fn clearing_latched_error_allows_same_error_to_be_reported_again() {
+    let manager = AudioEngineManager::new();
+    assert!(
+        manager
+            .take_unreported_error("decoder failed".to_string())
+            .is_some()
+    );
+
+    // A healthy engine snapshot clears the event-level deduplication latch.
+    assert!(manager.try_recv_event().is_none());
+    assert!(
+        manager
+            .take_unreported_error("decoder failed".to_string())
+            .is_some()
+    );
 }
 
 #[test]

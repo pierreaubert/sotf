@@ -5,6 +5,7 @@ use super::pick::choose_output_format;
 use super::playback::playback_buffer_capacity;
 use super::types::RebuildPlaybackParams;
 use super::types::RebuiltPlaybackStream;
+use crate::engine::volume_ramp::VolumeRampState;
 use cpal::StreamConfig;
 use cpal::traits::{DeviceTrait, StreamTrait};
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -12,10 +13,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 /// Shared state between thread and cpal callback (all fields are lock-free atomics)
-pub(super) struct PlaybackState {
+pub(in crate::engine) struct PlaybackState {
     pub(super) capacity: usize,
     pub(super) volume: Arc<AtomicU32>, // Atomic f32 stored as u32 bits
     pub(super) muted: Arc<AtomicBool>,
+    pub(super) volume_ramp: VolumeRampState,
     pub(super) flush_requested: Arc<AtomicBool>,
     pub(super) underrun_count: Arc<AtomicU64>,
     pub(super) last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
@@ -31,11 +33,12 @@ pub(super) struct PlaybackState {
 }
 
 impl PlaybackState {
-    pub(super) fn new(capacity: usize) -> Self {
+    pub(in crate::engine) fn new(capacity: usize) -> Self {
         Self {
             capacity,
             volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             muted: Arc::new(AtomicBool::new(false)),
+            volume_ramp: VolumeRampState::new(1.0),
             flush_requested: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
             last_buffer_level: Arc::new(AtomicU64::new(100)),
@@ -60,6 +63,12 @@ pub(super) fn copy_playback_controls(from: &PlaybackState, to: &PlaybackState) {
         .store(from.volume.load(Ordering::Relaxed), Ordering::Relaxed);
     to.muted
         .store(from.muted.load(Ordering::Relaxed), Ordering::Relaxed);
+    let target = if to.muted.load(Ordering::Relaxed) {
+        0.0
+    } else {
+        f32::from_bits(to.volume.load(Ordering::Relaxed))
+    };
+    to.volume_ramp.snap_to(target);
 }
 
 pub(super) fn rebuild_playback_stream(
@@ -141,7 +150,7 @@ pub(super) fn flush_completed(
 /// Read f32 samples from the ring buffer into a scratch buffer.
 /// Returns `true` if an underrun occurred (not enough data). Handles underrun by zero-filling.
 #[inline(always)]
-pub(super) fn read_ring_buffer(
+pub(in crate::engine) fn read_ring_buffer(
     consumer: &mut Consumer<f32>,
     scratch: &mut [f32],
     requested: usize,
@@ -155,10 +164,6 @@ pub(super) fn read_ring_buffer(
         {
             chunk.commit_all();
         }
-        state
-            .total_callback_samples
-            .fetch_add(available as u64, Ordering::Relaxed);
-
         scratch[..requested].fill(0.0);
 
         if consumer.slots() == 0 {

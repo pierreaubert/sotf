@@ -9,11 +9,13 @@ impl ManagerCommandHandler for StopCommand {
     fn execute(&self, ctx: &mut ManagerContext) -> ManagerResponse {
         log::debug!("[Manager Thread] Stop");
 
-        if let Err(e) = ctx.decoder.send_command(DecoderCommand::Stop) {
-            return ManagerResponse::Error(e);
-        }
+        let request_id = match ctx.decoder.send_command(DecoderCommand::Stop) {
+            Ok(request_id) => request_id,
+            Err(e) => return ManagerResponse::Error(e),
+        };
         if let Err(e) = super::super::wait::wait_for_decoder_ack(
             ctx.decoder,
+            request_id,
             std::time::Duration::from_millis(super::super::consts::DECODER_COMMAND_TIMEOUT_MS),
         ) {
             return ManagerResponse::Error(e);
@@ -36,6 +38,7 @@ impl ManagerCommandHandler for StopCommand {
         new_state.seeking = false;
         new_state.output_peak_linear = 0.0;
         new_state.output_clipping_detected = false;
+        new_state.last_error = None;
         ctx.state.store(Arc::new(new_state));
 
         ManagerResponse::Ok

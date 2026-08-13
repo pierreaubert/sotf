@@ -15,6 +15,41 @@ use std::sync::atomic::Ordering;
 
 use super::*;
 
+fn sink_config(sample_rate: u32, channels: usize, buffer_ms: u32) -> SinkConfig {
+    SinkConfig {
+        sample_rate,
+        channels,
+        buffer_ms,
+        device: None,
+        allow_virtual_output: false,
+    }
+}
+
+#[test]
+fn cpal_sink_rejects_zero_sample_rate_before_opening_device() {
+    let error = CpalSink::validate_config(&sink_config(0, 2, 200)).unwrap_err();
+    assert!(error.contains("sample rate"));
+}
+
+#[test]
+fn cpal_sink_rejects_zero_channels_before_opening_device() {
+    let error = CpalSink::validate_config(&sink_config(48_000, 0, 200)).unwrap_err();
+    assert!(error.contains("channel count"));
+}
+
+#[test]
+fn cpal_sink_rejects_channel_counts_that_cpal_cannot_represent() {
+    let error =
+        CpalSink::validate_config(&sink_config(48_000, u16::MAX as usize + 1, 200)).unwrap_err();
+    assert!(error.contains("cpal limit"));
+}
+
+#[test]
+fn cpal_sink_rejects_zero_buffer_duration() {
+    let error = CpalSink::validate_config(&sink_config(48_000, 2, 0)).unwrap_err();
+    assert!(error.contains("buffer duration"));
+}
+
 #[test]
 fn stream_error_callbacks_gate_event_formatting() {
     let source = include_str!("build.rs");
@@ -30,7 +65,7 @@ fn equal_channel_f32_output_clamps_after_volume() {
     let source = include_str!("build.rs");
 
     assert!(
-        source.contains("apply_volume_clamp(data, &state_clone);"),
+        source.contains("apply_volume_clamp(data, &state_clone, logical_channels, sample_rate);"),
         "equal-channel f32 CPAL output must clamp after volume"
     );
 }
@@ -40,7 +75,7 @@ fn mapped_channel_f32_output_clamps_after_volume() {
     let source = include_str!("build.rs");
 
     assert!(
-        source.contains("apply_volume_clamp(&mut scratch[..logical_len], state);"),
+        source.contains("&mut scratch[..logical_len],\n            state,\n            logical_channels,\n            sample_rate,"),
         "mapped-channel f32 CPAL output must clamp before hardware mapping"
     );
 }
@@ -212,6 +247,21 @@ fn read_ring_buffer_counts_only_consumed_samples_on_underrun() {
     assert!(underrun);
     assert_eq!(scratch, [0.25, 0.5, 0.75, 0.0, 0.0, 0.0]);
     assert_eq!(state.total_callback_samples.load(Ordering::Relaxed), 3);
+}
+
+#[test]
+fn read_ring_buffer_does_not_count_samples_discarded_by_flush() {
+    let (mut producer, mut consumer) = RingBuffer::<f32>::new(8);
+    let chunk = producer.write_chunk_uninit(4).unwrap();
+    chunk.fill_from_iter([0.25, 0.5, 0.75, 1.0]);
+
+    let state = CpalPlaybackState::new(8);
+    state.flush_requested.store(true, Ordering::Relaxed);
+    let mut scratch = [1.0; 4];
+    read_ring_buffer(&mut consumer, &mut scratch, 4, &state, 8);
+
+    assert_eq!(scratch, [0.0; 4]);
+    assert_eq!(state.total_callback_samples.load(Ordering::Relaxed), 0);
 }
 
 #[test]

@@ -6,6 +6,7 @@ use sotf_plugins::{PluginMaturity, catalog_entry, generic_app_catalog_entries};
 pub enum PluginType {
     EQ,
     Gain,
+    Dither,
     Upmixer,
     AAE,
     Compressor,
@@ -65,6 +66,7 @@ impl PluginType {
         match self {
             Self::EQ => "eq",
             Self::Gain => "gain",
+            Self::Dither => "dither",
             Self::Upmixer => "upmixer",
             Self::AAE => "aae",
             Self::Compressor => "compressor",
@@ -113,6 +115,7 @@ impl PluginType {
         match self {
             Self::EQ => "Parametric Equalizer IIR",
             Self::Gain => "Simple Volume/Gain Control",
+            Self::Dither => "Output bit-depth reduction with optional noise shaping",
             Self::Upmixer => "Stereo to Surround 5.1 to 9.1.6",
             Self::AAE => "Active Acoustic Enhancement (LARES-inspired reverb)",
             Self::Compressor => "Dynamic Range Compressor",
@@ -173,6 +176,7 @@ impl PluginType {
         match catalog_entry(name)?.canonical_type {
             "eq" => Some(Self::EQ),
             "gain" => Some(Self::Gain),
+            "dither" => Some(Self::Dither),
             "upmixer" => Some(Self::Upmixer),
             "aae" => Some(Self::AAE),
             "compressor" => Some(Self::Compressor),

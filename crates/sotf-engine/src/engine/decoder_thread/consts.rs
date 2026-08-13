@@ -21,7 +21,7 @@ pub(super) const HAL_INPUT_RUNAWAY_PEAK_LIMIT: f32 = 8.0;
 pub(super) const MAX_ENGINE_BLOCK_FRAMES: usize = 8192;
 
 /// Maximum channel count used to pre-size engine scratch buffers.
-pub(super) const MAX_ENGINE_CHANNELS: usize = 8;
+pub(super) const MAX_ENGINE_CHANNELS: usize = crate::EngineConfig::MAX_CHANNELS;
 
 /// Worst-case interleaved sample count for one engine block.
 pub(super) const MAX_ENGINE_SAMPLE_CAPACITY: usize = MAX_ENGINE_BLOCK_FRAMES * MAX_ENGINE_CHANNELS;

@@ -1,6 +1,7 @@
 use serial_test::serial;
 use sotf_audio::engine::playback_runtime_harness::{
-    FrameWriterHarness, HarnessFrameWriteOutcome, XorShift64, generated_frame,
+    FrameWriterHarness, HarnessFrameWriteOutcome, PlaybackCallbackHarness, XorShift64,
+    generated_frame,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
@@ -59,6 +60,52 @@ fn playback_frame_writer_hot_path_does_not_allocate() {
     assert_zero_alloc("downmix_10_to_2", 512, 10, 2, 8192, 0);
     assert_zero_alloc("fallback_4_to_6", 512, 4, 6, 8192, 0);
     assert_zero_alloc("full_buffer_drop", 512, 2, 2, 1024, 1024);
+}
+
+#[test]
+#[serial]
+fn playback_callback_harness_runs_consecutive_zero_allocation_windows() {
+    const WINDOWS: usize = 3;
+    let callback = std::thread::Builder::new()
+        .name("cpal-callback-harness".to_string())
+        .spawn(|| {
+            let cases = [(512, 2), (512, 6), (512, 10), (512, 12), (2048, 12)];
+            let mut harnesses = cases
+                .into_iter()
+                .map(|(frames, channels)| {
+                    let samples = frames * channels;
+                    (
+                        PlaybackCallbackHarness::new(samples * 2, samples, channels, 48_000),
+                        vec![0.25; samples],
+                    )
+                })
+                .collect::<Vec<_>>();
+            for (harness, input) in &mut harnesses {
+                let _ = harness.process(input);
+            }
+
+            let mut callbacks = 0;
+            for _ in 0..WINDOWS {
+                ALLOC_COUNT.store(0, Ordering::SeqCst);
+                let guard = enable_allocation_counting_for_current_thread();
+                for _ in 0..32 {
+                    for (harness, input) in &mut harnesses {
+                        std::hint::black_box(harness.process(input));
+                        callbacks += 1;
+                    }
+                }
+                drop(guard);
+                assert_eq!(
+                    ALLOC_COUNT.load(Ordering::SeqCst),
+                    0,
+                    "playback callback allocated in a measured window"
+                );
+            }
+            callbacks
+        })
+        .unwrap();
+
+    assert_eq!(callback.join().unwrap(), WINDOWS * 32 * 5);
 }
 
 #[test]

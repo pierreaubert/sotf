@@ -1,4 +1,7 @@
-use super::super::{PlaybackCommand, ProcessingMessage, ThreadEvent, plan_output_access};
+use super::super::{
+    PlaybackCommand, PlaybackConfiguration, PlaybackReconfigureRequest, ProcessingMessage,
+    ThreadEvent, plan_output_access,
+};
 use super::build::build_output_stream;
 #[cfg(target_os = "macos")]
 use super::core_audio_exclusive_mode_guard::CoreAudioExclusiveModeGuard;
@@ -29,7 +32,7 @@ use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::{Producer, RingBuffer};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, Sender, SyncSender, TryRecvError};
+use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
 use std::time::{Duration, Instant};
 
 /// Main playback thread function.
@@ -40,7 +43,7 @@ use std::time::{Duration, Instant};
 pub(super) fn run_playback_thread(
     message_rx: Receiver<ProcessingMessage>,
     command_rx: Receiver<PlaybackCommand>,
-    event_tx: Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     sample_rate: u32,
     buffer_ms: u32,
     initial_channels: usize,
@@ -79,7 +82,7 @@ pub(super) fn run_playback_thread(
 struct PlaybackRuntimeParams {
     message_rx: Receiver<ProcessingMessage>,
     command_rx: Receiver<PlaybackCommand>,
-    event_tx: Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     sample_rate: u32,
     buffer_ms: u32,
     initial_channels: usize,
@@ -93,7 +96,7 @@ struct PlaybackRuntimeParams {
 struct PlaybackRuntime {
     message_rx: Receiver<ProcessingMessage>,
     command_rx: Receiver<PlaybackCommand>,
-    event_tx: Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     recycle_tx: SyncSender<Vec<f32>>,
     host: cpal::Host,
     output_device: Option<String>,
@@ -168,8 +171,6 @@ enum RuntimeDecision {
 
 impl PlaybackRuntime {
     fn new(params: PlaybackRuntimeParams) -> Result<Self, String> {
-        set_realtime_priority();
-
         let PlaybackRuntimeParams {
             message_rx,
             command_rx,
@@ -183,6 +184,7 @@ impl PlaybackRuntime {
             allow_virtual_output,
             output_access,
         } = params;
+        set_realtime_priority(sample_rate, frame_size);
 
         let host = crate::devices::get_host_for_device(output_device.as_deref());
         #[cfg(target_os = "macos")]
@@ -376,10 +378,6 @@ impl PlaybackRuntime {
             self.emit_underrun_milestone();
             self.emit_output_meter();
 
-            if !self.has_minimum_ring_space() {
-                continue;
-            }
-
             self.emit_periodic_diagnostics();
 
             if self.handle_next_message() == RuntimeDecision::Break {
@@ -402,12 +400,29 @@ impl PlaybackRuntime {
                 self.state.muted.store(muted, Ordering::Relaxed);
                 RuntimeDecision::Proceed
             }
+            PlaybackCommand::Pause => {
+                request_flush(&self.state);
+                self.drain.flush_mode = FlushMode::DroppingUntilResume;
+                self.drain.end_of_stream = false;
+                self.drain.drain_start = None;
+                RuntimeDecision::Proceed
+            }
+            PlaybackCommand::Resume => {
+                self.drain.flush_mode =
+                    if flush_completed(&self.state, &self.producer, self.buffer_capacity) {
+                        FlushMode::Normal
+                    } else {
+                        FlushMode::WaitingForDrain
+                    };
+                RuntimeDecision::Proceed
+            }
             PlaybackCommand::UpdateSampleRate(new_sample_rate) => {
                 self.handle_sample_rate_update(new_sample_rate)
             }
             PlaybackCommand::UpdateChannels(new_channels) => {
                 self.handle_channel_update(new_channels)
             }
+            PlaybackCommand::Reconfigure(request) => self.handle_reconfigure_request(request),
             PlaybackCommand::Stop => {
                 self.state.reset_output_meter();
                 self.diagnostics.last_meter_report = Instant::now();
@@ -420,6 +435,125 @@ impl PlaybackRuntime {
             PlaybackCommand::Shutdown => {
                 log::debug!("[Playback Thread] Shutting down");
                 RuntimeDecision::Break
+            }
+        }
+    }
+
+    fn handle_reconfigure_request(
+        &mut self,
+        request: PlaybackReconfigureRequest,
+    ) -> RuntimeDecision {
+        if !request.ticket.try_begin_execution() {
+            request
+                .reply_tx
+                .send(Err(
+                    "Playback reconfiguration was cancelled before execution".to_string(),
+                ))
+                .ok();
+            return RuntimeDecision::Proceed;
+        }
+
+        let (decision, result) = self.reconfigure_output(request.requested, &request.ticket);
+        request.reply_tx.send(result).ok();
+        decision
+    }
+
+    fn reconfigure_output(
+        &mut self,
+        requested: PlaybackConfiguration,
+        ticket: &super::super::HostUpdateTicket,
+    ) -> (RuntimeDecision, Result<PlaybackConfiguration, String>) {
+        if requested.sample_rate == 0 {
+            return (
+                RuntimeDecision::Proceed,
+                Err("Playback sample rate must be non-zero".to_string()),
+            );
+        }
+        if requested.channels == 0 || requested.channels > u16::MAX as usize {
+            return (
+                RuntimeDecision::Proceed,
+                Err(format!(
+                    "Playback channel count {} is outside 1..={}",
+                    requested.channels,
+                    u16::MAX
+                )),
+            );
+        }
+        if requested.sample_rate == self.config.sample_rate && requested.channels == self.channels {
+            if !ticket.try_complete_execution() {
+                return (
+                    RuntimeDecision::Proceed,
+                    Err("Playback reconfiguration was cancelled before installation".to_string()),
+                );
+            }
+            return (
+                RuntimeDecision::Proceed,
+                Ok(PlaybackConfiguration {
+                    sample_rate: self.config.sample_rate,
+                    channels: self.channels,
+                }),
+            );
+        }
+
+        let drained = self.drain_pending_messages();
+        log::info!(
+            "[Playback Thread] Reconfiguring output: {}Hz/{}ch -> {}Hz/{}ch (drained {} frames)",
+            self.config.sample_rate,
+            self.channels,
+            requested.sample_rate,
+            requested.channels,
+            drained,
+        );
+        if let Err(error) = self.stream.pause() {
+            log::warn!("[Playback Thread] Failed to pause old stream: {error}");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+        self.drain_pending_messages();
+
+        match rebuild_playback_stream(
+            &self.host,
+            RebuildPlaybackParams {
+                output_device: self.output_device.as_deref(),
+                allow_virtual_output: self.allow_virtual_output,
+                sample_rate: requested.sample_rate,
+                requested_channels: requested.channels,
+                buffer_ms: self.buffer_ms,
+                buffer_size: initial_buffer_size(self.output_access_status, self.frame_size),
+                event_tx: self.event_tx.clone(),
+                old_state: &self.state,
+            },
+        ) {
+            Ok(rebuilt) => {
+                let actual = PlaybackConfiguration {
+                    sample_rate: rebuilt.config.sample_rate,
+                    channels: rebuilt.channels,
+                };
+                if !ticket.try_complete_execution() {
+                    drop(rebuilt);
+                    return (
+                        RuntimeDecision::Proceed,
+                        Err("Playback reconfiguration was cancelled before installation"
+                            .to_string()),
+                    );
+                }
+                self.install_recovered_stream(rebuilt);
+                (RuntimeDecision::Continue, Ok(actual))
+            }
+            Err(rebuild_error) => {
+                // The processing host has already committed its topology. Do
+                // not resume an output stream whose rate/channel contract may
+                // now be incompatible; fail loudly and let the manager publish
+                // a committed-but-output-failed state.
+                let error = format!(
+                    "Playback output reconfiguration to {}Hz/{}ch failed after host commit: {rebuild_error}",
+                    requested.sample_rate, requested.channels
+                );
+                send_playback_event(
+                    &self.event_tx,
+                    ThreadEvent::ProcessingError(error.clone()),
+                    "unrecoverable atomic output reconfiguration failure",
+                );
+                (RuntimeDecision::Break, Err(error))
             }
         }
     }
@@ -1006,18 +1140,6 @@ impl PlaybackRuntime {
         }
     }
 
-    fn has_minimum_ring_space(&mut self) -> bool {
-        let min_space_required =
-            minimum_ring_space_required(self.frame_size, self.channels, self.buffer_capacity);
-        if self.producer.slots() >= min_space_required {
-            return true;
-        }
-
-        std::thread::sleep(Duration::from_millis(SPIN_MS_RINGBUFFER));
-        self.accounting.frames_blocked += 1;
-        false
-    }
-
     fn emit_periodic_diagnostics(&mut self) {
         if self.diagnostics.last_diagnostic_log.elapsed() <= self.diagnostics.diagnostic_interval {
             return;
@@ -1098,10 +1220,43 @@ impl PlaybackRuntime {
     }
 
     fn handle_frame(&mut self, frame: super::super::AudioFrame) -> RuntimeDecision {
-        if matches!(self.drain.flush_mode, FlushMode::DroppingUntilFlush) {
+        if matches!(
+            self.drain.flush_mode,
+            FlushMode::DroppingUntilFlush | FlushMode::DroppingUntilResume
+        ) {
             self.accounting.frames_dropped += 1;
             recycle_frame_data(&self.recycle_tx, frame.data, "flush drop");
             return RuntimeDecision::Continue;
+        }
+
+        let required = required_frame_ring_space(
+            frame.num_frames,
+            frame.num_channels,
+            frame.data.len(),
+            self.channels,
+            self.buffer_capacity,
+        );
+        let mut counted_block = false;
+        while required <= self.buffer_capacity && self.producer.slots() < required {
+            if !counted_block {
+                self.accounting.frames_blocked += 1;
+                counted_block = true;
+            }
+            if let Ok(command) = self.command_rx.try_recv() {
+                if self.handle_command(command) == RuntimeDecision::Break {
+                    recycle_frame_data(&self.recycle_tx, frame.data, "shutdown frame drop");
+                    return RuntimeDecision::Break;
+                }
+                if matches!(
+                    self.drain.flush_mode,
+                    FlushMode::DroppingUntilFlush | FlushMode::DroppingUntilResume
+                ) {
+                    self.accounting.frames_dropped += 1;
+                    recycle_frame_data(&self.recycle_tx, frame.data, "paused frame drop");
+                    return RuntimeDecision::Continue;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(SPIN_MS_RINGBUFFER));
         }
 
         let first_frame = self.accounting.frames_received == 0;
@@ -1144,7 +1299,10 @@ impl PlaybackRuntime {
     }
 
     fn handle_end_of_stream(&mut self) -> RuntimeDecision {
-        if matches!(self.drain.flush_mode, FlushMode::DroppingUntilFlush) {
+        if matches!(
+            self.drain.flush_mode,
+            FlushMode::DroppingUntilFlush | FlushMode::DroppingUntilResume
+        ) {
             return RuntimeDecision::Continue;
         }
         log::debug!("[Playback Thread] End of stream - starting drain");
@@ -1295,9 +1453,12 @@ impl PlaybackRuntime {
         }
     }
 
-    fn drain_pending_messages(&self) -> usize {
+    fn drain_pending_messages(&mut self) -> usize {
         let mut drained = 0;
-        while self.message_rx.try_recv().is_ok() {
+        while let Ok(message) = self.message_rx.try_recv() {
+            if let ProcessingMessage::Frame(frame) = message {
+                recycle_frame_data(&self.recycle_tx, frame.data, "rebuild stale frame");
+            }
             drained += 1;
         }
         drained
@@ -1356,14 +1517,11 @@ impl PlaybackRuntime {
     }
 }
 
-fn set_realtime_priority() {
-    match super::super::rt_priority::set_realtime_priority(
-        super::super::rt_priority::RtPriority::Playback,
-    ) {
-        Ok(true) => log::info!("[Playback Thread] RT priority set successfully"),
-        Ok(false) => log::debug!("[Playback Thread] RT priority not available on this platform"),
-        Err(e) => log::warn!("[Playback Thread] Failed to set RT priority: {e}"),
-    }
+fn set_realtime_priority(sample_rate: u32, frame_size: usize) {
+    let _ = (sample_rate, frame_size);
+    log::warn!(
+        "[Playback Thread] cpal owns hardware-callback scheduling; the feeder is intentionally not given a hard realtime policy"
+    );
 }
 
 fn sanitize_output_device(output_device: Option<String>) -> Option<String> {
@@ -1380,12 +1538,19 @@ fn conversion_buffer_for_ring(buffer_capacity: usize) -> Vec<f32> {
     Vec::with_capacity(buffer_capacity)
 }
 
-pub(super) fn minimum_ring_space_required(
-    frame_size: usize,
-    channels: usize,
+pub(super) fn required_frame_ring_space(
+    num_frames: usize,
+    input_channels: usize,
+    data_len: usize,
+    output_channels: usize,
     buffer_capacity: usize,
 ) -> usize {
-    frame_size.saturating_mul(channels).min(buffer_capacity)
+    if input_channels == output_channels {
+        data_len
+    } else {
+        num_frames.saturating_mul(output_channels)
+    }
+    .min(buffer_capacity)
 }
 
 pub(super) fn should_emit_underrun_milestone(

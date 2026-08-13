@@ -6,19 +6,28 @@
 
 use super::*;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
-const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
+// Host construction and the subsequent processing-thread commit are each
+// bounded independently. Keep the public call budget longer than their sum so
+// a caller cannot time out while an accepted update is still able to land.
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(25);
+const SHUTDOWN_RESPONSE_TIMEOUT: Duration = Duration::from_secs(25);
+const SHUTDOWN_RUNNING: u8 = 0;
+const SHUTDOWN_STARTED: u8 = 1;
+const SHUTDOWN_COMPLETE: u8 = 2;
 
 /// Main audio engine
 pub struct AudioEngine {
     manager: ManagerThread,
     command_lock: Mutex<()>,
+    shutdown_state: AtomicU8,
 }
 
 impl AudioEngine {
-    fn expect_ok_response(&self) -> Result<(), String> {
-        match self.manager.recv_response_timeout(RESPONSE_TIMEOUT) {
+    fn expect_ok_response(&self, request_id: u64) -> Result<(), String> {
+        match self.manager.recv_response_for(request_id, RESPONSE_TIMEOUT) {
             Ok(ManagerResponse::Ok | ManagerResponse::Shutdown) => Ok(()),
             Ok(ManagerResponse::Error(e)) => Err(e),
             Ok(_) => Err("Unexpected response".to_string()),
@@ -35,28 +44,13 @@ impl AudioEngine {
         }
     }
 
-    /// Drain any pending manager response without blocking.
-    /// Used by fire-and-forget commands to clear the response channel.
-    fn drain_response(&self) {
-        // Try to receive any response that arrived (non-blocking).
-        // If the manager sent one for a previous command, consume it
-        // so it doesn't pollute future synchronous calls.
-        for _ in 0..1024 {
-            if self.manager.try_recv_response().is_none() {
-                return;
-            }
-        }
-        log::trace!("[AudioEngine] Stopped draining manager responses after 1024 messages");
-    }
-
     fn send_expect_ok(&self, command: ManagerCommand) -> Result<(), String> {
         let _guard = self
             .command_lock
             .lock()
             .map_err(|e| format!("Failed to lock command channel: {}", e))?;
-        self.drain_response();
-        self.manager.send_command(command)?;
-        self.expect_ok_response()
+        let request_id = self.manager.send_command(command)?;
+        self.expect_ok_response(request_id)
     }
 
     fn send_recv(&self, command: ManagerCommand) -> Result<ManagerResponse, String> {
@@ -64,9 +58,8 @@ impl AudioEngine {
             .command_lock
             .lock()
             .map_err(|e| format!("Failed to lock command channel: {}", e))?;
-        self.drain_response();
-        self.manager.send_command(command)?;
-        self.manager.recv_response_timeout(RESPONSE_TIMEOUT)
+        let request_id = self.manager.send_command(command)?;
+        self.manager.recv_response_for(request_id, RESPONSE_TIMEOUT)
     }
 
     /// Create and start a new audio engine
@@ -75,6 +68,7 @@ impl AudioEngine {
         Ok(Self {
             manager,
             command_lock: Mutex::new(()),
+            shutdown_state: AtomicU8::new(SHUTDOWN_RUNNING),
         })
     }
 
@@ -254,11 +248,48 @@ impl AudioEngine {
             .command_lock
             .lock()
             .map_err(|e| format!("Failed to lock command channel: {}", e))?;
-        self.drain_response();
-        self.manager.send_command(ManagerCommand::Shutdown)?;
-        // Manager may close channel before we receive response, which is fine
-        self.manager.recv_response().ok();
-        Ok(())
+        if self.shutdown_state.load(Ordering::Acquire) == SHUTDOWN_COMPLETE {
+            return Ok(());
+        }
+        let request_id = if self
+            .shutdown_state
+            .compare_exchange(
+                SHUTDOWN_RUNNING,
+                SHUTDOWN_STARTED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            self.manager.send_command(ManagerCommand::Shutdown)?
+        } else {
+            // The command lock serializes callers, so STARTED here means an
+            // earlier attempt timed out while cleanup was still in progress.
+            // Wait for manager completion rather than returning false success.
+            return self
+                .manager
+                .wait_for_exit(SHUTDOWN_RESPONSE_TIMEOUT)
+                .map(|_| {
+                    self.shutdown_state
+                        .store(SHUTDOWN_COMPLETE, Ordering::Release);
+                });
+        };
+        match self
+            .manager
+            .recv_response_for(request_id, SHUTDOWN_RESPONSE_TIMEOUT)
+        {
+            Ok(ManagerResponse::Shutdown | ManagerResponse::Ok) => {
+                self.shutdown_state
+                    .store(SHUTDOWN_COMPLETE, Ordering::Release);
+                Ok(())
+            }
+            Ok(ManagerResponse::Error(error)) => Err(error),
+            Ok(_) => Err("Unexpected shutdown response from engine manager".to_string()),
+            Err(error) => Err(format!(
+                "Engine shutdown response timed out after {:?}: {}",
+                SHUTDOWN_RESPONSE_TIMEOUT, error
+            )),
+        }
     }
 }
 

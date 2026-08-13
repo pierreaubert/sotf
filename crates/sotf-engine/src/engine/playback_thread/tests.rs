@@ -11,7 +11,7 @@ use super::playback_state::PlaybackState;
 use super::playback_state::flush_completed;
 use super::playback_state::read_ring_buffer;
 use super::playback_state::request_flush;
-use super::runtime::minimum_ring_space_required;
+use super::runtime::required_frame_ring_space;
 use super::runtime::should_emit_underrun_milestone;
 use crate::{OutputAccessMode, OutputAccessStatus};
 use cpal::SampleFormat;
@@ -30,9 +30,10 @@ fn output_access_status_for_device(
 fn output_meter_tracks_post_volume_peak_before_clamp() {
     let state = PlaybackState::new(16);
     state.volume.store(2.0f32.to_bits(), Ordering::Relaxed);
+    state.volume_ramp.snap_to(2.0);
     let mut samples = [0.25, -0.6, 0.1];
 
-    apply_volume_clamp(&mut samples, &state);
+    apply_volume_clamp(&mut samples, &state, 1, 48_000);
 
     assert_eq!(samples, [0.5, -1.0, 0.2]);
     let peak = f32::from_bits(state.output_peak_bits.load(Ordering::Relaxed));
@@ -45,7 +46,7 @@ fn output_meter_treats_non_finite_samples_as_clipping() {
     let state = PlaybackState::new(16);
     let mut samples = [0.5, f32::NAN];
 
-    apply_volume(&mut samples, &state);
+    apply_volume(&mut samples, &state, 1, 48_000);
 
     let peak = f32::from_bits(state.output_peak_bits.load(Ordering::Relaxed));
     assert!((peak - 0.5).abs() < 1e-6);
@@ -108,7 +109,7 @@ fn primary_f32_output_clamps_after_volume() {
     let source = include_str!("build.rs");
 
     assert!(
-        source.contains("apply_volume_clamp(data, &state_clone);"),
+        source.contains("apply_volume_clamp(data, &state_clone, channels, sample_rate);"),
         "primary f32 playback callback must clamp after volume before handing samples to CPAL"
     );
 }
@@ -305,6 +306,7 @@ fn read_ring_buffer_discards_samples_while_flush_requested() {
     assert_eq!(scratch, [0.0; 4]);
     assert_eq!(consumer.slots(), 0);
     assert!(!state.flush_requested.load(Ordering::Relaxed));
+    assert_eq!(state.total_callback_samples.load(Ordering::Relaxed), 0);
 }
 
 #[test]
@@ -349,7 +351,7 @@ fn f32_output_volume_at_unity_does_not_clip_samples() {
     let state = PlaybackState::new(8);
     let mut scratch = [-1.25, -0.5, 0.5, 1.25];
 
-    apply_volume(&mut scratch, &state);
+    apply_volume(&mut scratch, &state, 1, 48_000);
 
     assert_eq!(scratch, [-1.25, -0.5, 0.5, 1.25]);
 }
@@ -371,10 +373,10 @@ fn playback_buffer_capacity_rounds_up_after_channel_scaling() {
 }
 
 #[test]
-fn playback_ring_space_gate_clamps_to_buffer_capacity() {
-    assert_eq!(minimum_ring_space_required(512, 2, 4096), 1024);
-    assert_eq!(minimum_ring_space_required(4096, 2, 96), 96);
-    assert_eq!(minimum_ring_space_required(usize::MAX, 2, 96), 96);
+fn playback_ring_space_gate_uses_actual_frame_length_and_clamps_to_capacity() {
+    assert_eq!(required_frame_ring_space(512, 2, 1_280, 2, 4096), 1_280);
+    assert_eq!(required_frame_ring_space(512, 2, 1_024, 6, 4096), 3_072);
+    assert_eq!(required_frame_ring_space(4096, 2, 8_192, 2, 96), 96);
 }
 
 #[test]
@@ -487,4 +489,28 @@ fn is_virtual_output_device_name_matches_known_virtual_outputs() {
 #[test]
 fn is_virtual_output_device_name_allows_regular_physical_outputs() {
     assert!(!is_virtual_output_device_name("Built-in Output"));
+}
+
+#[test]
+fn acknowledged_reconfigure_returns_actual_playback_configuration() {
+    let (mut playback, command_rx) = super::PlaybackThread::command_probe();
+    let responder = std::thread::spawn(move || {
+        let super::super::PlaybackCommand::Reconfigure(request) = command_rx.recv().unwrap() else {
+            panic!("expected atomic playback reconfiguration command");
+        };
+        assert!(request.ticket.try_commit());
+        request
+            .reply_tx
+            .send(Ok(super::super::PlaybackConfiguration {
+                sample_rate: 48_000,
+                channels: 2,
+            }))
+            .unwrap();
+    });
+
+    let actual = playback.reconfigure(96_000, 6).unwrap();
+    assert_eq!(actual.sample_rate, 48_000);
+    assert_eq!(actual.channels, 2);
+    responder.join().unwrap();
+    playback.thread_handle = None;
 }

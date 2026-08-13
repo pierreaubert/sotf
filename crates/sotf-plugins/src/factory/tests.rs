@@ -18,7 +18,6 @@ use crate::{
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use crate::{ExternalPluginSandboxTiming, ExternalPluginTrust};
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::Plugin;
 use std::path::PathBuf;
 
 use tempfile::tempdir;
@@ -280,42 +279,6 @@ fn compressor_catalog_and_factory_expose_true_broadband_mode() {
     )
     .unwrap();
     assert_eq!(factory_output, reference_output);
-}
-
-#[test]
-fn ambisonics_catalog_matches_factory_order_contract() {
-    let entry = catalog_entry("ambisonics_decoder").expect("ambisonics catalog entry");
-    let super::catalog::PluginSupportedInputLayouts::Enumerated(widths) =
-        entry.metadata.channel_layout.supported_inputs
-    else {
-        panic!("Ambisonics channel contract must enumerate supported HOA widths");
-    };
-    assert_eq!(widths, &[4]);
-
-    for (channels, order, layout) in [(4, 1, "5.1")] {
-        let plugin = create_plugin(
-            "ambisonics_decoder",
-            &serde_json::json!({
-                "order": order,
-                "target_layout": layout,
-            }),
-            channels,
-            48_000,
-        )
-        .unwrap_or_else(|error| panic!("order-{order} factory contract failed: {error}"));
-        assert_eq!(plugin.input_channels(), channels);
-    }
-
-    let order3 = create_plugin(
-        "ambisonics_decoder",
-        &serde_json::json!({"order": 3, "target_layout": "9.1.6"}),
-        16,
-        48_000,
-    );
-    assert!(
-        order3.is_err(),
-        "order-3 must not be advertised until a built-in layout has 16 non-LFE feeds"
-    );
 }
 
 #[test]

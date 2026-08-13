@@ -9,7 +9,7 @@ use super::types::render_callback;
 use rtrb::{Consumer, RingBuffer};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::mpsc::{Receiver, Sender, SyncSender};
+use std::sync::mpsc::{Receiver, SyncSender};
 
 pub(super) struct AudioUnitHandle {
     pub(super) instance: ca::AudioComponentInstance,
@@ -105,17 +105,16 @@ impl AudioUnitHandle {
         };
         if status != ca::noErr {
             log::warn!(
-                "[iOS AudioUnit] MaxFramesPerSlice failed: {} (continuing)",
-                status
+                "[iOS AudioUnit] MaxFramesPerSlice failed: {status}; render callback supports the device-provided slice directly"
             );
         }
 
         // Create render context (heap-allocated, stable address)
-        let scratch_size = 4096 * channels;
         let render_ctx = Box::new(RenderContext {
             consumer,
             state,
-            scratch: vec![0.0; scratch_size],
+            sample_rate,
+            channels,
         });
 
         // Set render callback
@@ -183,7 +182,7 @@ impl Drop for AudioUnitHandle {
 pub(super) fn run_playback_ios(
     message_rx: Receiver<ProcessingMessage>,
     command_rx: Receiver<PlaybackCommand>,
-    event_tx: Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     sample_rate: u32,
     buffer_ms: u32,
     channels: usize,
@@ -191,7 +190,8 @@ pub(super) fn run_playback_ios(
     recycle_tx: SyncSender<Vec<f32>>,
 ) -> Result<(), String> {
     // Create ring buffer
-    let buffer_capacity = playback_buffer_capacity(sample_rate, channels, buffer_ms);
+    let buffer_capacity = playback_buffer_capacity(sample_rate, channels, buffer_ms)
+        .max(frame_size.saturating_mul(channels));
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
 
     // Create shared state
@@ -201,7 +201,7 @@ pub(super) fn run_playback_ios(
     let _audio_unit = AudioUnitHandle::new(sample_rate, channels, consumer, Arc::clone(&state))?;
 
     event_tx
-        .send(ThreadEvent::PlaybackChannelsChanged(channels))
+        .try_send(ThreadEvent::PlaybackChannelsChanged(channels))
         .ok();
 
     log::info!(
@@ -217,6 +217,9 @@ pub(super) fn run_playback_ios(
     let mut drain_start: Option<std::time::Instant> = None;
     let drain_timeout = std::time::Duration::from_secs(2);
     let mut flush_dropping = false;
+    let mut pause_dropping = false;
+    let mut resume_waiting_for_flush = false;
+    let mut pending_frame: Option<crate::AudioFrame> = None;
 
     // Main loop: read from processing queue and write to ring buffer
     loop {
@@ -228,6 +231,18 @@ pub(super) fn run_playback_ios(
                 }
                 PlaybackCommand::Mute(muted) => {
                     state.muted.store(muted, Ordering::Relaxed);
+                }
+                PlaybackCommand::Pause => {
+                    state.flush_requested.store(true, Ordering::Relaxed);
+                    pause_dropping = true;
+                    end_of_stream = false;
+                    drain_start = None;
+                    if let Some(frame) = pending_frame.take() {
+                        recycle_tx.try_send(frame.data).ok();
+                    }
+                }
+                PlaybackCommand::Resume => {
+                    resume_waiting_for_flush = true;
                 }
                 PlaybackCommand::UpdateSampleRate(new_rate) => {
                     if new_rate != sample_rate {
@@ -247,49 +262,115 @@ pub(super) fn run_playback_ios(
                         );
                     }
                 }
+                PlaybackCommand::Reconfigure(request) => {
+                    if !request.ticket.try_begin_execution() {
+                        request
+                            .reply_tx
+                            .send(Err(
+                                "iOS playback reconfiguration was cancelled before execution"
+                                    .to_string(),
+                            ))
+                            .ok();
+                    } else if !request.ticket.try_complete_execution() {
+                        request
+                            .reply_tx
+                            .send(Err(
+                                "iOS playback reconfiguration was cancelled before completion"
+                                    .to_string(),
+                            ))
+                            .ok();
+                    } else if request.requested.sample_rate == sample_rate
+                        && request.requested.channels == channels
+                    {
+                        request
+                            .reply_tx
+                            .send(Ok(super::super::PlaybackConfiguration {
+                                sample_rate,
+                                channels,
+                            }))
+                            .ok();
+                    } else {
+                        request
+                            .reply_tx
+                            .send(Err(format!(
+                                "iOS RemoteIO runtime reconfiguration from {}Hz/{}ch to {}Hz/{}ch is unsupported; rebuild the engine",
+                                sample_rate,
+                                channels,
+                                request.requested.sample_rate,
+                                request.requested.channels,
+                            )))
+                            .ok();
+                    }
+                }
                 PlaybackCommand::Stop => {
                     state.flush_requested.store(true, Ordering::Relaxed);
                     flush_dropping = true;
                     end_of_stream = false;
                     drain_start = None;
+                    if let Some(frame) = pending_frame.take() {
+                        recycle_tx.try_send(frame.data).ok();
+                    }
                 }
                 PlaybackCommand::Shutdown => {
                     log::debug!("[Playback Thread iOS] Shutting down");
+                    if let Some(frame) = pending_frame.take() {
+                        recycle_tx.try_send(frame.data).ok();
+                    }
                     break;
                 }
             }
         }
 
-        // Check for ring buffer space
-        let available_space = producer.slots();
-        let min_space = frame_size * channels * 2;
-        if available_space < min_space {
-            std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
-            continue;
+        if resume_waiting_for_flush && !state.flush_requested.load(Ordering::Relaxed) {
+            resume_waiting_for_flush = false;
+            pause_dropping = false;
         }
 
         // Read from message queue
-        match message_rx.try_recv() {
+        let message = if let Some(frame) = pending_frame.take() {
+            Ok(ProcessingMessage::Frame(frame))
+        } else {
+            message_rx.try_recv()
+        };
+        match message {
             Ok(ProcessingMessage::Frame(frame)) => {
-                if flush_dropping {
+                if flush_dropping || pause_dropping {
+                    recycle_tx.try_send(frame.data).ok();
+                    continue;
+                }
+
+                if frame.num_channels != channels {
+                    event_tx
+                        .try_send(ThreadEvent::ProcessingError(format!(
+                            "iOS playback requires {channels} channels, received {}",
+                            frame.num_channels
+                        )))
+                        .ok();
                     recycle_tx.try_send(frame.data).ok();
                     continue;
                 }
 
                 // Write to ring buffer
                 let frame_samples = frame.data.len();
+                if producer.slots() < frame_samples {
+                    pending_frame = Some(frame);
+                    std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
+                    continue;
+                }
                 match producer.write_chunk_uninit(frame_samples) {
                     Ok(chunk) => {
                         write_chunk_bulk(chunk, &frame.data);
                     }
                     Err(_) => {
-                        // Ring buffer full — drop frame
+                        pending_frame = Some(frame);
+                        std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
+                        continue;
                     }
                 }
                 recycle_tx.try_send(frame.data).ok();
             }
             Ok(ProcessingMessage::EndOfStream) => {
-                if flush_dropping {
+                if flush_dropping || pause_dropping {
                     continue;
                 }
                 log::debug!("[Playback Thread iOS] End of stream - starting drain");
@@ -307,13 +388,13 @@ pub(super) fn run_playback_ios(
                     // Check if ring buffer has drained
                     if producer.slots() >= buffer_capacity {
                         log::info!("[Playback Thread iOS] Ring buffer drained");
-                        event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                        event_tx.try_send(ThreadEvent::PlaybackDrained).ok();
                         break;
                     }
                     if let Some(start) = drain_start {
                         if start.elapsed() > drain_timeout {
                             log::warn!("[Playback Thread iOS] Drain timeout, signaling completion");
-                            event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                            event_tx.try_send(ThreadEvent::PlaybackDrained).ok();
                             break;
                         }
                     }
@@ -328,7 +409,7 @@ pub(super) fn run_playback_ios(
                     let drain_start = std::time::Instant::now();
                     while drain_start.elapsed() < drain_timeout {
                         if producer.slots() >= buffer_capacity {
-                            event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                            event_tx.try_send(ThreadEvent::PlaybackDrained).ok();
                             break;
                         }
                         std::thread::sleep(std::time::Duration::from_millis(5));

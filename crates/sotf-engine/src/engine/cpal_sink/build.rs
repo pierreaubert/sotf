@@ -9,14 +9,18 @@ use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::Consumer;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::Sender;
+
+// This builder serves the public standalone `CpalSink`, including logical to
+// hardware channel mapping. The playback-thread builder intentionally owns
+// engine-specific recovery telemetry and metering. Keep shared callback
+// invariants (ring accounting, gain ramp, clamp, dither) aligned between them.
 
 pub(super) fn build_output_stream(
     device: &Device,
     config: &StreamConfig,
     logical_channels: usize,
     state: Arc<CpalPlaybackState>,
-    event_tx: Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     consumer: Consumer<f32>,
     sample_format: SampleFormat,
 ) -> Result<Stream, String> {
@@ -65,12 +69,13 @@ pub(super) fn build_output_stream_f32(
     config: &StreamConfig,
     logical_channels: usize,
     state: Arc<CpalPlaybackState>,
-    event_tx: Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     mut consumer: Consumer<f32>,
 ) -> Result<Stream, String> {
     let state_clone = Arc::clone(&state);
     let capacity = state.capacity;
     let hardware_channels = config.channels as usize;
+    let sample_rate = config.sample_rate;
 
     if logical_channels == hardware_channels {
         let stream = device
@@ -79,7 +84,7 @@ pub(super) fn build_output_stream_f32(
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                     state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
                     read_ring_buffer(&mut consumer, data, data.len(), &state_clone, capacity);
-                    apply_volume_clamp(data, &state_clone);
+                    apply_volume_clamp(data, &state_clone, logical_channels, sample_rate);
                 },
                 move |err| {
                     crate::rate_limited_log!(warn, 5, "[CpalSink] Stream error: {}", err);
@@ -114,6 +119,7 @@ pub(super) fn build_output_stream_f32(
                     capacity,
                     logical_channels,
                     hardware_channels,
+                    sample_rate,
                 );
             },
             move |err| {
@@ -139,7 +145,7 @@ pub(super) fn build_output_stream_int<T>(
     config: &StreamConfig,
     logical_channels: usize,
     state: Arc<CpalPlaybackState>,
-    event_tx: Sender<ThreadEvent>,
+    event_tx: crossbeam::channel::Sender<ThreadEvent>,
     mut consumer: Consumer<f32>,
 ) -> Result<Stream, String>
 where
@@ -148,6 +154,7 @@ where
     let state_clone = Arc::clone(&state);
     let capacity = state.capacity;
     let hardware_channels = config.channels as usize;
+    let sample_rate = config.sample_rate;
     let mut scratch = vec![0.0f32; scratch_len(logical_channels)];
     let mut dither = TpdfDither::new(0x6370_616c_7369_6e6b);
 
@@ -168,7 +175,12 @@ where
                             &state_clone,
                             capacity,
                         );
-                        apply_volume_clamp(&mut scratch[..chunk_len], &state_clone);
+                        apply_volume_clamp(
+                            &mut scratch[..chunk_len],
+                            &state_clone,
+                            logical_channels,
+                            sample_rate,
+                        );
                         let dither_enabled = !state_clone.muted.load(Ordering::Relaxed);
                         for (out, &s) in data[offset..offset + chunk_len]
                             .iter_mut()
@@ -194,7 +206,12 @@ where
                             &state_clone,
                             capacity,
                         );
-                        apply_volume_clamp(&mut scratch[..logical_len], &state_clone);
+                        apply_volume_clamp(
+                            &mut scratch[..logical_len],
+                            &state_clone,
+                            logical_channels,
+                            sample_rate,
+                        );
                         let dither_enabled = !state_clone.muted.load(Ordering::Relaxed);
                         write_logical_to_hardware_int(
                             &scratch[..logical_len],
@@ -227,9 +244,14 @@ where
 }
 
 fn scratch_len(logical_channels: usize) -> usize {
-    16_384usize.max(logical_channels.max(1))
+    let channels = logical_channels.max(1);
+    16_384usize.div_ceil(channels) * channels
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "callback helper receives preallocated ring, format, and timing state explicitly"
+)]
 fn process_mapped_f32_callback(
     data: &mut [f32],
     scratch: &mut [f32],
@@ -238,6 +260,7 @@ fn process_mapped_f32_callback(
     capacity: usize,
     logical_channels: usize,
     hardware_channels: usize,
+    sample_rate: u32,
 ) {
     let mut offset = 0;
     while offset < data.len() {
@@ -257,7 +280,12 @@ fn process_mapped_f32_callback(
             state,
             capacity,
         );
-        apply_volume_clamp(&mut scratch[..logical_len], state);
+        apply_volume_clamp(
+            &mut scratch[..logical_len],
+            state,
+            logical_channels,
+            sample_rate,
+        );
         write_logical_to_hardware_f32(
             &scratch[..logical_len],
             &mut data[offset..offset + hardware_len],

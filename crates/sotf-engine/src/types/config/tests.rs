@@ -262,6 +262,27 @@ fn validate_rejects_frame_size_zero() {
 }
 
 #[test]
+fn validate_rejects_sizes_outside_allocation_free_contract() {
+    let config = EngineConfig {
+        frame_size: EngineConfig::MAX_FRAME_SIZE + 1,
+        ..Default::default()
+    };
+    assert!(config.validate().unwrap_err().contains("frame_size"));
+
+    let config = EngineConfig {
+        input_channels: EngineConfig::MAX_CHANNELS + 1,
+        ..Default::default()
+    };
+    assert!(config.validate().unwrap_err().contains("input_channels"));
+
+    let config = EngineConfig {
+        output_channels: EngineConfig::MAX_CHANNELS + 1,
+        ..Default::default()
+    };
+    assert!(config.validate().unwrap_err().contains("output_channels"));
+}
+
+#[test]
 fn validate_rejects_output_sample_rate_zero() {
     let config = EngineConfig {
         output_sample_rate: 0,
@@ -490,6 +511,7 @@ fn audio_engine_state_serde_roundtrip() {
         duration: Some(240.0),
         sample_rate: 96000,
         num_channels: 2,
+        playback_channels: 2,
         volume: 0.5,
         muted: true,
         processing_bypassed: false,

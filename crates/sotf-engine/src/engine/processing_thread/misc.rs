@@ -1,4 +1,4 @@
-use super::super::ProcessingCommand;
+use super::ProcessingRequest;
 use crate::EngineOversamplingPolicy;
 use sotf_plugins::{Plugin, PluginHost};
 use std::sync::mpsc::{Receiver, SyncSender};
@@ -9,9 +9,9 @@ use std::time::Duration;
 /// along with the command so the caller can handle both without data loss.
 pub(super) fn send_or_interrupt<T>(
     tx: &SyncSender<T>,
-    rx: &Receiver<ProcessingCommand>,
+    rx: &Receiver<ProcessingRequest>,
     mut msg: T,
-) -> Result<Option<(ProcessingCommand, Option<T>)>, String> {
+) -> Result<Option<(ProcessingRequest, Option<T>)>, String> {
     let mut retries = 0;
     loop {
         match tx.try_send(msg) {
@@ -24,7 +24,7 @@ pub(super) fn send_or_interrupt<T>(
                 }
                 retries += 1;
                 if retries > 200 {
-                    return Err("Processing queue stuck for >1s".to_string());
+                    return Err("Processing queue stuck for >200ms".to_string());
                 }
                 msg = returned_msg;
                 std::thread::sleep(Duration::from_millis(1));
