@@ -48,6 +48,9 @@ pub struct ChannelMuteSoloPlugin {
     pub(super) cached_parameters: std::cell::RefCell<Vec<Parameter>>,
     /// Dirty flag — set when any state change could affect cached_parameters.
     pub(super) params_dirty: std::cell::Cell<bool>,
+    /// Test-only count of channel-state JSON serializations performed for schema refreshes.
+    #[cfg(test)]
+    pub(super) schema_state_serializations: std::cell::Cell<usize>,
     /// Cache for SIMD optimization
     pub(super) cached_gains: Vec<f32>,
     /// Test-only proof that a converged block used the static-gain kernel.
@@ -78,6 +81,8 @@ impl ChannelMuteSoloPlugin {
             param_fade_ms: ParameterId::from("fade_ms"),
             cached_parameters: std::cell::RefCell::new(Vec::new()),
             params_dirty: std::cell::Cell::new(true),
+            #[cfg(test)]
+            schema_state_serializations: std::cell::Cell::new(0),
             cached_gains: vec![1.0; channels],
             #[cfg(test)]
             static_path_blocks: 0,
@@ -102,8 +107,6 @@ impl ChannelMuteSoloPlugin {
 
         plugin.reset_smoothers_to_current();
         plugin.mark_params_dirty();
-        // Eagerly rebuild after bulk state load so initial validate_parameter works.
-        plugin.rebuild_cached_parameters_if_dirty();
         plugin
     }
 
@@ -224,6 +227,10 @@ impl ChannelMuteSoloPlugin {
             return;
         }
         let mut cached = self.cached_parameters.borrow_mut();
+        #[cfg(test)]
+        self.schema_state_serializations
+            .set(self.schema_state_serializations.get() + 1);
+        let channel_states_json = serde_json::to_string(&self.channel_states).unwrap_or_default();
         if cached.is_empty() {
             let dim_spec = param_by_key(PARAMS, "dim_gain_db");
             let fade_spec = param_by_key(PARAMS, "fade_ms");
@@ -232,13 +239,9 @@ impl ChannelMuteSoloPlugin {
                     .with_description("Enable/disable the plugin")
                     .with_group("General")
                     .with_importance(ParameterImportance::Critical),
-                Parameter::new_string(
-                    "channel_states",
-                    "Channel States",
-                    serde_json::to_string(&self.channel_states).unwrap_or_default(),
-                )
-                .with_description("Per-channel mute/solo/dim states (JSON)")
-                .with_group("General"),
+                Parameter::new_string("channel_states", "Channel States", channel_states_json)
+                    .with_description("Per-channel mute/solo/dim states (JSON)")
+                    .with_group("General"),
                 Parameter::new_float(
                     "dim_gain_db",
                     dim_spec.name,
@@ -286,41 +289,16 @@ impl ChannelMuteSoloPlugin {
                 );
             }
         } else {
-            for parameter in cached.iter_mut() {
-                parameter.default_value = if parameter.id == self.param_enabled {
-                    ParameterValue::Bool(self.enabled)
-                } else if parameter.id == self.param_channel_states {
-                    ParameterValue::String(
-                        serde_json::to_string(&self.channel_states).unwrap_or_default(),
-                    )
-                } else if parameter.id == self.param_dim_gain_db {
-                    ParameterValue::Float(self.dim_gain_db)
-                } else if parameter.id == self.param_fade_ms {
-                    ParameterValue::Float(self.fade_ms)
-                } else if let Some(channel) = parameter
-                    .id
-                    .as_str()
-                    .strip_prefix("mute_")
-                    .and_then(|index| index.parse::<usize>().ok())
-                {
-                    ParameterValue::Bool(self.channel_states[channel].muted)
-                } else if let Some(channel) = parameter
-                    .id
-                    .as_str()
-                    .strip_prefix("solo_")
-                    .and_then(|index| index.parse::<usize>().ok())
-                {
-                    ParameterValue::Bool(self.channel_states[channel].soloed)
-                } else if let Some(channel) = parameter
-                    .id
-                    .as_str()
-                    .strip_prefix("dim_")
-                    .and_then(|index| index.parse::<usize>().ok())
-                {
-                    ParameterValue::Bool(self.channel_states[channel].dimmed)
-                } else {
-                    parameter.default_value.clone()
-                };
+            debug_assert_eq!(cached.len(), 4 + self.channels * 3);
+            cached[0].default_value = ParameterValue::Bool(self.enabled);
+            cached[1].default_value = ParameterValue::String(channel_states_json);
+            cached[2].default_value = ParameterValue::Float(self.dim_gain_db);
+            cached[3].default_value = ParameterValue::Float(self.fade_ms);
+            for (channel, state) in self.channel_states.iter().enumerate() {
+                let base = 4 + channel * 3;
+                cached[base].default_value = ParameterValue::Bool(state.muted);
+                cached[base + 1].default_value = ParameterValue::Bool(state.soloed);
+                cached[base + 2].default_value = ParameterValue::Bool(state.dimmed);
             }
         }
         self.params_dirty.set(false);
@@ -569,14 +547,10 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
         }
 
         if self.smoothers_are_settled() {
-            for (gain, smoother) in self
-                .cached_gains
-                .iter_mut()
-                .zip(&mut self.channel_smoothers)
-            {
-                // `next_n(0)` snaps the smoother's sub-threshold residue to
-                // its exact target without advancing transport time.
-                *gain = smoother.next_n(0);
+            for (gain, smoother) in self.cached_gains.iter_mut().zip(&self.channel_smoothers) {
+                // Static blocks use the exact target without advancing or
+                // otherwise mutating settled smoother state.
+                *gain = smoother.target();
             }
             #[cfg(test)]
             {

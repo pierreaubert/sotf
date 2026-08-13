@@ -2,7 +2,7 @@
 
 ## Remediation status
 
-All P0-P3 findings are fixed in `0.5.63` through `0.5.65`:
+All P0-P3 findings are fixed in `0.5.63` through `0.5.66`:
 
 - **Fixed:** channel smoothers advance once per sample, producing the same exponential transition
   for every callback partition.
@@ -21,6 +21,27 @@ All P0-P3 findings are fixed in `0.5.63` through `0.5.65`:
 - **Fixed:** the dead `param_specs.rs` and duplicate default modules were removed. Runtime,
   serde, schema ranges/defaults, and documentation now derive from `params::PARAMS` and define
   `fade_ms` as a one-pole time constant.
+
+### Retained performance follow-up (0.5.66)
+
+The settled-path recommendation was benchmarked on arm64 macOS with Criterion 0.8 before the
+follow-up implementation changes. The matrix covered 2, 6, 8, 16, and 32 channels at 64, 256,
+and 1024 frames with mixed mute/dim routing. Replacing the whole-buffer call with an otherwise
+equivalent per-frame call regressed stereo by 452-1226%, 6-channel cases by 23-52%, and
+32-channel cases by 4-10%. Several 8/16-channel runs were scheduler-noisy, so they are not used
+as evidence of a speedup. The whole-buffer kernel was retained because the repeated matrix found
+clear wins in the common stereo/5.1 cases and no repeatable benefit for the per-frame variant.
+
+The follow-up also removes the settled-path `next_n(0)` call: exact target gains are read without
+mutating smoother state. Tests compare the kernel with a scalar reference across the full matrix,
+verify the next automation transition is unchanged after arbitrary settled callbacks, and assert
+zero callback allocations in both settled and transitioning states.
+
+For metadata, immutable descriptors remain cached from construction, but applying values now only
+marks their value snapshot dirty. Channel-state JSON is serialized only when
+`parameter_schema()` refreshes that snapshot; an instrumented regression test proves bulk
+`apply_values` does not trigger serialization. Schema refresh updates known descriptor positions
+without formatting or reparsing per-channel IDs.
 
 Follow-up verification: the shared-factory regression
 `channel_mute_solo_facade_factory_validates_constructor_contract` rejects an

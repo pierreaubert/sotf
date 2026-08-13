@@ -2,7 +2,12 @@ use super::channel_mute_solo_plugin::ChannelMuteSoloPlugin;
 use super::types::{ChannelMuteSoloParams, ChannelState, default_dim_gain_db, default_fade_ms};
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::ParameterSet;
 use sotf_host::plugin::{PluginCompiledOp, ProcessContext};
+use sotf_host::{CountingAlloc, assert_no_allocs};
+
+#[global_allocator]
+static ALLOCATOR: CountingAlloc = CountingAlloc;
 
 #[test]
 fn test_bypass() {
@@ -625,6 +630,192 @@ fn settled_processing_uses_static_block_path_and_transition_sensitive_metadata()
                     .all(|sample| (*sample - 1.0).abs() < 1.0e-7)
         }));
     }
+}
+
+#[test]
+fn settled_block_kernel_matches_scalar_reference_across_layouts_and_blocks() {
+    for channels in [2, 6, 8, 16, 32] {
+        let states: Vec<_> = (0..channels)
+            .map(|channel| ChannelState {
+                muted: channel % 4 == 0,
+                soloed: false,
+                dimmed: channel % 4 == 1,
+            })
+            .collect();
+        for frames in [64, 256, 1_024] {
+            let mut plugin = ChannelMuteSoloPlugin::from_params(
+                channels,
+                ChannelMuteSoloParams {
+                    enabled: true,
+                    channel_states: states.clone(),
+                    dim_gain_db: -20.0,
+                    fade_ms: 5.0,
+                },
+            );
+            plugin.initialize(48_000).unwrap();
+            let mut actual: Vec<f32> = (0..channels * frames)
+                .map(|index| ((index % 29) as f32 - 14.0) / 14.0)
+                .collect();
+            let mut expected = actual.clone();
+            for frame in expected.chunks_exact_mut(channels) {
+                for (sample, state) in frame.iter_mut().zip(&states) {
+                    let gain = if state.muted {
+                        0.0
+                    } else if state.dimmed {
+                        0.1
+                    } else {
+                        1.0
+                    };
+                    *sample *= gain;
+                }
+            }
+
+            plugin
+                .process_in_place(&mut actual, &ProcessContext::new(48_000, frames))
+                .unwrap();
+
+            assert_eq!(actual, expected, "{channels} channels, {frames} frames");
+        }
+    }
+}
+
+#[test]
+fn settled_blocks_do_not_advance_state_before_the_next_automation_transition() {
+    fn prepare() -> ChannelMuteSoloPlugin {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        plugin.initialize(48_000).unwrap();
+        plugin.set_fade_ms(5.0);
+        plugin.set_channel_state(0, true, false, false).unwrap();
+        let mut settling = vec![1.0; 8_192];
+        plugin
+            .process_in_place(&mut settling, &ProcessContext::new(48_000, 4_096))
+            .unwrap();
+        assert!(!plugin.compile_metadata().stateful);
+        plugin
+    }
+
+    let mut reference = prepare();
+    let mut optimized = prepare();
+    let before_static_block = optimized.channel_smoothers[0].current();
+    let mut static_block = vec![1.0; 512];
+    optimized
+        .process_in_place(&mut static_block, &ProcessContext::new(48_000, 256))
+        .unwrap();
+    assert_eq!(
+        optimized.channel_smoothers[0].current(),
+        before_static_block,
+        "settled processing must not mutate smoother state"
+    );
+
+    reference.set_channel_state(0, false, false, false).unwrap();
+    optimized.set_channel_state(0, false, false, false).unwrap();
+    let mut reference_output = vec![1.0; 512];
+    let mut optimized_output = reference_output.clone();
+    let context = ProcessContext::new(48_000, 256);
+    reference
+        .process_in_place(&mut reference_output, &context)
+        .unwrap();
+    optimized
+        .process_in_place(&mut optimized_output, &context)
+        .unwrap();
+    assert_eq!(optimized_output, reference_output);
+}
+
+#[test]
+fn settled_and_transitioning_callbacks_do_not_allocate() {
+    let mut settled = ChannelMuteSoloPlugin::from_params(
+        8,
+        ChannelMuteSoloParams {
+            enabled: true,
+            channel_states: (0..8)
+                .map(|channel| ChannelState {
+                    muted: channel == 0,
+                    soloed: false,
+                    dimmed: channel == 1,
+                })
+                .collect(),
+            dim_gain_db: -20.0,
+            fade_ms: 5.0,
+        },
+    );
+    settled.initialize(48_000).unwrap();
+    let mut transitioning = ChannelMuteSoloPlugin::new(8, true);
+    transitioning.initialize(48_000).unwrap();
+    transitioning.set_fade_ms(5.0);
+    transitioning
+        .set_channel_state(0, true, false, false)
+        .unwrap();
+    let context = ProcessContext::new(48_000, 256);
+    let mut settled_buffer = vec![0.5; 8 * 256];
+    let mut transition_buffer = settled_buffer.clone();
+
+    assert_no_allocs("Channel Mute/Solo settled callback", || {
+        settled
+            .process_in_place(&mut settled_buffer, &context)
+            .unwrap();
+    });
+    assert_no_allocs("Channel Mute/Solo transition callback", || {
+        transitioning
+            .process_in_place(&mut transition_buffer, &context)
+            .unwrap();
+    });
+}
+
+#[test]
+fn apply_values_defers_schema_serialization_until_schema_is_requested() {
+    let mut plugin = ChannelMuteSoloPlugin::new(32, true);
+    let initial_serializations = plugin.schema_state_serializations.get();
+    let initial_states_json = plugin.cached_parameters.borrow()[1]
+        .default_value
+        .as_string()
+        .unwrap()
+        .to_owned();
+    let mut values = ParameterSet::new();
+    values.insert(ParameterId::from("mute_3"), ParameterValue::Bool(true));
+    values.insert(ParameterId::from("solo_4"), ParameterValue::Bool(true));
+    values.insert(ParameterId::from("dim_5"), ParameterValue::Bool(true));
+
+    assert_no_allocs("Channel Mute/Solo bulk apply_values", || {
+        plugin.apply_values(values).unwrap();
+    });
+
+    assert!(plugin.params_dirty.get());
+    assert_eq!(
+        plugin.schema_state_serializations.get(),
+        initial_serializations,
+        "normal apply_values must not serialize channel state metadata"
+    );
+    assert_eq!(
+        plugin.cached_parameters.borrow()[1]
+            .default_value
+            .as_string()
+            .unwrap(),
+        initial_states_json
+    );
+    let current = plugin.current_values();
+    assert_eq!(
+        current.get(&ParameterId::from("mute_3")),
+        Some(&ParameterValue::Bool(true))
+    );
+    assert_eq!(
+        current.get(&ParameterId::from("solo_4")),
+        Some(&ParameterValue::Bool(true))
+    );
+    assert_eq!(
+        current.get(&ParameterId::from("dim_5")),
+        Some(&ParameterValue::Bool(true))
+    );
+
+    let schema = plugin.parameter_schema();
+    assert_eq!(
+        plugin.schema_state_serializations.get(),
+        initial_serializations + 1
+    );
+    let states_json = schema[1].default_value.as_string().unwrap();
+    let states: Vec<ChannelState> = serde_json::from_str(states_json).unwrap();
+    assert!(states[3].muted);
+    assert!(states[4].soloed);
+    assert!(states[5].dimmed);
 }
 
 #[test]

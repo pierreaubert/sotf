@@ -1,3 +1,18 @@
+# 0.5.66
+
+## Performance evidence and cache follow-up (2026-08-13)
+
+- Retained the settled whole-buffer per-channel gain kernel after a Criterion matrix covering
+  2/6/8/16/32 channels and 64/256/1024-frame blocks. On arm64 macOS, replacing it with a
+  per-frame reference regressed stereo by 452-1226%, 6-channel cases by 23-52%, and 32-channel
+  cases by 4-10%; 8/16-channel comparisons were noisier and are not used to claim a speedup.
+- Settled blocks now read exact smoother targets without calling or mutating the smoother. Added
+  scalar-reference equivalence and next-automation-transition tests across the benchmark matrix.
+- Bulk parameter application leaves schema values dirty without formatting IDs or serializing
+  channel state. Only `parameter_schema()` refreshes those cached values, and refresh uses stable
+  descriptor positions rather than reparsing every per-channel ID.
+- Added settled/transition callback allocation tests and a reproducible Criterion benchmark.
+
 # 0.5.65
 
 ## Fixes (2026-08-12 review completion)
