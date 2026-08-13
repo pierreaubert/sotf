@@ -1,601 +1,500 @@
-#![allow(clippy::needless_range_loop)]
-/// Adaptive slew-rate limiter for click and pop repair.
-#[derive(Clone, Copy)]
-struct ChannelState {
-    last_sample: f32,
-    last_output: f32,
-    prev_delta: f32,
-    slope_envelope: f32,
-}
+//! Bounded-lookahead click detection and interpolation.
+//!
+//! The detector compares each delayed candidate with robust pre/post context.
+//! Only short deviations whose surrounding medians return to the same local
+//! trajectory are repaired. Multichannel decisions are linked in adjacent
+//! channel pairs by default, while interpolation remains channel-specific.
+
+/// Context on each side of the candidate and the plugin's fixed latency.
+pub const LOOKAHEAD_SAMPLES: usize = 8;
+const RING_FRAMES: usize = LOOKAHEAD_SAMPLES * 2 + 1;
+const SCALE_FLOOR: f32 = 1.0e-5;
+const CONTROL_SMOOTH_MS: f32 = 5.0;
 
 pub struct TransientSuppressor {
     channels: usize,
-    last_samples: Vec<f32>,
-    last_outputs: Vec<f32>,
-    prev_delta: Vec<f32>,
-    slope_envelope: Vec<f32>,
-    scratch_states: Vec<ChannelState>,
-    work: Vec<f32>,
-    sensitivity: f32,
-    release_ms: f32,
-    decay: f32,
-    one_minus_decay: f32,
+    ring: Vec<f32>,
+    write_frame: usize,
+    frames_seen: usize,
+    baselines: Vec<f32>,
+    residuals: Vec<f32>,
+    thresholds: Vec<f32>,
+    returned: Vec<bool>,
+    repair: Vec<bool>,
+    clean_scale: Vec<f32>,
+    clean_scale_primed: Vec<bool>,
+    sensitivity_current: f32,
+    sensitivity_target: f32,
+    repair_mix_current: f32,
+    repair_mix_target: f32,
+    control_decay: f32,
+    link_channels: bool,
 }
 
 impl TransientSuppressor {
-    pub fn new(channels: usize) -> Self {
+    pub fn new(channels: usize, sample_rate: u32) -> Result<Self, String> {
+        if channels == 0 {
+            return Err("transient suppressor requires at least one channel".into());
+        }
+        if sample_rate == 0 {
+            return Err("transient suppressor sample rate must be greater than zero".into());
+        }
         let mut this = Self {
             channels,
-            last_samples: vec![0.0; channels],
-            last_outputs: vec![0.0; channels],
-            prev_delta: vec![0.0; channels],
-            // Start at the non-zero floor so new() and reset() behave
-            // identically (fix for issue 3).
-            slope_envelope: vec![1e-6; channels],
-            scratch_states: vec![
-                ChannelState {
-                    last_sample: 0.0,
-                    last_output: 0.0,
-                    prev_delta: 0.0,
-                    slope_envelope: 1e-6,
-                };
-                channels
-            ],
-            work: vec![0.0; channels.saturating_mul(1024)],
-            sensitivity: 10.0,
-            release_ms: 20.0,
-            decay: 0.999,
-            one_minus_decay: 0.001,
+            ring: vec![0.0; channels * RING_FRAMES],
+            write_frame: 0,
+            frames_seen: 0,
+            baselines: vec![0.0; channels],
+            residuals: vec![0.0; channels],
+            thresholds: vec![SCALE_FLOOR; channels],
+            returned: vec![false; channels],
+            repair: vec![false; channels],
+            clean_scale: vec![SCALE_FLOOR; channels],
+            clean_scale_primed: vec![false; channels],
+            sensitivity_current: 10.0,
+            sensitivity_target: 10.0,
+            repair_mix_current: 1.0,
+            repair_mix_target: 1.0,
+            control_decay: 0.0,
+            link_channels: true,
         };
-        this.set_sample_rate(48000);
-        this
+        this.set_sample_rate(sample_rate)?;
+        Ok(this)
+    }
+
+    pub const fn latency_samples(&self) -> usize {
+        LOOKAHEAD_SAMPLES
     }
 
     pub fn reset(&mut self) {
-        self.last_samples.fill(0.0);
-        self.last_outputs.fill(0.0);
-        self.prev_delta.fill(0.0);
-        // Initialise to a small non-zero floor so the first sample after
-        // reset never triggers the discontinuous `== 0.0` re-initialisation
-        // branch (fix for issue 3).
-        self.slope_envelope.fill(1e-6);
+        self.ring.fill(0.0);
+        self.write_frame = 0;
+        self.frames_seen = 0;
+        self.baselines.fill(0.0);
+        self.residuals.fill(0.0);
+        self.thresholds.fill(SCALE_FLOOR);
+        self.returned.fill(false);
+        self.repair.fill(false);
+        self.clean_scale.fill(SCALE_FLOOR);
+        self.clean_scale_primed.fill(false);
+        self.sensitivity_current = self.sensitivity_target;
+        self.repair_mix_current = self.repair_mix_target;
     }
 
-    pub fn set_sample_rate(&mut self, sample_rate: u32) {
-        let sample_rate = sample_rate.max(1) as f32;
-        self.decay = (-1.0 / (sample_rate * (self.release_ms * 0.001))).exp();
-        self.one_minus_decay = 1.0 - self.decay;
-    }
-
-    #[cfg(test)]
-    fn decay_time_constant(&self) -> f32 {
-        -1.0 / (self.decay.ln())
+    pub fn set_sample_rate(&mut self, sample_rate: u32) -> Result<(), String> {
+        if sample_rate == 0 {
+            return Err("transient suppressor sample rate must be greater than zero".into());
+        }
+        let smoothing_samples = sample_rate as f32 * CONTROL_SMOOTH_MS * 0.001;
+        self.control_decay = (-1.0 / smoothing_samples.max(1.0)).exp();
+        Ok(())
     }
 
     pub fn set_sensitivity(&mut self, sensitivity: f32) {
-        self.sensitivity = sensitivity.max(1.0);
+        self.sensitivity_target = canonical_sensitivity(sensitivity);
     }
 
-    pub fn process(&mut self, buffer: &mut [f32]) {
-        if self.channels == 0 {
-            return;
-        }
-        if buffer.is_empty() || !buffer.len().is_multiple_of(self.channels) {
-            return;
-        }
-
-        if self.channels == 1 {
-            let mut state = ChannelState {
-                last_sample: self.last_samples[0],
-                last_output: self.last_outputs[0],
-                prev_delta: self.prev_delta[0],
-                slope_envelope: self.slope_envelope[0],
-            };
-
-            self.process_channel(&mut buffer[0..], &mut state);
-
-            self.last_samples[0] = state.last_sample;
-            self.last_outputs[0] = state.last_output;
-            self.prev_delta[0] = state.prev_delta;
-            self.slope_envelope[0] = state.slope_envelope;
-            return;
-        }
-
-        let num_frames = buffer.len() / self.channels;
-        let max_chunk_frames = self.work.len() / self.channels;
-        if num_frames > max_chunk_frames {
-            if max_chunk_frames == 0 {
-                return;
-            }
-            let chunk_samples = max_chunk_frames * self.channels;
-            for chunk in buffer.chunks_mut(chunk_samples) {
-                self.process(chunk);
-            }
-            return;
-        }
-
-        // Deinterleave into planar scratch so each channel can be processed
-        // independently.
-        for frame in 0..num_frames {
-            let base = frame * self.channels;
-            for ch in 0..self.channels {
-                self.work[ch * num_frames + frame] = buffer[base + ch];
-            }
-        }
-
-        for ch in 0..self.channels {
-            self.scratch_states[ch] = ChannelState {
-                last_sample: self.last_samples[ch],
-                last_output: self.last_outputs[ch],
-                prev_delta: self.prev_delta[ch],
-                slope_envelope: self.slope_envelope[ch],
-            };
-        }
-
-        let decay = self.decay;
-        let one_minus_decay = self.one_minus_decay;
-        let sensitivity = self.sensitivity;
-
-        for ch in 0..self.channels {
-            let start = ch * num_frames;
-            let samples = &mut self.work[start..start + num_frames];
-            let state = &mut self.scratch_states[ch];
-            Self::process_channel_impl(samples, state, sensitivity, decay, one_minus_decay);
-        }
-
-        for ch in 0..self.channels {
-            self.last_samples[ch] = self.scratch_states[ch].last_sample;
-            self.last_outputs[ch] = self.scratch_states[ch].last_output;
-            self.prev_delta[ch] = self.scratch_states[ch].prev_delta;
-            self.slope_envelope[ch] = self.scratch_states[ch].slope_envelope;
-        }
-
-        for frame in 0..num_frames {
-            let base = frame * self.channels;
-            for ch in 0..self.channels {
-                buffer[base + ch] = self.work[ch * num_frames + frame];
-            }
-        }
+    pub fn set_sensitivity_immediate(&mut self, sensitivity: f32) {
+        self.sensitivity_target = canonical_sensitivity(sensitivity);
+        self.sensitivity_current = self.sensitivity_target;
     }
 
-    fn process_channel(&mut self, samples: &mut [f32], state: &mut ChannelState) {
-        Self::process_channel_impl(
-            samples,
-            state,
-            self.sensitivity,
-            self.decay,
-            self.one_minus_decay,
-        )
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.repair_mix_target = if enabled { 1.0 } else { 0.0 };
     }
 
-    fn process_channel_impl(
-        samples: &mut [f32],
-        state: &mut ChannelState,
-        sensitivity: f32,
-        decay: f32,
-        one_minus_decay: f32,
-    ) {
-        for sample in samples.iter_mut() {
-            let input = *sample;
-            let last = state.last_sample;
-            let delta = input - last;
-            let abs_delta = delta.abs();
+    pub fn set_enabled_immediate(&mut self, enabled: bool) {
+        self.repair_mix_target = if enabled { 1.0 } else { 0.0 };
+        self.repair_mix_current = self.repair_mix_target;
+    }
 
-            let threshold = state.slope_envelope * sensitivity + 1e-5;
-            let curvature = (delta - state.prev_delta).abs();
-            let is_impulsive = if abs_delta > 0.0 {
-                (curvature / abs_delta) > 0.4 && curvature > threshold
-            } else {
-                false
-            };
+    pub fn set_link_channels(&mut self, linked: bool) {
+        self.link_channels = linked;
+    }
 
-            if abs_delta > threshold && is_impulsive {
-                let output_delta = input - state.last_output;
-                let abs_output_delta = output_delta.abs();
-                if abs_output_delta > threshold {
-                    let sign = if output_delta >= 0.0 { 1.0 } else { -1.0 };
-                    *sample = state.last_output + sign * threshold;
+    /// Process an exact interleaved frame buffer in place.
+    ///
+    /// The first `LOOKAHEAD_SAMPLES` output frames are silence. Thereafter the
+    /// output is the input delayed by that fixed amount, with only detected
+    /// short clicks replaced. Invalid shapes are rejected without mutation.
+    pub fn process(&mut self, buffer: &mut [f32]) -> Result<(), String> {
+        if !buffer.len().is_multiple_of(self.channels) {
+            return Err(format!(
+                "transient buffer length {} is not divisible by {} channels",
+                buffer.len(),
+                self.channels
+            ));
+        }
+
+        for frame in buffer.chunks_exact_mut(self.channels) {
+            self.advance_controls();
+            self.write_input_frame(frame);
+
+            if self.frames_seen <= LOOKAHEAD_SAMPLES {
+                frame.fill(0.0);
+                continue;
+            }
+
+            let candidate_frame =
+                (self.write_frame + RING_FRAMES - 1 - LOOKAHEAD_SAMPLES) % RING_FRAMES;
+            if self.frames_seen < RING_FRAMES {
+                for (ch, output) in frame.iter_mut().enumerate() {
+                    *output = self.ring[candidate_frame * self.channels + ch];
                 }
+                continue;
+            }
 
-                state.slope_envelope = state.slope_envelope * decay + threshold * one_minus_decay;
-
-                let output_decay = decay * decay;
-                state.last_output = state.last_output * output_decay + input * (1.0 - output_decay);
-            } else {
-                if abs_delta > state.slope_envelope {
-                    state.slope_envelope = abs_delta;
+            self.analyze_candidate(candidate_frame);
+            self.link_repair_decisions();
+            for (ch, output) in frame.iter_mut().enumerate() {
+                let dry = self.ring[candidate_frame * self.channels + ch];
+                let wet = if self.repair[ch] {
+                    self.baselines[ch]
                 } else {
-                    state.slope_envelope =
-                        state.slope_envelope * decay + abs_delta * one_minus_decay;
+                    dry
+                };
+                *output = dry + (wet - dry) * self.repair_mix_current;
+                self.update_clean_scale(ch);
+            }
+        }
+        Ok(())
+    }
+
+    fn advance_controls(&mut self) {
+        let one_minus = 1.0 - self.control_decay;
+        self.sensitivity_current =
+            self.sensitivity_current * self.control_decay + self.sensitivity_target * one_minus;
+        self.repair_mix_current =
+            self.repair_mix_current * self.control_decay + self.repair_mix_target * one_minus;
+    }
+
+    fn write_input_frame(&mut self, frame: &[f32]) {
+        let previous_frame = (self.write_frame + RING_FRAMES - 1) % RING_FRAMES;
+        for (ch, &input) in frame.iter().enumerate() {
+            let sample = if input.is_finite() {
+                input
+            } else if self.frames_seen == 0 {
+                0.0
+            } else {
+                self.ring[previous_frame * self.channels + ch]
+            };
+            self.ring[self.write_frame * self.channels + ch] = sample;
+        }
+        self.write_frame = (self.write_frame + 1) % RING_FRAMES;
+        self.frames_seen = self.frames_seen.saturating_add(1);
+    }
+
+    fn analyze_candidate(&mut self, candidate_frame: usize) {
+        for ch in 0..self.channels {
+            let mut pre = [0.0_f32; LOOKAHEAD_SAMPLES];
+            let mut post = [0.0_f32; LOOKAHEAD_SAMPLES];
+            for i in 0..LOOKAHEAD_SAMPLES {
+                pre[i] = self.sample(candidate_frame, ch, -(i as isize + 1));
+                post[i] = self.sample(candidate_frame, ch, i as isize + 1);
+            }
+            let pre_median = median(pre);
+            let post_median = median(post);
+            let baseline = 0.5 * (pre_median + post_median);
+            let candidate = self.sample(candidate_frame, ch, 0);
+            let residual = (candidate - baseline).abs();
+
+            let mut deviations = [0.0_f32; LOOKAHEAD_SAMPLES * 2];
+            for i in 0..LOOKAHEAD_SAMPLES {
+                deviations[i] = (pre[i] - pre_median).abs();
+                deviations[LOOKAHEAD_SAMPLES + i] = (post[i] - post_median).abs();
+            }
+            let mut slopes = [0.0_f32; (LOOKAHEAD_SAMPLES - 1) * 2];
+            for i in 0..LOOKAHEAD_SAMPLES - 1 {
+                slopes[i] = (pre[i + 1] - pre[i]).abs();
+                slopes[LOOKAHEAD_SAMPLES - 1 + i] = (post[i + 1] - post[i]).abs();
+            }
+            let local_scale = median_16(deviations)
+                .mul_add(1.4826, SCALE_FLOOR)
+                .max(median(slopes));
+            let scale = if self.clean_scale_primed[ch] {
+                local_scale.max(self.clean_scale[ch] * 0.25)
+            } else {
+                local_scale
+            }
+            .max(SCALE_FLOOR);
+            let threshold = scale * self.sensitivity_current.max(1.0) * 2.0 + SCALE_FLOOR;
+            let bridge = (post_median - pre_median).abs();
+            let candidate_offset = candidate - baseline;
+            let mut excursion_len = 1;
+            for direction in [-1_isize, 1] {
+                for distance in 1..=LOOKAHEAD_SAMPLES {
+                    let neighbor =
+                        self.sample(candidate_frame, ch, direction * distance as isize) - baseline;
+                    if neighbor * candidate_offset > 0.0 && neighbor.abs() >= residual * 0.5 {
+                        excursion_len += 1;
+                    } else {
+                        break;
+                    }
                 }
-                state.last_output = input;
             }
 
-            state.last_sample = input;
-            state.prev_delta = delta;
+            self.baselines[ch] = baseline;
+            self.residuals[ch] = residual;
+            self.thresholds[ch] = threshold;
+            self.returned[ch] = bridge <= (residual * 0.5).max(scale * 6.0);
+            self.repair[ch] = residual > threshold && self.returned[ch] && excursion_len <= 6;
         }
     }
+
+    fn link_repair_decisions(&mut self) {
+        if !self.link_channels || self.channels == 1 {
+            return;
+        }
+        for first in (0..self.channels).step_by(2) {
+            let end = (first + 2).min(self.channels);
+            let linked = self.repair[first..end].iter().any(|&repair| repair);
+            self.repair[first..end].fill(linked);
+        }
+    }
+
+    fn update_clean_scale(&mut self, ch: usize) {
+        if self.repair[ch] {
+            return;
+        }
+        let residual = ((self.thresholds[ch] - SCALE_FLOOR)
+            / (self.sensitivity_current.max(1.0) * 2.0))
+            .max(SCALE_FLOOR);
+        if !self.clean_scale_primed[ch] {
+            self.clean_scale[ch] = residual;
+            self.clean_scale_primed[ch] = true;
+        } else if residual > self.clean_scale[ch] {
+            self.clean_scale[ch] = residual;
+        } else {
+            self.clean_scale[ch] = self.clean_scale[ch] * 0.999 + residual * 0.001;
+        }
+    }
+
+    fn sample(&self, candidate_frame: usize, ch: usize, offset: isize) -> f32 {
+        let frame = (candidate_frame as isize + offset).rem_euclid(RING_FRAMES as isize) as usize;
+        self.ring[frame * self.channels + ch]
+    }
+}
+
+fn canonical_sensitivity(sensitivity: f32) -> f32 {
+    if sensitivity.is_finite() {
+        sensitivity.clamp(1.0, 100.0)
+    } else {
+        10.0
+    }
+}
+
+fn median<const N: usize>(mut values: [f32; N]) -> f32 {
+    values.sort_unstable_by(f32::total_cmp);
+    if N.is_multiple_of(2) {
+        0.5 * (values[N / 2 - 1] + values[N / 2])
+    } else {
+        values[N / 2]
+    }
+}
+
+fn median_16(mut values: [f32; 16]) -> f32 {
+    values.sort_unstable_by(f32::total_cmp);
+    0.5 * (values[7] + values[8])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn suppresses_large_slew_spike() {
-        let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sensitivity(5.0);
-
-        let mut buffer = Vec::new();
-        buffer.extend(std::iter::repeat_n(0.0, 10));
-        for i in 0..100 {
-            buffer.push((i as f32 * 0.1).sin() * 0.5);
-        }
-
-        let click_idx = buffer.len();
-        buffer.push(2.0);
-        buffer.extend(std::iter::repeat_n(0.0, 10));
-
-        suppressor.process(&mut buffer);
-        assert!(buffer[click_idx] < 1.0);
-    }
-
-    /// Issue 2: Envelope must adapt during a burst of clicks so that a
-    /// second click immediately following the first is also suppressed.
-    /// Previously the envelope was frozen during suppression, leaving the
-    /// threshold stale after a long burst.
-    #[test]
-    fn envelope_adapts_during_suppression_burst() {
-        let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sensitivity(5.0);
-
-        // Prime the envelope: 20 samples of gentle sine so the envelope
-        // settles to a moderate level.
-        let mut prime: Vec<f32> = (0..20).map(|i| (i as f32 * 0.05).sin() * 0.1).collect();
-        suppressor.process(&mut prime);
-
-        // Now feed 5 back-to-back clicks (amplitude 2.0) separated only
-        // by a single quiet sample. Each click should still be suppressed
-        // even though the previous one triggered suppression.
-        let mut burst = Vec::new();
-        for _ in 0..5 {
-            burst.push(2.0_f32);
-            burst.push(0.0_f32);
-        }
-        suppressor.process(&mut burst);
-
-        // Every click sample must have been reduced below the input value.
-        for k in (0..burst.len()).step_by(2) {
-            assert!(
-                burst[k] < 2.0,
-                "click at burst[{k}] was not suppressed (value={})",
-                burst[k]
-            );
-        }
-    }
-
-    /// Issue 3: After sustained silence, `slope_envelope` may reach exactly
-    /// 0.0.  The old guard `== 0.0` can either be silently skipped (if FP
-    /// never reaches exactly 0) or produce a discontinuous jump.  After the
-    /// fix the envelope must stay at the small non-zero floor and never
-    /// cause a discontinuity.
-    #[test]
-    fn envelope_does_not_jump_after_silence() {
-        let mut suppressor = TransientSuppressor::new(1);
-
-        // Reset drives envelope to 0.0 exactly.
-        suppressor.reset();
-
-        // Feed a moderate-amplitude sample; the envelope should be
-        // initialised smoothly (floor ≥ 1e-6) rather than jumping to
-        // abs_delta.  Whatever the result, it must be finite and ≥ 1e-7.
-        let mut buf = vec![0.0_f32, 0.3, 0.3, 0.3];
-        suppressor.process(&mut buf);
-
-        // No NaN/Inf in output.
-        for &s in &buf {
-            assert!(s.is_finite(), "non-finite sample after reset: {s}");
-        }
-    }
-
-    /// Issue 6: `last_samples` must track the *input* sample for delta
-    /// computation so that the algorithm does not chase its own clamped
-    /// output.  After a single suppressed click the next legitimate sample
-    /// must not itself be incorrectly suppressed.
-    #[test]
-    fn post_click_sample_not_over_suppressed() {
-        let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sensitivity(5.0);
-
-        // Prime the envelope with low-level sine.
-        let mut prime: Vec<f32> = (0..30).map(|i| (i as f32 * 0.05).sin() * 0.1).collect();
-        suppressor.process(&mut prime);
-
-        // One click followed by a legitimate signal at the same level as
-        // the pre-click signal.  The post-click sample should pass through
-        // nearly unchanged (within the small-signal envelope).
-        let mut buf = vec![2.0_f32, 0.1, 0.1, 0.1];
-        suppressor.process(&mut buf);
-
-        // The three post-click samples must not be clamped to near zero;
-        // they are well within the normal slew range of the pre-click signal.
-        for (k, &v) in buf.iter().enumerate().take(4).skip(1) {
-            assert!(
-                v > 0.001,
-                "post-click sample buf[{k}] over-suppressed (value={v})",
-            );
-        }
+    fn process_with_flush(suppressor: &mut TransientSuppressor, input: &[f32]) -> Vec<f32> {
+        let mut stream = input.to_vec();
+        stream.extend(std::iter::repeat_n(
+            0.0,
+            LOOKAHEAD_SAMPLES * suppressor.channels,
+        ));
+        suppressor.process(&mut stream).unwrap();
+        stream
     }
 
     #[test]
-    fn suppressor_distinguishes_impulsive_spikes_from_smooth_fast_ramps() {
-        let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sensitivity(1.0);
+    fn construction_contract_is_fallible() {
+        assert!(TransientSuppressor::new(0, 48_000).is_err());
+        assert!(TransientSuppressor::new(1, 0).is_err());
+    }
 
-        // Prime with a modest signal so the slope envelope is non-zero.
-        let mut prime: Vec<f32> = (0..20).map(|i| (i as f32 * 0.1).sin() * 0.1).collect();
-        suppressor.process(&mut prime);
-
-        // A one-sample impulsive spike should be suppressed due
-        // high curvature (high-frequency) content.
-        let mut click_buf = vec![2.0_f32, 0.0_f32];
-        suppressor.process(&mut click_buf);
-        assert!(
-            click_buf[0] < 2.0,
-            "impulsive spike should be softened (got {})",
-            click_buf[0]
-        );
-
-        // A strong but smooth linear ramp has high first-order slew but low
-        // curvature, so it should remain mostly untouched.
-        let mut smooth_ramp: Vec<f32> = (0..6).map(|i| 10.0 + i as f32 * 0.55).collect();
-        suppressor.process(&mut smooth_ramp);
-
-        let expected_last = 10.0 + 5.0 * 0.55;
-        assert!(
-            (smooth_ramp[5] - expected_last).abs() < 0.05,
-            "smooth ramp was over-suppressed (got {})",
-            smooth_ramp[5]
+    #[test]
+    fn disabled_path_is_exactly_latency_matched() {
+        let mut suppressor = TransientSuppressor::new(1, 48_000).unwrap();
+        suppressor.set_enabled_immediate(false);
+        let input: Vec<f32> = (0..64).map(|i| (i as f32 * 0.17).sin()).collect();
+        let output = process_with_flush(&mut suppressor, &input);
+        assert!(output[..LOOKAHEAD_SAMPLES].iter().all(|&x| x == 0.0));
+        assert_eq!(
+            &output[LOOKAHEAD_SAMPLES..LOOKAHEAD_SAMPLES + input.len()],
+            input.as_slice()
         );
     }
 
-    /// During a multi-sample click burst the old hard-clamp followed the
-    /// corrupted input ramp (`last_input ± threshold`), creating a staircase.
-    /// The fix uses `last_output ± threshold` with a faster one-pole drift
-    /// so the output stays near the pre-burst level and recovers smoothly.
     #[test]
-    fn suppression_does_not_staircase_during_burst() {
-        let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sensitivity(1.0);
+    fn isolated_click_is_closer_to_clean_reference() {
+        let clean: Vec<f32> = (0..256).map(|i| (i as f32 * 0.07).sin() * 0.25).collect();
+        let mut corrupt = clean.clone();
+        corrupt[120] += 3.0;
+        let mut suppressor = TransientSuppressor::new(1, 48_000).unwrap();
+        suppressor.set_sensitivity_immediate(3.0);
+        let output = process_with_flush(&mut suppressor, &corrupt);
+        let repaired = output[120 + LOOKAHEAD_SAMPLES];
+        assert!((repaired - clean[120]).abs() < (corrupt[120] - clean[120]).abs() * 0.05);
+    }
 
-        // Prime the envelope with gentle sine.
-        let mut prime: Vec<f32> = (0..40).map(|i| (i as f32 * 0.05).sin() * 0.1).collect();
-        suppressor.process(&mut prime);
-
-        // Gentle sine with a 5-sample high-curvature burst injected.
-        let mut buf: Vec<f32> = (0..20).map(|i| (i as f32 * 0.05).sin() * 0.1).collect();
-        for i in 0..5 {
-            buf[5 + i] = if i % 2 == 0 { 5.0 } else { -5.0 };
+    #[test]
+    fn short_click_region_is_interpolated_without_recovery_step() {
+        let clean: Vec<f32> = (0..320).map(|i| (i as f32 * 0.04).sin() * 0.2).collect();
+        let mut corrupt = clean.clone();
+        for (offset, sample) in corrupt[150..155].iter_mut().enumerate() {
+            *sample += if offset.is_multiple_of(2) { 3.0 } else { -3.0 };
         }
-
-        suppressor.process(&mut buf);
-
-        // With a staircase the burst samples after the first would follow
-        // the alternating impulses (~5, -5...). The fix keeps them near the
-        // pre-burst level for all samples.
-        let burst_max = buf[5..10].iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        assert!(
-            burst_max < 1.0,
-            "burst output followed impulses rather than being bounded (max={burst_max})"
-        );
-
-        // Step size within the burst should be bounded, not ~10.0 per sample.
-        for i in 6..10 {
-            let step = (buf[i] - buf[i - 1]).abs();
+        let mut suppressor = TransientSuppressor::new(1, 48_000).unwrap();
+        suppressor.set_sensitivity_immediate(2.0);
+        let output = process_with_flush(&mut suppressor, &corrupt);
+        let aligned = &output[LOOKAHEAD_SAMPLES..LOOKAHEAD_SAMPLES + clean.len()];
+        for i in 150..155 {
             assert!(
-                step < 0.5,
-                "stair-step at {i}: step={step}, prev={}, cur={}",
-                buf[i - 1],
-                buf[i]
+                (aligned[i] - clean[i]).abs() < 0.1,
+                "burst sample {i} was not reconstructed: clean={}, got={}",
+                clean[i],
+                aligned[i]
             );
+        }
+        for pair in aligned[147..159].windows(2) {
+            assert!((pair[1] - pair[0]).abs() < 0.15);
         }
     }
 
     #[test]
-    fn multichannel_processing_matches_per_channel_reference() {
-        let mut suppressor = TransientSuppressor::new(4);
-        suppressor.set_sensitivity(2.5);
-        let mut input = vec![
-            // frame 0: ch0..ch3
-            0.0, 0.2, 1.0, -0.2, //
-            0.1, 0.4, -1.2, 0.1, //
-            0.2, 0.6, 1.5, 0.0, //
-            0.3, 0.8, -0.7, -0.1, //
-            5.0, 0.9, -2.0, -0.3, // channel-specific spikes
-            5.1, 1.0, 2.0, 0.5, //
-        ];
-
-        let mut expected = input.clone();
-        let num_frames = input.len() / 4;
-        let mut ref_channels: Vec<Vec<f32>> = vec![vec![0.0; num_frames]; 4];
-        for frame in 0..num_frames {
-            let base = frame * 4;
-            for ch in 0..4usize {
-                ref_channels[ch][frame] = expected[base + ch];
+    fn onset_and_step_are_preserved_after_new_and_reset() {
+        let input = [vec![0.8; 64], {
+            let mut step = vec![0.0; 32];
+            step.extend(vec![0.8; 32]);
+            step
+        }];
+        for signal in input {
+            let mut suppressor = TransientSuppressor::new(1, 48_000).unwrap();
+            for _ in 0..2 {
+                let output = process_with_flush(&mut suppressor, &signal);
+                assert_eq!(
+                    &output[LOOKAHEAD_SAMPLES..LOOKAHEAD_SAMPLES + signal.len()],
+                    signal.as_slice()
+                );
+                suppressor.reset();
             }
         }
-
-        for ch in 0..4 {
-            let mut channel_suppressor = TransientSuppressor::new(1);
-            channel_suppressor.set_sensitivity(2.5);
-            channel_suppressor.process(&mut ref_channels[ch]);
-        }
-
-        for frame in 0..num_frames {
-            let base = frame * 4;
-            for ch in 0..4 {
-                expected[base + ch] = ref_channels[ch][frame];
-            }
-        }
-
-        suppressor.process(&mut input);
-        assert_eq!(input, expected);
     }
 
     #[test]
-    fn release_time_constant_is_reduced_for_musical_content() {
-        let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sample_rate(48000);
-
-        // A decay factor of 0.999 should be noticeably slower than the
-        // historical 0.99, which was about 2 ms at 48 kHz.
-        assert!(
-            suppressor.decay > 0.99,
-            "release decay should not remain at the legacy fast value"
-        );
-
-        // For a ~20 ms time constant at 48 kHz: tau_samples = -1 / ln(decay)
-        let tau_samples = suppressor.decay_time_constant();
-        assert!(
-            (920.0..=1100.0).contains(&tau_samples),
-            "release time constant should be near the 20 ms default: {tau_samples}"
-        );
-
-        let one_minus = suppressor.one_minus_decay + suppressor.decay;
-        assert!(
-            (one_minus - 1.0).abs() < 1e-6,
-            "decay coefficients should be complementary"
-        );
-    }
-
-    #[test]
-    fn multichannel_oversized_blocks_do_not_resize_work_buffer() {
-        let mut suppressor = TransientSuppressor::new(2);
-        let initial_len = suppressor.work.len();
-        let mut buffer = vec![0.1f32; initial_len * 2];
-
-        suppressor.process(&mut buffer);
-
-        assert_eq!(suppressor.work.len(), initial_len);
-        assert!(buffer.iter().all(|sample| sample.is_finite()));
-    }
-
-    #[test]
-    fn process_with_zero_channels_returns_early() {
-        let mut suppressor = TransientSuppressor::new(0);
-        let mut buffer = vec![1.0f32; 10];
-        suppressor.process(&mut buffer);
-        // Buffer should be untouched because channels == 0 causes early return.
-        assert!(buffer.iter().all(|&s| s == 1.0));
-    }
-
-    #[test]
-    fn process_empty_buffer_returns_early() {
-        let mut suppressor = TransientSuppressor::new(1);
-        let mut buffer: Vec<f32> = vec![];
-        suppressor.process(&mut buffer);
-        assert!(buffer.is_empty());
-    }
-
-    #[test]
-    fn process_non_multiple_len_returns_early() {
-        let mut suppressor = TransientSuppressor::new(2);
-        let mut buffer = vec![1.0f32; 5]; // 5 is not a multiple of 2
-        suppressor.process(&mut buffer);
-        // Buffer should be untouched because len is not a multiple of channels.
-        assert!(buffer.iter().all(|&s| s == 1.0));
-    }
-
-    #[test]
-    fn sensitivity_clamped_below_one() {
-        let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sensitivity(0.5);
-        assert_eq!(suppressor.sensitivity, 1.0);
-    }
-
-    #[test]
-    fn sample_rate_zero_clamped() {
-        let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sample_rate(0);
-        // sample_rate is clamped to 1, so decay should be calculated with sr=1
-        assert!(suppressor.decay > 0.0 && suppressor.decay < 1.0);
-        assert!((suppressor.decay + suppressor.one_minus_decay - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn silence_stays_zero() {
-        let mut suppressor = TransientSuppressor::new(1);
-        let mut buffer = vec![0.0f32; 100];
-        suppressor.process(&mut buffer);
-        for &s in &buffer {
-            assert_eq!(s, 0.0, "Silence should remain zero, got {}", s);
+    fn clean_high_frequency_and_square_signals_are_not_repaired() {
+        for input in [
+            (0..256)
+                .map(|i| (std::f32::consts::TAU * 12_000.0 * i as f32 / 48_000.0).sin() * 0.5)
+                .collect::<Vec<_>>(),
+            (0..256)
+                .map(|i| if (i / 12) % 2 == 0 { -0.5 } else { 0.5 })
+                .collect::<Vec<_>>(),
+        ] {
+            let mut suppressor = TransientSuppressor::new(1, 48_000).unwrap();
+            suppressor.set_sensitivity_immediate(1.0);
+            let output = process_with_flush(&mut suppressor, &input);
+            assert_eq!(
+                &output[LOOKAHEAD_SAMPLES..input.len()],
+                &input[..input.len() - LOOKAHEAD_SAMPLES]
+            );
         }
     }
 
     #[test]
-    fn state_persists_across_process_calls() {
-        let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sensitivity(5.0);
-
-        // First call primes the envelope.
-        let mut first = vec![0.0f32, 0.1, 0.1, 0.1];
-        suppressor.process(&mut first);
-
-        // Second call with a spike should be suppressed because the envelope
-        // carried over from the first call.
-        let mut second = vec![2.0f32, 0.0, 0.0, 0.0];
-        suppressor.process(&mut second);
-        assert!(
-            second[0] < 2.0,
-            "Spike should be suppressed due to persistent state"
-        );
+    fn repeated_clicks_do_not_train_the_detector() {
+        let mut input = vec![0.0; 96_000];
+        for i in (64..input.len() - 64).step_by(19) {
+            input[i] = if i % 2 == 0 { 4.0 } else { -4.0 };
+        }
+        let mut suppressor = TransientSuppressor::new(1, 48_000).unwrap();
+        suppressor.set_sensitivity_immediate(2.0);
+        let output = process_with_flush(&mut suppressor, &input);
+        let max = output[64 + LOOKAHEAD_SAMPLES..input.len()]
+            .iter()
+            .copied()
+            .map(f32::abs)
+            .fold(0.0, f32::max);
+        assert!(max < 0.05, "repeated click leaked at amplitude {max}");
     }
 
     #[test]
-    fn reset_restores_initial_state() {
-        let mut suppressor = TransientSuppressor::new(1);
-        suppressor.set_sensitivity(5.0);
-
-        // Process some audio to mutate state.
-        let mut buf = vec![0.5f32; 20];
-        suppressor.process(&mut buf);
-
-        suppressor.reset();
-
-        // After reset, processing identical buffers should yield identical results
-        // to a fresh suppressor.
-        let mut fresh = TransientSuppressor::new(1);
-        fresh.set_sensitivity(5.0);
-
-        let mut post_reset = vec![0.3f32; 10];
-        let mut post_fresh = vec![0.3f32; 10];
-        suppressor.process(&mut post_reset);
-        fresh.process(&mut post_fresh);
-
-        assert_eq!(post_reset, post_fresh);
+    fn linked_stereo_repairs_common_event_coherently() {
+        let mut input = vec![0.0; 256 * 2];
+        input[120 * 2] = 4.0;
+        input[120 * 2 + 1] = 1.0;
+        let mut suppressor = TransientSuppressor::new(2, 48_000).unwrap();
+        suppressor.set_sensitivity_immediate(2.0);
+        let output = process_with_flush(&mut suppressor, &input);
+        let index = (120 + LOOKAHEAD_SAMPLES) * 2;
+        assert!(output[index].abs() < 0.05);
+        assert!(output[index + 1].abs() < 0.05);
     }
 
     #[test]
-    fn single_sample_mono() {
-        let mut suppressor = TransientSuppressor::new(1);
-        // A lone sample has no prior history, so the algorithm sees high
-        // curvature and clamps it to the threshold.  The important property
-        // is that the output is finite and bounded.
-        let mut buffer = vec![0.1f32];
-        suppressor.process(&mut buffer);
-        assert!(buffer[0].is_finite());
-        assert!(buffer[0].abs() < 0.1); // clamped
+    fn independent_mode_does_not_modify_clean_partner() {
+        let mut input = vec![0.25; 128 * 2];
+        input[64 * 2] = 4.0;
+        let mut suppressor = TransientSuppressor::new(2, 48_000).unwrap();
+        suppressor.set_link_channels(false);
+        suppressor.set_sensitivity_immediate(2.0);
+        let output = process_with_flush(&mut suppressor, &input);
+        let index = (64 + LOOKAHEAD_SAMPLES) * 2;
+        assert!(output[index] < 1.0);
+        assert_eq!(output[index + 1], 0.25);
     }
 
     #[test]
-    fn two_channel_small_buffer() {
-        let mut suppressor = TransientSuppressor::new(2);
-        // Two frames give the second frame a delta history, so the second
-        // frame should pass through unchanged for a smooth signal.
-        let mut buffer = vec![0.1f32, 0.2, 0.1, 0.2];
-        suppressor.process(&mut buffer);
-        // Second frame (samples 2 and 3) should be unchanged because delta is zero.
-        assert_eq!(buffer[2], 0.1);
-        assert_eq!(buffer[3], 0.2);
+    fn non_finite_input_recovers_locally() {
+        let mut input = vec![0.25; 128];
+        input[40] = f32::NAN;
+        input[80] = f32::INFINITY;
+        let mut suppressor = TransientSuppressor::new(1, 48_000).unwrap();
+        let output = process_with_flush(&mut suppressor, &input);
+        assert!(output.iter().all(|sample| sample.is_finite()));
+        assert_eq!(output[100 + LOOKAHEAD_SAMPLES], 0.25);
+    }
+
+    #[test]
+    fn callback_partitioning_does_not_change_output() {
+        let input: Vec<f32> = (0..511).map(|i| (i as f32 * 0.11).sin() * 0.2).collect();
+        let mut whole = input.clone();
+        let mut a = TransientSuppressor::new(1, 48_000).unwrap();
+        a.process(&mut whole).unwrap();
+
+        let mut chunked = input.clone();
+        let mut b = TransientSuppressor::new(1, 48_000).unwrap();
+        for chunk in chunked.chunks_mut(13) {
+            b.process(chunk).unwrap();
+        }
+        assert_eq!(whole, chunked);
+    }
+
+    #[test]
+    fn controls_move_smoothly_instead_of_stepping() {
+        let mut suppressor = TransientSuppressor::new(1, 48_000).unwrap();
+        suppressor.set_sensitivity_immediate(1.0);
+        suppressor.set_sensitivity(100.0);
+        suppressor.set_enabled(false);
+        let mut one = [0.0];
+        suppressor.process(&mut one).unwrap();
+        assert!(suppressor.sensitivity_current > 1.0);
+        assert!(suppressor.sensitivity_current < 100.0);
+        assert!(suppressor.repair_mix_current > 0.0);
+        assert!(suppressor.repair_mix_current < 1.0);
+    }
+
+    #[test]
+    fn malformed_buffer_is_rejected_without_mutation() {
+        let mut suppressor = TransientSuppressor::new(2, 48_000).unwrap();
+        let mut buffer = vec![1.0; 3];
+        let original = buffer.clone();
+        assert!(suppressor.process(&mut buffer).is_err());
+        assert_eq!(buffer, original);
     }
 }

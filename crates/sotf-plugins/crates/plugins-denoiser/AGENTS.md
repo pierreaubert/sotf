@@ -4,8 +4,10 @@ Shared denoiser DSP building blocks for SOTF plugins. Extracted from `sotf-plugi
 
 ## Modules
 
-- `transient` — `TransientSuppressor` for click and transient repair (used by `sotf-plugin-declick`).
-- `hiss` — `HissReducer` for stationary high-frequency noise reduction (used by `sotf-plugin-hiss-reducer`).
+- `transient` — eight-sample-lookahead robust click detection and interpolation
+  (used by `sotf-plugin-declick`).
+- `hiss` — zero-latency persistent low-level high-band expander with warm
+  bypass and smoothed cutoff automation (used by `sotf-plugin-hiss-reducer`).
 - `rnnoise` — `RnnoiseBackend` wrapping `nnnoiseless` for RNNoise voice denoising (used by `sotf-plugin-speech-denoiser`).
 
 ## Testing

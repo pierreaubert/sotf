@@ -370,7 +370,7 @@ pub(super) fn test_hiss_reducer_zero_alloc() {
 }
 
 pub(super) fn test_declick_zero_alloc() {
-    let mut plugin = DeclickPlugin::new(2);
+    let mut plugin = DeclickPlugin::new(2, SAMPLE_RATE).unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);

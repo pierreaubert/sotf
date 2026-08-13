@@ -1,3 +1,30 @@
+# 0.5.7
+
+- Replace the causal slew limiter with an eight-sample-lookahead robust
+  pre/post median and MAD detector that reconstructs short clicks by
+  channel-specific interpolation.
+- Link detection in adjacent channel pairs by default, with a persisted
+  `link_channels` control for independent repair when required.
+- Keep the detector warm during latency-matched bypass and smooth both bypass
+  and sensitivity changes over 5 ms without callback allocation.
+- Process interleaved audio frame-major without deinterleave scratch or worker
+  dispatch; reject invalid construction/rate/buffer contracts explicitly.
+- Add clean/corrupt reference, onset, step, high-frequency, square-wave,
+  repeated-click, stereo-coherence, automation, allocation, and callback-size
+  regressions plus active 1–40-channel QA timing.
+
+# 0.5.6
+
+- Preserve the first legitimate sample after construction/reset by priming
+  detector history instead of classifying an onset against zero history.
+- Freeze clean-slope estimation while rejecting impulses so sustained crackle
+  cannot rapidly teach the detector that corruption is normal.
+- Canonicalize sensitivity to finite 1–100 values, reject zero sample rates,
+  zero-channel processing, and process-context sample-rate mismatches.
+- Sanitize isolated non-finite samples to the last finite output without
+  poisoning subsequent detector state.
+- Report the scalar nonlinear realtime path as `Dynamics`, not `Fft`.
+
 # 0.5.5
 
 Fixes applied to `plugins-denoiser::transient::TransientSuppressor` based on code review:

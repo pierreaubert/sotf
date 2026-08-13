@@ -1,3 +1,51 @@
+# 0.5.12
+
+- Keep RNNoise state advancing through a latency-aligned, 480-sample bypass
+  crossfade and reject layouts wider than stereo.
+- Sanitize and clamp model input, remove unused reduction metering, and move
+  large reusable model workspaces out of the callback stack while preserving
+  reference-vector output.
+
+# 0.5.11
+
+- Rework `HissReducer` as an honestly documented zero-latency high-band
+  downward expander with fast/slow power tracking, persistence, hysteresis,
+  continuous reduction depth, and sample-rate-derived timing.
+- Add warm click-free bypass, smoothed cutoff automation, non-finite recovery,
+  denormal guards, and exact settled-dry/zero-strength behavior.
+
+# 0.5.10
+
+- Replace `TransientSuppressor`'s derivative clamp with a fixed eight-sample
+  lookahead robust-context interpolator for Declick.
+- Add linked stereo-pair decisions, warm smoothed bypass, smoothed sensitivity,
+  exact delayed dry output, and frame-major allocation-free processing.
+- Remove the unused Rayon dependency and the inaccurate parallel-processing
+  claim from the shared transient path.
+
+# 0.5.9
+
+Linked-stereo RNNoise gain now transitions between detector decisions over
+model frames. This bounds cancellation-prone stereo amplitude modulation while
+retaining one common gain and preserving the stereo image.
+
+# 0.5.8
+
+Stereo RNNoise now detects cancellation-prone layouts before linking. Coherent
+stereo retains one shared frame gain; anti-phase, hard-panned, and unequal-level
+stereo use independent model detectors but apply one bounded gain to the
+original channels, preserving the stereo image without collapse or sample-wise
+gain modulation.
+
+# 0.5.7
+
+Bug fixes from the Speech Denoiser review (2026-08-12):
+
+- Stream arbitrary host callback sizes through the fixed RNNoise quantum with
+  a pre-seeded, constant-latency output queue.
+- Sanitize non-finite samples, prepare shared FFT resources during initialize,
+  and use frame-level linked stereo gain for cancellation-safe behavior.
+
 # 0.5.6
 
 Bug fixes from code review (2026-05-16):
@@ -29,3 +77,7 @@ Deferred / noted:
 
 - Initial release. Shared DSP building blocks extracted from `sotf-plugin-denoiser` so that the new dedicated declick, hiss reducer, and speech denoiser plugins can reuse the same primitives.
 - Modules: `transient` (TransientSuppressor for click repair), `hiss` (HissReducer for stationary high-frequency noise), `rnnoise` (RnnoiseBackend wrapping `nnnoiseless`).
+# 0.5.6
+
+- Improve the shared transient suppressor's startup priming, rejected-sample
+  slope learning, sensitivity bounds, and non-finite recovery for Declick.

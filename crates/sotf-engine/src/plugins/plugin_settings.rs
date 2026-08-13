@@ -1070,6 +1070,8 @@ pub enum PluginSettings {
         enabled: bool,
         #[serde(default = "default_declick_sensitivity")]
         sensitivity: f64,
+        #[serde(default = "default_declick_link_channels")]
+        link_channels: bool,
     },
     HissReducer {
         #[serde(default = "default_hiss_reducer_enabled")]
@@ -1948,6 +1950,7 @@ impl PluginSettings {
                 Self::Declick {
                     enabled: p(dc, "enabled").default_bool(),
                     sensitivity: p(dc, "sensitivity").default_f64(),
+                    link_channels: p(dc, "link_channels").default_bool(),
                 }
             }
             PluginType::HissReducer => {

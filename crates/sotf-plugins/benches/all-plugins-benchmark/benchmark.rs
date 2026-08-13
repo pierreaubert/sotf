@@ -814,7 +814,7 @@ pub(super) fn benchmark_denoiser_splits(c: &mut Criterion) {
     }
 
     {
-        let mut plugin = DeclickPlugin::new(CHANNELS);
+        let mut plugin = DeclickPlugin::new(CHANNELS, SAMPLE_RATE).unwrap();
         plugin.initialize(SAMPLE_RATE).unwrap();
         let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
         group.bench_function("declick", |b| {

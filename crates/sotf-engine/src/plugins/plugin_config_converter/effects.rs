@@ -372,6 +372,7 @@ pub fn convert_declick(settings: &PluginSettings, _sample_rate: f64) -> Option<P
     let PluginSettings::Declick {
         enabled,
         sensitivity,
+        link_channels,
     } = settings
     else {
         return None;
@@ -381,6 +382,7 @@ pub fn convert_declick(settings: &PluginSettings, _sample_rate: f64) -> Option<P
         json!({
             "enabled": enabled,
             "sensitivity": sensitivity,
+            "link_channels": link_channels,
         }),
     ))
 }

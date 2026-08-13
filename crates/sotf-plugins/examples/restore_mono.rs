@@ -93,8 +93,10 @@ fn main() {
     let declick_params = DeclickPluginParams {
         enabled: true,
         sensitivity: 5.0,
+        link_channels: true,
     };
-    let declick = DeclickPlugin::from_params(1, declick_params);
+    let declick = DeclickPlugin::from_params(1, sample_rate, declick_params)
+        .expect("Failed to construct declick");
     let mut declick_plugin = ParametricInPlacePluginAdapter::new(declick);
     declick_plugin
         .initialize(sample_rate)
