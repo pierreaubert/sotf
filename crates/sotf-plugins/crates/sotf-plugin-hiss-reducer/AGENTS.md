@@ -10,10 +10,9 @@ Stationary high-frequency-noise reducer. Wraps the `HissReducer` block from `plu
 ## Parameters
 
 - `enabled` — bypass toggle.
-- `threshold_db` — hiss-detection threshold.
-- `frequency_hz` — band-edge frequency.
+- `threshold_db` — absolute dBFS high-band level threshold (not SNR).
+- `frequency_hz` — one-pole band-edge frequency, limited to 0.45 × sample rate.
 - `strength` — reduction amount.
-- `low_latency` — short vs. transparent processing window.
 
 ## Features
 
@@ -32,3 +31,5 @@ cargo run -p sotf-plugin-hiss-reducer --features qa --bin qa-hiss-reducer
 - Implements `ParametricInPlacePlugin` — same in/out channel count.
 - Parameter registration must appear in 3 places (see `param_bridge`).
 - DSP body lives in `plugins-denoiser::hiss`; this crate is a thin host adapter.
+- Processing requires initialization and rejects context sample-rate mismatches.
+- Realtime setters and steady processing must remain allocation-free.

@@ -16,7 +16,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "dB",
         "General",
     )
-    .doc("SNR threshold for stationary hiss detection"),
+    .doc("Absolute dBFS threshold for persistent low-level high-band reduction"),
     ParamSpec::float(
         "Frequency",
         "frequency_hz",
@@ -27,7 +27,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Hz",
         "General",
     )
-    .doc("Frequency above which hiss reduction applies"),
+    .doc("One-pole high-band edge (limited to 0.45 x sample rate)"),
     ParamSpec::float("Strength", "strength", 0.5, 0.0, 1.0, 0.01, "", "General")
         .scaled(100.0)
         .doc("Hiss attenuation strength"),
@@ -53,6 +53,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Params {
     #[serde(default = "d_enabled")]
     pub enabled: bool,

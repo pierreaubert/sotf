@@ -3,7 +3,8 @@ title: "Hiss Reducer"
 description: "Reduces high-frequency hiss and tape noise while preserving program content."
 ---
 
-Reduces high-frequency hiss and tape noise while preserving program content.
+Reduces low-level, stationary high-frequency noise while preserving program content. The
+threshold is a calibrated high-band level threshold, not a direct SNR measurement.
 
 ## Parameters
 

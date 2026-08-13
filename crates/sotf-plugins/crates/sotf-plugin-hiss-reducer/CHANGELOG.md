@@ -1,4 +1,24 @@
+# 0.5.7
+
+- Replace the waveform-cycle binary gate with fast/slow power tracking,
+  persistence, hysteresis/hold, continuous reduction depth, and sample-rate
+  derived gain timing.
+- Smooth live cutoff and bypass transitions while keeping detector/filter state
+  warm; zero strength and settled bypass remain exactly transparent.
+- Canonicalize the visible cutoff against the active sample rate, reject invalid
+  topology/rates and unknown preset fields, sanitize non-finite audio, and snap
+  decaying state out of the denormal range.
+- Make realtime parameter setters allocation-free, use the crate version in host
+  metadata, and expand deterministic DSP, metadata, factory, and QA coverage.
+
 # 0.5.6
+
+- **Fix:** require nonzero initialization and reject processing at an uninitialized or mismatched sample rate.
+- **Fix:** canonicalize persisted and runtime parameters against the documented ranges.
+- **Fix:** use sample-rate-derived envelope/gain smoothing and a fast/slow envelope detector to avoid per-sample modulation clicks.
+- **Performance:** classify the plugin as IIR and reuse the cached parameter schema instead of rebuilding it on every query.
+
+# 0.5.5
 
 - **Fix:** disabled/bypassed processing now validates host buffer size before returning. The plugin
   no longer accepts malformed buffers only because hiss reduction is bypassed.

@@ -119,20 +119,15 @@ fn latency_is_zero_for_iir_filter() {
 /// consistent with what the reducer actually uses.
 #[test]
 fn initial_sample_rate_is_consistent() {
-    // Construct without calling initialize() and process a block of silence.
-    // With the bug the plugin stored 44100 but the reducer used 48000;
-    // after initialize(44100) the reducer would recompute coefficients for
-    // 44100 which changes the filter response. The test verifies that calling
-    // initialize with the same rate that was used at construction (48000)
-    // produces identical output to never calling initialize at all — i.e.,
-    // no silent coefficient change happens on the first initialize().
+    // Processing without an explicit host sample rate is rejected; this avoids
+    // silently running with the reducer's construction-time default.
     let mut plugin_uninit = HissReducerPlugin::new(1);
     let context = ProcessContext::new(48000, 8);
-    // Process before initialize — uses construction-time coefficients.
     let mut buf_uninit = vec![0.5f32; 8];
-    plugin_uninit
+    let err = plugin_uninit
         .process_in_place(&mut buf_uninit, &context)
-        .expect("process uninit");
+        .expect_err("process before initialize");
+    assert!(err.contains("initialized"));
 
     let mut plugin_init = HissReducerPlugin::new(1);
     plugin_init.initialize(48000).expect("init");
@@ -141,9 +136,5 @@ fn initial_sample_rate_is_consistent() {
         .process_in_place(&mut buf_init, &context)
         .expect("process init");
 
-    // Outputs must match: the reducer should use 48000 in both cases.
-    assert_eq!(
-        buf_uninit, buf_init,
-        "initialize(48000) must not change the filter response vs. default construction"
-    );
+    assert!(buf_init.iter().all(|sample| sample.is_finite()));
 }

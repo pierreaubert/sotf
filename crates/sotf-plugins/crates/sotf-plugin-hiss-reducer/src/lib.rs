@@ -13,6 +13,7 @@ use sotf_host::plugin::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HissReducerPluginParams {
     #[serde(default = "d_enabled")]
     pub enabled: bool,
@@ -59,23 +60,90 @@ pub struct HissReducerPlugin {
 
 impl HissReducerPlugin {
     pub fn new(channels: usize) -> Self {
-        Self::from_params(channels, HissReducerPluginParams::default())
+        Self::try_new(channels).expect("HissReducerPlugin requires at least one channel")
     }
 
     pub fn from_params(channels: usize, params: HissReducerPluginParams) -> Self {
+        Self::try_from_params(channels, params)
+            .expect("HissReducerPlugin requires at least one channel")
+    }
+
+    pub fn try_new(channels: usize) -> PluginResult<Self> {
+        Self::try_from_params(channels, HissReducerPluginParams::default())
+    }
+
+    pub fn try_from_params(channels: usize, params: HissReducerPluginParams) -> PluginResult<Self> {
+        Self::try_from_params_at_sample_rate(channels, 48_000, params)
+    }
+
+    pub fn try_from_params_at_sample_rate(
+        channels: usize,
+        sample_rate: u32,
+        params: HissReducerPluginParams,
+    ) -> PluginResult<Self> {
+        if channels == 0 {
+            return Err("HissReducerPlugin requires at least one channel".to_string());
+        }
+        let params = Self::canonicalize_params(params, sample_rate)?;
+        let mut reducer = Self::build_reducer(channels, &params);
+        reducer.initialize(sample_rate)?;
+        reducer.set_enabled(params.enabled, true);
         let mut plugin = Self {
             channels,
-            // Match HissReducer::new()'s internal default so the stored
-            // sample_rate is consistent with the reducer's initial coefficients
-            // before initialize() is called.
-            sample_rate: 48000,
+            sample_rate,
             initialized: false,
-            reducer: Self::build_reducer(channels, &params),
+            reducer,
             params,
             cached_parameters: Vec::new(),
         };
         plugin.rebuild_cached_parameters();
-        plugin
+        Ok(plugin)
+    }
+
+    fn maximum_frequency(sample_rate: u32) -> PluginResult<f32> {
+        if sample_rate == 0 {
+            return Err("sample rate must be nonzero".to_string());
+        }
+        let minimum = pk(HP, "frequency_hz").min_f64() as f32;
+        let maximum = (sample_rate as f32 * 0.45).min(pk(HP, "frequency_hz").max_f64() as f32);
+        if maximum < minimum {
+            return Err(format!(
+                "sample rate {sample_rate} is too low for the {minimum} Hz minimum cutoff"
+            ));
+        }
+        Ok(maximum)
+    }
+
+    fn canonicalize_params(
+        mut params: HissReducerPluginParams,
+        sample_rate: u32,
+    ) -> PluginResult<HissReducerPluginParams> {
+        let defaults = HissReducerPluginParams::default();
+        let maximum_frequency = Self::maximum_frequency(sample_rate)?;
+        params.threshold_db = if params.threshold_db.is_finite() {
+            params.threshold_db.clamp(
+                pk(HP, "threshold_db").min_f64() as f32,
+                pk(HP, "threshold_db").max_f64() as f32,
+            )
+        } else {
+            defaults.threshold_db
+        };
+        params.frequency_hz = if params.frequency_hz.is_finite() {
+            params
+                .frequency_hz
+                .clamp(pk(HP, "frequency_hz").min_f64() as f32, maximum_frequency)
+        } else {
+            defaults.frequency_hz.min(maximum_frequency)
+        };
+        params.strength = if params.strength.is_finite() {
+            params.strength.clamp(
+                pk(HP, "strength").min_f64() as f32,
+                pk(HP, "strength").max_f64() as f32,
+            )
+        } else {
+            defaults.strength
+        };
+        Ok(params)
     }
 
     fn build_reducer(channels: usize, params: &HissReducerPluginParams) -> HissReducer {
@@ -97,20 +165,63 @@ impl HissReducerPlugin {
     fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = param_bridge::build_parameters(HP, |i| self.param_value(i));
     }
+
+    fn apply_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        match id.as_str() {
+            "enabled" => {
+                self.params.enabled = value
+                    .as_bool()
+                    .ok_or_else(|| "enabled must be a bool".to_string())?;
+                self.reducer.set_enabled(self.params.enabled, false);
+            }
+            "threshold_db" => {
+                self.params.threshold_db = value
+                    .as_float()
+                    .ok_or_else(|| "threshold_db must be a float".to_string())?;
+                self.reducer.set_params(
+                    self.params.frequency_hz,
+                    self.params.threshold_db,
+                    self.params.strength,
+                );
+            }
+            "frequency_hz" => {
+                self.params.frequency_hz = value
+                    .as_float()
+                    .ok_or_else(|| "frequency_hz must be a float".to_string())?;
+                self.reducer.set_params(
+                    self.params.frequency_hz,
+                    self.params.threshold_db,
+                    self.params.strength,
+                );
+            }
+            "strength" => {
+                self.params.strength = value
+                    .as_float()
+                    .ok_or_else(|| "strength must be a float".to_string())?;
+                self.reducer.set_params(
+                    self.params.frequency_hz,
+                    self.params.threshold_db,
+                    self.params.strength,
+                );
+            }
+            _ => return Err(format!("Unknown parameter: {id}")),
+        }
+        Ok(())
+    }
 }
 
 impl ParametricInPlacePlugin for HissReducerPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Hiss Reducer", "1.0.0", "SotF")
-            .with_description("Stationary high-frequency hiss reducer")
+        PluginInfo::new("Hiss Reducer", env!("CARGO_PKG_VERSION"), "SotF")
+            .with_description("Persistent low-level high-frequency reducer")
     }
 
     fn cost_class(&self) -> PluginCostClass {
-        PluginCostClass::Fft
+        PluginCostClass::Iir
     }
 
     fn compile_metadata(&self) -> PluginCompileMetadata {
-        PluginCompileMetadata::nonlinear(PluginCostClass::Fft, None, self.latency_samples(), false)
+        PluginCompileMetadata::nonlinear(PluginCostClass::Iir, None, self.latency_samples(), false)
     }
 
     fn channels(&self) -> usize {
@@ -118,7 +229,7 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
     }
 
     fn parameter_schema(&self) -> ParameterSchema {
-        param_bridge::build_parameters(HP, |i| self.param_value(i))
+        self.cached_parameters.clone()
     }
 
     fn current_values(&self) -> ParameterSet {
@@ -143,34 +254,73 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
     }
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
-        for (id, value) in values {
-            let idx = param_bridge::set_parameter(HP, &id, &value, |i, v| match i {
-                0 => self.params.enabled = v > 0.5,
-                1 => self.params.threshold_db = v as f32,
-                2 => self.params.frequency_hz = v as f32,
-                3 => self.params.strength = v as f32,
+        let mut next = self.params.clone();
+        for (id, value) in &values {
+            self.parametric_validate_parameter(id, value)?;
+            param_bridge::set_parameter(HP, id, value, |i, v| match i {
+                0 => next.enabled = v > 0.5,
+                1 => next.threshold_db = v as f32,
+                2 => next.frequency_hz = v as f32,
+                3 => next.strength = v as f32,
                 _ => {}
             })?;
-            // For continuous parameters (threshold, frequency, strength) update the
-            // reducer in-place via set_params() to preserve DSP state (IIR history,
-            // envelope followers) and avoid audible clicks. Only the enabled flag
-            // (idx == 0) needs no reducer update at all.
-            if idx != 0 {
-                self.reducer.set_params(
-                    self.params.frequency_hz,
-                    self.params.threshold_db,
-                    self.params.strength,
-                );
+        }
+        self.params = Self::canonicalize_params(next, self.sample_rate)?;
+        self.reducer.set_enabled(self.params.enabled, false);
+        self.reducer.set_params(
+            self.params.frequency_hz,
+            self.params.threshold_db,
+            self.params.strength,
+        );
+        Ok(())
+    }
+
+    fn parametric_validate_parameter(
+        &self,
+        id: &ParameterId,
+        value: &ParameterValue,
+    ) -> PluginResult<()> {
+        self.cached_parameters
+            .iter()
+            .find(|parameter| &parameter.id == id)
+            .ok_or_else(|| format!("Unknown parameter: {id}"))?
+            .validate(value)
+            .map_err(|error| format!("{id}: {error}"))?;
+        if id.as_str() == "frequency_hz" {
+            let frequency = value
+                .as_float()
+                .ok_or_else(|| "frequency_hz must be a float".to_string())?;
+            let maximum = Self::maximum_frequency(self.sample_rate)?;
+            if frequency > maximum {
+                return Err(format!(
+                    "frequency_hz must not exceed {maximum} Hz at sample rate {}",
+                    self.sample_rate
+                ));
             }
-            self.rebuild_cached_parameters();
         }
         Ok(())
     }
 
+    fn parametric_set_parameter(
+        &mut self,
+        id: ParameterId,
+        value: ParameterValue,
+    ) -> PluginResult<()> {
+        self.parametric_validate_parameter(&id, &value)?;
+        self.apply_parameter(id, value)
+    }
+
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        self.params = Self::canonicalize_params(self.params.clone(), sample_rate)?;
         self.sample_rate = sample_rate;
+        self.reducer.initialize(sample_rate)?;
+        self.reducer.set_params(
+            self.params.frequency_hz,
+            self.params.threshold_db,
+            self.params.strength,
+        );
+        self.reducer.set_enabled(self.params.enabled, true);
         self.initialized = true;
-        self.reducer.initialize(sample_rate);
         Ok(())
     }
 
@@ -195,9 +345,19 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
             ));
         }
 
-        if self.params.enabled {
-            self.reducer.process(buffer);
+        if !self.initialized {
+            return Err("plugin must be initialized before processing".to_string());
         }
+        if context.sample_rate != self.sample_rate {
+            return Err(format!(
+                "sample rate mismatch: initialized at {}, context is {}",
+                self.sample_rate, context.sample_rate
+            ));
+        }
+
+        // Keep filter and detector state warm while bypassed; HissReducer owns
+        // the click-free wet/dry transition and reaches exact dry output.
+        self.reducer.process(buffer);
         Ok(context.num_frames)
     }
 
