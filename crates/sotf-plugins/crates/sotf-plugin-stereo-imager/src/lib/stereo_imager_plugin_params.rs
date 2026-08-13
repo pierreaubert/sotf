@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use sotf_host::param_specs::find_by_key as pk;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StereoImagerPluginParams {
     #[serde(default = "default_width")]
     pub width: f32,

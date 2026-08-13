@@ -429,18 +429,64 @@ fn set_parameter_out_of_range_fails() {
 }
 
 #[test]
-fn non_stereo_channels_pass_through_unchanged() {
-    let mut plugin = ParametricInPlacePluginAdapter::new(StereoImagerPlugin::new(
-        1,
-        StereoImagerPluginParams::default(),
-    ));
+fn non_stereo_channels_are_rejected() {
+    assert!(StereoImagerPlugin::try_new(1, StereoImagerPluginParams::default()).is_err());
+    assert!(StereoImagerPlugin::try_new(6, StereoImagerPluginParams::default()).is_err());
+}
+
+#[test]
+fn neutral_controls_are_sample_transparent() {
+    let params = StereoImagerPluginParams {
+        width: 1.0,
+        low_width: 1.0,
+        mid_width: 1.0,
+        high_width: 1.0,
+        mono_bass: false,
+        mix: 0.37,
+        ..Default::default()
+    };
+    let mut plugin =
+        ParametricInPlacePluginAdapter::new(StereoImagerPlugin::try_new(2, params).unwrap());
     plugin.initialize(SR).unwrap();
-    let mut buffer = vec![0.5, 0.3, 0.7, 0.1];
+    let mut buffer: Vec<f32> = (0..4096 * 2)
+        .map(|i| ((i as f32 * 0.137).sin() + (i as f32 * 0.031).cos()) * 0.3)
+        .collect();
     let original = buffer.clone();
     plugin
-        .process_in_place(&mut buffer, &ProcessContext::new(SR, 4))
+        .process_in_place(&mut buffer, &ProcessContext::new(SR, 4096))
         .unwrap();
     assert_eq!(buffer, original);
+}
+
+#[test]
+fn malformed_state_and_buffers_are_rejected() {
+    let invalid = StereoImagerPluginParams {
+        low_mid_freq: 4000.0,
+        mid_high_freq: 2000.0,
+        ..Default::default()
+    };
+    assert!(StereoImagerPlugin::try_new(2, invalid).is_err());
+    let invalid = StereoImagerPluginParams {
+        width: f32::NAN,
+        ..Default::default()
+    };
+    assert!(StereoImagerPlugin::try_new(2, invalid).is_err());
+
+    let mut plugin = ParametricInPlacePluginAdapter::new(
+        StereoImagerPlugin::try_new(2, StereoImagerPluginParams::default()).unwrap(),
+    );
+    plugin.initialize(SR).unwrap();
+    for mix in [0.0, 0.5, 1.0] {
+        plugin
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(mix))
+            .unwrap();
+        let mut short = vec![0.0; 7];
+        assert!(
+            plugin
+                .process_in_place(&mut short, &ProcessContext::new(SR, 4))
+                .is_err()
+        );
+    }
 }
 
 #[test]

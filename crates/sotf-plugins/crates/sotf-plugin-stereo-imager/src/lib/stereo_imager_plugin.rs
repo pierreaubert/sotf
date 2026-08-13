@@ -12,6 +12,8 @@ use sotf_host::plugin::{
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
+const CROSSOVER_CONTROL_INTERVAL: usize = 16;
+
 pub struct StereoImagerPlugin {
     pub(super) channels: usize,
     pub(super) sample_rate: u32,
@@ -30,9 +32,6 @@ pub struct StereoImagerPlugin {
     pub(super) crossover_low: Lr4Crossover<f32>,
     pub(super) crossover_high: Lr4Crossover<f32>,
 
-    // Pre-allocated dry buffer for mix blending
-    pub(super) dry_buf: Vec<f32>,
-
     // Smoothers for click-free parameter changes
     pub(super) width_smoother: Smoother,
     pub(super) low_mid_freq_smoother: Smoother,
@@ -40,13 +39,50 @@ pub struct StereoImagerPlugin {
     pub(super) low_width_smoother: Smoother,
     pub(super) mid_width_smoother: Smoother,
     pub(super) high_width_smoother: Smoother,
+    pub(super) mono_bass_smoother: Smoother,
     pub(super) mix_smoother: Smoother,
+
+    pub(super) crossover_control_phase: usize,
+    #[cfg(test)]
+    pub(super) crossover_update_count: usize,
 
     pub(super) cached_parameters: Vec<Parameter>,
 }
 
 impl StereoImagerPlugin {
+    pub fn try_new(channels: usize, params: StereoImagerPluginParams) -> PluginResult<Self> {
+        if channels != 2 {
+            return Err(format!(
+                "Stereo Imager requires exactly 2 channels, got {channels}"
+            ));
+        }
+        let values = [
+            ("width", params.width, 0.0, 2.0),
+            ("low_mid_freq", params.low_mid_freq, 20.0, 1000.0),
+            ("mid_high_freq", params.mid_high_freq, 1000.0, 10000.0),
+            ("low_width", params.low_width, 0.0, 2.0),
+            ("mid_width", params.mid_width, 0.0, 2.0),
+            ("high_width", params.high_width, 0.0, 2.0),
+            ("mix", params.mix, 0.0, 1.0),
+        ];
+        for (name, value, min, max) in values {
+            if !value.is_finite() || !(min..=max).contains(&value) {
+                return Err(format!(
+                    "{name} must be finite and in [{min}, {max}], got {value}"
+                ));
+            }
+        }
+        if params.low_mid_freq >= params.mid_high_freq {
+            return Err("low_mid_freq must be lower than mid_high_freq".into());
+        }
+        Ok(Self::new_validated(channels, params))
+    }
+
     pub fn new(channels: usize, params: StereoImagerPluginParams) -> Self {
+        Self::try_new(channels, params).expect("invalid Stereo Imager parameters")
+    }
+
+    fn new_validated(channels: usize, params: StereoImagerPluginParams) -> Self {
         let sr = 48000;
         let mut plugin = Self {
             channels,
@@ -65,15 +101,22 @@ impl StereoImagerPlugin {
             crossover_low: Lr4Crossover::new(params.low_mid_freq, sr as f32, 2),
             crossover_high: Lr4Crossover::new(params.mid_high_freq, sr as f32, 2),
 
-            dry_buf: Vec::new(),
-
             width_smoother: Smoother::new(params.width, SMOOTHING_MS, sr),
             low_mid_freq_smoother: Smoother::new(params.low_mid_freq, SMOOTHING_MS, sr),
             mid_high_freq_smoother: Smoother::new(params.mid_high_freq, SMOOTHING_MS, sr),
             low_width_smoother: Smoother::new(params.low_width, SMOOTHING_MS, sr),
             mid_width_smoother: Smoother::new(params.mid_width, SMOOTHING_MS, sr),
             high_width_smoother: Smoother::new(params.high_width, SMOOTHING_MS, sr),
+            mono_bass_smoother: Smoother::new(
+                if params.mono_bass { 0.0 } else { 1.0 },
+                SMOOTHING_MS,
+                sr,
+            ),
             mix_smoother: Smoother::new(params.mix, SMOOTHING_MS, sr),
+
+            crossover_control_phase: 0,
+            #[cfg(test)]
+            crossover_update_count: 0,
 
             cached_parameters: Vec::new(),
         };
@@ -83,6 +126,13 @@ impl StereoImagerPlugin {
 
     pub fn from_params(channels: usize, params: StereoImagerPluginParams) -> Self {
         Self::new(channels, params)
+    }
+
+    pub fn try_from_params(
+        channels: usize,
+        params: StereoImagerPluginParams,
+    ) -> PluginResult<Self> {
+        Self::try_new(channels, params)
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
@@ -182,12 +232,18 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
                 }
                 "low_mid_freq" => {
                     if let Some(v) = value.as_float() {
+                        if v >= self.mid_high_freq {
+                            return Err("low_mid_freq must be lower than mid_high_freq".into());
+                        }
                         self.low_mid_freq = v;
                         self.low_mid_freq_smoother.set_target(v);
                     }
                 }
                 "mid_high_freq" => {
                     if let Some(v) = value.as_float() {
+                        if v <= self.low_mid_freq {
+                            return Err("mid_high_freq must be higher than low_mid_freq".into());
+                        }
                         self.mid_high_freq = v;
                         self.mid_high_freq_smoother.set_target(v);
                     }
@@ -213,6 +269,8 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
                 "mono_bass" => {
                     if let Some(v) = value.as_bool() {
                         self.mono_bass = v;
+                        self.mono_bass_smoother
+                            .set_target(if v { 0.0 } else { 1.0 });
                     }
                 }
                 "mix" => {
@@ -232,6 +290,16 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("sample rate must be greater than zero".into());
+        }
+        if self.mid_high_freq >= sample_rate as f32 * 0.5 {
+            return Err(format!(
+                "mid_high_freq {} must be below Nyquist {}",
+                self.mid_high_freq,
+                sample_rate as f32 * 0.5
+            ));
+        }
         self.sample_rate = sample_rate;
 
         // Reinitialize crossovers at the correct sample rate
@@ -247,11 +315,17 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
         self.low_width_smoother = Smoother::new(self.low_width, SMOOTHING_MS, sample_rate);
         self.mid_width_smoother = Smoother::new(self.mid_width, SMOOTHING_MS, sample_rate);
         self.high_width_smoother = Smoother::new(self.high_width, SMOOTHING_MS, sample_rate);
+        self.mono_bass_smoother = Smoother::new(
+            if self.mono_bass { 0.0 } else { 1.0 },
+            SMOOTHING_MS,
+            sample_rate,
+        );
         self.mix_smoother = Smoother::new(self.mix, SMOOTHING_MS, sample_rate);
-
-        // Pre-allocate dry buffer for maximum expected frame size.
-        // 65536 * 2 covers virtually all real-world buffer sizes (up to ~1.4s @ 48 kHz).
-        self.dry_buf.resize(65536 * 2, 0.0);
+        self.crossover_control_phase = 0;
+        #[cfg(test)]
+        {
+            self.crossover_update_count = 0;
+        }
 
         Ok(())
     }
@@ -267,7 +341,10 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
         self.low_width_smoother.reset(self.low_width);
         self.mid_width_smoother.reset(self.mid_width);
         self.high_width_smoother.reset(self.high_width);
+        self.mono_bass_smoother
+            .reset(if self.mono_bass { 0.0 } else { 1.0 });
         self.mix_smoother.reset(self.mix);
+        self.crossover_control_phase = 0;
     }
 
     fn process_in_place(
@@ -278,9 +355,30 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
         enable_ftz_daz();
 
         let nf = context.num_frames;
-
-        // Stereo only -- pass through unchanged for non-stereo
-        if self.channels != 2 {
+        let required = nf
+            .checked_mul(2)
+            .ok_or_else(|| "Stereo Imager frame count overflow".to_string())?;
+        if buffer.len() != required {
+            return Err(format!(
+                "Stereo Imager buffer size mismatch: expected {required}, got {}",
+                buffer.len()
+            ));
+        }
+        let unity = |smoother: &Smoother| {
+            (smoother.target() - 1.0).abs() <= f32::EPSILON
+                && (smoother.current() - 1.0).abs() <= f32::EPSILON
+        };
+        if self.mono_bass_smoother.target() >= 1.0 - f32::EPSILON
+            && self.mono_bass_smoother.current() >= 1.0 - f32::EPSILON
+            && unity(&self.width_smoother)
+            && unity(&self.low_width_smoother)
+            && unity(&self.mid_width_smoother)
+            && unity(&self.high_width_smoother)
+            && (self.low_mid_freq_smoother.target() - self.low_mid_freq_smoother.current()).abs()
+                <= f32::EPSILON
+            && (self.mid_high_freq_smoother.target() - self.mid_high_freq_smoother.current()).abs()
+                <= f32::EPSILON
+        {
             return Ok(nf);
         }
 
@@ -291,25 +389,10 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
             return Ok(nf);
         }
 
-        if self.dry_buf.len() < nf * 2 {
-            return Err(format!(
-                "process_in_place: block requires {} samples, exceeds preallocated scratch capacity {}",
-                nf * 2,
-                self.dry_buf.len()
-            ));
-        }
-
-        // Save dry signal for mix blending only when wet/dry blend is active.
-        // At mix=1.0 (default) the copy is wasted; skip it to save memory bandwidth.
+        // The current input sample remains in local registers until the wet sample is
+        // produced, so intermediate mix values need no callback-sized scratch buffer.
         let need_dry = !(self.mix_smoother.target() >= 1.0 - f32::EPSILON
             && self.mix_smoother.current() >= 1.0 - f32::EPSILON);
-        if need_dry {
-            self.dry_buf[..nf * 2].copy_from_slice(&buffer[..nf * 2]);
-        }
-
-        // Hoist mono_bass out of the per-sample loop — it changes extremely rarely
-        // and checking a bool every sample wastes branch prediction budget.
-        let low_side_enable = if self.mono_bass { 0.0 } else { 1.0 };
 
         for frame in 0..nf {
             let idx = frame * 2;
@@ -320,23 +403,34 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
             let mid = (l + r) * 0.5;
             let side = (l - r) * 0.5;
 
-            // Smooth crossover automation. Retuning the LR4 filters in small
-            // per-frame frequency steps avoids the large coefficient jumps that
-            // caused zipper clicks when set_parameter() updated them instantly.
-            let mut low_mid_freq = self.low_mid_freq_smoother.advance();
-            let mut mid_high_freq = self.mid_high_freq_smoother.advance();
-            if low_mid_freq > mid_high_freq {
-                std::mem::swap(&mut low_mid_freq, &mut mid_high_freq);
+            // Advance targets at audio rate, but redesign biquad coefficients at a
+            // bounded control rate. This retains time-based smoothing without doing
+            // trigonometric filter design for every sample.
+            let low_mid_freq = self.low_mid_freq_smoother.advance();
+            let mid_high_freq = self.mid_high_freq_smoother.advance();
+            if self.crossover_control_phase == 0 {
+                if (self.crossover_low.frequency() - low_mid_freq).abs() > f32::EPSILON {
+                    self.crossover_low.set_frequency(low_mid_freq);
+                    #[cfg(test)]
+                    {
+                        self.crossover_update_count += 1;
+                    }
+                }
+                if (self.crossover_high.frequency() - mid_high_freq).abs() > f32::EPSILON {
+                    self.crossover_high.set_frequency(mid_high_freq);
+                    #[cfg(test)]
+                    {
+                        self.crossover_update_count += 1;
+                    }
+                }
             }
-            self.crossover_low.set_frequency(low_mid_freq);
-            self.crossover_high.set_frequency(mid_high_freq);
+            self.crossover_control_phase =
+                (self.crossover_control_phase + 1) % CROSSOVER_CONTROL_INTERVAL;
 
             // Split mid and side into bands via cascaded crossovers.
             // crossover_low: channel 0 = mid signal, channel 1 = side signal
-            let (mid_low, mid_rest) = self.crossover_low.process(mid, 0);
             let (side_low, side_rest) = self.crossover_low.process(side, 1);
             // crossover_high: channel 0 = mid rest, channel 1 = side rest
-            let (mid_mid, mid_high) = self.crossover_high.process(mid_rest, 0);
             let (side_mid, side_high) = self.crossover_high.process(side_rest, 1);
 
             // Advance smoothers (per-sample)
@@ -344,15 +438,17 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
             let lw = self.low_width_smoother.advance();
             let mw = self.mid_width_smoother.advance();
             let hw = self.high_width_smoother.advance();
+            let low_side_enable = self.mono_bass_smoother.advance();
 
             // Apply per-band width scaling to side signal.
-            let low_side = side_low * lw * gw * low_side_enable;
-            let mid_side_scaled = side_mid * mw * gw;
-            let high_side_scaled = side_high * hw * gw;
-
-            // Reconstruct total mid and side
-            let total_mid = mid_low + mid_mid + mid_high;
-            let total_side = low_side + mid_side_scaled + high_side_scaled;
+            // Apply only the width correction to the untouched M/S reference.
+            // At neutral widths every correction is exactly zero, avoiding the
+            // phase rotation and dry/wet comb filtering of crossover reconstruction.
+            let total_mid = mid;
+            let total_side = side * gw
+                + side_low * gw * (lw * low_side_enable - 1.0)
+                + side_mid * gw * (mw - 1.0)
+                + side_high * gw * (hw - 1.0);
 
             // M/S decode
             let wet_l = total_mid + total_side;
@@ -361,8 +457,8 @@ impl ParametricInPlacePlugin for StereoImagerPlugin {
             // Dry/wet mix
             let m = self.mix_smoother.advance();
             if need_dry {
-                buffer[idx] = self.dry_buf[idx] * (1.0 - m) + wet_l * m;
-                buffer[idx + 1] = self.dry_buf[idx + 1] * (1.0 - m) + wet_r * m;
+                buffer[idx] = l + (wet_l - l) * m;
+                buffer[idx + 1] = r + (wet_r - r) * m;
             } else {
                 buffer[idx] = wet_l;
                 buffer[idx + 1] = wet_r;

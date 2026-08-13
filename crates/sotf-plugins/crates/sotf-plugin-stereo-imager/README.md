@@ -13,6 +13,13 @@ Controls the stereo width of audio using Mid/Side processing. The signal is spli
 - **Width range**: From mono (collapsed) to hyper-wide
 - **Frequency-dependent**: Widen highs while keeping bass centered
 
+The plugin is strictly stereo. Neutral width settings are sample-transparent:
+the original M/S signal is retained and crossover bands contribute only width
+corrections, so intermediate mix values do not comb-filter the dry signal.
+Construction validates finite ranges and strict crossover ordering; initialization
+also requires the upper crossover below Nyquist. Processing is bounded to the
+preallocated 65536-frame capacity and performs no heap allocation.
+
 ## Architecture
 
 ```

@@ -78,6 +78,11 @@ fn test_crossover_frequency_changes_are_smoothed() {
         after > initial && after < 1000.0,
         "frequency should move gradually during processing: initial={initial}, after={after}"
     );
+
+    assert!(
+        plugin.crossover_update_count <= 256 / 8,
+        "crossover coefficient design must run at a bounded control rate, not once per sample"
+    );
 }
 
 /// mono_bass=false: the per-sample mono_bass branch must not change output
@@ -118,7 +123,46 @@ fn test_rapid_mono_bass_toggle_no_nan() {
     }
 }
 
-/// Buffer larger than 8192 frames: must not panic (dry_buf must accommodate).
+#[test]
+fn mono_bass_toggle_is_smoothed_without_a_sample_step() {
+    let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
+    plugin.initialize(48_000).unwrap();
+
+    // Out-of-phase low-frequency programme maximizes the side-band change.
+    let frames = 4096;
+    let mut buffer = Vec::with_capacity(frames * 2);
+    for frame in 0..frames {
+        let sample = (std::f32::consts::TAU * 80.0 * frame as f32 / 48_000.0).sin() * 0.5;
+        buffer.extend_from_slice(&[sample, -sample]);
+    }
+    plugin
+        .process_in_place(&mut buffer, &make_context(frames))
+        .unwrap();
+
+    plugin
+        .parametric_set_parameter(ParameterId::from("mono_bass"), ParameterValue::Bool(true))
+        .unwrap();
+    let mut transition = vec![0.0; 1024 * 2];
+    for frame in 0..1024 {
+        let sample =
+            (std::f32::consts::TAU * 80.0 * (frames + frame) as f32 / 48_000.0).sin() * 0.5;
+        transition[frame * 2] = sample;
+        transition[frame * 2 + 1] = -sample;
+    }
+    let first_input = transition[0];
+    plugin
+        .process_in_place(&mut transition, &make_context(1024))
+        .unwrap();
+
+    assert!(
+        (transition[0] - first_input).abs() < 0.02,
+        "mono-bass must begin from the previous side gain instead of switching at the block edge"
+    );
+    assert!(plugin.mono_bass_smoother.current() < 1.0);
+    assert!(plugin.mono_bass_smoother.current() > 0.0);
+}
+
+/// Large fully-wet blocks remain valid without callback-sized scratch.
 #[test]
 fn test_large_buffer_no_panic() {
     let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
@@ -133,20 +177,23 @@ fn test_large_buffer_no_panic() {
 }
 
 #[test]
-fn oversize_block_is_rejected_without_growing_dry_buffer() {
+fn arbitrary_large_mixed_block_needs_no_scratch_buffer() {
     let mut plugin = StereoImagerPlugin::new(2, StereoImagerPluginParams::default());
     plugin.initialize(48000).unwrap();
 
-    let initial_len = plugin.dry_buf.len();
-    let num_frames = initial_len / 2 + 1;
+    plugin
+        .parametric_set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+        .unwrap();
+    plugin.reset();
+    let num_frames = 70_000;
     let mut buffer = vec![0.25_f32; num_frames * 2];
-
-    let err = plugin
-        .process_in_place(&mut buffer, &make_context(num_frames))
-        .expect_err("oversize audio blocks must not allocate in process_in_place");
-
-    assert!(err.contains("exceeds preallocated scratch"));
-    assert_eq!(plugin.dry_buf.len(), initial_len);
+    assert_eq!(
+        plugin
+            .process_in_place(&mut buffer, &make_context(num_frames))
+            .unwrap(),
+        num_frames
+    );
+    assert!(buffer.iter().all(|sample| sample.is_finite()));
 }
 
 /// Mix=0 (fully dry): output must be byte-for-byte identical to input.
@@ -418,17 +465,7 @@ fn test_plugin_info_version_matches_manifest() {
 /// Non-stereo channels should pass through unchanged
 #[test]
 fn test_non_stereo_passthrough() {
-    let mut plugin = StereoImagerPlugin::new(1, StereoImagerPluginParams::default());
-    plugin.initialize(48000).unwrap();
-
-    let mut buffer = vec![0.5, 0.3, 0.7, 0.1];
-    let original = buffer.clone();
-
-    plugin
-        .process_in_place(&mut buffer, &make_context(4))
-        .unwrap();
-
-    assert_eq!(buffer, original);
+    assert!(StereoImagerPlugin::try_new(1, StereoImagerPluginParams::default()).is_err());
 }
 
 /// Bug: process_in_place must NOT call initialize() on sample-rate mismatch.

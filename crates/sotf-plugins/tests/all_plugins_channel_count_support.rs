@@ -219,6 +219,32 @@ fn all_plugins_channel_count_support() {
 }
 
 #[test]
+fn stereo_imager_catalog_matches_stereo_only_factory_contract() {
+    let entry = PLUGIN_CATALOG
+        .iter()
+        .find(|entry| entry.canonical_type == "stereo_imager")
+        .expect("Stereo Imager must have a catalog entry");
+    let PluginSupportedInputLayouts::Enumerated(supported_inputs) =
+        entry.metadata.channel_layout.supported_inputs
+    else {
+        panic!("Stereo Imager must enumerate its supported input layout");
+    };
+
+    assert_eq!(supported_inputs, &[2]);
+
+    for channels in [1, 4, 6, 8, 12] {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            try_instantiate_and_process("stereo_imager", channels)
+        }))
+        .expect("Stereo Imager factory must reject unsupported layouts without panicking");
+        assert!(
+            result.is_err(),
+            "Stereo Imager unexpectedly accepted {channels} channels"
+        );
+    }
+}
+
+#[test]
 fn catalog_default_channel_output_contracts_hold() {
     let mut failures = Vec::new();
 
@@ -235,13 +261,15 @@ fn catalog_default_channel_output_contracts_hold() {
 
         for &channels in supported_inputs {
             let expected_output = match entry.metadata.channel_layout.output {
-                PluginChannelOutputModel::PreservesInput => channels,
-                PluginChannelOutputModel::Fixed(output) => output,
-                PluginChannelOutputModel::Configurable { default_output, .. } => {
-                    default_output.channels(channels)
-                }
-                PluginChannelOutputModel::InputTimesBands => channels * 2,
-                PluginChannelOutputModel::InputDividedByBands => channels / 2,
+                PluginChannelOutputModel::PreservesInput => Some(channels),
+                PluginChannelOutputModel::Fixed(output) => Some(output),
+                // The default applies to the plugin's canonical default
+                // configuration, not every structural configuration needed to
+                // exercise each admitted input width (for example HOA order and
+                // Ambisonics target layout).
+                PluginChannelOutputModel::Configurable { .. } => None,
+                PluginChannelOutputModel::InputTimesBands => Some(channels * 2),
+                PluginChannelOutputModel::InputDividedByBands => Some(channels / 2),
                 PluginChannelOutputModel::DescriptorDefined
                 | PluginChannelOutputModel::PlatformNegotiated => continue,
             };
@@ -251,9 +279,10 @@ fn catalog_default_channel_output_contracts_hold() {
 
             match result {
                 Ok(Ok(out_ch)) => {
-                    if out_ch != expected_output {
+                    if expected_output.is_some_and(|expected| out_ch != expected) {
                         failures.push(format!(
-                            "{plugin_type}@{channels}ch produced {out_ch} output channels instead of catalog default {expected_output}"
+                            "{plugin_type}@{channels}ch produced {out_ch} output channels instead of catalog default {}",
+                            expected_output.unwrap()
                         ));
                     }
                 }

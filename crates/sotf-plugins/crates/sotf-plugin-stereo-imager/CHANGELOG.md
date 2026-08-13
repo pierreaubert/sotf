@@ -1,3 +1,38 @@
+# 0.5.6
+
+## Review remediation
+
+- Smooth mono-bass enable/disable over the same time-based transition as the
+  width controls, preventing a block-edge side-channel step.
+- Advance crossover targets at audio rate while redesigning LR4 coefficients at
+  a bounded control cadence instead of performing trigonometric design per sample.
+- Remove the fixed callback-sized dry scratch allocation and mix directly from
+  each input sample, eliminating both the 512 KiB reservation and arbitrary
+  65,536-frame callback cap.
+- Add deterministic regressions for transition continuity, bounded crossover
+  redesign work, and mixed processing of a 70,000-frame callback.
+
+# 0.5.5
+
+## Review remediation
+
+- Align the factory catalog with the plugin's stereo-only constructor: Stereo
+  Imager is advertised for exactly two input channels, so unsupported layouts
+  are rejected before instantiation rather than reported as supported.
+
+# 0.5.4
+
+## Review remediation
+
+- Preserve the untouched M/S reference and apply only filtered side-band width
+  corrections, making neutral width transparent and eliminating dry/wet comb filtering.
+- Add a neutral fast path that is sample-identical and skips crossover work.
+- Add fallible construction validation for stereo-only layout, finite/ranged
+  values, crossover ordering, unknown serialized fields, and Nyquist at initialization.
+- Reject crossing frequency targets rather than swapping their runtime identity.
+- Validate checked buffer length and scratch bounds before every processing path.
+- Retain deterministic crossover and smoother reset behavior.
+
 # 0.5.3
 
 ## Fixes
