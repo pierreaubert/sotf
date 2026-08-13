@@ -1,4 +1,3 @@
-use super::consts::CACHE_UPDATE_THROTTLE;
 use super::consts::EPSILON;
 use super::consts::FAST_ATTACK_MS;
 use super::consts::FAST_RELEASE_MS;
@@ -11,7 +10,7 @@ use super::types::TransientShaperPluginParams;
 use crate::params::PARAMS as TS;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::find_by_key as pk;
-use sotf_host::parameters::{Parameter, ParameterImportance};
+use sotf_host::parameters::{Parameter, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::plugin::{
@@ -44,11 +43,16 @@ pub struct TransientShaperPlugin {
     // Smoothers
     pub(super) attack_smoother: Smoother,
     pub(super) sustain_smoother: Smoother,
+    pub(super) sensitivity_smoother: Smoother,
+    pub(super) output_gain_smoother: Smoother,
     pub(super) mix_smoother: Smoother,
 
     // Monitoring
     pub(super) cache: RealTimeCache<TransientShaperData>,
-    pub(super) cache_counter: usize,
+    pub(super) cache_samples: usize,
+    pub(super) monitor_peak_transient: f32,
+    pub(super) monitor_peak_sustain: f32,
+    pub(super) monitor_extreme_gain: f32,
 
     pub(super) cached_parameters: Vec<Parameter>,
 }
@@ -72,9 +76,14 @@ impl TransientShaperPlugin {
             slow_release_coeff: time_to_coeff(SLOW_RELEASE_MS, sr),
             attack_smoother: Smoother::new(0.0, 10.0, sr),
             sustain_smoother: Smoother::new(0.0, 10.0, sr),
+            sensitivity_smoother: Smoother::new(Self::sensitivity_threshold(0.0), 10.0, sr),
+            output_gain_smoother: Smoother::new(Self::db_to_linear(0.0), 10.0, sr),
             mix_smoother: Smoother::new(1.0, 5.0, sr),
             cache: RealTimeCache::new(TransientShaperData::default()),
-            cache_counter: 0,
+            cache_samples: 0,
+            monitor_peak_transient: 0.0,
+            monitor_peak_sustain: 0.0,
+            monitor_extreme_gain: 1.0,
             cached_parameters: Vec::new(),
         };
         p.rebuild_cached_parameters();
@@ -88,11 +97,44 @@ impl TransientShaperPlugin {
         p.sensitivity_db = params.sensitivity_db.clamp(-12.0, 12.0);
         p.output_gain_db = params.output_gain_db.clamp(-12.0, 12.0);
         p.mix = params.mix.clamp(0.0, 1.0);
-        p.attack_smoother.set_target(p.attack_amount);
-        p.sustain_smoother.set_target(p.sustain_amount);
-        p.mix_smoother.set_target(p.mix);
+        p.attack_smoother.reset(p.attack_amount);
+        p.sustain_smoother.reset(p.sustain_amount);
+        p.sensitivity_smoother
+            .reset(Self::sensitivity_threshold(p.sensitivity_db));
+        p.output_gain_smoother
+            .reset(Self::db_to_linear(p.output_gain_db));
+        p.mix_smoother.reset(p.mix);
         p.rebuild_cached_parameters();
         p
+    }
+
+    pub fn try_from_params(
+        channels: usize,
+        params: TransientShaperPluginParams,
+    ) -> PluginResult<Self> {
+        if channels == 0 {
+            return Err("Transient Shaper requires at least one channel".to_string());
+        }
+        let ranges = [
+            ("attack", params.attack, -100.0, 100.0),
+            ("sustain", params.sustain, -100.0, 100.0),
+            ("sensitivity_db", params.sensitivity_db, -12.0, 12.0),
+            ("output_gain_db", params.output_gain_db, -12.0, 12.0),
+            ("mix", params.mix, 0.0, 1.0),
+        ];
+        for (name, value, min, max) in ranges {
+            if !value.is_finite() || !(min..=max).contains(&value) {
+                return Err(format!(
+                    "Invalid Transient Shaper {name}: expected finite value in {min}..={max}, got {value}"
+                ));
+            }
+        }
+        Ok(Self::from_params(channels, params))
+    }
+
+    #[inline]
+    pub(super) fn attack_component(fast: f32, slow: f32) -> f32 {
+        (fast - slow).max(0.0)
     }
 
     pub(super) fn update_coefficients(&mut self) {
@@ -156,11 +198,41 @@ impl TransientShaperPlugin {
             .with_importance(ParameterImportance::Useful),
         ];
     }
+
+    fn update_cached_parameter(&mut self, id: &str, value: &ParameterValue) {
+        if let Some(parameter) = self
+            .cached_parameters
+            .iter_mut()
+            .find(|parameter| parameter.id.as_str() == id)
+        {
+            parameter.default_value = value.clone();
+        }
+    }
+
+    #[inline]
+    fn db_to_linear(db: f32) -> f32 {
+        10.0_f32.powf(db / 20.0)
+    }
+
+    #[inline]
+    fn sensitivity_threshold(db: f32) -> f32 {
+        Self::db_to_linear(db) * 1.0e-3
+    }
+
+    #[inline]
+    fn protected_peak(peak: f32) -> f32 {
+        if peak <= 1.0 {
+            peak
+        } else {
+            let excess = peak - 1.0;
+            1.0 + excess / (1.0 + excess)
+        }
+    }
 }
 
 impl ParametricInPlacePlugin for TransientShaperPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("TransientShaper", "1.0.0", "SotF")
+        PluginInfo::new("TransientShaper", env!("CARGO_PKG_VERSION"), "SotF")
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -211,6 +283,8 @@ impl ParametricInPlacePlugin for TransientShaperPlugin {
                         && v.is_finite()
                     {
                         self.sensitivity_db = v.clamp(-12.0, 12.0);
+                        self.sensitivity_smoother
+                            .set_target(Self::sensitivity_threshold(self.sensitivity_db));
                     }
                 }
                 "output_gain" => {
@@ -218,6 +292,8 @@ impl ParametricInPlacePlugin for TransientShaperPlugin {
                         && v.is_finite()
                     {
                         self.output_gain_db = v.clamp(-12.0, 12.0);
+                        self.output_gain_smoother
+                            .set_target(Self::db_to_linear(self.output_gain_db));
                     }
                 }
                 "mix" => {
@@ -230,16 +306,21 @@ impl ParametricInPlacePlugin for TransientShaperPlugin {
                 }
                 _ => return Err(format!("Unknown parameter: {}", id)),
             }
+            self.update_cached_parameter(id.as_str(), &value);
         }
-        self.rebuild_cached_parameters();
         Ok(())
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("Transient Shaper sample rate must be greater than zero".to_string());
+        }
         self.sample_rate = sample_rate;
         self.update_coefficients();
         self.attack_smoother.set_time(10.0, sample_rate);
         self.sustain_smoother.set_time(10.0, sample_rate);
+        self.sensitivity_smoother.set_time(10.0, sample_rate);
+        self.output_gain_smoother.set_time(10.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
         Ok(())
     }
@@ -251,8 +332,15 @@ impl ParametricInPlacePlugin for TransientShaperPlugin {
         // doesn't inherit a mid-ramp state from before the reset.
         self.attack_smoother.reset(self.attack_amount);
         self.sustain_smoother.reset(self.sustain_amount);
+        self.sensitivity_smoother
+            .reset(Self::sensitivity_threshold(self.sensitivity_db));
+        self.output_gain_smoother
+            .reset(Self::db_to_linear(self.output_gain_db));
         self.mix_smoother.reset(self.mix);
-        self.cache_counter = 0;
+        self.cache_samples = 0;
+        self.monitor_peak_transient = 0.0;
+        self.monitor_peak_sustain = 0.0;
+        self.monitor_extreme_gain = 1.0;
     }
 
     fn process_in_place(
@@ -263,40 +351,33 @@ impl ParametricInPlacePlugin for TransientShaperPlugin {
         enable_ftz_daz();
         let num_frames = context.num_frames;
         let ch = self.channels;
-
-        // Sensitivity: threshold for gain modulation activation.
-        // sensitivity_db = 0 → threshold at -60 dBFS reference (1e-3 linear).
-        // Positive values raise the threshold (only loud signals are shaped);
-        // negative values lower it (even quiet signals are shaped).
-        // Because the ratios used for shaping cancel out any uniform envelope
-        // scaling, we implement sensitivity as a threshold gate: gain modulation
-        // is only applied when the slow envelope exceeds this threshold.
-        let threshold_lin = 10.0f32.powf(self.sensitivity_db / 20.0) * 1e-3;
-
-        // Pre-compute output gain (linear multiplier from dB).
-        // Applied to the final mixed output so it acts as true makeup gain
-        // regardless of the dry/wet mix setting.
-        let output_gain_lin = 10.0f32.powf(self.output_gain_db / 20.0);
+        let sample_len = num_frames
+            .checked_mul(ch)
+            .ok_or_else(|| "Transient Shaper block sample count overflow".to_string())?;
+        if buffer.len() != sample_len {
+            return Err(format!(
+                "Transient Shaper buffer size mismatch: expected {sample_len} samples, got {}",
+                buffer.len()
+            ));
+        }
 
         // Hoist env slice references to help the compiler promote them into
         // registers and avoid repeated &mut self borrows inside the inner loop.
         let fast_env = &mut self.fast_env;
         let slow_env = &mut self.slow_env;
 
-        // Monitoring accumulators
-        let mut peak_transient: f32 = 0.0;
-        let mut peak_sustain: f32 = 0.0;
-        let mut last_gain: f32 = 1.0;
-
         for frame in 0..num_frames {
             let attack_amt = self.attack_smoother.advance();
             let sustain_amt = self.sustain_smoother.advance();
+            let threshold_lin = self.sensitivity_smoother.advance();
+            let output_gain_lin = self.output_gain_smoother.advance();
             let current_mix = self.mix_smoother.advance();
 
+            let mut linked_fast = 0.0_f32;
+            let mut linked_slow = 0.0_f32;
             for c in 0..ch {
                 let idx = frame * ch + c;
-                let input = buffer[idx];
-                let abs_input = input.abs();
+                let abs_input = buffer[idx].abs();
 
                 // Fast envelope (tracks transients)
                 fast_env[c] = one_pole(
@@ -313,34 +394,52 @@ impl ParametricInPlacePlugin for TransientShaperPlugin {
                     self.slow_attack_coeff,
                     self.slow_release_coeff,
                 );
+                linked_fast = linked_fast.max(fast_env[c]);
+                linked_slow = linked_slow.max(slow_env[c]);
+            }
 
-                let fast = fast_env[c];
-                let slow = slow_env[c];
+            // One linked detector gain preserves inter-channel ratios and image.
+            let transient = Self::attack_component(linked_fast, linked_slow);
+            let gain = if linked_slow > threshold_lin {
+                let transient_ratio = (transient / linked_slow.max(EPSILON)).clamp(0.0, 1.0);
+                let sustain_ratio = (linked_slow / linked_fast.max(EPSILON)).clamp(0.0, 1.0);
+                (1.0 + attack_amt * transient_ratio + sustain_amt * sustain_ratio).clamp(0.25, 4.0)
+            } else {
+                1.0
+            };
+            let mixed_gain = (1.0 + current_mix * (gain - 1.0)) * output_gain_lin;
+            let frame_peak = (0..ch)
+                .map(|c| buffer[frame * ch + c].abs() * mixed_gain)
+                .fold(0.0_f32, f32::max);
+            let safety_gain = if mixed_gain > 1.0 && frame_peak > 1.0 {
+                Self::protected_peak(frame_peak) / frame_peak
+            } else {
+                1.0
+            };
+            for c in 0..ch {
+                buffer[frame * ch + c] *= mixed_gain * safety_gain;
+            }
 
-                // Transient = difference between fast and slow envelopes
-                let transient = fast - slow;
-                // Sustain = slow envelope
-                let sustain = slow;
-
-                // Compute gain modulation, gated by sensitivity threshold.
-                // When signal is below threshold, shaping is bypassed (gain = 1.0).
-                let gain: f32 = if slow > threshold_lin {
-                    let transient_ratio = (transient / slow.max(EPSILON)).clamp(-1.0, 1.0);
-                    let sustain_ratio = (sustain / fast.max(EPSILON)).clamp(-1.0, 1.0);
-                    (1.0 + attack_amt * transient_ratio + sustain_amt * sustain_ratio).max(0.0)
-                } else {
-                    1.0
-                };
-
-                let wet = input * gain;
-                // Apply dry/wet mix, then apply output gain to the full mixed
-                // output so it acts as true makeup gain at any mix setting.
-                buffer[idx] = (input + current_mix * (wet - input)) * output_gain_lin;
-
-                // Update monitoring — use max across channels for consistency.
-                peak_transient = peak_transient.max(transient.abs());
-                peak_sustain = peak_sustain.max(sustain);
-                last_gain = last_gain.max(gain);
+            self.monitor_peak_transient = self.monitor_peak_transient.max(transient);
+            self.monitor_peak_sustain = self.monitor_peak_sustain.max(linked_slow);
+            if (gain - 1.0).abs() > (self.monitor_extreme_gain - 1.0).abs() {
+                self.monitor_extreme_gain = gain;
+            }
+            self.cache_samples += 1;
+            let cache_interval = (self.sample_rate as usize / 30).max(1);
+            if self.cache_samples >= cache_interval {
+                let peak_transient = self.monitor_peak_transient;
+                let peak_sustain = self.monitor_peak_sustain;
+                let extreme_gain = self.monitor_extreme_gain;
+                self.cache.update(|data| {
+                    data.transient_level = peak_transient;
+                    data.sustain_level = peak_sustain;
+                    data.gain = extreme_gain;
+                });
+                self.cache_samples -= cache_interval;
+                self.monitor_peak_transient = 0.0;
+                self.monitor_peak_sustain = 0.0;
+                self.monitor_extreme_gain = 1.0;
             }
         }
 
@@ -354,18 +453,7 @@ impl ParametricInPlacePlugin for TransientShaperPlugin {
             }
         }
 
-        // Update monitoring cache (throttled)
-        self.cache_counter += 1;
-        if self.cache_counter >= CACHE_UPDATE_THROTTLE {
-            self.cache_counter = 0;
-            self.cache.update(|d| {
-                d.transient_level = peak_transient;
-                d.sustain_level = peak_sustain;
-                d.gain = last_gain;
-            });
-        }
-
-        flush_denormals_inplace(buffer);
+        flush_denormals_inplace(&mut buffer[..sample_len]);
         Ok(num_frames)
     }
 }

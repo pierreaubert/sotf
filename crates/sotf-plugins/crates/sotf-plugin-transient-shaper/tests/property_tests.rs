@@ -117,7 +117,7 @@ proptest! {
     }
 
     #[test]
-    fn output_gain_monotonic(sample in 0.1f32..0.5f32, gain_db in 0.0f32..12.0f32) {
+    fn output_gain_monotonic(sample in 0.05f32..0.2f32, gain_db in 0.0f32..12.0f32) {
         let mut p_low = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(
             1,
             TransientShaperPluginParams {

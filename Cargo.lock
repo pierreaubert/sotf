@@ -10901,7 +10901,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-transient-shaper"
-version = "0.5.5"
+version = "0.5.9"
 dependencies = [
  "proptest 1.11.0",
  "serde",

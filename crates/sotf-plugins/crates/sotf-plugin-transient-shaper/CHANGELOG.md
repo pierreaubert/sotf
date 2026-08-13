@@ -1,3 +1,42 @@
+# 0.5.9
+
+## Review remediation
+
+- Smooth sensitivity thresholds and output gains as linear coefficients per sample,
+  avoiding transcendental work in the callback loop, and verify rendered output is
+  invariant to callback partitioning.
+- Link envelope detection across channels so asymmetric transients retain their
+  inter-channel gain ratio.
+- Replace the callback-count meter throttle with a 30 Hz sample-derived window
+  that accumulates extrema and reports attenuation-only shaping.
+- Bound shaping gain and apply a linked soft peak ceiling only to plugin-generated
+  boosts, without moving the stereo image or changing neutral overrange passthrough.
+- Reuse the cached parameter schema storage during updates instead of rebuilding
+  and allocating the full schema.
+- Document the implemented shape detector and sensitivity gate accurately, and
+  add exact oversized-buffer rejection before state mutation.
+
+# 0.5.8
+
+## Fixes (2026-08-12 review follow-up)
+
+- Route the shared facade factory through the validated constructor so zero
+  channels and non-finite or out-of-range preset values are rejected instead
+  of silently clamped.
+
+# 0.5.7
+
+## Fixes (2026-08-12 review remediation)
+
+- Attack shaping now uses only the positive fast-minus-slow envelope component, so the Attack
+  control no longer applies inverted gain to decay tails.
+- Gain monitoring now reports the largest absolute gain deviation, including attenuation-only
+  blocks.
+- Added fallible validated construction and routed the plugin bridge factory through it, rejecting
+  zero channels and non-finite/out-of-range parameters.
+- Initialization rejects zero sample rate; processing checks sample-count overflow and buffer
+  length before advancing state and limits denormal flushing to the active region.
+
 # 0.5.6
 
 ## Fixed

@@ -1,7 +1,5 @@
 pub(super) const EPSILON: f32 = 1e-10;
 
-pub(super) const CACHE_UPDATE_THROTTLE: usize = 10;
-
 pub(super) const FAST_ATTACK_MS: f32 = 0.1;
 
 pub(super) const FAST_RELEASE_MS: f32 = 5.0;

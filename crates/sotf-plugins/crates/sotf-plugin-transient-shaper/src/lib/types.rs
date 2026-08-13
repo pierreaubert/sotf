@@ -19,6 +19,18 @@ pub struct TransientShaperPluginParams {
     pub mix: f32,
 }
 
+impl Default for TransientShaperPluginParams {
+    fn default() -> Self {
+        Self {
+            attack: default_attack(),
+            sustain: default_sustain(),
+            sensitivity_db: default_sensitivity_db(),
+            output_gain_db: default_output_gain_db(),
+            mix: default_mix(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
