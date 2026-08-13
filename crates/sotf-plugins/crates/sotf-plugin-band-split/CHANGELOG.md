@@ -1,3 +1,41 @@
+# 0.5.5
+
+## Fixes (2026-08-12 review closure)
+
+- Bound frequency-dependent IIR redesign to a persistent 6 kHz control rate
+  while retaining audio-rate logarithmic smoothing and exact callback-partition
+  invariance. The LR24/LR48 regression requires under 2% relative RMS error
+  against audio-rate coefficient design and under 0.01 RMS zipper residual.
+- Make successful live frequency/gain setters allocation-free, keep LR24/LR48
+  structural, and align parameter update metadata with those contracts.
+- Add independent LR24/LR48 slope/complementarity, impulse magnitude/phase,
+  deterministic noise reconstruction, multiband/sample-rate, 12-channel
+  isolation, reset, malformed-context, and worst-case deadline coverage.
+- Reject unknown persisted fields/crossover types and require initialized,
+  sample-rate-matched processing.
+- Keep engine channel topology in the graph contract rather than serializing it as an unknown Band Split runtime parameter.
+
+# 0.5.4
+
+## Fixes
+
+- Reject channel-count multiplication overflow before allocating split-band scratch storage and use checked output sizing in processing.
+
+# 0.5.3
+
+## Fixes (from code review 2026-08-12)
+
+- Validate crossover topology at construction, initialization, and parameter updates: values must
+  be finite, within the declared/sample-rate-aware range, and strictly ascending.
+- Validate exact checked input/output sample counts before processing, returning errors instead of
+  panicking on malformed host buffers.
+- Treat LR24/LR48 selection as structural after initialization, avoiding allocation and filter-state
+  reset on a live parameter path.
+- Reject non-finite/out-of-range dynamic gain and frequency values transactionally.
+- Reset frequency smoothers and crossover coefficients to their targets for deterministic transport
+  resets while retaining allocation-free steady-state processing.
+- Qualify documentation for cascaded multiband phase/reconstruction behavior.
+
 # 0.5.2
 
 ## Fixes

@@ -11,12 +11,22 @@ use sotf_host::plugin::{
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::{LinearSmoother, LogSmoother};
 
+/// Redesign IIR coefficients at 6 kHz rather than at audio rate. Frequency
+/// targets still follow the per-sample logarithmic smoother; the crossover
+/// receives stable, bounded-rate snapshots whose phase persists across host
+/// callback boundaries.
+pub(super) const COEFFICIENT_UPDATE_INTERVAL: usize = 8;
+
 pub struct BandSplitPlugin {
     pub(super) input_channels: usize,
     pub(super) sample_rate: u32,
     pub(super) num_bands: usize,
     pub(super) crossover: CrossoverMode,
     pub(super) freq_smoothers: Vec<LogSmoother>,
+    pub(super) applied_frequencies: Vec<f32>,
+    pub(super) coefficient_update_countdown: usize,
+    #[cfg(test)]
+    pub(super) coefficient_update_count: usize,
     /// Per-band gain in dB (one per band, up to MAX_BANDS). Default 0.0 dB.
     pub(super) band_gains_db: [f32; MAX_BANDS],
     /// Pre-computed linear multipliers from band_gains_db (target, for reference).
@@ -33,9 +43,19 @@ pub struct BandSplitPlugin {
     pub(super) band_gain_param_keys: Vec<(ParameterId, String)>,
     /// Pre-allocated flat scratch buffer: [num_bands * input_channels] for per-frame band output.
     pub(super) band_flat: Vec<f32>,
+    pub(super) initialized: bool,
 }
 
 impl BandSplitPlugin {
+    pub(super) fn checked_output_channels(
+        input_channels: usize,
+        num_bands: usize,
+    ) -> Result<usize, String> {
+        input_channels
+            .checked_mul(num_bands)
+            .ok_or_else(|| "BandSplit channel count overflow".to_string())
+    }
+
     pub fn new(
         input_channels: usize,
         frequency: f64,
@@ -59,6 +79,18 @@ impl BandSplitPlugin {
                 MAX_BANDS
             ));
         }
+        if input_channels == 0 {
+            return Err("input_channels must be greater than zero".to_string());
+        }
+        if !CROSSOVER_TYPES
+            .iter()
+            .any(|kind| kind.eq_ignore_ascii_case(crossover_type))
+        {
+            return Err(format!(
+                "unsupported crossover type {crossover_type:?}; expected LR24 or LR48"
+            ));
+        }
+        Self::validate_frequencies(frequencies, 48_000)?;
         let sr = 48000;
         let freq_f32: Vec<f32> = frequencies.iter().map(|&f| f as f32).collect();
 
@@ -68,6 +100,7 @@ impl BandSplitPlugin {
             .collect();
 
         let num_bands = frequencies.len() + 1;
+        let output_channels = Self::checked_output_channels(input_channels, num_bands)?;
 
         // Per-band gain smoothers at unity (0 dB → linear 1.0), 20 ms smoothing.
         let gain_smoothers = [
@@ -87,6 +120,10 @@ impl BandSplitPlugin {
             num_bands,
             crossover: CrossoverMode::new(&freq_f32, sr, input_channels, crossover_type_index),
             freq_smoothers: smoothers,
+            applied_frequencies: freq_f32,
+            coefficient_update_countdown: 0,
+            #[cfg(test)]
+            coefficient_update_count: 0,
             band_gains_db: [0.0; MAX_BANDS],
             band_gains_linear: [1.0; MAX_BANDS],
             band_gain_smoothers: gain_smoothers,
@@ -94,10 +131,50 @@ impl BandSplitPlugin {
             cached_parameters: Vec::new(),
             dynamic_param_keys,
             band_gain_param_keys,
-            band_flat: vec![0.0f32; num_bands * input_channels],
+            band_flat: vec![0.0f32; output_channels],
+            initialized: false,
         };
         p.rebuild_cached_parameters();
         Ok(p)
+    }
+
+    fn validate_frequencies(frequencies: &[f64], sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("sample rate must be greater than zero".to_string());
+        }
+        let max_frequency = (sample_rate as f64 * 0.49).min(20_000.0);
+        let mut previous = 0.0;
+        for (index, &frequency) in frequencies.iter().enumerate() {
+            if !frequency.is_finite() || frequency < 20.0 || frequency > max_frequency {
+                return Err(format!(
+                    "frequency {} must be finite and within 20..={max_frequency} Hz",
+                    index + 1
+                ));
+            }
+            if index > 0 && frequency <= previous {
+                return Err("crossover frequencies must be strictly ascending".to_string());
+            }
+            previous = frequency;
+        }
+        Ok(())
+    }
+
+    fn validate_frequency_target(&self, index: usize, frequency: f32) -> PluginResult<()> {
+        let max_frequency = (self.sample_rate as f32 * 0.49).min(20_000.0);
+        if !frequency.is_finite() || frequency < 20.0 || frequency > max_frequency {
+            return Err(format!(
+                "frequency must be finite and within 20..={max_frequency} Hz"
+            ));
+        }
+        if index > 0 && frequency <= self.freq_smoothers[index - 1].target() {
+            return Err("frequency must be above the previous crossover".to_string());
+        }
+        if index + 1 < self.freq_smoothers.len()
+            && frequency >= self.freq_smoothers[index + 1].target()
+        {
+            return Err("frequency must be below the next crossover".to_string());
+        }
+        Ok(())
     }
 
     #[allow(
@@ -219,17 +296,28 @@ impl BandSplitPlugin {
         }
         self.cached_parameters = params;
     }
+
+    fn update_cached_parameter(&mut self, id: &ParameterId, value: ParameterValue) {
+        if let Some(parameter) = self
+            .cached_parameters
+            .iter_mut()
+            .find(|parameter| parameter.id == *id)
+        {
+            parameter.default_value = value;
+        }
+    }
 }
 
 impl Plugin for BandSplitPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("BandSplit", "2.1.0", "Sotf")
+        PluginInfo::new("BandSplit", env!("CARGO_PKG_VERSION"), "Sotf")
     }
     fn input_channels(&self) -> usize {
         self.input_channels
     }
     fn output_channels(&self) -> usize {
-        self.input_channels * self.num_bands
+        Self::checked_output_channels(self.input_channels, self.num_bands)
+            .expect("validated BandSplit channel count")
     }
     fn compile_metadata(&self) -> PluginCompileMetadata {
         let mut metadata = PluginCompileMetadata::linear_transform(
@@ -250,10 +338,34 @@ impl Plugin for BandSplitPlugin {
         let name = &id.0;
         let previous_crossover_type = self.crossover_type_index;
 
-        // Try static PARAMS first (frequency at index 0, crossover_type at index 1)
-        if let Ok(idx) =
-            param_bridge::set_parameter(BS, &id, &value, |i, v| self.set_param_value(i, v))
+        if id.as_str() == "crossover_type" && self.initialized {
+            let requested = value
+                .as_int()
+                .ok_or_else(|| "crossover_type must be a choice index".to_string())?;
+            if !(0..CROSSOVER_TYPES.len() as i32).contains(&requested) {
+                return Err("crossover_type choice index is out of range".to_string());
+            }
+            if requested as usize == self.crossover_type_index {
+                return Ok(());
+            }
+            return Err("crossover_type is structural; rebuild the plugin".to_string());
+        }
+        if id.as_str() == "crossover_type"
+            && !matches!(value, ParameterValue::Int(index) if (0..CROSSOVER_TYPES.len() as i32).contains(&index))
         {
+            return Err("crossover_type must be an LR24/LR48 choice index (0 or 1)".to_string());
+        }
+        if id.as_str() == "frequency" {
+            let frequency = value
+                .as_float()
+                .ok_or_else(|| "frequency must be a float".to_string())?;
+            self.validate_frequency_target(0, frequency)?;
+        }
+
+        // Try static PARAMS first (frequency at index 0, crossover_type at index 1)
+        if BS.iter().any(|spec| spec.engine_key == id.as_str()) {
+            let idx =
+                param_bridge::set_parameter(BS, &id, &value, |i, v| self.set_param_value(i, v))?;
             // Side effect: frequency change needs to propagate to crossover
             if idx == 0 {
                 // frequency was already set via set_param_value -> smoother.set_target
@@ -266,7 +378,7 @@ impl Plugin for BandSplitPlugin {
                     self.crossover_type_index,
                 );
             }
-            self.rebuild_cached_parameters();
+            self.update_cached_parameter(&id, value);
             return Ok(());
         }
 
@@ -279,14 +391,14 @@ impl Plugin for BandSplitPlugin {
             let v = value
                 .as_float()
                 .ok_or_else(|| "band gain must be a float".to_string())?;
-            if v.is_finite() {
-                self.band_gains_db[band_idx] = v.clamp(-24.0, 24.0);
-                let linear = 10.0f32.powf(self.band_gains_db[band_idx] / 20.0);
-                self.band_gains_linear[band_idx] = linear;
-                // Schedule a smooth ramp to the new gain — prevents zipper noise.
-                self.band_gain_smoothers[band_idx].set_target(linear);
-                self.rebuild_cached_parameters();
+            if !v.is_finite() || !(-24.0..=24.0).contains(&v) {
+                return Err("band gain must be finite and within -24..=24 dB".to_string());
             }
+            self.band_gains_db[band_idx] = v;
+            let linear = 10.0f32.powf(v / 20.0);
+            self.band_gains_linear[band_idx] = linear;
+            self.band_gain_smoothers[band_idx].set_target(linear);
+            self.update_cached_parameter(&id, ParameterValue::Float(v));
             return Ok(());
         }
 
@@ -294,15 +406,16 @@ impl Plugin for BandSplitPlugin {
         if let Some(suffix) = name.strip_prefix("frequency_")
             && let Ok(n) = suffix.parse::<usize>()
         {
-            let i = n - 1;
+            let Some(i) = n.checked_sub(1) else {
+                return Err(format!("Unknown parameter: {id}"));
+            };
             if i < self.freq_smoothers.len() {
                 let v = value
                     .as_float()
                     .ok_or_else(|| "frequency must be a float".to_string())?;
-                if v.is_finite() {
-                    self.freq_smoothers[i].set_target(v);
-                    self.rebuild_cached_parameters();
-                }
+                self.validate_frequency_target(i, v)?;
+                self.freq_smoothers[i].set_target(v);
+                self.update_cached_parameter(&id, ParameterValue::Float(v));
                 return Ok(());
             }
         }
@@ -330,7 +443,7 @@ impl Plugin for BandSplitPlugin {
         if let Some(suffix) = name.strip_prefix("frequency_")
             && let Ok(n) = suffix.parse::<usize>()
         {
-            let i = n - 1;
+            let i = n.checked_sub(1)?;
             if i < self.freq_smoothers.len() {
                 return Some(ParameterValue::Float(self.freq_smoothers[i].target()));
             }
@@ -339,6 +452,12 @@ impl Plugin for BandSplitPlugin {
         None
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        let frequencies: Vec<f64> = self
+            .freq_smoothers
+            .iter()
+            .map(|s| s.target() as f64)
+            .collect();
+        Self::validate_frequencies(&frequencies, sample_rate)?;
         self.sample_rate = sample_rate;
         let freqs: Vec<f32> = self.freq_smoothers.iter().map(|s| s.target()).collect();
         for s in &mut self.freq_smoothers {
@@ -353,6 +472,13 @@ impl Plugin for BandSplitPlugin {
             self.input_channels,
             self.crossover_type_index,
         );
+        self.applied_frequencies.copy_from_slice(&freqs);
+        self.coefficient_update_countdown = 0;
+        #[cfg(test)]
+        {
+            self.coefficient_update_count = 0;
+        }
+        self.initialized = true;
         Ok(())
     }
     fn reset(&mut self) {
@@ -360,6 +486,13 @@ impl Plugin for BandSplitPlugin {
         for (i, s) in self.band_gain_smoothers.iter_mut().enumerate() {
             s.reset(self.band_gains_linear[i]);
         }
+        for (i, smoother) in self.freq_smoothers.iter_mut().enumerate() {
+            let target = smoother.target();
+            smoother.reset(target);
+            self.crossover.set_frequency(i, target);
+            self.applied_frequencies[i] = target;
+        }
+        self.coefficient_update_countdown = 0;
     }
 
     fn process(
@@ -368,23 +501,65 @@ impl Plugin for BandSplitPlugin {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
+        if !self.initialized {
+            return Err("BandSplit must be initialized before processing".to_string());
+        }
+        if context.sample_rate != self.sample_rate {
+            return Err(format!(
+                "BandSplit context rate {} Hz differs from initialized rate {} Hz",
+                context.sample_rate, self.sample_rate
+            ));
+        }
         enable_ftz_daz();
         let num_frames = context.num_frames;
         let in_ch = self.input_channels;
-        let out_ch = in_ch * self.num_bands;
+        let out_ch = Self::checked_output_channels(in_ch, self.num_bands)?;
         let nb = self.num_bands;
+        let expected_input = num_frames
+            .checked_mul(in_ch)
+            .ok_or_else(|| "BandSplit input buffer size overflow".to_string())?;
+        let expected_output = num_frames
+            .checked_mul(out_ch)
+            .ok_or_else(|| "BandSplit output buffer size overflow".to_string())?;
+        if input.len() != expected_input {
+            return Err(format!(
+                "BandSplit input length mismatch: expected {expected_input}, got {}",
+                input.len()
+            ));
+        }
+        if output.len() != expected_output {
+            return Err(format!(
+                "BandSplit output length mismatch: expected {expected_output}, got {}",
+                output.len()
+            ));
+        }
 
         for frame in 0..num_frames {
             let in_off = frame * in_ch;
             let out_off = frame * out_ch;
             let frame_input = &input[in_off..in_off + in_ch];
 
-            // Per-sample frequency smoothing: advance each smoother by one sample and
-            // update the crossover coefficients. This prevents step discontinuities
-            // (clicks/warbling) when the crossover frequency is automated.
-            for (i, smoother) in self.freq_smoothers.iter_mut().enumerate() {
-                let freq = smoother.advance();
-                self.crossover.set_frequency(i, freq);
+            // Advance parameter smoothing at audio rate, but redesign IIR
+            // coefficients only at the bounded control rate. The countdown is
+            // persistent, so the trajectory is independent of host partitioning.
+            for smoother in &mut self.freq_smoothers {
+                smoother.advance();
+            }
+            if self.coefficient_update_countdown == 0 {
+                for i in 0..self.freq_smoothers.len() {
+                    let frequency = self.freq_smoothers[i].current();
+                    if frequency != self.applied_frequencies[i] {
+                        self.crossover.set_frequency(i, frequency);
+                        self.applied_frequencies[i] = frequency;
+                        #[cfg(test)]
+                        {
+                            self.coefficient_update_count += 1;
+                        }
+                    }
+                }
+                self.coefficient_update_countdown = COEFFICIENT_UPDATE_INTERVAL - 1;
+            } else {
+                self.coefficient_update_countdown -= 1;
             }
 
             // Build mutable slice refs from pre-allocated flat buffer using split_at_mut

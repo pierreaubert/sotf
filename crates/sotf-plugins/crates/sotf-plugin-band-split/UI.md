@@ -27,7 +27,7 @@ Section title: "CROSSOVER"
 
 | Parameter | Control | Param Index | Range | Unit | Notes |
 |-----------|---------|-------------|-------|------|-------|
-| Frequency | Knob | 0 | 20–20000 | Hz | Crossover frequency (structural — rebuilds filters) |
+| Frequency | Knob | 0 | 20–20000 | Hz | Realtime-smoothed; Nyquist-aware validation |
 | Type | Button pair (LR24/LR48) | 1 | 0=LR24, 1=LR48 | — | Toggle between crossover slopes (structural — rebuilds plugin) |
 
 ### Type Button Behavior

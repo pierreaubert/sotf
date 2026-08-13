@@ -12,6 +12,67 @@ use sotf_plugin_band_split::BandSplitPlugin;
 const SR: u32 = 48000;
 const FRAMES: usize = 256;
 
+fn settled_band_amplitudes(
+    sample_rate: u32,
+    crossover_type: &str,
+    frequencies: &[f64],
+    tone_hz: f32,
+) -> Vec<f32> {
+    let frames = sample_rate as usize / 2;
+    let mut plugin = BandSplitPlugin::new_multiband(1, frequencies, crossover_type).unwrap();
+    plugin.initialize(sample_rate).unwrap();
+    let input: Vec<f32> = (0..frames)
+        .map(|frame| {
+            (2.0 * std::f32::consts::PI * tone_hz * frame as f32 / sample_rate as f32).sin()
+        })
+        .collect();
+    let bands = frequencies.len() + 1;
+    let mut output = vec![0.0; frames * bands];
+    plugin
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(sample_rate, frames),
+        )
+        .unwrap();
+    let start = frames / 2;
+    (0..bands)
+        .map(|band| {
+            let power = (start..frames)
+                .map(|frame| output[frame * bands + band].powi(2))
+                .sum::<f32>()
+                / (frames - start) as f32;
+            (2.0 * power).sqrt()
+        })
+        .collect()
+}
+
+fn summed_impulse_response(kind: &str, frequencies: &[f64], frames: usize) -> Vec<f32> {
+    let bands = frequencies.len() + 1;
+    let mut plugin = BandSplitPlugin::new_multiband(1, frequencies, kind).unwrap();
+    plugin.initialize(SR).unwrap();
+    let mut input = vec![0.0; frames];
+    input[0] = 1.0;
+    let mut split = vec![0.0; frames * bands];
+    plugin
+        .process(&input, &mut split, &ProcessContext::new(SR, frames))
+        .unwrap();
+    split
+        .chunks_exact(bands)
+        .map(|frame| frame.iter().sum())
+        .collect()
+}
+
+fn dft_at(signal: &[f32], frequency: f32) -> (f32, f32) {
+    signal
+        .iter()
+        .enumerate()
+        .fold((0.0, 0.0), |(re, im), (index, sample)| {
+            let phase = -2.0 * std::f32::consts::PI * frequency * index as f32 / SR as f32;
+            (re + sample * phase.cos(), im + sample * phase.sin())
+        })
+}
+
 // ----------------------------------------------------------------------------
 // Construction and Plugin trait metadata
 // ----------------------------------------------------------------------------
@@ -92,7 +153,6 @@ fn frequency_roundtrip() {
 #[test]
 fn crossover_type_roundtrip() {
     let mut plugin = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
-    plugin.initialize(SR).unwrap();
     plugin
         .set_parameter(ParameterId::from("crossover_type"), ParameterValue::Int(1))
         .unwrap();
@@ -100,6 +160,7 @@ fn crossover_type_roundtrip() {
         plugin.get_parameter(&ParameterId::from("crossover_type")),
         Some(ParameterValue::Int(1))
     );
+    plugin.initialize(SR).unwrap();
 }
 
 #[test]
@@ -216,7 +277,7 @@ fn band_gain_attenuates_band() {
     plugin
         .set_parameter(
             ParameterId::from("band_0_gain_db"),
-            ParameterValue::Float(-60.0),
+            ParameterValue::Float(-24.0),
         )
         .unwrap();
 
@@ -323,4 +384,171 @@ fn process_with_correct_output_size_succeeds() {
         .process(&input, &mut output, &ProcessContext::new(SR, FRAMES))
         .unwrap();
     assert_eq!(frames, FRAMES);
+}
+
+#[test]
+fn two_band_response_matches_linkwitz_riley_slope_and_complementarity() {
+    for (kind, order, tolerance) in [("LR24", 4_i32, 0.025_f32), ("LR48", 8, 0.035)] {
+        for ratio in [0.5_f32, 1.0, 2.0] {
+            let amplitudes = settled_band_amplitudes(48_000, kind, &[1_000.0], 1_000.0 * ratio);
+            let ratio_power = ratio.powi(order);
+            let expected_low = 1.0 / (1.0 + ratio_power);
+            let expected_high = ratio_power / (1.0 + ratio_power);
+            assert!(
+                (amplitudes[0] - expected_low).abs() < tolerance,
+                "{kind} low response at {ratio}fc: actual={}, expected={expected_low}",
+                amplitudes[0]
+            );
+            assert!(
+                (amplitudes[1] - expected_high).abs() < tolerance,
+                "{kind} high response at {ratio}fc: actual={}, expected={expected_high}",
+                amplitudes[1]
+            );
+            assert!(
+                (amplitudes.iter().sum::<f32>() - 1.0).abs() < tolerance * 2.0,
+                "{kind} complementary magnitude failed at {ratio}fc: {amplitudes:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn multiband_response_is_finite_isolated_and_valid_across_sample_rates() {
+    for sample_rate in [32_000, 44_100, 48_000, 96_000, 192_000] {
+        for kind in ["LR24", "LR48"] {
+            for (tone, expected_band) in [(100.0, 0), (1_000.0, 1), (4_000.0, 2), (12_000.0, 3)] {
+                let amplitudes =
+                    settled_band_amplitudes(sample_rate, kind, &[500.0, 2_000.0, 8_000.0], tone);
+                assert!(amplitudes.iter().all(|value| value.is_finite()));
+                let wanted = amplitudes[expected_band];
+                let strongest_other = amplitudes
+                    .iter()
+                    .enumerate()
+                    .filter(|(band, _)| *band != expected_band)
+                    .map(|(_, value)| *value)
+                    .fold(0.0_f32, f32::max);
+                assert!(
+                    wanted > strongest_other * 2.0,
+                    "{kind} {sample_rate} Hz, tone {tone}: wrong band response {amplitudes:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn twelve_channel_processing_has_no_cross_channel_leakage() {
+    let frames = 8_192;
+    let channels = 12;
+    let bands = 4;
+    let mut plugin =
+        BandSplitPlugin::new_multiband(channels, &[500.0, 2_000.0, 8_000.0], "LR48").unwrap();
+    plugin.initialize(SR).unwrap();
+    let mut input = vec![0.0; frames * channels];
+    for frame in 0..frames {
+        input[frame * channels + 7] =
+            (2.0 * std::f32::consts::PI * 1_000.0 * frame as f32 / SR as f32).sin();
+    }
+    let mut output = vec![0.0; frames * channels * bands];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(SR, frames))
+        .unwrap();
+    for frame in 0..frames {
+        for band in 0..bands {
+            for channel in 0..channels {
+                if channel != 7 {
+                    assert_eq!(
+                        output[frame * channels * bands + band * channels + channel],
+                        0.0
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn impulse_response_characterizes_reconstruction_magnitude_and_phase() {
+    let frames = 12_288;
+    for kind in ["LR24", "LR48"] {
+        let two_band = summed_impulse_response(kind, &[1_000.0], frames);
+        let mut maximum_phase = 0.0_f32;
+        for frequency in [125.0, 250.0, 500.0, 1_000.0, 2_000.0, 4_000.0, 8_000.0] {
+            let (re, im) = dft_at(&two_band, frequency);
+            let magnitude = re.hypot(im);
+            maximum_phase = maximum_phase.max(im.atan2(re).abs());
+            assert!(
+                (magnitude - 1.0).abs() < 0.015,
+                "{kind} two-band reconstruction magnitude at {frequency} Hz: {magnitude}"
+            );
+        }
+        assert!(
+            maximum_phase > 0.5,
+            "{kind} crossover sum should expose its frequency-dependent phase, got {maximum_phase} rad"
+        );
+
+        // Cascaded multiband sums intentionally are not phase-perfect. Bound
+        // their measured broadband magnitude so future topology changes cannot
+        // silently introduce severe cancellation or gain.
+        for frequencies in [&[500.0, 2_000.0][..], &[250.0, 1_000.0, 4_000.0][..]] {
+            let response = summed_impulse_response(kind, frequencies, frames);
+            for frequency in [125.0, 250.0, 500.0, 1_000.0, 2_000.0, 4_000.0, 8_000.0] {
+                let (re, im) = dft_at(&response, frequency);
+                let magnitude = re.hypot(im);
+                assert!(
+                    (0.45..=1.05).contains(&magnitude),
+                    "{kind} {}-band summed magnitude at {frequency} Hz: {magnitude}",
+                    frequencies.len() + 1
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn deterministic_white_noise_split_sum_has_bounded_gain_and_correlation() {
+    let frames = 48_000;
+    let mut state = 0x5eed_1234_u32;
+    let input: Vec<f32> = (0..frames)
+        .map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (state as f32 / u32::MAX as f32 - 0.5) * 0.5
+        })
+        .collect();
+    for kind in ["LR24", "LR48"] {
+        for frequencies in [
+            &[1_000.0][..],
+            &[500.0, 2_000.0][..],
+            &[250.0, 1_000.0, 4_000.0][..],
+        ] {
+            let bands = frequencies.len() + 1;
+            let mut plugin = BandSplitPlugin::new_multiband(1, frequencies, kind).unwrap();
+            plugin.initialize(SR).unwrap();
+            let mut output = vec![0.0; frames * bands];
+            plugin
+                .process(&input, &mut output, &ProcessContext::new(SR, frames))
+                .unwrap();
+            let mut input_power = 0.0;
+            let mut output_power = 0.0;
+            let mut cross = 0.0;
+            for frame in 2_048..frames {
+                let dry = input[frame];
+                let sum: f32 = output[frame * bands..(frame + 1) * bands].iter().sum();
+                input_power += dry * dry;
+                output_power += sum * sum;
+                cross += dry * sum;
+            }
+            let gain = (output_power / input_power).sqrt();
+            let correlation = cross / (input_power * output_power).sqrt();
+            let gain_bounds = if bands == 2 { 0.98..=1.02 } else { 0.55..=1.05 };
+            assert!(
+                gain_bounds.contains(&gain),
+                "{kind} {bands}-band noise reconstruction gain={gain}"
+            );
+            assert!(
+                correlation.is_finite() && correlation.abs() > 0.15,
+                "{kind} {bands}-band reconstruction correlation={correlation}"
+            );
+        }
+    }
 }

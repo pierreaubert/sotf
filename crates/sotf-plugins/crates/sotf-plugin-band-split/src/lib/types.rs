@@ -4,6 +4,7 @@ use super::default::default_num_bands;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BandSplitPluginParams {
     /// Crossover frequencies. Length determines the number of bands (len + 1).
     /// For backwards compatibility, a single frequency creates 2 bands.

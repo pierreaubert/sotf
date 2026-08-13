@@ -2,7 +2,7 @@
 
 ## Overview
 
-Splits an input signal into two frequency bands (low and high) using phase-coherent Linkwitz-Riley crossover filters. The output has 2× the input channels — low bands first, then high bands. Used for parallel processing of different frequency ranges (e.g., compressing bass separately from treble).
+Splits an input signal into frequency bands using Linkwitz-Riley crossover filters. The output is band-major: every channel of band 0, then every channel of band 1, and so on. Used for parallel processing of different frequency ranges (e.g., compressing bass separately from treble).
 
 ## Features
 
@@ -83,11 +83,27 @@ Example: 2-channel stereo input → 4-channel output [low-L, low-R, high-L, high
 ## Tips & Best Practices
 
 - Always pair Band Split with Band Merge to recombine the bands after processing.
-- Linkwitz-Riley crossovers are phase-coherent — summing the bands perfectly reconstructs the original signal.
-- Frequency changes are smoothed with a LogSmoother (20 ms) for click-free transitions.
-- Filters are rebuilt when frequency drifts more than 0.1 Hz from the target.
+- A two-band Linkwitz-Riley split has complementary low/high responses. Cascaded three- and
+  four-band splits have unequal group delays and do not perfectly null against the original signal.
+- Frequency changes follow a 20 ms logarithmic smoother. Filter coefficients
+  are updated at a persistent 6 kHz control rate, avoiding audio-rate
+  trigonometric redesign while remaining independent of callback partitions.
+- Frequency automation is smoothed, while LR24/LR48 type changes require rebuilding the plugin.
 - LR48 uses 2× the CPU of LR24 due to double the filter sections.
+- Frequencies must be finite, strictly ascending, and no higher than the lower
+  of 20 kHz or 0.49 × sample rate. Invalid automation is rejected transactionally.
 - The output channel count doubles — downstream plugins must handle the increased channel count.
+
+## Host and realtime contract
+
+- Initialize before processing. Callback sample rate must match initialization,
+  and input/output buffers must have the exact overflow-checked interleaved size.
+- Invalid static or dynamic frequency updates fail transactionally. LR24/LR48
+  changes require graph replacement; an exact write of the current type is a no-op.
+- Steady processing and live frequency/band-gain setters allocate no memory.
+  Reset snaps parameter ramps and filter coefficients to their target state.
+- Two-band sums are magnitude-complementary but phase-shifted. Cascaded
+  multiband sums have unequal group delay and are not phase-perfect.
 
 ## Signal Flow
 

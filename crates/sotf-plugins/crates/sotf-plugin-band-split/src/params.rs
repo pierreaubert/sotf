@@ -31,8 +31,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Hz",
         "General",
     )
-    .structural()
-    .doc("Crossover split frequency"),
+    .doc("Log-smoothed crossover frequency with bounded-rate coefficient updates"),
     ParamSpec::choice("Type", "crossover_type", 0, CROSSOVER_TYPES, "General")
         .structural()
         .doc("Filter slope (24 or 48 dB/oct)"),
@@ -69,6 +68,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 /// the correct default function is enough to support old presets that
 /// don't have the new field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Params {
     #[serde(default = "d_frequency")]
     pub frequency: f64,
@@ -120,7 +120,7 @@ impl PluginParamDef for Params {
         match index {
             0 => self.frequency = value,
             1 => {
-                let idx = (value as usize).min(CROSSOVER_TYPES.len() - 1);
+                let idx = value.round().clamp(0.0, (CROSSOVER_TYPES.len() - 1) as f64) as usize;
                 self.crossover_type = CROSSOVER_TYPES[idx].to_string();
             }
             _ => {}
@@ -166,5 +166,18 @@ mod tests {
         let p: Params = serde_json::from_str("{}").unwrap();
         assert_eq!(p.frequency, pk(PARAMS, "frequency").default_f64());
         assert_eq!(p.crossover_type, CROSSOVER_TYPES[0]);
+    }
+
+    #[test]
+    fn update_modes_match_runtime_contract() {
+        use sotf_host::param_specs::UpdateMode;
+
+        assert_eq!(PARAMS[0].update_mode, UpdateMode::Realtime);
+        assert_eq!(PARAMS[1].update_mode, UpdateMode::Structural);
+    }
+
+    #[test]
+    fn strict_state_rejects_unknown_fields() {
+        assert!(serde_json::from_str::<Params>(r#"{"frequency":300.0,"unknown":1}"#).is_err());
     }
 }

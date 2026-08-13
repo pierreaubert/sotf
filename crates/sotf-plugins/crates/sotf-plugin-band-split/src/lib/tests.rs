@@ -1,8 +1,301 @@
 use super::band_split_plugin::BandSplitPlugin;
+use super::crossover_mode::CrossoverMode;
 use super::misc::{MAX_BANDS, parse_crossover_type_index};
 use super::types::BandSplitPluginParams;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::smoothing::LogSmoother;
+
+#[test]
+fn test_frequency_automation_uses_bounded_control_rate_and_is_partition_invariant() {
+    let mut contiguous =
+        BandSplitPlugin::new_multiband(12, &[200.0, 2_000.0, 8_000.0], "LR48").unwrap();
+    let mut partitioned =
+        BandSplitPlugin::new_multiband(12, &[200.0, 2_000.0, 8_000.0], "LR48").unwrap();
+    contiguous.initialize(48_000).unwrap();
+    partitioned.initialize(48_000).unwrap();
+    for plugin in [&mut contiguous, &mut partitioned] {
+        plugin
+            .set_parameter(ParameterId::from("frequency"), ParameterValue::Float(300.0))
+            .unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("frequency_2"),
+                ParameterValue::Float(3_000.0),
+            )
+            .unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("frequency_3"),
+                ParameterValue::Float(10_000.0),
+            )
+            .unwrap();
+    }
+
+    let frames = 2_048;
+    let input: Vec<f32> = (0..frames * 12)
+        .map(|index| (index as f32 * 0.013).sin() * 0.25)
+        .collect();
+    let mut expected = vec![0.0; frames * 48];
+    contiguous
+        .process(&input, &mut expected, &ProcessContext::new(48_000, frames))
+        .unwrap();
+
+    let mut actual = vec![0.0; frames * 48];
+    let mut frame_offset = 0;
+    for block in [1, 31, 7, 256, 3, 511, 17, 1222] {
+        let end = frame_offset + block;
+        partitioned
+            .process(
+                &input[frame_offset * 12..end * 12],
+                &mut actual[frame_offset * 48..end * 48],
+                &ProcessContext::new(48_000, block),
+            )
+            .unwrap();
+        frame_offset = end;
+    }
+    assert_eq!(frame_offset, frames);
+    assert_eq!(actual, expected);
+
+    let maximum_updates =
+        3 * (frames.div_ceil(super::band_split_plugin::COEFFICIENT_UPDATE_INTERVAL) + 1);
+    assert!(contiguous.coefficient_update_count <= maximum_updates);
+    assert!(
+        contiguous.coefficient_update_count < frames * 3 / 4,
+        "coefficient design still runs close to audio rate"
+    );
+}
+
+#[test]
+fn control_rate_automation_tracks_per_sample_reference_without_zipper_energy() {
+    let frames = 4_096;
+    let input: Vec<f32> = (0..frames)
+        .map(|frame| (2.0 * std::f32::consts::PI * 2_000.0 * frame as f32 / 48_000.0).sin())
+        .collect();
+    for (kind, kind_index) in [("LR24", 0), ("LR48", 1)] {
+        let mut plugin = BandSplitPlugin::new(1, 500.0, kind).unwrap();
+        plugin.initialize(48_000).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("frequency"),
+                ParameterValue::Float(8_000.0),
+            )
+            .unwrap();
+        let mut actual = vec![0.0; frames * 2];
+        plugin
+            .process(&input, &mut actual, &ProcessContext::new(48_000, frames))
+            .unwrap();
+
+        let mut reference = CrossoverMode::new(&[500.0], 48_000, 1, kind_index);
+        let mut smoother = LogSmoother::new(500.0, 20.0, 48_000);
+        smoother.set_target(8_000.0);
+        let mut expected = vec![0.0; frames * 2];
+        for frame in 0..frames {
+            reference.set_frequency(0, smoother.advance());
+            let mut low = [0.0];
+            let mut high = [0.0];
+            reference.process_frame(&input[frame..frame + 1], &mut [&mut low, &mut high]);
+            expected[frame * 2] = low[0];
+            expected[frame * 2 + 1] = high[0];
+        }
+
+        let reference_power = expected.iter().map(|sample| sample * sample).sum::<f32>();
+        let error_power = actual
+            .iter()
+            .zip(&expected)
+            .map(|(sample, reference)| (sample - reference).powi(2))
+            .sum::<f32>();
+        let relative_rms_error = (error_power / reference_power).sqrt();
+        assert!(
+            relative_rms_error < 0.02,
+            "{kind} control-rate response drifted from per-sample reference: {relative_rms_error}"
+        );
+
+        let zipper_power = actual
+            .chunks_exact(2)
+            .zip(expected.chunks_exact(2))
+            .map(|(actual, expected)| actual[0] + actual[1] - expected[0] - expected[1])
+            .collect::<Vec<_>>()
+            .windows(2)
+            .map(|pair| (pair[1] - pair[0]).powi(2))
+            .sum::<f32>()
+            / (frames - 1) as f32;
+        assert!(
+            zipper_power.sqrt() < 0.01,
+            "{kind} control-rate updates introduced zipper energy: {zipper_power}"
+        );
+    }
+}
+
+#[test]
+fn test_process_requires_initialization_and_matching_sample_rate() {
+    let mut plugin = BandSplitPlugin::new(1, 1_000.0, "LR24").unwrap();
+    let input = vec![0.0; 64];
+    let mut output = vec![0.0; 128];
+    assert!(
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 64))
+            .is_err()
+    );
+    plugin.initialize(48_000).unwrap();
+    assert!(
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(44_100, 64))
+            .is_err()
+    );
+}
+
+#[test]
+fn test_dynamic_frequency_zero_suffix_is_rejected_without_panicking() {
+    let mut plugin = BandSplitPlugin::new_multiband(1, &[500.0, 2_000.0], "LR24").unwrap();
+    plugin.initialize(48_000).unwrap();
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("frequency_0"),
+                ParameterValue::Float(1_000.0),
+            )
+            .is_err()
+    );
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("frequency_0")),
+        None
+    );
+}
+
+#[test]
+fn test_invalid_frequency_topologies_are_rejected() {
+    for frequencies in [
+        vec![f64::NAN],
+        vec![f64::INFINITY],
+        vec![0.0],
+        vec![-100.0],
+        vec![1000.0, 1000.0],
+        vec![2000.0, 1000.0],
+        vec![20_001.0],
+    ] {
+        assert!(BandSplitPlugin::new_multiband(2, &frequencies, "LR24").is_err());
+    }
+    assert!(BandSplitPlugin::new_multiband(0, &[1000.0], "LR24").is_err());
+    assert!(BandSplitPlugin::new_multiband(1, &[1000.0], "unknown").is_err());
+}
+
+#[test]
+fn test_channel_count_overflow_is_rejected_before_allocation() {
+    assert!(BandSplitPlugin::checked_output_channels(usize::MAX, 2).is_err());
+    assert!(BandSplitPlugin::new_multiband(usize::MAX, &[1_000.0], "LR24").is_err());
+}
+
+#[test]
+fn test_initialize_rejects_frequency_above_sample_rate_limit() {
+    let mut plugin = BandSplitPlugin::new(2, 10_000.0, "LR24").unwrap();
+    assert!(plugin.initialize(16_000).is_err());
+}
+
+#[test]
+fn test_dynamic_frequency_validation_is_transactional() {
+    let mut plugin = BandSplitPlugin::new_multiband(2, &[500.0, 2_000.0], "LR24").unwrap();
+    let before = plugin.freq_smoothers[1].target();
+    for value in [f32::NAN, 10.0, 400.0, 25_000.0] {
+        assert!(
+            plugin
+                .set_parameter(
+                    ParameterId::from("frequency_2"),
+                    ParameterValue::Float(value)
+                )
+                .is_err()
+        );
+        assert_eq!(plugin.freq_smoothers[1].target(), before);
+    }
+}
+
+#[test]
+fn test_process_rejects_wrong_buffer_lengths() {
+    let mut plugin = BandSplitPlugin::new(2, 1000.0, "LR24").unwrap();
+    plugin.initialize(48_000).unwrap();
+    let context = ProcessContext::new(48_000, 4);
+    for (input_len, output_len) in [(7, 16), (9, 16), (8, 15), (8, 17)] {
+        let input = vec![0.0; input_len];
+        let mut output = vec![0.0; output_len];
+        assert!(plugin.process(&input, &mut output, &context).is_err());
+    }
+}
+
+#[test]
+fn test_crossover_type_is_structural_after_initialize() {
+    let mut plugin = BandSplitPlugin::new(2, 1000.0, "LR24").unwrap();
+    plugin.initialize(48_000).unwrap();
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("crossover_type"), ParameterValue::Int(1))
+            .is_err()
+    );
+    assert_eq!(plugin.crossover_type_index, 0);
+    plugin
+        .set_parameter(ParameterId::from("crossover_type"), ParameterValue::Int(0))
+        .expect("an exact structural no-op must remain valid");
+}
+
+#[test]
+fn test_crossover_type_rejects_invalid_choice_before_initialize() {
+    let mut plugin = BandSplitPlugin::new(2, 1000.0, "LR24").unwrap();
+    for value in [
+        ParameterValue::Int(-1),
+        ParameterValue::Int(2),
+        ParameterValue::Float(1.0),
+    ] {
+        assert!(
+            plugin
+                .set_parameter(ParameterId::from("crossover_type"), value)
+                .is_err()
+        );
+        assert_eq!(plugin.crossover_type_index, 0);
+    }
+}
+
+#[test]
+fn reset_during_frequency_ramp_matches_fresh_target_state() {
+    let mut reset = BandSplitPlugin::new(1, 500.0, "LR48").unwrap();
+    reset.initialize(48_000).unwrap();
+    reset
+        .set_parameter(
+            ParameterId::from("frequency"),
+            ParameterValue::Float(8_000.0),
+        )
+        .unwrap();
+    let mut ramp_output = vec![0.0; 257 * 2];
+    reset
+        .process(
+            &vec![0.25; 257],
+            &mut ramp_output,
+            &ProcessContext::new(48_000, 257),
+        )
+        .unwrap();
+    reset.reset();
+
+    let mut fresh = BandSplitPlugin::new(1, 8_000.0, "LR48").unwrap();
+    fresh.initialize(48_000).unwrap();
+    let input: Vec<f32> = (0..512)
+        .map(|sample| (sample as f32 * 0.071).sin() * 0.25)
+        .collect();
+    let mut reset_output = vec![0.0; 1_024];
+    let mut fresh_output = vec![0.0; 1_024];
+    let context = ProcessContext::new(48_000, 512);
+    reset.process(&input, &mut reset_output, &context).unwrap();
+    fresh.process(&input, &mut fresh_output, &context).unwrap();
+    assert_eq!(reset_output, fresh_output);
+}
+
+#[test]
+fn plugin_info_and_compile_metadata_match_runtime_contract() {
+    let plugin = BandSplitPlugin::new_multiband(2, &[500.0, 2_000.0], "LR48").unwrap();
+    assert_eq!(plugin.info().version, env!("CARGO_PKG_VERSION"));
+    let metadata = plugin.compile_metadata();
+    assert_eq!(metadata.cost_class, sotf_host::plugin::PluginCostClass::Iir);
+    assert!(metadata.linear && metadata.stateful && metadata.boundary);
+    assert!(!metadata.channel_mixing);
+    assert_eq!(metadata.latency_samples, 0);
+}
 
 #[test]
 fn test_band_split_basic() {
@@ -446,30 +739,22 @@ fn test_set_parameter_unknown_returns_error() {
 }
 
 #[test]
-fn test_set_parameter_gain_out_of_range_is_clamped() {
+fn test_set_parameter_gain_out_of_range_is_rejected() {
     let mut p = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
     p.initialize(48000).unwrap();
-    p.set_parameter(
-        ParameterId::from("band_0_gain_db"),
-        ParameterValue::Float(100.0),
-    )
-    .unwrap();
-    let v = p
-        .get_parameter(&ParameterId::from("band_0_gain_db"))
-        .and_then(|v| v.as_float())
-        .unwrap();
-    assert!(v <= 24.0);
-
-    p.set_parameter(
-        ParameterId::from("band_0_gain_db"),
-        ParameterValue::Float(-100.0),
-    )
-    .unwrap();
-    let v2 = p
-        .get_parameter(&ParameterId::from("band_0_gain_db"))
-        .and_then(|v| v.as_float())
-        .unwrap();
-    assert!(v2 >= -24.0);
+    for value in [100.0, -100.0] {
+        assert!(
+            p.set_parameter(
+                ParameterId::from("band_0_gain_db"),
+                ParameterValue::Float(value),
+            )
+            .is_err()
+        );
+    }
+    assert_eq!(
+        p.get_parameter(&ParameterId::from("band_0_gain_db")),
+        Some(ParameterValue::Float(0.0))
+    );
 }
 
 #[test]
