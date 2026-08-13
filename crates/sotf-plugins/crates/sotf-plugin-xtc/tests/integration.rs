@@ -92,7 +92,71 @@ fn xtc_invalid_source_mode_error() {
             ParameterValue::String("invalid_mode".to_string()),
         )
         .unwrap_err();
-    assert!(err.contains("source_mode"));
+    assert!(err.contains("structural"));
+}
+
+#[test]
+fn xtc_hrtf_source_requires_an_explicit_file() {
+    let params = XtcPluginParams {
+        source_mode: "hrtf_file".to_string(),
+        ..Default::default()
+    };
+    let err = match XtcPlugin::new(params, 44_100) {
+        Ok(_) => panic!("expected missing HRTF error"),
+        Err(err) => err,
+    };
+    assert!(err.contains("requires hrtf_file"));
+}
+
+#[test]
+fn xtc_runtime_hrtf_mode_requires_a_file_before_committing() {
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 44_100).unwrap();
+    plugin.initialize(44_100).unwrap();
+
+    let err = plugin
+        .set_parameter(
+            ParameterId::from("source_mode"),
+            ParameterValue::String("hrtf_file".to_string()),
+        )
+        .unwrap_err();
+
+    assert!(err.contains("structural"));
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("source_mode")),
+        Some(ParameterValue::String("synthetic".to_string()))
+    );
+}
+
+#[test]
+fn xtc_synthetic_mode_rejects_runtime_hrtf_path_without_committing() {
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 44_100).unwrap();
+    plugin.initialize(44_100).unwrap();
+
+    let err = plugin
+        .set_parameter(
+            ParameterId::from("hrtf_file"),
+            ParameterValue::String("Cargo.toml".to_string()),
+        )
+        .unwrap_err();
+
+    assert!(err.contains("structural"));
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("hrtf_file")),
+        Some(ParameterValue::String(String::new()))
+    );
+}
+
+#[test]
+fn xtc_synthetic_source_rejects_hidden_hrtf_override() {
+    let params = XtcPluginParams {
+        hrtf_file: Some("/does/not/exist.sofa".to_string()),
+        ..Default::default()
+    };
+    let err = match XtcPlugin::new(params, 44_100) {
+        Ok(_) => panic!("expected contradictory source error"),
+        Err(err) => err,
+    };
+    assert!(err.contains("cannot be combined"));
 }
 
 #[test]

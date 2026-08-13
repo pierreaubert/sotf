@@ -47,16 +47,16 @@ pub(super) fn compute_room_reflection_data(
     sample_rate: u32,
     num_bins: usize,
     fft_forward: Option<Arc<dyn RealToComplex<f32>>>,
-) -> Option<Arc<RoomReflectionData>> {
+) -> Result<Option<Arc<RoomReflectionData>>, String> {
     if !params.room_reflections_enabled {
-        return None;
+        return Ok(None);
     }
 
     let data = if let Some(ref ir_path) = params.room_ir_file {
-        build_reflection_data_ir(ir_path, sample_rate, num_bins, fft_forward).ok()?
+        build_reflection_data_ir(ir_path, sample_rate, num_bins, fft_forward)?
     } else {
         build_reflection_data_image_source(params, sample_rate, num_bins)
     };
 
-    Some(Arc::new(data))
+    Ok(Some(Arc::new(data)))
 }

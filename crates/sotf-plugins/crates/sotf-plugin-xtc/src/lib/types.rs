@@ -6,9 +6,23 @@ use std::sync::Arc;
 pub(super) struct PendingFilterUpdate {
     pub(super) generation: u64,
     pub(super) filters: Arc<XtcFilters>,
-    pub(super) hrtf_transfer_functions: Option<HrtfTransferFunctions>,
+    pub(super) hrtf_transfer_functions: Option<Arc<HrtfTransferFunctions>>,
     pub(super) room_reflection_cache: Option<Arc<RoomReflectionData>>,
     pub(super) room_params_hash: u64,
+}
+
+pub(super) enum RetiredXtcState {
+    Filters(Arc<XtcFilters>),
+    Pending(Arc<PendingFilterUpdate>),
+}
+
+pub(super) struct FilterUpdateRequest {
+    pub(super) generation: u64,
+    pub(super) params: super::config::XtcPluginParams,
+    pub(super) sample_rate: u32,
+    pub(super) num_bins: usize,
+    pub(super) expected_output_channels: usize,
+    pub(super) fft_forward: Arc<dyn realfft::RealToComplex<f32>>,
 }
 
 #[derive(Debug, Deserialize)]

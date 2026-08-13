@@ -64,4 +64,4 @@ cargo bench -p sotf-plugin-xtc --bench xtc-validation-benchmark
 - Head shadowing is modeled as a frequency-dependent lowpass filter based on head radius and angle.
 - Room reflection support via two methods: image source (synthetic, from geometry) or IR-based (from measured impulse responses loaded via Symphonia).
 - Uses a geometry cache (`compute_geometry_cache`) to avoid redundant trigonometric calculations when parameters haven't changed.
-- FFT size 1024, 75% overlap (hop size 256) for the overlap-add processing.
+- FFT size 2048 by default, 75% overlap (hop size 512) for overlap-add processing.

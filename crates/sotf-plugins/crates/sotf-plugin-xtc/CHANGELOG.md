@@ -1,3 +1,88 @@
+# 0.5.44
+
+## Testing
+
+- Strengthen the rapid-automation regression to wait for the real coalescing
+  worker's final generation, compare its published filters with the final
+  requested model, adopt and crossfade them without callback allocations, and
+  verify that the superseded snapshot is reclaimed off the callback thread.
+
+# 0.5.43
+
+## Fixes
+
+- Replace the saturated reclaimer's leak fallback with fixed-slot ownership
+  backpressure. A full queue retains one retry snapshot and defers subsequent
+  adoption/crossfade retirement until the background reclaimer makes room;
+  callback destruction, blocking, allocation, and leaks are all avoided.
+
+## Testing
+
+- Added a deterministic queue-plus-retry saturation test that verifies bounded
+  ownership, deferred acceptance, and eventual reclamation of every snapshot.
+
+# 0.5.42
+
+## Fixes
+
+- Keep the last good filters when an enabled room-IR reload fails, and expose
+  the generation-tagged worker error instead of silently publishing a
+  reflection-free model.
+- Validate pending filter width before publishing either the shared or cached
+  snapshot.
+- Reclaim completed crossfade and pending-update snapshots on a dedicated
+  background thread rather than destroying their buffers in the audio callback.
+
+## Testing
+
+- Added post-enable room-IR failure, wrong-width publication, and background
+  crossfade reclamation regressions.
+
+# 0.5.41
+
+## Fixes
+
+- Coalesce rapid geometry/head automation through one latest-request worker per
+  instance instead of spawning unbounded jobs on Rayon's global pool.
+- Make source mode, HRTF, room IR, and roomEQ matrix structural; callback
+  adoption accepts same-width updates only.
+- Consolidate runtime, factory, serde/preset, and generated UI parameters on
+  `XtcPluginParams`; align defaults and make shadow cutoff/slope effective.
+- Decode integer and floating-point PCM room-IR WAVs and reject corruption,
+  unsupported channel counts, and silently truncated long IRs.
+- Replace the redundant integrated effort pass with a per-frequency
+  loudspeaker-row power constraint.
+- Separate validation oracles from production helpers and reject non-finite
+  validation measurements.
+
+## Testing
+
+- Added coalescing-worker, structural-layout, parameter parity/preset,
+  cutoff/slope response, PCM16/long-IR, effort-power, and non-finite validation
+  regressions.
+
+# 0.5.40
+
+## Fixes
+
+- Source-mode and HRTF-path parameter changes are now validated as a complete
+  configuration before they are committed. Missing or invalid HRTF artifacts,
+  and contradictory synthetic/HRTF state, return an error without leaving the
+  visible parameters ahead of the active filters.
+
+# 0.5.39
+
+## Fixes
+
+- Brown–Duda plant construction now applies the contralateral ITD once; the
+  geometric path phase owns delay while Brown–Duda contributes magnitude.
+- Source modes are checked at construction: synthetic mode cannot silently
+  consume an HRTF path, and HRTF mode requires an explicit file.
+- RoomEQ output width is declared configurable in the plugin catalog so graph
+  metadata matches recommended matrices with more than two speaker outputs.
+- Room IR loading now reports packet read errors instead of treating truncated
+  input as EOF.
+
 # 0.5.38
 
 ## Fixes

@@ -10931,12 +10931,11 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-xtc"
-version = "0.5.38"
+version = "0.5.44"
 dependencies = [
  "arc-swap",
  "criterion",
  "math-dsp",
- "rayon",
  "realfft",
  "rustfft 6.4.1",
  "serde",

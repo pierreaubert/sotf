@@ -11,13 +11,12 @@ pub(super) fn apply_beta_freq_boosts(beta: f32, freq: f32, params: &XtcPluginPar
     beta * low_factor * high_factor
 }
 
-/// Apply global effort constraint to the inverse filters.
+/// Limit loudspeaker effort independently at each frequency.
 ///
-/// Computes total filter effort E = Σ|W(f)|² across all bins and all 4 filters.
-/// If E > E_max (derived from max_gain_db), scales all bins uniformly:
-///   W(f) *= sqrt(E_max / E)
-///
-/// The per-bin tanh soft limiter is kept as a safety net with a higher threshold.
+/// A coefficient-wise limit still permits a two-input output row to carry
+/// twice the configured power. This enforces `Σ_input |W[out,input](f)|² <=
+/// max_gain_linear²` for each loudspeaker row, which has a physical source-power
+/// interpretation and remains effective after coefficient limiting.
 pub(crate) fn apply_effort_constraint(
     filter_ll: &mut [Complex<f32>],
     filter_lr: &mut [Complex<f32>],
@@ -25,45 +24,22 @@ pub(crate) fn apply_effort_constraint(
     filter_rr: Option<&mut [Complex<f32>]>,
     max_gain_linear: f32,
 ) {
-    let num_bins = filter_ll.len();
-    // Scale budget by number of active filter arrays (2 for symmetric, 4 for asymmetric/HRTF)
-    let num_filters =
-        2 + if filter_rl.is_some() { 1 } else { 0 } + if filter_rr.is_some() { 1 } else { 0 };
-    let e_max = max_gain_linear * max_gain_linear * num_bins as f32 * num_filters as f32;
-
-    // Compute total effort across all filter components
-    let mut total_effort: f32 = 0.0;
-    for bin in 0..num_bins {
-        total_effort += filter_ll[bin].norm_sqr();
-        total_effort += filter_lr[bin].norm_sqr();
-    }
-    if let Some(ref rl) = filter_rl {
-        for c in rl.iter() {
-            total_effort += c.norm_sqr();
+    let max_power = max_gain_linear * max_gain_linear;
+    for (ll, lr) in filter_ll.iter_mut().zip(filter_lr.iter_mut()) {
+        let power = ll.norm_sqr() + lr.norm_sqr();
+        if power > max_power && power.is_finite() {
+            let scale = (max_power / power).sqrt();
+            *ll *= scale;
+            *lr *= scale;
         }
     }
-    if let Some(ref rr) = filter_rr {
-        for c in rr.iter() {
-            total_effort += c.norm_sqr();
-        }
-    }
-
-    if total_effort > e_max {
-        let scale = (e_max / total_effort).sqrt();
-        for c in filter_ll.iter_mut() {
-            *c *= scale;
-        }
-        for c in filter_lr.iter_mut() {
-            *c *= scale;
-        }
-        if let Some(rl) = filter_rl {
-            for c in rl.iter_mut() {
-                *c *= scale;
-            }
-        }
-        if let Some(rr) = filter_rr {
-            for c in rr.iter_mut() {
-                *c *= scale;
+    if let (Some(rl), Some(rr)) = (filter_rl, filter_rr) {
+        for (rl, rr) in rl.iter_mut().zip(rr.iter_mut()) {
+            let power = rl.norm_sqr() + rr.norm_sqr();
+            if power > max_power && power.is_finite() {
+                let scale = (max_power / power).sqrt();
+                *rl *= scale;
+                *rr *= scale;
             }
         }
     }
@@ -81,6 +57,7 @@ mod tests {
         apply_effort_constraint(&mut ll, &mut lr, None, None, 1.0);
         assert!(ll[0].norm() < 10.0);
         assert!(lr[0].norm() < 10.0);
+        assert!((ll[0].norm_sqr() + lr[0].norm_sqr() - 1.0).abs() < 1e-5);
     }
 
     #[test]

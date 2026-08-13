@@ -1,236 +1,87 @@
-//! XTC plugin parameter definitions — single source of truth.
+//! Canonical XTC parameter schema.
 //!
-//! This file owns:
-//! - Parameter specs (PARAMS array)
-//! - UI layout (LAYOUT)
-//! - Serializable state (Params struct with serde defaults)
-//! - Index↔field mapping (PluginParamDef impl)
-//!
-//! Adding a parameter: add to PARAMS, add field to Params, add match arms.
-//! Nothing else needs to change.
+//! `Params` is an alias of the runtime/factory configuration, so serde,
+//! factory construction, UI metadata, presets, and DSP dispatch cannot drift.
 
-use serde::{Deserialize, Serialize};
-use sotf_host::param_specs::ParamSpec;
-use sotf_host::plugin_layout::*;
+use sotf_host::plugin_layout::PluginLayout;
 use sotf_host::plugin_params::PluginParamDef;
 
 mod consts;
-mod d;
 #[cfg(test)]
 mod tests;
 
 pub use consts::*;
+pub type Params = crate::config::XtcPluginParams;
 
-use d::d_auto_gain_enabled;
-use d::d_auto_gain_max_db;
-use d::d_auto_gain_smoothing_ms;
-use d::d_beta_base;
-use d::d_beta_high_freq_boost;
-use d::d_beta_low_freq_boost;
-use d::d_bypass_neumann_refinement;
-use d::d_bypass_spectral_normalization;
-use d::d_bypass_xtc_filters;
-use d::d_distance_m;
-use d::d_head_offset_x;
-use d::d_head_offset_z;
-use d::d_head_radius_m;
-use d::d_head_shadow_cutoff_hz;
-use d::d_head_shadow_slope_db_per_octave;
-use d::d_head_tracking_smooth_s;
-use d::d_head_yaw_deg;
-use d::d_max_gain_db;
-use d::d_pinna_model_enabled;
-use d::d_reflection_beta_boost;
-use d::d_room_depth_m;
-use d::d_room_reflections_enabled;
-use d::d_room_width_m;
-use d::d_speaker_angle_deg;
-use d::d_spectral_normalization;
-use d::d_wall_absorption;
-
-/// XTC plugin parameters.
-///
-/// All serde defaults are derived from PARAMS — adding a field here with
-/// the correct default function is enough to support old presets that
-/// don't have the new field.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Params {
-    #[serde(default = "d_distance_m")]
-    pub distance_m: f64,
-    #[serde(default = "d_speaker_angle_deg")]
-    pub speaker_angle_deg: f64,
-    #[serde(default = "d_head_radius_m")]
-    pub head_radius_m: f64,
-    #[serde(default = "d_head_offset_x")]
-    pub head_offset_x: f64,
-    #[serde(default = "d_head_offset_z")]
-    pub head_offset_z: f64,
-    #[serde(default = "d_head_yaw_deg")]
-    pub head_yaw_deg: f64,
-    #[serde(default = "d_head_tracking_smooth_s")]
-    pub head_tracking_smooth_s: f64,
-    #[serde(default = "d_beta_base")]
-    pub beta_base: f64,
-    #[serde(default = "d_beta_low_freq_boost")]
-    pub beta_low_freq_boost: f64,
-    #[serde(default = "d_beta_high_freq_boost")]
-    pub beta_high_freq_boost: f64,
-    #[serde(default = "d_head_shadow_cutoff_hz")]
-    pub head_shadow_cutoff_hz: f64,
-    #[serde(default = "d_head_shadow_slope_db_per_octave")]
-    pub head_shadow_slope_db_per_octave: f64,
-    #[serde(default = "d_max_gain_db")]
-    pub max_gain_db: f64,
-    #[serde(default = "d_spectral_normalization")]
-    pub spectral_normalization: bool,
-    #[serde(default = "d_pinna_model_enabled")]
-    pub pinna_model_enabled: bool,
-    #[serde(default = "d_room_reflections_enabled")]
-    pub room_reflections_enabled: bool,
-    #[serde(default = "d_room_width_m")]
-    pub room_width_m: f64,
-    #[serde(default = "d_room_depth_m")]
-    pub room_depth_m: f64,
-    #[serde(default = "d_wall_absorption")]
-    pub wall_absorption: f64,
-    #[serde(default = "d_reflection_beta_boost")]
-    pub reflection_beta_boost: f64,
-    #[serde(default = "d_bypass_xtc_filters")]
-    pub bypass_xtc_filters: bool,
-    #[serde(default = "d_bypass_spectral_normalization")]
-    pub bypass_spectral_normalization: bool,
-    #[serde(default = "d_bypass_neumann_refinement")]
-    pub bypass_neumann_refinement: bool,
-    #[serde(default = "d_auto_gain_enabled")]
-    pub auto_gain_enabled: bool,
-    #[serde(default = "d_auto_gain_max_db")]
-    pub auto_gain_max_db: f64,
-    #[serde(default = "d_auto_gain_smoothing_ms")]
-    pub auto_gain_smoothing_ms: f64,
-    #[serde(default)]
-    pub head_model: f64,
-}
-
-impl Default for Params {
-    fn default() -> Self {
-        Self {
-            distance_m: d_distance_m(),
-            speaker_angle_deg: d_speaker_angle_deg(),
-            head_radius_m: d_head_radius_m(),
-            head_offset_x: d_head_offset_x(),
-            head_offset_z: d_head_offset_z(),
-            head_yaw_deg: d_head_yaw_deg(),
-            head_tracking_smooth_s: d_head_tracking_smooth_s(),
-            beta_base: d_beta_base(),
-            beta_low_freq_boost: d_beta_low_freq_boost(),
-            beta_high_freq_boost: d_beta_high_freq_boost(),
-            head_shadow_cutoff_hz: d_head_shadow_cutoff_hz(),
-            head_shadow_slope_db_per_octave: d_head_shadow_slope_db_per_octave(),
-            max_gain_db: d_max_gain_db(),
-            spectral_normalization: d_spectral_normalization(),
-            pinna_model_enabled: d_pinna_model_enabled(),
-            room_reflections_enabled: d_room_reflections_enabled(),
-            room_width_m: d_room_width_m(),
-            room_depth_m: d_room_depth_m(),
-            wall_absorption: d_wall_absorption(),
-            reflection_beta_boost: d_reflection_beta_boost(),
-            bypass_xtc_filters: d_bypass_xtc_filters(),
-            bypass_spectral_normalization: d_bypass_spectral_normalization(),
-            bypass_neumann_refinement: d_bypass_neumann_refinement(),
-            auto_gain_enabled: d_auto_gain_enabled(),
-            auto_gain_max_db: d_auto_gain_max_db(),
-            auto_gain_smoothing_ms: d_auto_gain_smoothing_ms(),
-            head_model: 0.0,
-        }
-    }
-}
-
-impl PluginParamDef for Params {
-    const PARAMS: &'static [ParamSpec] = PARAMS;
+impl PluginParamDef for crate::config::XtcPluginParams {
+    const PARAMS: &'static [sotf_host::param_specs::ParamSpec] = PARAMS;
     const LAYOUT: Option<&'static PluginLayout> = Some(&LAYOUT);
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
     const PLUGIN_TYPE_KEY: &'static str = "xtc";
 
     fn param_value(&self, index: usize) -> Option<f64> {
         match index {
-            0 => Some(self.distance_m),
-            1 => Some(self.speaker_angle_deg),
-            2 => Some(self.head_radius_m),
-            3 => Some(self.head_offset_x),
-            4 => Some(self.head_offset_z),
-            5 => Some(self.head_yaw_deg),
-            6 => Some(self.head_tracking_smooth_s),
-            7 => Some(self.beta_base),
-            8 => Some(self.beta_low_freq_boost),
-            9 => Some(self.beta_high_freq_boost),
-            10 => Some(self.head_shadow_cutoff_hz),
-            11 => Some(self.head_shadow_slope_db_per_octave),
-            12 => Some(self.max_gain_db),
-            13 => Some(if self.spectral_normalization {
-                1.0
-            } else {
-                0.0
-            }),
-            14 => Some(if self.pinna_model_enabled { 1.0 } else { 0.0 }),
-            15 => Some(if self.room_reflections_enabled {
-                1.0
-            } else {
-                0.0
-            }),
+            0 => Some(self.distance_m as f64),
+            1 => Some(self.speaker_angle_deg as f64),
+            2 => Some(self.head_radius_m as f64),
+            3 => Some(self.head_offset_x as f64),
+            4 => Some(self.head_offset_z as f64),
+            5 => Some(self.head_yaw_deg as f64),
+            6 => Some(self.head_tracking_smooth_s as f64),
+            7 => Some(self.beta_base as f64),
+            8 => Some(self.beta_low_freq_boost as f64),
+            9 => Some(self.beta_high_freq_boost as f64),
+            10 => Some(self.head_shadow_cutoff_hz as f64),
+            11 => Some(self.head_shadow_slope_db_per_octave as f64),
+            12 => Some(self.max_gain_db as f64),
+            13 => Some(self.spectral_normalization as u8 as f64),
+            14 => Some(self.pinna_model_enabled as u8 as f64),
+            15 => Some(self.room_reflections_enabled as u8 as f64),
             16 => None,
-            17 => Some(self.room_width_m),
-            18 => Some(self.room_depth_m),
-            19 => Some(self.wall_absorption),
-            20 => Some(self.reflection_beta_boost),
-            21 => Some(if self.bypass_xtc_filters { 1.0 } else { 0.0 }),
-            22 => Some(if self.bypass_spectral_normalization {
-                1.0
-            } else {
-                0.0
-            }),
-            23 => Some(if self.bypass_neumann_refinement {
-                1.0
-            } else {
-                0.0
-            }),
-            24 => Some(if self.auto_gain_enabled { 1.0 } else { 0.0 }),
-            25 => Some(self.auto_gain_max_db),
-            26 => Some(self.auto_gain_smoothing_ms),
-            27 => Some(self.head_model),
+            17 => Some(self.room_width_m as f64),
+            18 => Some(self.room_depth_m as f64),
+            19 => Some(self.wall_absorption as f64),
+            20 => Some(self.reflection_beta_boost as f64),
+            21 => Some(self.bypass_xtc_filters as u8 as f64),
+            22 => Some(self.bypass_spectral_normalization as u8 as f64),
+            23 => Some(self.bypass_neumann_refinement as u8 as f64),
+            24 => Some(self.auto_gain_enabled as u8 as f64),
+            25 => Some(self.auto_gain_max_db as f64),
+            26 => Some(self.auto_gain_smoothing_ms as f64),
+            27 => Some(self.head_model as f64),
             _ => None,
         }
     }
 
     fn set_param_value(&mut self, index: usize, value: f64) {
         match index {
-            0 => self.distance_m = value,
-            1 => self.speaker_angle_deg = value,
-            2 => self.head_radius_m = value,
-            3 => self.head_offset_x = value,
-            4 => self.head_offset_z = value,
-            5 => self.head_yaw_deg = value,
-            6 => self.head_tracking_smooth_s = value,
-            7 => self.beta_base = value,
-            8 => self.beta_low_freq_boost = value,
-            9 => self.beta_high_freq_boost = value,
-            10 => self.head_shadow_cutoff_hz = value,
-            11 => self.head_shadow_slope_db_per_octave = value,
-            12 => self.max_gain_db = value,
+            0 => self.distance_m = value as f32,
+            1 => self.speaker_angle_deg = value as f32,
+            2 => self.head_radius_m = value as f32,
+            3 => self.head_offset_x = value as f32,
+            4 => self.head_offset_z = value as f32,
+            5 => self.head_yaw_deg = value as f32,
+            6 => self.head_tracking_smooth_s = value as f32,
+            7 => self.beta_base = value as f32,
+            8 => self.beta_low_freq_boost = value as f32,
+            9 => self.beta_high_freq_boost = value as f32,
+            10 => self.head_shadow_cutoff_hz = value as f32,
+            11 => self.head_shadow_slope_db_per_octave = value as f32,
+            12 => self.max_gain_db = value as f32,
             13 => self.spectral_normalization = value > 0.5,
             14 => self.pinna_model_enabled = value > 0.5,
             15 => self.room_reflections_enabled = value > 0.5,
-            16 => {}
-            17 => self.room_width_m = value,
-            18 => self.room_depth_m = value,
-            19 => self.wall_absorption = value,
-            20 => self.reflection_beta_boost = value,
+            17 => self.room_width_m = value as f32,
+            18 => self.room_depth_m = value as f32,
+            19 => self.wall_absorption = value as f32,
+            20 => self.reflection_beta_boost = value as f32,
             21 => self.bypass_xtc_filters = value > 0.5,
             22 => self.bypass_spectral_normalization = value > 0.5,
             23 => self.bypass_neumann_refinement = value > 0.5,
             24 => self.auto_gain_enabled = value > 0.5,
-            25 => self.auto_gain_max_db = value,
-            26 => self.auto_gain_smoothing_ms = value,
-            27 => self.head_model = value,
+            25 => self.auto_gain_max_db = value as f32,
+            26 => self.auto_gain_smoothing_ms = value as f32,
+            27 => self.head_model = value as usize,
             _ => {}
         }
     }

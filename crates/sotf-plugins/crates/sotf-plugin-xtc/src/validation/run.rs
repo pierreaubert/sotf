@@ -1,9 +1,10 @@
 use super::super::config::XtcPluginParams;
-use super::super::filters::compute_xtc_filters_full;
+use super::super::filters::{
+    compute_geometry_cache, compute_xtc_filters_full, head_shadowing_woodworth,
+};
 use super::measure::measure_cancellation_depth_db_with_filters;
 use super::misc::CANCELLATION_DEPTH_TARGETS;
 use super::misc::REFERENCE_ILD_POINTS;
-use super::reference::reference_ild_db;
 use super::reference::reference_itd_ms;
 use super::validation_report::ValidationReport;
 use super::validation_result::ValidationResult;
@@ -24,24 +25,29 @@ pub fn run_validation(params: &XtcPluginParams, sample_rate: u32) -> ValidationR
     // 1. ITD validation - ITD is derived from geometry, so validate the setup
     // A correct XTC setup should have ITD matching the Woodworth formula
     let expected_itd = reference_itd_ms(params.speaker_angle_deg, params.head_radius_m);
-    // For validation, we check that the geometry produces a valid ITD range
+    let geometry = compute_geometry_cache(params, sample_rate, num_bins);
+    let measured_itd = (geometry.symmetric.delay_contra - geometry.symmetric.delay_ipsi) * 1_000.0;
     results.push(ValidationResult::check(
         "ITD (ms) - Geometry Check",
         expected_itd,
-        expected_itd,        // ITD is computed from params, so it matches by definition
-        expected_itd * 0.01, // Tiny tolerance since it's self-consistent
+        measured_itd,
+        0.02,
     ));
 
     // 2. ILD validation at key frequencies
     // Note: ILD varies significantly with individual anatomy, so we use wider tolerances
-    for &(freq, _expected_ild) in REFERENCE_ILD_POINTS {
-        let measured_ild = reference_ild_db(freq, params.speaker_angle_deg, params.head_radius_m);
-        // ILD is computed from the model, validate it's in a reasonable range
+    for &(freq, expected_ild) in REFERENCE_ILD_POINTS {
+        let shadow = head_shadowing_woodworth(
+            freq,
+            (90.0 + params.speaker_angle_deg).to_radians(),
+            params.head_radius_m,
+        );
+        let measured_ild = -20.0 * shadow.max(1e-6).log10();
         results.push(ValidationResult::check(
             &format!("ILD @ {}Hz (dB)", freq),
-            measured_ild, // Expected = measured since it's derived from same model
+            expected_ild,
             measured_ild,
-            0.01, // Self-consistency check
+            20.0,
         ));
     }
 
@@ -83,7 +89,11 @@ pub fn run_validation(params: &XtcPluginParams, sample_rate: u32) -> ValidationR
     results.push(ValidationResult::check_min(
         "Filter Stability (max magnitude)",
         0.0, // min value (just needs to be finite)
-        max_mag,
+        if max_mag.is_finite() {
+            max_mag
+        } else {
+            f32::NAN
+        },
     ));
     // Also check that filters are below the configured gain limit
     if max_mag <= max_gain_linear {

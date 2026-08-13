@@ -3,16 +3,23 @@
 
 use super::*;
 use crate::load::load_roomeq_recommended_filters;
+use crate::types::{PendingFilterUpdate, RetiredXtcState};
 use filters::{
     compute_beta_condition_number, compute_geometry_cache, compute_xtc_filters_full,
-    head_shadowing_brown_duda, head_shadowing_complex, head_shadowing_woodworth, sanitize_filter,
-    soft_limit_complex_magnitude, woodworth_diffraction_path,
+    head_shadowing_brown_duda, head_shadowing_complex, head_shadowing_for_plant,
+    head_shadowing_woodworth, sanitize_filter, soft_limit_complex_magnitude,
+    woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 use rustfft::num_complex::Complex;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::{CountingAlloc, assert_no_allocs};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
+
+#[global_allocator]
+static ALLOCATOR: CountingAlloc = CountingAlloc;
 
 #[test]
 fn test_xtc_creation() {
@@ -580,6 +587,13 @@ fn test_brown_duda_shadowing_applies_phase() {
         brown_duda.im.abs() > 1e-3,
         "Brown-Duda model should include its phase term"
     );
+}
+
+#[test]
+fn test_brown_duda_plant_owns_itd_in_geometric_path_only() {
+    let shadow = head_shadowing_for_plant(4000.0, 0.8, 0.0875, 1, 4000.0, 6.0);
+    assert!(shadow.re > 0.0);
+    assert!(shadow.im.abs() < 1e-7);
 }
 
 /// Test that Brown-Duda alpha_min matches the published rigid-sphere approximation.
@@ -1362,19 +1376,10 @@ fn test_roomeq_recommended_source_parameters() {
     });
     std::fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();
 
-    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
-    plugin
-        .set_parameter(
-            ParameterId::from("recommended_matrix_file"),
-            ParameterValue::String(path.to_string_lossy().to_string()),
-        )
-        .unwrap();
-    plugin
-        .set_parameter(
-            ParameterId::from("source_mode"),
-            ParameterValue::String("roomeq_recommended".to_string()),
-        )
-        .unwrap();
+    let mut params = XtcPluginParams::default();
+    params.recommended_matrix_file = Some(path.to_string_lossy().to_string());
+    params.source_mode = "roomeq_recommended".to_string();
+    let plugin = XtcPlugin::new(params, 48_000).unwrap();
 
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("source_mode")),
@@ -1398,19 +1403,13 @@ fn test_roomeq_recommended_source_rejects_invalid_artifact_on_enable() {
     ));
     std::fs::write(&path, b"{ invalid json").unwrap();
 
-    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
-    plugin
-        .set_parameter(
-            ParameterId::from("recommended_matrix_file"),
-            ParameterValue::String(path.to_string_lossy().to_string()),
-        )
-        .unwrap();
-    let err = plugin
-        .set_parameter(
-            ParameterId::from("source_mode"),
-            ParameterValue::String("roomeq_recommended".to_string()),
-        )
-        .unwrap_err();
+    let mut params = XtcPluginParams::default();
+    params.recommended_matrix_file = Some(path.to_string_lossy().to_string());
+    params.source_mode = "roomeq_recommended".to_string();
+    let err = match XtcPlugin::new(params, 48_000) {
+        Ok(_) => panic!("invalid roomEQ artifact unexpectedly accepted"),
+        Err(error) => error,
+    };
     assert!(err.contains("roomEQ recommended matrix"));
 
     let _ = std::fs::remove_file(path);
@@ -2441,4 +2440,418 @@ fn test_air_absorption() {
         "10kHz at 10m absorption {} should be moderate",
         atten_10k_10m
     );
+}
+
+#[test]
+fn shadow_cutoff_and_slope_both_change_production_filter_response() {
+    let baseline = compute_xtc_filters_full(&XtcPluginParams::default(), 48_000, 1025);
+    for mutate in [
+        |params: &mut XtcPluginParams| params.head_shadow_cutoff_hz = 2_000.0,
+        |params: &mut XtcPluginParams| params.head_shadow_slope_db_per_octave = 12.0,
+    ] {
+        let mut params = XtcPluginParams::default();
+        mutate(&mut params);
+        let changed = compute_xtc_filters_full(&params, 48_000, 1025);
+        let delta: f32 = baseline
+            .filter_lr
+            .iter()
+            .zip(&changed.filter_lr)
+            .map(|(left, right)| (*left - *right).norm())
+            .sum();
+        assert!(delta > 0.01, "shadow control was acoustically inert");
+    }
+}
+
+#[test]
+fn validation_rejects_non_finite_measurements() {
+    assert!(!crate::validation::ValidationResult::check("nan", 0.0, f32::NAN, 1.0).passed);
+    assert!(!crate::validation::ValidationResult::check_min("inf", 0.0, f32::INFINITY).passed);
+}
+
+#[test]
+fn async_filter_automation_coalesces_and_publishes_the_final_generation_off_thread() {
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+    let frames = 512;
+    let input = vec![0.0; frames * 2];
+    let mut output = vec![0.0; frames * 2];
+    let context = ProcessContext::new(48_000, frames);
+    plugin.process(&input, &mut output, &context).unwrap();
+
+    for value in 0..100 {
+        plugin
+            .set_parameter(
+                ParameterId::from("speaker_angle_deg"),
+                ParameterValue::Float(10.0 + value as f32 * 0.5),
+            )
+            .unwrap();
+    }
+
+    let requested_generation = plugin
+        .filter_state
+        .filter_update_generation
+        .load(Ordering::Acquire);
+    assert_eq!(requested_generation, 100);
+    let final_params = plugin.params.clone();
+    let expected = compute_xtc_filters_full(&final_params, 48_000, plugin.fft.fft_size / 2 + 1);
+
+    let mut published = None;
+    for _ in 0..1_000 {
+        if let Some(update) = plugin.filter_state.pending_filter_update.load_full()
+            && update.generation == requested_generation
+        {
+            published = Some(update);
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let published = published.expect("coalescing worker did not publish the final request");
+    assert_eq!(
+        plugin
+            .filter_state
+            .filter_worker_launches
+            .load(Ordering::Relaxed),
+        1
+    );
+    assert!(
+        published
+            .filters
+            .filter_ll
+            .iter()
+            .zip(&expected.filter_ll)
+            .all(|(actual, expected)| (*actual - *expected).norm() < 1.0e-6),
+        "published filters do not correspond to the final automation value"
+    );
+
+    let previous = plugin.filter_state.filters.load_full();
+    let previous_weak = Arc::downgrade(&previous);
+    drop(previous);
+    assert_no_allocs("XTC worker publication and crossfade", || {
+        for _ in 0..64 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+    });
+    assert_eq!(
+        plugin.filter_state.cached_current_filters.filter_ll,
+        expected.filter_ll
+    );
+
+    for _ in 0..500 {
+        if previous_weak.upgrade().is_none() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(
+        previous_weak.upgrade().is_none(),
+        "superseded filters were not reclaimed off the callback thread"
+    );
+}
+
+#[test]
+fn runtime_source_layout_changes_require_graph_rebuild() {
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+    let before = plugin.output_channels();
+    let err = plugin
+        .set_parameter(
+            ParameterId::from("source_mode"),
+            ParameterValue::String("roomeq_recommended".into()),
+        )
+        .unwrap_err();
+    assert!(err.contains("structural"));
+    assert_eq!(plugin.output_channels(), before);
+}
+
+#[test]
+fn same_width_filter_adoption_allocates_and_deallocates_nothing() {
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+    let generation = 1;
+    plugin
+        .filter_state
+        .filter_update_generation
+        .store(generation, Ordering::Release);
+    let filters = Arc::new(compute_xtc_filters_full(
+        &XtcPluginParams::default(),
+        48_000,
+        plugin.fft.fft_size / 2 + 1,
+    ));
+    plugin
+        .filter_state
+        .pending_filter_update
+        .store(Some(Arc::new(PendingFilterUpdate {
+            generation,
+            filters,
+            hrtf_transfer_functions: None,
+            room_reflection_cache: None,
+            room_params_hash: 0,
+        })));
+    assert_no_allocs("XTC same-width update adoption", || {
+        plugin.adopt_pending_filters();
+    });
+}
+
+#[test]
+fn post_enable_room_ir_failure_does_not_publish_reflection_free_filters() {
+    let path = std::env::temp_dir().join(format!(
+        "xtc-room-ir-async-failure-{}.wav",
+        std::process::id()
+    ));
+    write_pcm16_wav(&path, 256);
+
+    let mut params = XtcPluginParams::default();
+    params.room_ir_file = Some(path.to_string_lossy().into_owned());
+    params.room_reflections_enabled = true;
+    let mut plugin = XtcPlugin::new(params, 48_000).unwrap();
+    let before = plugin.filter_state.filters.load_full();
+    std::fs::remove_file(&path).unwrap();
+
+    plugin
+        .set_parameter(
+            ParameterId::from("speaker_angle_deg"),
+            ParameterValue::Float(31.0),
+        )
+        .unwrap();
+    for _ in 0..200 {
+        if !plugin
+            .filter_state
+            .filter_worker_running
+            .load(Ordering::Acquire)
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
+    assert!(
+        plugin
+            .filter_state
+            .pending_filter_update
+            .load_full()
+            .is_none()
+    );
+    assert!(Arc::ptr_eq(
+        &before,
+        &plugin.filter_state.filters.load_full()
+    ));
+    assert!(
+        plugin
+            .last_filter_update_error()
+            .is_some_and(|(generation, error)| generation > 0 && !error.is_empty()),
+        "post-enable room IR failure must remain observable"
+    );
+}
+
+#[test]
+fn wrong_width_pending_update_is_rejected_before_publication() {
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+    let generation = 1;
+    plugin
+        .filter_state
+        .filter_update_generation
+        .store(generation, Ordering::Release);
+    let before = plugin.filter_state.filters.load_full();
+    let bins = plugin.fft.fft_size / 2 + 1;
+    let zero = vec![Complex::new(0.0, 0.0); bins];
+    let wrong_width = Arc::new(filters::XtcFilters {
+        filter_ll: zero.clone(),
+        filter_lr: zero.clone(),
+        filter_rl: None,
+        filter_rr: None,
+        is_symmetric: true,
+        speaker_filters: Some(vec![
+            [zero.clone(), zero.clone()],
+            [zero.clone(), zero.clone()],
+            [zero.clone(), zero],
+        ]),
+    });
+    plugin
+        .filter_state
+        .pending_filter_update
+        .store(Some(Arc::new(PendingFilterUpdate {
+            generation,
+            filters: wrong_width,
+            hrtf_transfer_functions: None,
+            room_reflection_cache: None,
+            room_params_hash: 0,
+        })));
+
+    plugin.adopt_pending_filters();
+
+    assert!(Arc::ptr_eq(
+        &before,
+        &plugin.filter_state.filters.load_full()
+    ));
+    assert!(Arc::ptr_eq(
+        &before,
+        &plugin.filter_state.cached_current_filters
+    ));
+    assert!(plugin.filter_state.prev_filters.is_none());
+}
+
+#[test]
+fn completed_crossfade_filters_are_destroyed_by_background_reclaimer() {
+    *LAST_FILTER_RECLAIM_THREAD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+    let old = Arc::new(compute_xtc_filters_full(
+        &XtcPluginParams::default(),
+        48_000,
+        plugin.fft.fft_size / 2 + 1,
+    ));
+    let weak = Arc::downgrade(&old);
+    plugin.filter_state.prev_filters = Some(old);
+    plugin.filter_state.crossfade_progress = 0.0;
+    plugin.filter_state.progress_per_hop = 1.0;
+
+    plugin.process_stft_frame();
+
+    for _ in 0..200 {
+        if weak.upgrade().is_none() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(
+        weak.upgrade().is_none(),
+        "retired filters were not reclaimed"
+    );
+    assert_eq!(
+        LAST_FILTER_RECLAIM_THREAD
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_deref(),
+        Some("xtc-filter-reclaimer")
+    );
+}
+
+#[test]
+fn saturated_reclaimer_retains_bounded_ownership_without_leaking() {
+    *LAST_FILTER_RECLAIM_THREAD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    PAUSE_FILTER_RECLAIMER.store(true, Ordering::Release);
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+    let bins = plugin.fft.fft_size / 2 + 1;
+    let mut retired = Vec::new();
+
+    // Let the reclaimer receive and hold one item, then fill its eight queue
+    // slots and the plugin's single retry slot.
+    let first = Arc::new(compute_xtc_filters_full(
+        &XtcPluginParams::default(),
+        48_000,
+        bins,
+    ));
+    retired.push(Arc::downgrade(&first));
+    plugin.retire_state_off_audio_thread(RetiredXtcState::Filters(first));
+    for _ in 0..200 {
+        if LAST_FILTER_RECLAIM_THREAD
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_some()
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    for _ in 0..9 {
+        let filters = Arc::new(compute_xtc_filters_full(
+            &XtcPluginParams::default(),
+            48_000,
+            bins,
+        ));
+        retired.push(Arc::downgrade(&filters));
+        plugin.retire_state_off_audio_thread(RetiredXtcState::Filters(filters));
+    }
+    assert!(plugin.filter_state.retired_filter_retry.is_some());
+
+    // Saturation applies backpressure: ownership of an additional snapshot is
+    // not consumed until the fixed retry slot can be flushed.
+    let extra = Arc::new(compute_xtc_filters_full(
+        &XtcPluginParams::default(),
+        48_000,
+        bins,
+    ));
+    let extra_weak = Arc::downgrade(&extra);
+    assert!(!plugin.flush_retired_filter_retry());
+    assert!(extra_weak.upgrade().is_some());
+
+    PAUSE_FILTER_RECLAIMER.store(false, Ordering::Release);
+    for _ in 0..500 {
+        if plugin.flush_retired_filter_retry()
+            && retired.iter().all(|filters| filters.upgrade().is_none())
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(plugin.filter_state.retired_filter_retry.is_none());
+    assert!(retired.iter().all(|filters| filters.upgrade().is_none()));
+    drop(extra);
+    assert!(extra_weak.upgrade().is_none());
+}
+
+fn write_pcm16_wav(path: &std::path::Path, frames: usize) {
+    let data_bytes = frames * 2;
+    let mut bytes = Vec::with_capacity(44 + data_bytes);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36_u32 + data_bytes as u32).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&48_000_u32.to_le_bytes());
+    bytes.extend_from_slice(&96_000_u32.to_le_bytes());
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&16_u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&(data_bytes as u32).to_le_bytes());
+    for frame in 0..frames {
+        let sample = if frame == 0 { i16::MAX } else { 0 };
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    std::fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn room_ir_accepts_pcm16_and_rejects_implicit_long_tail_truncation() {
+    let short = std::env::temp_dir().join(format!("xtc-pcm16-{}.wav", std::process::id()));
+    write_pcm16_wav(&short, 256);
+    assert!(
+        reflections::build_reflection_data_ir(short.to_str().unwrap(), 48_000, 1025, None,).is_ok()
+    );
+
+    let long = std::env::temp_dir().join(format!("xtc-pcm16-long-{}.wav", std::process::id()));
+    write_pcm16_wav(&long, 4096);
+    let error =
+        match reflections::build_reflection_data_ir(long.to_str().unwrap(), 48_000, 1025, None) {
+            Ok(_) => panic!("long room IR unexpectedly truncated"),
+            Err(error) => error,
+        };
+    assert!(error.contains("trim/window"));
+    let _ = std::fs::remove_file(short);
+    let _ = std::fs::remove_file(long);
+}
+
+#[test]
+fn malformed_room_ir_enable_is_transactional() {
+    let path = std::env::temp_dir().join(format!("xtc-bad-ir-{}.wav", std::process::id()));
+    std::fs::write(&path, b"not a wav").unwrap();
+    let params = XtcPluginParams {
+        room_ir_file: Some(path.to_string_lossy().to_string()),
+        room_reflections_enabled: false,
+        ..Default::default()
+    };
+    let mut plugin = XtcPlugin::new(params, 48_000).unwrap();
+    let error = plugin
+        .set_parameter(
+            ParameterId::from("room_reflections_enabled"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap_err();
+    assert!(error.contains("WAV"));
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("room_reflections_enabled")),
+        Some(ParameterValue::Bool(false))
+    );
+    let _ = std::fs::remove_file(path);
 }

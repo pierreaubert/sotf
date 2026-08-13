@@ -24,6 +24,46 @@ use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
 use std::sync::Arc;
 
+/// Return the head-shadow magnitude used by the plant model.
+///
+/// Geometric path length supplies the relative delay for every analytical
+/// model. Brown–Duda's public helper also reports that delay as a phase (which
+/// is useful to callers comparing the standalone model), but applying both
+/// phases would double the ITD in the composed plant.
+#[inline]
+pub(crate) fn head_shadowing_for_plant(
+    freq: f32,
+    angle_rad: f32,
+    head_radius: f32,
+    head_model: usize,
+    cutoff_hz: f32,
+    slope_db_per_octave: f32,
+) -> Complex<f32> {
+    let base = match head_model {
+        1 => Complex::new(
+            super::head::head_shadowing_brown_duda(freq, angle_rad, head_radius).0,
+            0.0,
+        ),
+        _ => head_shadowing_complex(freq, angle_rad, head_radius, head_model),
+    };
+    if freq <= 0.0 || cutoff_hz <= 0.0 {
+        return base;
+    }
+
+    // The analytical models have a fixed diffraction roll-off. These controls
+    // specify a correction relative to the historical 4 kHz / 6 dB-octave
+    // tuning, preserving the default response while making both controls
+    // acoustically effective and continuously adjustable.
+    let requested_octaves = (freq / cutoff_hz).log2().max(0.0);
+    let reference_octaves = (freq / 4_000.0).log2().max(0.0);
+    let correction_db = -slope_db_per_octave * requested_octaves + 6.0 * reference_octaves;
+    let angular_weight = (angle_rad.abs() * 0.5).sin().powi(2);
+    let correction = 10.0_f32
+        .powf(correction_db * angular_weight / 20.0)
+        .clamp(0.125, 8.0);
+    base * correction
+}
+
 /// Compute geometry cache for the given parameters.
 ///
 /// Pre-computes all path lengths, angles, and ratios that don't change per bin.
@@ -279,8 +319,17 @@ fn compute_xtc_filters_asymmetric_with_cache(
         let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let pinna_left_contra = pinna_left_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
         let delta_t_left = delay_left_contra - delay_left_ipsi;
-        let shadow_ll = head_shadowing_complex(freq, asym.angle_left_contra, a, params.head_model)
-            * asym.amplitude_ratio_left;
+        // Brown–Duda already models the contralateral ITD.  The geometric
+        // path phase below is the single plant delay owner, so use only its
+        // magnitude here; otherwise the same ITD is applied twice.
+        let shadow_ll = head_shadowing_for_plant(
+            freq,
+            asym.angle_left_contra,
+            a,
+            params.head_model,
+            params.head_shadow_cutoff_hz,
+            params.head_shadow_slope_db_per_octave,
+        ) * asym.amplitude_ratio_left;
         let phase_ll_contra = -2.0 * PI * freq * delta_t_left;
         let path_ll = Complex::new(phase_ll_contra.cos(), phase_ll_contra.sin());
         let h_ll_contra = shadow_ll * path_ll * pinna_left_contra;
@@ -291,8 +340,14 @@ fn compute_xtc_filters_asymmetric_with_cache(
             .as_deref()
             .map_or(1.0, |lut| lut[bin]);
         let delta_t_right = delay_right_contra - delay_right_ipsi;
-        let shadow_rr = head_shadowing_complex(freq, asym.angle_right_contra, a, params.head_model)
-            * asym.amplitude_ratio_right;
+        let shadow_rr = head_shadowing_for_plant(
+            freq,
+            asym.angle_right_contra,
+            a,
+            params.head_model,
+            params.head_shadow_cutoff_hz,
+            params.head_shadow_slope_db_per_octave,
+        ) * asym.amplitude_ratio_right;
         let phase_rr_contra = -2.0 * PI * freq * delta_t_right;
         let path_rr = Complex::new(phase_rr_contra.cos(), phase_rr_contra.sin());
         let h_rr_contra = shadow_rr * path_rr * pinna_right_contra;
@@ -594,8 +649,14 @@ fn compute_xtc_filters_symmetric_with_cache(
 
         // Contralateral path is relative to ipsilateral.
         let delta_t = sym.delay_contra - sym.delay_ipsi;
-        let shadow = head_shadowing_complex(freq, sym.contra_angle, a, params.head_model)
-            * sym.amplitude_ratio;
+        let shadow = head_shadowing_for_plant(
+            freq,
+            sym.contra_angle,
+            a,
+            params.head_model,
+            params.head_shadow_cutoff_hz,
+            params.head_shadow_slope_db_per_octave,
+        ) * sym.amplitude_ratio;
         let phase_contra = -2.0 * PI * freq * delta_t;
         let path_phase = Complex::new(phase_contra.cos(), phase_contra.sin());
         let h_contra_phase_only = shadow * path_phase;

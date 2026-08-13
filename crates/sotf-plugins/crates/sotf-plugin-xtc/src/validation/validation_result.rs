@@ -16,7 +16,11 @@ pub struct ValidationResult {
 impl ValidationResult {
     /// Create a new validation result with pass/fail determination.
     pub fn check(name: &str, expected: f32, measured: f32, tolerance: f32) -> Self {
-        let passed = (measured - expected).abs() <= tolerance;
+        let passed = expected.is_finite()
+            && measured.is_finite()
+            && tolerance.is_finite()
+            && tolerance >= 0.0
+            && (measured - expected).abs() <= tolerance;
         Self {
             metric_name: name.to_string(),
             expected,
@@ -28,7 +32,7 @@ impl ValidationResult {
 
     /// Create a validation result for a minimum threshold test.
     pub fn check_min(name: &str, min_value: f32, measured: f32) -> Self {
-        let passed = measured >= min_value;
+        let passed = min_value.is_finite() && measured.is_finite() && measured >= min_value;
         Self {
             metric_name: name.to_string(),
             expected: min_value,

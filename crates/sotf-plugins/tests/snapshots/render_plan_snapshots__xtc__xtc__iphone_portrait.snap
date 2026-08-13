@@ -1,5 +1,6 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 80
 expression: plan
 ---
 {
@@ -19,64 +20,73 @@ expression: plan
     "main"
   ],
   "columns_collapsed": [
-    "config",
     "output"
   ],
   "visible_group_ids": [
-    "BETA",
-    "SHADOW"
+    "GEOMETRY",
+    "BETA"
   ],
   "overflow_group_ids": [
+    "SHADOW",
     "ADVANCED",
     "ROOM"
   ],
-  "config_controls": [
-    {
-      "param_index": 0,
-      "param_name": "Distance",
-      "control_type": "knob",
-      "unit": "m",
-      "range": [
-        0.5,
-        10.0
-      ],
-      "read_only": false
-    },
-    {
-      "param_index": 1,
-      "param_name": "Speaker Angle",
-      "control_type": "knob",
-      "unit": "°",
-      "range": [
-        10.0,
-        90.0
-      ],
-      "read_only": false
-    },
-    {
-      "param_index": 2,
-      "param_name": "Head Radius",
-      "control_type": "knob",
-      "unit": "m",
-      "range": [
-        0.05,
-        0.12
-      ],
-      "read_only": false
-    },
-    {
-      "param_index": 27,
-      "param_name": "Head Model",
-      "control_type": "selector",
-      "unit": "",
-      "range": [
-        0.0,
-        1.0
-      ],
-      "read_only": false
-    }
-  ],
+  "config_controls": [],
   "main_groups": [
+    {
+      "id": "GEOMETRY",
+      "title": "GEOMETRY",
+      "controls": [
+        {
+          "param_index": 0,
+          "param_name": "Distance",
+          "control_type": "knob",
+          "unit": "m",
+          "range": [
+            0.5,
+            10.0
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 1,
+          "param_name": "Speaker Angle",
+          "control_type": "knob",
+          "unit": "°",
+          "range": [
+            10.0,
+            90.0
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 2,
+          "param_name": "Head Radius",
+          "control_type": "knob",
+          "unit": "m",
+          "range": [
+            0.05,
+            0.12
+          ],
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 27,
+          "param_name": "Head Model",
+          "control_type": "selector",
+          "unit": "",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false,
+          "enabled": true
+        }
+      ]
+    },
     {
       "id": "BETA",
       "title": "BETA",
@@ -90,7 +100,8 @@ expression: plan
             0.0001,
             0.1
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 8,
@@ -101,7 +112,8 @@ expression: plan
             0.0,
             30.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 9,
@@ -112,7 +124,8 @@ expression: plan
             0.0,
             30.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     },
@@ -129,7 +142,8 @@ expression: plan
             1000.0,
             10000.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 11,
@@ -140,7 +154,8 @@ expression: plan
             0.0,
             12.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 12,
@@ -151,7 +166,8 @@ expression: plan
             3.0,
             30.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     },
@@ -168,7 +184,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 14,
@@ -179,7 +196,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     },
@@ -196,7 +214,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 16,
@@ -204,7 +223,8 @@ expression: plan
           "control_type": "file_picker",
           "unit": "",
           "range": null,
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         },
         {
           "param_index": 17,
@@ -215,7 +235,8 @@ expression: plan
             2.0,
             10.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         },
         {
           "param_index": 18,
@@ -226,7 +247,8 @@ expression: plan
             2.0,
             15.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         },
         {
           "param_index": 19,
@@ -237,7 +259,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         },
         {
           "param_index": 20,
@@ -248,7 +271,8 @@ expression: plan
             1.0,
             10.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         }
       ]
     }
@@ -263,7 +287,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 22,
@@ -274,7 +299,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 23,
@@ -285,7 +311,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 24,
@@ -296,7 +323,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 25,
@@ -307,7 +335,8 @@ expression: plan
         0.0,
         24.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 26,
@@ -318,7 +347,8 @@ expression: plan
         10.0,
         500.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     }
   ],
   "tabs": [
@@ -334,7 +364,8 @@ expression: plan
             -0.5,
             0.5
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 4,
@@ -345,7 +376,8 @@ expression: plan
             -0.5,
             0.5
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 5,
@@ -356,7 +388,8 @@ expression: plan
             -90.0,
             90.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 6,
@@ -367,7 +400,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     }

@@ -128,7 +128,6 @@ pub(crate) fn build_reflection_data_ir(
     num_bins: usize,
     fft_forward: Option<Arc<dyn RealToComplex<f32>>>,
 ) -> Result<RoomReflectionData, String> {
-    use symphonia::core::audio::{Audio, GenericAudioBufferRef};
     use symphonia::core::codecs::CodecParameters;
     use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
     use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
@@ -162,23 +161,30 @@ pub(crate) fn build_reflection_data_ir(
         .as_ref()
         .map(|c| c.count())
         .unwrap_or(1);
+    if !(1..=2).contains(&num_channels) {
+        return Err(format!(
+            "Room IR must be mono or stereo, got {num_channels} channels"
+        ));
+    }
 
     let mut decoder =
         symphonia_codec_pcm::PcmDecoder::try_new(&codec_params, &AudioDecoderOptions::default())
             .map_err(|e| format!("Decoder: {}", e))?;
 
     let mut channels: Vec<Vec<f32>> = vec![Vec::new(); num_channels];
-    while let Ok(Some(packet)) = reader.next_packet() {
+    loop {
+        let packet = match reader.next_packet() {
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
+            Err(e) => return Err(format!("WAV read: {}", e)),
+        };
         let decoded = decoder
             .decode(&packet)
             .map_err(|e| format!("Decode: {}", e))?;
-        match &decoded {
-            GenericAudioBufferRef::F32(buf) => {
-                for (ch, channel) in channels.iter_mut().enumerate() {
-                    channel.extend_from_slice(buf.plane(ch).ok_or("Missing IR channel")?);
-                }
-            }
-            _ => return Err("Only F32 WAV format supported for room IR".into()),
+        let mut decoded_channels = vec![Vec::<f32>::new(); num_channels];
+        decoded.copy_to_vecs_planar(&mut decoded_channels);
+        for (channel, decoded_channel) in channels.iter_mut().zip(decoded_channels) {
+            channel.extend(decoded_channel);
         }
     }
 
@@ -187,6 +193,12 @@ pub(crate) fn build_reflection_data_ir(
     }
 
     let fft_size = (num_bins - 1) * 2;
+    let longest_ir = channels.iter().map(Vec::len).max().unwrap_or(0);
+    if longest_ir > fft_size {
+        return Err(format!(
+            "Room IR has {longest_ir} frames but XTC's explicit early-reflection window is {fft_size} frames; trim/window the IR before loading"
+        ));
+    }
 
     // Reuse caller-supplied FFT plan when the size matches; otherwise plan a new one.
     // This avoids allocating a planner for every IR load (Optimization 4).

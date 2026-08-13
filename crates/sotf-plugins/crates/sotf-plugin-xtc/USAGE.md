@@ -236,6 +236,10 @@ For troubleshooting audio artifacts — each bypass isolates a processing stage.
 
 ## Signal Flow
 
+Source/artifact and FFT-size changes are structural. Rebuild the plugin graph
+after changing them; runtime automation is limited to parameters that preserve
+the compiled output layout.
+
 ```
 Input (Stereo) → STFT (windowed FFT, 75% overlap)
                     ↓

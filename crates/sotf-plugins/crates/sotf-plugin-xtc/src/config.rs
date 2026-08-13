@@ -191,7 +191,7 @@ fn default_fft_size() -> usize {
     2048
 }
 fn default_beta_base() -> f32 {
-    0.01 // Increased from 0.0003 for better stability and less ringing
+    0.001
 }
 fn default_beta_low_freq_boost() -> f32 {
     10.0
@@ -203,7 +203,7 @@ fn default_max_gain_db() -> f32 {
     12.0 // Increased from 6.0 for better cancellation depth
 }
 fn default_kappa_target() -> f32 {
-    100.0
+    50.0
 }
 fn default_head_shadow_cutoff() -> f32 {
     4000.0
@@ -233,7 +233,7 @@ fn default_auto_gain_enabled() -> bool {
     true
 }
 fn default_auto_gain_max_db() -> f32 {
-    24.0 // Increased from 6.0 to prevent saturation
+    12.0
 }
 fn default_spectral_normalization() -> bool {
     true

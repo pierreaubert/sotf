@@ -1,4 +1,4 @@
-use super::super::filters::{SPEED_OF_SOUND, head_shadowing_woodworth};
+const SPEED_OF_SOUND: f32 = 343.0;
 use std::f32::consts::PI;
 
 /// Reference ITD using Woodworth formula.
@@ -16,7 +16,13 @@ pub fn reference_itd_ms(speaker_angle_deg: f32, head_radius_m: f32) -> f32 {
 #[inline]
 pub fn reference_ild_db(freq_hz: f32, source_angle_deg: f32, head_radius_m: f32) -> f32 {
     let shadow_angle = (90.0 + source_angle_deg).min(180.0);
-    let shadow = head_shadowing_woodworth(freq_hz, shadow_angle * PI / 180.0, head_radius_m);
+    let theta = shadow_angle * PI / 180.0;
+    let ka = 2.0 * PI * freq_hz.max(0.0) * head_radius_m / SPEED_OF_SOUND;
+    // Independent first-order rigid-sphere diffraction oracle. This shares no
+    // production head-shadow helper, preventing self-consistency false passes.
+    let shadow = (1.0 + (0.55 * ka * (theta * 0.5).sin().abs()).powi(2))
+        .sqrt()
+        .recip();
 
     if shadow < 1e-6 {
         return 60.0;

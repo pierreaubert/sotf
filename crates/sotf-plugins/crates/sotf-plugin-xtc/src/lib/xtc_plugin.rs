@@ -15,11 +15,11 @@ use super::load::load_hrtf_for_xtc;
 use super::load::load_roomeq_recommended_filters;
 use super::load::validate_roomeq_recommended_source;
 use super::misc::MAX_PROCESS_FRAMES;
-use super::reflections::RoomReflectionData;
-use super::types::PendingFilterUpdate;
+use super::reflections::{RoomReflectionData, build_reflection_data_ir};
+use super::types::{FilterUpdateRequest, PendingFilterUpdate, RetiredXtcState};
 use super::xtc_data::XtcData;
 use crate::params::PARAMS as XT;
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use math_audio_dsp::stft::generate_hann_window;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
@@ -33,9 +33,15 @@ use sotf_host::plugin::{
 use sotf_host::simd::{deinterleave_stereo, flush_denormals_inplace, window_mul_simd};
 use std::any::Any;
 use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    mpsc::{SyncSender, TrySendError, sync_channel},
 };
+
+#[cfg(test)]
+pub(super) static LAST_FILTER_RECLAIM_THREAD: Mutex<Option<String>> = Mutex::new(None);
+#[cfg(test)]
+pub(super) static PAUSE_FILTER_RECLAIMER: AtomicBool = AtomicBool::new(false);
 
 /// FFT / STFT configuration and shared resources.
 pub(super) struct XtcFftConfig {
@@ -99,10 +105,22 @@ pub(super) struct XtcFilterState {
     pub(super) cached_current_filters: Arc<XtcFilters>,
 
     /// Completed asynchronous filter update waiting to be adopted by the audio thread.
-    pub(super) pending_filter_update: Arc<ArcSwap<Option<PendingFilterUpdate>>>,
+    pub(super) pending_filter_update: Arc<ArcSwapOption<PendingFilterUpdate>>,
 
     /// Latest requested asynchronous filter generation; workers use it to drop stale results.
     pub(super) filter_update_generation: Arc<AtomicU64>,
+
+    /// Latest-only control-thread request mailbox. At most one worker exists
+    /// per instance; rapid automation overwrites this slot instead of spawning
+    /// unbounded expensive jobs on Rayon's global pool.
+    pub(super) filter_request: Arc<Mutex<Option<FilterUpdateRequest>>>,
+    pub(super) filter_worker_running: Arc<AtomicBool>,
+    pub(super) filter_worker_launches: Arc<AtomicU64>,
+    pub(super) last_filter_update_error: Arc<Mutex<Option<(u64, String)>>>,
+
+    filter_retire_tx: Option<SyncSender<RetiredXtcState>>,
+    filter_retire_thread: Option<std::thread::JoinHandle<()>>,
+    pub(super) retired_filter_retry: Option<RetiredXtcState>,
 
     /// Previous filter snapshot for crossfading (Block mode)
     pub(super) prev_filters: Option<Arc<XtcFilters>>,
@@ -114,13 +132,22 @@ pub(super) struct XtcFilterState {
     pub(super) progress_per_hop: f32,
 
     /// Loaded HRTF transfer functions (from SOFA file)
-    pub(super) hrtf_transfer_functions: Option<HrtfTransferFunctions>,
+    pub(super) hrtf_transfer_functions: Option<Arc<HrtfTransferFunctions>>,
 
     /// Cached room reflection data (Optimization 4)
     pub(super) room_reflection_cache: Option<Arc<RoomReflectionData>>,
 
     /// Hash of room-related parameters for cache invalidation (Optimization 4)
     pub(super) room_params_hash: u64,
+}
+
+impl Drop for XtcFilterState {
+    fn drop(&mut self) {
+        self.filter_retire_tx.take();
+        if let Some(thread) = self.filter_retire_thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 /// Overlap-add output ring buffer state.
@@ -203,8 +230,89 @@ pub struct XtcPlugin {
 }
 
 impl XtcPlugin {
+    const STRUCTURAL_SOURCE_ERROR: &'static str =
+        "XTC source/artifact changes are structural and require rebuilding the plugin graph";
+
+    /// Most recent failure from the coalescing filter worker, tagged with the
+    /// request generation. Control/UI threads may poll this; the audio callback
+    /// never takes this mutex.
+    pub fn last_filter_update_error(&self) -> Option<(u64, String)> {
+        self.filter_state
+            .last_filter_update_error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+    /// Validate a source configuration before exposing it through parameters.
+    ///
+    /// Source changes are structural: an asynchronous recompute may fail after
+    /// a setter returns, so accepting a configuration that cannot produce its
+    /// requested plant would leave the UI state ahead of the effective filters.
+    /// Validate the complete candidate synchronously while the control thread is
+    /// still allowed to perform file I/O.
+    fn validate_source_configuration(
+        params: &XtcPluginParams,
+        sample_rate: u32,
+        num_bins: usize,
+    ) -> Result<(), String> {
+        match params.source_mode.as_str() {
+            "synthetic" | "roomeq_recommended" if params.hrtf_file.is_some() => Err(format!(
+                "source_mode='{}' cannot be combined with hrtf_file; use source_mode='hrtf_file'",
+                params.source_mode
+            )),
+            "hrtf_file" => {
+                let hrtf_path = params
+                    .hrtf_file
+                    .as_deref()
+                    .ok_or_else(|| "source_mode='hrtf_file' requires hrtf_file".to_string())?;
+                load_hrtf_for_xtc(hrtf_path, params, sample_rate, num_bins).map(|_| ())
+            }
+            "roomeq_recommended" => {
+                validate_roomeq_recommended_source(params, sample_rate, num_bins)
+            }
+            "synthetic" => Ok(()),
+            other => Err(format!(
+                "source_mode must be 'synthetic', 'hrtf_file', or 'roomeq_recommended', got '{}'",
+                other
+            )),
+        }
+    }
+
+    fn validate_room_ir_configuration(
+        params: &XtcPluginParams,
+        sample_rate: u32,
+        num_bins: usize,
+        fft_forward: Arc<dyn RealToComplex<f32>>,
+    ) -> Result<(), String> {
+        if params.room_reflections_enabled
+            && let Some(path) = params.room_ir_file.as_deref()
+        {
+            build_reflection_data_ir(path, sample_rate, num_bins, Some(fft_forward))?;
+        }
+        Ok(())
+    }
+
     /// Create a new XTC plugin
     pub fn new(params: XtcPluginParams, sample_rate: u32) -> Result<Self, String> {
+        match params.source_mode.as_str() {
+            "synthetic" if params.hrtf_file.is_some() => {
+                return Err(
+                    "source_mode='synthetic' cannot be combined with hrtf_file; use source_mode='hrtf_file'"
+                        .to_string(),
+                );
+            }
+            "hrtf_file" if params.hrtf_file.is_none() => {
+                return Err("source_mode='hrtf_file' requires hrtf_file".to_string());
+            }
+            "synthetic" | "hrtf_file" | "roomeq_recommended" => {}
+            other => {
+                return Err(format!(
+                    "source_mode must be 'synthetic', 'hrtf_file', or 'roomeq_recommended', got '{}'",
+                    other
+                ));
+            }
+        }
+
         // Validate FFT size
         if !params.fft_size.is_power_of_two() {
             return Err(format!(
@@ -247,24 +355,22 @@ impl XtcPlugin {
 
         // Compute frequency-domain filters
         let num_bins = fft_size / 2 + 1;
+        Self::validate_room_ir_configuration(&params, sample_rate, num_bins, fft_forward.clone())?;
 
         // Compute initial room reflection data if enabled (Optimization 4)
         let room_params_hash = compute_room_params_hash(&params);
         let room_reflection_cache = if params.room_reflections_enabled {
             // Pass the pre-planned FFT to avoid re-creating the planner (Optimization 4)
-            compute_room_reflection_data(&params, sample_rate, num_bins, Some(fft_forward.clone()))
+            compute_room_reflection_data(&params, sample_rate, num_bins, Some(fft_forward.clone()))?
         } else {
             None
         };
 
         // Load HRTF file if specified. The roomEQ recommended source bypasses
         // geometry/HRTF solving and loads its co-designed filters directly.
-        let hrtf_transfer_functions = if params.source_mode != "roomeq_recommended" {
-            if let Some(ref hrtf_path) = params.hrtf_file {
-                load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)?
-            } else {
-                None
-            }
+        let hrtf_transfer_functions = if params.source_mode == "hrtf_file" {
+            let hrtf_path = params.hrtf_file.as_deref().expect("validated above");
+            load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)?.map(Arc::new)
         } else {
             None
         };
@@ -283,7 +389,7 @@ impl XtcPlugin {
                 num_bins,
                 &cache,
                 room_reflection_cache.clone(),
-                hrtf_transfer_functions.as_ref(),
+                hrtf_transfer_functions.as_deref(),
             )
         };
         let output_channels = filters.output_channels();
@@ -307,6 +413,30 @@ impl XtcPlugin {
         } else {
             None
         };
+
+        let (filter_retire_tx, filter_retire_rx) = sync_channel(8);
+        let filter_retire_thread = std::thread::Builder::new()
+            .name("xtc-filter-reclaimer".to_string())
+            .spawn(move || {
+                while let Ok(retired) = filter_retire_rx.recv() {
+                    #[cfg(test)]
+                    {
+                        *LAST_FILTER_RECLAIM_THREAD
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                            std::thread::current().name().map(str::to_owned);
+                    }
+                    #[cfg(test)]
+                    while PAUSE_FILTER_RECLAIMER.load(Ordering::Acquire) {
+                        std::thread::yield_now();
+                    }
+                    match retired {
+                        RetiredXtcState::Filters(filters) => drop(filters),
+                        RetiredXtcState::Pending(update) => drop(update),
+                    }
+                }
+            })
+            .map_err(|error| format!("Failed to start XTC filter reclaimer: {error}"))?;
 
         let mut p = Self {
             params: params.clone(),
@@ -345,8 +475,15 @@ impl XtcPlugin {
             filter_state: XtcFilterState {
                 filters,
                 cached_current_filters,
-                pending_filter_update: Arc::new(ArcSwap::from_pointee(None)),
+                pending_filter_update: Arc::new(ArcSwapOption::empty()),
                 filter_update_generation: Arc::new(AtomicU64::new(0)),
+                filter_request: Arc::new(Mutex::new(None)),
+                filter_worker_running: Arc::new(AtomicBool::new(false)),
+                filter_worker_launches: Arc::new(AtomicU64::new(0)),
+                last_filter_update_error: Arc::new(Mutex::new(None)),
+                filter_retire_tx: Some(filter_retire_tx),
+                filter_retire_thread: Some(filter_retire_thread),
+                retired_filter_retry: None,
                 prev_filters: None,
                 crossfade_progress: 1.0, // Start fully faded to current
                 progress_per_hop: 0.0,
@@ -551,26 +688,30 @@ impl XtcPlugin {
         if sync {
             let new_hash = compute_room_params_hash(&self.params);
             let room_data = if new_hash != self.filter_state.room_params_hash {
-                compute_room_reflection_data(
+                let Ok(room_data) = compute_room_reflection_data(
                     &self.params,
                     sample_rate,
                     num_bins,
                     Some(self.fft.fft_forward.clone()),
-                )
+                ) else {
+                    return;
+                };
+                room_data
             } else {
                 self.filter_state.room_reflection_cache.clone()
             };
             self.filter_state.room_reflection_cache = room_data.clone();
             self.filter_state.room_params_hash = new_hash;
 
-            let hrtf_data = if self.params.source_mode != "roomeq_recommended" {
-                if let Some(ref hrtf_path) = self.params.hrtf_file {
-                    load_hrtf_for_xtc(hrtf_path, &self.params, sample_rate, num_bins)
-                        .ok()
-                        .flatten()
-                } else {
-                    None
-                }
+            let hrtf_data = if self.params.source_mode == "hrtf_file" {
+                let Some(hrtf_path) = self.params.hrtf_file.as_deref() else {
+                    return;
+                };
+                let Ok(data) = load_hrtf_for_xtc(hrtf_path, &self.params, sample_rate, num_bins)
+                else {
+                    return;
+                };
+                data.map(Arc::new)
             } else {
                 None
             };
@@ -594,86 +735,170 @@ impl XtcPlugin {
                     num_bins,
                     &cache,
                     room_data.clone(),
-                    hrtf_data.as_ref(),
+                    hrtf_data.as_deref(),
                 )
             };
             let new_filters = Arc::new(new_filters);
             let previous_output_channels =
                 self.filter_state.cached_current_filters.output_channels();
             let next_output_channels = new_filters.output_channels();
+            if previous_output_channels != next_output_channels {
+                return;
+            }
             self.filter_state.filters.store(Arc::clone(&new_filters));
             self.filter_state.cached_current_filters = new_filters;
-            if previous_output_channels != next_output_channels {
-                self.resize_output_accumulator(next_output_channels);
-                self.dynamics.auto_gain = None;
-            }
-            self.filter_state
-                .pending_filter_update
-                .store(Arc::new(None));
+            self.reconfigure_auto_gain_for_layout();
+            self.filter_state.pending_filter_update.store(None);
         } else {
-            // Asynchronous update using rayon. The audio thread starts the
-            // crossfade only when it adopts a completed update.
+            // Latest-only coalescing worker. Expensive recomputation never
+            // fans out onto Rayon's global pool under high-rate automation.
             let generation = self
                 .filter_state
                 .filter_update_generation
                 .fetch_add(1, Ordering::Relaxed)
                 + 1;
-            let params = self.params.clone();
+            let request = FilterUpdateRequest {
+                generation,
+                params: self.params.clone(),
+                sample_rate,
+                num_bins,
+                expected_output_channels: self.output_channels(),
+                fft_forward: self.fft.fft_forward.clone(),
+            };
+            *self
+                .filter_state
+                .filter_request
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(request);
+            if self
+                .filter_state
+                .filter_worker_running
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                return;
+            }
+
+            let request_mailbox = self.filter_state.filter_request.clone();
+            let worker_running = self.filter_state.filter_worker_running.clone();
+            let worker_running_on_error = worker_running.clone();
+            let worker_launches = self.filter_state.filter_worker_launches.clone();
             let pending_filter_update = self.filter_state.pending_filter_update.clone();
             let requested_generation = self.filter_state.filter_update_generation.clone();
-            let fft_forward = self.fft.fft_forward.clone();
-            rayon::spawn(move || {
-                let room_params_hash = compute_room_params_hash(&params);
-                let room_data =
-                    compute_room_reflection_data(&params, sample_rate, num_bins, Some(fft_forward));
-                let hrtf_data = if params.source_mode != "roomeq_recommended" {
-                    if let Some(ref hrtf_path) = params.hrtf_file {
-                        load_hrtf_for_xtc(hrtf_path, &params, sample_rate, num_bins)
-                            .ok()
-                            .flatten()
-                    } else {
-                        None
+            let last_filter_update_error = self.filter_state.last_filter_update_error.clone();
+            let spawn_result = std::thread::Builder::new()
+                .name("xtc-filter-worker".to_string())
+                .spawn(move || {
+                    worker_launches.fetch_add(1, Ordering::Relaxed);
+                    loop {
+                        let request = request_mailbox
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .take();
+                        if let Some(request) = request {
+                            match Self::compute_filter_update(&request) {
+                                Ok(update)
+                                    if requested_generation.load(Ordering::Acquire)
+                                        == request.generation =>
+                                {
+                                    *last_filter_update_error
+                                        .lock()
+                                        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+                                    pending_filter_update.store(Some(Arc::new(update)));
+                                }
+                                Err(error)
+                                    if requested_generation.load(Ordering::Acquire)
+                                        == request.generation =>
+                                {
+                                    *last_filter_update_error
+                                        .lock()
+                                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                                        Some((request.generation, error));
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        worker_running.store(false, Ordering::Release);
+                        let has_raced_request = request_mailbox
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .is_some();
+                        if has_raced_request
+                            && worker_running
+                                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                                .is_ok()
+                        {
+                            continue;
+                        }
+                        break;
                     }
-                } else {
-                    None
-                };
-                let new_filters = if params.source_mode == "roomeq_recommended" {
-                    let Some(matrix_path) = params.recommended_matrix_file.as_deref() else {
-                        return;
-                    };
-                    let Ok(filters) =
-                        load_roomeq_recommended_filters(matrix_path, sample_rate, num_bins)
-                    else {
-                        return;
-                    };
-                    filters
-                } else {
-                    let cache = compute_geometry_cache(&params, sample_rate, num_bins);
-                    compute_xtc_filters_full_with_cache_and_hrtf(
-                        &params,
-                        sample_rate,
-                        num_bins,
-                        &cache,
-                        room_data.clone(),
-                        hrtf_data.as_ref(),
-                    )
-                };
-                if requested_generation.load(Ordering::Acquire) == generation {
-                    pending_filter_update.store(Arc::new(Some(PendingFilterUpdate {
-                        generation,
-                        filters: Arc::new(new_filters),
-                        hrtf_transfer_functions: hrtf_data,
-                        room_reflection_cache: room_data,
-                        room_params_hash,
-                    })));
-                }
-            });
+                });
+            if spawn_result.is_err() {
+                worker_running_on_error.store(false, Ordering::Release);
+            }
         }
     }
 
+    pub(super) fn compute_filter_update(
+        request: &FilterUpdateRequest,
+    ) -> Result<PendingFilterUpdate, String> {
+        let params = &request.params;
+        let room_params_hash = compute_room_params_hash(params);
+        let room_data = compute_room_reflection_data(
+            params,
+            request.sample_rate,
+            request.num_bins,
+            Some(request.fft_forward.clone()),
+        )?;
+        let hrtf_data = if params.source_mode == "hrtf_file" {
+            let hrtf_path = params
+                .hrtf_file
+                .as_deref()
+                .ok_or_else(|| "source_mode='hrtf_file' requires hrtf_file".to_string())?;
+            load_hrtf_for_xtc(hrtf_path, params, request.sample_rate, request.num_bins)?
+                .map(Arc::new)
+        } else {
+            None
+        };
+        let new_filters = if params.source_mode == "roomeq_recommended" {
+            let matrix_path = params.recommended_matrix_file.as_deref().ok_or_else(|| {
+                "source_mode='roomeq_recommended' requires recommended_matrix_file".to_string()
+            })?;
+            load_roomeq_recommended_filters(matrix_path, request.sample_rate, request.num_bins)?
+        } else {
+            let cache = compute_geometry_cache(params, request.sample_rate, request.num_bins);
+            compute_xtc_filters_full_with_cache_and_hrtf(
+                params,
+                request.sample_rate,
+                request.num_bins,
+                &cache,
+                room_data.clone(),
+                hrtf_data.as_deref(),
+            )
+        };
+        if new_filters.output_channels() != request.expected_output_channels {
+            return Err(format!(
+                "XTC filter update changed output width from {} to {}",
+                request.expected_output_channels,
+                new_filters.output_channels()
+            ));
+        }
+        Ok(PendingFilterUpdate {
+            generation: request.generation,
+            filters: Arc::new(new_filters),
+            hrtf_transfer_functions: hrtf_data,
+            room_reflection_cache: room_data,
+            room_params_hash,
+        })
+    }
+
     pub(super) fn adopt_pending_filters(&mut self) {
-        let update = self.filter_state.pending_filter_update.load_full();
-        let Some(update) = update.as_ref() else {
+        if !self.flush_retired_filter_retry() {
+            return;
+        }
+        let Some(update) = self.filter_state.pending_filter_update.load_full() else {
             return;
         };
 
@@ -683,44 +908,83 @@ impl XtcPlugin {
                 .filter_update_generation
                 .load(Ordering::Acquire)
         {
-            self.filter_state
-                .pending_filter_update
-                .store(Arc::new(None));
+            self.filter_state.pending_filter_update.store(None);
+            self.retire_state_off_audio_thread(RetiredXtcState::Pending(update));
             return;
         }
 
         let previous = self.filter_state.filters.load_full();
         let previous_output_channels = previous.output_channels();
+        let next_output_channels = update.filters.output_channels();
+        if previous_output_channels != next_output_channels {
+            self.filter_state.pending_filter_update.store(None);
+            self.retire_state_off_audio_thread(RetiredXtcState::Pending(update));
+            return;
+        }
         self.filter_state.filters.store(Arc::clone(&update.filters));
         self.filter_state.cached_current_filters = Arc::clone(&update.filters);
         self.filter_state.hrtf_transfer_functions = update.hrtf_transfer_functions.clone();
         self.filter_state.room_reflection_cache = update.room_reflection_cache.clone();
         self.filter_state.room_params_hash = update.room_params_hash;
-        let next_output_channels = update.filters.output_channels();
-        if previous_output_channels == next_output_channels {
-            self.filter_state.prev_filters = Some(previous);
-            self.filter_state.crossfade_progress = 0.0;
-        } else {
-            self.filter_state.prev_filters = None;
-            self.filter_state.crossfade_progress = 1.0;
-            self.resize_output_accumulator(next_output_channels);
-            self.dynamics.auto_gain = None;
-        }
-        self.filter_state
-            .pending_filter_update
-            .store(Arc::new(None));
+        self.filter_state.prev_filters = Some(previous);
+        self.filter_state.crossfade_progress = 0.0;
+        self.filter_state.pending_filter_update.store(None);
+        self.retire_state_off_audio_thread(RetiredXtcState::Pending(update));
     }
 
-    pub(super) fn resize_output_accumulator(&mut self, output_channels: usize) {
-        let required_len = self.fft.fft_size * 4 * output_channels;
-        if self.output.output_accumulator.len() != required_len {
-            self.output.output_accumulator.resize(required_len, 0.0);
+    pub(super) fn flush_retired_filter_retry(&mut self) -> bool {
+        if let Some(retry) = self.filter_state.retired_filter_retry.take() {
+            match self
+                .filter_state
+                .filter_retire_tx
+                .as_ref()
+                .expect("XTC filter reclaimer exists while processing")
+                .try_send(retry)
+            {
+                Ok(()) => {}
+                Err(TrySendError::Full(retry)) | Err(TrySendError::Disconnected(retry)) => {
+                    self.filter_state.retired_filter_retry = Some(retry);
+                    return false;
+                }
+            }
         }
-        self.output.output_accumulator.fill(0.0);
-        self.output.output_accumulator_fill = 0;
-        self.output.next_add_position = 0;
-        self.output.output_read_position = 0;
-        self.output.latency_filled = 0;
+        true
+    }
+
+    pub(super) fn retire_state_off_audio_thread(&mut self, retired: RetiredXtcState) {
+        debug_assert!(self.filter_state.retired_filter_retry.is_none());
+        match self
+            .filter_state
+            .filter_retire_tx
+            .as_ref()
+            .expect("XTC filter reclaimer exists while processing")
+            .try_send(retired)
+        {
+            Ok(()) => {}
+            Err(TrySendError::Full(retired)) | Err(TrySendError::Disconnected(retired)) => {
+                self.filter_state.retired_filter_retry = Some(retired);
+            }
+        }
+    }
+
+    fn reconfigure_auto_gain_for_layout(&mut self) {
+        if self.output_channels() != 2 || !self.params.auto_gain_enabled {
+            self.dynamics.auto_gain = None;
+            return;
+        }
+        if self.dynamics.auto_gain.is_none() {
+            self.dynamics.auto_gain = AutoGain::new(
+                2,
+                self.fft.sample_rate,
+                AutoGainParams {
+                    enabled: true,
+                    loudness_type: Default::default(),
+                    max_gain_db: self.params.auto_gain_max_db,
+                    smoothing_ms: self.params.auto_gain_smoothing_ms,
+                },
+            )
+            .ok();
+        }
     }
 
     /// Process one STFT frame using SIMD-optimized operations.
@@ -962,8 +1226,11 @@ impl XtcPlugin {
             self.filter_state.crossfade_progress = (self.filter_state.crossfade_progress
                 + self.filter_state.progress_per_hop)
                 .min(1.0);
-            if self.filter_state.crossfade_progress >= 1.0 {
-                self.filter_state.prev_filters = None; // Release old filters
+            if self.filter_state.crossfade_progress >= 1.0
+                && self.flush_retired_filter_retry()
+                && let Some(filters) = self.filter_state.prev_filters.take()
+            {
+                self.retire_state_off_audio_thread(RetiredXtcState::Filters(filters));
             }
         }
     }
@@ -1043,14 +1310,17 @@ impl Plugin for XtcPlugin {
             let v = value
                 .as_string()
                 .ok_or_else(|| "hrtf_file must be a string".to_string())?;
-            if v.is_empty() {
-                self.params.hrtf_file = None;
-            } else {
-                if !std::path::Path::new(v).exists() {
-                    return Err(format!("HRTF file not found: {}", v));
-                }
-                self.params.hrtf_file = Some(v.to_string());
+            let mut candidate = self.params.clone();
+            candidate.hrtf_file = (!v.is_empty()).then(|| v.to_string());
+            if candidate.hrtf_file != self.params.hrtf_file {
+                return Err(Self::STRUCTURAL_SOURCE_ERROR.to_string());
             }
+            Self::validate_source_configuration(
+                &candidate,
+                self.fft.sample_rate,
+                self.fft.fft_size / 2 + 1,
+            )?;
+            self.params = candidate;
             self.update_filters(false);
             self.rebuild_cached_parameters();
             return Ok(());
@@ -1059,42 +1329,27 @@ impl Plugin for XtcPlugin {
             let v = value
                 .as_string()
                 .ok_or_else(|| "room_ir_file must be a string".to_string())?;
-            if v.is_empty() {
-                self.params.room_ir_file = None;
-            } else {
-                if !std::path::Path::new(v).exists() {
-                    return Err(format!("Room IR file not found: {}", v));
-                }
-                self.params.room_ir_file = Some(v.to_string());
+            let candidate = (!v.is_empty()).then(|| v.to_string());
+            if candidate != self.params.room_ir_file {
+                return Err(Self::STRUCTURAL_SOURCE_ERROR.to_string());
             }
-            self.update_filters(false);
-            self.rebuild_cached_parameters();
             return Ok(());
         }
         if id.as_str() == "source_mode" {
             let v = value
                 .as_string()
                 .ok_or_else(|| "source_mode must be a string".to_string())?;
-            match v {
-                "synthetic" | "hrtf_file" | "roomeq_recommended" => {
-                    if v == "roomeq_recommended" {
-                        let mut candidate = self.params.clone();
-                        candidate.source_mode = v.to_string();
-                        validate_roomeq_recommended_source(
-                            &candidate,
-                            self.fft.sample_rate,
-                            self.fft.fft_size / 2 + 1,
-                        )?;
-                    }
-                    self.params.source_mode = v.to_string();
-                }
-                _ => {
-                    return Err(format!(
-                        "source_mode must be 'synthetic', 'hrtf_file', or 'roomeq_recommended', got '{}'",
-                        v
-                    ));
-                }
+            let mut candidate = self.params.clone();
+            candidate.source_mode = v.to_string();
+            if candidate.source_mode != self.params.source_mode {
+                return Err(Self::STRUCTURAL_SOURCE_ERROR.to_string());
             }
+            Self::validate_source_configuration(
+                &candidate,
+                self.fft.sample_rate,
+                self.fft.fft_size / 2 + 1,
+            )?;
+            self.params = candidate;
             self.update_filters(false);
             self.rebuild_cached_parameters();
             return Ok(());
@@ -1103,25 +1358,10 @@ impl Plugin for XtcPlugin {
             let v = value
                 .as_string()
                 .ok_or_else(|| "recommended_matrix_file must be a string".to_string())?;
-            if v.is_empty() {
-                self.params.recommended_matrix_file = None;
-            } else {
-                if !std::path::Path::new(v).exists() {
-                    return Err(format!("roomEQ recommended matrix not found: {}", v));
-                }
-                if self.params.source_mode == "roomeq_recommended" {
-                    let mut candidate = self.params.clone();
-                    candidate.recommended_matrix_file = Some(v.to_string());
-                    validate_roomeq_recommended_source(
-                        &candidate,
-                        self.fft.sample_rate,
-                        self.fft.fft_size / 2 + 1,
-                    )?;
-                }
-                self.params.recommended_matrix_file = Some(v.to_string());
+            let candidate = (!v.is_empty()).then(|| v.to_string());
+            if candidate != self.params.recommended_matrix_file {
+                return Err(Self::STRUCTURAL_SOURCE_ERROR.to_string());
             }
-            self.update_filters(false);
-            self.rebuild_cached_parameters();
             return Ok(());
         }
         if id.as_str() == "itd_modeling" {
@@ -1138,6 +1378,21 @@ impl Plugin for XtcPlugin {
             self.update_filters(false);
             self.rebuild_cached_parameters();
             return Ok(());
+        }
+
+        if id.as_str() == "room_reflections_enabled"
+            && value
+                .as_bool()
+                .ok_or_else(|| "room_reflections_enabled must be boolean".to_string())?
+        {
+            let mut candidate = self.params.clone();
+            candidate.room_reflections_enabled = true;
+            Self::validate_room_ir_configuration(
+                &candidate,
+                self.fft.sample_rate,
+                self.fft.fft_size / 2 + 1,
+                self.fft.fft_forward.clone(),
+            )?;
         }
 
         let idx = param_bridge::set_parameter(XT, &id, &value, |i, v| self.set_param_value(i, v))?;
@@ -1203,6 +1458,9 @@ impl Plugin for XtcPlugin {
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        if id.as_str() == "fft_size" {
+            return Some(ParameterValue::Int(self.params.fft_size as i32));
+        }
         // Parameters not in PARAMS — handle separately
         if id.as_str() == "enabled" {
             return Some(ParameterValue::Bool(self.params.enabled));
