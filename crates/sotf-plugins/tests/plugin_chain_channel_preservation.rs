@@ -7,8 +7,8 @@
 
 use sotf_plugins::factory::create_plugin;
 use sotf_plugins::{
-    CompressorPlugin, EqPlugin, GainPlugin, LimiterPlugin, ParametricInPlacePluginAdapter,
-    ParametricPluginAdapter, PluginHost,
+    CompressorPlugin, EqPlugin, GainPlugin, Host, LimiterPlugin, LoudnessData,
+    LoudnessMonitorPlugin, ParametricInPlacePluginAdapter, ParametricPluginAdapter, PluginHost,
 };
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -24,6 +24,27 @@ fn interleaved_sine(channels: usize, frames: usize) -> Vec<f32> {
         }
     }
     buf
+}
+
+#[test]
+fn loudness_analyzer_tap_is_bit_transparent_inside_linear_chain() {
+    let mut host = PluginHost::new(2, SAMPLE_RATE);
+    host.add_plugin(Box::new(LoudnessMonitorPlugin::new(2).unwrap()))
+        .unwrap();
+    host.add_plugin(Box::new(ParametricPluginAdapter::new(GainPlugin::new(
+        2, 0.0,
+    ))))
+    .unwrap();
+    host.build().unwrap();
+
+    let input = interleaved_sine(2, FRAMES);
+    let mut output = vec![0.0; input.len()];
+    assert_eq!(host.process(&input, &mut output).unwrap(), FRAMES);
+    assert_eq!(output, input);
+
+    let data = host.get_plugin_data(0).unwrap();
+    let loudness = data.downcast_ref::<LoudnessData>().unwrap();
+    assert!(loudness.sample_peak_valid);
 }
 
 fn assert_all_finite(buffer: &[f32], label: &str) {

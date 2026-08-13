@@ -1,5 +1,18 @@
 # Unreleased
 
+## Zero-copy compiled analyzer taps
+
+- Add an input-only analyzer callback for non-terminal compiled analyzer nodes.
+  Loudness Monitor consumes the existing upstream buffer directly, so the host
+  no longer copies a bit-transparent analyzer output into alternating scratch
+  before the next plugin.
+- Preserve the regular process path for terminal, bypassed, and unsupported
+  analyzers. Once an input-only hook is attempted, errors, invalid frame counts,
+  and panics preserve transparent audio without re-entering potentially
+  partially advanced analyzer state for the same block.
+- Cover compiled analyzer-plus-DSP chains, a stateful-failure no-reentry case,
+  and the real Loudness Monitor with regressions proving sample-exact output.
+
 ## Exact whole-program loudness and query status
 
 - Add a selectable `whole_program` integrated-loudness mode that retains every

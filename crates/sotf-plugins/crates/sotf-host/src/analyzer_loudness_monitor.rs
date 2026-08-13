@@ -897,41 +897,27 @@ impl Plugin for LoudnessMonitorPlugin {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        if !self.initialized {
-            return Err("loudness monitor must be initialized before processing".to_string());
-        }
-        if context.sample_rate != self.sample_rate {
+        let expected_samples = self.validate_analyzer_input(input, context)?;
+        if output.len() != expected_samples {
             return Err(format!(
-                "loudness monitor initialized at {} Hz but received {} Hz context",
-                self.sample_rate, context.sample_rate
-            ));
-        }
-        let expected_samples = context
-            .num_frames
-            .checked_mul(self.num_channels)
-            .ok_or_else(|| "loudness monitor frame/channel count overflow".to_string())?;
-        if input.len() != expected_samples || output.len() != expected_samples {
-            return Err(format!(
-                "loudness monitor expected {expected_samples} samples for {} frames x {} channels, got input={} output={}",
+                "loudness monitor expected {expected_samples} output samples for {} frames x {} channels, got output={}",
                 context.num_frames,
                 self.num_channels,
-                input.len(),
                 output.len()
             ));
         }
         output.copy_from_slice(input);
-        if !self.enabled {
-            return Ok(context.num_frames);
-        }
-        self.monitor.add_frames(input)?;
-
-        // Update cache: read loudness data then swap into cache.
-        // Split borrows to avoid &mut self.cache + &mut self.monitor conflict.
-        let monitor = &mut self.monitor;
-        self.cache.update(|d| {
-            monitor.update_loudness_data(d);
-        });
-        Ok(context.num_frames)
+        self.process_analyzer_input(input, context)
+    }
+    fn process_analyzer_tap_f32(
+        &mut self,
+        input: &[f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        Some(
+            self.validate_analyzer_input(input, context)
+                .and_then(|_| self.process_analyzer_input(input, context)),
+        )
     }
     fn process_compiled_f32(
         &mut self,
@@ -950,6 +936,56 @@ impl Plugin for LoudnessMonitorPlugin {
     }
     fn take_cache_contention_stats(&mut self) -> (u64, u64) {
         self.cache.take_contention_stats()
+    }
+}
+
+impl LoudnessMonitorPlugin {
+    fn validate_analyzer_input(
+        &self,
+        input: &[f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        if !self.initialized {
+            return Err("loudness monitor must be initialized before processing".to_string());
+        }
+        if context.sample_rate != self.sample_rate {
+            return Err(format!(
+                "loudness monitor initialized at {} Hz but received {} Hz context",
+                self.sample_rate, context.sample_rate
+            ));
+        }
+        let expected_samples = context
+            .num_frames
+            .checked_mul(self.num_channels)
+            .ok_or_else(|| "loudness monitor frame/channel count overflow".to_string())?;
+        if input.len() != expected_samples {
+            return Err(format!(
+                "loudness monitor expected {expected_samples} input samples for {} frames x {} channels, got input={}",
+                context.num_frames,
+                self.num_channels,
+                input.len()
+            ));
+        }
+        Ok(expected_samples)
+    }
+
+    fn process_analyzer_input(
+        &mut self,
+        input: &[f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        if !self.enabled {
+            return Ok(context.num_frames);
+        }
+        self.monitor.add_frames(input)?;
+
+        // Update cache: read loudness data then swap into cache.
+        // Split borrows to avoid &mut self.cache + &mut self.monitor conflict.
+        let monitor = &mut self.monitor;
+        self.cache.update(|d| {
+            monitor.update_loudness_data(d);
+        });
+        Ok(context.num_frames)
     }
 }
 

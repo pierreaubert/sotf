@@ -262,6 +262,26 @@ pub trait Plugin: Send {
         None
     }
 
+    /// Consume an analyzer tap without copying its bit-transparent input into
+    /// a separate output buffer. The host uses this only for a non-terminal
+    /// compiled analyzer node, where the same upstream buffer remains the
+    /// downstream source. Returning `None` requests the ordinary compiled
+    /// process path and must be side-effect-free. Once an implementation
+    /// returns `Some`, it must have consumed the block exactly once and must
+    /// not expect the host to call regular `process()` after an error. A
+    /// successful call must be state-equivalent to one regular analyzer
+    /// invocation and return exactly `context.num_frames`. Implementations
+    /// must be allocation-free and bounded on the realtime thread; their
+    /// regular output contract must remain bit-transparent.
+    fn process_analyzer_tap_f32(
+        &mut self,
+        input: &[f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        let _ = (input, context);
+        None
+    }
+
     /// Stable scalar gain that a host compiled plan may fuse with adjacent ops.
     ///
     /// Return `Some(gain)` only when skipping `process()` for this block would

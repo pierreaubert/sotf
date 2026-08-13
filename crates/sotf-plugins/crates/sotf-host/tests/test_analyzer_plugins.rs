@@ -59,6 +59,31 @@ fn render_loudness(layout: ChannelLayout, role_samples: &[(ChannelRole, f32)]) -
 }
 
 #[test]
+fn loudness_input_only_tap_updates_measurement_without_output_copy() {
+    let frames = 4_800;
+    let input: Vec<f32> = (0usize..frames)
+        .flat_map(|frame| {
+            let sample = if frame.is_multiple_of(2) { 0.25 } else { -0.25 };
+            [sample, -sample]
+        })
+        .collect();
+    let mut plugin = LoudnessMonitorPlugin::new(2).unwrap();
+    plugin.initialize(48_000).unwrap();
+
+    assert_eq!(
+        plugin
+            .process_analyzer_tap_f32(&input, &ProcessContext::new(48_000, frames))
+            .expect("Loudness Monitor supports the input-only analyzer hook")
+            .unwrap(),
+        frames
+    );
+    let snapshot = plugin.get_data().unwrap();
+    let loudness = snapshot.downcast_ref::<LoudnessData>().unwrap();
+    assert_eq!(loudness.channel_peaks.len(), 2);
+    assert!(loudness.channel_peaks.iter().all(|peak| *peak == 0.25));
+}
+
+#[test]
 fn explicit_5_1_loudness_is_independent_of_physical_channel_order() {
     use ChannelRole::*;
     let canonical = explicit_5_1([FrontLeft, FrontRight, FrontCenter, Lfe, SideLeft, SideRight]);

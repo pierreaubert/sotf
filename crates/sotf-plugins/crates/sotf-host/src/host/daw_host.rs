@@ -1337,6 +1337,57 @@ impl DawHost {
         }
     }
 
+    pub(super) fn process_analyzer_tap_f32_isolated(
+        plugin: &mut dyn Plugin,
+        node: &GraphNode,
+        input: &[f32],
+        context: &ProcessContext<'_>,
+    ) -> bool {
+        let result = match catch_unwind(AssertUnwindSafe(|| {
+            plugin.process_analyzer_tap_f32(input, context)
+        })) {
+            Ok(None) => return false,
+            Ok(Some(result)) => result,
+            Err(payload) => {
+                let reason = panic_payload_description(payload.as_ref());
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) panicked in zero-copy analyzer tap: {}; preserving transparent audio without analyzer reentry",
+                    node.name,
+                    node.id,
+                    reason
+                );
+                return true;
+            }
+        };
+        match result {
+            Ok(frames) if frames == context.num_frames => true,
+            Ok(frames) => {
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) zero-copy analyzer tap returned {} frames, expected {}; preserving transparent audio without analyzer reentry",
+                    node.name,
+                    node.id,
+                    frames,
+                    context.num_frames
+                );
+                true
+            }
+            Err(err) => {
+                crate::rate_limited_log!(
+                    error,
+                    5,
+                    "host: plugin '{}' (node {}) zero-copy analyzer tap failed: {err}; preserving transparent audio without analyzer reentry",
+                    node.name,
+                    node.id
+                );
+                true
+            }
+        }
+    }
+
     pub(super) fn process_plugin_f64_isolated(
         plugin: &mut dyn Plugin,
         node: &GraphNode,
@@ -2038,6 +2089,27 @@ impl DawHost {
             let region_writes_final_gain = active_gain_region
                 .is_some_and(|(region_end, gain)| region_end == plan.ops.len() && gain != 1.0);
             let is_last = idx + 1 == plan.ops.len() && !region_writes_final_gain;
+            if !is_last
+                && op.kind == CompiledOpKind::AnalyzerTap
+                && !self.bypassed.get(nid).copied().unwrap_or(false)
+            {
+                let context = ProcessContext::new(self.config.sample_rate, current_frames)
+                    .with_sample_position(block_start_sample);
+                let tap_input = match current_source {
+                    CompiledLinearSource::ExternalInput => &input[..current_len],
+                    CompiledLinearSource::ScratchInput => &bufs.scratch_input[..current_len],
+                    CompiledLinearSource::ScratchOutput => &bufs.scratch_output[..current_len],
+                };
+                if Self::process_analyzer_tap_f32_isolated(
+                    self.plugins[nid].as_mut().unwrap().as_mut(),
+                    node,
+                    tap_input,
+                    &context,
+                ) {
+                    idx += 1;
+                    continue;
+                }
+            }
             let output_frames = {
                 let plugin = self.plugins[nid].as_ref().unwrap();
                 Self::plugin_output_frames_for_input_isolated(

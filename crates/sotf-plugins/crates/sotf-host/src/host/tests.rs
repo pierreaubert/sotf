@@ -199,6 +199,79 @@ fn test_compiled_linear_f32_uses_specialized_eq_hook() {
 }
 
 #[test]
+fn test_compiled_nonterminal_analyzer_tap_reuses_upstream_buffer() {
+    let regular_calls = Arc::new(AtomicUsize::new(0));
+    let tap_calls = Arc::new(AtomicUsize::new(0));
+    let mut g = DawHost::new(2, 48_000);
+    g.add_plugin(Box::new(ZeroCopyAnalyzerHookPlugin {
+        regular_calls: Arc::clone(&regular_calls),
+        tap_calls: Arc::clone(&tap_calls),
+    }))
+    .unwrap();
+    g.add_plugin(Box::new(SpecializedEqHookPlugin)).unwrap();
+    g.build().unwrap();
+
+    let input = vec![0.25_f32, -0.5, 0.75, -1.0];
+    let mut output = vec![0.0; input.len()];
+    assert_eq!(g.process(&input, &mut output).unwrap(), 2);
+    assert_eq!(output, vec![0.5, -1.0, 1.5, -2.0]);
+    assert_eq!(tap_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(regular_calls.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn test_failed_zero_copy_analyzer_is_not_reentered_for_the_same_block() {
+    let regular_calls = Arc::new(AtomicUsize::new(0));
+    let tap_calls = Arc::new(AtomicUsize::new(0));
+    let mut g = DawHost::new(2, 48_000);
+    g.add_plugin(Box::new(FailingZeroCopyAnalyzerHookPlugin {
+        regular_calls: Arc::clone(&regular_calls),
+        tap_calls: Arc::clone(&tap_calls),
+        failure: ZeroCopyAnalyzerFailure::Error,
+    }))
+    .unwrap();
+    g.add_plugin(Box::new(SpecializedEqHookPlugin)).unwrap();
+    g.build().unwrap();
+
+    let input = vec![0.25_f32, -0.5, 0.75, -1.0];
+    let mut output = vec![0.0; input.len()];
+    assert_eq!(g.process(&input, &mut output).unwrap(), 2);
+    assert_eq!(output, vec![0.5, -1.0, 1.5, -2.0]);
+    assert_eq!(tap_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(regular_calls.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn test_wrong_count_zero_copy_analyzer_is_not_reentered_for_the_same_block() {
+    assert_consumed_zero_copy_failure_is_not_reentered(ZeroCopyAnalyzerFailure::WrongCount);
+}
+
+#[test]
+fn test_panicking_zero_copy_analyzer_is_not_reentered_for_the_same_block() {
+    assert_consumed_zero_copy_failure_is_not_reentered(ZeroCopyAnalyzerFailure::Panic);
+}
+
+fn assert_consumed_zero_copy_failure_is_not_reentered(failure: ZeroCopyAnalyzerFailure) {
+    let regular_calls = Arc::new(AtomicUsize::new(0));
+    let tap_calls = Arc::new(AtomicUsize::new(0));
+    let mut g = DawHost::new(2, 48_000);
+    g.add_plugin(Box::new(FailingZeroCopyAnalyzerHookPlugin {
+        regular_calls: Arc::clone(&regular_calls),
+        tap_calls: Arc::clone(&tap_calls),
+        failure,
+    }))
+    .unwrap();
+    g.add_plugin(Box::new(SpecializedEqHookPlugin)).unwrap();
+    g.build().unwrap();
+    let input = vec![0.25_f32, -0.5, 0.75, -1.0];
+    let mut output = vec![0.0; input.len()];
+    assert_eq!(g.process(&input, &mut output).unwrap(), 2);
+    assert_eq!(output, vec![0.5, -1.0, 1.5, -2.0]);
+    assert_eq!(tap_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(regular_calls.load(Ordering::Relaxed), 0);
+}
+
+#[test]
 fn test_compiled_linear_f32_uses_other_specialized_hooks() {
     let cases = [
         (
@@ -551,6 +624,134 @@ struct SpecializedCompiledHookPlugin {
     class: PluginCostClass,
     op: PluginCompiledOp,
     scale: f32,
+}
+
+struct ZeroCopyAnalyzerHookPlugin {
+    regular_calls: Arc<AtomicUsize>,
+    tap_calls: Arc<AtomicUsize>,
+}
+
+struct FailingZeroCopyAnalyzerHookPlugin {
+    regular_calls: Arc<AtomicUsize>,
+    tap_calls: Arc<AtomicUsize>,
+    failure: ZeroCopyAnalyzerFailure,
+}
+
+#[derive(Clone, Copy)]
+enum ZeroCopyAnalyzerFailure {
+    Error,
+    WrongCount,
+    Panic,
+}
+
+impl Plugin for FailingZeroCopyAnalyzerHookPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Failing zero-copy Analyzer", "0.1", "test")
+    }
+    fn input_channels(&self) -> usize {
+        2
+    }
+    fn output_channels(&self) -> usize {
+        2
+    }
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Analyzer
+    }
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::analyzer(Some(PluginCompiledOp::AnalyzerTap))
+    }
+    fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+        vec![]
+    }
+    fn set_parameter(
+        &mut self,
+        _: crate::parameters::ParameterId,
+        _: crate::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        Err("none".into())
+    }
+    fn get_parameter(
+        &self,
+        _: &crate::parameters::ParameterId,
+    ) -> Option<crate::parameters::ParameterValue> {
+        None
+    }
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        self.regular_calls.fetch_add(1, Ordering::Relaxed);
+        output.copy_from_slice(input);
+        Ok(context.num_frames)
+    }
+    fn process_analyzer_tap_f32(
+        &mut self,
+        _: &[f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        self.tap_calls.fetch_add(1, Ordering::Relaxed);
+        match self.failure {
+            ZeroCopyAnalyzerFailure::Error => {
+                Some(Err("state advanced before synthetic failure".to_string()))
+            }
+            ZeroCopyAnalyzerFailure::WrongCount => Some(Ok(context.num_frames + 1)),
+            ZeroCopyAnalyzerFailure::Panic => panic!("synthetic analyzer tap panic"),
+        }
+    }
+}
+
+impl Plugin for ZeroCopyAnalyzerHookPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Zero-copy Analyzer", "0.1", "test")
+    }
+    fn input_channels(&self) -> usize {
+        2
+    }
+    fn output_channels(&self) -> usize {
+        2
+    }
+    fn cost_class(&self) -> PluginCostClass {
+        PluginCostClass::Analyzer
+    }
+    fn compile_metadata(&self) -> PluginCompileMetadata {
+        PluginCompileMetadata::analyzer(Some(PluginCompiledOp::AnalyzerTap))
+    }
+    fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+        vec![]
+    }
+    fn set_parameter(
+        &mut self,
+        _: crate::parameters::ParameterId,
+        _: crate::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        Err("none".into())
+    }
+    fn get_parameter(
+        &self,
+        _: &crate::parameters::ParameterId,
+    ) -> Option<crate::parameters::ParameterValue> {
+        None
+    }
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        self.regular_calls.fetch_add(1, Ordering::Relaxed);
+        output.copy_from_slice(input);
+        Ok(context.num_frames)
+    }
+    fn process_analyzer_tap_f32(
+        &mut self,
+        _: &[f32],
+        context: &ProcessContext,
+    ) -> Option<Result<usize, String>> {
+        self.tap_calls.fetch_add(1, Ordering::Relaxed);
+        Some(Ok(context.num_frames))
+    }
 }
 
 impl Plugin for SpecializedCompiledHookPlugin {

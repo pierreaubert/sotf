@@ -1,5 +1,19 @@
 # Loudness Monitor plugin review — 2026-08-12
 
+## Analyzer-tap performance closure — sotf-host 0.5.105
+
+The retained host-copy gap is closed for non-terminal compiled analyzer nodes.
+The plugin now exposes an input-only analyzer-tap callback, and the linear
+render plan keeps the existing upstream source as the next plugin's input
+instead of copying transparent audio through alternating scratch. Terminal
+analyzers still perform the one unavoidable copy into the caller's output.
+Unsupported hooks and bypass retain the ordinary isolated plugin path. Once a
+hook is attempted, invalid frame counts, errors, and panics preserve transparent
+audio without calling partially advanced analyzer state a second time. Focused
+host regressions cover successful and stateful-failure hooks, while a real
+Loudness Monitor→DSP chain proves sample-exact audio and observable measurement;
+existing allocation and analyzer suites cover the realtime/data contract.
+
 ## Exact integrated-mode closure — sotf-host 0.5.104
 
 The deferred integrated-history and publication-contract gap is closed:
