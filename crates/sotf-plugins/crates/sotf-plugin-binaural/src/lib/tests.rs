@@ -11,6 +11,556 @@ use sotf_host::plugin::{Plugin, ProcessContext};
 use std::sync::Arc;
 
 #[test]
+fn unsupported_channel_layouts_are_rejected() {
+    for channels in [0, 4, 7, 9, 11, 13, 15, 17] {
+        let params = crate::BinauralDecoderParams {
+            input_channels: channels,
+            ..serde_json::from_value(serde_json::json!({"input_channels": 2})).unwrap()
+        };
+        assert!(
+            BinauralDecoderPlugin::try_from_params(params).is_err(),
+            "{channels} channels must not silently fall back to stereo"
+        );
+    }
+    for channels in crate::config::SUPPORTED_INPUT_CHANNELS {
+        let params = crate::BinauralDecoderParams {
+            input_channels: channels,
+            ..serde_json::from_value(serde_json::json!({"input_channels": 2})).unwrap()
+        };
+        assert!(BinauralDecoderPlugin::try_from_params(params).is_ok());
+    }
+}
+
+#[test]
+fn construction_state_restores_all_runtime_room_controls() {
+    let params: crate::BinauralDecoderParams = serde_json::from_value(serde_json::json!({
+        "input_channels": 2,
+        "crossfade_mode": 1,
+        "crossfade_ms": 125.0,
+        "late_reverb_enabled": true,
+        "late_reverb_mix": 0.42,
+        "late_reverb_rt60": 2.5,
+        "late_reverb_damping": 0.65
+    }))
+    .unwrap();
+    let plugin = BinauralDecoderPlugin::try_from_params(params).unwrap();
+    assert_eq!(plugin.config.crossfade_mode_index, 1);
+    assert_eq!(plugin.config.crossfade_ms, 125.0);
+    assert!(plugin.config.late_reverb_enabled);
+    assert_eq!(plugin.config.late_reverb_mix, 0.42);
+    assert_eq!(plugin.config.late_reverb_rt60, 2.5);
+    assert_eq!(plugin.config.late_reverb_damping, 0.65);
+}
+
+#[test]
+fn runtime_parameter_surface_exactly_matches_canonical_specs() {
+    let plugin = BinauralDecoderPlugin::new(
+        2,
+        64,
+        None,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    let runtime = plugin.parameters();
+    assert_eq!(runtime.len(), crate::params::PARAMS.len());
+    for (parameter, spec) in runtime.iter().zip(crate::params::PARAMS) {
+        assert_eq!(parameter.id.as_str(), spec.engine_key);
+        assert_eq!(parameter.update_mode, spec.update_mode);
+    }
+    assert!(
+        runtime
+            .iter()
+            .all(|parameter| parameter.id.as_str() != "hrtf_file")
+    );
+    assert_eq!(plugin.info().version, env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn compile_metadata_is_a_conservative_stateful_boundary() {
+    let plugin = BinauralDecoderPlugin::new(
+        2,
+        64,
+        None,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    let metadata = plugin.compile_metadata();
+    assert!(metadata.boundary && metadata.stateful);
+    assert!(!metadata.linear && !metadata.time_invariant_for_block);
+    assert!(!metadata.can_absorb_input_gain && !metadata.can_absorb_output_gain);
+    assert_eq!(metadata.latency_samples, plugin.latency_samples());
+}
+
+#[test]
+fn full_head_update_queue_retries_without_advancing_last_sent_angle() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        64,
+        None,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.initialize(48_000).unwrap();
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    tx.try_send((0.0, 0.0, 0.0)).unwrap();
+    plugin.hrtf_update_tx = Some(tx);
+    plugin.smoothing.head_yaw_deg.set_target(90.0);
+    let input = vec![0.0; 64 * 2];
+    let mut output = vec![0.0; 64 * 2];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 64))
+        .unwrap();
+    assert_eq!(plugin.smoothing.last_hrtf_yaw, 0.0);
+    rx.try_recv().unwrap();
+
+    let mut latest = 0.0;
+    for _ in 0..200 {
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 64))
+            .unwrap();
+        if let Ok((yaw, _, _)) = rx.try_recv() {
+            latest = yaw;
+        }
+    }
+    assert!(latest > 89.0, "worker mailbox stopped at {latest} degrees");
+    assert!((plugin.smoothing.last_hrtf_yaw - latest).abs() < 1.0e-6);
+}
+
+#[test]
+fn completed_crossfade_state_is_handed_to_background_reclaimer() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        64,
+        None,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    let old = Arc::new(BinauralState {
+        hrtf_filters_freq: vec![vec![Complex::new(1.0, 0.0); 66]; 2],
+        diffuse_field_eq_filter: None,
+        _hrtf_data: None,
+    });
+    let weak = Arc::downgrade(&old);
+    plugin.crossfade.crossfade_prev_state = Some(old);
+    plugin.crossfade.crossfade_remaining = 0;
+    plugin.retire_completed_crossfade_state();
+    assert!(plugin.crossfade.crossfade_prev_state.is_none());
+    for _ in 0..100 {
+        if weak.upgrade().is_none() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("retired HRTF state was not destroyed by the background reclaimer");
+}
+
+#[test]
+fn reflections_preserve_source_ownership_and_silent_channels_add_nothing() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        64,
+        None,
+        1.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.smoothing.externalization.set_target(1.0);
+    plugin.room.cached_reflections = vec![vec![], vec![]];
+    let reflection = room::Reflection {
+        delay_samples: 1,
+        gain: 0.5,
+        left_gain: 0.8,
+        right_gain: 0.2,
+        azimuth_deg: -45.0,
+        elevation_deg: 0.0,
+        hrtf_filter: None,
+    };
+    plugin.room.cached_reflections[0].push(reflection.clone());
+    plugin.room.reflection_delay_line[0] = 1.0;
+    plugin.room.reflection_read_pos = 1;
+    let mut output = [0.0, 0.0];
+    plugin.apply_reflections(&mut output, 1);
+    assert!((output[0] - 0.4).abs() < 1.0e-6);
+    assert!((output[1] - 0.1).abs() < 1.0e-6);
+
+    // A configured reflection owned by a silent second channel cannot change
+    // the first source's response.
+    plugin.room.cached_reflections[1].push(reflection);
+    plugin.room.reflection_read_pos = 1;
+    let mut with_silent_channel = [0.0, 0.0];
+    plugin.apply_reflections(&mut with_silent_channel, 1);
+    assert_eq!(with_silent_channel, output);
+}
+
+#[path = "tests/misc.rs"]
+mod misc;
+
+fn test_vbap_sofa() -> sotf_host::sofa::SofaFile {
+    use sotf_host::sofa::SourcePosition;
+    // Three non-collinear unit vectors in the positive octant.
+    let positions = vec![
+        SourcePosition::new(0.0, 0.0, 1.0),
+        SourcePosition::new(90.0, 0.0, 1.0),
+        SourcePosition::new(0.0, 90.0, 1.0),
+    ];
+    sotf_host::sofa::SofaFile {
+        sample_rate: 48_000.0,
+        num_measurements: 3,
+        ir_length: 1,
+        positions,
+        impulse_responses: vec![1.0; 6],
+        convention: "SimpleFreeFieldHRIR".into(),
+        data_sample_rate: Some(48_000.0),
+    }
+}
+
+#[test]
+fn vbap_weights_are_exact_affine_coordinates() {
+    use sotf_host::sofa::SourcePosition;
+    let sofa = test_vbap_sofa();
+    let nearest = [(0, 0.0), (1, 0.0), (2, 0.0)];
+
+    for (target, expected) in [
+        (SourcePosition::new(0.0, 0.0, 1.0), [1.0, 0.0, 0.0]),
+        (SourcePosition::new(45.0, 0.0, 1.0), [0.5, 0.5, 0.0]),
+        (SourcePosition::new(45.0, 35.26439, 1.0), [1.0 / 3.0; 3]),
+    ] {
+        let gains = hrtf::calculate_vbap_gains(&target, &nearest, &sofa);
+        for i in 0..3 {
+            assert!(
+                (gains[i] - expected[i]).abs() < 1.0e-4,
+                "{gains:?} != {expected:?}"
+            );
+        }
+        assert!((gains.iter().sum::<f32>() - 1.0).abs() < 1.0e-5);
+    }
+}
+
+#[test]
+fn vbap_constant_field_is_reproduced() {
+    use sotf_host::sofa::SourcePosition;
+    let sofa = test_vbap_sofa();
+    let nearest = [(0, 0.0), (1, 0.0), (2, 0.0)];
+    let target = SourcePosition::new(45.0, 35.26439, 1.0);
+    let gains = hrtf::calculate_vbap_gains(&target, &nearest, &sofa);
+    let mut planner = realfft::RealFftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(64);
+    let (left, right) = hrtf::interpolate_hrtf_frequency_domain(
+        &nearest,
+        &gains,
+        &sofa,
+        64,
+        48_000,
+        &fft,
+        0.0,
+        target.azimuth,
+        target.elevation,
+    );
+    for value in left.iter().chain(right.iter()) {
+        assert!(
+            (value.re - 1.0).abs() < 1.0e-4 && value.im.abs() < 1.0e-4,
+            "{value:?}"
+        );
+    }
+}
+
+#[test]
+fn diffuse_eq_rejects_empty_inconsistent_and_non_finite_datasets() {
+    use sotf_host::sofa::{SofaFile, SourcePosition};
+    let mut planner = realfft::RealFftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(64);
+    let make = |num_measurements, positions, impulse_responses, ir_length| SofaFile {
+        sample_rate: 48_000.0,
+        num_measurements,
+        ir_length,
+        positions,
+        impulse_responses,
+        convention: "SimpleFreeFieldHRIR".into(),
+        data_sample_rate: Some(48_000.0),
+    };
+    assert!(
+        filter::compute_diffuse_field_eq(&make(0, vec![], vec![], 1), 64, 48_000, &fft).is_err()
+    );
+    assert!(
+        filter::compute_diffuse_field_eq(
+            &make(1, vec![SourcePosition::new(0.0, 0.0, 1.0)], vec![1.0], 1),
+            64,
+            48_000,
+            &fft
+        )
+        .is_err()
+    );
+    assert!(
+        filter::compute_diffuse_field_eq(
+            &make(
+                1,
+                vec![SourcePosition::new(0.0, 0.0, 1.0)],
+                vec![f32::NAN, f32::NAN],
+                1
+            ),
+            64,
+            48_000,
+            &fft
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn diffuse_eq_is_level_invariant_bounded_and_preserves_ear_balance() {
+    use sotf_host::sofa::{SofaFile, SourcePosition};
+    let make = |scale: f32| SofaFile {
+        sample_rate: 48_000.0,
+        num_measurements: 2,
+        ir_length: 4,
+        positions: vec![
+            SourcePosition::new(-30.0, 0.0, 1.0),
+            SourcePosition::new(30.0, 0.0, 1.0),
+        ],
+        impulse_responses: [
+            [1.0, 0.2, 0.0, 0.0],
+            [0.5, 0.1, 0.0, 0.0],
+            [0.8, -0.1, 0.0, 0.0],
+            [0.4, -0.05, 0.0, 0.0],
+        ]
+        .into_iter()
+        .flatten()
+        .map(|sample| sample * scale)
+        .collect(),
+        convention: "SimpleFreeFieldHRIR".into(),
+        data_sample_rate: Some(48_000.0),
+    };
+    let mut planner = realfft::RealFftPlanner::<f32>::new();
+    let fft = planner.plan_fft_forward(64);
+    let a = filter::compute_diffuse_field_eq(&make(1.0), 64, 48_000, &fft).unwrap();
+    let b = filter::compute_diffuse_field_eq(&make(0.01), 64, 48_000, &fft).unwrap();
+    let max_boost = 10.0_f32.powf(12.0 / 20.0) + 1.0e-5;
+    for ear in 0..2 {
+        for bin in 0..a[ear].len() {
+            assert!((a[ear][bin].norm() - b[ear][bin].norm()).abs() < 2.0e-3);
+            assert!(a[ear][bin].norm() <= max_boost);
+        }
+    }
+    // Bin 1 is the nearest 64-point FFT bin to the 1 kHz comparison frequency.
+    let reference_bin = 1;
+    assert!(a[0][reference_bin].norm() < a[1][reference_bin].norm());
+}
+
+#[test]
+fn initialize_configures_fdn_for_engine_rate_and_reset_clears_tail() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        1024,
+        None,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.config.late_reverb_enabled = true;
+    plugin.config.late_reverb_mix = 1.0;
+    plugin.initialize(96_000).unwrap();
+
+    // Excite the FDN directly, then reset and require complete silence.
+    for i in 0..20_000 {
+        let input = if i == 0 { 1.0 } else { 0.0 };
+        let _ = plugin.room.fdn.process_stereo(input, input);
+    }
+    plugin.reset_state();
+    for _ in 0..20_000 {
+        let (left, right) = plugin.room.fdn.process_stereo(0.0, 0.0);
+        assert_eq!((left, right), (0.0, 0.0));
+    }
+}
+
+#[test]
+fn streaming_process_holds_output_for_reported_latency() {
+    let fft_size = 64;
+    let total_frames = fft_size * 4;
+    let impulse_frame = fft_size / 4;
+    let mut input = vec![0.0_f32; total_frames * 2];
+    input[impulse_frame * 2] = 1.0;
+
+    // Exercise callback sizes on both sides of the FFT frame.  A callback
+    // larger than the frame is the important case: without the host-facing
+    // gate, the first frame drains using future samples from that callback.
+    for callback_frames in [1, 16, 32, 64, 128] {
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            fft_size,
+            None,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
+        plugin.initialize(48_000).unwrap();
+
+        let mut rendered = Vec::with_capacity(total_frames * 2);
+        for start in (0..total_frames).step_by(callback_frames) {
+            let end = (start + callback_frames).min(total_frames);
+            let frames = end - start;
+            let mut block = vec![0.0_f32; frames * 2];
+            let context = ProcessContext::new(48_000, frames);
+            plugin
+                .process(&input[start * 2..end * 2], &mut block, &context)
+                .unwrap();
+            rendered.extend_from_slice(&block);
+        }
+
+        let expected_frame = plugin.latency_samples() + impulse_frame;
+        assert!(
+            rendered[..expected_frame * 2]
+                .chunks_exact(2)
+                .all(|frame| frame.iter().all(|sample| sample.abs() < 1.0e-7)),
+            "callback {callback_frames}: output escaped before fixed latency at frame {expected_frame}"
+        );
+        assert!(
+            rendered[expected_frame * 2].abs() > 1.0e-4,
+            "callback {callback_frames}: impulse did not arrive at fixed frame {expected_frame}"
+        );
+    }
+}
+
+#[test]
+fn streaming_hrtf_matches_direct_linear_convolution_across_boundaries() {
+    let fft_size = 64;
+    let sample_rate = 48_000;
+    let input_frames = 192;
+    let flush_frames = 128;
+    let input: Vec<f32> = (0..input_frames)
+        .map(|i| ((i as f32 * 0.37).sin() + (i as f32 * 0.11).cos()) * 0.2)
+        .collect();
+
+    for ir_len in [1, 15, 49] {
+        let left_ir: Vec<f32> = (0..ir_len)
+            .map(|i| {
+                if i == 0 {
+                    0.7
+                } else {
+                    0.2 * (-0.08 * i as f32).exp()
+                }
+            })
+            .collect();
+        let right_ir: Vec<f32> = left_ir.iter().rev().map(|sample| sample * 0.6).collect();
+        for callback_frames in [1, 15, 16, 17, 64, 97] {
+            let mut plugin = BinauralDecoderPlugin::new(
+                1,
+                fft_size,
+                None,
+                0.0,
+                0.0,
+                false,
+                120.0,
+                2.0,
+                0.0,
+                RoomModel {
+                    max_order: 0,
+                    ..Default::default()
+                },
+            );
+            plugin.initialize(sample_rate).unwrap();
+            let left = filter::ir_to_freq(&left_ir, fft_size, &plugin.fft.fft_r2c);
+            let right = filter::ir_to_freq(&right_ir, fft_size, &plugin.fft.fft_r2c);
+            let mut combined = left;
+            combined.extend(right);
+            let state = Arc::new(BinauralState {
+                hrtf_filters_freq: vec![combined],
+                diffuse_field_eq_filter: None,
+                _hrtf_data: None,
+            });
+            plugin.state.store(state.clone());
+            plugin.crossfade.current_state_snapshot = state;
+
+            let mut stream = input.clone();
+            stream.resize(input_frames + flush_frames, 0.0);
+            let mut rendered = Vec::new();
+            for block in stream.chunks(callback_frames) {
+                let mut output = vec![0.0; block.len() * 2];
+                plugin
+                    .process(
+                        block,
+                        &mut output,
+                        &ProcessContext::new(sample_rate, block.len()),
+                    )
+                    .unwrap();
+                rendered.extend(output);
+            }
+
+            for frame in 0..input_frames + ir_len - 1 {
+                let direct = |ir: &[f32]| {
+                    (0..ir.len())
+                        .filter_map(|tap| {
+                            frame
+                                .checked_sub(tap)
+                                .filter(|&src| src < input.len())
+                                .map(|src| input[src] * ir[tap])
+                        })
+                        .sum::<f32>()
+                };
+                let output_frame = plugin.latency_samples() + frame;
+                let expected_left = direct(&left_ir);
+                let expected_right = direct(&right_ir);
+                assert!(
+                    (rendered[output_frame * 2] - expected_left).abs() < 2.0e-5,
+                    "ir={ir_len} block={callback_frames} frame={frame}: {} != {expected_left}",
+                    rendered[output_frame * 2]
+                );
+                assert!(
+                    (rendered[output_frame * 2 + 1] - expected_right).abs() < 2.0e-5,
+                    "ir={ir_len} block={callback_frames} frame={frame}: {} != {expected_right}",
+                    rendered[output_frame * 2 + 1]
+                );
+            }
+        }
+    }
+
+    let plugin = BinauralDecoderPlugin::new(
+        1,
+        fft_size,
+        None,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    assert!(plugin.validate_linear_convolution_ir(50).is_err());
+}
+
+#[test]
 fn test_binaural_decoder_creation() {
     let plugin = BinauralDecoderPlugin::new(
         5,
@@ -1056,7 +1606,7 @@ fn test_reflection_delay_clamped_to_buffer_size() {
     plugin.initialize(sr).unwrap();
 
     // Inject a reflection whose delay exceeds delay_line capacity (16384 samples).
-    plugin.room.cached_reflections.push(room::Reflection {
+    plugin.room.cached_reflections[0].push(room::Reflection {
         delay_samples: 100_000, // Far beyond 16384
         gain: 0.5,
         left_gain: 0.7,
@@ -1068,14 +1618,14 @@ fn test_reflection_delay_clamped_to_buffer_size() {
 
     // Clamp manually (mimicking what initialize does post-build).
     let max_delay = plugin.room.reflection_delay_mask;
-    for r in &mut plugin.room.cached_reflections {
+    for r in plugin.room.cached_reflections.iter_mut().flatten() {
         if r.delay_samples > max_delay {
             r.delay_samples = max_delay;
         }
     }
 
     // All delays must now be within the buffer.
-    for r in &plugin.room.cached_reflections {
+    for r in plugin.room.cached_reflections.iter().flatten() {
         assert!(
             r.delay_samples <= max_delay,
             "delay {} exceeds buffer mask {}",
@@ -1147,6 +1697,34 @@ fn test_set_parameter_hrtf_file_empty_clears_path() {
         )
         .unwrap();
     assert!(plugin.config.hrtf_path.is_none());
+}
+
+#[test]
+fn failed_runtime_sofa_replacement_is_transactional() {
+    let mut plugin = BinauralDecoderPlugin::new(
+        2,
+        64,
+        None,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.initialize(48_000).unwrap();
+    let before = plugin.state.load_full();
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("sofa_file"),
+                ParameterValue::String("/definitely/missing/binaural.sofa".into()),
+            )
+            .is_err()
+    );
+    assert!(plugin.config.hrtf_path.is_none());
+    assert!(Arc::ptr_eq(&before, &plugin.state.load_full()));
 }
 
 #[test]
@@ -1475,7 +2053,7 @@ fn test_initialize_clamps_reflection_delays() {
     );
     plugin.initialize(48000).unwrap();
     let max_delay = plugin.room.reflection_delay_mask;
-    for r in &plugin.room.cached_reflections {
+    for r in plugin.room.cached_reflections.iter().flatten() {
         assert!(
             r.delay_samples <= max_delay,
             "delay {} exceeds buffer mask {}",

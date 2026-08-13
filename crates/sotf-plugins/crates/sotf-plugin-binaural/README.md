@@ -2,4 +2,8 @@
 
 SOTF Binaural Decoder plugin for HRTF-based binaural rendering.
 
-Renders multichannel audio to binaural stereo using FFT-based convolution with SOFA HRTF files. Speaker configuration aware for accurate spatial reproduction over headphones.
+Renders supported multichannel layouts to binaural stereo using causal,
+partitioned overlap-add convolution with SOFA HRTFs. The renderer has a fixed
+`fft_size` host latency, strict speaker-layout admission, transactional SOFA
+replacement/head tracking, source-owned broadband room reflections, optional
+diffuse-field EQ, and late reverb.

@@ -62,18 +62,16 @@ pub fn calculate_vbap_gains(
 
     // Calculate barycentric coordinates
     // w1 corresponds to v1, w2 corresponds to v2
-    let n_cross_v02 = cross(n, v02);
+    let v02_cross_n = cross(v02, n);
     let n_cross_v01 = cross(n, v01);
 
-    let w1 = dot(n_cross_v02, v0p) / n_dot_n;
+    let w1 = dot(v02_cross_n, v0p) / n_dot_n;
     let w2 = dot(n_cross_v01, v0p) / n_dot_n;
     let w0 = 1.0 - w1 - w2;
 
     // Check if point is inside triangle (all weights non-negative)
     // If outside, clamp to valid range and warn
     let mut weights = [w0, w1, w2];
-    let mut was_clamped = false;
-
     if weights.iter().any(|&w| w < -0.01) {
         // Point is significantly outside triangle
         // This can happen with sparse HRTF measurements
@@ -83,8 +81,6 @@ pub fn calculate_vbap_gains(
             w1,
             w2
         );
-        was_clamped = true;
-
         // Clamp negative weights to zero
         for w in &mut weights {
             if *w < 0.0 {
@@ -104,21 +100,13 @@ pub fn calculate_vbap_gains(
         }
     }
 
-    if was_clamped {
-        // For out-of-triangle targets the weights are already renormalized to sum 1.0.
-        // Do NOT apply energy normalization: clamped weights like [0, 0.5, 0.5] have
-        // energy = 0.5, so scale = sqrt(2) ≈ 1.41 — a +3 dB unintended boost.
-        weights
+    // These are interpolation weights for an HRTF field, not loudspeaker VBAP
+    // gains. Preserve affine/constant fields by normalizing to unit sum.
+    let sum: f32 = weights.iter().sum();
+    if sum > 1e-6 {
+        [weights[0] / sum, weights[1] / sum, weights[2] / sum]
     } else {
-        // For in-triangle targets apply VBAP energy normalization to maintain constant
-        // perceived loudness as the source moves between measurement positions.
-        let energy = weights[0] * weights[0] + weights[1] * weights[1] + weights[2] * weights[2];
-        if energy > 1e-6 {
-            let scale = 1.0 / energy.sqrt();
-            [weights[0] * scale, weights[1] * scale, weights[2] * scale]
-        } else {
-            [1.0, 0.0, 0.0]
-        }
+        [1.0, 0.0, 0.0]
     }
 }
 

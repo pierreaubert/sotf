@@ -13,13 +13,13 @@ use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
 };
-use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz, window_mul_simd};
+use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz};
 use sotf_host::smoothing::Smoother;
 use sotf_host::sofa::SofaFile;
 use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::mpsc::{SyncSender, sync_channel};
+use std::sync::mpsc::{SyncSender, TrySendError, sync_channel};
 use std::thread::JoinHandle;
 
 #[derive(Clone)]
@@ -53,7 +53,6 @@ pub(super) struct BinauralConfig {
 pub(super) struct BinauralFft {
     pub(super) fft_r2c: Arc<dyn RealToComplex<f32>>,
     pub(super) fft_c2r: Arc<dyn ComplexToReal<f32>>,
-    pub(super) analysis_window: Vec<f32>,
 }
 
 pub(super) struct BinauralAnalysis {
@@ -83,15 +82,22 @@ pub(super) struct BinauralOutput {
     pub(super) output_accumulator_fill: usize,
     pub(super) next_add_position: usize,
     pub(super) output_read_position: usize,
+    /// Number of startup samples already emitted as latency padding.
+    ///
+    /// The renderer needs a complete FFT frame before it can produce the
+    /// first valid output.  Keep this gate in the host-facing process path so
+    /// large callbacks cannot drain a frame using samples from the same
+    /// callback before the reported fixed latency has elapsed.
     pub(super) latency_filled: usize,
     pub(super) output_scale: f32,
 }
 
 pub(super) struct BinauralRoom {
     pub(super) reflection_delay_line: Vec<f32>,
-    pub(super) reflection_delay_pos: usize,
+    pub(super) reflection_write_pos: usize,
+    pub(super) reflection_read_pos: usize,
     pub(super) reflection_delay_mask: usize,
-    pub(super) cached_reflections: Vec<Reflection>,
+    pub(super) cached_reflections: Vec<Vec<Reflection>>,
     pub(super) fdn: math_audio_dsp::fdn::Fdn,
 }
 
@@ -120,6 +126,11 @@ pub(super) struct BinauralSmoothing {
     pub(super) last_hrtf_roll: f32,
 }
 
+pub(super) struct BinauralRetirement {
+    pub(super) tx: Option<SyncSender<Arc<BinauralState>>>,
+    pub(super) thread: Option<JoinHandle<()>>,
+}
+
 pub struct BinauralDecoderPlugin {
     pub(super) state: Arc<ArcSwap<BinauralState>>,
     pub(super) config: BinauralConfig,
@@ -131,6 +142,7 @@ pub struct BinauralDecoderPlugin {
     pub(super) room: BinauralRoom,
     pub(super) crossfade: BinauralCrossfade,
     pub(super) smoothing: BinauralSmoothing,
+    pub(super) retirement: BinauralRetirement,
     /// Channel used to request head-angle HRTF recomputations from the
     /// background thread. Capacity 1; stale requests are dropped when the
     /// thread is still busy.
@@ -140,6 +152,16 @@ pub struct BinauralDecoderPlugin {
 }
 
 impl BinauralDecoderPlugin {
+    pub(super) fn validate_linear_convolution_ir(&self, ir_length: usize) -> PluginResult<()> {
+        let capacity = self.config.fft_size - self.config.hop_size + 1;
+        if ir_length > capacity {
+            return Err(format!(
+                "SOFA IR length {ir_length} exceeds linear convolution capacity {capacity}; increase fft_size"
+            ));
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         input_channels: usize,
@@ -182,14 +204,7 @@ impl BinauralDecoderPlugin {
             }
         }
 
-        let analysis_window: Vec<f32> = (0..fft_size)
-            .map(|i| {
-                let x = i as f32 / fft_size as f32;
-                0.5 * (1.0 - (2.0 * std::f32::consts::PI * x).cos())
-            })
-            .collect();
-
-        let output_scale = 1.0 / (fft_size as f32 * 2.0);
+        let output_scale = 1.0 / fft_size as f32;
 
         let mut hrtf_filters_freq =
             vec![vec![Complex::new(0.0, 0.0); freq_size * 2]; input_channels];
@@ -220,6 +235,16 @@ impl BinauralDecoderPlugin {
             _hrtf_data: None,
         });
 
+        // Bounded, allocation-free handoff for destroying replaced HRTF states
+        // away from the realtime callback. If the queue is temporarily full,
+        // the callback retains the state and retries on the next FFT hop.
+        let (retire_tx, retire_rx) = sync_channel::<Arc<BinauralState>>(8);
+        let retire_thread = std::thread::spawn(move || {
+            while let Ok(state) = retire_rx.recv() {
+                drop(state);
+            }
+        });
+
         let mut p = Self {
             state: Arc::new(ArcSwap::from(initial_state.clone())),
             config: BinauralConfig {
@@ -248,11 +273,7 @@ impl BinauralDecoderPlugin {
                 late_reverb_damping: 0.3,
                 cached_parameters: Vec::new(),
             },
-            fft: BinauralFft {
-                fft_r2c,
-                fft_c2r,
-                analysis_window,
-            },
+            fft: BinauralFft { fft_r2c, fft_c2r },
             analysis: BinauralAnalysis {
                 temp_freq_buffer: vec![Complex::new(0.0, 0.0); freq_size],
                 temp_fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
@@ -281,10 +302,11 @@ impl BinauralDecoderPlugin {
                 output_scale,
             },
             room: BinauralRoom {
-                reflection_delay_line: vec![0.0; delay_size * 2],
-                reflection_delay_pos: 0,
+                reflection_delay_line: vec![0.0; delay_size * input_channels],
+                reflection_write_pos: 0,
+                reflection_read_pos: 0,
                 reflection_delay_mask: delay_size - 1,
-                cached_reflections: Vec::new(),
+                cached_reflections: vec![Vec::new(); input_channels],
                 fdn: math_audio_dsp::fdn::Fdn::new(8, sr),
             },
             crossfade: BinauralCrossfade {
@@ -310,6 +332,10 @@ impl BinauralDecoderPlugin {
                 last_hrtf_pitch: 0.0,
                 last_hrtf_roll: 0.0,
             },
+            retirement: BinauralRetirement {
+                tx: Some(retire_tx),
+                thread: Some(retire_thread),
+            },
             hrtf_update_tx: None,
             hrtf_update_thread: None,
         };
@@ -334,6 +360,13 @@ impl BinauralDecoderPlugin {
             6 => Some(self.config.late_reverb_mix as f64),
             7 => Some(self.config.late_reverb_rt60 as f64),
             8 => Some(self.config.late_reverb_damping as f64),
+            9 => Some(self.config.crossfade_ms as f64),
+            10 => Some(self.smoothing.head_yaw_deg.target() as f64),
+            11 => Some(self.smoothing.head_pitch_deg.target() as f64),
+            12 => Some(self.smoothing.head_roll_deg.target() as f64),
+            13 => None,
+            14 => Some(self.config.head_width_cm as f64),
+            15 => Some(self.config.ear_height_cm as f64),
             _ => None,
         }
     }
@@ -351,75 +384,72 @@ impl BinauralDecoderPlugin {
             6 => self.config.late_reverb_mix = value as f32,
             7 => self.config.late_reverb_rt60 = value as f32,
             8 => self.config.late_reverb_damping = value as f32,
+            9 => self.config.crossfade_ms = value as f32,
+            10 => self.smoothing.head_yaw_deg.set_target(value as f32),
+            11 => self.smoothing.head_pitch_deg.set_target(value as f32),
+            12 => self.smoothing.head_roll_deg.set_target(value as f32),
+            13 => {}
+            14 => self.config.head_width_cm = value as f32,
+            15 => self.config.ear_height_cm = value as f32,
             _ => {}
         }
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
         self.config.cached_parameters = param_bridge::build_parameters(BN, |i| self.param_value(i));
-        // Append parameters not in PARAMS
-        let hrtf_path_str = self
-            .config
-            .hrtf_path
-            .as_ref()
-            .and_then(|p| p.to_str())
-            .unwrap_or("")
-            .to_string();
-        self.config.cached_parameters.push(Parameter::new_float(
-            "crossfade_ms",
-            "Crossfade (ms)",
-            self.config.crossfade_ms,
-            10.0,
-            500.0,
-        ));
-        self.config.cached_parameters.push(Parameter::new_string(
-            "hrtf_file",
-            "HRTF File",
-            hrtf_path_str,
-        ));
-        self.config.cached_parameters.push(Parameter::new_float(
-            "head_yaw_deg",
-            "Head Yaw (deg)",
-            self.smoothing.head_yaw_deg.target(),
-            -180.0,
-            180.0,
-        ));
-        self.config.cached_parameters.push(Parameter::new_float(
-            "head_pitch_deg",
-            "Head Pitch (deg)",
-            self.smoothing.head_pitch_deg.target(),
-            -180.0,
-            180.0,
-        ));
-        self.config.cached_parameters.push(Parameter::new_float(
-            "head_roll_deg",
-            "Head Roll (deg)",
-            self.smoothing.head_roll_deg.target(),
-            -180.0,
-            180.0,
-        ));
-        self.config.cached_parameters.push(Parameter::new_string(
-            "hrtf_database_dir",
-            "HRTF Database Dir",
-            self.config.hrtf_database_dir.clone(),
-        ));
-        self.config.cached_parameters.push(Parameter::new_float(
-            "head_width_cm",
-            "Head Width (cm)",
-            self.config.head_width_cm,
-            10.0,
-            25.0,
-        ));
-        self.config.cached_parameters.push(Parameter::new_float(
-            "ear_height_cm",
-            "Ear Height (cm)",
-            self.config.ear_height_cm,
-            4.0,
-            16.0,
-        ));
     }
 
-    pub fn from_params(params: BinauralDecoderParams) -> Self {
+    fn default_hrtf_state(&self) -> Arc<BinauralState> {
+        let mut filters = vec![
+            vec![Complex::new(0.0, 0.0); self.config.freq_size * 2];
+            self.config.input_channels
+        ];
+        for &ch in &self.coefficients.main_channels {
+            if ch == 0 {
+                filters[ch][..self.config.freq_size].fill(Complex::new(1.0, 0.0));
+            } else if ch == 1 {
+                filters[ch][self.config.freq_size..].fill(Complex::new(1.0, 0.0));
+            } else {
+                filters[ch][..self.config.freq_size].fill(Complex::new(0.707, 0.0));
+                filters[ch][self.config.freq_size..].fill(Complex::new(0.707, 0.0));
+            }
+        }
+        super::hrtf::normalize_hrtf_gains(
+            &mut filters,
+            &self.coefficients.lfe_channels,
+            self.config.freq_size,
+            self.config.input_channels,
+        );
+        Arc::new(BinauralState {
+            hrtf_filters_freq: filters,
+            diffuse_field_eq_filter: None,
+            _hrtf_data: None,
+        })
+    }
+
+    pub fn try_from_params(params: BinauralDecoderParams) -> PluginResult<Self> {
+        if !super::config::SUPPORTED_INPUT_CHANNELS.contains(&params.input_channels) {
+            return Err(format!(
+                "unsupported binaural input channel count {}; supported counts are {:?}",
+                params.input_channels,
+                super::config::SUPPORTED_INPUT_CHANNELS
+            ));
+        }
+        if params.crossfade_mode > 1 {
+            return Err("crossfade_mode must be 0 (Linear) or 1 (Spectral)".to_string());
+        }
+        if !params.crossfade_ms.is_finite() || !(10.0..=500.0).contains(&params.crossfade_ms) {
+            return Err("crossfade_ms must be finite and in 10..=500 ms".to_string());
+        }
+        for (name, value, min, max) in [
+            ("late_reverb_mix", params.late_reverb_mix, 0.0, 1.0),
+            ("late_reverb_rt60", params.late_reverb_rt60, 0.1, 5.0),
+            ("late_reverb_damping", params.late_reverb_damping, 0.0, 1.0),
+        ] {
+            if !value.is_finite() || !(min..=max).contains(&value) {
+                return Err(format!("{name} must be finite and in {min}..={max}"));
+            }
+        }
         let hrtf_path = if params.hrtf_file.is_empty() {
             None
         } else {
@@ -440,14 +470,25 @@ impl BinauralDecoderPlugin {
         plugin.config.hrtf_database_dir = params.hrtf_database_dir;
         plugin.config.head_width_cm = params.head_width_cm;
         plugin.config.ear_height_cm = params.ear_height_cm;
+        plugin.config.crossfade_mode_index = params.crossfade_mode;
+        plugin.config.crossfade_ms = params.crossfade_ms;
+        plugin.config.late_reverb_enabled = params.late_reverb_enabled;
+        plugin.config.late_reverb_mix = params.late_reverb_mix;
+        plugin.config.late_reverb_rt60 = params.late_reverb_rt60;
+        plugin.config.late_reverb_damping = params.late_reverb_damping;
         if !params.srir_file.is_empty() {
             plugin.config.srir_file = Some(PathBuf::from(params.srir_file));
         }
         plugin.rebuild_cached_parameters();
-        plugin
+        Ok(plugin)
+    }
+
+    pub fn from_params(params: BinauralDecoderParams) -> Self {
+        Self::try_from_params(params).expect("invalid BinauralDecoderParams")
     }
 
     pub(super) fn process_audio_block(&mut self) {
+        self.retire_completed_crossfade_state();
         // Detect state changes for crossfade.
         // Use load() (borrow guard) instead of load_full() (Arc clone) to avoid
         // an atomic refcount increment on every audio block call.
@@ -525,10 +566,9 @@ impl BinauralDecoderPlugin {
 
             for &ch in &self.coefficients.main_channels {
                 let ch_offset = ch * n;
-                window_mul_simd(
-                    &mut self.analysis.ifft_output_buf,
-                    &self.input.input_buffer[ch_offset..ch_offset + n],
-                    &self.fft.analysis_window,
+                self.analysis.ifft_output_buf.fill(0.0);
+                self.analysis.ifft_output_buf[..self.config.hop_size].copy_from_slice(
+                    &self.input.input_buffer[ch_offset..ch_offset + self.config.hop_size],
                 );
 
                 self.fft
@@ -681,7 +721,7 @@ impl BinauralDecoderPlugin {
                 .crossfade_remaining
                 .saturating_sub(self.config.hop_size);
             if self.crossfade.crossfade_remaining == 0 {
-                self.crossfade.crossfade_prev_state = None;
+                self.retire_completed_crossfade_state();
                 log::debug!("[BinauralDecoder] HRTF crossfade complete");
             }
         } else {
@@ -692,10 +732,9 @@ impl BinauralDecoderPlugin {
 
             for &ch in &self.coefficients.main_channels {
                 let ch_offset = ch * n;
-                window_mul_simd(
-                    &mut self.analysis.ifft_output_buf,
-                    &self.input.input_buffer[ch_offset..ch_offset + n],
-                    &self.fft.analysis_window,
+                self.analysis.ifft_output_buf.fill(0.0);
+                self.analysis.ifft_output_buf[..self.config.hop_size].copy_from_slice(
+                    &self.input.input_buffer[ch_offset..ch_offset + self.config.hop_size],
                 );
 
                 self.fft
@@ -742,10 +781,9 @@ impl BinauralDecoderPlugin {
         }
         for &ch in &self.coefficients.lfe_channels {
             let ch_offset = ch * n;
-            window_mul_simd(
-                &mut self.analysis.ifft_output_buf,
-                &self.input.input_buffer[ch_offset..ch_offset + n],
-                &self.fft.analysis_window,
+            self.analysis.ifft_output_buf.fill(0.0);
+            self.analysis.ifft_output_buf[..self.config.hop_size].copy_from_slice(
+                &self.input.input_buffer[ch_offset..ch_offset + self.config.hop_size],
             );
 
             self.fft
@@ -819,7 +857,6 @@ impl BinauralDecoderPlugin {
         self.output.next_add_position =
             (self.output.next_add_position + self.config.hop_size) & mask;
         self.output.output_accumulator_fill += self.config.hop_size;
-        self.output.latency_filled += self.config.hop_size;
     }
 
     pub(super) fn apply_reflections(&mut self, output: &mut [f32], nf: usize) {
@@ -827,37 +864,36 @@ impl BinauralDecoderPlugin {
         let delay_mask = self.room.reflection_delay_mask;
 
         for i in 0..nf {
-            let l = output[i * 2];
-            let r = output[i * 2 + 1];
-            self.room.reflection_delay_line[self.room.reflection_delay_pos * 2] = l;
-            self.room.reflection_delay_line[self.room.reflection_delay_pos * 2 + 1] = r;
-
-            if ext > 0.01 && !self.room.cached_reflections.is_empty() {
+            if ext > 0.01 {
                 let mut rl = 0.0;
                 let mut rr = 0.0;
-                for ref_ in &self.room.cached_reflections {
-                    let r_pos = (self.room.reflection_delay_pos + delay_mask + 1
-                        - ref_.delay_samples)
-                        & delay_mask;
-                    let g = ref_.gain * ext;
+                for (channel, reflections) in self.room.cached_reflections.iter().enumerate() {
+                    for ref_ in reflections {
+                        let r_pos = (self.room.reflection_read_pos + delay_mask + 1
+                            - ref_.delay_samples)
+                            & delay_mask;
+                        let source = self.room.reflection_delay_line
+                            [r_pos * self.config.input_channels + channel];
+                        let g = ref_.gain * ext;
 
-                    // Use HRTF-derived L/R gains when available (SSIR reflections),
-                    // otherwise fall back to simple azimuth-based panning (ISM reflections).
-                    let (lg, rg) = if let Some(hrtf) = &ref_.hrtf_filter {
-                        // Broadband energy from pre-computed HRTF gives perceptually
-                        // accurate ILD (interaural level difference) for each reflection DOA.
-                        (hrtf.left_gain_broadband, hrtf.right_gain_broadband)
-                    } else {
-                        (ref_.left_gain, ref_.right_gain)
-                    };
+                        // Use HRTF-derived L/R gains when available (SSIR reflections),
+                        // otherwise fall back to simple azimuth-based panning (ISM reflections).
+                        let (lg, rg) = if let Some(hrtf) = &ref_.hrtf_filter {
+                            // Broadband energy from pre-computed HRTF gives perceptually
+                            // accurate ILD (interaural level difference) for each reflection DOA.
+                            (hrtf.left_gain_broadband, hrtf.right_gain_broadband)
+                        } else {
+                            (ref_.left_gain, ref_.right_gain)
+                        };
 
-                    rl += self.room.reflection_delay_line[r_pos * 2] * g * lg;
-                    rr += self.room.reflection_delay_line[r_pos * 2 + 1] * g * rg;
+                        rl += source * g * lg;
+                        rr += source * g * rg;
+                    }
                 }
                 output[i * 2] += rl;
                 output[i * 2 + 1] += rr;
             }
-            self.room.reflection_delay_pos = (self.room.reflection_delay_pos + 1) & delay_mask;
+            self.room.reflection_read_pos = (self.room.reflection_read_pos + 1) & delay_mask;
         }
     }
 
@@ -946,6 +982,19 @@ impl BinauralDecoderPlugin {
         let config = self.config.clone();
         let fft_r2c = Arc::clone(&self.fft.fft_r2c);
         let lfe_channels = self.coefficients.lfe_channels.clone();
+        let prepared = {
+            let state_guard = state.load();
+            let sofa = state_guard
+                ._hrtf_data
+                .as_ref()
+                .expect("worker is spawned only with a loaded SOFA dataset");
+            Arc::new(super::hrtf::prepare_hrtf_spectra(
+                sofa,
+                config.fft_size,
+                config.sample_rate,
+                &fft_r2c,
+            ))
+        };
 
         let (tx, rx) = sync_channel::<(f32, f32, f32)>(1);
         let handle = std::thread::spawn(move || {
@@ -953,7 +1002,7 @@ impl BinauralDecoderPlugin {
                 let new_state = match Self::compute_head_rotated_hrtf_state(
                     &state,
                     &config,
-                    &fft_r2c,
+                    &prepared,
                     &lfe_channels,
                     yaw,
                     pitch,
@@ -989,7 +1038,7 @@ impl BinauralDecoderPlugin {
     fn compute_head_rotated_hrtf_state(
         state: &Arc<ArcSwap<BinauralState>>,
         config: &BinauralConfig,
-        fft_r2c: &Arc<dyn RealToComplex<f32>>,
+        prepared: &super::hrtf::PreparedHrtfSpectra,
         lfe_channels: &[usize],
         yaw: f32,
         pitch: f32,
@@ -1018,13 +1067,12 @@ impl BinauralDecoderPlugin {
             let tgt = sotf_host::sofa::SourcePosition::new(rotated_az, rotated_el, 1.0);
             let near = sofa_ref.find_three_nearest(&tgt);
             let gains = super::hrtf::calculate_vbap_gains(&tgt, &near, sofa_ref);
-            let (l_fft, r_fft) = super::hrtf::interpolate_hrtf_frequency_domain(
+            let (l_fft, r_fft) = super::hrtf::interpolate_hrtf_prepared(
                 &near,
                 &gains,
-                sofa_ref,
+                prepared,
                 config.fft_size,
                 config.sample_rate,
-                fft_r2c,
                 config.near_field_strength,
                 tgt.azimuth,
                 tgt.elevation,
@@ -1040,19 +1088,10 @@ impl BinauralDecoderPlugin {
             config.input_channels,
         );
 
-        let eq = if config.diffuse_field_eq {
-            Some(
-                super::filter::compute_diffuse_field_eq(
-                    sofa_ref,
-                    config.fft_size,
-                    config.sample_rate,
-                    fft_r2c,
-                )
-                .map_err(|e| format!("Diffuse field EQ calculation failed: {}", e))?,
-            )
-        } else {
-            None
-        };
+        // Diffuse-field EQ depends on the dataset, not on head orientation.
+        // Reuse the load-time result instead of transforming every SOFA
+        // measurement again for each tracking update.
+        let eq = state_guard.diffuse_field_eq_filter.clone();
 
         let sofa_clone = state_guard._hrtf_data.clone();
         drop(state_guard);
@@ -1072,10 +1111,11 @@ impl BinauralDecoderPlugin {
         self.output.output_read_position = 0;
         self.output.latency_filled = 0;
         self.room.reflection_delay_line.fill(0.0);
-        self.room.reflection_delay_pos = 0;
+        self.room.reflection_write_pos = 0;
+        self.room.reflection_read_pos = 0;
         // Clear crossfade state on reset
-        self.crossfade.crossfade_prev_state = None;
         self.crossfade.crossfade_remaining = 0;
+        self.retire_completed_crossfade_state();
         // Reset RTPGHI state so stale phase history is not carried across resets
         if let Some(ref mut rtpghi) = self.crossfade.rtpghi_left {
             rtpghi.reset();
@@ -1083,18 +1123,42 @@ impl BinauralDecoderPlugin {
         if let Some(ref mut rtpghi) = self.crossfade.rtpghi_right {
             rtpghi.reset();
         }
+        self.room.fdn.reset();
+    }
+
+    pub(super) fn retire_completed_crossfade_state(&mut self) {
+        if self.crossfade.crossfade_remaining != 0 {
+            return;
+        }
+        let Some(old_state) = self.crossfade.crossfade_prev_state.take() else {
+            return;
+        };
+        let Some(tx) = &self.retirement.tx else {
+            self.crossfade.crossfade_prev_state = Some(old_state);
+            return;
+        };
+        match tx.try_send(old_state) {
+            Ok(()) => {}
+            Err(TrySendError::Full(old_state)) | Err(TrySendError::Disconnected(old_state)) => {
+                self.crossfade.crossfade_prev_state = Some(old_state);
+            }
+        }
     }
 }
 
 impl Drop for BinauralDecoderPlugin {
     fn drop(&mut self) {
         self.shutdown_hrtf_update_thread();
+        self.retirement.tx.take();
+        if let Some(handle) = self.retirement.thread.take() {
+            let _ = handle.join();
+        }
     }
 }
 
 impl Plugin for BinauralDecoderPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Binaural Decoder", "2.1.0", "SotF")
+        PluginInfo::new("Binaural Decoder", env!("CARGO_PKG_VERSION"), "SotF")
     }
     fn input_channels(&self) -> usize {
         self.config.input_channels
@@ -1103,14 +1167,7 @@ impl Plugin for BinauralDecoderPlugin {
         2
     }
     fn compile_metadata(&self) -> PluginCompileMetadata {
-        PluginCompileMetadata::linear_transform(
-            PluginCostClass::Convolution,
-            None,
-            self.latency_samples(),
-            true,
-            true,
-            false,
-        )
+        PluginCompileMetadata::boundary(PluginCostClass::Convolution, self.latency_samples())
     }
     fn parameters(&self) -> Vec<Parameter> {
         self.config.cached_parameters.clone()
@@ -1137,9 +1194,7 @@ impl Plugin for BinauralDecoderPlugin {
             } else {
                 Some(PathBuf::from(&path_str))
             };
-            self.config.hrtf_path = new_path;
-
-            if let Some(ref p) = self.config.hrtf_path.clone()
+            if let Some(ref p) = new_path
                 && self.config.sample_rate > 0
             {
                 let mut sofa = SofaFile::load(p)
@@ -1150,6 +1205,7 @@ impl Plugin for BinauralDecoderPlugin {
                     super::hrtf::resample_sofa(&mut sofa, self.config.sample_rate)
                         .map_err(|e| format!("HRTF resample failed: {}", e))?;
                 }
+                self.validate_linear_convolution_ir(sofa.ir_length)?;
 
                 let mut filters = vec![
                     vec![Complex::new(0.0, 0.0); self.config.freq_size * 2];
@@ -1205,7 +1261,19 @@ impl Plugin for BinauralDecoderPlugin {
                     diffuse_field_eq_filter: eq,
                     _hrtf_data: Some(sofa),
                 });
+                // Commit only after every fallible load/resample/filter step
+                // succeeds. The old worker and state remain valid on error.
+                self.shutdown_hrtf_update_thread();
+                self.config.hrtf_path = new_path;
                 self.state.store(new_state);
+                self.smoothing.last_hrtf_yaw = f32::INFINITY;
+                self.smoothing.last_hrtf_pitch = f32::INFINITY;
+                self.smoothing.last_hrtf_roll = f32::INFINITY;
+                self.spawn_hrtf_update_thread();
+            } else {
+                self.shutdown_hrtf_update_thread();
+                self.config.hrtf_path = new_path;
+                self.state.store(self.default_hrtf_state());
             }
 
             self.rebuild_cached_parameters();
@@ -1396,12 +1464,22 @@ impl Plugin for BinauralDecoderPlugin {
         param_bridge::get_parameter(BN, id, |i| self.param_value(i))
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
+        if sr == 0 {
+            return Err("sample rate must be greater than zero".to_string());
+        }
         enable_ftz_daz();
         self.config.sample_rate = sr;
         self.smoothing.externalization.set_time(50.0, sr);
         self.smoothing.head_yaw_deg.set_time(10.0, sr);
         self.smoothing.head_pitch_deg.set_time(10.0, sr);
         self.smoothing.head_roll_deg.set_time(10.0, sr);
+        self.room.fdn.set_room_params(
+            self.config.late_reverb_rt60,
+            self.config.late_reverb_damping,
+            1.0,
+            sr,
+        );
+        self.room.fdn.reset();
 
         // Initialize RTPGHI processors for spectral crossfade mode
         self.crossfade.rtpghi_left = Some(RtpghiProcessor::new(
@@ -1434,7 +1512,7 @@ impl Plugin for BinauralDecoderPlugin {
         );
         self.coefficients.lfe_lowpass_filter = f;
         self.coefficients.lfe_gain = g;
-        self.room.cached_reflections.clear();
+        self.room.cached_reflections = vec![Vec::new(); self.config.input_channels];
         if let Some(srir_path) = &self.config.srir_file {
             // SSIR-based measured room reflections
             match super::room::calculate_reflections_from_srir(srir_path, sr) {
@@ -1444,7 +1522,9 @@ impl Plugin for BinauralDecoderPlugin {
                         refs.len(),
                         srir_path.display()
                     );
-                    self.room.cached_reflections = refs;
+                    for &channel in &self.coefficients.main_channels {
+                        self.room.cached_reflections[channel] = refs.clone();
+                    }
                 }
                 Err(e) => {
                     log::warn!(
@@ -1459,7 +1539,7 @@ impl Plugin for BinauralDecoderPlugin {
                     );
                     for (ch, cr) in refs.into_iter().enumerate() {
                         if !self.coefficients.lfe_channels.contains(&ch) {
-                            self.room.cached_reflections.extend(cr);
+                            self.room.cached_reflections[ch] = cr;
                         }
                     }
                 }
@@ -1473,7 +1553,7 @@ impl Plugin for BinauralDecoderPlugin {
             );
             for (ch, cr) in refs.into_iter().enumerate() {
                 if !self.coefficients.lfe_channels.contains(&ch) {
-                    self.room.cached_reflections.extend(cr);
+                    self.room.cached_reflections[ch] = cr;
                 }
             }
         }
@@ -1483,7 +1563,7 @@ impl Plugin for BinauralDecoderPlugin {
         // large rooms or SRIRs can exceed this. Without clamping the bitmask wraps
         // and the reflection appears at the wrong (possibly negative-relative) time.
         let max_delay = self.room.reflection_delay_mask; // == delay_size - 1
-        for refl in &mut self.room.cached_reflections {
+        for refl in self.room.cached_reflections.iter_mut().flatten() {
             if refl.delay_samples > max_delay {
                 log::warn!(
                     "[BinauralDecoder] Reflection delay {} samples exceeds delay-line capacity {}; \
@@ -1535,6 +1615,7 @@ impl Plugin for BinauralDecoderPlugin {
                 );
                 super::hrtf::resample_sofa(&mut sofa, sr)?;
             }
+            self.validate_linear_convolution_ir(sofa.ir_length)?;
 
             let mut filters = vec![
                 vec![Complex::new(0.0, 0.0); self.config.freq_size * 2];
@@ -1585,7 +1666,7 @@ impl Plugin for BinauralDecoderPlugin {
                 None
             };
             // Pre-compute per-reflection HRTF filters for SSIR reflections
-            for refl in &mut self.room.cached_reflections {
+            for refl in self.room.cached_reflections.iter_mut().flatten() {
                 if refl.hrtf_filter.is_some() {
                     continue;
                 }
@@ -1659,12 +1740,16 @@ impl Plugin for BinauralDecoderPlugin {
             // detects the change and crossfades. If the channel is full the thread
             // is still busy, so we drop the stale request; the smoother will send
             // a newer angle on the next frame.
-            if let Some(tx) = &self.hrtf_update_tx {
-                let _ = tx.try_send((yaw, pitch, roll));
+            let sent = if let Some(tx) = &self.hrtf_update_tx {
+                tx.try_send((yaw, pitch, roll)).is_ok()
+            } else {
+                false
+            };
+            if sent {
+                self.smoothing.last_hrtf_yaw = yaw;
+                self.smoothing.last_hrtf_pitch = pitch;
+                self.smoothing.last_hrtf_roll = roll;
             }
-            self.smoothing.last_hrtf_yaw = yaw;
-            self.smoothing.last_hrtf_pitch = pitch;
-            self.smoothing.last_hrtf_roll = roll;
         }
 
         let mut ip = 0;
@@ -1681,24 +1766,76 @@ impl Plugin for BinauralDecoderPlugin {
                             input[(ip + i) * self.config.input_channels + ch];
                     }
                 }
+                for i in 0..to_copy {
+                    let write_pos =
+                        (self.room.reflection_write_pos + i) & self.room.reflection_delay_mask;
+                    let src = &input[(ip + i) * self.config.input_channels
+                        ..(ip + i + 1) * self.config.input_channels];
+                    let dst = &mut self.room.reflection_delay_line[write_pos
+                        * self.config.input_channels
+                        ..(write_pos + 1) * self.config.input_channels];
+                    dst.copy_from_slice(src);
+                }
+                self.room.reflection_write_pos =
+                    (self.room.reflection_write_pos + to_copy) & self.room.reflection_delay_mask;
                 self.input.input_fill += to_copy;
                 ip += to_copy;
             }
-            while self.input.input_fill >= n {
+            while self.input.input_fill >= self.config.hop_size {
                 self.process_audio_block();
                 for ch in 0..self.config.input_channels {
                     let off = ch * n;
-                    self.input.input_buffer[off..off + n].copy_within(self.config.hop_size..n, 0);
+                    let remaining = self.input.input_fill - self.config.hop_size;
+                    self.input.input_buffer[off..off + self.input.input_fill]
+                        .copy_within(self.config.hop_size..self.input.input_fill, 0);
+                    self.input.input_buffer[off + remaining..off + self.input.input_fill].fill(0.0);
                 }
-                self.input.input_fill = n - self.config.hop_size;
+                self.input.input_fill -= self.config.hop_size;
             }
+
+            // Consume the complete callback before advancing the output
+            // timeline. Large callbacks may require several input-buffer
+            // fills; draining early would silently drop their tail.
+            if ip < nf {
+                continue;
+            }
+
+            // Do not expose output generated from the initial frame until the
+            // declared fixed latency has elapsed.  This is deliberately
+            // drained by output sample count rather than by FFT-hop count:
+            // callbacks may be smaller than a hop or larger than an FFT
+            // frame, and both cases must observe the same absolute delay.
+            if self.output.latency_filled < self.config.fft_size {
+                let to_zero = (self.config.fft_size - self.output.latency_filled).min(nf - op);
+                let zero_end = (op + to_zero) * 2;
+                output[op * 2..zero_end].fill(0.0);
+                self.output.latency_filled += to_zero;
+                op += to_zero;
+                continue;
+            }
+
             let to_drain = self.output.output_accumulator_fill.min(nf - op);
             if to_drain > 0 {
                 let drain_slice = &mut output[op * 2..(op + to_drain) * 2];
                 for i in 0..to_drain {
                     let ri = (self.output.output_read_position + i) & mask;
-                    drain_slice[i * 2] = self.output.output_accumulator[ri * 2];
-                    drain_slice[i * 2 + 1] = self.output.output_accumulator[ri * 2 + 1];
+                    // The four-hop Hann overlap-add leaves a small finite-
+                    // precision residue after a signal has fully drained.
+                    // Suppress only this well-below-floor residue so a reset
+                    // or a sustained silence has an exact zero contract.
+                    const RESIDUAL_FLOOR: f32 = 1.0e-5;
+                    let left = self.output.output_accumulator[ri * 2];
+                    let right = self.output.output_accumulator[ri * 2 + 1];
+                    drain_slice[i * 2] = if left.abs() < RESIDUAL_FLOOR {
+                        0.0
+                    } else {
+                        left
+                    };
+                    drain_slice[i * 2 + 1] = if right.abs() < RESIDUAL_FLOOR {
+                        0.0
+                    } else {
+                        right
+                    };
                     self.output.output_accumulator[ri * 2] = 0.0;
                     self.output.output_accumulator[ri * 2 + 1] = 0.0;
                 }

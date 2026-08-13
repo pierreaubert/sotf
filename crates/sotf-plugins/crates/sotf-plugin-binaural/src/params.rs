@@ -85,6 +85,22 @@ pub const PARAMS: &[ParamSpec] = &[
     // Index 8
     ParamSpec::float("Reverb Damping", "late_reverb_damping", 0.3, 0.0, 1.0, 0.05, "", "Room")
         .doc("High-frequency damping (0=bright, 1=dark)"),
+    // Index 9
+    ParamSpec::float("Crossfade", "crossfade_ms", 50.0, 10.0, 500.0, 5.0, "ms", "Quality")
+        .doc("HRTF state transition duration"),
+    // Indices 10-12
+    ParamSpec::float("Head Yaw", "head_yaw_deg", 0.0, -180.0, 180.0, 1.0, "deg", "Tracking"),
+    ParamSpec::float("Head Pitch", "head_pitch_deg", 0.0, -180.0, 180.0, 1.0, "deg", "Tracking"),
+    ParamSpec::float("Head Roll", "head_roll_deg", 0.0, -180.0, 180.0, 1.0, "deg", "Tracking"),
+    // Index 13
+    ParamSpec::file_path("HRTF Database", "hrtf_database_dir", "Setup")
+        .setup()
+        .doc("Directory containing anthropometrically named SOFA files"),
+    // Indices 14-15
+    ParamSpec::float("Head Width", "head_width_cm", 15.0, 10.0, 25.0, 0.5, "cm", "Tracking")
+        .structural(),
+    ParamSpec::float("Ear Height", "ear_height_cm", 10.0, 4.0, 16.0, 0.5, "cm", "Tracking")
+        .structural(),
     // Legacy no-op fields are intentionally ignored by serde rather than
     // retained in live parameter state.
 ];
@@ -103,18 +119,35 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             ControlSpec::knob(2),        // externalization
             ControlSpec::knob(3),        // near_field_strength
             ControlSpec::selector(4),    // crossfade_mode
+            ControlSpec::knob(9),        // crossfade_ms
         ],
     )],
     output: &[],
-    tabs: &[TabSpec {
-        name: "Reverb",
-        controls: &[
-            ControlSpec::toggle(5), // late_reverb_enabled
-            ControlSpec::knob(6).enabled_when(ParamCondition::bool(5, true)), // mix
-            ControlSpec::knob(7).enabled_when(ParamCondition::bool(5, true)), // rt60
-            ControlSpec::knob(8).enabled_when(ParamCondition::bool(5, true)), // damping
-        ],
-    }],
+    tabs: &[
+        TabSpec {
+            name: "Reverb",
+            controls: &[
+                ControlSpec::toggle(5), // late_reverb_enabled
+                ControlSpec::knob(6).enabled_when(ParamCondition::bool(5, true)), // mix
+                ControlSpec::knob(7).enabled_when(ParamCondition::bool(5, true)), // rt60
+                ControlSpec::knob(8).enabled_when(ParamCondition::bool(5, true)), // damping
+            ],
+        },
+        TabSpec {
+            name: "Tracking",
+            controls: &[
+                ControlSpec::knob(10), // head_yaw_deg
+                ControlSpec::knob(11), // head_pitch_deg
+                ControlSpec::knob(12), // head_roll_deg
+                ControlSpec::knob(14), // head_width_cm
+                ControlSpec::knob(15), // ear_height_cm
+            ],
+        },
+        TabSpec {
+            name: "Setup",
+            controls: &[ControlSpec::file_picker(13)], // hrtf_database_dir
+        },
+    ],
     visualizations: &[],
     column_constraints: &[
         ColumnConstraint::config(180.0, 0.5),
@@ -151,6 +184,28 @@ pub struct Params {
     pub late_reverb_rt60: f64,
     #[serde(default = "d_late_reverb_damping")]
     pub late_reverb_damping: f64,
+    #[serde(default = "d_crossfade_ms")]
+    pub crossfade_ms: f64,
+    #[serde(default)]
+    pub head_yaw_deg: f64,
+    #[serde(default)]
+    pub head_pitch_deg: f64,
+    #[serde(default)]
+    pub head_roll_deg: f64,
+    #[serde(default = "d_head_width_cm")]
+    pub head_width_cm: f64,
+    #[serde(default = "d_ear_height_cm")]
+    pub ear_height_cm: f64,
+}
+
+fn d_crossfade_ms() -> f64 {
+    pk(PARAMS, "crossfade_ms").default_f64()
+}
+fn d_head_width_cm() -> f64 {
+    pk(PARAMS, "head_width_cm").default_f64()
+}
+fn d_ear_height_cm() -> f64 {
+    pk(PARAMS, "ear_height_cm").default_f64()
 }
 
 fn d_late_reverb_mix() -> f64 {
@@ -187,6 +242,12 @@ impl Default for Params {
             late_reverb_mix: d_late_reverb_mix(),
             late_reverb_rt60: d_late_reverb_rt60(),
             late_reverb_damping: d_late_reverb_damping(),
+            crossfade_ms: d_crossfade_ms(),
+            head_yaw_deg: 0.0,
+            head_pitch_deg: 0.0,
+            head_roll_deg: 0.0,
+            head_width_cm: d_head_width_cm(),
+            ear_height_cm: d_ear_height_cm(),
         }
     }
 }
@@ -212,6 +273,13 @@ impl PluginParamDef for Params {
             6 => Some(self.late_reverb_mix),
             7 => Some(self.late_reverb_rt60),
             8 => Some(self.late_reverb_damping),
+            9 => Some(self.crossfade_ms),
+            10 => Some(self.head_yaw_deg),
+            11 => Some(self.head_pitch_deg),
+            12 => Some(self.head_roll_deg),
+            13 => None,
+            14 => Some(self.head_width_cm),
+            15 => Some(self.ear_height_cm),
             _ => None,
         }
     }
@@ -227,6 +295,13 @@ impl PluginParamDef for Params {
             6 => self.late_reverb_mix = value,
             7 => self.late_reverb_rt60 = value,
             8 => self.late_reverb_damping = value,
+            9 => self.crossfade_ms = value,
+            10 => self.head_yaw_deg = value,
+            11 => self.head_pitch_deg = value,
+            12 => self.head_roll_deg = value,
+            13 => {}
+            14 => self.head_width_cm = value,
+            15 => self.ear_height_cm = value,
             _ => {}
         }
     }
@@ -241,11 +316,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn review_parameters_are_visible_with_documented_controls() {
+        let expected = [
+            (9, "main", ControlType::Knob),
+            (10, "Tracking", ControlType::Knob),
+            (11, "Tracking", ControlType::Knob),
+            (12, "Tracking", ControlType::Knob),
+            (13, "Setup", ControlType::FilePicker),
+            (14, "Tracking", ControlType::Knob),
+            (15, "Tracking", ControlType::Knob),
+        ];
+
+        for (param_index, expected_surface, expected_type) in expected {
+            let mut matches =
+                LAYOUT
+                    .main
+                    .iter()
+                    .flat_map(|group| group.controls.iter().map(|control| ("main", control)))
+                    .chain(LAYOUT.tabs.iter().flat_map(|tab| {
+                        tab.controls.iter().map(move |control| (tab.name, control))
+                    }))
+                    .filter(|(_, control)| control.param_index == param_index);
+            let (surface, control) = matches.next().unwrap_or_else(|| {
+                panic!(
+                    "{} is missing from the layout",
+                    PARAMS[param_index].engine_key
+                )
+            });
+
+            assert_eq!(surface, expected_surface);
+            assert_eq!(control.control_type, expected_type);
+            assert!(
+                !control.hidden,
+                "{} is a public UI parameter, not a chrome-owned hidden parameter",
+                PARAMS[param_index].engine_key
+            );
+            assert!(
+                matches.next().is_none(),
+                "{} must have exactly one layout control",
+                PARAMS[param_index].engine_key
+            );
+        }
+    }
+
+    #[test]
     fn param_index_coverage() {
         let p = Params::default();
         // index 0 is FilePath (sofa_file) — returns None by design
         assert!(p.param_value(0).is_none(), "sofa_file should return None");
         for i in 1..PARAMS.len() {
+            if i == 13 {
+                continue;
+            }
             assert!(
                 p.param_value(i).is_some(),
                 "param_value({}) returned None",

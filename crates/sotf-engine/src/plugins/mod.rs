@@ -136,6 +136,9 @@ sotf_plugins::serde_param_default! {
     fn default_binaural_late_reverb_mix() -> f64 = "late_reverb_mix";
     fn default_binaural_late_reverb_rt60() -> f64 = "late_reverb_rt60";
     fn default_binaural_late_reverb_damping() -> f64 = "late_reverb_damping";
+    fn default_binaural_crossfade_ms() -> f64 = "crossfade_ms";
+    fn default_binaural_head_width_cm() -> f64 = "head_width_cm";
+    fn default_binaural_ear_height_cm() -> f64 = "ear_height_cm";
 }
 sotf_plugins::serde_param_default! {
     lc_specs::PARAMS;

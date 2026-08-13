@@ -141,7 +141,7 @@ fn extract_tagged_value(text: &str, tags: &[&str]) -> Option<f32> {
 }
 
 /// Compute match score: negative total absolute deviation.
-/// Files with no parseable dims get score 0.0 (neutral fallback).
+/// Files with no parseable dimensions are fallback-only.
 fn compute_score(
     file_hw: Option<f32>,
     file_eh: Option<f32>,
@@ -149,7 +149,7 @@ fn compute_score(
     target_eh: f32,
 ) -> f32 {
     match (file_hw, file_eh) {
-        (None, None) => 0.0,
+        (None, None) => f32::NEG_INFINITY,
         (Some(hw), None) => -(hw - target_hw).abs(),
         (None, Some(eh)) => -(eh - target_eh).abs(),
         (Some(hw), Some(eh)) => -((hw - target_hw).abs() + (eh - target_eh).abs()),
@@ -208,9 +208,9 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_score_no_dims_is_neutral() {
+    fn test_compute_score_no_dims_is_fallback() {
         let s = compute_score(None, None, 15.0, 10.0);
-        assert!((s - 0.0).abs() < 1e-6);
+        assert!(s.is_infinite() && s.is_sign_negative());
     }
 
     #[test]
@@ -240,8 +240,11 @@ mod tests {
         let ranked = scan_and_rank(&tmp, 15.0, 10.0);
         assert!(ranked.len() >= 3, "Should find at least 3 .sofa files");
 
-        // The two score-0 entries (exact match + generic) should come first,
-        // then hw16, then hw13
+        assert_eq!(ranked[0].path.file_name().unwrap(), "head_15_ear_10.sofa");
+        assert_eq!(
+            ranked.last().unwrap().path.file_name().unwrap(),
+            "generic.sofa"
+        );
         let scores: Vec<f32> = ranked.iter().map(|c| c.score).collect();
         for w in scores.windows(2) {
             assert!(

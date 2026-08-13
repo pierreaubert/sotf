@@ -11,8 +11,7 @@ Renders multichannel audio (stereo to 16 channels) to binaural stereo using Head
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
 | SOFA File | file path | — | Path to HRTF data file (.sofa format) |
-| Input Channels | 2 to 16 | 2 | Number of input channels (determines speaker layout) |
-| Enable Optimization | On/Off | On | Sum-before-IFFT optimization (reduces FFT operations) |
+| Input Channels | 1,2,3,5,6,8,10,12,14,16 | 2 | Exact shared speaker layout; other widths are rejected |
 
 ### Spatial Processing (runtime-adjustable)
 
@@ -44,6 +43,10 @@ The plugin automatically selects the speaker layout based on input channel count
 | 5 | 5.0 (L, R, C, LS, RS) |
 | 6 | 5.1 (L, R, C, LFE, LS, RS) |
 | 8 | 7.1 (L, R, C, LFE, LS, RS, LB, RB) |
+| 10 | shared 10-channel immersive layout |
+| 12 | 7.1.4 immersive layout |
+| 14 | shared 14-channel immersive layout |
+| 16 | 9.1.6 immersive layout |
 
 ## Demos
 
@@ -111,14 +114,15 @@ The plugin automatically selects the speaker layout based on input channel count
 - The FFT size (2048 default) determines the HRTF filter resolution. Larger FFTs give better frequency resolution but add latency.
 - LFE channels are automatically detected from the speaker configuration and processed separately with a low-pass crossover.
 - Near-field strength models the head-shadowing effect for nearby sources — subtle values (0.1-0.3) add realism.
-- HRTF filters are loaded asynchronously via ArcSwap to avoid blocking the audio thread.
+- Initial and explicit runtime SOFA loads run on the control thread and commit
+  transactionally. Head-rotation recomputation runs on a rebound background worker.
 - The Sum-Before-IFFT optimization reduces computational cost by accumulating frequency-domain contributions before a single inverse FFT per ear.
 - VBAP interpolation between measured HRTF positions ensures smooth spatial transitions for arbitrary speaker angles.
 
 ## Signal Flow
 
 ```
-Input (N channels) → STFT (Hann window, 75% overlap)
+Input (N channels) → hop partitions (zero-padded for causal linear OLA)
   → For each main channel:
       Multiply by HRTF filter (L ear + R ear)
       Accumulate into sum_left / sum_right
@@ -126,7 +130,7 @@ Input (N channels) → STFT (Hann window, 75% overlap)
       Low-pass filter at crossover frequency
       Mix equally into both ears with distance attenuation
   → Optional: diffuse-field EQ correction
-  → ISTFT + overlap-add → Stereo output (L, R)
-  → Optional: externalization blend (dry HRTF + room reflections)
+  → IFFT + overlap-add → Stereo output (L, R)
+  → Optional: source-owned broadband-ILD room reflections
 → Output (2 channels)
 ```

@@ -22,6 +22,12 @@ fn default_params() -> BinauralDecoderParams {
         hrtf_database_dir: String::new(),
         head_width_cm: 15.0,
         ear_height_cm: 10.0,
+        crossfade_mode: 0,
+        crossfade_ms: 50.0,
+        late_reverb_enabled: false,
+        late_reverb_mix: 0.3,
+        late_reverb_rt60: 1.0,
+        late_reverb_damping: 0.3,
     }
 }
 
@@ -62,7 +68,7 @@ fn construct_new_and_trait_metadata() {
     );
     assert_eq!(plugin.input_channels(), 6);
     assert_eq!(plugin.output_channels(), 2);
-    assert_eq!(plugin.info().version, "2.1.0");
+    assert_eq!(plugin.info().version, env!("CARGO_PKG_VERSION"));
     assert_eq!(plugin.info().author, "SotF");
 }
 
@@ -169,7 +175,8 @@ fn parameters_listed_by_trait() {
     assert!(ids.contains(&"near_field_strength"));
     assert!(ids.contains(&"crossfade_ms"));
     assert!(ids.contains(&"head_yaw_deg"));
-    assert!(ids.contains(&"hrtf_file"));
+    assert!(ids.contains(&"sofa_file"));
+    assert!(!ids.contains(&"hrtf_file"));
 }
 
 #[test]

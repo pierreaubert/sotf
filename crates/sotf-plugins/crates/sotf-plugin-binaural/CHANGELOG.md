@@ -1,3 +1,68 @@
+# 0.5.23
+
+## Fixes
+
+- Expose the remediated crossfade duration, head orientation, HRTF database,
+  and anthropometric parameters in the generated layout with their documented
+  control types; a dedicated regression prevents silently hiding these public
+  controls merely to satisfy layout coverage.
+- Preserve the complete Binaural settings state when player or engine graphs
+  reconstruct the plugin for a new upstream channel width, and make the CLI
+  specialize the canonical defaults instead of duplicating the settings
+  constructor.
+
+# 0.5.22
+
+## Fixes
+
+- Replace circular sliding-window HRTF multiplication with causal hop-partition
+  overlap-add and reject SOFA IRs beyond the verified linear-convolution
+  capacity; streaming direct-FIR regressions cover irregular callbacks, FFT
+  boundaries, and IR lengths from one sample through the capacity limit.
+- Preserve per-input reflection ownership so silent configured channels cannot
+  add another source's room paths; reflection rendering is explicitly
+  broadband HRTF-derived ILD rather than claiming unused spectral/ITD filters.
+- Consume complete oversized callbacks instead of dropping samples beyond the
+  internal input-buffer fill.
+- Retire replaced HRTF states on a bounded background queue rather than
+  destroying their nested allocations in the audio callback.
+- Unify construction and runtime state for crossfade and late-reverb controls,
+  canonicalize the public SOFA key, reject unsupported channel counts, and
+  align the factory catalog with the exact shared speaker layouts.
+- Make runtime SOFA replacement transactional and force the rebound worker to
+  converge to the current head target.
+- Reject empty, inconsistent, and non-finite diffuse-field datasets; use
+  log-frequency smoothing, level-relative regularization, common-ear
+  normalization, and a final +12 dB boost ceiling.
+- Reuse load-time diffuse EQ during head updates and defer repeated HRTF-state
+  reclamation off the callback.
+
+# 0.5.21
+
+## Fixes
+
+- Gate startup output with the reported FFT latency, so callback sizes below,
+  equal to, or above one FFT frame observe the same causal delay instead of
+  draining a frame using future samples from the current callback.
+- Suppress finite-precision overlap-add residue below `-114 dBFS` after the
+  STFT tail has drained, preserving an exact-zero silence contract.
+
+# 0.5.20
+
+## Fixes
+
+- Corrected the sign of the first VBAP barycentric coordinate and use affine
+  unit-sum HRTF interpolation weights, preserving constant HRTF and ITD fields.
+- Configure the late-reverb FDN at the engine sample rate during initialize and
+  clear its complete delay/absorption state on reset.
+- Retry dropped head-tracking updates by advancing the last-requested angles
+  only after a successful worker enqueue.
+- Stop/rebind the head-tracking worker during runtime SOFA replacement and
+  restore documented default filters when the SOFA path is cleared.
+- Rank anthropometrically labelled SOFA candidates ahead of generic fallbacks.
+- Use conservative compile-boundary metadata for time-varying/nonlinear modes.
+- Activated the previously disconnected HRTF resampling/VBAP regression module.
+
 # 0.5.19
 
 ## Fixes (from code review 2026-05-11)

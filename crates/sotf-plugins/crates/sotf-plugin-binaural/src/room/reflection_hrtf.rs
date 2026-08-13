@@ -3,13 +3,9 @@ use rustfft::num_complex::Complex;
 /// Pre-computed frequency-domain HRTF filter for a single reflection.
 #[derive(Debug, Clone)]
 pub struct ReflectionHrtf {
-    /// Left-ear HRTF in frequency domain
-    pub left: Vec<Complex<f32>>,
-    /// Right-ear HRTF in frequency domain
-    pub right: Vec<Complex<f32>>,
-    /// Broadband left-ear gain derived from HRTF energy (for efficient real-time use)
+    /// Broadband left-ear gain derived from HRTF energy.
     pub left_gain_broadband: f32,
-    /// Broadband right-ear gain derived from HRTF energy (for efficient real-time use)
+    /// Broadband right-ear gain derived from HRTF energy.
     pub right_gain_broadband: f32,
 }
 
@@ -30,8 +26,6 @@ impl ReflectionHrtf {
         let right_gain_broadband = right_rms / max_rms;
 
         Self {
-            left,
-            right,
             left_gain_broadband,
             right_gain_broadband,
         }

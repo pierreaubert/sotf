@@ -17,12 +17,12 @@ src/
 ```
 
 **Algorithm pipeline:**
-1. Multichannel input accumulated in overlap-add buffer
-2. Forward FFT per input channel
+1. Multichannel input split into zero-padded hop partitions
+2. Forward FFT per active input channel
 3. Per-channel HRTF convolution in frequency domain (complex multiply-accumulate)
 4. LFE channels processed through lowpass filter and mixed at configurable gain
 5. Optional diffuse field equalization
-6. Optional room reflections via image source method
+6. Optional source-owned broadband-ILD room reflections via image source method
 7. Sum left/right HRTF outputs across all channels
 8. Inverse FFT + overlap-add
 9. Output as stereo (2 channels)
@@ -62,6 +62,7 @@ cargo bench -p sotf-plugin-binaural --bench binaural-decoder-benchmark
 - Output accumulator uses a power-of-2 ring buffer with bitmask wrapping (`output_accumulator_mask`).
 - LFE channels are identified from the speaker config, processed through a lowpass filter, and mixed into both L/R outputs.
 - SIMD operations: `complex_mul_add_simd` for HRTF convolution, `window_mul_simd` for analysis window application.
-- Room reflections use the image source method with individual HRTF per reflection, adding spatial cues for externalization.
+- Room reflections retain input/source ownership and use HRTF-derived broadband
+  ILD. Full reflection ITD/pinna convolution is not claimed.
 - Optional RTPGHI (Real-Time Phase Gradient Heap Integration) processor from `math-dsp` for phase reconstruction.
 - The `sofa-reader` dev dependency is used only in benchmarks.

@@ -278,6 +278,7 @@ impl_param_accessors! {
             auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
             mode: usize, playback_level_db: f64, reference_level_db: f64,
             playback_volume_db: f64,
+            auto_gain_position: usize, headroom_normalized: bool, auto_calibrated: bool,
         ]
     },
     Convolution {
@@ -294,6 +295,8 @@ impl_param_accessors! {
             crossfade_mode: usize,
             late_reverb_enabled: bool, late_reverb_mix: f64, late_reverb_rt60: f64,
             late_reverb_damping: f64,
+            crossfade_ms: f64, head_yaw_deg: f64, head_pitch_deg: f64, head_roll_deg: f64,
+            hrtf_database_dir: skip, head_width_cm: f64, ear_height_cm: f64,
         ]
     },
     XTC {

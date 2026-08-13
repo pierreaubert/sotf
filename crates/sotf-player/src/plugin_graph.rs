@@ -1659,6 +1659,8 @@ impl PluginGraph {
                     max_filters,
                     tdf2,
                     topology,
+                    auto_gain_enabled,
+                    oversampling,
                 } if *channels != current_channels => {
                     let ch_filters_match = channel_filters
                         .as_ref()
@@ -1677,6 +1679,8 @@ impl PluginGraph {
                         max_filters: *max_filters,
                         tdf2: *tdf2,
                         topology: *topology,
+                        auto_gain_enabled: *auto_gain_enabled,
+                        oversampling: *oversampling,
                     });
                 }
                 PluginSettings::Gain {
@@ -1700,6 +1704,13 @@ impl PluginGraph {
                     late_reverb_mix,
                     late_reverb_rt60,
                     late_reverb_damping,
+                    crossfade_ms,
+                    head_yaw_deg,
+                    head_pitch_deg,
+                    head_roll_deg,
+                    hrtf_database_dir,
+                    head_width_cm,
+                    ear_height_cm,
                 } if *input_channels != current_channels => {
                     updated_settings = Some(PluginSettings::BinauralDecoder {
                         sofa_file: sofa_file.clone(),
@@ -1711,6 +1722,13 @@ impl PluginGraph {
                         late_reverb_mix: *late_reverb_mix,
                         late_reverb_rt60: *late_reverb_rt60,
                         late_reverb_damping: *late_reverb_damping,
+                        crossfade_ms: *crossfade_ms,
+                        head_yaw_deg: *head_yaw_deg,
+                        head_pitch_deg: *head_pitch_deg,
+                        head_roll_deg: *head_roll_deg,
+                        hrtf_database_dir: hrtf_database_dir.clone(),
+                        head_width_cm: *head_width_cm,
+                        ear_height_cm: *ear_height_cm,
                     });
                 }
                 PluginSettings::Matrix {
@@ -1738,6 +1756,7 @@ impl PluginGraph {
                 }
                 PluginSettings::Downmix {
                     input_channels,
+                    input_layout: _,
                     center_gain_db,
                     surround_gain_db,
                     height_gain_db,
@@ -1746,9 +1765,11 @@ impl PluginGraph {
                     phase_blend_low_hz,
                     phase_blend_high_hz,
                     itu_mode,
+                    matrix_ltrt,
                 } if *input_channels != current_channels => {
                     updated_settings = Some(PluginSettings::Downmix {
                         input_channels: current_channels,
+                        input_layout: None,
                         center_gain_db: *center_gain_db,
                         surround_gain_db: *surround_gain_db,
                         height_gain_db: *height_gain_db,
@@ -1757,6 +1778,7 @@ impl PluginGraph {
                         phase_blend_low_hz: *phase_blend_low_hz,
                         phase_blend_high_hz: *phase_blend_high_hz,
                         itu_mode: *itu_mode,
+                        matrix_ltrt: *matrix_ltrt,
                     });
                 }
                 PluginSettings::BandSplit {

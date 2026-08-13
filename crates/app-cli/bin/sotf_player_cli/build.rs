@@ -414,43 +414,29 @@ pub(super) fn build_rack_mode_plugins(
 
                 let idx = chain.add_plugin(&PluginType::BinauralDecoder)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
-                    plugin.settings = PluginSettings::BinauralDecoder {
-                        sofa_file: sofa_path.to_string_lossy().to_string(),
-                        input_channels,
-                        externalization: plugins.binaural.externalization as f64,
-                        near_field_strength: plugins.binaural.near_field as f64,
-                        crossfade_mode: 0,
-                        late_reverb_enabled: false,
-                        late_reverb_mix: 0.3,
-                        late_reverb_rt60: 1.0,
-                        late_reverb_damping: 0.3,
+                    let PluginSettings::BinauralDecoder {
+                        sofa_file: configured_sofa_file,
+                        input_channels: configured_input_channels,
+                        externalization,
+                        near_field_strength,
+                        ..
+                    } = &mut plugin.settings
+                    else {
+                        unreachable!("BinauralDecoder default produced a different plugin type");
                     };
+                    *configured_sofa_file = sofa_path.to_string_lossy().to_string();
+                    *configured_input_channels = input_channels;
+                    *externalization = plugins.binaural.externalization as f64;
+                    *near_field_strength = plugins.binaural.near_field as f64;
                 }
                 log::info!("Rack: Added BinauralDecoder plugin");
             }
             "loudness" | "loudness-compensation" => {
-                let (auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms) =
-                    loudness_auto_gain_params;
                 if let Some(lc) = loudness {
                     let idx = chain.add_plugin(&PluginType::LoudnessCompensation)?;
                     if let Some(plugin) = chain.get_plugin_mut(idx) {
-                        plugin.settings = PluginSettings::LoudnessCompensation {
-                            low_freq: 100.0,
-                            low_gain: lc.low_boost,
-                            high_freq: 10000.0,
-                            high_gain: lc.high_boost,
-                            mid_enabled: true,
-                            mid_freq: 3000.0,
-                            mid_gain: 3.0,
-                            mid_q: 0.707,
-                            auto_gain_enabled,
-                            auto_gain_max_db: auto_gain_max_db as f64,
-                            auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
-                            mode: 0,
-                            playback_level_db: 70.0,
-                            reference_level_db: 83.0,
-                            playback_volume_db: 0.0,
-                        };
+                        plugin.settings =
+                            manual_loudness_settings(Some(lc), loudness_auto_gain_params);
                     }
                 } else {
                     // No --loudness-compensation values supplied: use inert
@@ -458,23 +444,7 @@ pub(super) fn build_rack_mode_plugins(
                     // defaults were musically destructive and surprising.
                     let idx = chain.add_plugin(&PluginType::LoudnessCompensation)?;
                     if let Some(plugin) = chain.get_plugin_mut(idx) {
-                        plugin.settings = PluginSettings::LoudnessCompensation {
-                            low_freq: 100.0,
-                            low_gain: 0.0,
-                            high_freq: 10000.0,
-                            high_gain: 0.0,
-                            mid_enabled: false,
-                            mid_freq: 3000.0,
-                            mid_gain: 0.0,
-                            mid_q: 0.707,
-                            auto_gain_enabled,
-                            auto_gain_max_db: auto_gain_max_db as f64,
-                            auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
-                            mode: 0,
-                            playback_level_db: 70.0,
-                            reference_level_db: 83.0,
-                            playback_volume_db: 0.0,
-                        };
+                        plugin.settings = manual_loudness_settings(None, loudness_auto_gain_params);
                     }
                     let msg = "Note: `loudness` rack item used without --loudness-compensation; \
                          applying 0 dB shelves (no-op).";
@@ -487,19 +457,7 @@ pub(super) fn build_rack_mode_plugins(
                 let channels = chain.output_channels();
                 let idx = chain.add_plugin(&PluginType::EQ)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
-                    let eq_filters: Vec<EQFilter> = filters
-                        .iter()
-                        .map(|f| EQFilter::new(f.filter_type, f.freq, f.q, f.db_gain))
-                        .collect();
-                    plugin.settings = PluginSettings::EQ {
-                        channels,
-                        filters: eq_filters,
-                        channel_filters: None,
-                        per_channel_mode: false,
-                        max_filters: 20,
-                        tdf2: false,
-                        topology: 0.0,
-                    };
+                    plugin.settings = rack_eq_settings(channels, filters);
                 }
                 log::info!("Rack: Added EQ plugin with {} filters", filters.len());
             }

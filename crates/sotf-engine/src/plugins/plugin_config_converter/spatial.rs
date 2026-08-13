@@ -68,6 +68,13 @@ pub fn convert_binaural_decoder(
         late_reverb_mix,
         late_reverb_rt60,
         late_reverb_damping,
+        crossfade_ms,
+        head_yaw_deg,
+        head_pitch_deg,
+        head_roll_deg,
+        hrtf_database_dir,
+        head_width_cm,
+        ear_height_cm,
     } = settings
     else {
         return None;
@@ -84,6 +91,13 @@ pub fn convert_binaural_decoder(
             "late_reverb_mix": late_reverb_mix,
             "late_reverb_rt60": late_reverb_rt60,
             "late_reverb_damping": late_reverb_damping,
+            "crossfade_ms": crossfade_ms,
+            "head_yaw_deg": head_yaw_deg,
+            "head_pitch_deg": head_pitch_deg,
+            "head_roll_deg": head_roll_deg,
+            "hrtf_database_dir": hrtf_database_dir,
+            "head_width_cm": head_width_cm,
+            "ear_height_cm": ear_height_cm,
         }),
     ))
 }

@@ -14,7 +14,8 @@ pub struct Reflection {
     pub azimuth_deg: f32,
     /// DOA elevation in degrees. Used for per-reflection HRTF lookup.
     pub elevation_deg: f32,
-    /// Pre-computed HRTF FIR for this reflection's DOA: [left_ir, right_ir] in frequency domain.
-    /// Populated during initialize() when a SOFA file is loaded. Empty for ISM reflections.
+    /// Broadband HRTF-derived ILD for this reflection's direction. This does
+    /// not claim reflection ITD or pinna-spectrum rendering; direct paths use
+    /// the full linear HRTF convolution renderer.
     pub hrtf_filter: Option<ReflectionHrtf>,
 }

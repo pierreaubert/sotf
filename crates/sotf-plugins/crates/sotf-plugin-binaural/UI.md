@@ -1,63 +1,27 @@
 # Binaural Decoder — UI Specification
 
-## Layout Mode
-custom
+The generated UI is defined by `src/params.rs`; this document mirrors that
+canonical schema. `sofa_file` is the only public SOFA key. Legacy construction
+state using `hrtf_file` is accepted as an alias but is not exposed twice.
 
-## ASCII Layout
+| Index | Key | Control | Range/default | Update |
+|---:|---|---|---|---|
+| 0 | `sofa_file` | file picker | empty | setup |
+| 1 | `input_channels` | read-only | exact supported layout | structural |
+| 2 | `externalization` | knob | 0–1 / 0 | realtime |
+| 3 | `near_field_strength` | knob | 0–1 / 0 | structural |
+| 4 | `crossfade_mode` | selector | Linear, Spectral / Linear | realtime |
+| 5 | `late_reverb_enabled` | toggle | false | realtime |
+| 6 | `late_reverb_mix` | knob | 0–1 / 0.3 | realtime |
+| 7 | `late_reverb_rt60` | knob | 0.1–5 s / 1 s | realtime |
+| 8 | `late_reverb_damping` | knob | 0–1 / 0.3 | realtime |
+| 9 | `crossfade_ms` | knob | 10–500 ms / 50 ms | realtime |
+| 10 | `head_yaw_deg` | knob | ±180° / 0° | realtime |
+| 11 | `head_pitch_deg` | knob | ±180° / 0° | realtime |
+| 12 | `head_roll_deg` | knob | ±180° / 0° | realtime |
+| 13 | `hrtf_database_dir` | directory picker | empty | setup |
+| 14 | `head_width_cm` | knob | 10–25 cm / 15 cm | structural |
+| 15 | `ear_height_cm` | knob | 4–16 cm / 10 cm | structural |
 
-```
-+---------------------------------------------------------------------+
-| menu ui                                        | menu preset | T S X|
-+---------------------------------------------------------------------+
-| SETUP (180px)            | CONTROLS (flex)       | (empty, 120px)   |
-| SOFA File: [name] [Load] | [Externalization knob]|                  |
-| Input Channels: 6        | [Near Field knob]     |                  |
-| [Optimization] toggle    |                       |                  |
-+---------------------------------------------------------------------+
-```
-
-## Menu Bar
-| Position | Element | Behavior |
-|----------|---------|----------|
-| Right | Preset picker | Standard |
-| Right | T S X | Toggle/Solo/Close |
-
-## Setup (Left Column, 180px)
-Section title: "SETUP"
-
-| Parameter | Control | Param Index | Notes |
-|-----------|---------|-------------|-------|
-| SOFA File | File display + Load button | 0 | Shows filename (basename only, ellipsis if >120px). Load button dispatches `OpenSofaFile` action |
-| Input Channels | Read-only text | 1 | Shows channel count as text |
-| Optimization | Toggle | 2 | Sum-before-IFFT optimization |
-
-### SOFA File Display
-- Container with `theme.background_secondary`, rounded, padded
-- Label "SOFA File" in `text_xs`, `theme.text_muted`
-- Filename in `text_sm`, bold, `theme.text_primary` (or `theme.text_muted` if empty, showing "None")
-- Load button: `theme.surface` background, 1px border, hover to `theme.surface_hover`
-
-## Controls (Center Column, flex)
-Section title: "CONTROLS"
-
-| Parameter | Control | Param Index | Range | Unit |
-|-----------|---------|-------------|-------|------|
-| Externalization | Knob | 3 | 0.0–1.0 | — |
-| Near Field | Knob | 4 | 0.0–1.0 | — |
-
-Both knobs in a horizontal row with `gap_4`.
-
-## Right Column (120px, empty)
-Empty spacer for visual balance.
-
-## Param Index Mapping
-| Index | Parameter | ParamSpec Key |
-|-------|-----------|---------------|
-| 0 | sofa_file | `sofa_file` (FilePath) |
-| 1 | input_channels | `input_channels` (Int) |
-| 3 | externalization | `externalization` (Float) |
-| 4 | near_field_strength | `near_field_strength` (Float) |
-
-## Responsive Behavior
-- 3-column layout maintained at all widths
-- Center column is flex, right column is fixed spacer
+Supported input widths are `1, 2, 3, 5, 6, 8, 10, 12, 14, 16`; ambiguous
+counts such as four channels are rejected rather than mapped silently to stereo.

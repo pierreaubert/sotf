@@ -49,6 +49,8 @@ use super::default_aae_safety_limit_db;
 use super::default_aae_speaker_config;
 use super::default_aae_treble_ratio;
 use super::default_ab_auto_gain_enabled;
+use super::default_ab_band_mask_high_hz;
+use super::default_ab_band_mask_low_hz;
 use super::default_ab_gain_smoothing_ms;
 use super::default_ab_max_auto_gain_db;
 use super::default_ab_mix_transition_ms;
@@ -67,6 +69,9 @@ use super::default_beamformer_mic_spacing_cm;
 use super::default_beamformer_num_mics;
 use super::default_beamformer_steer_angle_deg;
 use super::default_beamformer_type;
+use super::default_binaural_crossfade_ms;
+use super::default_binaural_ear_height_cm;
+use super::default_binaural_head_width_cm;
 use super::default_binaural_late_reverb_damping;
 use super::default_binaural_late_reverb_mix;
 use super::default_binaural_late_reverb_rt60;
@@ -101,6 +106,7 @@ use super::default_de_esser_ratio;
 use super::default_de_esser_release;
 use super::default_de_esser_threshold;
 use super::default_declick_enabled;
+use super::default_declick_link_channels;
 use super::default_declick_sensitivity;
 use super::default_delay_allpass_coeff;
 use super::default_delay_feedback;
@@ -128,9 +134,13 @@ use super::default_denoiser_spectral_sub_enabled;
 use super::default_denoiser_temporal_smoothing_enabled;
 use super::default_denoiser_transparency;
 use super::default_denoiser_use_captured_profile;
+use super::default_dither_bit_depth;
+use super::default_dither_noise_shaping;
+use super::default_dither_type;
 use super::default_downmix_center_gain_db;
 use super::default_downmix_height_gain_db;
 use super::default_downmix_lfe_gain_db;
+use super::default_downmix_matrix_ltrt;
 use super::default_downmix_phase_blend_high_hz;
 use super::default_downmix_phase_blend_low_hz;
 use super::default_downmix_phase_coherence;
@@ -881,6 +891,20 @@ pub enum PluginSettings {
         late_reverb_rt60: f64,
         #[serde(default = "default_binaural_late_reverb_damping")]
         late_reverb_damping: f64,
+        #[serde(default = "default_binaural_crossfade_ms")]
+        crossfade_ms: f64,
+        #[serde(default)]
+        head_yaw_deg: f64,
+        #[serde(default)]
+        head_pitch_deg: f64,
+        #[serde(default)]
+        head_roll_deg: f64,
+        #[serde(default)]
+        hrtf_database_dir: String,
+        #[serde(default = "default_binaural_head_width_cm")]
+        head_width_cm: f64,
+        #[serde(default = "default_binaural_ear_height_cm")]
+        ear_height_cm: f64,
     },
     Convolution {
         ir_file: String,
@@ -1762,6 +1786,9 @@ impl PluginSettings {
                     playback_level_db: p(lc, "playback_level_db").default_f64(),
                     reference_level_db: p(lc, "reference_level_db").default_f64(),
                     playback_volume_db: 0.0,
+                    auto_gain_position: p(lc, "auto_gain_position").default_usize(),
+                    headroom_normalized: p(lc, "headroom_normalized").default_bool(),
+                    auto_calibrated: p(lc, "auto_calibrated").default_bool(),
                 }
             }
             PluginType::FletcherMunson => {
@@ -1783,6 +1810,9 @@ impl PluginSettings {
                     playback_level_db: p(lc, "playback_level_db").default_f64(),
                     reference_level_db: p(lc, "reference_level_db").default_f64(),
                     playback_volume_db: 0.0,
+                    auto_gain_position: p(lc, "auto_gain_position").default_usize(),
+                    headroom_normalized: p(lc, "headroom_normalized").default_bool(),
+                    auto_calibrated: true,
                 }
             }
             PluginType::BinauralDecoder => {
@@ -1797,6 +1827,13 @@ impl PluginSettings {
                     late_reverb_mix: p(b, "late_reverb_mix").default_f64(),
                     late_reverb_rt60: p(b, "late_reverb_rt60").default_f64(),
                     late_reverb_damping: p(b, "late_reverb_damping").default_f64(),
+                    crossfade_ms: p(b, "crossfade_ms").default_f64(),
+                    head_yaw_deg: p(b, "head_yaw_deg").default_f64(),
+                    head_pitch_deg: p(b, "head_pitch_deg").default_f64(),
+                    head_roll_deg: p(b, "head_roll_deg").default_f64(),
+                    hrtf_database_dir: String::new(),
+                    head_width_cm: p(b, "head_width_cm").default_f64(),
+                    ear_height_cm: p(b, "ear_height_cm").default_f64(),
                 }
             }
             PluginType::Convolution => {

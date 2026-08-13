@@ -1,133 +1,131 @@
-use sotf_host::sofa::SofaFile;
 use super::super::hrtf;
-    use super::super::*;
-    use sotf_host::sofa::{SofaFile, SourcePosition};
+use sotf_host::sofa::SofaFile;
+use sotf_host::sofa::SourcePosition;
 
-    /// Create a minimal synthetic SofaFile for testing (no file I/O needed)
-    fn make_test_sofa(sample_rate: f32, ir_length: usize, num_measurements: usize) -> SofaFile {
-        let mut positions = Vec::with_capacity(num_measurements);
-        let mut impulse_responses = Vec::with_capacity(num_measurements * 2 * ir_length);
+/// Create a minimal synthetic SofaFile for testing (no file I/O needed)
+fn make_test_sofa(sample_rate: f32, ir_length: usize, num_measurements: usize) -> SofaFile {
+    let mut positions = Vec::with_capacity(num_measurements);
+    let mut impulse_responses = Vec::with_capacity(num_measurements * 2 * ir_length);
 
-        for i in 0..num_measurements {
-            let az = (i as f32 / num_measurements as f32) * 360.0 - 180.0;
-            positions.push(SourcePosition::new(az, 0.0, 1.0));
+    for i in 0..num_measurements {
+        let az = (i as f32 / num_measurements as f32) * 360.0 - 180.0;
+        positions.push(SourcePosition::new(az, 0.0, 1.0));
 
-            // Create a simple delta impulse for each ear
-            for _ear in 0..2 {
-                let mut ir = vec![0.0f32; ir_length];
-                ir[0] = 1.0; // delta impulse
-                impulse_responses.extend_from_slice(&ir);
+        // Create a simple delta impulse for each ear
+        for _ear in 0..2 {
+            let mut ir = vec![0.0f32; ir_length];
+            ir[0] = 1.0; // delta impulse
+            impulse_responses.extend_from_slice(&ir);
+        }
+    }
+
+    SofaFile {
+        sample_rate,
+        num_measurements,
+        ir_length,
+        positions,
+        impulse_responses,
+        convention: "SimpleFreeFieldHRIR".to_string(),
+        data_sample_rate: Some(sample_rate),
+    }
+}
+
+#[test]
+fn test_resample_sofa_same_rate() {
+    let mut sofa = make_test_sofa(48000.0, 128, 4);
+    // No-op when rates match
+    hrtf::resample_sofa(&mut sofa, 48000).unwrap();
+    assert_eq!(sofa.sample_rate, 48000.0);
+    assert_eq!(sofa.ir_length, 128);
+}
+
+#[test]
+fn test_resample_sofa_upsample() {
+    // Use a longer IR with a wider pulse to survive resampler latency and filtering
+    let original_ir_length = 512;
+    let num_measurements = 4;
+    let mut sofa = make_test_sofa(44100.0, original_ir_length, num_measurements);
+
+    // Put a wider pulse (first 8 samples = 1.0) so energy survives sinc interpolation
+    for m in 0..num_measurements {
+        for ear in 0..2 {
+            let offset = m * 2 * original_ir_length + ear * original_ir_length;
+            for i in 0..8 {
+                sofa.impulse_responses[offset + i] = 1.0;
             }
         }
-
-        SofaFile {
-            sample_rate,
-            num_measurements,
-            ir_length,
-            positions,
-            impulse_responses,
-            convention: "SimpleFreeFieldHRIR".to_string(),
-            data_sample_rate: Some(sample_rate),
-        }
     }
 
-    #[test]
-    fn test_resample_sofa_same_rate() {
-        let mut sofa = make_test_sofa(48000.0, 128, 4);
-        // No-op when rates match
-        hrtf::resample_sofa(&mut sofa, 48000).unwrap();
-        assert_eq!(sofa.sample_rate, 48000.0);
-        assert_eq!(sofa.ir_length, 128);
-    }
+    hrtf::resample_sofa(&mut sofa, 48000).unwrap();
 
-    #[test]
-    fn test_resample_sofa_upsample() {
-        // Use a longer IR with a wider pulse to survive resampler latency and filtering
-        let original_ir_length = 512;
-        let num_measurements = 4;
-        let mut sofa = make_test_sofa(44100.0, original_ir_length, num_measurements);
+    // After resampling 44100->48000, IR length should increase proportionally
+    let expected_length = (original_ir_length as f64 * 48000.0 / 44100.0).ceil() as usize;
+    assert_eq!(sofa.sample_rate, 48000.0);
+    assert_eq!(sofa.ir_length, expected_length);
+    assert_eq!(
+        sofa.impulse_responses.len(),
+        num_measurements * 2 * expected_length
+    );
 
-        // Put a wider pulse (first 8 samples = 1.0) so energy survives sinc interpolation
-        for m in 0..num_measurements {
-            for ear in 0..2 {
-                let offset = m * 2 * original_ir_length + ear * original_ir_length;
-                for i in 0..8 {
-                    sofa.impulse_responses[offset + i] = 1.0;
-                }
-            }
-        }
+    // Check that the resampled IR has non-zero energy
+    let ir_left = &sofa.impulse_responses[0..expected_length];
+    let energy: f32 = ir_left.iter().map(|x| x * x).sum();
+    assert!(
+        energy > 0.1,
+        "Resampled IR energy ({}) should be non-trivial",
+        energy
+    );
+}
 
-        hrtf::resample_sofa(&mut sofa, 48000).unwrap();
+#[test]
+fn test_resample_sofa_downsample() {
+    let original_ir_length = 256;
+    let mut sofa = make_test_sofa(96000.0, original_ir_length, 2);
+    hrtf::resample_sofa(&mut sofa, 48000).unwrap();
 
-        // After resampling 44100->48000, IR length should increase proportionally
-        let expected_length = (original_ir_length as f64 * 48000.0 / 44100.0).ceil() as usize;
-        assert_eq!(sofa.sample_rate, 48000.0);
-        assert_eq!(sofa.ir_length, expected_length);
-        assert_eq!(
-            sofa.impulse_responses.len(),
-            num_measurements * 2 * expected_length
-        );
+    let expected_length = (original_ir_length as f64 * 48000.0 / 96000.0).ceil() as usize;
+    assert_eq!(sofa.sample_rate, 48000.0);
+    assert_eq!(sofa.ir_length, expected_length);
+    assert_eq!(sofa.impulse_responses.len(), 2 * 2 * expected_length);
+}
 
-        // Check that the resampled IR has non-zero energy
-        let ir_left = &sofa.impulse_responses[0..expected_length];
-        let energy: f32 = ir_left.iter().map(|x| x * x).sum();
+/// AL7: VBAP out-of-triangle clamping must not add a gain boost.
+/// Weights [0, 0.5, 0.5] (after clamping) should sum to 1.0 and their
+/// energy must equal 0.5, meaning no extra scale factor is applied.
+#[test]
+fn test_vbap_out_of_triangle_no_gain_boost() {
+    // Construct a SOFA with 3 positions that form a triangle, then pick
+    // a target clearly outside — this exercises the clamping path.
+    let mut sofa = make_test_sofa(48000.0, 64, 3);
+    // Place the 3 measurements at known positions.
+    sofa.positions[0] = SourcePosition::new(0.0, 0.0, 1.0); // front
+    sofa.positions[1] = SourcePosition::new(90.0, 0.0, 1.0); // right
+    sofa.positions[2] = SourcePosition::new(0.0, 90.0, 1.0); // above
+
+    // Target well outside the triangle (behind-left), forces clamping.
+    let target = SourcePosition::new(-135.0, -45.0, 1.0);
+    let nearest = [(0, 0.0f32), (1, 0.0f32), (2, 0.0f32)];
+    let gains = hrtf::calculate_vbap_gains(&target, &nearest, &sofa);
+
+    // All gains must be non-negative (clamped).
+    for g in &gains {
         assert!(
-            energy > 0.1,
-            "Resampled IR energy ({}) should be non-trivial",
-            energy
+            *g >= 0.0,
+            "VBAP gain must be non-negative after clamping, got {g}"
         );
     }
 
-    #[test]
-    fn test_resample_sofa_downsample() {
-        let original_ir_length = 256;
-        let mut sofa = make_test_sofa(96000.0, original_ir_length, 2);
-        hrtf::resample_sofa(&mut sofa, 48000).unwrap();
+    // Gains must sum to 1.0 (renormalized, no energy boost).
+    let sum: f32 = gains.iter().sum();
+    assert!(
+        (sum - 1.0).abs() < 1e-4 || sum < 1e-6, // either renormalized or all-zero fallback
+        "Clamped VBAP gains must sum to 1.0, got {sum:.4}"
+    );
 
-        let expected_length = (original_ir_length as f64 * 48000.0 / 96000.0).ceil() as usize;
-        assert_eq!(sofa.sample_rate, 48000.0);
-        assert_eq!(sofa.ir_length, expected_length);
-        assert_eq!(sofa.impulse_responses.len(), 2 * 2 * expected_length);
-    }
-
-    /// AL7: VBAP out-of-triangle clamping must not add a gain boost.
-    /// Weights [0, 0.5, 0.5] (after clamping) should sum to 1.0 and their
-    /// energy must equal 0.5, meaning no extra scale factor is applied.
-    #[test]
-    fn test_vbap_out_of_triangle_no_gain_boost() {
-        // Construct a SOFA with 3 positions that form a triangle, then pick
-        // a target clearly outside — this exercises the clamping path.
-        let mut sofa = make_test_sofa(48000.0, 64, 3);
-        // Place the 3 measurements at known positions.
-        sofa.positions[0] = SourcePosition::new(0.0, 0.0, 1.0); // front
-        sofa.positions[1] = SourcePosition::new(90.0, 0.0, 1.0); // right
-        sofa.positions[2] = SourcePosition::new(0.0, 90.0, 1.0); // above
-
-        // Target well outside the triangle (behind-left), forces clamping.
-        let target = SourcePosition::new(-135.0, -45.0, 1.0);
-        let nearest = [(0, 0.0f32), (1, 0.0f32), (2, 0.0f32)];
-        let gains = hrtf::calculate_vbap_gains(&target, &nearest, &sofa);
-
-        // All gains must be non-negative (clamped).
-        for g in &gains {
-            assert!(
-                *g >= 0.0,
-                "VBAP gain must be non-negative after clamping, got {g}"
-            );
-        }
-
-        // Gains must sum to 1.0 (renormalized, no energy boost).
-        let sum: f32 = gains.iter().sum();
-        assert!(
-            (sum - 1.0).abs() < 1e-4 || sum < 1e-6, // either renormalized or all-zero fallback
-            "Clamped VBAP gains must sum to 1.0, got {sum:.4}"
-        );
-
-        // The energy of the clamped weights must be <= 1.0 (no boost above in-triangle).
-        let energy: f32 = gains.iter().map(|g| g * g).sum();
-        assert!(
-            energy <= 1.001,
-            "Clamped VBAP energy must not exceed 1.0 (no gain boost), got {energy:.4}"
-        );
-    }
-
+    // The energy of the clamped weights must be <= 1.0 (no boost above in-triangle).
+    let energy: f32 = gains.iter().map(|g| g * g).sum();
+    assert!(
+        energy <= 1.001,
+        "Clamped VBAP energy must not exceed 1.0 (no gain boost), got {energy:.4}"
+    );
+}
