@@ -53,8 +53,24 @@ fn main() {
     });
     println!("  Zero Allocations: PASS");
 
-    // Test 4: Performance Benchmark
-    println!("\n[Test 4] Performance Benchmark");
+    println!("\n[Test 4] Dynamic-ratio automation (Zero Allocations)");
+    plugin
+        .set_parameter(
+            "dynamic_ratio".into(),
+            sotf_host::parameters::ParameterValue::Bool(true),
+        )
+        .unwrap();
+    let nominal = output_sr as f64 / input_sr as f64;
+    assert_no_allocs("ResamplerPlugin ratio automation", || {
+        for ratio in [nominal * 0.995, nominal, nominal * 1.005, nominal] {
+            plugin.set_ratio(ratio, true).unwrap();
+            plugin.process(&rt_input, &mut rt_output, &rt_ctx).unwrap();
+        }
+    });
+    println!("  Dynamic-ratio Zero Allocations: PASS");
+
+    // Test 5: Performance Benchmark
+    println!("\n[Test 5] Performance Benchmark");
     let bench_frames = 48000 * 5;
     let bench_input = vec![0.1f32; bench_frames * channels];
     let bench_max_out = ((bench_frames as f64 * output_sr as f64 / input_sr as f64) as usize)
@@ -89,7 +105,7 @@ fn main() {
     assert!(cpu_usage < 10.0, "CPU usage too high: {:.2}%", cpu_usage);
     println!("  Performance: PASS");
 
-    println!("\n[Test 5] Ratio/quality/channel/callback matrix");
+    println!("\n[Test 6] Ratio/quality/channel/callback deadline matrix");
     let mut worst_callback = std::time::Duration::ZERO;
     for quality in [
         ResamplerQuality::Fast,

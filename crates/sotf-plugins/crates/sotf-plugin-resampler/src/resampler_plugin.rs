@@ -29,8 +29,6 @@ pub struct ResamplerPlugin {
     pub(super) resampler: Option<Async<f32>>,
     /// Chunk size for processing (number of frames per chunk)
     pub(super) chunk_size: usize,
-    /// Input buffer (planar: one vec per channel)
-    pub(super) input_buffer: Vec<Vec<f32>>,
     /// Output buffer (planar: one vec per channel, pre-allocated to max output size)
     pub(super) output_buffer: Vec<Vec<f32>>,
     /// Actual output frames from last process() call
@@ -123,7 +121,6 @@ impl ResamplerPlugin {
             output_sample_rate,
             resampler: Some(resampler),
             chunk_size,
-            input_buffer: vec![vec![0.0; chunk_size]; num_channels],
             output_buffer: vec![vec![0.0; max_output_frames]; num_channels],
             last_output_frames: 0,
             residual_input: vec![vec![0.0; chunk_size]; num_channels],
@@ -186,7 +183,7 @@ impl ResamplerPlugin {
     /// Rebuild the resampler with current quality settings.
     /// Called when quality changes.
     ///
-    /// This reuses the pre-allocated `input_buffer`, `output_buffer`, and `residual_input`
+    /// This reuses the pre-allocated `output_buffer` and `residual_input`
     /// rather than creating new `Vec`s, so it is safe to call from a context where heap
     /// allocation is undesirable (though note that rubato's internal `create_resampler`
     /// still allocates the sinc table).  The output frame size depends only on chunk_size
@@ -620,15 +617,8 @@ impl Plugin for ResamplerPlugin {
 
             // When we have a full chunk, process it
             if self.residual_frames == chunk_size {
-                // Copy residual into input_buffer for processing
-                for ch in 0..self.num_channels {
-                    self.input_buffer[ch][..chunk_size]
-                        .copy_from_slice(&self.residual_input[ch][..chunk_size]);
-                }
-                self.residual_frames = 0;
-
                 let input_adapter =
-                    SequentialSliceOfVecs::new(&self.input_buffer, self.num_channels, chunk_size)
+                    SequentialSliceOfVecs::new(&self.residual_input, self.num_channels, chunk_size)
                         .map_err(|e| format!("Input adapter error: {:?}", e))?;
                 let mut output_adapter = SequentialSliceOfVecs::new_mut(
                     &mut self.output_buffer,
@@ -640,6 +630,7 @@ impl Plugin for ResamplerPlugin {
                 let (_, output_frames) = resampler
                     .process_into_buffer(&input_adapter, &mut output_adapter, None)
                     .map_err(|e| format!("Resampling failed: {:?}", e))?;
+                self.residual_frames = 0;
 
                 // Check output buffer capacity
                 let out_sample_offset = total_output_frames * self.num_channels;
@@ -721,12 +712,10 @@ impl Plugin for ResamplerPlugin {
         let partial_len = self.residual_frames;
         for ch in 0..self.num_channels {
             self.residual_input[ch][partial_len..self.chunk_size].fill(0.0);
-            self.input_buffer[ch][..self.chunk_size]
-                .copy_from_slice(&self.residual_input[ch][..self.chunk_size]);
         }
 
         let input_adapter =
-            SequentialSliceOfVecs::new(&self.input_buffer, self.num_channels, self.chunk_size)
+            SequentialSliceOfVecs::new(&self.residual_input, self.num_channels, self.chunk_size)
                 .map_err(|e| format!("Input adapter error: {e:?}"))?;
         let mut output_adapter = SequentialSliceOfVecs::new_mut(
             &mut self.output_buffer,
@@ -809,7 +798,6 @@ fn test_flush_produces_trailing_output() {
 fn test_rebuild_resampler_reuses_buffers() {
     let mut resampler = ResamplerPlugin::new(2, 44100, 48000, 1024).unwrap();
 
-    let input_ptr = resampler.input_buffer[0].as_ptr();
     let output_ptr = resampler.output_buffer[0].as_ptr();
     let residual_ptr = resampler.residual_input[0].as_ptr();
 
@@ -821,11 +809,6 @@ fn test_rebuild_resampler_reuses_buffers() {
         )
         .unwrap();
 
-    assert_eq!(
-        resampler.input_buffer[0].as_ptr(),
-        input_ptr,
-        "input_buffer was reallocated"
-    );
     assert_eq!(
         resampler.output_buffer[0].as_ptr(),
         output_ptr,

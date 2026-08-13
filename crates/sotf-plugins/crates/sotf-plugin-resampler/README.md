@@ -3,10 +3,16 @@
 Allocation-free streaming sample-rate conversion using rubato's asynchronous sinc resampler.
 
 The plugin accepts interleaved audio and retains partial input until `chunk_size` frames are
-available. `output_frames_for_input()` is a conservative destination-capacity bound;
+available. The preallocated residual planes feed rubato directly without a second planar
+full-chunk copy. `output_frames_for_input()` is a conservative destination-capacity bound;
 `available_output_frames()` reports what the next call can emit immediately. The returned frame
 count is authoritative and may be zero or larger than the input callback. `DawHost` preserves
 that count rather than padding it with input-rate silence.
+
+A fixed input callback size cannot also be a fixed output callback size when rates differ: 256
+frames at 44.1 kHz span about 279 frames at 48 kHz. A device-facing fixed-frame consumer needs a
+separate output-clock FIFO/pull scheduler at the clock-domain boundary. The plugin does not
+silently relabel, duplicate, or discard samples to simulate one.
 
 At end of stream, call the object-safe `Plugin::drain()` repeatedly until `complete` is true.
 Drain follows rubato's complete-stream procedure: submit the final partial chunk, pump zero input

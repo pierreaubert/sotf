@@ -1,3 +1,11 @@
+# 0.5.27
+
+## Improvements
+
+- Removed the redundant planar full-chunk copy: the preallocated residual planes now feed rubato directly in both processing and drain paths.
+- Added complete-stream rate, spectral-rejection, callback-partition invariance, dynamic-ratio allocation, and callback-deadline regression evidence.
+- Documented why fixed-size input callbacks cannot imply the same fixed output frame count across different sample-rate clock domains; produced frame counts remain authoritative.
+
 # 0.5.26
 
 ## Fixes

@@ -1,6 +1,20 @@
 # Resampler plugin code review — 2026-08-12
 
-## Remediation status — 0.5.26
+## Remediation status — 0.5.27
+
+0.5.27 closes the retained copy/profile evidence gap without changing clock-domain semantics.
+The redundant `residual_input` to `input_buffer` planar copy was removed; rubato now reads the
+preallocated residual planes directly. Automated coverage checks exact complete-stream rate
+counts, spectral stop-band rejection, bit-exact callback-partition invariance, allocation-free
+dynamic-ratio automation, and the QA callback-deadline matrix.
+
+The remaining P0 wording about producing a fixed output callback for every fixed input callback
+is not implementable inside the plugin contract when rates differ. A 256-frame callback spans
+different wall-clock durations at 44.1 and 48 kHz (about 279 output frames per 256 input frames).
+Enforcing 256 frames on both sides would redefine a clock, change pitch/duration, or require
+periodic duplication/drop. Produced frames therefore remain authoritative; a device-facing
+fixed-frame consumer must own an output-clock FIFO/pull scheduler outside the plugin graph. This
+is an integration architecture boundary, not a Resampler DSP defect.
 
 All P0-P3 findings are remediated. In addition to the 0.5.25 timing,
 transactionality, realtime-parameter, choice, latency, rate-negotiation, unity,
