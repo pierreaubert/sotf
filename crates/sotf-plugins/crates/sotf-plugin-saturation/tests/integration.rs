@@ -6,7 +6,8 @@
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
-use sotf_host::plugin::ProcessContext;
+use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::{AutoOversampledPlugin, ParametricInPlacePluginAdapter};
 use sotf_plugin_saturation::{SaturationPlugin, SaturationPluginParams};
 
 const SR: u32 = 48000;
@@ -40,6 +41,7 @@ fn instantiate_and_declare_metadata() {
     assert_eq!(plugin.channels(), 2);
     assert!(!plugin.supports_f64());
     assert_eq!(plugin.preferred_oversampling(), Some(4));
+    assert_eq!(plugin.latency_samples(), 0);
 
     let params = plugin.parameters();
     let ids: Vec<_> = params.iter().map(|p| p.id.as_str()).collect();
@@ -47,6 +49,236 @@ fn instantiate_and_declare_metadata() {
     assert!(ids.contains(&"drive"));
     assert!(ids.contains(&"mix"));
     assert!(ids.contains(&"dynamic_amount"));
+}
+
+#[test]
+fn host_wraps_exactly_once_and_aligns_dry_wet_in_one_time_domain() {
+    fn wrapped(mix: f32) -> AutoOversampledPlugin {
+        let inner = SaturationPlugin::from_params(
+            1,
+            SaturationPluginParams {
+                mode: "Soft Clip".to_string(),
+                drive: 8.0,
+                oversampling: "2x".to_string(),
+                mix,
+                dc_blocker_enabled: false,
+                use_adaa: false,
+                ..Default::default()
+            },
+        );
+        let adapter = ParametricInPlacePluginAdapter::new(inner);
+        let mut wrapped = AutoOversampledPlugin::new(Box::new(adapter), 2).unwrap();
+        wrapped.initialize(SR).unwrap();
+        wrapped
+    }
+
+    let mut dry = wrapped(0.0);
+    let mut mixed = wrapped(0.5);
+    assert_eq!(dry.preferred_oversampling(), None);
+    assert!(dry.latency_samples() > 0);
+    let frames = 4096;
+    let mut input = vec![0.0; frames];
+    input[0] = 0.5;
+    let mut dry_output = vec![0.0; frames];
+    let mut mixed_output = vec![0.0; frames];
+    dry.process(&input, &mut dry_output, &ctx(frames)).unwrap();
+    mixed
+        .process(&input, &mut mixed_output, &ctx(frames))
+        .unwrap();
+    let peak = |samples: &[f32]| {
+        samples
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+            .unwrap()
+            .0
+    };
+    assert_eq!(peak(&dry_output), peak(&mixed_output));
+}
+
+#[test]
+fn drive_automation_is_callback_partition_invariant_for_every_topology() {
+    let frames = 2_048;
+    let input: Vec<f32> = (0..frames)
+        .map(|frame| {
+            let low = (2.0 * std::f32::consts::PI * 317.0 * frame as f32 / SR as f32).sin();
+            let high = (2.0 * std::f32::consts::PI * 7_913.0 * frame as f32 / SR as f32).sin();
+            0.25 * low + 0.15 * high
+        })
+        .collect();
+    let partitions = [1, 17, 3, 64, 5, 127, 2, 251, 31, 509, 7, 89];
+
+    for mode in ["Soft Clip", "Tube", "Tape", "Exciter"] {
+        for oversampling in ["Off", "2x", "4x"] {
+            let make_plugin = || {
+                let mut plugin = SaturationPlugin::from_params(
+                    1,
+                    SaturationPluginParams {
+                        mode: mode.to_string(),
+                        drive: 1.0,
+                        oversampling: oversampling.to_string(),
+                        exciter_freq: 3_000.0,
+                        dynamic_amount: 0.4,
+                        mix: 1.0,
+                        dc_blocker_enabled: false,
+                        use_adaa: false,
+                        ..Default::default()
+                    },
+                );
+                plugin.initialize(SR).unwrap();
+                plugin
+                    .set_parameter(ParameterId::from("drive"), ParameterValue::Float(15.0))
+                    .unwrap();
+                plugin
+            };
+
+            let mut whole_plugin = make_plugin();
+            let mut whole = input.clone();
+            whole_plugin
+                .process_in_place(&mut whole, &ctx(frames))
+                .unwrap();
+
+            let mut partitioned_plugin = make_plugin();
+            let mut partitioned = input.clone();
+            let mut offset = 0;
+            let mut partition_index = 0;
+            while offset < frames {
+                let count = partitions[partition_index % partitions.len()].min(frames - offset);
+                partitioned_plugin
+                    .process_in_place(&mut partitioned[offset..offset + count], &ctx(count))
+                    .unwrap();
+                offset += count;
+                partition_index += 1;
+            }
+
+            let max_error = whole
+                .iter()
+                .zip(&partitioned)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0_f32, f32::max);
+            assert!(
+                max_error < 2e-5,
+                "{mode}/{oversampling} drive automation depends on callback partitioning: {max_error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn dynamic_control_survives_every_mode_and_actual_host_oversampling_factor() {
+    fn render(mode: &str, factor: u32, dynamic_amount: f32) -> Vec<f32> {
+        let inner = SaturationPlugin::from_params(
+            1,
+            SaturationPluginParams {
+                mode: mode.to_string(),
+                drive: 3.0,
+                oversampling: match factor {
+                    2 => "2x",
+                    4 => "4x",
+                    _ => "Off",
+                }
+                .to_string(),
+                exciter_freq: 3_000.0,
+                dynamic_amount,
+                dynamic_attack_ms: 0.1,
+                dynamic_release_ms: 1.0,
+                mix: 1.0,
+                dc_blocker_enabled: false,
+                use_adaa: false,
+                ..Default::default()
+            },
+        );
+        let adapter = ParametricInPlacePluginAdapter::new(inner);
+        let mut plugin: Box<dyn Plugin> = if factor == 1 {
+            Box::new(adapter)
+        } else {
+            Box::new(AutoOversampledPlugin::new(Box::new(adapter), factor).unwrap())
+        };
+        plugin.initialize(SR).unwrap();
+        let frames = 4_096;
+        let input: Vec<f32> = (0..frames)
+            .map(|frame| {
+                let amplitude = if frame < frames / 2 { 0.08 } else { 0.7 };
+                amplitude * (2.0 * std::f32::consts::PI * 7_500.0 * frame as f32 / SR as f32).sin()
+            })
+            .collect();
+        let mut output = vec![0.0; frames];
+        plugin.process(&input, &mut output, &ctx(frames)).unwrap();
+        output
+    }
+
+    for mode in ["Soft Clip", "Tube", "Tape", "Exciter"] {
+        for factor in [1, 2, 4] {
+            let static_output = render(mode, factor, 0.0);
+            let dynamic_output = render(mode, factor, 1.0);
+            assert!(dynamic_output.iter().all(|sample| sample.is_finite()));
+            let difference: f32 = static_output
+                .iter()
+                .zip(&dynamic_output)
+                .skip(2_048)
+                .map(|(a, b)| (a - b).abs())
+                .sum();
+            assert!(
+                difference > 0.1,
+                "{mode}/{factor}x discarded dynamic drive (difference={difference})"
+            );
+        }
+    }
+}
+
+#[test]
+fn four_x_host_oversampling_reduces_out_of_band_harmonic_aliases() {
+    fn render(factor: u32) -> Vec<f32> {
+        let inner = SaturationPlugin::from_params(
+            1,
+            SaturationPluginParams {
+                mode: "Soft Clip".to_string(),
+                drive: 12.0,
+                oversampling: if factor == 4 { "4x" } else { "Off" }.to_string(),
+                mix: 1.0,
+                dc_blocker_enabled: false,
+                use_adaa: false,
+                ..Default::default()
+            },
+        );
+        let adapter = ParametricInPlacePluginAdapter::new(inner);
+        let mut plugin: Box<dyn Plugin> = if factor == 4 {
+            Box::new(AutoOversampledPlugin::new(Box::new(adapter), 4).unwrap())
+        } else {
+            Box::new(adapter)
+        };
+        plugin.initialize(SR).unwrap();
+        let frames = 8_192;
+        let input = sine(9_000.0, frames, 0.8);
+        let mut output = vec![0.0; frames];
+        plugin.process(&input, &mut output, &ctx(frames)).unwrap();
+        output
+    }
+
+    fn magnitude(samples: &[f32], frequency: f32) -> f32 {
+        let (real, imag) =
+            samples
+                .iter()
+                .enumerate()
+                .fold((0.0_f32, 0.0_f32), |(real, imag), (index, sample)| {
+                    let phase = 2.0 * std::f32::consts::PI * frequency * index as f32 / SR as f32;
+                    (real + sample * phase.cos(), imag - sample * phase.sin())
+                });
+        2.0 * (real * real + imag * imag).sqrt() / samples.len() as f32
+    }
+
+    let direct = render(1);
+    let oversampled = render(4);
+    let direct_tail = &direct[4_096..];
+    let oversampled_tail = &oversampled[4_096..];
+    // A 9 kHz waveshaper's 3rd and 5th harmonics alias to 21 kHz and 3 kHz.
+    let direct_alias = magnitude(direct_tail, 21_000.0).hypot(magnitude(direct_tail, 3_000.0));
+    let oversampled_alias =
+        magnitude(oversampled_tail, 21_000.0).hypot(magnitude(oversampled_tail, 3_000.0));
+    assert!(
+        oversampled_alias < direct_alias * 0.5,
+        "4x host oversampling did not sufficiently reject aliases: direct={direct_alias}, 4x={oversampled_alias}"
+    );
 }
 
 #[test]
@@ -62,7 +294,6 @@ fn initialize_changes_sample_rate() {
 #[test]
 fn parameter_roundtrip() {
     let mut plugin = SaturationPlugin::new(2);
-    plugin.initialize(SR).unwrap();
 
     let cases: Vec<(ParameterId, ParameterValue)> = vec![
         (
@@ -103,6 +334,7 @@ fn parameter_roundtrip() {
         let read = plugin.get_parameter(&id).expect("parameter should exist");
         assert_eq!(read, value, "round-trip failed for {}", id);
     }
+    plugin.initialize(SR).unwrap();
 }
 
 #[test]
@@ -278,23 +510,40 @@ fn mode_switch_and_oversampling_state() {
     let mut plugin = SaturationPlugin::new(1);
     plugin.initialize(SR).unwrap();
 
-    plugin
-        .set_parameter(
-            ParameterId::from("mode"),
-            ParameterValue::String("Exciter".to_string()),
-        )
-        .unwrap();
-    plugin
-        .set_parameter(
-            ParameterId::from("oversampling"),
-            ParameterValue::String("2x".to_string()),
-        )
-        .unwrap();
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("mode"),
+                ParameterValue::String("Exciter".to_string()),
+            )
+            .unwrap_err()
+            .contains("structural")
+    );
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("oversampling"),
+                ParameterValue::String("4x".to_string()),
+            )
+            .unwrap_err()
+            .contains("structural")
+    );
+
+    let mut plugin = SaturationPlugin::from_params(
+        1,
+        SaturationPluginParams {
+            mode: "Exciter".to_string(),
+            oversampling: "2x".to_string(),
+            ..Default::default()
+        },
+    );
+    plugin.initialize(SR).unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("oversampling")),
         Some(ParameterValue::String("2x".to_string()))
     );
     assert_eq!(plugin.preferred_oversampling(), Some(2));
+    assert_eq!(plugin.latency_samples(), 0);
 
     let mut buf = sine(8000.0, 512, 0.5);
     plugin.process_in_place(&mut buf, &ctx(512)).unwrap();

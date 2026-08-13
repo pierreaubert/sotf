@@ -4,6 +4,7 @@ use super::default::default_mix;
 use super::default::default_output_gain;
 use super::default::default_tone;
 use super::misc::DEFAULT_BUF_SIZE;
+use super::misc::MAX_BLOCK_FRAMES;
 use super::misc::MAX_CHANNELS;
 use super::misc::soft_clip;
 use super::misc::tape;
@@ -17,9 +18,9 @@ use sotf_host::adaa::{Adaa1, adaa1_softclip, adaa1_tanh};
 use sotf_host::dc_blocker::DcBlocker;
 use sotf_host::envelope_follower::EnvelopeFollower;
 use sotf_host::lr4_crossover::Lr4Crossover;
-use sotf_host::oversampling::Oversampler;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::plugin::{
@@ -61,7 +62,6 @@ pub struct SaturationPlugin {
     pub(super) use_adaa: bool,
 
     // DSP state
-    pub(super) oversampler: Option<Oversampler>,
     pub(super) crossovers: Vec<Lr4Crossover<f32>>, // For exciter mode (one per channel)
 
     // --- Phase 3A: SOTA DSP state ---
@@ -76,11 +76,10 @@ pub struct SaturationPlugin {
     pub(super) output_smoother: Smoother,
 
     // Pre-allocated buffers
-    pub(super) dry_buf: Vec<f32>,  // Original signal for mix
-    pub(super) low_buf: Vec<f32>,  // Low band (pass-through) for exciter mode
-    pub(super) high_buf: Vec<f32>, // High band (saturated) for exciter mode
+    pub(super) dry_buf: Vec<f32>, // Original signal for mix
 
     pub(super) cached_parameters: Vec<Parameter>,
+    pub(super) initialized: bool,
 }
 
 impl SaturationPlugin {
@@ -128,7 +127,6 @@ impl SaturationPlugin {
             param_use_adaa: ParameterId::from("use_adaa"),
             use_adaa: pk(SAT, "use_adaa").default_f64() > 0.5,
 
-            oversampler: None,
             crossovers: (0..channels)
                 .map(|_| Lr4Crossover::new(exciter_freq, sr as f32, 1))
                 .collect(),
@@ -146,13 +144,11 @@ impl SaturationPlugin {
             output_smoother: Smoother::new(output_gain, 10.0, sr),
 
             dry_buf: vec![0.0; buf_size],
-            low_buf: vec![0.0; buf_size],
-            high_buf: vec![0.0; buf_size],
 
             cached_parameters: Vec::new(),
+            initialized: false,
         };
 
-        p.rebuild_oversampler();
         p.rebuild_cached_parameters();
         p
     }
@@ -198,9 +194,51 @@ impl SaturationPlugin {
         p.output_smoother = Smoother::new(p.output_gain_db, 10.0, sr);
 
         p.rebuild_crossovers();
-        p.rebuild_oversampler();
         p.rebuild_cached_parameters();
         p
+    }
+
+    /// Construct a plugin from external configuration without silently repairing
+    /// malformed presets. The legacy `from_params` remains for trusted callers.
+    pub fn try_from_params(channels: usize, params: SaturationPluginParams) -> PluginResult<Self> {
+        if channels == 0 || channels > MAX_CHANNELS {
+            return Err(format!(
+                "Saturation channel count must be in 1..={MAX_CHANNELS}, got {channels}"
+            ));
+        }
+        if !matches!(
+            params.mode.as_str(),
+            "Soft Clip" | "soft_clip" | "Tube" | "tube" | "Tape" | "tape" | "Exciter" | "exciter"
+        ) {
+            return Err(format!("Unknown saturation mode: {}", params.mode));
+        }
+        if !matches!(
+            params.oversampling.as_str(),
+            "Off" | "off" | "0" | "2x" | "2" | "4x" | "4"
+        ) {
+            return Err(format!(
+                "Unknown saturation oversampling factor: {}",
+                params.oversampling
+            ));
+        }
+        let ranged = [
+            ("drive", params.drive, 1.0, 20.0),
+            ("tone", params.tone, 1.0, 3.0),
+            ("exciter_freq", params.exciter_freq, 500.0, 10_000.0),
+            ("output_gain_db", params.output_gain_db, -12.0, 12.0),
+            ("mix", params.mix, 0.0, 1.0),
+            ("dynamic_amount", params.dynamic_amount, 0.0, 1.0),
+            ("dynamic_attack_ms", params.dynamic_attack_ms, 0.1, 100.0),
+            ("dynamic_release_ms", params.dynamic_release_ms, 1.0, 500.0),
+        ];
+        for (name, value, min, max) in ranged {
+            if !value.is_finite() || !(min..=max).contains(&value) {
+                return Err(format!(
+                    "Invalid saturation {name}: expected finite value in {min}..={max}, got {value}"
+                ));
+            }
+        }
+        Ok(Self::from_params(channels, params))
     }
 
     pub(super) fn mode_string(&self) -> String {
@@ -222,24 +260,10 @@ impl SaturationPlugin {
         }
     }
 
-    pub(super) fn rebuild_oversampler(&mut self) {
-        let factor = match self.oversampling_index {
-            1 => 2u32,
-            2 => 4u32,
-            _ => {
-                self.oversampler = None;
-                return;
-            }
-        };
-        match Oversampler::new(factor, self.channels) {
-            Ok(os) => self.oversampler = Some(os),
-            Err(_) => self.oversampler = None,
-        }
-    }
-
     pub(super) fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = vec![
             Parameter::new_string("mode", "Mode", self.mode_string())
+                .with_update_mode(UpdateMode::Structural)
                 .with_description("Saturation algorithm")
                 .with_group("Saturation")
                 .with_importance(ParameterImportance::Critical),
@@ -260,7 +284,7 @@ impl SaturationPlugin {
                 pk(SAT, "tone").min_f64() as f32,
                 pk(SAT, "tone").max_f64() as f32,
             )
-            .with_description("Harmonic character (tube mode: even/odd balance)")
+            .with_description("Static waveshaper knee/exponent; Tube remains odd-symmetric")
             .with_group("Saturation")
             .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
@@ -270,10 +294,12 @@ impl SaturationPlugin {
                 pk(SAT, "exciter_freq").min_f64() as f32,
                 pk(SAT, "exciter_freq").max_f64() as f32,
             )
+            .with_update_mode(UpdateMode::Structural)
             .with_description("Crossover frequency for exciter mode")
             .with_group("Exciter")
             .with_importance(ParameterImportance::Useful),
             Parameter::new_string("oversampling", "Oversampling", self.oversampling_string())
+                .with_update_mode(UpdateMode::Structural)
                 .with_description("Oversampling factor for alias suppression")
                 .with_group("Quality")
                 .with_importance(ParameterImportance::Useful),
@@ -326,26 +352,36 @@ impl SaturationPlugin {
             .with_group("Dynamic")
             .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("dc_blocker", "DC Block", self.dc_blocker_enabled)
+                .with_update_mode(UpdateMode::Structural)
                 .with_group("Quality")
                 .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("use_adaa", "ADAA", self.use_adaa)
+                .with_update_mode(UpdateMode::Structural)
                 .with_group("Quality")
                 .with_importance(ParameterImportance::Useful),
         ];
     }
 
+    fn update_cached_float(&mut self, id: &str, value: f32) {
+        if let Some(parameter) = self
+            .cached_parameters
+            .iter_mut()
+            .find(|parameter| parameter.id.as_str() == id)
+        {
+            parameter.default_value = ParameterValue::Float(value);
+        }
+    }
+
     /// Process exciter mode without oversampling: split -> saturate HF -> recombine
-    pub(super) fn process_exciter_direct(
-        &mut self,
-        buffer: &mut [f32],
-        num_frames: usize,
-        drive: f32,
-    ) {
+    pub(super) fn process_exciter_direct(&mut self, buffer: &mut [f32], num_frames: usize) {
         let nc = self.channels;
         for frame in 0..num_frames {
+            let base_drive = self.drive_smoother.advance();
             for ch in 0..nc {
                 let idx = frame * nc + ch;
                 let input = buffer[idx];
+                let env = self.envelope_followers[ch].process(self.dry_buf[idx].abs());
+                let drive = (base_drive * (1.0 + env * self.dynamic_amount)).min(20.0);
 
                 let (low, high) = self.crossovers[ch].process(input, 0);
                 let saturated_high = soft_clip(high, drive);
@@ -398,7 +434,12 @@ impl ParametricInPlacePlugin for SaturationPlugin {
     }
 
     fn compile_metadata(&self) -> PluginCompileMetadata {
-        PluginCompileMetadata::nonlinear(PluginCostClass::Dynamics, None, 0, false)
+        PluginCompileMetadata::nonlinear(
+            PluginCostClass::Dynamics,
+            None,
+            self.latency_samples(),
+            false,
+        )
     }
 
     fn channels(&self) -> usize {
@@ -454,6 +495,99 @@ impl ParametricInPlacePlugin for SaturationPlugin {
     }
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        // Validate enum values before mutating any state.  `Parameter` validates
+        // the string type but intentionally does not know this plugin's aliases,
+        // so silently mapping an unknown value to a different topology here
+        // would make bulk updates order-dependent and corrupt preset state.
+        for (id, value) in &values {
+            let Some(parameter) = self
+                .cached_parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)
+            else {
+                return Err(format!("Unknown parameter: {id}"));
+            };
+            let legacy_bool = (id == &self.param_dc_blocker || id == &self.param_use_adaa)
+                && parameter_value_as_legacy_bool(value).is_some();
+            if !legacy_bool {
+                parameter
+                    .validate(value)
+                    .map_err(|error| format!("{id}: {error}"))?;
+            }
+            if id == &self.param_mode {
+                let Some(mode) = value.as_string() else {
+                    return Err("mode must be a string enum".to_string());
+                };
+                if !matches!(
+                    mode,
+                    "Soft Clip"
+                        | "soft_clip"
+                        | "Tube"
+                        | "tube"
+                        | "Tape"
+                        | "tape"
+                        | "Exciter"
+                        | "exciter"
+                ) {
+                    return Err(format!("Unknown saturation mode: {mode}"));
+                }
+            } else if id == &self.param_oversampling {
+                let Some(oversampling) = value.as_string() else {
+                    return Err("oversampling must be a string enum".to_string());
+                };
+                if !matches!(oversampling, "Off" | "off" | "0" | "2x" | "2" | "4x" | "4") {
+                    return Err(format!(
+                        "Unknown saturation oversampling factor: {oversampling}"
+                    ));
+                }
+            }
+        }
+
+        if self.initialized {
+            for (id, value) in &values {
+                let changed = if id == &self.param_mode {
+                    value.as_string().is_some_and(|value| {
+                        let mode = match value {
+                            "Soft Clip" | "soft_clip" => SaturationMode::SoftClip,
+                            "Tube" | "tube" => SaturationMode::Tube,
+                            "Tape" | "tape" => SaturationMode::Tape,
+                            "Exciter" | "exciter" => SaturationMode::Exciter,
+                            _ => self.mode,
+                        };
+                        mode != self.mode
+                    })
+                } else if id == &self.param_oversampling {
+                    value.as_string().is_some_and(|value| {
+                        let index = match value {
+                            "Off" | "off" | "0" => 0,
+                            "2x" | "2" => 1,
+                            "4x" | "4" => 2,
+                            _ => self.oversampling_index,
+                        };
+                        index != self.oversampling_index
+                    })
+                } else if id == &self.param_exciter_freq {
+                    value
+                        .as_float()
+                        .is_some_and(|value| value != self.exciter_freq)
+                } else if id == &self.param_use_adaa {
+                    parameter_value_as_legacy_bool(value)
+                        .is_some_and(|value| value != self.use_adaa)
+                } else if id == &self.param_dc_blocker {
+                    parameter_value_as_legacy_bool(value)
+                        .is_some_and(|value| value != self.dc_blocker_enabled)
+                } else {
+                    false
+                };
+                if changed {
+                    return Err(format!(
+                        "{id} is structural; recreate Saturation so the host can rebuild topology and latency"
+                    ));
+                }
+            }
+        }
+
+        let mut structural_changed = false;
         for (id, value) in values {
             if id == self.param_mode {
                 let new_mode = if let Some(s) = value.as_string() {
@@ -469,6 +603,7 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                 } else {
                     SaturationMode::SoftClip
                 };
+                structural_changed |= new_mode != self.mode;
                 self.mode = new_mode;
             } else if id == self.param_drive {
                 let v = value
@@ -477,6 +612,7 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                 if v.is_finite() {
                     self.drive = v.clamp(1.0, 20.0);
                     self.drive_smoother.set_target(self.drive);
+                    self.update_cached_float("drive", self.drive);
                 }
             } else if id == self.param_tone {
                 let v = value
@@ -484,21 +620,23 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                     .unwrap_or(pk(SAT, "tone").default_f64() as f32);
                 if v.is_finite() {
                     self.tone = v.clamp(1.0, 3.0);
+                    self.update_cached_float("tone", self.tone);
                 }
             } else if id == self.param_exciter_freq {
                 let v = value
                     .as_float()
                     .unwrap_or(pk(SAT, "exciter_freq").default_f64() as f32);
                 if v.is_finite() {
+                    structural_changed |= v != self.exciter_freq;
                     self.exciter_freq = v.clamp(500.0, 10000.0);
                     self.rebuild_crossovers();
                 }
             } else if id == self.param_oversampling {
                 let new_index = if let Some(s) = value.as_string() {
                     match s {
-                        "Off" | "off" => 0,
-                        "2x" => 1,
-                        "4x" => 2,
+                        "Off" | "off" | "0" => 0,
+                        "2x" | "2" => 1,
+                        "4x" | "4" => 2,
                         _ => 0,
                     }
                 } else if let Some(v) = value.as_float() {
@@ -507,8 +645,8 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                     0
                 };
                 if new_index != self.oversampling_index {
+                    structural_changed = true;
                     self.oversampling_index = new_index;
-                    self.rebuild_oversampler();
                 }
             } else if id == self.param_output_gain {
                 let v = value
@@ -517,6 +655,7 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                 if v.is_finite() {
                     self.output_gain_db = v.clamp(-12.0, 12.0);
                     self.output_smoother.set_target(self.output_gain_db);
+                    self.update_cached_float("output_gain", self.output_gain_db);
                 }
             } else if id == self.param_mix {
                 let v = value
@@ -525,16 +664,19 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                 if v.is_finite() {
                     self.mix = v.clamp(0.0, 1.0);
                     self.mix_smoother.set_target(self.mix);
+                    self.update_cached_float("mix", self.mix);
                 }
             } else if id == self.param_dynamic_amount {
                 let v = value.as_float().unwrap_or(0.0);
                 if v.is_finite() {
                     self.dynamic_amount = v.clamp(0.0, 1.0);
+                    self.update_cached_float("dynamic_amount", self.dynamic_amount);
                 }
             } else if id == self.param_dynamic_attack_ms {
                 let v = value.as_float().unwrap_or(5.0);
                 if v.is_finite() {
                     self.dynamic_attack_ms = v.clamp(0.1, 100.0);
+                    self.update_cached_float("dynamic_attack_ms", self.dynamic_attack_ms);
                     for ef in &mut self.envelope_followers {
                         ef.set_times(
                             self.dynamic_attack_ms,
@@ -547,6 +689,7 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                 let v = value.as_float().unwrap_or(50.0);
                 if v.is_finite() {
                     self.dynamic_release_ms = v.clamp(1.0, 500.0);
+                    self.update_cached_float("dynamic_release_ms", self.dynamic_release_ms);
                     for ef in &mut self.envelope_followers {
                         ef.set_times(
                             self.dynamic_attack_ms,
@@ -557,22 +700,37 @@ impl ParametricInPlacePlugin for SaturationPlugin {
                 }
             } else if id == self.param_dc_blocker {
                 if let Some(enabled) = parameter_value_as_legacy_bool(&value) {
+                    structural_changed |= enabled != self.dc_blocker_enabled;
                     self.dc_blocker_enabled = enabled;
                 }
             } else if id == self.param_use_adaa {
                 if let Some(enabled) = parameter_value_as_legacy_bool(&value) {
+                    structural_changed |= enabled != self.use_adaa;
                     self.use_adaa = enabled;
                 }
             } else {
                 return Err(format!("Unknown parameter: {id}"));
             }
         }
-        self.rebuild_cached_parameters();
+        if structural_changed {
+            self.rebuild_cached_parameters();
+        }
         Ok(())
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("Saturation sample rate must be greater than zero".to_string());
+        }
         self.sample_rate = sample_rate;
+
+        let maximum_exciter = sample_rate as f32 * 0.475;
+        if self.exciter_freq > maximum_exciter {
+            return Err(format!(
+                "Saturation exciter frequency {} Hz must not exceed {maximum_exciter} Hz at {sample_rate} Hz",
+                self.exciter_freq
+            ));
+        }
 
         // Reinit crossovers
         for xo in &mut self.crossovers {
@@ -583,9 +741,6 @@ impl ParametricInPlacePlugin for SaturationPlugin {
         self.drive_smoother.set_time(10.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
         self.output_smoother.set_time(10.0, sample_rate);
-
-        // Rebuild oversampler for new sample rate context
-        self.rebuild_oversampler();
 
         // Reinit SOTA DSP components
         self.dc_blocker.set_sample_rate(sample_rate, 5.0);
@@ -598,15 +753,14 @@ impl ParametricInPlacePlugin for SaturationPlugin {
             })
             .collect();
 
-        // Pre-allocate buffers for the largest block sizes seen in offline and
-        // stress hosts without growing on the audio callback path.
-        let max_expected_frames = sample_rate as usize + 8192;
-        let buf_size = DEFAULT_BUF_SIZE.max(max_expected_frames * self.channels);
+        // Scratch follows one explicit maximum-block contract rather than sample
+        // rate (which is unrelated to callback size and caused tens of MiB waste).
+        let buf_size = DEFAULT_BUF_SIZE.max(MAX_BLOCK_FRAMES.saturating_mul(self.channels));
         if self.dry_buf.len() < buf_size {
             self.dry_buf.resize(buf_size, 0.0);
-            self.low_buf.resize(buf_size, 0.0);
-            self.high_buf.resize(buf_size, 0.0);
         }
+
+        self.initialized = true;
 
         Ok(())
     }
@@ -615,11 +769,6 @@ impl ParametricInPlacePlugin for SaturationPlugin {
         // Reset crossovers
         for xo in &mut self.crossovers {
             xo.reset();
-        }
-
-        // Reset oversampler
-        if let Some(ref mut os) = self.oversampler {
-            os.reset();
         }
 
         // Reset SOTA DSP components
@@ -633,6 +782,9 @@ impl ParametricInPlacePlugin for SaturationPlugin {
         for ef in &mut self.envelope_followers {
             ef.reset();
         }
+        self.drive_smoother.reset(self.drive);
+        self.mix_smoother.reset(self.mix);
+        self.output_smoother.reset(self.output_gain_db);
     }
 
     fn process_in_place(
@@ -643,7 +795,18 @@ impl ParametricInPlacePlugin for SaturationPlugin {
         enable_ftz_daz();
         let nf = context.num_frames;
         let nc = self.channels;
-        let total = nf * nc;
+        if !self.initialized {
+            return Err("Saturation must be initialized before processing".to_string());
+        }
+        if context.sample_rate != self.sample_rate {
+            return Err(format!(
+                "Saturation context rate {} Hz differs from initialized rate {} Hz",
+                context.sample_rate, self.sample_rate
+            ));
+        }
+        let total = nf
+            .checked_mul(nc)
+            .ok_or_else(|| "Saturation frame/sample count overflow".to_string())?;
 
         if buffer.len() < total {
             return Err(format!(
@@ -663,105 +826,13 @@ impl ParametricInPlacePlugin for SaturationPlugin {
         // Save dry signal for mix
         self.dry_buf[..total].copy_from_slice(&buffer[..total]);
 
-        // Capture smoother start values before advancing, so we can ramp per-sample.
-        // This eliminates zipper noise when drive/mix/output_gain are automated.
-        let drive_start = self.drive_smoother.current();
-        let drive_end = self.drive_smoother.next_n(nf);
-        let drive_step = if nf > 1 {
-            (drive_end - drive_start) / nf as f32
-        } else {
-            0.0
-        };
-
-        let mix_start = self.mix_smoother.current();
-        let mix_end = self.mix_smoother.next_n(nf);
-        let mix_step = if nf > 1 {
-            (mix_end - mix_start) / nf as f32
-        } else {
-            0.0
-        };
-
-        let gain_start = self.output_smoother.current();
-        let gain_end = self.output_smoother.next_n(nf);
-        let gain_step = if nf > 1 {
-            (gain_end - gain_start) / nf as f32
-        } else {
-            0.0
-        };
-
-        // Block-constant values used for code paths that cannot do per-sample smoothing
-        // (oversampler inner closure captures drive by value).
-        let drive_block = drive_end;
-
         let mode = self.mode;
         let tone = self.tone;
-        let dyn_amount = self.dynamic_amount;
-
         if mode == SaturationMode::Exciter {
-            // Exciter mode: split signal, saturate HF only, recombine
-            if let Some(ref mut os) = self.oversampler {
-                // Strategy: split at 1x rate, oversample+saturate HF band, recombine.
-
-                // Step 1: split at 1x rate
-                for frame in 0..nf {
-                    for ch in 0..nc {
-                        let idx = frame * nc + ch;
-                        let input = buffer[idx];
-                        let (low, high) = self.crossovers[ch].process(input, 0);
-                        self.low_buf[idx] = low;
-                        self.high_buf[idx] = high;
-                    }
-                }
-
-                // Step 2: put HF into buffer, oversample and saturate
-                buffer[..total].copy_from_slice(&self.high_buf[..total]);
-                // Use block-constant drive for oversampled path (closure capture).
-                // The drive ramp is applied in the final per-frame mix loop below.
-                let frames_written = os
-                    .process(buffer, nf, |planar, os_frames| {
-                        for ch_buf in planar.iter_mut().take(nc) {
-                            for sample in ch_buf.iter_mut().take(os_frames) {
-                                *sample = soft_clip(*sample, drive_block);
-                            }
-                        }
-                    })
-                    .unwrap_or(nf);
-
-                // Only recombine for frames the oversampler actually wrote.
-                // Frames beyond frames_written are already zero (pre-zeroed by oversampler).
-                let valid = frames_written * nc;
-                for (out, &low) in buffer[..valid].iter_mut().zip(self.low_buf[..valid].iter()) {
-                    *out += low;
-                }
-                // Remaining frames: pass through the low band only
-                for (out, &low) in buffer[valid..total]
-                    .iter_mut()
-                    .zip(self.low_buf[valid..total].iter())
-                {
-                    *out = low;
-                }
-            } else {
-                // No oversampling: direct exciter processing with block-constant drive
-                self.process_exciter_direct(buffer, nf, drive_block);
-            }
-        } else if let Some(ref mut os) = self.oversampler {
-            // Oversampled processing for non-exciter modes.
-            // Use block-constant drive; per-sample ramp is applied in the final loop.
-            let frames_written = os
-                .process(buffer, nf, |planar, os_frames| {
-                    for ch_buf in planar.iter_mut().take(nc) {
-                        for sample in ch_buf.iter_mut().take(os_frames) {
-                            *sample = saturate(*sample, mode, drive_block, tone);
-                        }
-                    }
-                })
-                .unwrap_or(nf);
-
-            // Zero out tail that oversampler did not write (latency fill period)
-            let valid = frames_written * nc;
-            for s in buffer[valid..total].iter_mut() {
-                *s = 0.0;
-            }
+            // Host-owned oversampling means this exact per-frame envelope runs
+            // at the processing rate supplied by the wrapper and dry/wet remains
+            // in the same time domain.
+            self.process_exciter_direct(buffer, nf);
         } else if self.use_adaa && mode != SaturationMode::Exciter {
             // ADAA processing (anti-aliased, no oversampling).
             // Tube ADAA: adaa_softclip is built for f(x)=x/(1+|x|), i.e. tone=1.
@@ -770,10 +841,12 @@ impl ParametricInPlacePlugin for SaturationPlugin {
             // harmonic character consistent regardless of the ADAA flag.
             // Per-channel state avoids corruption in interleaved processing.
             for frame in 0..nf {
-                let frame_drive = drive_start + frame as f32 * drive_step;
-                let frame_tanh_drive = frame_drive.tanh();
+                let base_drive = self.drive_smoother.advance();
                 for ch in 0..nc {
                     let idx = frame * nc + ch;
+                    let env = self.envelope_followers[ch].process(self.dry_buf[idx].abs());
+                    let frame_drive = (base_drive * (1.0 + env * self.dynamic_amount)).min(20.0);
+                    let frame_tanh_drive = frame_drive.tanh();
                     match mode {
                         SaturationMode::SoftClip => {
                             let driven = buffer[idx] * frame_drive;
@@ -798,31 +871,12 @@ impl ParametricInPlacePlugin for SaturationPlugin {
         } else {
             // Direct processing (no oversampling, no ADAA) with per-sample drive ramp
             for frame in 0..nf {
-                let frame_drive = drive_start + frame as f32 * drive_step;
+                let base_drive = self.drive_smoother.advance();
                 for ch in 0..nc {
                     let idx = frame * nc + ch;
+                    let env = self.envelope_followers[ch].process(self.dry_buf[idx].abs());
+                    let frame_drive = (base_drive * (1.0 + env * self.dynamic_amount)).min(20.0);
                     buffer[idx] = saturate(buffer[idx], mode, frame_drive, tone);
-                }
-            }
-        }
-
-        // Dynamic saturation: modulate drive before the nonlinearity by re-applying
-        // with an envelope-scaled drive boost. The envelope follows the dry input so
-        // that drive tracks input level, adding dynamic harmonic generation rather than
-        // post-distortion amplitude pumping.
-        // Max dynamic drive is clamped to 20.0 to prevent blow-up on loud passages.
-        const MAX_DYNAMIC_DRIVE: f32 = 20.0;
-        if dyn_amount > 0.001 {
-            for frame in 0..nf {
-                let frame_drive = drive_start + frame as f32 * drive_step;
-                for ch in 0..nc {
-                    let idx = frame * nc + ch;
-                    let dry_abs = self.dry_buf[idx].abs();
-                    let env = self.envelope_followers[ch].process(dry_abs);
-                    // Compute a drive-modulated re-saturation of the dry signal
-                    let dynamic_drive =
-                        (frame_drive * (1.0 + env * dyn_amount)).min(MAX_DYNAMIC_DRIVE);
-                    buffer[idx] = saturate(self.dry_buf[idx], mode, dynamic_drive, tone);
                 }
             }
         }
@@ -834,9 +888,9 @@ impl ParametricInPlacePlugin for SaturationPlugin {
 
         // Apply per-sample output gain ramp and dry/wet mix
         for frame in 0..nf {
-            let frame_gain_db = gain_start + frame as f32 * gain_step;
+            let frame_gain_db = self.output_smoother.advance();
             let frame_output_linear = fast_pow10(frame_gain_db / 20.0);
-            let frame_mix = mix_start + frame as f32 * mix_step;
+            let frame_mix = self.mix_smoother.advance();
             for ch in 0..nc {
                 let idx = frame * nc + ch;
                 let dry = self.dry_buf[idx];
@@ -856,6 +910,10 @@ impl ParametricInPlacePlugin for SaturationPlugin {
             2 => Some(4),
             _ => None,
         }
+    }
+
+    fn latency_samples(&self) -> usize {
+        0
     }
 }
 

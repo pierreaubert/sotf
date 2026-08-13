@@ -1,11 +1,11 @@
 /// Maximum number of channels supported for pre-allocated buffers.
 pub(super) const MAX_CHANNELS: usize = 32;
 
-/// Default pre-allocation size in samples (frames * channels).
-/// Covers 48000 frames * 2 channels = 96000. `initialize` expands this for
-/// unusually large host blocks so the audio callback can fail cleanly instead
-/// of growing scratch storage in `process_in_place`.
+/// Default pre-allocation size in samples. Initialization guarantees at least
+/// 16,384 frames per configured channel; larger callbacks fail without growing
+/// on the audio thread.
 pub(super) const DEFAULT_BUF_SIZE: usize = 96000;
+pub(super) const MAX_BLOCK_FRAMES: usize = 65_536;
 
 /// Soft clip: tanh(input * drive) / tanh(drive)
 #[inline(always)]

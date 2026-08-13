@@ -1,3 +1,80 @@
+# 0.5.12
+
+## Fixes
+
+- Advertise mode, Exciter crossover, oversampling, DC blocker, and ADAA as
+  structural controls, matching the initialized plugin's graph-rebuild-only
+  setter contract.
+
+# 0.5.11
+
+## Fixes (2026-08-12 review closure)
+
+- Moved oversampling ownership to the host graph. Saturation now advertises its
+  requested factor, has zero internal latency, and processes dynamics and
+  dry/wet mixing in the wrapper's single processing domain.
+- Continuous drive, mix, and output controls now advance exactly once per
+  source frame, making automation independent of callback partitioning.
+- Topology-affecting live changes are rejected after initialization so the host
+  can rebuild off the audio thread; continuous updates preserve cached metadata
+  without allocation or topology reconstruction.
+- Initialization now rejects invalid low-rate Exciter crossover configurations,
+  processing checks initialization, context rate, and sample-count overflow,
+  and scratch capacity follows an explicit maximum-block contract rather than
+  scaling with sample rate.
+- Documentation now describes Tube and Tape as static waveshapers instead of
+  claiming physical analog emulation.
+- Added exact-once host wrapping, latency-aligned dry/wet, all-mode/all-factor
+  dynamic composition, callback partition, alias rejection, malformed input,
+  reset, and allocation/QA regressions.
+
+# 0.5.10
+
+## Fixes (2026-08-12 review remediation)
+
+- Bulk parameter updates now reject unknown mode and oversampling enum values
+  before mutating any state, preventing silent topology changes and partial
+  updates. Added an atomicity regression test.
+
+# 0.5.9
+
+## Fixes (2026-08-12 review remediation)
+
+- Dynamic drive is now applied inside the selected oversampled nonlinearity,
+  including the Exciter high-band path, instead of being ignored whenever the
+  internal oversampler is enabled.
+- Added a regression covering dynamic Exciter processing with 2x oversampling.
+
+# 0.5.8
+
+## Fixes (2026-08-12 review remediation)
+
+- Oversampler processing failures now propagate to the host instead of being
+  converted into successful full-block consumption. Added regression coverage
+  for an injected oversampler error.
+
+# 0.5.7
+
+## Fixes (2026-08-12 review remediation)
+
+- Dynamic drive modulation now feeds the selected direct/ADAA/Exciter topology instead of
+  overwriting its output with a second memoryless pass. Exciter dynamics therefore preserve the
+  split-band signal path.
+- The plugin now reports internal oversampler latency and no longer requests a second layer of
+  host oversampling.
+- Reset settles drive, mix, and output smoothers at their current parameter targets.
+- Added a fallible validated constructor and routed both public factories through it, rejecting
+  unknown modes/factors, invalid channel counts, non-finite/out-of-range values, and zero sample
+  rates. Exciter frequency is limited below Nyquist during initialization.
+- Added regressions for dynamic Exciter topology, latency metadata, double-oversampling prevention,
+  invalid configuration, and smoother reset.
+
+## Deferred
+
+- Oversampled dynamic-drive interpolation, latency-aligned dry/wet mixing, and realtime-safe
+  topology switching require a larger host/oversampler control-path redesign.
+- Exact host maximum-block sizing and pass fusion remain performance follow-ups.
+
 # 0.5.6
 
 ## Fixes

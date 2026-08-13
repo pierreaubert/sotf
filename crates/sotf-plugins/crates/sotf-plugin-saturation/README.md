@@ -4,11 +4,14 @@ Saturation / Harmonic Exciter — adds warmth and harmonic richness.
 
 ## What It Does
 
-Adds harmonic overtones to audio through nonlinear waveshaping, simulating the pleasing distortion characteristics of analog equipment (tape machines, tube amplifiers). At low drive levels, adds subtle warmth; at higher levels, produces audible distortion.
+Adds harmonic overtones through deterministic nonlinear waveshaping. The Tube
+and Tape labels describe static, tube- and tape-flavoured curves; they are not
+physical circuit, bias, hysteresis, or magnetic-head models.
 
 ## Features
 
-- **Multiple saturation curves**: Soft clip, hard clip, tape emulation, tube emulation
+- **Multiple saturation curves**: Soft clip, odd-symmetric Tube-style curve,
+  memoryless Tape-style sigmoid, and split-band Exciter
 - **Anti-aliased processing**: ADAA (Anti-Derivative Anti-Aliasing) reduces digital artifacts
 - **Drive control**: From subtle warmth to heavy distortion
 - **Mix control**: Blend dry and saturated signal

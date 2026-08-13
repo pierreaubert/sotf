@@ -32,7 +32,7 @@ pub const PARAMS: &[ParamSpec] = &[
     ParamSpec::float("Drive", "drive", 2.0, 1.0, 20.0, 0.1, "", "Saturation")
         .doc("Saturation intensity"),
     ParamSpec::float("Tone", "tone", 1.5, 1.0, 3.0, 0.1, "", "Saturation")
-        .doc("Harmonic character (tube mode: even/odd balance)"),
+        .doc("Static waveshaper knee/exponent; Tube remains odd-symmetric"),
     ParamSpec::float(
         "Exciter Freq",
         "exciter_freq",
@@ -105,8 +105,10 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .doc("Dynamic saturation envelope release time"),
     ParamSpec::bool_labeled("DC Block", "dc_blocker", true, "On", "Off", "Quality")
+        .setup()
         .doc("Remove DC offset from asymmetric saturation"),
     ParamSpec::bool_labeled("ADAA", "use_adaa", true, "On", "Off", "Quality")
+        .setup()
         .doc("Antiderivative anti-aliasing when oversampling is off"),
 ];
 
