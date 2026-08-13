@@ -1,5 +1,18 @@
 # Unreleased
 
+## 0.5.8 acoustic-quality measurement program
+
+- Add a deterministic offline quality runner spanning Small–Cathedral presets,
+  5.1/9.1.6 layouts, 44.1/48 kHz, and 64/257/1024-frame partitions.
+- Add regression-tested measurements for octave-band Schroeder RT60, normalized
+  echo density/mixing time, inter-channel coherence, energy entropy/vector and
+  diffuseness, LFE magnitude/phase, modulation sidebands, THD/IMD, exact linked
+  limiter gain, detector precision/recall, and gain pumping.
+- Expose read-only dialogue and limiter telemetry through `AaeData`; processing
+  behavior and callback allocation remain unchanged.
+- Document a reproducible external corpus/listening protocol and explicitly keep
+  it separate from deterministic synthetic acceptance.
+
 ## 0.5.7 complete 2026-08-12 review remediation
 
 - Make every public and bridge construction path fallible and validate all

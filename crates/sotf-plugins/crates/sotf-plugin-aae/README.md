@@ -31,3 +31,11 @@ percussion rejection, delay/filter transition state, sparse routing, tail
 continuity, and level-safe feedback behavior. `qa-aae` additionally exercises
 the maximum 9.1.6/Cathedral configuration with content awareness and auto gain,
 reporting callback p50/p95/max time against the audio deadline.
+
+`qa-aae-quality` is the allocation-permitted offline measurement program. It
+prints TSV records for bandwise Schroeder RT60, echo density/mixing time,
+spatial coherence/energy/diffuseness, LFE transfer, modulation sidebands,
+distortion/limiter activity, and synthetic dialogue-detector precision/recall
+over a representative preset/layout/rate/partition matrix. See
+`quality-validation.md` for the separate external listening/corpus protocol;
+synthetic results are never presented as listening evidence.

@@ -7,6 +7,48 @@ Scope: `sotf-plugin-aae`
 Focus: correctness, reverberation and spatial-rendering quality, realtime
 allocation, and performance
 
+## Retained quality-program gap — implemented in 0.5.8
+
+The retained P3 recommendation for measurement-first acoustic validation is now
+implemented by `qa-aae-quality` and the regression-tested `quality` module:
+
+- octave-band Schroeder backward integration with T20-derived RT60 and fit R²;
+- Abel-style normalized echo density and mixing time;
+- inter-channel coherence, normalized spatial-energy entropy, energy vector,
+  and combined diffuseness with LFE excluded by speaker metadata;
+- end-to-end LFE magnitude and phase at 60/120/250/1000 Hz, with an LR4
+  high-frequency-rejection gate;
+- FDN modulation sidebands, one-tone THD, two-tone IMD, and exact linked output
+  limiter gain telemetry;
+- labeled deterministic centered/panned voice, steady music, percussion,
+  anti-phase, and decorrelated stereo fixtures reporting detector
+  precision/recall and gain total variation/maximum step;
+- a tractable matrix covering all four room presets, 5.1 and 9.1.6, 44.1 and
+  48 kHz, and 64/257/1024-frame host partitions.
+
+Metric implementations have numeric-oracle regressions independent of AAE. The
+runner's measured baseline is deliberately honest: the synthetic detector set
+currently yields precision 0.50 and recall 1.00, so centered steady/percussive
+false positives remain visible rather than being relabeled to make the gate
+green. `quality-validation.md` defines the reproducible manifest, command, and
+blind level-matched listening/corpus protocol. Those external results are not
+fabricated and are not claimed complete by the deterministic suite.
+
+Verification:
+
+```text
+cargo test -p sotf-plugin-aae --locked
+cargo clippy -p sotf-plugin-aae --all-targets --features qa --no-deps --locked -- -D warnings
+cargo run --release -p sotf-plugin-aae --features qa --bin qa-aae-quality --locked
+cargo run --release -p sotf-plugin-aae --features qa --bin qa-aae --locked
+```
+
+All four commands pass. A dependency-inclusive Clippy invocation remains
+blocked by three pre-existing `sotf-host` lints in `analyzer_spectrum.rs` and
+`auto_gain.rs`; the `--no-deps` gate proves the AAE library, tests, benchmarks,
+and both QA binaries are warning-free without folding unrelated host edits into
+this plugin commit.
+
 ## Remediation status (0.5.7 — complete)
 
 All P0–P3 findings are fixed and regression-tested in this remediation:

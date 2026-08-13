@@ -4,6 +4,7 @@ pub mod early_reflections;
 pub mod fdn;
 pub mod hadamard;
 pub mod params;
+pub mod quality;
 pub mod tone_filter;
 
 #[path = "lib/aae_plugin.rs"]

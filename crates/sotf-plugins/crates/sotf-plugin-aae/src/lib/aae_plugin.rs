@@ -1154,6 +1154,9 @@ impl Plugin for AaePlugin {
                 .as_ref()
                 .map(MultichannelAutoGain::data)
                 .unwrap_or_default(),
+            dialogue_duck_gain: self.dialogue_duck_gain,
+            dialogue_active: self.dialogue_voiced_center && self.dialogue_hold_remaining > 0,
+            output_limiter_gain: self.final_limiter_gain,
         }))
     }
 }

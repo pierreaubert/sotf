@@ -6,8 +6,8 @@
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
-use sotf_plugin_aae::AaePlugin;
 use sotf_plugin_aae::params::AaePluginParams;
+use sotf_plugin_aae::{AaeData, AaePlugin};
 
 fn ctx(sample_rate: u32, num_frames: usize) -> ProcessContext<'static> {
     ProcessContext::new(sample_rate, num_frames)
@@ -287,6 +287,50 @@ fn speaker_config_change_requires_graph_rebuild() {
 fn get_data_is_present() {
     let plugin = AaePlugin::from_params(AaePluginParams::default()).unwrap();
     assert!(plugin.get_data().is_some());
+}
+
+#[test]
+fn quality_telemetry_observes_detector_and_limiter_without_changing_audio_contract() {
+    let mut plugin = AaePlugin::from_params(AaePluginParams {
+        dry_level: 1.0,
+        er_level: 1.0,
+        late_level: 1.0,
+        content_aware: true,
+        dialogue_attenuation_db: 6.0,
+        ..Default::default()
+    })
+    .unwrap();
+    plugin.initialize(48_000).unwrap();
+
+    // Amplitude-modulated centered voiced material exercises the detector;
+    // deliberately over-range input exercises the linked output limiter.
+    let frames = 48_000;
+    let input: Vec<f32> = (0..frames)
+        .flat_map(|index| {
+            let time = index as f32 / 48_000.0;
+            let voiced = 2.0
+                * (std::f32::consts::TAU * 180.0 * time).sin()
+                * (0.55 + 0.35 * (std::f32::consts::TAU * 4.0 * time).sin());
+            [voiced, voiced]
+        })
+        .collect();
+    let mut output = vec![0.0; frames * plugin.output_channels()];
+    plugin
+        .process(&input, &mut output, &ctx(48_000, frames))
+        .unwrap();
+
+    let data = plugin.get_data().unwrap();
+    let data = data.downcast_ref::<AaeData>().unwrap();
+    assert!(data.dialogue_active, "voiced fixture should be classified");
+    assert!(
+        data.dialogue_duck_gain < 0.75,
+        "wet gain should show ducking"
+    );
+    assert!(
+        data.output_limiter_gain < 1.0,
+        "hot fixture should exercise linked limiting"
+    );
+    assert!(output.iter().all(|sample| sample.abs() <= 1.000_001));
 }
 
 #[test]
