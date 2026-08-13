@@ -1,3 +1,21 @@
+# 0.5.42
+
+## Performance
+
+- Split wrapped overlap-add writes into two modulo-free regions and drain the
+  interleaved output ring with at most two contiguous copy/clear operations.
+- Add streaming Criterion coverage for 2/3/8/16 outputs and host blocks below,
+  at, and above the 512-frame hop. On the review machine the retained kernel
+  improved 2/3/8-output callbacks by about 24–27%, 16 outputs from about 90 to
+  73 microseconds, and stereo 128/512/2048-frame blocks by about 13–20%.
+
+## Testing
+
+- Compare wrapped, nonzero-offset OLA accumulation exactly with the former
+  scalar modulo-ring formula. A drain matrix covers tail/interior positions,
+  before/at/across-wrap lengths, 2/3/8/16 channels, exact copied output, cleared
+  samples, untouched sentinels, and the next read position.
+
 # 0.5.41
 
 ## Fixes

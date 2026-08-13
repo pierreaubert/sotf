@@ -30,6 +30,72 @@ fn test_xtc_creation() {
 }
 
 #[test]
+fn wrapped_ola_accumulation_matches_scalar_ring_reference() {
+    let ring_frames = 8;
+    let channels = 3;
+    let start = 6;
+    let channel = 1;
+    let ifft = [1.0, -2.0, 3.0, -4.0, 5.0];
+    let window = [0.25, 0.5, 0.75, 1.0, 0.5];
+    let scale = 0.5;
+    let mut expected = vec![0.125_f32; ring_frames * channels];
+    let mut actual = expected.clone();
+
+    for i in 0..ifft.len() {
+        let frame = (start + i) & (ring_frames - 1);
+        expected[frame * channels + channel] += ifft[i] * window[i] * scale;
+    }
+    crate::xtc_plugin::accumulate_ifft_channel(
+        &mut actual,
+        start,
+        channels,
+        channel,
+        &ifft,
+        &window,
+        scale,
+    );
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn wrapped_accumulator_drain_matches_scalar_oracle_and_clears_only_drained_frames() {
+    let ring_frames = 8;
+    for channels in [2, 3, 8, 16] {
+        for read_position in [0, 3, ring_frames - 1] {
+            for frames_to_drain in [1, ring_frames - read_position, ring_frames] {
+                let original: Vec<f32> = (0..ring_frames * channels)
+                    .map(|sample| sample as f32 + 0.25)
+                    .collect();
+                let mut expected_ring = original.clone();
+                let mut expected_output = vec![0.0_f32; frames_to_drain * channels];
+                for frame in 0..frames_to_drain {
+                    let ring_frame = (read_position + frame) & (ring_frames - 1);
+                    for channel in 0..channels {
+                        let ring_sample = ring_frame * channels + channel;
+                        expected_output[frame * channels + channel] = original[ring_sample];
+                        expected_ring[ring_sample] = 0.0;
+                    }
+                }
+
+                let mut actual_ring = original;
+                let mut actual_output = vec![-1.0_f32; frames_to_drain * channels];
+                let next = crate::xtc_plugin::drain_output_accumulator(
+                    &mut actual_ring,
+                    read_position,
+                    channels,
+                    &mut actual_output,
+                );
+
+                assert_eq!(actual_output, expected_output);
+                assert_eq!(actual_ring, expected_ring);
+                assert_eq!(next, (read_position + frames_to_drain) & (ring_frames - 1));
+            }
+        }
+    }
+}
+
+#[test]
 fn test_roomeq_recommended_matrix_loader() {
     let path = std::env::temp_dir().join(format!(
         "xtc-roomeq-recommended-{}.json",

@@ -120,11 +120,18 @@ All remaining P0–P3 review items are closed with focused regression coverage:
 - Effort limiting now enforces a physical per-frequency loudspeaker-row power
   bound, which can activate even after coefficient limits; its test verifies
   the resulting row norm. Filter generation performs the pass once.
-- Scalar OLA remains interleaved because ring wrap and N-output strides prevent
-  direct use of the contiguous SIMD primitives without repacking. The existing
-  QA benchmark covers steady-state zero allocation and performance for the
-  supported hot path; this is now an evidenced optimization opportunity, not a
-  correctness defect.
+- Performance follow-up in 0.5.42 removes per-sample ring modulo from OLA by
+  splitting every wrapped write into at most two linear regions. Output drain,
+  copy, and clear likewise operate on at most two contiguous interleaved spans
+  instead of frame-sized slices. A scalar wrapped-ring oracle covers exact
+  accumulation. Criterion now exercises 2/3/8/16 outputs and 128/512/2048-frame
+  callbacks. Before/after runs of that same benchmark against the parent commit
+  measured roughly 24–27% improvement for 2/3/8 outputs, about 73 microseconds
+  versus 90 for 16 outputs, and roughly 13–20% for the stereo block matrix on
+  the review machine. The interleaved N-output stride remains, but planar
+  repacking is not justified after these gains. A separate drain oracle covers
+  tail/interior positions, before/at/across-wrap lengths, 2/3/8/16 channels,
+  copied output, cleared samples, untouched sentinels, and next-position state.
 - Decisive focused regressions for these remediations are
   `room_ir_accepts_pcm16_and_rejects_implicit_long_tail_truncation`,
   `async_filter_automation_uses_one_coalescing_worker`, and
@@ -134,8 +141,8 @@ All remaining P0–P3 review items are closed with focused regression coverage:
   per-frequency loudspeaker-row power bound.
 - Independent acoustic fixtures remain covered by the production-geometry ITD,
   independent ILD, non-finite, and streamed-cancellation regressions described
-  above. SIMD/ring-buffer work remains an evidenced optimization opportunity,
-  not an unfixed P0-P3 correctness finding.
+  above. The retained ring-buffer optimization is exact and benchmark-backed;
+  no P0-P3 correctness finding remains.
 
 ## Scope reviewed
 

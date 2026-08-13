@@ -37,6 +37,64 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
+#[inline(always)]
+pub(super) fn accumulate_ifft_channel(
+    accumulator: &mut [f32],
+    start_frame: usize,
+    output_channels: usize,
+    channel: usize,
+    ifft: &[f32],
+    window: &[f32],
+    scale: f32,
+) {
+    let ring_frames = accumulator.len() / output_channels;
+    debug_assert_eq!(ifft.len(), window.len());
+    debug_assert!(start_frame < ring_frames);
+    debug_assert_eq!(accumulator.len(), ring_frames * output_channels);
+    debug_assert!(channel < output_channels);
+
+    let first_frames = ifft.len().min(ring_frames - start_frame);
+    for i in 0..first_frames {
+        let dst = (start_frame + i) * output_channels + channel;
+        accumulator[dst] += ifft[i] * window[i] * scale;
+    }
+    for i in first_frames..ifft.len() {
+        let dst = (i - first_frames) * output_channels + channel;
+        accumulator[dst] += ifft[i] * window[i] * scale;
+    }
+}
+
+#[inline(always)]
+pub(super) fn drain_output_accumulator(
+    accumulator: &mut [f32],
+    read_position: usize,
+    output_channels: usize,
+    output: &mut [f32],
+) -> usize {
+    debug_assert!(output_channels > 0);
+    debug_assert_eq!(accumulator.len() % output_channels, 0);
+    debug_assert_eq!(output.len() % output_channels, 0);
+    let ring_frames = accumulator.len() / output_channels;
+    let frames_to_drain = output.len() / output_channels;
+    debug_assert!(ring_frames.is_power_of_two());
+    debug_assert!(read_position < ring_frames);
+    debug_assert!(frames_to_drain <= ring_frames);
+
+    let first_frames = frames_to_drain.min(ring_frames - read_position);
+    let first_samples = first_frames * output_channels;
+    let acc_start = read_position * output_channels;
+    output[..first_samples].copy_from_slice(&accumulator[acc_start..acc_start + first_samples]);
+    accumulator[acc_start..acc_start + first_samples].fill(0.0);
+
+    let remaining_samples = output.len() - first_samples;
+    if remaining_samples > 0 {
+        output[first_samples..].copy_from_slice(&accumulator[..remaining_samples]);
+        accumulator[..remaining_samples].fill(0.0);
+    }
+
+    (read_position + frames_to_drain) & (ring_frames - 1)
+}
+
 /// FFT / STFT configuration and shared resources.
 pub(super) struct XtcFftConfig {
     /// FFT size (must be power of 2)
@@ -180,8 +238,8 @@ pub(super) struct XtcDiagnostics {
 /// Optimized with:
 /// - Block-based I/O processing (no sample-by-sample loops)
 /// - SIMD complex multiplication for frequency domain filtering
-/// - SIMD windowed overlap-add
-/// - Contiguous buffer access patterns (no modulo in hot path)
+/// - Modulo-free wrapped overlap-add regions
+/// - Contiguous ring drain/copy/clear operations
 /// - Asynchronous filter recomputation to avoid audio glitches
 pub struct XtcPlugin {
     /// Configuration parameters
@@ -890,7 +948,6 @@ impl XtcPlugin {
             .expect("FFT processing failed");
 
         let scale = self.fft.output_scale;
-        let fft_size = self.fft.fft_size;
         let mask = self.output.output_accumulator_mask;
 
         // Diagnostic bypass: skip all XTC filter math, just IFFT the windowed input.
@@ -911,11 +968,15 @@ impl XtcPlugin {
                 .expect("IFFT processing failed");
 
             // Accumulate Left
-            for i in 0..fft_size {
-                let idx = (self.output.next_add_position + i) & mask;
-                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
-                self.output.output_accumulator[idx * output_channels] += s;
-            }
+            accumulate_ifft_channel(
+                &mut self.output.output_accumulator,
+                self.output.next_add_position,
+                output_channels,
+                0,
+                &self.work.ifft_output,
+                &self.fft.analysis_window,
+                scale,
+            );
 
             // Right channel
             self.work
@@ -929,12 +990,16 @@ impl XtcPlugin {
                 .expect("IFFT processing failed");
 
             // Accumulate Right
-            for i in 0..fft_size {
-                let idx = (self.output.next_add_position + i) & mask;
-                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
-                if output_channels > 1 {
-                    self.output.output_accumulator[idx * output_channels + 1] += s;
-                }
+            if output_channels > 1 {
+                accumulate_ifft_channel(
+                    &mut self.output.output_accumulator,
+                    self.output.next_add_position,
+                    output_channels,
+                    1,
+                    &self.work.ifft_output,
+                    &self.fft.analysis_window,
+                    scale,
+                );
             }
         } else if let Some(speaker_filters) = self
             .filter_state
@@ -973,11 +1038,15 @@ impl XtcPlugin {
                         .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                         .expect("IFFT processing failed");
 
-                    for i in 0..fft_size {
-                        let idx = (self.output.next_add_position + i) & mask;
-                        let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
-                        self.output.output_accumulator[idx * output_channels + speaker_idx] += s;
-                    }
+                    accumulate_ifft_channel(
+                        &mut self.output.output_accumulator,
+                        self.output.next_add_position,
+                        output_channels,
+                        speaker_idx,
+                        &self.work.ifft_output,
+                        &self.fft.analysis_window,
+                        scale,
+                    );
                 } else {
                     apply_filter_pair(
                         &mut self.work.ifft_input,
@@ -991,11 +1060,15 @@ impl XtcPlugin {
                         .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                         .expect("IFFT processing failed");
 
-                    for i in 0..fft_size {
-                        let idx = (self.output.next_add_position + i) & mask;
-                        let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
-                        self.output.output_accumulator[idx * output_channels + speaker_idx] += s;
-                    }
+                    accumulate_ifft_channel(
+                        &mut self.output.output_accumulator,
+                        self.output.next_add_position,
+                        output_channels,
+                        speaker_idx,
+                        &self.work.ifft_output,
+                        &self.fft.analysis_window,
+                        scale,
+                    );
                 }
             }
         } else if self.filter_state.crossfade_progress < 1.0
@@ -1021,11 +1094,15 @@ impl XtcPlugin {
                 .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                 .expect("IFFT processing failed");
 
-            for i in 0..fft_size {
-                let idx = (self.output.next_add_position + i) & mask;
-                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
-                self.output.output_accumulator[idx * 2] += s;
-            }
+            accumulate_ifft_channel(
+                &mut self.output.output_accumulator,
+                self.output.next_add_position,
+                2,
+                0,
+                &self.work.ifft_output,
+                &self.fft.analysis_window,
+                scale,
+            );
 
             // --- Right channel with frequency-domain crossfade (1 IFFT instead of 2) ---
             apply_filter_right_blended(
@@ -1041,11 +1118,15 @@ impl XtcPlugin {
                 .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                 .expect("IFFT processing failed");
 
-            for i in 0..fft_size {
-                let idx = (self.output.next_add_position + i) & mask;
-                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
-                self.output.output_accumulator[idx * 2 + 1] += s;
-            }
+            accumulate_ifft_channel(
+                &mut self.output.output_accumulator,
+                self.output.next_add_position,
+                2,
+                1,
+                &self.work.ifft_output,
+                &self.fft.analysis_window,
+                scale,
+            );
         } else {
             // Normal path: no crossfade needed
             let filters = &self.filter_state.cached_current_filters;
@@ -1062,11 +1143,15 @@ impl XtcPlugin {
                 .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                 .expect("IFFT processing failed");
 
-            for i in 0..fft_size {
-                let idx = (self.output.next_add_position + i) & mask;
-                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
-                self.output.output_accumulator[idx * 2] += s;
-            }
+            accumulate_ifft_channel(
+                &mut self.output.output_accumulator,
+                self.output.next_add_position,
+                2,
+                0,
+                &self.work.ifft_output,
+                &self.fft.analysis_window,
+                scale,
+            );
 
             // Right channel
             apply_filter_right(
@@ -1080,11 +1165,15 @@ impl XtcPlugin {
                 .process(&mut self.work.ifft_input, &mut self.work.ifft_output)
                 .expect("IFFT processing failed");
 
-            for i in 0..fft_size {
-                let idx = (self.output.next_add_position + i) & mask;
-                let s = self.work.ifft_output[i] * self.fft.analysis_window[i] * scale;
-                self.output.output_accumulator[idx * 2 + 1] += s;
-            }
+            accumulate_ifft_channel(
+                &mut self.output.output_accumulator,
+                self.output.next_add_position,
+                2,
+                1,
+                &self.work.ifft_output,
+                &self.fft.analysis_window,
+                scale,
+            );
         }
 
         // Update positions
@@ -1485,7 +1574,6 @@ impl Plugin for XtcPlugin {
             arc_swap::Guard::into_inner(self.filter_state.filters.load());
 
         let mut output_pos = 0;
-        let mask = self.output.output_accumulator_mask;
         let mut block_start = 0;
 
         while block_start < num_frames && output_pos < num_frames {
@@ -1536,19 +1624,14 @@ impl Plugin for XtcPlugin {
                     .min(num_frames - output_pos);
 
                 if frames_to_drain > 0 {
-                    for i in 0..frames_to_drain {
-                        let read_idx = (self.output.output_read_position + i) & mask;
-                        let acc_base = read_idx * output_channels;
-                        let out_base = (output_pos + i) * output_channels;
-                        output[out_base..out_base + output_channels].copy_from_slice(
-                            &self.output.output_accumulator[acc_base..acc_base + output_channels],
-                        );
-                        // Clear after reading for next overlap-add cycle
-                        self.output.output_accumulator[acc_base..acc_base + output_channels]
-                            .fill(0.0);
-                    }
-                    self.output.output_read_position =
-                        (self.output.output_read_position + frames_to_drain) & mask;
+                    let out_start = output_pos * output_channels;
+                    let out_end = out_start + frames_to_drain * output_channels;
+                    self.output.output_read_position = drain_output_accumulator(
+                        &mut self.output.output_accumulator,
+                        self.output.output_read_position,
+                        output_channels,
+                        &mut output[out_start..out_end],
+                    );
                     self.output.output_accumulator_fill -= frames_to_drain;
                     output_pos += frames_to_drain;
                 } else if input_pos >= block_frames {

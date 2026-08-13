@@ -6,12 +6,92 @@
 //!   cargo bench -p plugins --no-default-features -- xtc-validation
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use sotf_plugin_xtc::XtcPluginParams;
+use sotf_host::{Plugin, ProcessContext};
 use sotf_plugin_xtc::validation::{
     CANCELLATION_DEPTH_TARGETS, measure_cancellation_depth_db, measure_cancellation_depth_spectrum,
     reference_ild_db, reference_itd_ms, run_validation,
 };
+use sotf_plugin_xtc::{XtcPlugin, XtcPluginParams};
 use std::hint::black_box;
+use std::time::Duration;
+
+fn matrix_fixture(output_channels: usize) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!(
+        "xtc-process-benchmark-{}-{output_channels}.json",
+        std::process::id()
+    ));
+    let speakers: Vec<String> = (0..output_channels).map(|ch| format!("S{ch}")).collect();
+    let mut filters = Vec::with_capacity(output_channels * 2);
+    for speaker in &speakers {
+        for (ear, gain) in [("left_ear", 0.5), ("right_ear", 0.5)] {
+            filters.push(serde_json::json!({
+                "speaker": speaker,
+                "target_ear": ear,
+                "taps": [gain]
+            }));
+        }
+    }
+    let artifact = serde_json::json!({
+        "version": "ctc-recommended-v1",
+        "source": "benchmark",
+        "sample_rate": 48_000,
+        "speakers": speakers,
+        "ears": ["left_ear", "right_ear"],
+        "filters": filters
+    });
+    std::fs::write(&path, serde_json::to_vec(&artifact).unwrap()).unwrap();
+    path
+}
+
+fn bench_streaming_process(c: &mut Criterion) {
+    let mut group = c.benchmark_group("xtc_streaming_process");
+    group.sample_size(20);
+    group.measurement_time(Duration::from_secs(2));
+
+    for output_channels in [2, 3, 8, 16] {
+        let path = matrix_fixture(output_channels);
+        let params = XtcPluginParams {
+            source_mode: "roomeq_recommended".into(),
+            recommended_matrix_file: Some(path.to_string_lossy().into_owned()),
+            auto_gain_enabled: false,
+            ..Default::default()
+        };
+        let mut plugin = XtcPlugin::new(params, 48_000).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let frames = 512;
+        let input = vec![0.125_f32; frames * 2];
+        let mut output = vec![0.0_f32; frames * output_channels];
+        let context = ProcessContext::new(48_000, frames);
+        group.bench_with_input(
+            BenchmarkId::new("outputs", output_channels),
+            &output_channels,
+            |b, _| {
+                b.iter(|| {
+                    plugin
+                        .process(black_box(&input), black_box(&mut output), &context)
+                        .unwrap()
+                });
+            },
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    for frames in [128, 512, 2048] {
+        let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let input = vec![0.125_f32; frames * 2];
+        let mut output = vec![0.0_f32; frames * 2];
+        let context = ProcessContext::new(48_000, frames);
+        group.bench_with_input(BenchmarkId::new("block_frames", frames), &frames, |b, _| {
+            b.iter(|| {
+                plugin
+                    .process(black_box(&input), black_box(&mut output), &context)
+                    .unwrap()
+            });
+        });
+    }
+    group.finish();
+}
 
 fn bench_reference_itd(c: &mut Criterion) {
     let mut group = c.benchmark_group("xtc_reference_itd");
@@ -119,6 +199,7 @@ criterion_group!(
     bench_cancellation_depth_spectrum,
     bench_full_validation_suite,
     bench_validation_with_varying_geometry,
+    bench_streaming_process,
 );
 
 criterion_main!(xtc_validation);
