@@ -31,6 +31,87 @@ pub use time_signature::*;
 pub use transport_info::*;
 pub use types::*;
 
+/// Validate the common realtime block contract before any plugin state advances.
+///
+/// The host contract is deliberately strict: buffers contain exactly the
+/// interleaved samples described by `context` and channel metadata, and input
+/// samples must be finite. Rejected blocks leave output and plugin state
+/// untouched. Individual plugins therefore do not need to rediscover malformed
+/// buffers after partially updating filters, delay lines, or stochastic state.
+pub fn validate_process_block_f32(
+    input: &[f32],
+    output: &[f32],
+    context: &ProcessContext<'_>,
+    input_channels: usize,
+    output_channels: usize,
+) -> PluginResult<()> {
+    validate_process_block_lengths(
+        input.len(),
+        output.len(),
+        context,
+        input_channels,
+        output_channels,
+    )?;
+    if let Some(index) = input.iter().position(|sample| !sample.is_finite()) {
+        return Err(format!(
+            "plugin input contains non-finite sample at interleaved index {index}"
+        ));
+    }
+    Ok(())
+}
+
+/// f64 counterpart of [`validate_process_block_f32`].
+pub fn validate_process_block_f64(
+    input: &[f64],
+    output: &[f64],
+    context: &ProcessContext<'_>,
+    input_channels: usize,
+    output_channels: usize,
+) -> PluginResult<()> {
+    validate_process_block_lengths(
+        input.len(),
+        output.len(),
+        context,
+        input_channels,
+        output_channels,
+    )?;
+    if let Some(index) = input.iter().position(|sample| !sample.is_finite()) {
+        return Err(format!(
+            "plugin input contains non-finite sample at interleaved index {index}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_process_block_lengths(
+    input_len: usize,
+    output_len: usize,
+    context: &ProcessContext<'_>,
+    input_channels: usize,
+    output_channels: usize,
+) -> PluginResult<()> {
+    if input_channels == 0 || output_channels == 0 {
+        return Err(format!(
+            "plugin channel counts must be non-zero, got input={input_channels} output={output_channels}"
+        ));
+    }
+    let expected_input = context
+        .num_frames
+        .checked_mul(input_channels)
+        .ok_or_else(|| "plugin input buffer length overflow".to_string())?;
+    let expected_output = context
+        .num_frames
+        .checked_mul(output_channels)
+        .ok_or_else(|| "plugin output buffer length overflow".to_string())?;
+    if input_len != expected_input || output_len != expected_output {
+        return Err(format!(
+            "plugin expected input={expected_input} output={expected_output} samples for {} frames x {input_channels}/{output_channels} channels, got input={input_len} output={output_len}",
+            context.num_frames
+        ));
+    }
+    Ok(())
+}
+
 /// Result of one allocation-free end-of-stream drain step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PluginDrainResult {
@@ -127,6 +208,10 @@ pub trait Plugin: Send {
     /// * `output` - Interleaved output samples (will be filled by plugin)
     ///   Length must be num_frames * output_channels()
     /// * `context` - Processing context (sample rate, frame count, etc.)
+    ///
+    /// Input samples must be finite. Implementations must reject malformed or
+    /// non-finite blocks before changing output or internal DSP state. The
+    /// standard adapters enforce this contract for their wrapped plugins.
     ///
     /// # Returns
     /// Ok(()) on success, Err(message) on failure

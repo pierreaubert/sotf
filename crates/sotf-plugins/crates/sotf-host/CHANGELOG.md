@@ -1,5 +1,16 @@
 # Unreleased
 
+## Strict realtime block validation
+
+- Require exact interleaved input/output lengths and finite input samples in
+  the standard in-place and parametric adapters before copying output or
+  advancing plugin state.
+- Apply the same validation to f32, f64, ordinary, and compiled adapter paths;
+  malformed blocks now return descriptive errors instead of panicking in
+  `copy_from_slice` or poisoning stateful DSP.
+- Add transactional regressions proving rejected short, long, NaN, and
+  infinite blocks leave output and wrapped plugin state unchanged.
+
 ## External plugin final review evidence
 
 - Add allocation-counted warmed success, timeout, quarantine, and negotiated

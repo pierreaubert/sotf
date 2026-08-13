@@ -11,7 +11,7 @@ use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::parametric_plugin::{ParameterSchema, ParameterSet};
 use crate::plugin::{
     InPlacePlugin, Plugin, PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo,
-    PluginResult, ProcessContext,
+    PluginResult, ProcessContext, validate_process_block_f32, validate_process_block_f64,
 };
 use std::any::Any;
 use std::sync::Arc;
@@ -63,6 +63,10 @@ pub trait ParametricInPlacePlugin: Send {
     fn reset(&mut self) {}
 
     /// Process audio samples in-place.
+    ///
+    /// The public adapter validates exact block shape and finite input before
+    /// entering this method. Direct lower-level callers must uphold that same
+    /// contract themselves.
     fn process_in_place(
         &mut self,
         buffer: &mut [f32],
@@ -361,9 +365,11 @@ impl<T: ParametricInPlacePlugin> Plugin for ParametricInPlacePluginAdapter<T> {
         let in_ch = self.plugin.input_channels();
         let out_ch = self.plugin.channels();
         if in_ch == out_ch {
+            validate_process_block_f32(input, output, context, in_ch, out_ch)?;
             output.copy_from_slice(input);
             self.plugin.process_in_place(output, context)
         } else {
+            validate_process_block_f32(input, output, context, in_ch, in_ch)?;
             output[..input.len()].copy_from_slice(input);
             let frames = self
                 .plugin
@@ -384,6 +390,16 @@ impl<T: ParametricInPlacePlugin> Plugin for ParametricInPlacePluginAdapter<T> {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Option<Result<usize, String>> {
+        let validation = validate_process_block_f32(
+            input,
+            output,
+            context,
+            self.plugin.input_channels(),
+            self.plugin.channels(),
+        );
+        if let Err(error) = validation {
+            return Some(Err(error));
+        }
         self.plugin.process_compiled_f32(op, input, output, context)
     }
 
@@ -404,9 +420,11 @@ impl<T: ParametricInPlacePlugin> Plugin for ParametricInPlacePluginAdapter<T> {
         let in_ch = self.plugin.input_channels();
         let out_ch = self.plugin.channels();
         if in_ch == out_ch {
+            validate_process_block_f64(input, output, context, in_ch, out_ch)?;
             output.copy_from_slice(input);
             self.plugin.process_in_place_f64(output, context)
         } else {
+            validate_process_block_f64(input, output, context, in_ch, in_ch)?;
             output[..input.len()].copy_from_slice(input);
             let frames = self
                 .plugin

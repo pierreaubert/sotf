@@ -1,8 +1,8 @@
-use super::Plugin;
 use super::in_place_plugin::InPlacePlugin;
 use super::plugin_info::PluginInfo;
 use super::process_context::ProcessContext;
 use super::types::{PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginResult};
+use super::{Plugin, validate_process_block_f32, validate_process_block_f64};
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use std::any::Any;
 use std::sync::Arc;
@@ -89,10 +89,14 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
         let in_ch = self.plugin.input_channels();
         let out_ch = self.plugin.channels();
         if in_ch == out_ch {
+            validate_process_block_f32(input, output, context, in_ch, out_ch)?;
             // Standard in-place: copy input to output, then process
             output.copy_from_slice(input);
             self.plugin.process_in_place(output, context)
         } else {
+            // Sidechain-style in-place plugins use the output as an input-width
+            // work buffer, then compact the programme channels in place.
+            validate_process_block_f32(input, output, context, in_ch, in_ch)?;
             // Extended input (e.g. external sidechain): copy full input to output buffer
             // which is sized for input_channels, then process in-place.
             // The output buffer must be sized for input_channels * num_frames.
@@ -117,6 +121,16 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Option<Result<usize, String>> {
+        let validation = validate_process_block_f32(
+            input,
+            output,
+            context,
+            self.plugin.input_channels(),
+            self.plugin.channels(),
+        );
+        if let Err(error) = validation {
+            return Some(Err(error));
+        }
         self.plugin.process_compiled_f32(op, input, output, context)
     }
 
@@ -137,9 +151,11 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
         let in_ch = self.plugin.input_channels();
         let out_ch = self.plugin.channels();
         if in_ch == out_ch {
+            validate_process_block_f64(input, output, context, in_ch, out_ch)?;
             output.copy_from_slice(input);
             self.process_in_place_f64_with_scratch(output, context)
         } else {
+            validate_process_block_f64(input, output, context, in_ch, in_ch)?;
             output[..input.len()].copy_from_slice(input);
             let frames =
                 self.process_in_place_f64_with_scratch(&mut output[..input.len()], context)?;

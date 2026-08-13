@@ -6,8 +6,10 @@
 // ============================================================================
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
-use sotf_host::plugin::ProcessContext;
+use sotf_host::parametric_in_place_plugin::{
+    ParametricInPlacePlugin, ParametricInPlacePluginAdapter,
+};
+use sotf_host::plugin::{Plugin, PluginCompiledOp, ProcessContext};
 use sotf_plugin_dither::{DitherPlugin, DitherPluginParams};
 
 const SR: u32 = 48000;
@@ -327,5 +329,60 @@ fn get_unknown_parameter_returns_none() {
         plugin
             .get_parameter(&ParameterId::from("does_not_exist"))
             .is_none()
+    );
+}
+
+#[test]
+fn adapter_rejects_bad_blocks_without_advancing_dither_state() {
+    let context = ProcessContext::new(SR, 8);
+    let mut tested = ParametricInPlacePluginAdapter::new(DitherPlugin::new(2));
+    let mut reference = ParametricInPlacePluginAdapter::new(DitherPlugin::new(2));
+    tested.initialize(SR).unwrap();
+    reference.initialize(SR).unwrap();
+
+    let mut untouched = vec![0.75; 16];
+    let before = untouched.clone();
+    let error = tested
+        .process(&[f32::NAN; 16], &mut untouched, &context)
+        .unwrap_err();
+    assert!(error.contains("non-finite"));
+    assert_eq!(untouched, before, "rejected input changed output");
+
+    let short_error = tested
+        .process(&[0.0; 15], &mut untouched, &context)
+        .unwrap_err();
+    assert!(short_error.contains("expected input=16"));
+    assert_eq!(untouched, before, "short input changed output");
+
+    let compiled_error = tested
+        .process_compiled_f32(
+            PluginCompiledOp::ApplyGain,
+            &[f32::INFINITY; 16],
+            &mut untouched,
+            &context,
+        )
+        .expect("invalid compiled block must produce an explicit error")
+        .unwrap_err();
+    assert!(compiled_error.contains("non-finite"));
+    assert_eq!(untouched, before, "compiled rejection changed output");
+
+    let mut output_f64 = vec![0.5; 16];
+    let f64_before = output_f64.clone();
+    let f64_error = tested
+        .process_f64(&[f64::NEG_INFINITY; 16], &mut output_f64, &context)
+        .unwrap_err();
+    assert!(f64_error.contains("non-finite"));
+    assert_eq!(output_f64, f64_before, "f64 rejection changed output");
+
+    let input = vec![0.0; 16];
+    let mut after_rejection = vec![0.0; 16];
+    let mut fresh = vec![0.0; 16];
+    tested
+        .process(&input, &mut after_rejection, &context)
+        .unwrap();
+    reference.process(&input, &mut fresh, &context).unwrap();
+    assert_eq!(
+        after_rejection, fresh,
+        "rejected blocks advanced RNG or noise-shaping state"
     );
 }

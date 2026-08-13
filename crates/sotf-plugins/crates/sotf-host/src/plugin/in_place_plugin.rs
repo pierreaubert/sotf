@@ -58,6 +58,11 @@ pub trait InPlacePlugin: Send {
     ///   Length is num_frames * channels()
     /// * `context` - Processing context
     ///
+    /// Standard adapters reject non-finite samples and malformed lengths before
+    /// calling this method, so rejected public `Plugin::process` blocks do not
+    /// advance the wrapped plugin's state. Direct callers of this lower-level
+    /// trait are responsible for providing the same validated contract.
+    ///
     /// # Returns
     /// Actual number of frames processed, or error message
     fn process_in_place(

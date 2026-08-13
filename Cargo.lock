@@ -10264,7 +10264,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.100"
+version = "0.5.101"
 dependencies = [
  "arc-swap",
  "audioadapter-buffers",
@@ -10653,7 +10653,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-dither"
-version = "0.5.12"
+version = "0.5.13"
 dependencies = [
  "rustfft 6.4.1",
  "serde",

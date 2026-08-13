@@ -9,8 +9,8 @@ use super::plugin_info::PluginInfo;
 use super::process_context::ProcessContext;
 use super::time_signature::TimeSignature;
 use super::transport_info::TransportInfo;
-use super::types::NoteExpressionKind;
 use super::types::PluginResult;
+use super::types::{NoteExpressionKind, PluginCompiledOp};
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 
 /// Minimal in-place plugin that uses all defaults.
@@ -454,4 +454,113 @@ fn in_place_adapter_f64_reuses_scratch_and_produces_correct_output() {
             expected
         );
     }
+}
+
+#[derive(Default)]
+struct StatefulValidationPlugin {
+    process_calls: usize,
+    compiled_calls: usize,
+}
+
+impl InPlacePlugin for StatefulValidationPlugin {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("StatefulValidation", "0.0.1", "Test")
+    }
+
+    fn channels(&self) -> usize {
+        2
+    }
+
+    fn parameters(&self) -> Vec<Parameter> {
+        vec![]
+    }
+
+    fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
+        Ok(())
+    }
+
+    fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
+        None
+    }
+
+    fn process_in_place(
+        &mut self,
+        buffer: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
+        self.process_calls += 1;
+        for sample in buffer {
+            *sample += 1.0;
+        }
+        Ok(context.num_frames)
+    }
+
+    fn process_compiled_f32(
+        &mut self,
+        _op: PluginCompiledOp,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Option<PluginResult<usize>> {
+        self.compiled_calls += 1;
+        output.copy_from_slice(input);
+        Some(Ok(context.num_frames))
+    }
+}
+
+#[test]
+fn in_place_adapter_rejects_malformed_or_nonfinite_blocks_transactionally() {
+    let mut adapted = InPlacePluginAdapter::new(StatefulValidationPlugin::default());
+    let context = ProcessContext::new(48_000, 4);
+    let valid = vec![0.25; 8];
+    let mut output = vec![7.0; 8];
+
+    for input in [
+        vec![0.25; 7],
+        vec![0.25; 9],
+        vec![f32::NAN; 8],
+        vec![f32::INFINITY; 8],
+        vec![f32::NEG_INFINITY; 8],
+    ] {
+        let before = output.clone();
+        let error = adapted.process(&input, &mut output, &context).unwrap_err();
+        assert!(
+            error.contains("expected") || error.contains("non-finite"),
+            "unexpected validation error: {error}"
+        );
+        assert_eq!(output, before, "rejected input must not alter output");
+        assert_eq!(adapted.plugin.process_calls, 0, "DSP state advanced");
+    }
+
+    let mut short_output = vec![7.0; 7];
+    assert!(
+        adapted
+            .process(&valid, &mut short_output, &context)
+            .is_err()
+    );
+    assert_eq!(short_output, vec![7.0; 7]);
+    assert_eq!(adapted.plugin.process_calls, 0);
+
+    assert_eq!(adapted.process(&valid, &mut output, &context).unwrap(), 4);
+    assert_eq!(adapted.plugin.process_calls, 1);
+    assert_eq!(output, vec![1.25; 8]);
+}
+
+#[test]
+fn compiled_adapter_uses_the_same_transactional_block_validation() {
+    let mut adapted = InPlacePluginAdapter::new(StatefulValidationPlugin::default());
+    let context = ProcessContext::new(48_000, 4);
+    let mut output = vec![3.0; 8];
+
+    let result = adapted
+        .process_compiled_f32(
+            PluginCompiledOp::ApplyGain,
+            &[f32::NAN; 8],
+            &mut output,
+            &context,
+        )
+        .expect("invalid compiled blocks must return an explicit error");
+    assert!(result.unwrap_err().contains("non-finite"));
+    assert_eq!(output, vec![3.0; 8]);
+    assert_eq!(adapted.plugin.compiled_calls, 0);
 }

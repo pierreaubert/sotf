@@ -27,8 +27,13 @@ mean/variance and lag-1 correlation, pin the feedback algebra, cover negative an
 positive choice bounds, verify reset restarts the RNG sequence, and cover endpoint,
 near-full-scale, and shaper-overshoot behavior at all supported bit depths.
 
-The repository-wide non-finite/buffer-length policy remains a cross-plugin
-follow-up; it is not one of the Dither-specific shaping/factory defects above.
+Follow-up in 0.5.13 defines the shared adapter boundary used by Dither: input
+and output lengths must exactly match the interleaved frame/channel contract,
+and input samples must be finite. Validation runs before any output copy or DSP
+state change in f32, f64, ordinary, and compiled adapter paths. The
+`adapter_rejects_bad_blocks_without_advancing_dither_state` regression rejects
+short and non-finite input, preserves the destination, and proves the next
+valid stochastic render is byte-identical to a fresh instance.
 
 ## Findings
 

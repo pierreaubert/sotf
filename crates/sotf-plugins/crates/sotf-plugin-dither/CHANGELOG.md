@@ -1,3 +1,14 @@
+# 0.5.13
+
+## Robustness
+
+- Adopt the host's strict realtime block contract through the parametric
+  adapter: exact buffer lengths and finite input are validated before Dither's
+  RNG or error-feedback history advances.
+- Add a public-adapter regression proving malformed and non-finite blocks are
+  transactional and the next valid TPDF block remains byte-identical to a
+  fresh instance.
+
 # 0.5.12
 
 ## Fixes
