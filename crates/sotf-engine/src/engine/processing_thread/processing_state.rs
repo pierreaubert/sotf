@@ -393,6 +393,12 @@ pub(super) fn handle_processing_command(
                 .ok();
         }
         ProcessingCommand::Stop => {
+            // Stop discards the current stream. Reset all buffered plugin
+            // state so a later start cannot emit stale residual/tail audio.
+            state.host.reset();
+            if let Some(previous) = state.prev_host.as_mut() {
+                previous.reset();
+            }
             log::debug!("[Processing Thread] Stopped");
         }
         ProcessingCommand::Shutdown => {
@@ -701,6 +707,77 @@ pub(super) fn run_processing_thread(
             }
             Ok(DecoderMessage::EndOfStream) => {
                 decoder_stream_active = false;
+                // Finalize every stateful plugin before publishing EOS. Drain
+                // output is already propagated through downstream plugins by
+                // DawHost, so a resampler followed by another buffered plugin
+                // retains both tails in causal order.
+                let output_channels = state.output_channels();
+                let output_sample_rate = state.host.output_sample_rate(state.sample_rate);
+                let mut drain_steps = 0usize;
+                loop {
+                    drain_steps += 1;
+                    if drain_steps > 4096 {
+                        event_tx
+                            .send(ThreadEvent::ProcessingError(
+                                "plugin drain did not converge after 4096 steps".to_string(),
+                            ))
+                            .ok();
+                        break;
+                    }
+                    let capacity = state.host.drain_output_frames_max();
+                    let samples = capacity.saturating_mul(output_channels);
+                    ProcessingState::prepare_scratch_buffer(&mut state.process_buffer, samples);
+                    let drain = match state.host.drain(&mut state.process_buffer[..samples]) {
+                        Ok(result) => result,
+                        Err(error) => {
+                            event_tx.send(ThreadEvent::ProcessingError(error)).ok();
+                            break;
+                        }
+                    };
+                    if drain.frames > 0 {
+                        let actual_samples = drain.frames.saturating_mul(output_channels);
+                        let mut data = recycle_rx.try_recv().unwrap_or_else(|_| {
+                            state.recycle_fallback_pool.pop().unwrap_or_else(|| {
+                                state.recycle_miss_count += 1;
+                                Vec::with_capacity(actual_samples)
+                            })
+                        });
+                        data.clear();
+                        if data.capacity() < actual_samples {
+                            data.reserve(actual_samples - data.capacity());
+                        }
+                        data.extend_from_slice(&state.process_buffer[..actual_samples]);
+                        let frame = super::super::AudioFrame::new(
+                            data,
+                            drain.frames,
+                            output_channels,
+                            output_sample_rate,
+                        );
+                        let mut pending = Some(ProcessingMessage::Frame(frame));
+                        while let Some(message) = pending.take() {
+                            match send_or_interrupt(&message_tx, &command_rx, message) {
+                                Ok(Some((command, unsent))) => {
+                                    pending = unsent;
+                                    if handle_processing_command(
+                                        command,
+                                        &mut state,
+                                        &response_tx,
+                                        &event_tx,
+                                    ) {
+                                        break;
+                                    }
+                                }
+                                Ok(None) => {}
+                                Err(_) => {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if drain.complete {
+                        break;
+                    }
+                }
                 let mut pending_msg = Some(ProcessingMessage::EndOfStream);
                 while let Some(msg) = pending_msg.take() {
                     match send_or_interrupt(&message_tx, &command_rx, msg) {

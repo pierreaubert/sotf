@@ -1,3 +1,36 @@
+# 0.5.26
+
+## Fixes
+
+- Added object-safe allocation-free plugin/host draining and engine EOF propagation, including
+  causal draining through downstream stateful plugins.
+- Replaced one-chunk discard estimation with rubato's cumulative complete-stream procedure so
+  leading delay and final sinc ringing are preserved exactly.
+- Negotiated sample rates per host node after rate-changing plugins and reset pending state on stop.
+- Added exhaustive residual-boundary/extreme-ratio/quality count tests, transactional multi-chunk
+  retry, bridge choice roundtrips, unity non-finite policy, estimator channel matrix, and realtime
+  ratio-automation allocation coverage.
+- Clarified capacity, availability, latency-domain, unity, dynamic-ratio, quality, and drain APIs.
+
+# 0.5.25
+
+## Fixes
+
+- Preserve the actual zero/burst output frame count of rate-changing plugins in `DawHost`; sub-chunk Resampler calls are no longer padded with input-rate silence.
+- Reject host sample rates that disagree with the configured Resampler input clock.
+- Validate process and flush destination capacity before consuming residual input or advancing rubato, making buffer-error retries transactional.
+- Make equal-rate, non-dynamic conversion a bit-exact, zero-latency passthrough for arbitrary block partitions.
+- Express latency entirely in output frames by converting the chunk priming interval through the active ratio.
+- Expose quality as the canonical integer choice used by ParamBridge and reject live post-activation quality rebuilds that allocate and discard filter/residual state.
+- Remove cached-parameter reconstruction from runtime ratio updates and always report `Some(0)` for known zero-frame output.
+- Split immediately available output (`available_output_frames`) from conservative destination capacity and add an explicit `flush_output_frames_max` contract.
+- Correct the crate guide/API documentation and expand QA/test coverage for these contracts.
+
+## Remaining limitations
+
+- The object-safe `Plugin`/engine EOF drain contract and exact complete sinc-tail trimming require a coordinated host/engine design; the concrete `flush()` helper still processes one padded partial chunk.
+- The planar residual-to-rubato copy and scalar interleave/deinterleave loops remain candidates for profile-guided optimization.
+
 # 0.5.24
 
 ## Fixes
@@ -7,6 +40,10 @@
   benchmark's output layout correct if it is extended to validate rendered samples.
 
 # 0.5.23
+
+> Historical note: the concrete one-step flush and latency limitations below
+> were superseded by the complete-stream drain and output-domain latency
+> contracts in 0.5.25-0.5.26.
 
 ## Fixes
 

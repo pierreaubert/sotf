@@ -1,6 +1,6 @@
 use sotf_host::plugin::{Plugin, ProcessContext};
 use sotf_host::{CountingAlloc, assert_no_allocs};
-use sotf_plugin_resampler::ResamplerPlugin;
+use sotf_plugin_resampler::{ResamplerPlugin, ResamplerQuality};
 
 #[global_allocator]
 static A: CountingAlloc = CountingAlloc;
@@ -19,7 +19,7 @@ fn main() {
 
     let num_frames = 1024;
     let input = vec![0.5f32; num_frames * channels];
-    let max_out_frames = ((num_frames as f64 * output_sr as f64 / input_sr as f64) as usize) + 128;
+    let max_out_frames = plugin.output_frames_for_input(num_frames);
     let mut output = vec![0.0f32; max_out_frames * channels];
     let ctx = ProcessContext::new(input_sr, num_frames);
     plugin.process(&input, &mut output, &ctx).unwrap();
@@ -39,7 +39,7 @@ fn main() {
     println!("\n[Test 3] Real-time Safety (Zero Allocations)");
     let rt_block = 1024;
     let rt_input = vec![0.1f32; rt_block * channels];
-    let rt_max_out = ((rt_block as f64 * output_sr as f64 / input_sr as f64) as usize) + 128;
+    let rt_max_out = plugin.output_frames_for_input(rt_block);
     let mut rt_output = vec![0.0f32; rt_max_out * channels];
     let rt_ctx = ProcessContext::new(input_sr, rt_block);
 
@@ -57,7 +57,8 @@ fn main() {
     println!("\n[Test 4] Performance Benchmark");
     let bench_frames = 48000 * 5;
     let bench_input = vec![0.1f32; bench_frames * channels];
-    let bench_max_out = ((bench_frames as f64 * output_sr as f64 / input_sr as f64) as usize) + 128;
+    let bench_max_out = ((bench_frames as f64 * output_sr as f64 / input_sr as f64) as usize)
+        + plugin.output_frames_for_input(rt_block);
     let mut bench_output = vec![0.0f32; bench_max_out * channels];
 
     let start = std::time::Instant::now();
@@ -87,6 +88,59 @@ fn main() {
     println!("  Estimated CPU Usage: {:.2}%", cpu_usage);
     assert!(cpu_usage < 10.0, "CPU usage too high: {:.2}%", cpu_usage);
     println!("  Performance: PASS");
+
+    println!("\n[Test 5] Ratio/quality/channel/callback matrix");
+    let mut worst_callback = std::time::Duration::ZERO;
+    for quality in [
+        ResamplerQuality::Fast,
+        ResamplerQuality::Medium,
+        ResamplerQuality::High,
+    ] {
+        for &(source_rate, sink_rate) in &[(22_050, 96_000), (96_000, 22_050)] {
+            for matrix_channels in [1usize, 2, 8, 16] {
+                let mut candidate = ResamplerPlugin::with_quality(
+                    matrix_channels,
+                    source_rate,
+                    sink_rate,
+                    64,
+                    quality,
+                )
+                .unwrap();
+                candidate.initialize(source_rate).unwrap();
+                for frames in [1usize, 17, 63, 64, 127] {
+                    let input = vec![0.1; frames * matrix_channels];
+                    let mut output =
+                        vec![0.0; candidate.output_frames_for_input(frames) * matrix_channels];
+                    let started = std::time::Instant::now();
+                    let produced = candidate
+                        .process(
+                            &input,
+                            &mut output,
+                            &ProcessContext::new(source_rate, frames),
+                        )
+                        .unwrap();
+                    worst_callback = worst_callback.max(started.elapsed());
+                    assert!(
+                        output[..produced * matrix_channels]
+                            .iter()
+                            .all(|sample| sample.is_finite())
+                    );
+                }
+                let mut drain = vec![0.0; candidate.drain_output_frames_max() * matrix_channels];
+                while !candidate
+                    .drain(&mut drain, &ProcessContext::new(source_rate, 0))
+                    .unwrap()
+                    .complete
+                {}
+            }
+        }
+    }
+    println!(
+        "  Worst observed callback: {:.3}ms",
+        worst_callback.as_secs_f64() * 1000.0
+    );
+    assert!(worst_callback < std::time::Duration::from_millis(20));
+    println!("  Matrix: PASS");
 
     println!("\n[ALL PASS] Resampler QA Complete.");
 }

@@ -9,6 +9,7 @@ mod midi_event;
 mod midi_message;
 mod misc;
 mod note_expression_event;
+mod parameter_event;
 mod plugin_info;
 mod process_context;
 #[cfg(test)]
@@ -23,11 +24,28 @@ pub use loop_range::*;
 pub use midi_event::*;
 pub use midi_message::*;
 pub use note_expression_event::*;
+pub use parameter_event::*;
 pub use plugin_info::*;
 pub use process_context::*;
 pub use time_signature::*;
 pub use transport_info::*;
 pub use types::*;
+
+/// Result of one allocation-free end-of-stream drain step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PluginDrainResult {
+    /// Output-rate frames written by this step.
+    pub frames: usize,
+    /// `true` when no buffered input or filter tail remains.
+    pub complete: bool,
+}
+
+impl PluginDrainResult {
+    pub const COMPLETE: Self = Self {
+        frames: 0,
+        complete: true,
+    };
+}
 
 /// Core plugin trait
 ///
@@ -79,6 +97,16 @@ pub trait Plugin: Send {
     /// Get a parameter value
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue>;
 
+    /// Optional opaque native state for out-of-process persistence.
+    fn save_opaque_state(&self) -> PluginResult<Vec<u8>> {
+        Err("plugin does not expose opaque state".to_string())
+    }
+
+    /// Restore opaque native state on the control thread.
+    fn load_opaque_state(&mut self, _state: &[u8]) -> PluginResult<()> {
+        Err("plugin does not expose opaque state".to_string())
+    }
+
     /// Initialize the plugin with the given sample rate
     /// This is called before any audio processing begins
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
@@ -108,6 +136,29 @@ pub trait Plugin: Send {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String>;
+
+    /// Maximum output-rate frames written by one [`Plugin::drain`] call.
+    ///
+    /// Stateful streaming plugins override this together with `drain`. The
+    /// value is a capacity bound, not a promise that frames are immediately
+    /// available.
+    fn drain_output_frames_max(&self) -> usize {
+        0
+    }
+
+    /// Advance end-of-stream state without accepting new programme samples.
+    ///
+    /// Implementations must be object-safe, allocation-free, transactional on
+    /// destination-capacity errors, and eventually return `complete = true`.
+    /// Hosts call this repeatedly and pass any returned frames through every
+    /// downstream plugin before draining the downstream plugin's own tail.
+    fn drain(
+        &mut self,
+        _output: &mut [f32],
+        _context: &ProcessContext,
+    ) -> PluginResult<PluginDrainResult> {
+        Ok(PluginDrainResult::COMPLETE)
+    }
 
     /// Process a host-selected compiled operation.
     ///

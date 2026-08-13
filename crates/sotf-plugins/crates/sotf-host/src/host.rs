@@ -1,4 +1,4 @@
-use crate::plugin::Plugin;
+use crate::plugin::{Plugin, PluginDrainResult};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -48,6 +48,8 @@ pub trait Host {
     ) -> Result<(), String>;
     fn process(&mut self, input: &[f32], output: &mut [f32]) -> Result<usize, String>;
     fn process_f64(&mut self, input: &[f64], output: &mut [f64]) -> Result<usize, String>;
+    fn drain_output_frames_max(&self) -> usize;
+    fn drain(&mut self, output: &mut [f32]) -> Result<PluginDrainResult, String>;
     fn reset(&mut self);
     fn total_latency_samples(&self) -> usize;
     /// RT diagnostics: collect cache contention stats from all analyzer plugins.

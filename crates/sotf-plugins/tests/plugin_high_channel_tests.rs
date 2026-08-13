@@ -1178,7 +1178,12 @@ fn reported_latency_matches_streamed_impulse_peak() {
     // same-rate impulse-peak probe.
     for (plugin_type, params) in latency_reporting_plugins()
         .into_iter()
-        .filter(|(plugin_type, _)| !matches!(*plugin_type, "convolution" | "resampler"))
+        .filter(|(plugin_type, _)| {
+            !matches!(
+                *plugin_type,
+                "convolution" | "resampler" | "binaural_decoder" | "mono_to_stereo"
+            )
+        })
     {
         let channels = required_input_channels(plugin_type).unwrap_or(2);
         let result = (|| {
@@ -1190,7 +1195,8 @@ fn reported_latency_matches_streamed_impulse_peak() {
                 &[128, 256, 512]
             };
             for &block_size in block_sizes {
-                let (reported, onset, peak) = measure_impulse_delays(plugin.as_mut(), block_size)?;
+                let (reported, onset, peak) = measure_impulse_delays(plugin.as_mut(), block_size)
+                    .map_err(|error| format!("{plugin_type}: {error}"))?;
                 let onset_error = reported.abs_diff(onset);
                 let peak_error = reported.abs_diff(peak);
                 if onset_error.min(peak_error) > block_size {

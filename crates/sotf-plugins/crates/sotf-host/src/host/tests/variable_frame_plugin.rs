@@ -4,6 +4,7 @@ use crate::plugin::Plugin;
 pub(super) struct VariableFramePlugin {
     pub(super) channels: usize,
     pub(super) output_frames: usize,
+    pub(super) output_rate: u32,
 }
 
 impl VariableFramePlugin {
@@ -11,6 +12,15 @@ impl VariableFramePlugin {
         Self {
             channels,
             output_frames,
+            output_rate: 48_000,
+        }
+    }
+
+    pub(super) fn rate_changing(channels: usize, output_frames: usize, output_rate: u32) -> Self {
+        Self {
+            channels,
+            output_frames,
+            output_rate,
         }
     }
 }
@@ -55,6 +65,9 @@ impl Plugin for VariableFramePlugin {
     }
     fn output_frames_for_input(&self, _: usize) -> usize {
         self.output_frames
+    }
+    fn output_sample_rate(&self, _: u32) -> u32 {
+        self.output_rate
     }
     fn latency_samples(&self) -> usize {
         1

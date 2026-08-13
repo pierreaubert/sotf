@@ -242,7 +242,7 @@ fn test_resampler_zero_alloc() {
     plugin.initialize(44100).unwrap();
 
     let input = vec![0.0f32; BUFFER_SIZE * 2];
-    let mut output = vec![0.0f32; BUFFER_SIZE * 4]; // Extra space
+    let mut output = vec![0.0f32; plugin.output_frames_for_input(BUFFER_SIZE) * 2];
     let ctx = ProcessContext::new(44100, BUFFER_SIZE);
 
     // Warm-up
@@ -255,6 +255,24 @@ fn test_resampler_zero_alloc() {
         for _ in 0..1000 {
             plugin.process(&input, &mut output, &ctx).unwrap();
             let _ = plugin.get_data();
+        }
+    });
+
+    plugin.reset();
+    plugin
+        .set_parameter(
+            ParameterId::from("dynamic_ratio"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    let partial = vec![0.25f32; (BUFFER_SIZE - 1) * 2];
+    let partial_ctx = ProcessContext::new(44100, BUFFER_SIZE - 1);
+    plugin.process(&partial, &mut [], &partial_ctx).unwrap();
+    let nominal = 48_000.0 / 44_100.0;
+    assert_no_allocs("ResamplerPlugin ratio automation with residual", || {
+        for index in 0..1000 {
+            let ratio = nominal * if index % 2 == 0 { 0.99 } else { 1.01 };
+            plugin.set_ratio(ratio, true).unwrap();
         }
     });
 }

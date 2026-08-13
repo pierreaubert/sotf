@@ -12,6 +12,23 @@ pub enum ResamplerQuality {
 }
 
 impl ResamplerQuality {
+    pub(super) fn index(self) -> i32 {
+        match self {
+            Self::Fast => 0,
+            Self::Medium => 1,
+            Self::High => 2,
+        }
+    }
+
+    pub(super) fn from_index(index: i32) -> Option<Self> {
+        match index {
+            0 => Some(Self::Fast),
+            1 => Some(Self::Medium),
+            2 => Some(Self::High),
+            _ => None,
+        }
+    }
+
     pub(super) fn sinc_len(self) -> usize {
         match self {
             Self::Fast => 64,

@@ -150,7 +150,9 @@ fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
 
     // 27. Resampler
     plugins.push(Box::new(
-        ResamplerPlugin::new(2, 44100, 48000, 1024).unwrap(),
+        // Keep the fixture's configured input rate aligned with the host
+        // context used below; the plugin intentionally rejects mismatches.
+        ResamplerPlugin::new(2, SAMPLE_RATE, SAMPLE_RATE, 1024).unwrap(),
     ));
 
     // 28. Convolution

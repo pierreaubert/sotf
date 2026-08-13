@@ -1,7 +1,8 @@
 // Integration tests for sotf-plugin-resampler exercising the public Plugin trait.
 
+use sotf_host::host::DawHost;
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::plugin::{Plugin, PluginDrainResult, PluginInfo, PluginResult, ProcessContext};
 use sotf_plugin_resampler::{ResamplerPlugin, ResamplerQuality};
 
 #[test]
@@ -33,7 +34,6 @@ fn integration_default_constructor() {
 #[test]
 fn integration_quality_change_via_parameter() {
     let mut resampler = ResamplerPlugin::new(2, 44100, 48000, 1024).unwrap();
-    resampler.initialize(44100).unwrap();
 
     // Switch to high quality through the public Plugin trait.
     resampler
@@ -45,7 +45,7 @@ fn integration_quality_change_via_parameter() {
     let v = resampler
         .get_parameter(&ParameterId::from("quality"))
         .unwrap();
-    assert_eq!(v, ParameterValue::String("high".to_string()));
+    assert_eq!(v, ParameterValue::Int(2));
 
     // Invalid quality string must be rejected.
     let res = resampler.set_parameter(
@@ -53,6 +53,12 @@ fn integration_quality_change_via_parameter() {
         ParameterValue::String("ultra".to_string()),
     );
     assert!(res.is_err());
+    resampler.initialize(44100).unwrap();
+    assert!(
+        resampler
+            .set_parameter(ParameterId::from("quality"), ParameterValue::Int(1))
+            .is_err()
+    );
 }
 
 #[test]
@@ -64,7 +70,7 @@ fn integration_with_quality_constructor() {
     let v = resampler
         .get_parameter(&ParameterId::from("quality"))
         .unwrap();
-    assert_eq!(v, ParameterValue::String("high".to_string()));
+    assert_eq!(v, ParameterValue::Int(2));
 }
 
 #[test]
@@ -136,11 +142,11 @@ fn integration_flush_drains_residual() {
     assert_eq!(produced, 0);
 
     // Flush must produce the buffered residual frames.
-    let flush_capacity = resampler.output_frames_for_input(0);
+    let flush_capacity = resampler.flush_output_frames_max();
     let mut flush_buf = vec![0.0f32; flush_capacity * 2];
     let (flush_frames, discard) = resampler.flush(&mut flush_buf).unwrap();
     assert!(flush_frames > 0);
-    assert!(discard > 0);
+    assert_eq!(discard, 0, "complete-stream drain trims internally");
 }
 
 #[test]
@@ -215,4 +221,200 @@ fn integration_reset_recoverable() {
     let mut output2 = vec![0.0f32; max_out * 2];
     resampler.process(&input, &mut output2, &ctx).unwrap();
     assert!(output2.iter().all(|s| s.is_finite()));
+}
+
+#[test]
+fn complete_stream_counts_cover_all_qualities_ratios_and_residual_boundaries() {
+    for quality in [
+        ResamplerQuality::Fast,
+        ResamplerQuality::Medium,
+        ResamplerQuality::High,
+    ] {
+        for &(input_rate, output_rate) in &[(22_050, 96_000), (96_000, 22_050)] {
+            for input_frames in [1usize, 1023, 1024, 1025] {
+                let mut plugin =
+                    ResamplerPlugin::with_quality(1, input_rate, output_rate, 1024, quality)
+                        .unwrap();
+                plugin.initialize(input_rate).unwrap();
+                let input = vec![0.25; input_frames];
+                let capacity = plugin.output_frames_for_input(input_frames);
+                let mut output = vec![0.0; capacity];
+                let mut total = plugin
+                    .process(
+                        &input,
+                        &mut output,
+                        &ProcessContext::new(input_rate, input_frames),
+                    )
+                    .unwrap();
+                for _ in 0..8 {
+                    let mut tail = vec![0.0; plugin.drain_output_frames_max()];
+                    let step = plugin
+                        .drain(&mut tail, &ProcessContext::new(input_rate, 0))
+                        .unwrap();
+                    total += step.frames;
+                    if step.complete {
+                        break;
+                    }
+                }
+                let expected = (input_frames as f64 * output_rate as f64 / input_rate as f64).ceil()
+                    as usize
+                    + plugin.output_delay_frames();
+                assert_eq!(
+                    total, expected,
+                    "quality={quality:?}, {input_rate}->{output_rate}, input={input_frames}"
+                );
+                let mut empty = vec![0.0; plugin.drain_output_frames_max()];
+                assert!(
+                    plugin
+                        .drain(&mut empty, &ProcessContext::new(input_rate, 0))
+                        .unwrap()
+                        .complete
+                );
+                assert_eq!(plugin.last_output_frames(), Some(0));
+            }
+        }
+    }
+}
+
+#[test]
+fn ratio_ramps_use_cumulative_stream_duration_when_draining() {
+    let mut plugin = ResamplerPlugin::new(1, 44_100, 48_000, 64).unwrap();
+    plugin.initialize(44_100).unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("dynamic_ratio"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    let nominal = 48_000.0 / 44_100.0;
+    let mut expected = 0.0;
+    let mut total = 0;
+    for (frames, ratio) in [(64usize, nominal * 0.99), (31, nominal * 1.01)] {
+        plugin.set_ratio(ratio, true).unwrap();
+        expected += frames as f64 * ratio;
+        let input = vec![0.25; frames];
+        let mut output = vec![0.0; plugin.output_frames_for_input(frames)];
+        total += plugin
+            .process(&input, &mut output, &ProcessContext::new(44_100, frames))
+            .unwrap();
+    }
+    let frozen_drain_delay = plugin.output_delay_frames();
+    loop {
+        let mut output = vec![0.0; plugin.drain_output_frames_max()];
+        let step = plugin
+            .drain(&mut output, &ProcessContext::new(44_100, 0))
+            .unwrap();
+        total += step.frames;
+        if step.complete {
+            break;
+        }
+    }
+    assert_eq!(total, expected.ceil() as usize + frozen_drain_delay);
+}
+
+struct RateProbe {
+    expected_rate: u32,
+    tail_pending: bool,
+}
+
+impl Plugin for RateProbe {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Rate probe", "test", "SOTF")
+    }
+    fn input_channels(&self) -> usize {
+        1
+    }
+    fn output_channels(&self) -> usize {
+        1
+    }
+    fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
+        Vec::new()
+    }
+    fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> PluginResult<()> {
+        Err("no parameters".to_string())
+    }
+    fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
+        None
+    }
+    fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == self.expected_rate {
+            Ok(())
+        } else {
+            Err(format!(
+                "expected {}, got {sample_rate}",
+                self.expected_rate
+            ))
+        }
+    }
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
+        assert_eq!(context.sample_rate, self.expected_rate);
+        output[..input.len()].copy_from_slice(input);
+        self.tail_pending = context.num_frames > 0;
+        Ok(context.num_frames)
+    }
+    fn drain_output_frames_max(&self) -> usize {
+        usize::from(self.tail_pending)
+    }
+    fn drain(
+        &mut self,
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<PluginDrainResult> {
+        assert_eq!(context.sample_rate, self.expected_rate);
+        if self.tail_pending {
+            output[0] = 0.125;
+            self.tail_pending = false;
+            Ok(PluginDrainResult {
+                frames: 1,
+                complete: true,
+            })
+        } else {
+            Ok(PluginDrainResult::COMPLETE)
+        }
+    }
+}
+
+#[test]
+fn host_negotiates_resampler_output_rate_for_downstream_nodes() {
+    let mut mismatched = DawHost::new(1, 48_000);
+    assert!(
+        mismatched
+            .add_plugin(Box::new(
+                ResamplerPlugin::new(1, 44_100, 48_000, 64).unwrap()
+            ))
+            .is_err(),
+        "rate mismatch must fail before graph activation"
+    );
+
+    let mut host = DawHost::new(1, 44_100);
+    host.add_plugin(Box::new(
+        ResamplerPlugin::new(1, 44_100, 48_000, 64).unwrap(),
+    ))
+    .unwrap();
+    host.add_plugin(Box::new(RateProbe {
+        expected_rate: 48_000,
+        tail_pending: false,
+    }))
+    .unwrap();
+    let input = vec![0.25; 64];
+    let mut output = vec![0.0; host.output_frames_for_input(64)];
+    assert!(host.process(&input, &mut output).unwrap() > 0);
+    let mut tail = vec![0.0; host.drain_output_frames_max()];
+    let mut tail_frames = 0;
+    loop {
+        let step = host.drain(&mut tail).unwrap();
+        tail_frames += step.frames;
+        if step.complete {
+            break;
+        }
+    }
+    assert!(
+        tail_frames > 1,
+        "host must emit both the resampler tail and downstream stateful tail"
+    );
 }

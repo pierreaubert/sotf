@@ -1,12 +1,14 @@
 use super::resampler_quality::ResamplerQuality;
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
-    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters, SincInterpolationType,
     WindowFunction,
 };
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{
-    Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
+    Plugin, PluginCompileMetadata, PluginCostClass, PluginDrainResult, PluginInfo, PluginResult,
+    ProcessContext,
 };
 
 /// Resampler plugin using rubato
@@ -49,6 +51,16 @@ pub struct ResamplerPlugin {
     pub(super) param_ratio: ParameterId,
     /// Cached parameters
     pub(super) cached_parameters: Vec<Parameter>,
+    /// Set after the host negotiates the configured input rate.
+    pub(super) initialized: bool,
+    /// Programme frames accepted since the last reset.
+    pub(super) stream_input_frames: u64,
+    /// Raw rubato output frames already exposed, including leading delay.
+    pub(super) stream_output_frames: u64,
+    /// Cumulative programme duration expressed in output-rate frames.
+    pub(super) expected_signal_frames: f64,
+    /// Frozen raw-output target once end-of-stream draining begins.
+    pub(super) drain_target_frames: Option<u64>,
 }
 
 impl ResamplerPlugin {
@@ -123,6 +135,11 @@ impl ResamplerPlugin {
             param_dynamic_ratio: ParameterId::from("dynamic_ratio"),
             param_ratio: ParameterId::from("ratio"),
             cached_parameters: Vec::new(),
+            initialized: false,
+            stream_input_frames: 0,
+            stream_output_frames: 0,
+            expected_signal_frames: 0.0,
+            drain_target_frames: None,
         };
         plugin.rebuild_cached_parameters();
         Ok(plugin)
@@ -207,7 +224,8 @@ impl ResamplerPlugin {
     pub(super) fn rebuild_cached_parameters(&mut self) {
         let nominal_ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
         self.cached_parameters = vec![
-            Parameter::new_string("quality", "Quality", self.quality.as_str().to_string())
+            Parameter::new_int("quality", "Quality", self.quality.index(), 0, 2)
+                .with_update_mode(UpdateMode::Structural)
                 .with_description(
                     "Resampling quality: fast (64-tap), medium (128-tap), high (256-tap)",
                 ),
@@ -246,17 +264,57 @@ impl ResamplerPlugin {
     /// This should be used for buffer allocation to ensure the buffer is always large enough.
     /// The actual output frame count may be less and is returned by process().
     pub fn output_frames_for_input(&self, input_frames: usize) -> usize {
+        if self.is_unity_passthrough() {
+            return input_frames;
+        }
         // Use rubato's output_frames_max() for safe buffer allocation
         // The actual output varies based on resampler internal state
         if let Some(ref resampler) = self.resampler {
             let pending = self.residual_frames.saturating_add(input_frames);
-            let chunks = pending.div_ceil(self.chunk_size);
+            let chunks = pending / self.chunk_size;
             chunks.saturating_mul(resampler.output_frames_max())
         } else {
             // Fallback estimate if resampler not initialized
             let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
             (input_frames as f64 * ratio).ceil() as usize + 1
         }
+    }
+
+    /// Frames immediately available from complete buffered input chunks.
+    /// This is a scheduling estimate, not a destination-capacity bound.
+    pub fn available_output_frames(&self, input_frames: usize) -> usize {
+        if self.is_unity_passthrough() {
+            return input_frames;
+        }
+        let pending = self.residual_frames.saturating_add(input_frames);
+        let chunks = pending / self.chunk_size;
+        match (chunks, self.resampler.as_ref()) {
+            (0, _) => 0,
+            (1, Some(resampler)) => resampler.output_frames_next().saturating_add(4),
+            (count, Some(resampler)) => count.saturating_mul(resampler.output_frames_max()),
+            _ => 0,
+        }
+    }
+
+    /// Maximum frames written by one complete-stream drain step.
+    pub fn flush_output_frames_max(&self) -> usize {
+        if self.stream_input_frames == 0
+            || self.is_unity_passthrough()
+            || self
+                .drain_target_frames
+                .is_some_and(|target| self.stream_output_frames >= target)
+        {
+            0
+        } else {
+            self.resampler
+                .as_ref()
+                .map(Resampler::output_frames_max)
+                .unwrap_or(0)
+        }
+    }
+
+    fn is_unity_passthrough(&self) -> bool {
+        self.input_sample_rate == self.output_sample_rate && !self.dynamic_ratio
     }
 
     /// Get the nominal resampling ratio (output_rate / input_rate)
@@ -304,77 +362,26 @@ impl ResamplerPlugin {
             .set_resample_ratio(new_ratio, ramp)
             .map_err(|e| format!("Failed to set ratio: {:?}", e))?;
         self.current_ratio = new_ratio;
-        self.rebuild_cached_parameters();
         Ok(())
     }
 
-    /// Flush any buffered residual frames through the resampler.
+    /// Finish the current stream using rubato's documented complete-stream contract.
     ///
     /// When `process()` receives input that is not a multiple of `chunk_size`, the remaining
     /// frames are held in an internal residual buffer and will not be processed until the next
     /// `process()` call that fills it.  Call `flush()` at the end of a stream to drain those
-    /// frames.  The residual is zero-padded to a full `chunk_size` before being sent to rubato;
-    /// callers should discard the trailing zero-padded portion of the output (approximately
-    /// `(chunk_size - residual_frames) * ratio` frames from the end).
+    /// frames. The final partial chunk is submitted with rubato's `partial_len`, then zero-input
+    /// chunks are pumped until the cumulative raw output contains the complete delayed signal.
+    /// The returned output is already trimmed at the exact cumulative boundary; `discard` is
+    /// retained for source compatibility and is always zero.
     ///
     /// Returns the number of output frames written into `output`.
     ///
-    /// `output` must be at least `output_frames_for_input(0) * num_channels` samples long
+    /// `output` must be at least `flush_output_frames_max() * num_channels` samples long
     /// (i.e., large enough for one chunk's maximum output).
     pub fn flush(&mut self, output: &mut [f32]) -> Result<(usize, usize), String> {
-        if self.residual_frames == 0 {
-            return Ok((0, 0));
-        }
-
-        let resampler = self.resampler.as_mut().ok_or("Resampler not initialized")?;
-        let chunk_size = self.chunk_size;
-        let max_output_frames = resampler.output_frames_max();
-        let residual = self.residual_frames;
-
-        // Zero-pad residual input to a full chunk.
-        // residual_input already contains the valid frames at [0..residual_frames];
-        // zero the tail so rubato sees silence for the padded portion.
-        for ch in 0..self.num_channels {
-            self.residual_input[ch][self.residual_frames..chunk_size].fill(0.0);
-            // Copy into input_buffer for rubato (residual_input is the canonical source).
-            self.input_buffer[ch][..chunk_size]
-                .copy_from_slice(&self.residual_input[ch][..chunk_size]);
-        }
-        self.residual_frames = 0;
-
-        let input_adapter =
-            SequentialSliceOfVecs::new(&self.input_buffer, self.num_channels, chunk_size)
-                .map_err(|e| format!("Input adapter error: {:?}", e))?;
-        let mut output_adapter = SequentialSliceOfVecs::new_mut(
-            &mut self.output_buffer,
-            self.num_channels,
-            max_output_frames,
-        )
-        .map_err(|e| format!("Output adapter error: {:?}", e))?;
-
-        let (_, output_frames) = resampler
-            .process_into_buffer(&input_adapter, &mut output_adapter, None)
-            .map_err(|e| format!("Resampling failed: {:?}", e))?;
-
-        let required_samples = output_frames * self.num_channels;
-        if required_samples > output.len() {
-            return Err(format!(
-                "Output buffer too small for flush: need {required_samples} samples, got {}",
-                output.len()
-            ));
-        }
-
-        Self::planar_to_interleaved(
-            &self.output_buffer,
-            output,
-            output_frames,
-            self.num_channels,
-        );
-
-        // Compute how many trailing output frames are garbage from zero-padding.
-        let valid_output_estimate = (residual as f64 * self.current_ratio).ceil() as usize;
-        let discard = output_frames.saturating_sub(valid_output_estimate);
-        Ok((output_frames, discard))
+        let result = self.drain(output, &ProcessContext::new(self.input_sample_rate, 0))?;
+        Ok((result.frames, 0))
     }
 
     /// Set the resampling ratio relative to the current ratio (only works when dynamic_ratio is enabled).
@@ -391,14 +398,13 @@ impl ResamplerPlugin {
             .map_err(|e| format!("Failed to set relative ratio: {:?}", e))?;
         // Update our tracked ratio
         self.current_ratio *= rel_ratio;
-        self.rebuild_cached_parameters();
         Ok(())
     }
 }
 
 impl Plugin for ResamplerPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Resampler", "2.0.0", "SotF").with_description(format!(
+        PluginInfo::new("Resampler", env!("CARGO_PKG_VERSION"), "SotF").with_description(format!(
             "Sample rate converter: {}Hz -> {}Hz (ratio: {:.4}, quality: {})",
             self.input_sample_rate,
             self.output_sample_rate,
@@ -431,16 +437,24 @@ impl Plugin for ResamplerPlugin {
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
-
         if id == self.param_quality {
-            let s = value
-                .as_string()
-                .ok_or_else(|| "quality must be a string".to_string())?;
-            let new_quality = ResamplerQuality::from_str(s).ok_or_else(|| {
-                format!("Invalid quality '{}': expected fast, medium, or high", s)
-            })?;
+            let new_quality = match &value {
+                ParameterValue::Int(index) => ResamplerQuality::from_index(*index)
+                    .ok_or_else(|| format!("Invalid quality index {index}: expected 0, 1, or 2"))?,
+                ParameterValue::String(label) => {
+                    ResamplerQuality::from_str(label).ok_or_else(|| {
+                        format!("Invalid quality '{label}': expected fast, medium, or high")
+                    })?
+                }
+                _ => return Err("quality must be a choice index".to_string()),
+            };
             if new_quality != self.quality {
+                if self.initialized || self.residual_frames != 0 {
+                    return Err(
+                        "quality is a structural setup parameter; rebuild the plugin to change it"
+                            .to_string(),
+                    );
+                }
                 self.quality = new_quality;
                 self.rebuild_resampler()?;
             }
@@ -467,16 +481,16 @@ impl Plugin for ResamplerPlugin {
                 return Err("Cannot change ratio when dynamic_ratio is disabled".to_string());
             }
             self.set_ratio(v as f64, true)?;
-            // rebuild_cached_parameters already called by set_ratio
             return Ok(());
+        } else {
+            return Err(format!("Unknown parameter: {id}"));
         }
-        self.rebuild_cached_parameters();
         Ok(())
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id == &self.param_quality {
-            Some(ParameterValue::String(self.quality.as_str().to_string()))
+            Some(ParameterValue::Int(self.quality.index()))
         } else if id == &self.param_dynamic_ratio {
             Some(ParameterValue::Bool(self.dynamic_ratio))
         } else if id == &self.param_ratio {
@@ -491,12 +505,12 @@ impl Plugin for ResamplerPlugin {
         // processing rate differs from our input rate, log a warning since the
         // resampling ratio may not produce the expected output rate.
         if sample_rate != self.input_sample_rate && self.input_sample_rate > 0 {
-            log::warn!(
-                "[Resampler] Host sample rate ({} Hz) differs from configured input rate ({} Hz)",
-                sample_rate,
+            return Err(format!(
+                "Host sample rate ({sample_rate} Hz) differs from configured input rate ({} Hz)",
                 self.input_sample_rate
-            );
+            ));
         }
+        self.initialized = true;
         Ok(())
     }
 
@@ -510,6 +524,11 @@ impl Plugin for ResamplerPlugin {
         // Clear residual buffer — zero the data to prevent stale audio leaking through
         // if a future code path reads residual_input without tight bounds checking.
         self.residual_frames = 0;
+        self.last_output_frames = 0;
+        self.stream_input_frames = 0;
+        self.stream_output_frames = 0;
+        self.expected_signal_frames = 0.0;
+        self.drain_target_frames = None;
         for ch in 0..self.num_channels {
             self.residual_input[ch].fill(0.0);
         }
@@ -521,6 +540,9 @@ impl Plugin for ResamplerPlugin {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
+        if self.drain_target_frames.is_some() {
+            return Err("stream has been finalized; reset before processing new input".to_string());
+        }
         let num_input_frames = context.num_frames;
         let expected_input_samples = num_input_frames * self.num_channels;
 
@@ -531,6 +553,42 @@ impl Plugin for ResamplerPlugin {
                 num_input_frames,
                 self.num_channels,
                 input.len()
+            ));
+        }
+
+        if self.is_unity_passthrough() {
+            if output.len() < input.len() {
+                return Err(format!(
+                    "Output buffer too small: need {} samples, got {}",
+                    input.len(),
+                    output.len()
+                ));
+            }
+            output[..input.len()].copy_from_slice(input);
+            self.last_output_frames = num_input_frames;
+            self.stream_input_frames = self
+                .stream_input_frames
+                .saturating_add(num_input_frames as u64);
+            self.stream_output_frames = self
+                .stream_output_frames
+                .saturating_add(num_input_frames as u64);
+            self.expected_signal_frames += num_input_frames as f64;
+            return Ok(num_input_frames);
+        }
+
+        let complete_chunks =
+            self.residual_frames.saturating_add(num_input_frames) / self.chunk_size;
+        let capacity_frames = complete_chunks.saturating_mul(
+            self.resampler
+                .as_ref()
+                .ok_or("Resampler not initialized")?
+                .output_frames_max(),
+        );
+        let required_samples = capacity_frames.saturating_mul(self.num_channels);
+        if required_samples > output.len() {
+            return Err(format!(
+                "Output buffer too small: need {required_samples} samples, got {}",
+                output.len()
             ));
         }
 
@@ -608,31 +666,113 @@ impl Plugin for ResamplerPlugin {
 
         // Store actual output frame count
         self.last_output_frames = total_output_frames;
+        self.stream_input_frames = self
+            .stream_input_frames
+            .saturating_add(num_input_frames as u64);
+        self.stream_output_frames = self
+            .stream_output_frames
+            .saturating_add(total_output_frames as u64);
+        self.expected_signal_frames += num_input_frames as f64 * self.current_ratio;
 
         Ok(total_output_frames)
     }
 
+    fn drain_output_frames_max(&self) -> usize {
+        self.flush_output_frames_max()
+    }
+
+    fn drain(
+        &mut self,
+        output: &mut [f32],
+        _context: &ProcessContext,
+    ) -> PluginResult<PluginDrainResult> {
+        if self.is_unity_passthrough() || self.stream_input_frames == 0 {
+            self.last_output_frames = 0;
+            self.drain_target_frames = Some(self.stream_output_frames);
+            return Ok(PluginDrainResult::COMPLETE);
+        }
+
+        // Match rubato's process_all contract: ceil(total programme duration
+        // in output frames), then retain enough raw output for leading-delay
+        // trimming to preserve the matching final sinc tail.
+        let computed_target = (self.expected_signal_frames.ceil() as u64)
+            .saturating_add(self.output_delay_frames() as u64);
+        let target = *self.drain_target_frames.get_or_insert(computed_target);
+        if self.stream_output_frames >= target {
+            self.last_output_frames = 0;
+            return Ok(PluginDrainResult::COMPLETE);
+        }
+
+        let max_output_frames = self
+            .resampler
+            .as_ref()
+            .ok_or("Resampler not initialized")?
+            .output_frames_max();
+        let remaining = target.saturating_sub(self.stream_output_frames) as usize;
+        let frames_to_write_bound = remaining.min(max_output_frames);
+        let required_samples = frames_to_write_bound.saturating_mul(self.num_channels);
+        if output.len() < required_samples {
+            return Err(format!(
+                "Output buffer too small for drain: need {required_samples} samples, got {}",
+                output.len()
+            ));
+        }
+
+        let partial_len = self.residual_frames;
+        for ch in 0..self.num_channels {
+            self.residual_input[ch][partial_len..self.chunk_size].fill(0.0);
+            self.input_buffer[ch][..self.chunk_size]
+                .copy_from_slice(&self.residual_input[ch][..self.chunk_size]);
+        }
+
+        let input_adapter =
+            SequentialSliceOfVecs::new(&self.input_buffer, self.num_channels, self.chunk_size)
+                .map_err(|e| format!("Input adapter error: {e:?}"))?;
+        let mut output_adapter = SequentialSliceOfVecs::new_mut(
+            &mut self.output_buffer,
+            self.num_channels,
+            max_output_frames,
+        )
+        .map_err(|e| format!("Output adapter error: {e:?}"))?;
+        let indexing = Indexing {
+            input_offset: 0,
+            output_offset: 0,
+            partial_len: Some(partial_len),
+            active_channels_mask: None,
+        };
+        let (_, produced) = self
+            .resampler
+            .as_mut()
+            .ok_or("Resampler not initialized")?
+            .process_into_buffer(&input_adapter, &mut output_adapter, Some(&indexing))
+            .map_err(|e| format!("Resampling drain failed: {e:?}"))?;
+
+        self.residual_frames = 0;
+        let frames = produced.min(remaining);
+        Self::planar_to_interleaved(&self.output_buffer, output, frames, self.num_channels);
+        self.stream_output_frames = self.stream_output_frames.saturating_add(produced as u64);
+        self.last_output_frames = frames;
+        Ok(PluginDrainResult {
+            frames,
+            complete: self.stream_output_frames >= target,
+        })
+    }
+
     fn latency_samples(&self) -> usize {
+        if self.is_unity_passthrough() {
+            return 0;
+        }
         // Use rubato's exact output_delay() which accounts for the full FIR group delay,
         // ring-buffer offsets, and polyphase filter delays — not just sinc_len / 2.
         // Also add the chunking buffer latency: up to chunk_size - 1 frames can sit in
         // residual_input before producing output.
         let rubato_delay = self.output_delay_frames();
-        rubato_delay + self.chunk_size - 1
+        let priming_output_frames = (((self.chunk_size - 1) as f64) * self.current_ratio).ceil();
+        rubato_delay.saturating_add(priming_output_frames as usize)
     }
 
     fn output_frames_for_input(&self, input_frames: usize) -> usize {
-        // Use rubato's output_frames_max() for safe buffer allocation
-        // The actual output varies based on resampler internal state
-        if let Some(ref resampler) = self.resampler {
-            let pending = self.residual_frames.saturating_add(input_frames);
-            let chunks = pending.div_ceil(self.chunk_size);
-            chunks.saturating_mul(resampler.output_frames_max())
-        } else {
-            // Fallback estimate if resampler not initialized
-            let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
-            (input_frames as f64 * ratio).ceil() as usize + 1
-        }
+        ResamplerPlugin::output_frames_for_input(self, input_frames)
     }
 
     fn output_sample_rate(&self, _input_rate: u32) -> u32 {
@@ -640,11 +780,7 @@ impl Plugin for ResamplerPlugin {
     }
 
     fn last_output_frames(&self) -> Option<usize> {
-        if self.last_output_frames > 0 {
-            Some(self.last_output_frames)
-        } else {
-            None
-        }
+        Some(self.last_output_frames)
     }
 }
 
@@ -662,14 +798,11 @@ fn test_flush_produces_trailing_output() {
     let produced = resampler.process(&input, &mut output, &ctx).unwrap();
     assert_eq!(produced, 0, "Partial chunk should produce no output yet");
 
-    // Flush should produce output for the buffered partial chunk, with discard > 0
-    let mut flush_buf = vec![0.0_f32; max_output * 2];
+    // Flush returns the exact complete-stream prefix; no caller-side estimate is needed.
+    let mut flush_buf = vec![0.0_f32; resampler.flush_output_frames_max() * 2];
     let (flush_output, discard) = resampler.flush(&mut flush_buf).unwrap();
     assert!(flush_output > 0, "Flush should produce trailing output");
-    assert!(
-        discard > 0,
-        "Flushing a partial chunk should report discard frames > 0"
-    );
+    assert_eq!(discard, 0);
 }
 
 #[test]

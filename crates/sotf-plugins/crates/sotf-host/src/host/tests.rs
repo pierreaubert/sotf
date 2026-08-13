@@ -818,6 +818,17 @@ fn test_parallel_variable_frame_consistent_cf() {
 }
 
 #[test]
+fn test_rate_changing_variable_frame_is_not_zero_padded_to_input_length() {
+    let mut host = DawHost::new(2, 44_100);
+    host.add_plugin(Box::new(VariableFramePlugin::rate_changing(2, 0, 48_000)))
+        .unwrap();
+    host.build().unwrap();
+    let input = vec![0.5; 256 * 2];
+    let mut output = vec![1.0; 256 * 2];
+    assert_eq!(host.process(&input, &mut output).unwrap(), 0);
+}
+
+#[test]
 fn test_sidechain_edge_appends_extended_input_for_in_place_adapter() {
     let mut g = DawHost::new(2, 48000);
     let audio = g
