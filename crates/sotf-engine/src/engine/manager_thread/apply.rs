@@ -1,5 +1,6 @@
 use super::super::{
-    AudioEngineState, PlaybackCommand, PlaybackThread, ProcessingCommand, ProcessingThread,
+    AudioEngineState, PlaybackCommand, PlaybackThread, PreparedHostUpdate, ProcessingCommand,
+    ProcessingThread,
 };
 use super::config_update_queue::ConfigUpdateQueue;
 use super::consts::SPIN_MS_SLEEP_MANAGER;
@@ -133,15 +134,26 @@ pub(in crate::engine::manager_thread) fn apply_plugin_update(
 
     // Send update command to processing thread
 
+    let current = state.load();
+    let prepared = PreparedHostUpdate::prepare(
+        host,
+        sample_rate,
+        current.num_channels,
+        current.plugin_latency_samples,
+    )
+    .map_err(|message| ConfigError::PluginBuild {
+        diagnostic: PluginBuildDiagnostic::host(message),
+    })?;
+    drop(current);
     processing
-        .send_command(ProcessingCommand::UpdateHost(Box::new(host)))
+        .send_command(ProcessingCommand::CommitHostUpdate(prepared))
         .map_err(|_| {
-            log::error!("[Manager Thread] Failed to send UpdateHost command: disconnected");
+            log::error!("[Manager Thread] Failed to send CommitHostUpdate command: disconnected");
             ConfigError::ChannelDisconnected
         })?;
 
     log::debug!(
-        "[Manager Thread] apply_plugin_update: Sent UpdateHost to processing thread, waiting for ACK..."
+        "[Manager Thread] apply_plugin_update: Sent CommitHostUpdate to processing thread, waiting for ACK..."
     );
 
     // Calculate adaptive timeout based on plugin complexity
@@ -184,6 +196,7 @@ pub(in crate::engine::manager_thread) fn apply_plugin_update(
                 super::super::ProcessingResponse::PluginChainUpdated {
                     output_channels,
                     latency_samples,
+                    ..
                 } => {
                     log::debug!(
                         "[Manager Thread] ACK received: Plugin chain updated, output_channels={}, latency={}",
@@ -286,8 +299,19 @@ pub(in crate::engine::manager_thread) fn apply_plugin_graph_update(
     }
     store_plugin_build_diagnostics(state, build_diagnostics);
 
+    let current = state.load();
+    let prepared = PreparedHostUpdate::prepare(
+        host,
+        sample_rate,
+        current.num_channels,
+        current.plugin_latency_samples,
+    )
+    .map_err(|message| ConfigError::PluginBuild {
+        diagnostic: PluginBuildDiagnostic::host(message),
+    })?;
+    drop(current);
     processing
-        .send_command(ProcessingCommand::UpdateHost(Box::new(host)))
+        .send_command(ProcessingCommand::CommitHostUpdate(prepared))
         .map_err(|_| ConfigError::ChannelDisconnected)?;
 
     let old_channels = state.load().num_channels;

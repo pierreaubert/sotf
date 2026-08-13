@@ -36,8 +36,10 @@ Implemented in `sotf-plugin-multiband-compressor` 0.5.13:
 Remaining findings are not silently closed: the catalog's true single-band Compressor identity,
 sidechain/schema parity, link-control migration, parameter/crossover smoothing, oversized-block
 chunking, and crossover reconstruction/documentation require broader factory, host, or DSP design
-work. Dynamic lookahead changes also still need an explicit host
-latency-recompile notification contract.
+work. `sotf-engine` 1.0.32 now provides the previously missing structural-host
+commit and explicit old/new latency-change notification contract; wiring a
+future dynamic-lookahead configuration through a full host rebuild remains
+plugin/factory integration work rather than an in-place realtime setter.
 
 Implemented in `sotf-plugin-multiband-compressor` 0.5.15:
 

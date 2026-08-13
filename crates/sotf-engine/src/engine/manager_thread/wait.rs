@@ -38,6 +38,7 @@ pub(in crate::engine::manager_thread) fn wait_for_plugin_chain_update(
                 super::super::ProcessingResponse::PluginChainUpdated {
                     output_channels,
                     latency_samples,
+                    ..
                 } => return Ok((output_channels, latency_samples)),
                 super::super::ProcessingResponse::Error(reason) => {
                     return Err(ConfigError::ProcessingError { reason });

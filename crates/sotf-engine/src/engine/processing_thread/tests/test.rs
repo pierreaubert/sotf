@@ -59,7 +59,7 @@ fn test_processing_state_with_invalid_isolated_plugin() -> (ProcessingState, tem
         #[cfg(feature = "streaming")]
         None,
     );
-    state.host = host;
+    *state.host = host;
     (state, tempdir)
 }
 

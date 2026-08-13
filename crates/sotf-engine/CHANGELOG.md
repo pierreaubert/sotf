@@ -1,3 +1,20 @@
+# 1.0.32 (unreleased)
+
+## Transactional structural host updates
+
+- Added a shared prepare/validate/commit protocol for plugin-chain and graph
+  replacements. Complete hosts, analyzer cache slots, and latency-alignment
+  storage are now prepared on the control side before the processing thread
+  receives an infallible move-only candidate.
+- Reject stale prepared candidates transactionally without replacing the
+  working host, and report old/new latency plus an explicit change flag in the
+  commit acknowledgement.
+- Crossfade same-rate latency changes after delaying the shorter path; retain
+  the existing old-to-silence-to-new transition for output-rate changes where
+  samples cannot be blended one-for-one.
+- Route replaced hosts and completed transition buffers to the bounded engine
+  GC queue so plugin state is reclaimed off the processing thread.
+
 # 1.0.31 (unreleased)
 
 - Carry PND's optional absolute pilot/reference frequency through typed engine

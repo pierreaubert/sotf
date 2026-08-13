@@ -10103,7 +10103,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.31"
+version = "1.0.32"
 dependencies = [
  "arc-swap",
  "bytemuck",

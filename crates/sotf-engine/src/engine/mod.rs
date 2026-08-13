@@ -74,6 +74,7 @@ mod config_watcher_stub;
 pub use config_watcher_stub::{ConfigEvent, ConfigWatcher};
 
 mod gc_thread;
+pub(crate) use gc_thread::GcItem;
 pub use gc_thread::{GcSender, GcThread};
 
 mod thread_join;

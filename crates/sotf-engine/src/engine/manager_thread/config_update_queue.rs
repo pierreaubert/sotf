@@ -307,8 +307,14 @@ pub(super) fn run_manager_thread(
                 )
                 .map_err(|e| e.to_string())?;
                 // Send host to processing thread
+                let prepared = super::super::PreparedHostUpdate::prepare(
+                    host,
+                    config.output_sample_rate,
+                    config.input_channels,
+                    0,
+                )?;
                 if let Err(e) =
-                    processing_thread.send_command(ProcessingCommand::UpdateHost(Box::new(host)))
+                    processing_thread.send_command(ProcessingCommand::CommitHostUpdate(prepared))
                 {
                     return Err(format!("Failed to send initial plugin host: {}", e));
                 }
@@ -324,6 +330,7 @@ pub(super) fn run_manager_thread(
                             super::super::ProcessingResponse::PluginChainUpdated {
                                 output_channels: ch,
                                 latency_samples,
+                                ..
                             } => {
                                 log::info!(
                                     "[Manager Thread] Initial plugin chain loaded in {:?}, output channels: {}, latency: {} samples",

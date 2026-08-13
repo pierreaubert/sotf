@@ -13,15 +13,26 @@ reload_config        -> send ManagerCommand::ReloadConfig
 handle_config_event -> ConfigEvent::ConfigChanged(_) | ConfigEvent::Reload
 
 handle_command      -> ManagerCommand::UpdatePluginChain -> apply_plugin_update
-apply_plugin_update -> ProcessingResponse::PluginChainUpdated
+apply_plugin_update -> PreparedHostUpdate::prepare -> ProcessingCommand::CommitHostUpdate
+                    -> ProcessingResponse::PluginChainUpdated
 
 
 # processing_thread.rs
 
 start_reload
 loop
-  ProcessingCommand::UpdatePlugin
+  ProcessingCommand::CommitHostUpdate
   ProcessingCommand::SetParameter
 
+Structural host updates are built and fully allocation-prepared on the
+manager/control side. The processing thread validates the candidate against
+the output-channel/latency snapshot it was based on, then commits it at a block
+boundary. A stale candidate is retired without touching the active host.
+
+For equal output rates, old and new hosts run concurrently during a 50 ms
+crossfade and the shorter-latency path passes through its preallocated delay
+line before mixing. Rate-changing replacements transition through silence.
+Completed and rolled-back host states are sent to the bounded GC queue, so the
+processing path neither allocates transition storage nor destroys plugin state.
 
 

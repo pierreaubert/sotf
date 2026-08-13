@@ -96,9 +96,12 @@ Implement a validated phase-vocoder pitch-shift design (often time-stretch plus 
 
 ### P1 — Structural parameter setters allocate and change topology/latency live
 
-Status: the realtime safety portion is fixed in 0.5.7: structural setters now
-reject changes after initialization. Off-thread rebuild/swap and
-latency-aligned crossfade remain host-level architecture work and are deferred.
+Status: the plugin-local realtime safety portion is fixed in 0.5.7: structural
+setters reject changes after initialization. The shared engine host protocol is
+now implemented in `sotf-engine` 1.0.32: a replacement host and transition
+storage are prepared off-thread, validated transactionally, committed at a
+processing boundary, latency-aligned for same-rate crossfades, and retired on
+the GC thread. Plugin-local reset allocation tests remain outstanding.
 
 Although analysis window, multi-channel analysis, and phase vocoder are marked structural/setup, the public setter immediately resets analyzer histories, clears and repopulates analyzer vectors, creates FFT plans/buffers, and changes processing topology/latency (`pnd_plugin.rs:577-625`, `analysis.rs:247-259`). `reset` recreates the rubato resampler (`pnd_plugin.rs:821-840`), which also allocates. If these trait methods run on the audio thread they violate real-time safety and can click; switching back also exposes path states maintained on different timelines.
 

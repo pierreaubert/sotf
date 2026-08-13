@@ -1,3 +1,12 @@
+# 0.7.10
+
+## Audio engine
+
+- Plugin-chain and graph structural changes are now prepared and validated
+  before an atomic processing-boundary commit. Latency changes are reported
+  explicitly, same-rate replacements crossfade with latency alignment, and
+  retired plugin state is reclaimed by the background GC thread.
+
 # 0.7.9
 
 ## Features

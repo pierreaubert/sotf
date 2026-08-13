@@ -1,5 +1,6 @@
 use super::super::{
-    DecoderMessage, ProcessingCommand, ProcessingMessage, ProcessingResponse, ThreadEvent,
+    DecoderMessage, GcItem, PreparedHostUpdate, PreparedTransitionDelay, ProcessingCommand,
+    ProcessingMessage, ProcessingResponse, ThreadEvent,
 };
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 use super::isolated::isolated_external_plugin_status;
@@ -27,9 +28,9 @@ const RECYCLE_FALLBACK_POOL_SIZE: usize = 4;
 /// Processing state
 pub(super) struct ProcessingState {
     /// Current plugin host
-    pub(super) host: PluginHost,
+    pub(super) host: Box<PluginHost>,
     /// Previous host for crossfading
-    pub(super) prev_host: Option<PluginHost>,
+    pub(super) prev_host: Option<Box<PluginHost>>,
     /// Crossfade progress (0.0 to 1.0, 1.0 = current host only)
     pub(super) crossfade_progress: f32,
     /// Crossfade step per frame
@@ -37,6 +38,13 @@ pub(super) struct ProcessingState {
     /// When host timing differs, transition old→silence→new instead of
     /// blending time-misaligned samples.
     pub(super) crossfade_through_silence: bool,
+    /// Preallocated latency alignment for the old and new paths.
+    pub(super) old_path_delay: PreparedTransitionDelay,
+    pub(super) new_path_delay: PreparedTransitionDelay,
+    /// Background state reclaimer. Production always installs this before processing.
+    pub(super) gc_tx: Option<super::super::GcSender>,
+    /// Retained only if the bounded GC queue is momentarily full.
+    pub(super) pending_retirements: Vec<GcItem>,
     /// Number of channels
     pub(super) channels: usize,
     pub(super) bypassed: bool,
@@ -86,11 +94,15 @@ impl ProcessingState {
         }
 
         Self {
-            host: PluginHost::new(channels, sample_rate),
+            host: Box::new(PluginHost::new(channels, sample_rate)),
             prev_host: None,
             crossfade_progress: 1.0,
             crossfade_step: 0.0,
             crossfade_through_silence: false,
+            old_path_delay: PreparedTransitionDelay::default(),
+            new_path_delay: PreparedTransitionDelay::default(),
+            gc_tx: None,
+            pending_retirements: Vec::with_capacity(64),
             channels,
             bypassed: false,
             // Pre-sized for the worst-case processing block so the hot path only reuses memory.
@@ -159,6 +171,105 @@ impl ProcessingState {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn transition_delay_samples(&self) -> usize {
+        self.old_path_delay.len().max(self.new_path_delay.len())
+    }
+
+    fn flush_pending_retirement(&mut self) {
+        let Some(gc_tx) = self.gc_tx.as_ref() else {
+            return;
+        };
+        while let Some(item) = self.pending_retirements.pop() {
+            if let Err(error) = gc_tx.try_send(item) {
+                self.pending_retirements.push(error.into_inner());
+                break;
+            }
+        }
+    }
+
+    fn retire(&mut self, item: GcItem) {
+        self.flush_pending_retirement();
+        let Some(gc_tx) = self.gc_tx.as_ref() else {
+            self.pending_retirements.push(item);
+            return;
+        };
+        if let Err(error) = gc_tx.try_send(item) {
+            self.pending_retirements.push(error.into_inner());
+        }
+    }
+
+    fn commit_host_update(
+        &mut self,
+        update: PreparedHostUpdate,
+    ) -> Result<(usize, usize, usize), &'static str> {
+        let current_channels = self.host.output_channels();
+        let current_latency = self.host.total_latency_samples();
+        if current_channels != update.expected_output_channels
+            || current_latency != update.expected_latency_samples
+        {
+            self.retire(GcItem::HostTransition {
+                host: update.host,
+                old_path_delay: update.old_path_delay,
+                new_path_delay: update.new_path_delay,
+            });
+            return Err("stale prepared host update: active host changed before commit");
+        }
+
+        let PreparedHostUpdate {
+            host: new_host,
+            output_channels,
+            output_sample_rate,
+            latency_samples,
+            analyzer_cache,
+            old_path_delay,
+            new_path_delay,
+            ..
+        } = update;
+        if output_channels != new_host.output_channels()
+            || output_sample_rate != new_host.output_sample_rate(self.sample_rate)
+            || latency_samples != new_host.total_latency_samples()
+        {
+            self.retire(GcItem::HostTransition {
+                host: new_host,
+                old_path_delay,
+                new_path_delay,
+            });
+            return Err("prepared host metadata changed before commit");
+        }
+
+        let old_output_rate = self.host.output_sample_rate(self.sample_rate);
+        let can_transition = current_channels == output_channels && self.host.plugin_count() > 0;
+        if let Some(previous) = self.prev_host.take() {
+            let old_path_delay = std::mem::take(&mut self.old_path_delay);
+            let new_path_delay = std::mem::take(&mut self.new_path_delay);
+            self.retire(GcItem::HostTransition {
+                host: previous,
+                old_path_delay,
+                new_path_delay,
+            });
+        }
+
+        if can_transition {
+            self.prev_host = Some(std::mem::replace(&mut self.host, new_host));
+            self.crossfade_progress = 0.0;
+            self.crossfade_step = 0.0;
+            self.crossfade_through_silence = old_output_rate != output_sample_rate;
+            self.old_path_delay = old_path_delay;
+            self.new_path_delay = new_path_delay;
+        } else {
+            let previous = std::mem::replace(&mut self.host, new_host);
+            self.retire(GcItem::PluginHost(previous));
+            self.crossfade_progress = 1.0;
+            self.crossfade_through_silence = false;
+            self.old_path_delay = PreparedTransitionDelay::default();
+            self.new_path_delay = PreparedTransitionDelay::default();
+        }
+        self.channels = output_channels;
+        self.spare_cache_arc = Some(analyzer_cache);
+        Ok((output_channels, current_latency, latency_samples))
+    }
+
     /// Process a frame
     /// Returns the actual number of output frames written
     pub(super) fn process_frame(
@@ -167,6 +278,7 @@ impl ProcessingState {
         output: &mut [f32],
         input_frames: usize,
     ) -> Result<usize, String> {
+        self.flush_pending_retirement();
         if self.bypassed {
             // Bypass — copy input to output. When the plugin chain changes
             // channel count (e.g. upmixer 2ch→5ch), output is sized for the
@@ -183,6 +295,10 @@ impl ProcessingState {
         // Handle crossfade if in progress
         if let Some(ref mut prev_host) = self.prev_host {
             let actual_frames = self.host.process(input, output)?;
+            if !self.crossfade_through_silence {
+                self.new_path_delay
+                    .process_in_place(&mut output[..actual_frames * self.channels]);
+            }
 
             // Size the previous-host destination from its own output rate.
             // During a down-rate transition the old host can require more
@@ -193,6 +309,10 @@ impl ProcessingState {
 
             let prev_actual =
                 prev_host.process(input, &mut self.prev_process_buffer[..prev_buf_len])?;
+            if !self.crossfade_through_silence {
+                self.old_path_delay
+                    .process_in_place(&mut self.prev_process_buffer[..prev_actual * self.channels]);
+            }
 
             // Compute crossfade step from actual frame size (~50ms crossfade)
             if self.crossfade_step == 0.0 {
@@ -247,7 +367,14 @@ impl ProcessingState {
 
             self.crossfade_progress = alpha_end;
             if self.crossfade_progress >= 1.0 {
-                self.prev_host = None;
+                let previous = self.prev_host.take().expect("crossfade host exists");
+                let old_path_delay = std::mem::take(&mut self.old_path_delay);
+                let new_path_delay = std::mem::take(&mut self.new_path_delay);
+                self.retire(GcItem::HostTransition {
+                    host: previous,
+                    old_path_delay,
+                    new_path_delay,
+                });
                 self.crossfade_through_silence = false;
             }
 
@@ -269,56 +396,29 @@ pub(super) fn handle_processing_command(
 ) -> bool {
     let _ = event_tx;
     match command {
-        ProcessingCommand::UpdateHost(new_host) => {
-            let new_host = *new_host;
-            let output_channels = new_host.output_channels();
+        ProcessingCommand::CommitHostUpdate(update) => {
+            let output_channels = update.output_channels;
             log::trace!(
-                "[Processing Thread] UpdateHost: Plugin host updated, output_channels={}",
+                "[Processing Thread] CommitHostUpdate: committing prepared host, output_channels={}",
                 output_channels
             );
 
-            let old_latency = state.host.total_latency_samples();
-            let new_latency = new_host.total_latency_samples();
-            let old_output_rate = state.host.output_sample_rate(state.sample_rate);
-            let new_output_rate = new_host.output_sample_rate(state.sample_rate);
-            let same_timing = old_output_rate == new_output_rate
-                && (old_latency as u128 * new_output_rate as u128)
-                    == (new_latency as u128 * old_output_rate as u128);
-            let can_transition =
-                state.host.output_channels() == output_channels && state.host.plugin_count() > 0;
-
-            // A sample-for-sample blend is only valid when both chains share
-            // channel count and latency. Otherwise swap atomically rather than
-            // create comb filtering from time-misaligned signals.
-            if can_transition {
-                state.prev_host = Some(std::mem::replace(&mut state.host, new_host));
-                state.crossfade_progress = 0.0;
-                state.crossfade_through_silence = !same_timing;
-
-                // crossfade_step is computed lazily in process_frame using
-                // the actual input_frames, so it adapts to any frame size.
-                // Initialize to 0 so first process_frame computes it.
-                state.crossfade_step = 0.0;
-            } else {
-                // Immediate swap for first host or channel mismatch
-                state.host = new_host;
-                state.prev_host = None;
-                state.crossfade_progress = 1.0;
-                state.crossfade_through_silence = false;
-            }
-
-            state.channels = output_channels;
-
-            // Pre-size the spare cache Arc so analyzer data updates never need to
-            // allocate on the audio hot path, even on the first frame.
-            let plugin_count = state.host.plugin_count();
-            state.spare_cache_arc = Some(Arc::new(vec![None; plugin_count]));
-
-            let latency_samples = state.host.total_latency_samples();
+            let (output_channels, previous_latency_samples, latency_samples) =
+                match state.commit_host_update(update) {
+                    Ok(notification) => notification,
+                    Err(reason) => {
+                        response_tx
+                            .send(ProcessingResponse::Error(reason.to_string()))
+                            .ok();
+                        return false;
+                    }
+                };
             response_tx
                 .send(ProcessingResponse::PluginChainUpdated {
                     output_channels,
+                    previous_latency_samples,
                     latency_samples,
+                    latency_changed: previous_latency_samples != latency_samples,
                 })
                 .ok();
         }
@@ -467,7 +567,7 @@ pub(super) fn run_processing_thread(
     sample_rate: u32,
     channels: usize,
     plugin_data_cache: super::super::PluginDataCache,
-    _gc_tx: super::super::GcSender,
+    gc_tx: super::super::GcSender,
     recycle_rx: Receiver<Vec<f32>>,
     decoder_recycle_tx: SyncSender<Vec<f32>>,
     #[cfg(feature = "streaming")] network_stream_tap: Option<sotf_streaming::PcmStreamHandle>,
@@ -491,6 +591,7 @@ pub(super) fn run_processing_thread(
         #[cfg(feature = "streaming")]
         network_stream_tap,
     );
+    state.gc_tx = Some(gc_tx);
 
     log::info!(
         "[Processing Thread] Started - {}Hz, {} channels",

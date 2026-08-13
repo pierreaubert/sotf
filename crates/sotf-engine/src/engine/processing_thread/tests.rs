@@ -1,7 +1,7 @@
 use super::super::PluginDataCache;
 use super::super::{
     PluginConfig, PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig,
-    ProcessingCommand,
+    PreparedHostUpdate, ProcessingCommand,
 };
 use super::build::{build_plugin_graph_host, build_plugin_host};
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
@@ -247,7 +247,7 @@ fn crossfade_zero_frame_block_completes_instead_of_leaking_prev_host() {
 }
 
 #[test]
-fn latency_changing_host_update_fades_through_silence_without_a_jump() {
+fn output_rate_changing_host_update_fades_through_silence_without_a_jump() {
     let sample_rate = 48_000;
     for reverse_rate_change in [false, true] {
         let gain = PluginConfig::new("gain", serde_json::json!({ "gain_db": 0.0 }));
@@ -288,12 +288,20 @@ fn latency_changing_host_update_fades_through_silence_without_a_jump() {
             #[cfg(feature = "streaming")]
             None,
         );
-        state.host = old_host;
+        *state.host = old_host;
         let (response_tx, _response_rx) = std::sync::mpsc::channel();
         let (event_tx, _event_rx) = std::sync::mpsc::channel();
 
+        let previous_latency = state.host.total_latency_samples();
+        let prepared = PreparedHostUpdate::prepare(
+            new_host,
+            sample_rate,
+            state.host.output_channels(),
+            previous_latency,
+        )
+        .unwrap();
         assert!(!handle_processing_command(
-            ProcessingCommand::UpdateHost(Box::new(new_host)),
+            ProcessingCommand::CommitHostUpdate(prepared),
             &mut state,
             &response_tx,
             &event_tx,
@@ -302,7 +310,6 @@ fn latency_changing_host_update_fades_through_silence_without_a_jump() {
             state.prev_host.is_some(),
             "latency-changing update should retain the old host for a safe transition"
         );
-
         let mut rendered = Vec::new();
         for _ in 0..50 {
             let input = vec![1.0f32; 64];
@@ -320,6 +327,111 @@ fn latency_changing_host_update_fades_through_silence_without_a_jump() {
             "rate-change direction reverse={reverse_rate_change} introduced an adjacent-sample jump of {max_jump}"
         );
     }
+}
+
+#[test]
+fn same_rate_latency_change_prepares_an_aligned_crossfade() {
+    let current = PluginConfig::new("gain", serde_json::json!({ "gain_db": 0.0 }));
+    let candidate = PluginConfig::new(
+        "linear_phase_eq",
+        serde_json::json!({ "num_filters": 0, "fir_length": 64 }),
+    );
+    let (mut current_host, _) = build_plugin_host(&[current], 48_000, 1).unwrap();
+    let (mut candidate_host, warnings) = build_plugin_host(&[candidate], 48_000, 1).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    current_host.build().unwrap();
+    candidate_host.build().unwrap();
+    assert_eq!(current_host.output_sample_rate(48_000), 48_000);
+    assert_eq!(candidate_host.output_sample_rate(48_000), 48_000);
+    assert_ne!(
+        current_host.total_latency_samples(),
+        candidate_host.total_latency_samples()
+    );
+
+    let mut state = ProcessingState::new(
+        1,
+        48_000,
+        #[cfg(feature = "streaming")]
+        None,
+    );
+    *state.host = current_host;
+    let prepared = PreparedHostUpdate::prepare(
+        candidate_host,
+        48_000,
+        state.host.output_channels(),
+        state.host.total_latency_samples(),
+    )
+    .unwrap();
+    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let (event_tx, _event_rx) = std::sync::mpsc::channel();
+
+    handle_processing_command(
+        ProcessingCommand::CommitHostUpdate(prepared),
+        &mut state,
+        &response_tx,
+        &event_tx,
+    );
+
+    assert!(state.prev_host.is_some());
+    assert!(!state.crossfade_through_silence);
+    assert!(state.transition_delay_samples() > 0);
+    assert!(matches!(
+        response_rx.recv().unwrap(),
+        super::super::ProcessingResponse::PluginChainUpdated {
+            previous_latency_samples: 0,
+            latency_samples,
+            latency_changed: true,
+            ..
+        } if latency_samples > 0
+    ));
+}
+
+#[test]
+fn prepared_host_update_rejects_a_stale_base_without_replacing_the_working_host() {
+    let sample_rate = 48_000;
+    let current = PluginConfig::new("gain", serde_json::json!({ "gain_db": 0.0 }));
+    let candidate = PluginConfig::new("gain", serde_json::json!({ "gain_db": -6.0 }));
+    let (mut current_host, _) = build_plugin_host(&[current], sample_rate, 2).unwrap();
+    let (mut candidate_host, _) = build_plugin_host(&[candidate], sample_rate, 2).unwrap();
+    current_host.build().unwrap();
+    candidate_host.build().unwrap();
+
+    let prepared = PreparedHostUpdate::prepare(candidate_host, sample_rate, 2, 123)
+        .expect("candidate preparation itself should succeed");
+    let mut state = ProcessingState::new(
+        2,
+        sample_rate,
+        #[cfg(feature = "streaming")]
+        None,
+    );
+    *state.host = current_host;
+    let (response_tx, response_rx) = std::sync::mpsc::channel();
+    let (event_tx, _event_rx) = std::sync::mpsc::channel();
+
+    handle_processing_command(
+        ProcessingCommand::CommitHostUpdate(prepared),
+        &mut state,
+        &response_tx,
+        &event_tx,
+    );
+
+    assert_eq!(state.host.total_latency_samples(), 0);
+    assert!(matches!(
+        response_rx.recv().unwrap(),
+        super::super::ProcessingResponse::Error(message)
+            if message.contains("stale prepared host update")
+    ));
+}
+
+#[test]
+fn prepared_host_update_owns_analyzer_cache_storage_before_commit() {
+    let config = PluginConfig::new("spectrum_analyzer", serde_json::json!(null));
+    let (mut host, warnings) = build_plugin_host(&[config], 48_000, 2).unwrap();
+    assert!(warnings.is_empty());
+    host.build().unwrap();
+
+    let prepared = PreparedHostUpdate::prepare(host, 48_000, 2, 0).unwrap();
+    assert_eq!(prepared.prepared_analyzer_slots(), 1);
 }
 
 #[test]
@@ -552,10 +664,10 @@ fn plugin_cache_update_skips_under_ui_contention_without_fallback() {
         #[cfg(feature = "streaming")]
         None,
     );
-    state.host = host;
+    *state.host = host;
 
     // Pre-size both the published cache and the spare so no bootstrap resize
-    // is needed.  This mirrors what UpdateHost does in the real thread.
+    // is needed. This mirrors what PreparedHostUpdate does off-thread.
     let plugin_data_cache: PluginDataCache =
         Arc::new(ArcSwap::from_pointee(vec![None; plugin_count]));
     state.spare_cache_arc = Some(Arc::new(vec![None; plugin_count]));
@@ -605,7 +717,7 @@ fn plugin_cache_update_skips_missing_spare_without_allocating() {
         #[cfg(feature = "streaming")]
         None,
     );
-    state.host = host;
+    *state.host = host;
     state.spare_cache_arc = None;
 
     let plugin_data_cache: PluginDataCache =
