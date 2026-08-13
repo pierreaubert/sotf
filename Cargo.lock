@@ -10558,7 +10558,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-channel-mute-solo"
-version = "0.5.61"
+version = "0.5.65"
 dependencies = [
  "serde",
  "serde_json",

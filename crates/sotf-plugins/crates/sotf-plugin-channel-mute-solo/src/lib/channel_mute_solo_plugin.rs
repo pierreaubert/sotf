@@ -1,7 +1,6 @@
-use super::misc::DEFAULT_DIM_GAIN_DB;
-use super::misc::DEFAULT_FADE_MS;
-use super::types::ChannelMuteSoloParams;
-use super::types::ChannelState;
+use super::types::{ChannelMuteSoloParams, ChannelState, default_dim_gain_db, default_fade_ms};
+use crate::params::PARAMS;
+use sotf_host::param_specs::find_by_key as param_by_key;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
@@ -33,7 +32,7 @@ pub struct ChannelMuteSoloPlugin {
     pub(super) dim_gain_db: f32,
     /// Dim gain as linear multiplier (cached from dim_gain_db)
     pub(super) dim_gain_linear: f32,
-    /// Fade time in ms for mute/solo/dim transitions
+    /// One-pole time constant in ms for mute/solo/dim transitions
     pub(super) fade_ms: f32,
     /// Parameter ID for enabled flag
     pub(super) param_enabled: ParameterId,
@@ -51,8 +50,9 @@ pub struct ChannelMuteSoloPlugin {
     pub(super) params_dirty: std::cell::Cell<bool>,
     /// Cache for SIMD optimization
     pub(super) cached_gains: Vec<f32>,
-    /// Pre-allocated start-of-block gains for block ramping.
-    pub(super) start_gains: Vec<f32>,
+    /// Test-only proof that a converged block used the static-gain kernel.
+    #[cfg(test)]
+    pub(super) static_path_blocks: usize,
 }
 
 impl ChannelMuteSoloPlugin {
@@ -60,8 +60,8 @@ impl ChannelMuteSoloPlugin {
     pub fn new(channels: usize, enabled: bool) -> Self {
         let channel_states = vec![ChannelState::default(); channels];
         let sample_rate = 48000;
-        let dim_gain_db = DEFAULT_DIM_GAIN_DB;
-        let fade_ms = DEFAULT_FADE_MS;
+        let dim_gain_db = default_dim_gain_db();
+        let fade_ms = default_fade_ms();
         let channel_smoothers = vec![Smoother::new(1.0, fade_ms, sample_rate); channels];
         let p = Self {
             channels,
@@ -79,7 +79,8 @@ impl ChannelMuteSoloPlugin {
             cached_parameters: std::cell::RefCell::new(Vec::new()),
             params_dirty: std::cell::Cell::new(true),
             cached_gains: vec![1.0; channels],
-            start_gains: vec![1.0; channels],
+            #[cfg(test)]
+            static_path_blocks: 0,
         };
         // Build initial cache so validate_parameter works before any set_parameter call.
         p.rebuild_cached_parameters_if_dirty();
@@ -104,6 +105,19 @@ impl ChannelMuteSoloPlugin {
         // Eagerly rebuild after bulk state load so initial validate_parameter works.
         plugin.rebuild_cached_parameters_if_dirty();
         plugin
+    }
+
+    pub fn try_from_params(channels: usize, params: ChannelMuteSoloParams) -> PluginResult<Self> {
+        if channels == 0 {
+            return Err("Channel Mute/Solo requires at least one channel".to_string());
+        }
+        if !params.dim_gain_db.is_finite() || !(-60.0..=0.0).contains(&params.dim_gain_db) {
+            return Err(format!("Invalid dim_gain_db: {}", params.dim_gain_db));
+        }
+        if !params.fade_ms.is_finite() || !(0.0..=100.0).contains(&params.fade_ms) {
+            return Err(format!("Invalid fade_ms: {}", params.fade_ms));
+        }
+        Ok(Self::from_params(channels, params))
     }
 
     /// Set whether the plugin is enabled
@@ -143,12 +157,18 @@ impl ChannelMuteSoloPlugin {
     }
 
     /// Set all channel states at once
-    pub fn set_channel_states(&mut self, states: &[ChannelState]) {
-        if states.len() == self.channels {
-            self.channel_states.clone_from_slice(states);
-            self.update_smoother_targets();
-            self.mark_params_dirty();
+    pub fn set_channel_states(&mut self, states: &[ChannelState]) -> PluginResult<()> {
+        if states.len() != self.channels {
+            return Err(format!(
+                "channel state count mismatch: expected {}, got {}",
+                self.channels,
+                states.len()
+            ));
         }
+        self.channel_states.clone_from_slice(states);
+        self.update_smoother_targets();
+        self.mark_params_dirty();
+        Ok(())
     }
 
     /// Get the state for a specific channel
@@ -194,59 +214,123 @@ impl ChannelMuteSoloPlugin {
         self.params_dirty.set(true);
     }
 
-    /// Rebuild cached parameter descriptors if the dirty flag is set.
-    /// Can be called from `&self` contexts via interior mutability.
+    /// Refresh cached parameter values if the dirty flag is set.
+    ///
+    /// Descriptor IDs, names, groups, and ranges are constructed once. Later
+    /// schema requests update only the value-bearing fields, so a routing
+    /// toggle never reformats every per-channel descriptor.
     pub(super) fn rebuild_cached_parameters_if_dirty(&self) {
         if !self.params_dirty.get() {
             return;
         }
-        let mut params = vec![
-            Parameter::new_bool("enabled", "Enabled", self.enabled)
-                .with_description("Enable/disable the plugin")
-                .with_group("General")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_string(
-                "channel_states",
-                "Channel States",
-                serde_json::to_string(&self.channel_states).unwrap_or_default(),
-            )
-            .with_description("Per-channel mute/solo/dim states (JSON)")
-            .with_group("General"),
-            Parameter::new_float("dim_gain_db", "Dim Gain", self.dim_gain_db, -60.0, 0.0)
-                .with_description("Gain applied to dimmed channels (dB)")
+        let mut cached = self.cached_parameters.borrow_mut();
+        if cached.is_empty() {
+            let dim_spec = param_by_key(PARAMS, "dim_gain_db");
+            let fade_spec = param_by_key(PARAMS, "fade_ms");
+            *cached = vec![
+                Parameter::new_bool("enabled", "Enabled", self.enabled)
+                    .with_description("Enable/disable the plugin")
+                    .with_group("General")
+                    .with_importance(ParameterImportance::Critical),
+                Parameter::new_string(
+                    "channel_states",
+                    "Channel States",
+                    serde_json::to_string(&self.channel_states).unwrap_or_default(),
+                )
+                .with_description("Per-channel mute/solo/dim states (JSON)")
                 .with_group("General"),
-            Parameter::new_float("fade_ms", "Fade Time", self.fade_ms, 0.0, 100.0)
-                .with_description("Transition fade time (ms)")
-                .with_group("General"),
-        ];
-        for ch in 0..self.channels {
-            params.push(
-                Parameter::new_bool(
-                    &format!("mute_{ch}"),
-                    &format!("Mute Ch{ch}"),
-                    self.channel_states[ch].muted,
+                Parameter::new_float(
+                    "dim_gain_db",
+                    dim_spec.name,
+                    self.dim_gain_db,
+                    dim_spec.min_f64() as f32,
+                    dim_spec.max_f64() as f32,
                 )
-                .with_group("Per-Channel"),
-            );
-            params.push(
-                Parameter::new_bool(
-                    &format!("solo_{ch}"),
-                    &format!("Solo Ch{ch}"),
-                    self.channel_states[ch].soloed,
+                .with_description(dim_spec.doc)
+                .with_group(dim_spec.group),
+                Parameter::new_float(
+                    "fade_ms",
+                    fade_spec.name,
+                    self.fade_ms,
+                    fade_spec.min_f64() as f32,
+                    fade_spec.max_f64() as f32,
                 )
-                .with_group("Per-Channel"),
-            );
-            params.push(
-                Parameter::new_bool(
-                    &format!("dim_{ch}"),
-                    &format!("Dim Ch{ch}"),
-                    self.channel_states[ch].dimmed,
-                )
-                .with_group("Per-Channel"),
-            );
+                .with_description(fade_spec.doc)
+                .with_group(fade_spec.group),
+            ];
+            cached.reserve(self.channels.saturating_mul(3));
+            for ch in 0..self.channels {
+                cached.push(
+                    Parameter::new_bool(
+                        &format!("mute_{ch}"),
+                        &format!("Mute Ch{ch}"),
+                        self.channel_states[ch].muted,
+                    )
+                    .with_group("Per-Channel"),
+                );
+                cached.push(
+                    Parameter::new_bool(
+                        &format!("solo_{ch}"),
+                        &format!("Solo Ch{ch}"),
+                        self.channel_states[ch].soloed,
+                    )
+                    .with_group("Per-Channel"),
+                );
+                cached.push(
+                    Parameter::new_bool(
+                        &format!("dim_{ch}"),
+                        &format!("Dim Ch{ch}"),
+                        self.channel_states[ch].dimmed,
+                    )
+                    .with_group("Per-Channel"),
+                );
+            }
+        } else {
+            for parameter in cached.iter_mut() {
+                parameter.default_value = if parameter.id == self.param_enabled {
+                    ParameterValue::Bool(self.enabled)
+                } else if parameter.id == self.param_channel_states {
+                    ParameterValue::String(
+                        serde_json::to_string(&self.channel_states).unwrap_or_default(),
+                    )
+                } else if parameter.id == self.param_dim_gain_db {
+                    ParameterValue::Float(self.dim_gain_db)
+                } else if parameter.id == self.param_fade_ms {
+                    ParameterValue::Float(self.fade_ms)
+                } else if let Some(channel) = parameter
+                    .id
+                    .as_str()
+                    .strip_prefix("mute_")
+                    .and_then(|index| index.parse::<usize>().ok())
+                {
+                    ParameterValue::Bool(self.channel_states[channel].muted)
+                } else if let Some(channel) = parameter
+                    .id
+                    .as_str()
+                    .strip_prefix("solo_")
+                    .and_then(|index| index.parse::<usize>().ok())
+                {
+                    ParameterValue::Bool(self.channel_states[channel].soloed)
+                } else if let Some(channel) = parameter
+                    .id
+                    .as_str()
+                    .strip_prefix("dim_")
+                    .and_then(|index| index.parse::<usize>().ok())
+                {
+                    ParameterValue::Bool(self.channel_states[channel].dimmed)
+                } else {
+                    parameter.default_value.clone()
+                };
+            }
         }
-        *self.cached_parameters.borrow_mut() = params;
         self.params_dirty.set(false);
+    }
+
+    #[inline]
+    fn smoothers_are_settled(&self) -> bool {
+        self.channel_smoothers
+            .iter()
+            .all(|smoother| (smoother.current() - smoother.target()).abs() < 1.0e-5)
     }
 
     /// Recompute smoother targets based on current channel states
@@ -305,7 +389,7 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
             Some(PluginCompiledOp::ChannelMuteSolo),
             false,
         );
-        metadata.stateful = self.fade_ms > 0.0;
+        metadata.stateful = !self.smoothers_are_settled();
         metadata.time_invariant_for_block = !metadata.stateful;
         metadata
     }
@@ -314,13 +398,35 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
         self.channels
     }
 
+    fn parametric_validate_parameter(
+        &self,
+        id: &ParameterId,
+        value: &ParameterValue,
+    ) -> PluginResult<()> {
+        // IDs, types, and bounds are immutable after construction. Validate
+        // against the cached descriptors directly so consecutive adapter
+        // updates do not refresh/serialize dirty current values merely to
+        // inspect an unchanged schema.
+        if let Some(parameter) = self
+            .cached_parameters
+            .borrow()
+            .iter()
+            .find(|parameter| &parameter.id == id)
+        {
+            parameter
+                .validate(value)
+                .map_err(|error| format!("{id}: {error}"))
+        } else {
+            Err(format!("Unknown parameter: {id}"))
+        }
+    }
+
     fn parameter_schema(&self) -> ParameterSchema {
         self.rebuild_cached_parameters_if_dirty();
         self.cached_parameters.borrow().clone()
     }
 
     fn current_values(&self) -> ParameterSet {
-        self.rebuild_cached_parameters_if_dirty();
         let mut values = ParameterSet::new();
         for param in self.cached_parameters.borrow().iter() {
             let value = if param.id == self.param_enabled {
@@ -408,7 +514,7 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
                 if let Some(json_str) = value.as_string() {
                     let states: Vec<ChannelState> =
                         serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-                    self.set_channel_states(&states);
+                    self.set_channel_states(&states)?;
                     self.mark_params_dirty();
                 } else {
                     return Err("channel_states must be string".to_string());
@@ -431,11 +537,13 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
                 return Err(format!("Unknown parameter: {}", id));
             }
         }
-        self.rebuild_cached_parameters_if_dirty();
         Ok(())
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("Channel Mute/Solo sample rate must be greater than zero".to_string());
+        }
         self.sample_rate = sample_rate;
         for smoother in &mut self.channel_smoothers {
             smoother.set_time(self.fade_ms, sample_rate);
@@ -450,68 +558,65 @@ impl ParametricInPlacePlugin for ChannelMuteSoloPlugin {
         context: &ProcessContext,
     ) -> PluginResult<usize> {
         let num_frames = context.num_frames;
+        let sample_len = num_frames
+            .checked_mul(self.channels)
+            .ok_or_else(|| "Channel mute/solo block sample count overflow".to_string())?;
+        if buffer.len() < sample_len {
+            return Err(format!(
+                "Channel mute/solo buffer too small: need {sample_len} samples, got {}",
+                buffer.len()
+            ));
+        }
 
-        // Validate buffer length: must be exactly num_frames * channels.
-        debug_assert_eq!(
-            buffer.len(),
-            num_frames * self.channels,
-            "Buffer length {} does not match expected {}",
-            buffer.len(),
-            num_frames * self.channels
-        );
-
-        // If disabled and all smoothers have already settled at unity, skip all work.
-        let all_at_unity = self
-            .channel_smoothers
-            .iter()
-            .all(|s| (s.current() - 1.0).abs() < 1e-5);
-        if !self.enabled && all_at_unity {
+        if self.smoothers_are_settled() {
+            for (gain, smoother) in self
+                .cached_gains
+                .iter_mut()
+                .zip(&mut self.channel_smoothers)
+            {
+                // `next_n(0)` snaps the smoother's sub-threshold residue to
+                // its exact target without advancing transport time.
+                *gain = smoother.next_n(0);
+            }
+            #[cfg(test)]
+            {
+                self.static_path_blocks += 1;
+            }
+            if self.cached_gains.iter().all(|gain| *gain == 1.0) {
+                return Ok(num_frames);
+            }
+            apply_per_channel_gain_simd(
+                &mut buffer[..sample_len],
+                self.channels,
+                &self.cached_gains,
+            );
             return Ok(num_frames);
         }
 
-        // Block-based smoothing: advance each smoother once across the whole block using
-        // next_n(), then apply a per-frame linear ramp between start and end gain values.
-        // For a 5 ms tau at 48 kHz the linear-ramp error vs. true exponential is <0.3%
-        // across a 512-sample block — inaudible — while avoiding O(num_frames × channels)
-        // individual smoother calls.
         let channels = self.channels;
-        for (gain, smoother) in self
-            .start_gains
-            .iter_mut()
-            .zip(self.channel_smoothers.iter())
-        {
-            *gain = smoother.current();
-        }
-        for (gain, smoother) in self
-            .cached_gains
-            .iter_mut()
-            .zip(self.channel_smoothers.iter_mut())
-        {
-            // next_n() advances the smoother's current value to the end-of-block state.
-            *gain = smoother.next_n(num_frames);
-        }
-
-        if num_frames == 1 {
-            // Single frame: no ramp needed — just apply end gain via SIMD helper.
-            apply_per_channel_gain_simd(buffer, channels, &self.cached_gains);
-        } else {
-            let inv_nf = 1.0 / num_frames as f32;
-            for frame in 0..num_frames {
-                // Each emitted sample represents one smoother advance. The
-                // final sample therefore lands exactly on the stored end state.
-                let t = (frame + 1) as f32 * inv_nf;
-                let offset = frame * channels;
-                let frame_buf = &mut buffer[offset..offset + channels];
-                for (s, (&sg, &eg)) in frame_buf
-                    .iter_mut()
-                    .zip(self.start_gains.iter().zip(self.cached_gains.iter()))
-                {
-                    *s *= sg + t * (eg - sg);
-                }
+        for frame in 0..num_frames {
+            for (gain, smoother) in self
+                .cached_gains
+                .iter_mut()
+                .zip(&mut self.channel_smoothers)
+            {
+                *gain = smoother.advance();
             }
+            let offset = frame * channels;
+            apply_per_channel_gain_simd(
+                &mut buffer[offset..offset + channels],
+                channels,
+                &self.cached_gains,
+            );
         }
 
         Ok(num_frames)
+    }
+
+    fn reset(&mut self) {
+        // A transport reset/seek does not alter routing state. Preserve both
+        // the current and target gains so an in-flight click-free transition
+        // continues from the same sample value after transport resumes.
     }
 
     fn process_compiled_f32(

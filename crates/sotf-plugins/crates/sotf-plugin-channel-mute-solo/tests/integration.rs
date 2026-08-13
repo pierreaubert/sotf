@@ -226,8 +226,7 @@ fn muted_channel_is_silenced() {
         .unwrap();
 
     let dc = 0.5f32;
-    // Let the default 5 ms fade settle. Two blocks avoids the intra-block ramp
-    // error at the very end of a single large block.
+    // Let the default 5 ms one-pole transition settle well below the tolerance.
     let frames = 4096;
     let mut buffer = vec![dc; frames * 2];
     plugin

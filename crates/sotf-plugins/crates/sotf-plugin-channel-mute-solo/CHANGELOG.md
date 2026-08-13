@@ -1,3 +1,40 @@
+# 0.5.65
+
+## Fixes (2026-08-12 review completion)
+
+- Transport reset now preserves the current and target gains of every in-flight
+  mute, solo, dim, enable, and disable transition instead of snapping routing.
+- Converged routing uses one static per-channel block kernel; compile metadata is
+  stateful only while a smoother is actually transitioning.
+- Adapter updates leave parameter descriptors dirty until schema discovery, and
+  schema refresh reuses the cached descriptor vector and immutable IDs/names.
+- Removed duplicate parameter/default sources and derived defaults and ranges
+  from `params::PARAMS`; documentation now defines fade time as a one-pole time
+  constant.
+- Added deterministic reset-continuity, path-selection, metadata, cache reuse,
+  and canonical-default regression tests.
+
+# 0.5.64
+
+## Fixes (2026-08-12 review follow-up)
+
+- Route the shared facade factory through validated construction so zero
+  channels and invalid dim/fade preset values are rejected consistently with
+  the bridge factory.
+
+# 0.5.63
+
+## Fixes (2026-08-12 review remediation)
+
+- Replaced callback-wide endpoint interpolation with one-pole smoother advancement per sample,
+  making mute/solo/dim fades identical across callback partitions.
+- Added fallible validated construction and routed the plugin bridge factory through it; zero
+  channels, non-finite/out-of-range dim gain, and invalid fade times are rejected.
+- Bulk channel-state updates now return an error when their length does not match the plugin's
+  fixed channel layout.
+- Normal processing now checks sample-count overflow and short buffers before advancing state,
+  while permitting untouched oversized tails consistently with the compiled path.
+
 # 0.5.62
 
 ## Fixes

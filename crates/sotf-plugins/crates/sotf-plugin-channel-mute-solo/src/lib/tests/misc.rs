@@ -1,11 +1,10 @@
 use sotf_host :: parameters :: { ParameterId , ParameterValue } ;
 use sotf_host :: plugin :: { ProcessContext } ;
-use super::super::params;
+use sotf_host::ParametricInPlacePlugin;
 use super::super::channel_mute_solo_plugin::ChannelMuteSoloPlugin;
-use super::super::misc::DEFAULT_DIM_GAIN_DB;
-use super::super::misc::DEFAULT_FADE_MS;
-use super::super::types::ChannelMuteSoloParams;
-use super::super::types::ChannelState;
+use super::super::types::{
+    ChannelMuteSoloParams, ChannelState, default_dim_gain_db, default_fade_ms,
+};
     use crate::*;
 
     /// Number of frames to process for smoother convergence in tests
@@ -146,8 +145,8 @@ use super::super::types::ChannelState;
                     dimmed: false,
                 },
             ],
-            dim_gain_db: DEFAULT_DIM_GAIN_DB,
-            fade_ms: DEFAULT_FADE_MS,
+            dim_gain_db: default_dim_gain_db(),
+            fade_ms: default_fade_ms(),
         };
 
         let mut plugin = ChannelMuteSoloPlugin::from_params(2, params);
@@ -323,4 +322,3 @@ use super::super::types::ChannelState;
             last_ch1
         );
     }
-

@@ -1,13 +1,8 @@
 use super::channel_mute_solo_plugin::ChannelMuteSoloPlugin;
-use super::misc::DEFAULT_DIM_GAIN_DB;
-use super::misc::DEFAULT_FADE_MS;
-use super::types::ChannelMuteSoloParams;
-use super::types::ChannelState;
+use super::types::{ChannelMuteSoloParams, ChannelState, default_dim_gain_db, default_fade_ms};
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::{PluginCompiledOp, ProcessContext};
-
-mod misc;
 
 #[test]
 fn test_bypass() {
@@ -37,8 +32,8 @@ fn test_from_params() {
                 dimmed: false,
             },
         ],
-        dim_gain_db: DEFAULT_DIM_GAIN_DB,
-        fade_ms: DEFAULT_FADE_MS,
+        dim_gain_db: default_dim_gain_db(),
+        fade_ms: default_fade_ms(),
     };
 
     let plugin = ChannelMuteSoloPlugin::from_params(2, params);
@@ -70,7 +65,7 @@ fn test_fade_ms_via_set_parameter() {
 fn test_get_fade_ms_parameter() {
     let plugin = ChannelMuteSoloPlugin::new(2, true);
     let val = plugin.get_parameter(&ParameterId::from("fade_ms"));
-    assert_eq!(val, Some(ParameterValue::Float(DEFAULT_FADE_MS)));
+    assert_eq!(val, Some(ParameterValue::Float(default_fade_ms())));
 }
 
 #[test]
@@ -103,22 +98,21 @@ fn test_params_serde_defaults() {
     // When deserializing JSON without dim_gain_db/fade_ms, defaults should apply
     let json = r#"{"enabled": true, "channel_states": []}"#;
     let params: ChannelMuteSoloParams = serde_json::from_str(json).unwrap();
-    assert!((params.dim_gain_db - DEFAULT_DIM_GAIN_DB).abs() < f32::EPSILON);
-    assert!((params.fade_ms - DEFAULT_FADE_MS).abs() < f32::EPSILON);
+    assert!((params.dim_gain_db - default_dim_gain_db()).abs() < f32::EPSILON);
+    assert!((params.fade_ms - default_fade_ms()).abs() < f32::EPSILON);
 }
 
-/// Fix 2.1: params.rs PARAMS spec fade_ms default must match lib.rs DEFAULT_FADE_MS (5.0).
-/// Previously params.rs had 10.0, lib.rs had 5.0, causing UI/DSP mismatch.
+/// The runtime/serde default must come from the canonical PARAMS schema.
 #[test]
 fn test_params_spec_fade_ms_default_matches_dsp_default() {
     use crate::params::PARAMS;
     use sotf_host::param_specs::find_by_key as pk;
     let spec_default = pk(PARAMS, "fade_ms").default_f64() as f32;
     assert!(
-        (spec_default - DEFAULT_FADE_MS).abs() < f32::EPSILON,
-        "params.rs PARAMS fade_ms default ({}) must equal lib.rs DEFAULT_FADE_MS ({})",
+        (spec_default - default_fade_ms()).abs() < f32::EPSILON,
+        "params.rs PARAMS fade_ms default ({}) must equal the runtime default ({})",
         spec_default,
-        DEFAULT_FADE_MS
+        default_fade_ms()
     );
 }
 
@@ -132,8 +126,8 @@ fn test_from_params_fewer_channel_states_pads_defaults() {
             soloed: false,
             dimmed: false,
         }],
-        dim_gain_db: DEFAULT_DIM_GAIN_DB,
-        fade_ms: DEFAULT_FADE_MS,
+        dim_gain_db: default_dim_gain_db(),
+        fade_ms: default_fade_ms(),
     };
     // 2-channel plugin, only 1 state provided
     let plugin = ChannelMuteSoloPlugin::from_params(2, params);
@@ -165,8 +159,8 @@ fn test_from_params_more_channel_states_truncates() {
                 dimmed: true,
             },
         ],
-        dim_gain_db: DEFAULT_DIM_GAIN_DB,
-        fade_ms: DEFAULT_FADE_MS,
+        dim_gain_db: default_dim_gain_db(),
+        fade_ms: default_fade_ms(),
     };
     // 2-channel plugin, 3 states provided — should use first 2
     let plugin = ChannelMuteSoloPlugin::from_params(2, params);
@@ -241,7 +235,7 @@ fn test_set_channel_states_accepts_slice() {
         },
     ];
 
-    plugin.set_channel_states(&states);
+    plugin.set_channel_states(&states).unwrap();
 
     let ch0 = plugin.get_channel_state(0).unwrap();
     let ch1 = plugin.get_channel_state(1).unwrap();
@@ -424,7 +418,7 @@ fn test_block_smoothing_converges_to_target() {
 }
 
 #[test]
-fn block_ramp_last_sample_matches_advanced_smoother_state() {
+fn final_sample_matches_advanced_smoother_state() {
     let mut plugin = ChannelMuteSoloPlugin::new(1, true);
     plugin.set_fade_ms(50.0);
     plugin.set_channel_state(0, true, false, false).unwrap();
@@ -437,9 +431,249 @@ fn block_ramp_last_sample_matches_advanced_smoother_state() {
     let smoother_end = plugin.channel_smoothers[0].current();
     assert!(
         (buffer[7] - smoother_end).abs() < 1.0e-7,
-        "last ramp sample {} must equal the advanced smoother state {smoother_end}",
+        "last sample {} must equal the advanced smoother state {smoother_end}",
         buffer[7]
     );
+}
+
+#[test]
+fn smoothing_is_invariant_to_block_partition() {
+    fn render(parts: &[usize]) -> Vec<f32> {
+        let mut plugin = ChannelMuteSoloPlugin::new(1, true);
+        plugin.initialize(48_000).unwrap();
+        plugin.set_fade_ms(5.0);
+        plugin.set_channel_state(0, true, false, false).unwrap();
+        let mut output = Vec::new();
+        for &frames in parts {
+            let mut block = vec![1.0; frames];
+            plugin
+                .process_in_place(&mut block, &ProcessContext::new(48_000, frames))
+                .unwrap();
+            output.extend(block);
+        }
+        output
+    }
+    assert_eq!(render(&[512]), render(&[32; 16]));
+}
+
+#[test]
+fn invalid_config_and_buffers_are_rejected() {
+    let bad = ChannelMuteSoloParams {
+        enabled: true,
+        channel_states: vec![],
+        dim_gain_db: f32::NAN,
+        fade_ms: 5.0,
+    };
+    assert!(ChannelMuteSoloPlugin::try_from_params(1, bad).is_err());
+    let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+    let mut short = vec![1.0; 7];
+    assert!(
+        plugin
+            .process_in_place(&mut short, &ProcessContext::new(48_000, 4))
+            .is_err()
+    );
+}
+
+#[test]
+fn bulk_state_length_mismatch_is_rejected() {
+    let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+    assert!(
+        plugin
+            .set_channel_states(&[ChannelState::default()])
+            .is_err()
+    );
+}
+
+#[test]
+fn transport_reset_preserves_every_in_flight_routing_fade() {
+    fn assert_reset_continues(setup: impl Fn(&mut ChannelMuteSoloPlugin), observed_channel: usize) {
+        let mut reference = ChannelMuteSoloPlugin::new(2, true);
+        reference.initialize(48_000).unwrap();
+        reference.set_fade_ms(20.0);
+        setup(&mut reference);
+        let mut reset = ChannelMuteSoloPlugin::new(2, true);
+        reset.initialize(48_000).unwrap();
+        reset.set_fade_ms(20.0);
+        setup(&mut reset);
+
+        let context = ProcessContext::new(48_000, 37);
+        let mut reference_prefix = vec![1.0; 74];
+        let mut reset_prefix = reference_prefix.clone();
+        reference
+            .process_in_place(&mut reference_prefix, &context)
+            .unwrap();
+        reset.process_in_place(&mut reset_prefix, &context).unwrap();
+        reset.reset();
+
+        let one_frame = ProcessContext::new(48_000, 1);
+        let mut expected = vec![1.0; 2];
+        let mut actual = expected.clone();
+        reference
+            .process_in_place(&mut expected, &one_frame)
+            .unwrap();
+        reset.process_in_place(&mut actual, &one_frame).unwrap();
+        assert!(
+            (actual[observed_channel] - expected[observed_channel]).abs() < 1.0e-7,
+            "transport reset interrupted a routing fade: expected {}, got {}",
+            expected[observed_channel],
+            actual[observed_channel]
+        );
+    }
+
+    assert_reset_continues(
+        |plugin| plugin.set_channel_state(0, true, false, false).unwrap(),
+        0,
+    );
+    assert_reset_continues(
+        |plugin| plugin.set_channel_state(0, false, true, false).unwrap(),
+        1,
+    );
+    assert_reset_continues(
+        |plugin| plugin.set_channel_state(0, false, false, true).unwrap(),
+        0,
+    );
+
+    for (initially_enabled, next_enabled) in [(true, false), (false, true)] {
+        let muted = ChannelMuteSoloParams {
+            enabled: initially_enabled,
+            channel_states: vec![
+                ChannelState {
+                    muted: true,
+                    ..ChannelState::default()
+                },
+                ChannelState::default(),
+            ],
+            dim_gain_db: default_dim_gain_db(),
+            fade_ms: 20.0,
+        };
+        let mut reference = ChannelMuteSoloPlugin::from_params(2, muted.clone());
+        let mut reset = ChannelMuteSoloPlugin::from_params(2, muted);
+        reference.set_enabled(next_enabled);
+        reset.set_enabled(next_enabled);
+        let prefix_context = ProcessContext::new(48_000, 37);
+        let mut expected_prefix = vec![1.0; 74];
+        let mut actual_prefix = expected_prefix.clone();
+        reference
+            .process_in_place(&mut expected_prefix, &prefix_context)
+            .unwrap();
+        reset
+            .process_in_place(&mut actual_prefix, &prefix_context)
+            .unwrap();
+        reset.reset();
+        let one_frame = ProcessContext::new(48_000, 1);
+        let mut expected = vec![1.0; 2];
+        let mut actual = expected.clone();
+        reference
+            .process_in_place(&mut expected, &one_frame)
+            .unwrap();
+        reset.process_in_place(&mut actual, &one_frame).unwrap();
+        assert!((actual[0] - expected[0]).abs() < 1.0e-7);
+    }
+}
+
+#[test]
+fn settled_processing_uses_static_block_path_and_transition_sensitive_metadata() {
+    let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+    plugin.initialize(48_000).unwrap();
+    plugin.set_fade_ms(5.0);
+    plugin.set_channel_state(0, true, false, false).unwrap();
+
+    let transitioning = plugin.compile_metadata();
+    assert!(transitioning.stateful);
+    assert!(!transitioning.time_invariant_for_block);
+    let mut transition = vec![1.0; 2];
+    plugin
+        .process_in_place(&mut transition, &ProcessContext::new(48_000, 1))
+        .unwrap();
+    assert_eq!(plugin.static_path_blocks, 0);
+
+    let frames = 4096;
+    let mut settle = vec![1.0; frames * 2];
+    plugin
+        .process_in_place(&mut settle, &ProcessContext::new(48_000, frames))
+        .unwrap();
+    let settled = plugin.compile_metadata();
+    assert!(!settled.stateful);
+    assert!(settled.time_invariant_for_block);
+
+    let mut block = vec![1.0; 64];
+    plugin
+        .process_in_place(&mut block, &ProcessContext::new(48_000, 32))
+        .unwrap();
+    assert_eq!(plugin.static_path_blocks, 1);
+    assert!(
+        block
+            .chunks_exact(2)
+            .all(|frame| { frame[0].abs() < 1.0e-7 && (frame[1] - 1.0).abs() < 1.0e-7 })
+    );
+
+    for channels in [1, 2, 6, 8, 16, 32] {
+        let mut static_plugin = ChannelMuteSoloPlugin::new(channels, true);
+        static_plugin.set_fade_ms(0.0);
+        static_plugin
+            .set_channel_state(0, true, false, false)
+            .unwrap();
+        let mut static_block = vec![1.0; 64 * channels];
+        static_plugin
+            .process_in_place(&mut static_block, &ProcessContext::new(48_000, 64))
+            .unwrap();
+        assert_eq!(static_plugin.static_path_blocks, 1, "{channels} channels");
+        assert!(static_block.chunks_exact(channels).all(|frame| {
+            frame[0].abs() < 1.0e-7
+                && frame[1.min(channels)..]
+                    .iter()
+                    .all(|sample| (*sample - 1.0).abs() < 1.0e-7)
+        }));
+    }
+}
+
+#[test]
+fn adapter_updates_defer_descriptor_refresh_without_reallocating_ids() {
+    let mut plugin = ChannelMuteSoloPlugin::new(8, true);
+    let initial_ptr = plugin.cached_parameters.borrow().as_ptr();
+    let initial_capacity = plugin.cached_parameters.borrow().capacity();
+    let initial_states_json = plugin.cached_parameters.borrow()[1]
+        .default_value
+        .as_string()
+        .unwrap()
+        .to_owned();
+
+    plugin
+        .set_parameter(ParameterId::from("mute_3"), ParameterValue::Bool(true))
+        .unwrap();
+    plugin
+        .set_parameter(ParameterId::from("solo_4"), ParameterValue::Bool(true))
+        .unwrap();
+
+    assert!(plugin.params_dirty.get());
+    assert_eq!(plugin.cached_parameters.borrow().as_ptr(), initial_ptr);
+    assert_eq!(
+        plugin.cached_parameters.borrow().capacity(),
+        initial_capacity
+    );
+    assert_eq!(
+        plugin.cached_parameters.borrow()[1]
+            .default_value
+            .as_string()
+            .unwrap(),
+        initial_states_json,
+        "repeated adapter validation must not serialize dirty state"
+    );
+
+    let schema = plugin.parameter_schema();
+    assert!(!plugin.params_dirty.get());
+    assert_eq!(plugin.cached_parameters.borrow().as_ptr(), initial_ptr);
+    assert_eq!(
+        plugin.cached_parameters.borrow().capacity(),
+        initial_capacity
+    );
+    let states_json = schema
+        .iter()
+        .find(|parameter| parameter.id.as_str() == "channel_states")
+        .and_then(|parameter| parameter.default_value.as_string())
+        .unwrap();
+    let states: Vec<ChannelState> = serde_json::from_str(states_json).unwrap();
+    assert!(states[3].muted);
 }
 
 /// Bug fix: set_channel_state must return an error for out-of-bounds channel.

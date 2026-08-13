@@ -67,8 +67,12 @@ Each strip has padding, rounded corners, and `theme.surface` background.
 | Index | Parameter |
 |-------|-----------|
 | 0 | enabled (bool) |
+| 1 | dim_gain_db (float, -60 to 0 dB; default -20 dB) |
+| 2 | fade_ms (float, 0 to 100 ms; default 5 ms one-pole time constant) |
 
-Channel mute/solo/dim states are stored in a separate `channel_states` array, not in ParamSpec.
+The canonical fixed-parameter schema is `params::PARAMS`. Channel mute/solo/dim states are
+additionally exposed as `channel_states` JSON and dynamic `mute_N`, `solo_N`, and `dim_N`
+parameters because their count depends on the active channel layout.
 
 ## Responsive Behavior
 - Channel strips wrap to next row when width is insufficient

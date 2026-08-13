@@ -29,7 +29,10 @@ When any channel is soloed, all non-soloed channels are silenced regardless of t
 
 ### Smooth Transitions
 
-All state changes use a 5 ms fade to prevent audible clicks. The smoother interpolates linearly from current gain to target gain.
+By default, state changes use a 5 ms one-pole time constant to prevent audible clicks. One time
+constant reaches about 63% of a gain change; roughly five time constants settle within 1% of the
+target. The exponential smoother advances once per audio sample, so its response is independent
+of host callback size. A transport reset preserves any transition already in progress.
 
 ## Demos
 
@@ -54,7 +57,8 @@ All state changes use a 5 ms fade to prevent audible clicks. The smoother interp
 ## Tips & Best Practices
 
 - The plugin uses SIMD-optimized gain application for minimal CPU impact.
-- When disabled and all smoothers have settled to 1.0, processing is bypassed entirely.
+- Converged states use one static per-channel block gain operation. When every gain is unity,
+  processing is bypassed entirely.
 - Channel states are serialized as JSON for preset storage.
 - Smooth fading prevents any audible artifacts when toggling states.
 - Place this plugin after the upmixer/matrix for surround channel monitoring.

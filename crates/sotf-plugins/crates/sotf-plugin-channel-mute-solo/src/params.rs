@@ -41,7 +41,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "ms",
         "General",
     )
-    .doc("Mute/solo crossfade duration"),
+    .doc("One-pole mute/solo smoothing time constant"),
 ];
 
 // ============================================================================

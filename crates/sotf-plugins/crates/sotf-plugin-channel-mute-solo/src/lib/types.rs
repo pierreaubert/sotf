@@ -1,6 +1,14 @@
-use super::default::default_dim_gain_db;
-use super::default::default_fade_ms;
+use crate::params::PARAMS;
 use serde::{Deserialize, Serialize};
+use sotf_host::param_specs::find_by_key as param_by_key;
+
+pub(super) fn default_dim_gain_db() -> f32 {
+    param_by_key(PARAMS, "dim_gain_db").default_f32()
+}
+
+pub(super) fn default_fade_ms() -> f32 {
+    param_by_key(PARAMS, "fade_ms").default_f32()
+}
 
 /// State for a single channel
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -21,7 +29,7 @@ pub struct ChannelMuteSoloParams {
     /// Dim gain in dB (default -20.0)
     #[serde(default = "default_dim_gain_db")]
     pub dim_gain_db: f32,
-    /// Fade time in ms for mute/solo/dim transitions (default 5.0)
+    /// One-pole time constant in ms for mute/solo/dim transitions (default 5.0)
     #[serde(default = "default_fade_ms")]
     pub fade_ms: f32,
 }
