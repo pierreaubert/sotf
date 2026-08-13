@@ -1,9 +1,17 @@
 use sotf_host::plugin::{Plugin, ProcessContext};
 use sotf_host::{CountingAlloc, assert_no_allocs};
 use sotf_plugin_resampler::{ResamplerPlugin, ResamplerQuality};
+use std::time::{Duration, Instant};
 
 #[global_allocator]
 static A: CountingAlloc = CountingAlloc;
+
+fn nearest_rank(samples: &[Duration], percentile: usize) -> Duration {
+    assert!(!samples.is_empty());
+    assert!((1..=100).contains(&percentile));
+    let rank = (samples.len() * percentile).div_ceil(100);
+    samples[rank - 1]
+}
 
 fn main() {
     let channels = 2;
@@ -106,7 +114,14 @@ fn main() {
     println!("  Performance: PASS");
 
     println!("\n[Test 6] Ratio/quality/channel/callback deadline matrix");
-    let mut worst_callback = std::time::Duration::ZERO;
+    const WARMUP_CALLBACKS: usize = 128;
+    const SAMPLED_CALLBACKS: usize = 256;
+    const CALLBACK_DEADLINE: Duration = Duration::from_millis(20);
+    let mut all_samples = Vec::with_capacity(3 * 2 * 4 * 5 * SAMPLED_CALLBACKS);
+    let mut worst_case_p50 = Duration::ZERO;
+    let mut worst_case_p95 = Duration::ZERO;
+    let mut worst_case_p99 = Duration::ZERO;
+    let mut worst_callback = Duration::ZERO;
     for quality in [
         ResamplerQuality::Fast,
         ResamplerQuality::Medium,
@@ -114,48 +129,77 @@ fn main() {
     ] {
         for &(source_rate, sink_rate) in &[(22_050, 96_000), (96_000, 22_050)] {
             for matrix_channels in [1usize, 2, 8, 16] {
-                let mut candidate = ResamplerPlugin::with_quality(
-                    matrix_channels,
-                    source_rate,
-                    sink_rate,
-                    64,
-                    quality,
-                )
-                .unwrap();
-                candidate.initialize(source_rate).unwrap();
                 for frames in [1usize, 17, 63, 64, 127] {
+                    let mut candidate = ResamplerPlugin::with_quality(
+                        matrix_channels,
+                        source_rate,
+                        sink_rate,
+                        64,
+                        quality,
+                    )
+                    .unwrap();
+                    candidate.initialize(source_rate).unwrap();
                     let input = vec![0.1; frames * matrix_channels];
-                    let mut output =
-                        vec![0.0; candidate.output_frames_for_input(frames) * matrix_channels];
-                    let started = std::time::Instant::now();
-                    let produced = candidate
-                        .process(
-                            &input,
-                            &mut output,
-                            &ProcessContext::new(source_rate, frames),
-                        )
-                        .unwrap();
-                    worst_callback = worst_callback.max(started.elapsed());
-                    assert!(
-                        output[..produced * matrix_channels]
-                            .iter()
-                            .all(|sample| sample.is_finite())
-                    );
+                    // Include one extra chunk in the preallocated capacity because
+                    // residual input can make a later callback emit more than the first.
+                    let output_capacity = candidate.output_frames_for_input(frames + 64);
+                    let mut output = vec![0.0; output_capacity * matrix_channels];
+                    let context = ProcessContext::new(source_rate, frames);
+
+                    for _ in 0..WARMUP_CALLBACKS {
+                        candidate.process(&input, &mut output, &context).unwrap();
+                    }
+
+                    let mut samples = Vec::with_capacity(SAMPLED_CALLBACKS);
+                    for _ in 0..SAMPLED_CALLBACKS {
+                        let started = Instant::now();
+                        let produced = candidate.process(&input, &mut output, &context).unwrap();
+                        samples.push(started.elapsed());
+                        assert!(
+                            output[..produced * matrix_channels]
+                                .iter()
+                                .all(|sample| sample.is_finite())
+                        );
+                    }
+                    samples.sort_unstable();
+                    let p50 = nearest_rank(&samples, 50);
+                    let p95 = nearest_rank(&samples, 95);
+                    let p99 = nearest_rank(&samples, 99);
+                    let max = samples[SAMPLED_CALLBACKS - 1];
+                    worst_case_p50 = worst_case_p50.max(p50);
+                    worst_case_p95 = worst_case_p95.max(p95);
+                    worst_case_p99 = worst_case_p99.max(p99);
+                    worst_callback = worst_callback.max(max);
+                    assert!(p99 < CALLBACK_DEADLINE, "matrix-case p99 missed deadline");
+                    assert!(max < CALLBACK_DEADLINE, "matrix-case max missed deadline");
+                    all_samples.extend_from_slice(&samples);
+
+                    let mut drain =
+                        vec![0.0; candidate.drain_output_frames_max() * matrix_channels];
+                    while !candidate
+                        .drain(&mut drain, &ProcessContext::new(source_rate, 0))
+                        .unwrap()
+                        .complete
+                    {}
                 }
-                let mut drain = vec![0.0; candidate.drain_output_frames_max() * matrix_channels];
-                while !candidate
-                    .drain(&mut drain, &ProcessContext::new(source_rate, 0))
-                    .unwrap()
-                    .complete
-                {}
             }
         }
     }
+    all_samples.sort_unstable();
     println!(
-        "  Worst observed callback: {:.3}ms",
+        "  Aggregate p50/p95/p99/max: {:.3}/{:.3}/{:.3}/{:.3}ms",
+        nearest_rank(&all_samples, 50).as_secs_f64() * 1000.0,
+        nearest_rank(&all_samples, 95).as_secs_f64() * 1000.0,
+        nearest_rank(&all_samples, 99).as_secs_f64() * 1000.0,
         worst_callback.as_secs_f64() * 1000.0
     );
-    assert!(worst_callback < std::time::Duration::from_millis(20));
+    println!(
+        "  Worst-case p50/p95/p99/max: {:.3}/{:.3}/{:.3}/{:.3}ms",
+        worst_case_p50.as_secs_f64() * 1000.0,
+        worst_case_p95.as_secs_f64() * 1000.0,
+        worst_case_p99.as_secs_f64() * 1000.0,
+        worst_callback.as_secs_f64() * 1000.0
+    );
     println!("  Matrix: PASS");
 
     println!("\n[ALL PASS] Resampler QA Complete.");

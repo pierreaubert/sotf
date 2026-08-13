@@ -261,10 +261,12 @@ fn test_resampler_zero_alloc() {
     let partial_ctx = ProcessContext::new(44100, BUFFER_SIZE - 1);
     plugin.process(&partial, &mut [], &partial_ctx).unwrap();
     let nominal = 48_000.0 / 44_100.0;
+    let ratio_id = ParameterId::from("ratio");
     assert_no_allocs("ResamplerPlugin ratio automation with residual", || {
         for index in 0..1000 {
-            let ratio = nominal * if index % 2 == 0 { 0.99 } else { 1.01 };
-            plugin.set_ratio(ratio, true).unwrap();
+            let ratio = (nominal * if index % 2 == 0 { 0.99 } else { 1.01 }) as f32;
+            Plugin::set_parameter(&mut plugin, ratio_id.clone(), ParameterValue::Float(ratio))
+                .unwrap();
         }
     });
 }

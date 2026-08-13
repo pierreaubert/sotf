@@ -6,7 +6,8 @@
 The redundant `residual_input` to `input_buffer` planar copy was removed; rubato now reads the
 preallocated residual planes directly. Automated coverage checks exact complete-stream rate
 counts, spectral stop-band rejection, bit-exact callback-partition invariance, allocation-free
-dynamic-ratio automation, and the QA callback-deadline matrix.
+dynamic-ratio automation through `Plugin::set_parameter`, and warmed p50/p95/p99/max callback
+timing across every case in the QA quality/rate/channel/callback matrix.
 
 The remaining P0 wording about producing a fixed output callback for every fixed input callback
 is not implementable inside the plugin contract when rates differ. A 256-frame callback spans
@@ -112,7 +113,7 @@ Rewrite the README/guide around the actual rate, frame-count, latency, residual,
 
 ### P2 — Audio-quality and performance QA cover one favorable operating point
 
-The QA binary measures only stereo Medium 44.1 -> 48 kHz with 1024-frame blocks, checks merely “some output,” and reports average throughput (`qa_resampler.rs:8-89`). The zero-allocation test uses the same full-chunk shape. The only spectral assertion is a loose RMS check for Fast downsampling of a single 22.5 kHz tone (`src/tests.rs:713-773`); there are no passband-ripple, stopband, alias-grid, phase/delay, THD+N, block-partition, high-quality, high-channel, worst-callback, or dynamic-ratio-ramp goldens. Meanwhile each full chunk is copied interleaved -> planar residual -> planar input and then interleaved again (`resampler_plugin.rs:552-569, 597-603`), a known deferred bandwidth cost (`CHANGELOG.md:51-60`).
+At review time, the QA binary measured only stereo Medium 44.1 -> 48 kHz with 1024-frame blocks, checked merely “some output,” and reported average throughput (`qa_resampler.rs:8-89`). The zero-allocation test used the same full-chunk shape. The only spectral assertion was a loose RMS check for Fast downsampling of a single 22.5 kHz tone (`src/tests.rs:713-773`); there were no passband-ripple, stopband, alias-grid, phase/delay, THD+N, block-partition, high-quality, high-channel, worst-callback, or dynamic-ratio-ramp goldens. Each full chunk was also copied interleaved -> planar residual -> planar input and then interleaved again (`resampler_plugin.rs:552-569, 597-603`), a known deferred bandwidth cost (`CHANGELOG.md:51-60`).
 
 Add swept/multitone reference measurements across supported rates/ratios and qualities, cumulative rational frame-count tests with exact bounds, and worst-case callback-time percentiles for 1/2/8/16 channels and small/irregular/multi-chunk blocks. Profile before optimizing, then remove the residual-to-input copy by adapting the canonical planar buffer directly and consider a blocked/SIMD interleave kernel where channel-count profiling justifies it.
 
@@ -126,17 +127,17 @@ Add swept/multitone reference measurements across supported rates/ratios and qua
 
 ## Realtime and performance assessment
 
-For unchanged parameters and full 1024-frame chunks, the callback is bounded and passed the allocation test; the QA run measured about 0.55% of one core for stereo Medium 44.1 -> 48 kHz on this machine. The cost is dominated by rubato's sinc interpolation plus scalar deinterleave/interleave and one avoidable full planar copy. Those favorable results do not make the plugin realtime-correct in the engine: irregular/sub-chunk callbacks break timing, runtime ratio setters allocate, quality changes allocate and discard state, and retained capacity can be much larger than immediately produced output. Worst-callback latency and high-channel/extreme-ratio behavior remain unmeasured.
+The original review measured about 0.55% of one core for stereo Medium 44.1 -> 48 kHz and only proved zero allocation for unchanged parameters with full 1024-frame chunks. The 0.5.27 remediation removes the avoidable planar copy and extends the allocation assertion through the `Plugin::set_parameter("ratio", Float(...))` trait path while residual input is buffered. The QA matrix now warms every case for 128 callbacks, records 256 callbacks per case, reports p50/p95/p99/max, and gates each case's p99 and max against a 20 ms deadline. This is callback-cost evidence for the exercised matrix, not a general hard-realtime guarantee for every host or machine.
 
 ## Focused verification
 
-- `cargo test -p sotf-plugin-resampler` — 56 passed across four suites.
-- `cargo test -p sotf-plugins --test realtime_allocation_tests test_resampler_zero_alloc` — 1 passed, 45 filtered out.
+- `cargo test -p sotf-plugin-resampler` — 70 passed across three test suites (47 unit, 16 integration, and 7 public-API tests).
+- `cargo test -p sotf-plugins --test realtime_allocation_tests test_resampler_zero_alloc` — passed; the measured automation loop dispatches through `Plugin::set_parameter` with a cached `ParameterId` and buffered residual input.
 - `cargo test -p sotf-plugins --test factory_integration_tests` — 17 passed.
 - `cargo test -p sotf-plugins --test parameter_roundtrip_tests` — 2 passed.
-- `cargo run -p sotf-plugin-resampler --features qa --bin qa-resampler` — passed; reported 0 allocations and approximately 0.55% average CPU for its single benchmark case.
+- `cargo run -p sotf-plugin-resampler --features qa --bin qa-resampler` — passed; the evidence run reported aggregate p50/p95/p99/max of 0.003/0.231/0.441/0.841 ms and worst-case p50/p95/p99/max of 0.732/0.806/0.818/0.841 ms across the warmed matrix.
 
-These establish the current baseline but do not contradict the findings: no test runs sub-chunk Resampler calls through `DawHost`/the engine, invokes a polymorphic EOF drain, checks transactional retry, round-trips quality through `ParamBridge`, measures physical latency across ratios, rejects host-rate mismatch, or automates ratio under the allocation counter.
+The remediation suite additionally covers sub-chunk host/engine propagation, polymorphic EOF drain, transactional retry, quality round-trips, output-domain latency across ratios, host-rate rejection, and ratio automation under the allocation counter. Timing values remain machine-specific; the repeatable evidence is the warm-up/sample protocol, matrix coverage, reported distribution, and per-case deadline gates.
 
 ## Coverage reviewed
 

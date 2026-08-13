@@ -3,7 +3,12 @@
 ## Improvements
 
 - Removed the redundant planar full-chunk copy: the preallocated residual planes now feed rubato directly in both processing and drain paths.
-- Added complete-stream rate, spectral-rejection, callback-partition invariance, dynamic-ratio allocation, and callback-deadline regression evidence.
+- Added complete-stream rate, spectral-rejection, and callback-partition invariance evidence.
+- Added allocation regression coverage for dynamic-ratio automation through the
+  `Plugin::set_parameter` trait path with buffered residual input.
+- Added warmed callback timing distributions (p50, p95, p99, and max after 128 warm-up calls
+  and 256 measured calls per case) across the quality/rate/channel/callback QA matrix, with
+  per-case p99 and max deadline gates.
 - Documented why fixed-size input callbacks cannot imply the same fixed output frame count across different sample-rate clock domains; produced frame counts remain authoritative.
 
 # 0.5.26
