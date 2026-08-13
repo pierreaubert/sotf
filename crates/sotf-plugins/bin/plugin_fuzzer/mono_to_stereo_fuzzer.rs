@@ -12,6 +12,7 @@ impl PluginFuzzer for MonoToStereoFuzzer {
             stereo_width: rng.random_range(0.0..1.0),
             freq_dependent: rng.random_bool(0.5),
             haas_delay_ms: 0.0,
+            ..Default::default()
         };
 
         let plugin = MonoToStereoPlugin::from_params(1, params.clone());

@@ -32,6 +32,7 @@ fn from_params_uses_provided_values() {
         stereo_width: 0.25,
         freq_dependent: false,
         haas_delay_ms: 2.5,
+        ..Default::default()
     };
     let plugin = MonoToStereoPlugin::from_params(1, params);
     assert_eq!(plugin.input_channels(), 1);
@@ -97,7 +98,6 @@ fn haas_delay_roundtrip() {
 #[test]
 fn decor_frequencies_roundtrip() {
     let mut plugin = MonoToStereoPlugin::new();
-    plugin.initialize(SR).unwrap();
     plugin
         .set_parameter(
             ParameterId::from("decor_low_hz"),
@@ -110,6 +110,7 @@ fn decor_frequencies_roundtrip() {
             ParameterValue::Float(3000.0),
         )
         .unwrap();
+    plugin.initialize(SR).unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("decor_low_hz")),
         Some(ParameterValue::Float(200.0))
@@ -123,13 +124,13 @@ fn decor_frequencies_roundtrip() {
 #[test]
 fn freq_dependent_roundtrip() {
     let mut plugin = MonoToStereoPlugin::new();
-    plugin.initialize(SR).unwrap();
     plugin
         .set_parameter(
             ParameterId::from("freq_dependent"),
             ParameterValue::Bool(false),
         )
         .unwrap();
+    plugin.initialize(SR).unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("freq_dependent")),
         Some(ParameterValue::Bool(false))
@@ -166,7 +167,7 @@ fn process_dc_input_produces_stereo_output() {
         .process(&input, &mut output, &ProcessContext::new(SR, FRAMES))
         .unwrap();
 
-    // After the STFT latency, some sample should carry the DC contribution.
+    // The causal path must carry DC without a warm-up lookahead block.
     let max_left = output
         .iter()
         .step_by(2)
@@ -285,8 +286,7 @@ fn process_with_correct_output_size_succeeds() {
 }
 
 #[test]
-fn latency_reported_as_fft_size() {
+fn causal_decorrelator_reports_zero_latency() {
     let plugin = MonoToStereoPlugin::new();
-    // The plugin reports STFT pipeline latency equal to its FFT size.
-    assert_eq!(plugin.latency_samples(), 2048);
+    assert_eq!(plugin.latency_samples(), 0);
 }

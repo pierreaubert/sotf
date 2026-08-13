@@ -12,6 +12,7 @@ fn main() {
         stereo_width: 1.0,
         freq_dependent: false,
         haas_delay_ms: 0.0,
+        ..Default::default()
     };
 
     let mut plugin = MonoToStereoPlugin::from_params(1, params);
@@ -25,6 +26,7 @@ fn main() {
         stereo_width: 0.0,
         freq_dependent: false,
         haas_delay_ms: 0.0,
+        ..Default::default()
     };
     let mut plugin_mono = MonoToStereoPlugin::from_params(1, params_mono);
     plugin_mono.initialize(sample_rate).unwrap();
@@ -53,6 +55,7 @@ fn main() {
             stereo_width: 1.0,
             freq_dependent: false,
             haas_delay_ms: 0.0,
+            ..Default::default()
         },
     );
     plugin.initialize(sample_rate).unwrap();

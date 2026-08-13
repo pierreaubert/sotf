@@ -386,8 +386,6 @@ fn mono_to_stereo_from_1ch_is_finite() {
         SAMPLE_RATE,
     )
     .expect("mono_to_stereo should instantiate for 1ch input");
-    plugin.initialize(SAMPLE_RATE).unwrap();
-
     assert_eq!(plugin.input_channels(), 1);
     assert_eq!(plugin.output_channels(), 2);
 
@@ -412,6 +410,7 @@ fn mono_to_stereo_from_1ch_is_finite() {
             ParameterValue::Bool(false),
         )
         .unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
 
     // FFT_SIZE is 2048 inside the plugin; 16x gives the latency buffer time to
     // fill and the smoother time to settle.
@@ -452,7 +451,7 @@ fn factory_reports_exact_channel_layouts_for_channel_changing_plugins() {
         ),
         (
             "band_split",
-            serde_json::json!({"num_bands": 2, "frequency": 1000.0, "type": "lr4"}),
+            serde_json::json!({"num_bands": 2, "frequency": 1000.0, "type": "LR24"}),
             3,
             6,
         ),

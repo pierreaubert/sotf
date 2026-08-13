@@ -2,7 +2,9 @@
 
 ## Overview
 
-Converts a mono signal into a stereo signal using FFT-based random-phase decorrelation. Unlike simple panning or Haas-effect tricks, this plugin creates a perceptually wide stereo image from mono content by applying frequency-dependent phase randomization, ensuring the left and right channels are decorrelated without altering the tonal balance.
+Converts a mono signal into stereo with a causal all-pass cascade. The right channel receives a
+frequency-shaped phase response whose magnitude is unity in steady state; the left channel remains
+direct. This avoids FFT circular wrap and random-bin pre-echo while retaining optional Haas widening.
 
 ## Features
 
@@ -26,20 +28,10 @@ Adds a small time offset between left and right channels for additional spatial 
 |-----------|-------|---------|------|-------------|
 | Haas Delay | 0.0 to 5.0 | 1.5 | ms | Inter-channel delay for Haas-effect widening |
 
-### Complementary EQ
-
-Applies subtle spectral differences between L and R channels to enhance the perception of width without relying solely on phase decorrelation.
-
-**Parameters:**
-
-| Parameter | Range | Default | Unit | Description |
-|-----------|-------|---------|------|-------------|
-| Comp EQ | On/Off | On | — | Enable complementary EQ for additional width |
-| Comp EQ Depth | 0.0 to 3.0 | 1.0 | dB | Amount of spectral complementarity between L/R |
-
 ### Decorrelation Band
 
-Defines the frequency range over which random-phase decorrelation is applied. Frequencies outside this range are kept identical in both channels (mono-compatible).
+Defines the frequency range around which the causal all-pass phase rotation is concentrated.
+These topology controls, including `freq_dependent`, are applied by rebuilding the plugin graph.
 
 **Parameters:**
 
@@ -59,7 +51,7 @@ Defines the frequency range over which random-phase decorrelation is applied. Fr
 ```json
 {
   "stereo_width": 0.4,
-  "comp_eq_depth_db": 1.0
+  "freq_dependent": true
 }
 ```
 
@@ -72,7 +64,7 @@ Defines the frequency range over which random-phase decorrelation is applied. Fr
 ```json
 {
   "stereo_width": 1.0,
-  "comp_eq_depth_db": 1.5
+  "freq_dependent": true
 }
 ```
 
@@ -85,7 +77,7 @@ Defines the frequency range over which random-phase decorrelation is applied. Fr
 ```json
 {
   "stereo_width": 0.2,
-  "comp_eq_depth_db": 0.5
+  "freq_dependent": true
 }
 ```
 
@@ -96,7 +88,7 @@ Defines the frequency range over which random-phase decorrelation is applied. Fr
 ```json
 {
   "stereo_width": 0.3,
-  "comp_eq_depth_db": 0.8
+  "freq_dependent": true
 }
 ```
 **Tips:** Check mono compatibility — fold to mono and ensure no cancellation artifacts.
@@ -106,7 +98,7 @@ Defines the frequency range over which random-phase decorrelation is applied. Fr
 ```json
 {
   "stereo_width": 0.5,
-  "comp_eq_depth_db": 1.0
+  "freq_dependent": true
 }
 ```
 **Tips:** Good starting point for most material. Adjust width to taste.
@@ -116,7 +108,7 @@ Defines the frequency range over which random-phase decorrelation is applied. Fr
 ```json
 {
   "stereo_width": 0.8,
-  "comp_eq_depth_db": 1.5
+  "freq_dependent": true
 }
 ```
 **Tips:** At high width values, check that the sound still collapses to mono gracefully.
@@ -126,36 +118,26 @@ Defines the frequency range over which random-phase decorrelation is applied. Fr
 ```json
 {
   "stereo_width": 1.0,
-  "comp_eq_depth_db": 2.0
+  "freq_dependent": false
 }
 ```
 **Tips:** Full decorrelation — the left and right channels will be completely different. Not mono-compatible.
 
 ## Tips & Best Practices
 
-- The plugin introduces latency (2048 samples / ~46 ms at 44.1 kHz) due to FFT processing.
+- The causal all-pass path reports zero host-compensated latency. Haas delay remains an intentional right-channel effect.
 - Width = 0 produces perfect mono (L = R). Use this to verify the plugin is transparent.
 - Check mono compatibility when using high width values — fold to mono and listen for cancellation.
-- The decorrelation band (300-2000 Hz by default) keeps bass and highs mono-compatible.
+- The decorrelation band (300-2000 Hz by default) keeps low bass highly correlated.
 - Lower the decorrelation low frequency to include more bass in the stereo field (can reduce mono compatibility).
 - For headphone listening, lower width values (0.2-0.4) often sound more natural than full width.
-- The complementary EQ adds subtle tonal differences between channels for a more convincing stereo image.
 
 ## Signal Flow
 
 ```
-Mono Input → FFT Analysis → Windowed STFT
-                                │
-                   ┌────────────┴────────────┐
-                   │                         │
-              Left (direct)         Right (decorrelated)
-                   │                         │
-              IFFT + OLA              IFFT + OLA
-                   │                         │
-                   └────────┬────────────────┘
-                            │
-                     Width Crossfade
-                   (R = L×(1-w) + decor×w)
-                            │
-                     Stereo Output [L, R]
+Mono Input ───────────────→ Left (direct)
+     │
+     └→ Causal all-pass cascade → optional Haas delay → Right
+
+Width changes the stable all-pass coefficients; width 0 uses an exact L=R duplicate fast path.
 ```

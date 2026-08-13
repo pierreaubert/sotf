@@ -12,3 +12,11 @@ pub(super) fn default_freq_dependent() -> bool {
 pub(super) fn default_haas_delay_ms() -> f32 {
     pk(MS, "haas_delay_ms").default_f64() as f32
 }
+
+pub(super) fn default_decor_low_hz() -> f32 {
+    pk(MS, "decor_low_hz").default_f64() as f32
+}
+
+pub(super) fn default_decor_high_hz() -> f32 {
+    pk(MS, "decor_high_hz").default_f64() as f32
+}

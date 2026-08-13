@@ -1,3 +1,10 @@
+# 0.5.5
+
+## Fixes (2026-08-12 review follow-up)
+
+- Align the cross-format factory smoke test with MonoToStereo's fixed
+  one-channel input contract.
+
 # 0.5.4
 
 ## New

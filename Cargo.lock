@@ -7486,7 +7486,7 @@ dependencies = [
 
 [[package]]
 name = "plugins-bridge"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "log",
  "serde",
@@ -10806,9 +10806,8 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-mono-to-stereo"
-version = "0.5.4"
+version = "0.5.8"
 dependencies = [
- "realfft",
  "rustfft 6.4.1",
  "serde",
  "serde_json",

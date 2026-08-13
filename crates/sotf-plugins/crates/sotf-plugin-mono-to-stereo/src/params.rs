@@ -42,7 +42,8 @@ pub const PARAMS: &[ParamSpec] = &[
         "Hz",
         "General",
     )
-    .doc("Decorrelation low crossover"),
+    .doc("Decorrelation low crossover")
+    .structural(),
     ParamSpec::float(
         "Decor High",
         "decor_high_hz",
@@ -53,9 +54,11 @@ pub const PARAMS: &[ParamSpec] = &[
         "Hz",
         "General",
     )
-    .doc("Decorrelation high crossover"),
+    .doc("Decorrelation high crossover")
+    .structural(),
     ParamSpec::bool_param("Freq Dependent", "freq_dependent", true, "General")
-        .doc("Vary width by frequency band"),
+        .doc("Vary width by frequency band")
+        .structural(),
 ];
 
 // ============================================================================

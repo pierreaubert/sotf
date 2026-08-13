@@ -214,6 +214,7 @@ fn main() {
         stereo_width: 0.6, // moderate width — natural, not exaggerated
         freq_dependent: true,
         haas_delay_ms: 0.8, // subtle Haas delay
+        ..Default::default()
     };
 
     let mut m2s_plugin = MonoToStereoPlugin::from_params(1, m2s_params);

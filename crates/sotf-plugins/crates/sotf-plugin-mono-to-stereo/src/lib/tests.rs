@@ -1,5 +1,5 @@
 use super::consts::FFT_SIZE;
-use super::mono_to_stereo_plugin::MonoToStereoPlugin;
+use super::mono_to_stereo_plugin::{IDENTITY_RADIUS, MonoToStereoPlugin};
 use sotf_host::parameters::ParameterId;
 use sotf_host::parameters::ParameterValue;
 use sotf_host::plugin::{Plugin, ProcessContext};
@@ -208,33 +208,23 @@ fn test_freq_dependent_bass_stays_mono() {
     );
 }
 
-/// Test that changing decor_low_hz via set_parameter actually affects the
-/// decorrelation filter. We test a 150 Hz tone:
-/// - With default decor_low_hz=300 Hz: 150 Hz bins are below threshold → filter=1+0j
-///   → L and R are proportional (high correlation).
-/// - With decor_low_hz=100 Hz (minimum): 150 Hz bins are above threshold → random phase
-///   → L and R differ (lower correlation).
-///
-/// We use freq_dependent=false for a clean, flat filter path.
-///
-/// Note: decor_low_hz range is [100, 500] Hz (from PARAMS), so values are
-/// clamped at the plugin boundary.
+/// Moving the lower structural crossover across a 150 Hz tone must move the
+/// localized all-pass phase rotation with it. Preparing at 300 Hz keeps the
+/// tone highly correlated; preparing at 100 Hz places it inside the rotation.
 #[test]
 fn test_decor_low_hz_parameter_is_honoured() {
     use sotf_host::parameters::{ParameterId, ParameterValue};
 
     fn run_and_measure_correlation(decor_low: f32) -> f64 {
         let mut p = MonoToStereoPlugin::new();
-        p.initialize(48000).unwrap();
-        // Use freq_dependent=false so the decorrelation filter is applied flat.
-        let _ = p.set_parameter(
-            ParameterId::from("freq_dependent"),
-            ParameterValue::Bool(false),
-        );
-        let _ = p.set_parameter(
+        // Frequency-dependent mode makes the lower crossover the onset of
+        // localized all-pass phase rotation.
+        p.set_parameter(
             ParameterId::from("decor_low_hz"),
             ParameterValue::Float(decor_low),
-        );
+        )
+        .unwrap();
+        p.initialize(48000).unwrap();
         p.stereo_width.reset(1.0);
         p.haas_delay_ms = 0.0;
         p.update_haas_delay_samples();
@@ -272,9 +262,9 @@ fn test_decor_low_hz_parameter_is_honoured() {
         if denom < 1e-12 { 1.0 } else { sum_l_r / denom }
     }
 
-    // decor_low_hz=300 (default): 150 Hz bins stay at 1+0j → L/R in-phase → correlation ≈ 1.
+    // At the default 300 Hz onset, 150 Hz remains highly correlated.
     let corr_high_low = run_and_measure_correlation(300.0);
-    // decor_low_hz=100 (min): 150 Hz bins get random phases → correlation drops.
+    // At a 100 Hz onset, 150 Hz is inside the phase-rotation region.
     let corr_low_low = run_and_measure_correlation(100.0);
 
     assert!(
@@ -291,25 +281,24 @@ fn test_decor_low_hz_parameter_is_honoured() {
     );
 }
 
-/// Test that changing decor_high_hz via set_parameter affects the width curve.
-/// Before the fix, compute_freq_width_curve() hardcoded 2000 Hz and was ignored.
+/// Preparing a lower high crossover makes a 400 Hz tone measurably decorrelated.
 #[test]
 fn test_decor_high_hz_parameter_is_honoured() {
     use sotf_host::parameters::{ParameterId, ParameterValue};
 
-    // Default high = 2000 Hz. Set it to 200 Hz so even bass gets decorrelated
-    // (below the 300 Hz default low — we also lower decor_low to 100 Hz).
-    // Then a 400 Hz tone should be fully decorrelated (above 200 Hz high crossover).
+    // Use the lowest legal crossover band so 400 Hz lies within its phase rotation.
     let mut p = MonoToStereoPlugin::new();
-    p.initialize(48000).unwrap();
-    let _ = p.set_parameter(
+    p.set_parameter(
         ParameterId::from("decor_low_hz"),
         ParameterValue::Float(100.0),
-    );
-    let _ = p.set_parameter(
+    )
+    .unwrap();
+    p.set_parameter(
         ParameterId::from("decor_high_hz"),
-        ParameterValue::Float(200.0),
-    );
+        ParameterValue::Float(1000.0),
+    )
+    .unwrap();
+    p.initialize(48000).unwrap();
     p.stereo_width.reset(1.0);
     p.haas_delay_ms = 0.0;
     p.update_haas_delay_samples();
@@ -376,10 +365,7 @@ fn test_process_no_stale_output_on_small_blocks() {
     }
 }
 
-/// Test L/R energy balance at width=1.0 using broadband noise.
-/// A single sine is unstable because the random-phase decorrelation filter
-/// shifts a tonal signal by a random amount, causing large OLA variance.
-/// Broadband content averages across many bins and gives a stable ratio.
+/// Test L/R energy balance at width=1.0 using broadband content.
 #[test]
 fn test_mono_to_stereo_lr_energy_balance() {
     let mut p = MonoToStereoPlugin::new();
@@ -453,10 +439,8 @@ fn test_set_parameter_haas_delay_ms_updates_samples() {
 }
 
 #[test]
-fn test_set_parameter_decor_frequencies_update_curve() {
-    use super::consts::FFT_SIZE;
+fn test_structural_decor_frequencies_prepare_topology_before_initialize() {
     let mut p = MonoToStereoPlugin::new();
-    p.initialize(48000).unwrap();
     p.set_parameter(
         ParameterId::from("decor_low_hz"),
         ParameterValue::Float(200.0),
@@ -467,35 +451,27 @@ fn test_set_parameter_decor_frequencies_update_curve() {
         ParameterValue::Float(1000.0),
     )
     .unwrap();
+    p.initialize(48000).unwrap();
     assert!((p.decor_low_hz - 200.0).abs() < 1e-6);
     assert!((p.decor_high_hz - 1000.0).abs() < 1e-6);
-    let bin_hz = 48000.0 / FFT_SIZE as f32;
-    let low_bin = (200.0 / bin_hz).floor() as usize;
-    let high_bin = (1000.0 / bin_hz).ceil() as usize;
-    for i in 0..=low_bin {
-        assert!(
-            p.freq_width_curve[i].abs() < 1e-6,
-            "bin {i} should be below low cutoff"
-        );
-    }
-    for i in high_bin..p.freq_width_curve.len() {
-        assert!(
-            (p.freq_width_curve[i] - 1.0).abs() < 1e-6,
-            "bin {i} should be above high cutoff"
-        );
-    }
+    let expected_low = (std::f32::consts::TAU * 200.0 / 48_000.0).cos();
+    let expected_high = (std::f32::consts::TAU * 1000.0 / 48_000.0).cos();
+    assert!((p.section_cosines[0] - expected_low).abs() < 1e-6);
+    assert!((p.section_cosines[2] - expected_high).abs() < 1e-6);
 }
 
 #[test]
 fn test_set_parameter_freq_dependent() {
     let mut p = MonoToStereoPlugin::new();
-    p.initialize(48000).unwrap();
     p.set_parameter(
         ParameterId::from("freq_dependent"),
         ParameterValue::Bool(false),
     )
     .unwrap();
     assert!(!p.freq_dependent);
+    p.initialize(48000).unwrap();
+    assert!(p.target_radius < 0.7);
+    p = MonoToStereoPlugin::new();
     p.set_parameter(
         ParameterId::from("freq_dependent"),
         ParameterValue::Bool(true),
@@ -585,42 +561,19 @@ fn test_from_params_honours_arguments() {
         stereo_width: 0.25,
         freq_dependent: false,
         haas_delay_ms: 2.5,
+        decor_low_hz: 200.0,
+        decor_high_hz: 3_000.0,
     };
     let p = MonoToStereoPlugin::from_params(1, params);
     assert!((p.stereo_width.target() - 0.25).abs() < 1e-6);
     assert!(!p.freq_dependent);
     assert!((p.haas_delay_ms - 2.5).abs() < 1e-6);
-}
-
-#[test]
-fn test_generate_decorrelation_filter_respects_low_hz() {
-    use super::consts::FFT_SIZE;
-    let mut p = MonoToStereoPlugin::new();
-    p.initialize(48000).unwrap();
-    p.set_parameter(
-        ParameterId::from("decor_low_hz"),
-        ParameterValue::Float(500.0),
-    )
-    .unwrap();
-    p.generate_decorrelation_filter();
-    let bin_hz = 48000.0 / FFT_SIZE as f32;
-    let low_bin = (500.0 / bin_hz).floor() as usize;
-    for i in 1..low_bin {
-        let c = p.decorrelation_filter[i];
-        assert!(
-            c.im.abs() < 1e-6,
-            "bin {i} imag should be zero below low_hz"
-        );
-        assert!(
-            (c.re - 1.0).abs() < 1e-6,
-            "bin {i} real should be 1.0 below low_hz"
-        );
-    }
+    assert_eq!(p.haas_delay_samples, 110);
+    assert!((p.decor_low_hz - 200.0).abs() < 1e-6);
+    assert!((p.decor_high_hz - 3_000.0).abs() < 1e-6);
 }
 
 /// Happy-path regression: process() must return Ok(num_frames) for normal input.
-/// This verifies the refactor of process_stft() to return Result does not break
-/// the common case.
 #[test]
 fn test_process_returns_ok_num_frames() {
     let mut p = MonoToStereoPlugin::new();
@@ -634,4 +587,445 @@ fn test_process_returns_ok_num_frames() {
         Ok(num_frames),
         "process() should return Ok(num_frames)"
     );
+}
+
+#[test]
+fn test_process_is_partition_invariant_with_fixed_latency() {
+    fn render(block_sizes: &[usize]) -> Vec<f32> {
+        let total_frames = 8192;
+        let input: Vec<f32> = (0..total_frames)
+            .map(|i| (i as f32 * 0.017).sin() * 0.4)
+            .collect();
+        let mut plugin = MonoToStereoPlugin::new();
+        plugin.initialize(48_000).unwrap();
+        plugin.stereo_width.reset(0.35);
+        plugin.haas_delay_ms = 0.0;
+        let mut output = vec![0.0; total_frames * 2];
+        let mut input_pos = 0;
+        let mut block_pos = 0;
+        while input_pos < total_frames {
+            let block = block_sizes[block_pos % block_sizes.len()];
+            let end = (input_pos + block).min(total_frames);
+            plugin
+                .process(
+                    &input[input_pos..end],
+                    &mut output[input_pos * 2..end * 2],
+                    &ProcessContext::new(48_000, end - input_pos),
+                )
+                .unwrap();
+            input_pos = end;
+            block_pos += 1;
+        }
+        output
+    }
+
+    let reference = render(&[1]);
+    for blocks in [
+        &[64][..],
+        &[256][..],
+        &[512][..],
+        &[1024][..],
+        &[127, 641, 89, 1024][..],
+    ] {
+        let actual = render(blocks);
+        assert_eq!(actual.len(), reference.len());
+        for (index, (a, b)) in actual.iter().zip(&reference).enumerate() {
+            assert!(
+                (a - b).abs() < 2e-5,
+                "partition mismatch at {index}: {a} vs {b}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_process_rejects_short_buffers_without_mutating_state() {
+    let mut plugin = MonoToStereoPlugin::new();
+    plugin.initialize(48_000).unwrap();
+    let input = vec![0.25; 8];
+    let mut output = vec![7.0; 16];
+    let before_last_input = plugin.last_input;
+    let before_right_state = plugin.first_order_y1;
+
+    let error = plugin
+        .process(&input[..7], &mut output, &ProcessContext::new(48_000, 8))
+        .unwrap_err();
+    assert!(error.contains("input") && error.contains("8"));
+    assert_eq!(plugin.last_input, before_last_input);
+    assert_eq!(plugin.first_order_y1, before_right_state);
+    assert!(output.iter().all(|sample| *sample == 7.0));
+
+    let error = plugin
+        .process(&input, &mut output[..15], &ProcessContext::new(48_000, 8))
+        .unwrap_err();
+    assert!(error.contains("output") && error.contains("16"));
+    assert_eq!(plugin.last_input, before_last_input);
+    assert_eq!(plugin.first_order_y1, before_right_state);
+    assert!(output.iter().all(|sample| *sample == 7.0));
+}
+
+#[test]
+fn test_process_rejects_oversized_buffers_without_mutating_state() {
+    let mut plugin = MonoToStereoPlugin::new();
+    plugin.initialize(48_000).unwrap();
+    let input = [0.25_f32, -0.5, 91.0, 92.0];
+    let mut output = [77.0_f32; 8];
+    let before_last_input = plugin.last_input;
+    let before_right_state = plugin.first_order_y1;
+
+    let error = plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+        .unwrap_err();
+    assert!(error.contains("input") && error.contains("exactly"));
+    assert_eq!(plugin.last_input, before_last_input);
+    assert_eq!(plugin.first_order_y1, before_right_state);
+    assert_eq!(output, [77.0; 8]);
+
+    let input = [0.25_f32, -0.5];
+    let error = plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+        .unwrap_err();
+    assert!(error.contains("output") && error.contains("exactly"));
+    assert_eq!(plugin.last_input, before_last_input);
+    assert_eq!(plugin.first_order_y1, before_right_state);
+    assert_eq!(output, [77.0; 8]);
+}
+
+#[test]
+fn test_process_rejects_stereo_sample_count_overflow_without_mutating_state() {
+    let mut plugin = MonoToStereoPlugin::new();
+    plugin.initialize(48_000).unwrap();
+    let before_last_input = plugin.last_input;
+    let before_right_state = plugin.first_order_y1;
+    let mut output = [73.0_f32; 2];
+
+    let error = plugin
+        .process(&[], &mut output, &ProcessContext::new(48_000, usize::MAX))
+        .unwrap_err();
+
+    assert!(error.contains("overflows"), "unexpected error: {error}");
+    assert_eq!(plugin.last_input, before_last_input);
+    assert_eq!(plugin.first_order_y1, before_right_state);
+    assert_eq!(output, [73.0; 2]);
+}
+
+#[test]
+fn initialize_rejects_zero_sample_rate_atomically() {
+    let mut plugin = MonoToStereoPlugin::new();
+    plugin.initialize(48_000).unwrap();
+    let before_rate = plugin.sample_rate;
+    let before_cosines = plugin.section_cosines;
+
+    let error = plugin.initialize(0).unwrap_err();
+
+    assert!(error.contains("sample rate"), "unexpected error: {error}");
+    assert_eq!(plugin.sample_rate, before_rate);
+    assert_eq!(plugin.section_cosines, before_cosines);
+}
+
+#[test]
+fn plugin_info_version_matches_crate_version() {
+    assert_eq!(
+        MonoToStereoPlugin::new().info().version,
+        env!("CARGO_PKG_VERSION")
+    );
+}
+
+#[test]
+fn test_second_order_allpass_keeps_every_bin_unit_magnitude() {
+    let mut plugin = MonoToStereoPlugin::new();
+    plugin.initialize(48_000).unwrap();
+    for radius in [0.25_f32, 0.68, 0.998, IDENTITY_RADIUS] {
+        for cosine in plugin.section_cosines {
+            for bin in 0..=FFT_SIZE / 2 {
+                let omega = std::f32::consts::TAU * bin as f32 / FFT_SIZE as f32;
+                let response = MonoToStereoPlugin::allpass2_response(radius, cosine, omega);
+                assert!(
+                    (response.norm() - 1.0).abs() < 2e-3,
+                    "radius={radius}, bin={bin}, response={response:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_try_from_params_validates_channels_and_each_numeric_field() {
+    for (width, delay) in [(0.0, 0.0), (1.0, 5.0)] {
+        let params = MonoToStereoPluginParams {
+            stereo_width: width,
+            freq_dependent: true,
+            haas_delay_ms: delay,
+            ..Default::default()
+        };
+        assert!(
+            MonoToStereoPlugin::try_from_params(1, params).is_ok(),
+            "schema endpoint width={width}, delay={delay} must be accepted"
+        );
+    }
+
+    let error = match MonoToStereoPlugin::try_from_params(
+        2,
+        MonoToStereoPluginParams {
+            stereo_width: 0.25,
+            freq_dependent: true,
+            haas_delay_ms: 2.5,
+            ..Default::default()
+        },
+    ) {
+        Ok(_) => panic!("wrong channel count must fail"),
+        Err(error) => error,
+    };
+    assert!(error.contains("1 input channel"));
+
+    for width in [-0.01, 1.01, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let error = match MonoToStereoPlugin::try_from_params(
+            1,
+            MonoToStereoPluginParams {
+                stereo_width: width,
+                freq_dependent: true,
+                haas_delay_ms: 2.5,
+                ..Default::default()
+            },
+        ) {
+            Ok(_) => panic!("invalid stereo width {width} must fail"),
+            Err(error) => error,
+        };
+        assert!(error.contains("stereo_width"), "unexpected error: {error}");
+    }
+
+    for delay in [-0.01, 5.01, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let error = match MonoToStereoPlugin::try_from_params(
+            1,
+            MonoToStereoPluginParams {
+                stereo_width: 0.25,
+                freq_dependent: true,
+                haas_delay_ms: delay,
+                ..Default::default()
+            },
+        ) {
+            Ok(_) => panic!("invalid Haas delay {delay} must fail"),
+            Err(error) => error,
+        };
+        assert!(error.contains("haas_delay_ms"), "unexpected error: {error}");
+    }
+
+    for low in [99.0, 501.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let error = MonoToStereoPlugin::try_from_params(
+            1,
+            MonoToStereoPluginParams {
+                decor_low_hz: low,
+                ..Default::default()
+            },
+        )
+        .err()
+        .expect("invalid decorrelation low crossover must fail");
+        assert!(error.contains("decor_low_hz"), "unexpected error: {error}");
+    }
+
+    for high in [999.0, 5_001.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let error = MonoToStereoPlugin::try_from_params(
+            1,
+            MonoToStereoPluginParams {
+                decor_high_hz: high,
+                ..Default::default()
+            },
+        )
+        .err()
+        .expect("invalid decorrelation high crossover must fail");
+        assert!(error.contains("decor_high_hz"), "unexpected error: {error}");
+    }
+}
+
+#[test]
+fn causal_allpass_is_energy_normalized_at_every_fft_bin() {
+    for coefficient in [0.0_f32, 0.25, 0.5, 0.75, 0.95] {
+        for bin in 0..=FFT_SIZE / 2 {
+            let omega = std::f32::consts::TAU * bin as f32 / FFT_SIZE as f32;
+            let response = MonoToStereoPlugin::allpass_response(coefficient, omega);
+            assert!(
+                (response.norm() - 1.0).abs() < 2.0e-6,
+                "a={coefficient}, bin={bin}, response={response:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn rendered_audio_preserves_lr_energy_at_every_width_and_frequency() {
+    const SAMPLE_RATE: u32 = 48_000;
+    const FRAMES: usize = 48_000;
+    for width in [0.0_f32, 0.25, 0.5, 0.75, 1.0] {
+        for frequency in [80.0_f32, 300.0, 1_000.0, 5_000.0, 12_000.0, 20_000.0] {
+            let mut plugin = MonoToStereoPlugin::new();
+            plugin.initialize(SAMPLE_RATE).unwrap();
+            plugin.stereo_width.reset(width);
+            plugin.haas_delay_ms = 0.0;
+            plugin.update_haas_delay_samples();
+            let input: Vec<f32> = (0..FRAMES)
+                .map(|frame| {
+                    (std::f32::consts::TAU * frequency * frame as f32 / SAMPLE_RATE as f32).sin()
+                        * 0.25
+                })
+                .collect();
+            let mut output = vec![0.0_f32; FRAMES * 2];
+            plugin
+                .process(
+                    &input,
+                    &mut output,
+                    &ProcessContext::new(SAMPLE_RATE, FRAMES),
+                )
+                .unwrap();
+            // The narrowest causal all-pass poles need several time constants
+            // to reach their steady-state unit-energy sinusoidal response.
+            let skip = 12_000;
+            let left = output[skip * 2..]
+                .chunks_exact(2)
+                .map(|frame| (frame[0] as f64).powi(2))
+                .sum::<f64>();
+            let right = output[skip * 2..]
+                .chunks_exact(2)
+                .map(|frame| (frame[1] as f64).powi(2))
+                .sum::<f64>();
+            let ratio = (right / left).sqrt();
+            assert!(
+                (ratio - 1.0).abs() < 0.015,
+                "width={width}, frequency={frequency}, L/R RMS ratio={ratio}"
+            );
+            let input_energy = input[skip..]
+                .iter()
+                .map(|sample| (*sample as f64).powi(2))
+                .sum::<f64>();
+            let fold_energy = output[skip * 2..]
+                .chunks_exact(2)
+                .map(|frame| (((frame[0] + frame[1]) * 0.5) as f64).powi(2))
+                .sum::<f64>();
+            assert!(
+                fold_energy <= input_energy * 1.02,
+                "width={width}, frequency={frequency}, mono fold boosted energy"
+            );
+            let channel_peak = output[skip * 2..]
+                .iter()
+                .map(|sample| sample.abs())
+                .fold(0.0_f32, f32::max);
+            assert!(
+                channel_peak <= 0.255,
+                "width={width}, frequency={frequency}, channel peak={channel_peak}"
+            );
+        }
+    }
+}
+
+#[test]
+fn decorrelator_is_causal_and_has_no_circular_pre_echo() {
+    let mut plugin = MonoToStereoPlugin::new();
+    plugin.initialize(48_000).unwrap();
+    plugin.stereo_width.reset(1.0);
+    plugin.haas_delay_ms = 0.0;
+    plugin.update_haas_delay_samples();
+    let mut input = vec![0.0_f32; 4_096];
+    input[1_000] = 1.0;
+    let mut output = vec![0.0_f32; input.len() * 2];
+    plugin
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(48_000, input.len()),
+        )
+        .unwrap();
+    assert!(output[..2_000].iter().all(|sample| sample.abs() < 1.0e-8));
+    assert!(output[2_001].abs() > 1.0e-4);
+    assert_eq!(plugin.latency_samples(), 0);
+}
+
+#[test]
+fn decorrelator_topology_parameters_require_graph_rebuild_after_initialize() {
+    let mut plugin = MonoToStereoPlugin::new();
+    plugin.initialize(48_000).unwrap();
+    for (id, value) in [
+        ("decor_low_hz", ParameterValue::Float(250.0)),
+        ("decor_high_hz", ParameterValue::Float(3_000.0)),
+        ("freq_dependent", ParameterValue::Bool(false)),
+    ] {
+        let before = plugin.get_parameter(&ParameterId::from(id));
+        let error = plugin
+            .set_parameter(ParameterId::from(id), value)
+            .unwrap_err();
+        assert!(error.contains("structural") && error.contains("rebuild"));
+        assert_eq!(plugin.get_parameter(&ParameterId::from(id)), before);
+    }
+}
+
+#[test]
+fn settled_zero_width_uses_exact_duplicate_fast_path() {
+    let mut plugin = MonoToStereoPlugin::new();
+    plugin.initialize(48_000).unwrap();
+    plugin.stereo_width.reset(0.0);
+    plugin.haas_delay_ms = 0.0;
+    plugin.update_haas_delay_samples();
+    let input: Vec<f32> = (0..4_096).map(|i| (i as f32 * 0.013).sin()).collect();
+    let mut output = vec![0.0_f32; input.len() * 2];
+    plugin
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(48_000, input.len()),
+        )
+        .unwrap();
+    assert!(output.chunks_exact(2).zip(&input).all(|(frame, input)| {
+        frame[0].to_bits() == input.to_bits() && frame[1].to_bits() == input.to_bits()
+    }));
+    assert_eq!(plugin.duplicate_fast_path_frames, input.len());
+    assert_eq!(plugin.smoothed_width_frames, 0);
+}
+
+#[test]
+fn settled_nonzero_width_avoids_per_sample_smoother_work() {
+    let mut plugin = MonoToStereoPlugin::new();
+    plugin.initialize(48_000).unwrap();
+    plugin.stereo_width.reset(0.75);
+    plugin.haas_delay_ms = 0.0;
+    plugin.update_haas_delay_samples();
+    let input: Vec<f32> = (0..8_192)
+        .map(|i| (i as f32 * 0.019).sin() * 0.25)
+        .collect();
+    let mut output = vec![0.0_f32; input.len() * 2];
+    plugin
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(48_000, input.len()),
+        )
+        .unwrap();
+    assert_eq!(plugin.smoothed_width_frames, 0);
+    assert_eq!(plugin.duplicate_fast_path_frames, 0);
+    assert!(output.iter().all(|sample| sample.is_finite()));
+    assert!(
+        output
+            .chunks_exact(2)
+            .skip(2_048)
+            .any(|frame| (frame[0] - frame[1]).abs() > 1.0e-4)
+    );
+}
+
+#[test]
+fn leaving_duplicate_fast_path_primes_state_without_a_transition_spike() {
+    let mut plugin = MonoToStereoPlugin::new();
+    plugin.initialize(48_000).unwrap();
+    plugin.haas_delay_ms = 0.0;
+    plugin.update_haas_delay_samples();
+    plugin.stereo_width.reset(0.0);
+    let input = vec![0.25_f32; 512];
+    let mut output = vec![0.0_f32; 1_024];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 512))
+        .unwrap();
+
+    plugin.stereo_width.reset(1.0);
+    output.fill(0.0);
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 512))
+        .unwrap();
+    assert!(output.iter().all(|sample| sample.is_finite()));
+    assert!(output.iter().all(|sample| sample.abs() <= 0.251));
 }
