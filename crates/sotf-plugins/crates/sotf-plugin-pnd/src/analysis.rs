@@ -26,6 +26,8 @@ pub struct PndAnalyzer {
 
     // Pre-allocated scratch buffers (reused via .clear())
     peak_scratch: Vec<(f32, f32)>,
+    magnitude_scratch: Vec<f32>,
+    noise_floor_scratch: Vec<f32>,
     ratio_scratch: Vec<f32>,
     matched_prev_scratch: Vec<bool>,
 
@@ -46,6 +48,7 @@ pub struct PndAnalyzer {
     last_confidence: f32,
     last_matched_partials: usize,
     last_total_peaks: usize,
+    last_noise_floor: f32,
     analysis_generation: u64,
 }
 
@@ -71,6 +74,8 @@ impl PndAnalyzer {
             prev_peaks: Vec::with_capacity(spectrum_size),
             matched_peaks: Vec::with_capacity(spectrum_size),
             peak_scratch: Vec::with_capacity(spectrum_size),
+            magnitude_scratch: vec![0.0; spectrum_size],
+            noise_floor_scratch: vec![0.0; spectrum_size],
             ratio_scratch: Vec::with_capacity(spectrum_size),
             matched_prev_scratch: vec![false; spectrum_size],
 
@@ -87,6 +92,7 @@ impl PndAnalyzer {
             last_confidence: 0.0,
             last_matched_partials: 0,
             last_total_peaks: 0,
+            last_noise_floor: 0.0,
             analysis_generation: 0,
         }
     }
@@ -119,11 +125,36 @@ impl PndAnalyzer {
         let bin_hz = self.sample_rate as f32 / self.fft_size as f32;
         self.peak_scratch.clear();
 
-        let threshold = 0.001; // ~-60dB
+        // Derive a level-relative threshold from the frame spectrum. A fixed
+        // raw FFT magnitude changes meaning with window normalization, input
+        // gain, and FFT size. The median is a robust broadband-noise estimate;
+        // the peak-relative floor rejects numerical sidelobes in otherwise
+        // quiet tonal frames.
+        let magnitude_count = self.fft.spectrum_size.saturating_sub(2);
+        let mut max_magnitude = 0.0_f32;
+        for bin in 0..self.fft.spectrum_size {
+            let magnitude = self.fft.freq_buffer[bin].norm();
+            self.magnitude_scratch[bin] = magnitude;
+            if bin > 0 && bin + 1 < self.fft.spectrum_size {
+                self.noise_floor_scratch[bin - 1] = magnitude;
+                max_magnitude = max_magnitude.max(magnitude);
+            }
+        }
+        let noise_floor = if magnitude_count == 0 {
+            0.0
+        } else {
+            let middle = magnitude_count / 2;
+            self.noise_floor_scratch[..magnitude_count].select_nth_unstable_by(middle, |a, b| {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            self.noise_floor_scratch[middle]
+        };
+        self.last_noise_floor = noise_floor;
+        let threshold = (noise_floor * 4.0).max(max_magnitude * 1.0e-5);
         for i in 1..self.fft.spectrum_size - 1 {
-            let mag_prev = self.fft.freq_buffer[i - 1].norm();
-            let mag_curr = self.fft.freq_buffer[i].norm();
-            let mag_next = self.fft.freq_buffer[i + 1].norm();
+            let mag_prev = self.magnitude_scratch[i - 1];
+            let mag_curr = self.magnitude_scratch[i];
+            let mag_next = self.magnitude_scratch[i + 1];
 
             if mag_curr > threshold && mag_curr > mag_prev && mag_curr > mag_next {
                 // Parabolic interpolation for more accurate frequency
@@ -156,8 +187,24 @@ impl PndAnalyzer {
         // Update confidence tracking
         self.last_total_peaks = self.peak_scratch.len();
         self.last_matched_partials = matched_partials;
-        self.last_confidence = if self.last_total_peaks > 0 {
-            matched_partials as f32 / self.last_total_peaks as f32
+        self.last_confidence = if self.last_total_peaks > 0 && matched_partials > 0 {
+            let total_salient_magnitude = self
+                .peak_scratch
+                .iter()
+                .map(|(_, magnitude)| *magnitude)
+                .sum::<f32>();
+            let matched_magnitude = self
+                .matched_peaks
+                .iter()
+                .map(|(_, magnitude)| *magnitude)
+                .sum::<f32>();
+            let energy_support = if total_salient_magnitude > f32::EPSILON {
+                matched_magnitude / total_salient_magnitude
+            } else {
+                0.0
+            };
+            let count_support = (matched_partials as f32 / MIN_MATCHED_PARTIALS as f32).min(1.0);
+            (energy_support * count_support).clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -299,7 +346,10 @@ impl PndAnalyzer {
         let confidence = if local_magnitude > f32::EPSILON {
             let prominence = (magnitude / local_magnitude).clamp(0.0, 1.0);
             let proximity = (1.0 - relative_error / MATCH_FRACTION).clamp(0.0, 1.0);
-            prominence * proximity
+            // A broadband peak must rise clearly above the frame's robust
+            // noise floor as well as dominate the local pilot guard band.
+            let snr_weight = magnitude / (magnitude + 4.0 * self.last_noise_floor);
+            prominence * proximity * snr_weight.clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -314,6 +364,8 @@ impl PndAnalyzer {
         self.matched_peaks.clear();
         self.peak_scratch.clear();
         self.ratio_scratch.clear();
+        self.magnitude_scratch.fill(0.0);
+        self.noise_floor_scratch.fill(0.0);
 
         // Reset drift history
         self.drift_history.fill(0.0);
@@ -327,6 +379,7 @@ impl PndAnalyzer {
         self.last_confidence = 0.0;
         self.last_matched_partials = 0;
         self.last_total_peaks = 0;
+        self.last_noise_floor = 0.0;
         self.analysis_generation = 0;
     }
 }
@@ -738,5 +791,67 @@ mod tests {
         // instead of being interpreted as device-clock correction.
         analyzer.analyze(&tone(523.25, 0.25, 8192));
         assert_eq!(analyzer.estimate_against_reference(440.0), (1.0, 0.0));
+    }
+
+    #[test]
+    fn harmonic_pilot_confidence_is_level_and_spectrum_robust() {
+        for amplitude in [0.5_f32, 0.05, 0.005, 0.0005] {
+            let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
+            let samples = (0..48_000)
+                .map(|frame| {
+                    let time = frame as f32 / 48_000.0;
+                    (1..=6)
+                        .map(|harmonic| {
+                            let harmonic = harmonic as f32;
+                            amplitude / harmonic
+                                * (2.0 * std::f32::consts::PI * 444.4 * harmonic * time).sin()
+                        })
+                        .sum::<f32>()
+                })
+                .collect::<Vec<_>>();
+            analyzer.analyze(&samples);
+            let (ratio, reference_confidence) = analyzer.estimate_against_reference(440.0);
+            assert!(
+                (ratio - 1.01).abs() < 0.004,
+                "amplitude {amplitude}: harmonic pilot ratio {ratio}"
+            );
+            assert!(
+                reference_confidence > 0.5,
+                "amplitude {amplitude}: harmonic pilot confidence {reference_confidence}"
+            );
+            assert!(
+                analyzer.confidence() > 0.5,
+                "amplitude {amplitude}: temporal harmonic confidence {}",
+                analyzer.confidence()
+            );
+        }
+    }
+
+    #[test]
+    fn broadband_and_colored_noise_do_not_gain_reference_authority() {
+        for colored in [false, true] {
+            let mut seed = 0x6d2b_79f5_u32;
+            let mut previous = 0.0_f32;
+            let noise = (0..48_000)
+                .map(|_| {
+                    seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    let white = (seed as f32 / u32::MAX as f32 - 0.5) * 0.4;
+                    if colored {
+                        previous = 0.97 * previous + 0.03 * white;
+                        previous
+                    } else {
+                        white
+                    }
+                })
+                .collect::<Vec<_>>();
+            let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
+            analyzer.analyze(&noise);
+            let (_, confidence) = analyzer.estimate_against_reference(440.0);
+            assert!(
+                confidence < 0.5,
+                "{} noise acquired pilot authority: {confidence}",
+                if colored { "colored" } else { "white" }
+            );
+        }
     }
 }

@@ -2,7 +2,9 @@
 
 PND is a duration-preserving insert for tonal programme material. It always
 consumes and produces the host callback's frame count. It is not a device-clock
-synchronizer and does not perform variable-duration SRC.
+synchronizer and does not perform variable-duration SRC. Producer/consumer
+timestamps, FIFO fill control, and asynchronous SRC belong to the stream
+boundary; the plugin owns only its fixed-frame analysis/vocoder state.
 
 Parameters:
 
@@ -25,9 +27,16 @@ fixed-frame input
 ```
 
 The phase vocoder remaps spectral energy and instantaneous frequency. It has no
-formant-envelope model and no identity/peak phase locking, so large corrections
-or strongly percussive material can smear transients. Prefer small, slowly
-varying corrections and monitor confidence.
+formant-envelope model, so pitch correction moves formants with the spectrum.
+Normalized spectral-flux onset resets and identity phase locking preserve
+transient localization and peak-region phase coherence over the supported
+±5% correction range. Prefer small, slowly varying corrections and monitor
+confidence. No formant-preservation mode is exposed or claimed.
+
+Reference confidence combines local pilot prominence, proximity, and a robust
+per-frame spectral-noise estimate. In multi-channel mode only a coherent
+majority cluster can authorize the shared ratio; mutually contradictory tonal
+sources return the correction toward unity.
 
 Legacy `phase_vocoder` values are accepted only for preset compatibility. Both
 `false` and `true` migrate to the duration-preserving engine and the field is

@@ -4,6 +4,36 @@
 
 ## Remediation status — 2026-08-12
 
+- Retained local DSP-quality gaps closed in 0.5.11: the duration-preserving
+  vocoder now uses normalized spectral-flux onset resets and identity phase
+  locking around remapped peaks. Objective regressions cover shifted-impulse
+  localization at arbitrary within-frame offsets and both correction bounds,
+  attacks on a sustained harmonic bed, repeated percussive attacks, voiced
+  harmonic concentration, and independent-channel phase relationships. New-hop
+  novelty is crest-gated, armed before Hann edge attenuation, and its time
+  origin is carried through overlapping frames. The detector uses
+  a frame-relative robust noise floor plus energy/SNR-aware confidence, with
+  harmonic, 60 dB level, bin-edge, white/colored-noise, controlled-SNR, and
+  silence-transition evidence. Multi-channel estimates require a coherent
+  confidence-weighted majority cluster; conflicting high-confidence sources
+  fail closed and channel-order permutations are deterministic. Non-finite
+  input joins buffer/rate validation before any state mutation, making repaired
+  retries equivalent to uninterrupted processing. Reset/cache/allocation
+  regressions remain green.
+- Performance was measured rather than assumed. Five identical 5-second stereo
+  QA runs produced a 50.25 ms median (1.00% realtime CPU) in 0.5.11 versus
+  38.53 ms (0.77%) in 0.5.10: a ~30.4% relative DSP cost for the retained
+  onset/phase-locking quality path, with both versions allocation-free. This is
+  an explicit quality/performance tradeoff, not characterized as an optimization.
+- Formant preservation is intentionally unsupported, not partially
+  implemented: PND has no formant-envelope estimator or formant control, and
+  documentation states that uniform correction moves formants. Adding such a
+  mode requires a separate objective spectral-envelope design and validation.
+  No listening study or external audio corpus is claimed here.
+- The reference-free identifiability boundary is unchanged: constant absolute
+  offset requires an observable pilot/note, while zero-reference operation is
+  change-only. PND remains a fixed-frame, duration-preserving insert; device
+  clock/FIFO/timestamp ownership remains at the stream boundary.
 - P0/P1 architecture and latency closed in 0.5.10: PND is now exclusively a
   fixed-frame, duration-preserving correction insert. The variable-duration
   rubato SRC, bounded frame dropping, and dry underrun fallback were removed;
@@ -29,8 +59,9 @@
   and duration and use one confidence-consensus correction ratio. Reset
   immediately publishes unity/default diagnostics through a preallocated
   three-generation cache even when readers hold the preceding generations.
-- Transient identity/peak phase locking remains unimplemented and is not
-  claimed. Formant preservation also remains explicitly unsupported.
+- Transient identity/peak phase locking was subsequently implemented and
+  objectively gated in 0.5.11. Formant preservation remains explicitly
+  unsupported.
 
 - P1 factory validation fixed in 0.5.7: `try_from_params` applies finite,
   schema-range, and non-zero-channel checks, and both workspace factories use
@@ -60,17 +91,18 @@
   known pilot authorize absolute correction. An oracle proves stable 440 and
   444.4 Hz both remain unity without a reference, while a 440 Hz pilot recovers
   the latter's +1% offset. Invalid and above-Nyquist references reject.
-- P0 partially mitigated: bounded output-ring overflow now drops the oldest
-  complete frames, and SRC underruns use corresponding input samples rather
-  than zeros. This bounds memory and avoids silence, but it does not satisfy a
-  strict no-drop fixed-frame clock-correction contract; that architecture-level
-  redesign remains explicitly deferred.
+- Historical P0 mitigation in 0.5.5/0.5.6 was superseded by 0.5.10: the
+  variable-duration SRC/rings no longer exist in PND. The plugin now performs
+  duration-preserving pitch correction only; clock-domain SRC remains a
+  separate stream-boundary responsibility rather than deferred plugin work.
 - P1 fixed: processing now rejects a `ProcessContext` sample-rate mismatch.
-- Verification after remediation: focused PND tests pass, including the new
-  sustained-correction and sample-rate-contract regressions. The remaining
-  findings below (reference-free drift identifiability, transient/phase-locking
-  vocoder quality, level-robust peak/SNR modeling, exact queue transaction semantics, and
-  broader algorithmic limits) remain open for a subsequent design batch.
+- Verification after remediation: focused PND tests cover sustained correction,
+  sample-rate/latency contracts, reference identifiability, transient/phase
+  behavior, detector robustness, coherent multichannel policy, transactional
+  errors, cache reset, and processing/reset allocations. Historical findings
+  remain below for traceability; formant preservation and external
+  corpus/listening validation are the only intentionally unimplemented quality
+  extensions and are not claimed.
 
 ### P0 — A persistent correction ratio cannot satisfy the fixed-frame plugin contract
 
@@ -111,12 +143,13 @@ Use sample-accurate input/output queues with a fixed startup prefill independent
 
 ### P1 — The phase-vocoder pitch shifter is incomplete and will smear or misplace nontrivial spectra
 
-Status: the fundamental spectral-translation defect is fixed in 0.5.8. The
+Status: the fundamental spectral-translation defect was fixed in 0.5.8. The
 vocoder now remaps positive-bin energy and instantaneous frequency, handles
 collisions, discards out-of-band targets, restores conjugate symmetry, and has
-bidirectional frequency-oracle tests. Transient phase locking and an optional
-formant-envelope stage remain quality improvements rather than being claimed by
-the implementation.
+bidirectional frequency-oracle tests. Version 0.5.11 adds normalized onset
+detection, tracked within-frame phase-ramp remapping, and identity peak-region
+phase locking, with impulse/bed/percussive/harmonic/spatial-phase objective
+gates. A formant-envelope stage remains explicitly unsupported and unclaimed.
 
 `process_hop` retains every magnitude in its original FFT bin and only multiplies the phase advance by `pitch_shift` (`phase_vocoder_channel.rs:88-126`). Energy is never mapped to shifted bins, collisions/out-of-band bins are not handled, and there is no identity/peak phase locking or transient treatment. Small within-bin shifts may move a stationary partial, but larger corrections and polyphonic/transient content cannot produce a coherent spectral translation. The code processes the redundant negative half before overwriting it with conjugate symmetry, doubling much of the trigonometric/norm work. “Preserving formants” in the docs is unsupported; an ordinary uniform pitch shift generally moves formants unless a separate envelope estimator is used.
 
@@ -129,7 +162,7 @@ setters reject changes after initialization. The shared engine host protocol is
 now implemented in `sotf-engine` 1.0.32: a replacement host and transition
 storage are prepared off-thread, validated transactionally, committed at a
 processing boundary, latency-aligned for same-rate crossfades, and retired on
-the GC thread. Plugin-local reset allocation tests remain outstanding.
+the GC thread. Plugin-local process and reset allocation tests pass.
 
 Although analysis window, multi-channel analysis, and phase vocoder are marked structural/setup, the public setter immediately resets analyzer histories, clears and repopulates analyzer vectors, creates FFT plans/buffers, and changes processing topology/latency (`pnd_plugin.rs:577-625`, `analysis.rs:247-259`). `reset` recreates the rubato resampler (`pnd_plugin.rs:821-840`), which also allocates. If these trait methods run on the audio thread they violate real-time safety and can click; switching back also exposes path states maintained on different timelines.
 
@@ -144,7 +177,9 @@ Validate construction through the same `ParamSpec` schema, reject unsupported ch
 ### P2 — Multi-channel consensus can authorize the wrong correction
 
 Status: fixed in 0.5.7 by confidence-weighted consensus with low-confidence
-channel rejection. Full spatial/channel policy remains deferred.
+channel rejection, then completed in 0.5.11 with a coherent-majority cluster,
+fail-closed conflicting sources, deterministic permutation behavior, and an
+end-to-end five-channel tonal/silent/conflicting spatial regression.
 
 The code takes an unweighted median drift but separately averages confidence (`pnd_plugin.rs:263-283,433-454`). A confident tonal channel plus silent/noisy channels can yield a median unity drift while the average crosses the threshold, or a valid dominant channel can be rejected by low-confidence channels. Even-sized medians use the upper middle. Peak matching is also many-to-one: multiple current peaks can select the same previous peak (`analysis.rs:146-176`), inflating matched-partial count and confidence (`analysis.rs:181-185`).
 
@@ -152,11 +187,21 @@ Form `(ratio, confidence)` observations together, discard low-confidence channel
 
 ### P2 — Peak detection and confidence are not level- or spectrum-robust
 
+Status: fixed in 0.5.11 with a robust frame-relative spectral-noise floor,
+energy-weighted temporal confidence, and reference prominence/proximity/SNR
+weighting. Objective tests cover 60 dB level range, harmonic stacks, FFT-bin
+edges, controlled 40/20/10 dB SNR, white and colored noise, and silence/tone
+transitions. No external corpus or listening validation is claimed.
+
 Peak picking uses a fixed raw FFT magnitude threshold of 0.001 (`analysis.rs:117-143`), so behavior depends on input amplitude, FFT/window normalization, and channel gain. Confidence is simply matched peaks divided by all detected peaks; spectral leakage or noise increases the denominator, while many-to-one matching can increase the numerator. The “~−60 dB” comment is not tied to dBFS after window/FFT normalization.
 
 Normalize magnitude, estimate a local/global noise floor, use prominence/SNR and frequency-dependent tolerances, and calibrate confidence against controlled datasets. Add amplitude-invariance sweeps, noise/SNR sweeps, low-frequency/bin-edge cases, silence-to-tone transitions, and real musical fixtures.
 
 ### P2 — Error paths can consume queued input before SRC success
+
+Status: the variable-duration SRC/queue was removed in 0.5.10. All remaining
+fallible buffer/rate/content checks occur before analyzer/vocoder/cache state
+mutation; 0.5.11 adds non-finite-content retry equivalence.
 
 `process_one_chunk` advances the input-ring read position and decrements its count before creating adapters and calling the resampler (`pnd_plugin.rs:476-504`). Any subsequent adapter/SRC/output-ring failure loses the input chunk, leaving state inconsistent if the host retries or continues.
 

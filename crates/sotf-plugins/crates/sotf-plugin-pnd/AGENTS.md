@@ -12,7 +12,10 @@ Preserve these contracts:
 - multi-channel analysis excludes low-confidence observations before consensus;
 - zero reference is change-only tracking and cannot identify constant offset;
 - legacy `phase_vocoder` false/true values both migrate explicitly to the sole duration-preserving engine;
-- no formant-preservation or transient phase-locking claim without implementation and tests.
+- identity/peak phase locking and onset resets require objective transient and
+  inter-channel phase tests;
+- formant preservation remains unsupported unless a separate envelope model
+  and objective spectral gates are added.
 
 Use impulse partition, long-duration correction, transactional error, detector
 amplitude/SNR/bin-edge/motion, unity SNR, transient localization, multichannel,

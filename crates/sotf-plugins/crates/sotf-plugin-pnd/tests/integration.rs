@@ -28,6 +28,18 @@ fn integration_default_parameters() {
     assert!(ids.contains(&"confidence_threshold"));
     assert!(ids.contains(&"reference_frequency_hz"));
     assert!(!ids.contains(&"phase_vocoder"));
+    assert!(!ids.contains(&"formant_preservation"));
+
+    let mut plugin = plugin;
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("formant_preservation"),
+                ParameterValue::Bool(true),
+            )
+            .is_err(),
+        "PND must reject a formant mode until an envelope model and objective gates exist"
+    );
 }
 
 #[test]

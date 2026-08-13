@@ -2,6 +2,7 @@ use super::consts::PV_FFT_SIZE;
 use super::consts::PV_LATENCY_FRAMES;
 use super::pnd_plugin::PndPlugin;
 use super::pnd_plugin::smooth_drift_ratio;
+use super::pnd_plugin::weighted_channel_consensus;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
 
@@ -142,6 +143,103 @@ fn process_errors_are_transactional() {
         .unwrap();
     fresh.process(&input, &mut fresh_output, &context).unwrap();
     assert_eq!(retry_output, fresh_output);
+
+    // Content validation is also pre-state: repairing a non-finite callback
+    // and retrying is bit-identical to an uninterrupted fresh instance.
+    let mut invalid_input = input.clone();
+    invalid_input[PROCESS_CHUNK_FRAMES / 2] = f32::NAN;
+    assert!(
+        retried
+            .process(&invalid_input, &mut retry_output, &context)
+            .is_err()
+    );
+    retried
+        .process(&input, &mut retry_output, &context)
+        .unwrap();
+    fresh.process(&input, &mut fresh_output, &context).unwrap();
+    assert_eq!(retry_output, fresh_output);
+}
+
+#[test]
+fn multichannel_consensus_excludes_silence_and_rejects_conflicting_sources() {
+    let mut tonal_plus_silence = [(1.01, 0.9), (1.0, 0.0), (0.99, 0.1)];
+    let (ratio, confidence) = weighted_channel_consensus(&mut tonal_plus_silence, 0.5);
+    assert!((ratio - 1.01).abs() < 1.0e-6);
+    assert!((confidence - 0.9).abs() < 1.0e-6);
+
+    let mut conflict = [(0.99, 0.95), (1.01, 0.95)];
+    assert_eq!(
+        weighted_channel_consensus(&mut conflict, 0.5),
+        (1.0, 0.0),
+        "opposite high-confidence sources must not authorize a fictitious average"
+    );
+}
+
+#[test]
+fn multichannel_consensus_is_permutation_invariant_and_requires_majority_support() {
+    let observations = [(1.010, 0.9), (1.011, 0.8), (1.009, 0.7), (0.98, 0.9)];
+    let mut forward = observations;
+    let mut reverse = observations;
+    reverse.reverse();
+    let expected = weighted_channel_consensus(&mut forward, 0.5);
+    let permuted = weighted_channel_consensus(&mut reverse, 0.5);
+    assert_eq!(expected, permuted);
+    assert!((expected.0 - 1.01).abs() < 0.001);
+    assert!(
+        expected.1 > 0.6,
+        "a coherent three-of-four majority should pass the default confidence gate: {expected:?}"
+    );
+}
+
+fn render_multichannel_reference_ratio(frequencies: &[Option<f32>]) -> f64 {
+    let sample_rate = 48_000;
+    let frames = sample_rate as usize;
+    let channels = frequencies.len();
+    let mut plugin = PndPlugin::new(channels);
+    plugin.reference_frequency_hz = 440.0;
+    plugin.confidence_threshold = 0.5;
+    plugin.drift_smoothing = 0.001;
+    plugin.initialize(sample_rate).unwrap();
+    let input = (0..frames)
+        .flat_map(|frame| {
+            frequencies.iter().map(move |frequency| {
+                frequency.map_or(0.0, |frequency| {
+                    0.25 * (2.0 * std::f32::consts::PI * frequency * frame as f32
+                        / sample_rate as f32)
+                        .sin()
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut output = vec![0.0; input.len()];
+    plugin
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(sample_rate, frames),
+        )
+        .unwrap();
+    plugin.current_ratio
+}
+
+#[test]
+fn end_to_end_spatial_consensus_is_order_independent_and_fails_closed_on_a_split() {
+    let forward = [Some(444.4), Some(444.4), None, Some(444.4), Some(435.6)];
+    let mut reversed = forward;
+    reversed.reverse();
+    let forward_ratio = render_multichannel_reference_ratio(&forward);
+    let reversed_ratio = render_multichannel_reference_ratio(&reversed);
+    assert_eq!(forward_ratio, reversed_ratio);
+    assert!(
+        forward_ratio < 0.995,
+        "the coherent referenced majority should authorize correction: {forward_ratio}"
+    );
+
+    let split_ratio = render_multichannel_reference_ratio(&[Some(444.4), Some(435.6)]);
+    assert!(
+        (split_ratio - 1.0).abs() < 1.0e-9,
+        "an even spatial conflict must fail closed: {split_ratio}"
+    );
 }
 
 #[test]

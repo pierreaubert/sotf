@@ -10842,7 +10842,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-pnd"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "hound",
  "rustfft 6.4.1",

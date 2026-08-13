@@ -407,7 +407,7 @@ pub(super) fn smooth_drift_ratio(
 /// channels to outvote a reliable tonal channel. Observations are compacted
 /// and sorted in the caller-owned scratch buffer, so this remains allocation
 /// free in the processing callback.
-fn weighted_channel_consensus(
+pub(super) fn weighted_channel_consensus(
     observations: &mut [(f32, f32)],
     confidence_threshold: f32,
 ) -> (f32, f32) {
@@ -428,21 +428,58 @@ fn weighted_channel_consensus(
         return (1.0, 0.0);
     }
 
+    // Channel order must not affect a shared correction decision.
     observations[..valid]
         .sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let total_weight: f32 = observations[..valid].iter().map(|(_, c)| *c).sum();
-    let target_weight = total_weight * 0.5;
-    let mut accumulated = 0.0;
-    let mut weighted_median = observations[valid - 1].0;
-    for &(ratio, confidence) in &observations[..valid] {
-        accumulated += confidence;
-        if accumulated >= target_weight {
-            weighted_median = ratio;
-            break;
+    if valid == 1 {
+        return observations[0];
+    }
+
+    // A single shared clock/pitch correction must be supported by a coherent
+    // channel cluster. Mutually contradictory high-confidence channels are not
+    // averaged into a correction that no channel observed. A 0.4% relative
+    // radius comfortably covers detector interpolation error while separating
+    // musically different sources and opposite drift hypotheses.
+    const CONSENSUS_RADIUS: f32 = 0.004;
+    let mut best_center = observations[0].0;
+    let mut best_weight = 0.0_f32;
+    for &(center, _) in &observations[..valid] {
+        let support = observations[..valid]
+            .iter()
+            .filter(|(ratio, _)| ((ratio / center) - 1.0).abs() <= CONSENSUS_RADIUS)
+            .map(|(_, confidence)| *confidence)
+            .sum::<f32>();
+        let support_is_better = support > best_weight + f32::EPSILON;
+        let support_is_tied = (support - best_weight).abs() <= f32::EPSILON;
+        let center_is_safer = (center - 1.0).abs() < (best_center - 1.0).abs()
+            || ((center - 1.0).abs() == (best_center - 1.0).abs() && center < best_center);
+        if support_is_better || (support_is_tied && center_is_safer) {
+            best_center = center;
+            best_weight = support;
         }
     }
 
-    (weighted_median, total_weight / valid as f32)
+    let support_fraction = best_weight / total_weight.max(f32::MIN_POSITIVE);
+    if support_fraction < 0.6 {
+        return (1.0, 0.0);
+    }
+
+    let mut weighted_ratio = 0.0_f32;
+    let mut members = 0usize;
+    for &(ratio, confidence) in &observations[..valid] {
+        if ((ratio / best_center) - 1.0).abs() <= CONSENSUS_RADIUS {
+            weighted_ratio += ratio * confidence;
+            members += 1;
+        }
+    }
+    let ratio = weighted_ratio / best_weight.max(f32::MIN_POSITIVE);
+    // Preserve the average confidence of the coherent observations while
+    // reducing it by cluster impurity. The square-root penalty lets a clear
+    // multi-channel majority remain authoritative at the default gate without
+    // allowing an even split through (the split already fails above).
+    let confidence = (best_weight / members.max(1) as f32) * support_fraction.sqrt();
+    (ratio, confidence.clamp(0.0, 1.0))
 }
 
 impl Plugin for PndPlugin {
@@ -622,6 +659,13 @@ impl Plugin for PndPlugin {
                 "Process context sample rate {} does not match initialized sample rate {}",
                 context.sample_rate, self.sample_rate
             ));
+        }
+        // Keep every fallible validation ahead of analyzer/vocoder mutation.
+        // Once this gate succeeds the prepared DSP path is infallible, so a
+        // rejected callback can be repaired and retried without losing clock,
+        // FFT, phase, or diagnostic state.
+        if input.iter().any(|sample| !sample.is_finite()) {
+            return Err("PND input contains a non-finite sample".to_string());
         }
 
         self.process_phase_vocoder(input, output, context)

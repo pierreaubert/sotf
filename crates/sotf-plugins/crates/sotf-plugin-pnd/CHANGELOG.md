@@ -1,3 +1,35 @@
+# 0.5.11
+
+- Added allocation-free normalized spectral-flux transient detection and
+  identity phase locking around remapped spectral peaks. Synthesis peak phases
+  initialize from analysis phase, reset on attacks, and preserve independent
+  channels' relative phase rather than starting every channel at zero.
+- Preserve each detected attack's within-frame time origin when remapping
+  transient phase ramps. Offset-spanning regressions at both correction bounds
+  keep the output peak at input offset plus the fixed 2047-frame latency. New-
+  hop novelty is crest-gated against sustained programme, armed before Hann
+  edge attenuation, and carried through overlapping frames; a harmonic-bed
+  residual regression covers short attacks over already-audible material.
+- Replaced raw fixed-magnitude peak gating with a frame-relative spectral-noise
+  floor and energy-weighted temporal confidence. Reference confidence now
+  combines local prominence, proximity, and broadband SNR evidence.
+- Made multi-channel consensus require a coherent confidence-weighted majority
+  cluster. Silent/noisy channels remain excluded, while contradictory tonal
+  estimates fail closed and channel-order permutations are deterministic.
+- Reject non-finite input before mutating analyzer, phase-vocoder, or cache
+  state, so a repaired callback is retry-equivalent to uninterrupted processing.
+- Added objective shifted-transient localization, repeated percussive attack,
+  voiced harmonic-stack concentration, inter-channel phase, harmonic-level,
+  colored/white-noise, SNR, spatial-consensus, transaction, reset,
+  cache-generation, and realtime allocation regressions.
+- Formant preservation remains explicitly unsupported: no formant-envelope
+  model or misleading control is exposed. Reference-free constant-offset
+  identifiability and the fixed-frame duration-preserving boundary are unchanged.
+- The objective quality path has a measured bounded CPU cost: five identical
+  5-second stereo QA runs had a 50.25 ms median (1.00% realtime CPU), versus
+  38.53 ms (0.77%) for 0.5.10. Both runs were allocation-free; the ~30.4%
+  relative DSP increase is retained for transient and spatial-phase correctness.
+
 # 0.5.10
 
 ## Breaking semantic correction
