@@ -1292,6 +1292,8 @@ pub enum PluginSettings {
         #[serde(default)]
         lfo_depth_ms: f64,
         #[serde(default)]
+        pitch_preserving: bool,
+        #[serde(default)]
         allpass_feedback: bool,
         #[serde(default = "default_delay_allpass_coeff")]
         allpass_coeff: f64,
@@ -2108,6 +2110,7 @@ impl PluginSettings {
                     mix: p(d, "mix").default_f64(),
                     lfo_rate_hz: p(d, "lfo_rate_hz").default_f64(),
                     lfo_depth_ms: p(d, "lfo_depth_ms").default_f64(),
+                    pitch_preserving: p(d, "pitch_preserving").default_bool(),
                     allpass_feedback: p(d, "allpass_feedback").default_bool(),
                     allpass_coeff: p(d, "allpass_coeff").default_f64(),
                 }

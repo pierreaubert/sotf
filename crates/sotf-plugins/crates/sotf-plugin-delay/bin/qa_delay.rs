@@ -16,6 +16,7 @@ fn main() {
         mix: 1.0, // Wet only
         lfo_rate_hz: 0.0,
         lfo_depth_ms: 0.0,
+        pitch_preserving: false,
         allpass_feedback: false,
         allpass_coeff: 0.5,
         channel_delays_ms: Vec::new(),
@@ -51,6 +52,22 @@ fn main() {
     // Run standard QA tests
     let mut plugin = ParametricInPlacePluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "DelayPlugin");
+
+    let clean_params = DelayPluginParams {
+        delay_ms: 100.0,
+        feedback: 0.3,
+        mix: 1.0,
+        lfo_rate_hz: 0.0,
+        lfo_depth_ms: 0.0,
+        pitch_preserving: true,
+        allpass_feedback: false,
+        allpass_coeff: 0.5,
+        channel_delays_ms: Vec::new(),
+    };
+    let mut clean = DelayPlugin::from_params(2, clean_params).expect("valid clean params");
+    clean.initialize(sample_rate).unwrap();
+    let mut clean = ParametricInPlacePluginAdapter::new(clean);
+    run_standard_tests(&mut clean, "DelayPlugin pitch-preserving stereo");
 
     println!("\n[ALL PASS] Delay QA Complete.");
 }

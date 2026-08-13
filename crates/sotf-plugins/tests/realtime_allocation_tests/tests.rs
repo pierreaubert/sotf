@@ -1158,6 +1158,53 @@ fn test_delay_zero_alloc() {
 
 #[test]
 #[serial]
+fn test_delay_pitch_preserving_zero_alloc() {
+    let mut plugin = DelayPlugin::new(2, 100.0, 0.3, 0.5);
+    plugin
+        .set_parameter(
+            ParameterId::from("pitch_preserving"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    assert_parametric_in_place_process_zero_alloc(
+        "DelayPlugin::process_in_place pitch-preserving",
+        plugin,
+        2,
+        BUFFER_SIZE,
+    );
+}
+
+#[test]
+#[serial]
+fn test_delay_reset_zero_alloc_during_active_clean_transition() {
+    let mut scalar = DelayPlugin::new(2, 100.0, 0.3, 0.5);
+    scalar
+        .set_parameter(
+            ParameterId::from("pitch_preserving"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    scalar.initialize(SAMPLE_RATE).unwrap();
+    scalar
+        .set_parameter(ParameterId::from("delay_ms"), ParameterValue::Float(200.0))
+        .unwrap();
+    let mut block = generate_test_buffer(64, 2);
+    scalar
+        .process_in_place(&mut block, &ProcessContext::new(SAMPLE_RATE, 64))
+        .unwrap();
+
+    let mut per_channel = DelayPlugin::new_per_channel(vec![1.0, 3.0, 7.0]).unwrap();
+    per_channel.initialize(SAMPLE_RATE).unwrap();
+    assert_no_allocs("DelayPlugin scalar/per-channel reset", || {
+        scalar.reset();
+        per_channel.reset();
+        scalar.initialize(SAMPLE_RATE).unwrap();
+        per_channel.initialize(SAMPLE_RATE).unwrap();
+    });
+}
+
+#[test]
+#[serial]
 fn test_aae_zero_alloc() {
     let mut plugin = AaePlugin::from_params(AaePluginParams::default()).unwrap();
     assert_plugin_process_zero_alloc("AaePlugin::process", &mut plugin, BUFFER_SIZE);

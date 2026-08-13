@@ -1,6 +1,6 @@
 use crate::params::{
     default_allpass_coeff, default_allpass_feedback, default_delay_ms, default_feedback,
-    default_lfo_depth_ms, default_lfo_rate_hz, default_mix,
+    default_lfo_depth_ms, default_lfo_rate_hz, default_mix, default_pitch_preserving,
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +16,8 @@ pub struct DelayPluginParams {
     pub lfo_rate_hz: f32,
     #[serde(default = "default_lfo_depth_ms")]
     pub lfo_depth_ms: f32,
+    #[serde(default = "default_pitch_preserving")]
+    pub pitch_preserving: bool,
     #[serde(default = "default_allpass_feedback")]
     pub allpass_feedback: bool,
     #[serde(default = "default_allpass_coeff")]
@@ -46,6 +48,10 @@ mod tests {
         assert_eq!(
             p.lfo_depth_ms,
             pk(PARAMS, "lfo_depth_ms").default_f64() as f32
+        );
+        assert_eq!(
+            p.pitch_preserving,
+            pk(PARAMS, "pitch_preserving").default_bool()
         );
         assert_eq!(
             p.allpass_feedback,

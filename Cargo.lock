@@ -10632,7 +10632,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-delay"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "proptest 1.11.0",
  "serde",

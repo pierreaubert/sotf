@@ -260,6 +260,7 @@ fn convert_delay(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginC
         mix,
         lfo_rate_hz,
         lfo_depth_ms,
+        pitch_preserving,
         allpass_feedback,
         allpass_coeff,
     } = settings
@@ -274,6 +275,7 @@ fn convert_delay(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginC
             "mix": mix,
             "lfo_rate_hz": lfo_rate_hz,
             "lfo_depth_ms": lfo_depth_ms,
+            "pitch_preserving": pitch_preserving,
             "allpass_feedback": allpass_feedback,
             "allpass_coeff": allpass_coeff,
         }),
@@ -357,6 +359,7 @@ mod tests {
             mix: 0.5,
             lfo_rate_hz: 0.0,
             lfo_depth_ms: 0.0,
+            pitch_preserving: true,
             allpass_feedback: false,
             allpass_coeff: 0.0,
         };
@@ -365,6 +368,7 @@ mod tests {
             .expect("delay converter registered");
         assert_eq!(config.plugin_type, "delay");
         assert_eq!(config.parameters["delay_ms"], 100.0);
+        assert_eq!(config.parameters["pitch_preserving"], true);
     }
 
     #[test]

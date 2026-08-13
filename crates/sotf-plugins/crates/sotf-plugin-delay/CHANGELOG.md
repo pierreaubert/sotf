@@ -1,3 +1,21 @@
+# 0.5.11
+
+## Added
+
+- Added an opt-in structural `pitch_preserving` mode. Delay automation targets
+  transition between fixed taps for 20 ms instead of sweeping a read
+  head. Every nonidentical change fades fully through silence before resuming at
+  the exact target, avoiding the legacy Doppler glide, phase rotation, and
+  cross-phase nulls without relying on a finite correlation window.
+- Pitch-preserving mode requires zero LFO rate and depth because no
+  input-agnostic blend of differently delayed taps can guarantee both carrier
+  and phase retention without nulls.
+- Added full-fade bass tone/phase oracles at aligned, quarter-period, and
+  half-period offsets and multiple automation phases, plus irregular callback
+  partition, realtime allocation, QA, engine-settings, and converter coverage.
+  Version-1 preset indexes remain unchanged; the new version-2 boolean is
+  appended and defaults off.
+
 # 0.5.10
 
 ## Fixes

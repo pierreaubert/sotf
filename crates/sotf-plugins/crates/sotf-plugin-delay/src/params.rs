@@ -66,6 +66,9 @@ pub const PARAMS: &[ParamSpec] = &[
     .doc("Allpass filter coefficient"),
     ParamSpec::bool_param("Allpass Feedback", "allpass_feedback", false, "General")
         .doc("Use allpass filter in feedback path"),
+    ParamSpec::bool_param("Pitch Preserving", "pitch_preserving", false, "Modulation")
+        .structural()
+        .doc("Use fixed read heads for pitch-preserving delay changes; requires zero LFO rate and depth"),
 ];
 
 // ============================================================================
@@ -88,8 +91,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     tabs: &[TabSpec {
         name: "Modulation",
         controls: &[
-            ControlSpec::knob(3), // lfo_rate_hz
-            ControlSpec::knob(4), // lfo_depth_ms
+            ControlSpec::knob(3),   // lfo_rate_hz
+            ControlSpec::knob(4),   // lfo_depth_ms
+            ControlSpec::toggle(7), // pitch_preserving
         ],
     }],
     visualizations: &[],
@@ -121,6 +125,8 @@ pub struct Params {
     pub lfo_rate_hz: f64,
     #[serde(default = "d_lfo_depth_ms")]
     pub lfo_depth_ms: f64,
+    #[serde(default = "d_pitch_preserving")]
+    pub pitch_preserving: bool,
     #[serde(default = "d_allpass_feedback")]
     pub allpass_feedback: bool,
     #[serde(default = "d_allpass_coeff")]
@@ -141,6 +147,9 @@ fn d_lfo_rate_hz() -> f64 {
 }
 fn d_lfo_depth_ms() -> f64 {
     pk(PARAMS, "lfo_depth_ms").default_f64()
+}
+fn d_pitch_preserving() -> bool {
+    pk(PARAMS, "pitch_preserving").default_bool()
 }
 fn d_allpass_feedback() -> bool {
     pk(PARAMS, "allpass_feedback").default_bool()
@@ -164,6 +173,9 @@ pub fn default_lfo_rate_hz() -> f32 {
 pub fn default_lfo_depth_ms() -> f32 {
     d_lfo_depth_ms() as f32
 }
+pub fn default_pitch_preserving() -> bool {
+    d_pitch_preserving()
+}
 pub fn default_allpass_feedback() -> bool {
     d_allpass_feedback()
 }
@@ -179,6 +191,7 @@ impl Default for Params {
             mix: d_mix(),
             lfo_rate_hz: d_lfo_rate_hz(),
             lfo_depth_ms: d_lfo_depth_ms(),
+            pitch_preserving: d_pitch_preserving(),
             allpass_feedback: d_allpass_feedback(),
             allpass_coeff: d_allpass_coeff(),
         }
@@ -192,7 +205,7 @@ impl Default for Params {
 impl PluginParamDef for Params {
     const PARAMS: &'static [ParamSpec] = PARAMS;
     const LAYOUT: Option<&'static PluginLayout> = Some(&LAYOUT);
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
     const PLUGIN_TYPE_KEY: &'static str = "delay";
 
     fn param_value(&self, index: usize) -> Option<f64> {
@@ -204,6 +217,7 @@ impl PluginParamDef for Params {
             4 => Some(self.lfo_depth_ms),
             5 => Some(self.allpass_coeff),
             6 => Some(if self.allpass_feedback { 1.0 } else { 0.0 }),
+            7 => Some(if self.pitch_preserving { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -217,6 +231,7 @@ impl PluginParamDef for Params {
             4 => self.lfo_depth_ms = value,
             5 => self.allpass_coeff = value,
             6 => self.allpass_feedback = value > 0.5,
+            7 => self.pitch_preserving = value > 0.5,
             _ => {}
         }
     }
@@ -256,6 +271,7 @@ mod tests {
         assert_eq!(original.mix, restored.mix);
         assert_eq!(original.lfo_rate_hz, restored.lfo_rate_hz);
         assert_eq!(original.lfo_depth_ms, restored.lfo_depth_ms);
+        assert_eq!(original.pitch_preserving, restored.pitch_preserving);
         assert_eq!(original.allpass_feedback, restored.allpass_feedback);
         assert_eq!(original.allpass_coeff, restored.allpass_coeff);
     }
@@ -269,9 +285,30 @@ mod tests {
         assert_eq!(p.lfo_rate_hz, pk(PARAMS, "lfo_rate_hz").default_f64());
         assert_eq!(p.lfo_depth_ms, pk(PARAMS, "lfo_depth_ms").default_f64());
         assert_eq!(
+            p.pitch_preserving,
+            pk(PARAMS, "pitch_preserving").default_bool()
+        );
+        assert_eq!(
             p.allpass_feedback,
             pk(PARAMS, "allpass_feedback").default_bool()
         );
         assert_eq!(p.allpass_coeff, pk(PARAMS, "allpass_coeff").default_f64());
+    }
+
+    #[test]
+    fn version_one_state_migrates_to_legacy_moving_head_mode() {
+        let legacy = serde_json::json!({
+            "delay_ms": 250.0,
+            "feedback": 0.4,
+            "mix": 0.7,
+            "lfo_rate_hz": 1.5,
+            "lfo_depth_ms": 2.0,
+            "allpass_feedback": true,
+            "allpass_coeff": 0.6
+        });
+        let restored: Params = serde_json::from_value(legacy).unwrap();
+        assert!(!restored.pitch_preserving);
+        assert_eq!(restored.delay_ms, 250.0);
+        assert_eq!(restored.allpass_coeff, 0.6);
     }
 }

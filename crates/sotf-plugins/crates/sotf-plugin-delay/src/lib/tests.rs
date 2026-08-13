@@ -1,8 +1,10 @@
 use super::allpass_state::AllpassState;
 use super::delay_plugin::DelayPlugin;
 use super::types::DelayPluginParams;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::parametric_plugin::ParameterSet;
 use sotf_host::plugin::ProcessContext;
 
 #[test]
@@ -83,11 +85,263 @@ fn test_lfo_modulation() {
     );
 }
 
+fn render_clean_delay_change(
+    frequency: f32,
+    target_delay_ms: f32,
+    warm_frames: usize,
+    partitions: &[usize],
+) -> Vec<f32> {
+    const SAMPLE_RATE: u32 = 48_000;
+    const CAPTURE_FRAMES: usize = 1_600;
+
+    let mut plugin = DelayPlugin::new(1, 10.0, 0.0, 1.0);
+    plugin
+        .set_parameter(
+            ParameterId::from("pitch_preserving"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let sample = |index: usize| {
+        (std::f32::consts::TAU * frequency * index as f32 / SAMPLE_RATE as f32).sin()
+    };
+    let mut absolute = 0usize;
+    let mut part = 0usize;
+    while absolute < warm_frames {
+        let frames = partitions[part % partitions.len()].min(warm_frames - absolute);
+        let mut block: Vec<f32> = (absolute..absolute + frames).map(sample).collect();
+        plugin
+            .process_in_place(&mut block, &ProcessContext::new(SAMPLE_RATE, frames))
+            .unwrap();
+        absolute += frames;
+        part += 1;
+    }
+
+    plugin
+        .set_parameter(
+            ParameterId::from("delay_ms"),
+            ParameterValue::Float(target_delay_ms),
+        )
+        .unwrap();
+
+    let mut output = Vec::with_capacity(CAPTURE_FRAMES);
+    while output.len() < CAPTURE_FRAMES {
+        let frames = partitions[part % partitions.len()].min(CAPTURE_FRAMES - output.len());
+        let mut block: Vec<f32> = (absolute..absolute + frames).map(sample).collect();
+        plugin
+            .process_in_place(&mut block, &ProcessContext::new(SAMPLE_RATE, frames))
+            .unwrap();
+        output.extend_from_slice(&block);
+        absolute += frames;
+        part += 1;
+    }
+    output
+}
+
+#[test]
+fn pitch_preserving_transition_matches_stationary_taps_for_full_bass_fade() {
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const FREQUENCY: f32 = 20.0;
+    const OLD_DELAY_SAMPLES: usize = 480;
+    const FADE_SAMPLES: usize = 960;
+
+    // At 20 Hz these target changes are respectively one period, one quarter
+    // period, and one half period away from the original 10 ms tap. Several
+    // automation phases cover the short-window false-positive cases that a
+    // correlation gate would misclassify as phase compatible.
+    for target_delay_ms in [60.0_f32, 22.5, 35.0] {
+        let target_delay_samples = (target_delay_ms * SAMPLE_RATE / 1000.0).round() as usize;
+        for warm_frames in [12_000usize, 12_137, 12_871] {
+            let output = render_clean_delay_change(
+                FREQUENCY,
+                target_delay_ms,
+                warm_frames,
+                &[1, 64, 511, 73, 997],
+            );
+            let sample = |index: usize| {
+                (std::f32::consts::TAU * FREQUENCY * index as f32 / SAMPLE_RATE).sin()
+            };
+            let mut max_error = 0.0_f32;
+            for (frame, &actual) in output.iter().enumerate() {
+                let old = sample(warm_frames + frame - OLD_DELAY_SAMPLES);
+                let next = sample(warm_frames + frame - target_delay_samples);
+                let expected = if frame < FADE_SAMPLES {
+                    let fade = (frame + 1) as f32 / FADE_SAMPLES as f32;
+                    if fade < 0.5 {
+                        old * (1.0 - 2.0 * fade)
+                    } else {
+                        next * (2.0 * fade - 1.0)
+                    }
+                } else {
+                    next
+                };
+                max_error = max_error.max((actual - expected).abs());
+            }
+            assert!(
+                max_error < 2.0e-6,
+                "target={target_delay_ms} ms warm={warm_frames} max error={max_error}"
+            );
+            assert_eq!(output[FADE_SAMPLES / 2 - 1], 0.0);
+            assert!(output.iter().all(|sample| sample.is_finite()));
+        }
+    }
+}
+
+#[test]
+fn pitch_preserving_transition_is_callback_partition_invariant() {
+    let contiguous = render_clean_delay_change(20.0, 22.5, 12_137, &[4_096]);
+    let irregular = render_clean_delay_change(20.0, 22.5, 12_137, &[1, 64, 511, 73, 997]);
+    assert_eq!(contiguous, irregular);
+}
+
+#[test]
+fn pitch_preserving_mode_is_graph_rebuild_only_after_initialization() {
+    let mut plugin = DelayPlugin::new(1, 10.0, 0.0, 1.0);
+    let dynamic = plugin
+        .parameter_schema()
+        .into_iter()
+        .find(|parameter| parameter.id.as_str() == "pitch_preserving")
+        .unwrap();
+    assert_eq!(dynamic.update_mode, UpdateMode::Structural);
+    assert_eq!(crate::params::PARAMS[7].update_mode, UpdateMode::Structural);
+    plugin.initialize(48_000).unwrap();
+    let error = plugin
+        .set_parameter(
+            ParameterId::from("pitch_preserving"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap_err();
+    assert!(error.contains("structural"));
+}
+
+#[test]
+fn pitch_preserving_mode_rejects_lfo_to_protect_carrier_and_phase() {
+    let invalid = DelayPlugin::from_params(
+        1,
+        DelayPluginParams {
+            delay_ms: 100.0,
+            feedback: 0.0,
+            mix: 1.0,
+            lfo_rate_hz: 2.0,
+            lfo_depth_ms: 5.0,
+            pitch_preserving: true,
+            allpass_feedback: false,
+            allpass_coeff: 0.5,
+            channel_delays_ms: Vec::new(),
+        },
+    );
+    assert!(
+        invalid
+            .err()
+            .expect("pitch-preserving LFO must be rejected")
+            .contains("requires lfo_rate_hz")
+    );
+
+    let mut clean = DelayPlugin::new(1, 100.0, 0.0, 1.0);
+    clean
+        .set_parameter(
+            ParameterId::from("pitch_preserving"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    assert!(
+        clean
+            .set_parameter(ParameterId::from("lfo_rate_hz"), ParameterValue::Float(2.0),)
+            .is_err()
+    );
+    assert!(
+        clean
+            .set_parameter(
+                ParameterId::from("lfo_depth_ms"),
+                ParameterValue::Float(5.0),
+            )
+            .is_err()
+    );
+    assert_eq!(clean.modulation.rate_hz, 0.0);
+    assert_eq!(clean.modulation.depth_ms, 0.0);
+
+    let mut modulated = DelayPlugin::new(1, 100.0, 0.0, 1.0);
+    modulated
+        .set_parameter(ParameterId::from("lfo_rate_hz"), ParameterValue::Float(2.0))
+        .unwrap();
+    let error = modulated
+        .set_parameter(
+            ParameterId::from("pitch_preserving"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap_err();
+    assert!(error.contains("requires lfo_rate_hz"));
+
+    let mut batch = DelayPlugin::new(1, 100.0, 0.0, 1.0);
+    let mut values = ParameterSet::new();
+    values.insert(
+        ParameterId::from("pitch_preserving"),
+        ParameterValue::Bool(true),
+    );
+    values.insert(ParameterId::from("lfo_rate_hz"), ParameterValue::Float(2.0));
+    assert!(batch.apply_values(values).is_err());
+    assert_eq!(
+        batch.get_parameter(&ParameterId::from("pitch_preserving")),
+        Some(ParameterValue::Bool(false))
+    );
+    assert_eq!(
+        batch.get_parameter(&ParameterId::from("lfo_rate_hz")),
+        Some(ParameterValue::Float(0.0))
+    );
+}
+
+#[test]
+fn pitch_preserving_batch_mode_switch_is_transactional() {
+    let mut plugin = DelayPlugin::new(1, 100.0, 0.0, 1.0);
+    plugin
+        .set_parameter(
+            ParameterId::from("pitch_preserving"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+
+    let mut valid = ParameterSet::new();
+    valid.insert(
+        ParameterId::from("allpass_coeff"),
+        ParameterValue::Float(0.8),
+    );
+    valid.insert(ParameterId::from("lfo_rate_hz"), ParameterValue::Float(2.0));
+    valid.insert(
+        ParameterId::from("pitch_preserving"),
+        ParameterValue::Bool(false),
+    );
+    plugin.apply_values(valid).unwrap();
+    assert_eq!(plugin.allpass_coeff, 0.8);
+    assert_eq!(plugin.modulation.rate_hz, 2.0);
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("pitch_preserving")),
+        Some(ParameterValue::Bool(false))
+    );
+
+    let before = plugin.current_values();
+    let mut invalid = ParameterSet::new();
+    invalid.insert(
+        ParameterId::from("allpass_coeff"),
+        ParameterValue::Float(0.9),
+    );
+    invalid.insert(
+        ParameterId::from("lfo_depth_ms"),
+        ParameterValue::Float(4.0),
+    );
+    invalid.insert(
+        ParameterId::from("pitch_preserving"),
+        ParameterValue::Bool(true),
+    );
+    assert!(plugin.apply_values(invalid).is_err());
+    assert_eq!(plugin.current_values(), before);
+}
+
 #[test]
 fn test_effective_delay_samples_scales_depth_to_preserve_symmetry() {
     let mut p = DelayPlugin::new(1, 100.0, 0.0, 1.0);
     p.initialize(48000).unwrap();
-    p.lfo_depth_ms = 10.0;
+    p.modulation.depth_ms = 10.0;
     p.delay_smoother.set_target(100.0 * 48.0);
 
     let base_delay = 100.0 * 48.0;
@@ -106,7 +360,7 @@ fn test_effective_delay_samples_scales_depth_to_preserve_symmetry() {
 fn test_effective_delay_samples_preserves_feasible_half_cycle_near_min_delay() {
     let mut p = DelayPlugin::new(1, 0.0, 0.0, 1.0);
     p.initialize(48000).unwrap();
-    p.lfo_depth_ms = 10.0;
+    p.modulation.depth_ms = 10.0;
 
     let base_delay = 0.0;
     let positive = p.effective_delay_samples(base_delay, 1.0);
@@ -125,7 +379,7 @@ fn test_effective_delay_samples_preserves_feasible_half_cycle_near_min_delay() {
 fn effective_delay_is_continuous_at_both_boundaries() {
     let mut p = DelayPlugin::new(1, 0.0, 0.0, 1.0);
     p.initialize(48_000).unwrap();
-    p.lfo_depth_ms = 10.0;
+    p.modulation.depth_ms = 10.0;
     let max_delay = p.max_delay_ms * p.sample_rate as f32 / 1000.0;
 
     for base in [0.0, 0.25, max_delay - 0.25, max_delay] {
@@ -302,6 +556,7 @@ fn per_channel_factory_rejects_effect_controls() {
         mix: 1.0,
         lfo_rate_hz: 0.0,
         lfo_depth_ms: 0.0,
+        pitch_preserving: false,
         allpass_feedback: false,
         allpass_coeff: 0.5,
         channel_delays_ms: vec![1.0, 2.0],
@@ -353,6 +608,7 @@ fn factory_params_reject_invalid_values() {
         mix: 1.0,
         lfo_rate_hz: 0.0,
         lfo_depth_ms: 0.0,
+        pitch_preserving: false,
         allpass_feedback: false,
         allpass_coeff: 0.5,
         channel_delays_ms: Vec::new(),
@@ -386,6 +642,62 @@ fn fallible_constructor_rejects_every_invalid_scalar_boundary() {
     assert!(DelayPlugin::try_new(1, 10.0, -0.96, 1.0).is_err());
     assert!(DelayPlugin::try_new(1, 10.0, 0.0, 1.01).is_err());
     assert!(DelayPlugin::try_new_with_max_delay(1, 11.0, 0.0, 1.0, 10.0).is_err());
+    assert!(
+        DelayPlugin::try_new(super::delay_plugin::MAX_DELAY_CHANNELS + 1, 10.0, 0.0, 1.0).is_err()
+    );
+    assert!(
+        DelayPlugin::new_per_channel(vec![0.0; super::delay_plugin::MAX_DELAY_CHANNELS + 1])
+            .is_err()
+    );
+}
+
+#[test]
+fn initialize_rejects_invalid_capacity_inputs_without_mutating_state() {
+    let mut plugin = DelayPlugin::new(1, 10.0, 0.0, 1.0);
+    let original_rate = plugin.sample_rate;
+    let original_samples = plugin.max_samples;
+    assert!(plugin.initialize(0).is_err());
+    assert_eq!(plugin.sample_rate, original_rate);
+    assert_eq!(plugin.max_samples, original_samples);
+
+    plugin.channels = usize::MAX;
+    assert!(plugin.initialize(48_000).is_err());
+    assert_eq!(plugin.sample_rate, original_rate);
+    assert_eq!(plugin.max_samples, original_samples);
+}
+
+#[test]
+fn reinitialize_clears_delay_tail_cursor_and_transition_state() {
+    let mut plugin = DelayPlugin::new(1, 10.0, 0.8, 1.0);
+    plugin
+        .set_parameter(
+            ParameterId::from("pitch_preserving"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    plugin.initialize(48_000).unwrap();
+    let mut impulse = vec![0.0; 2_048];
+    impulse[0] = 1.0;
+    plugin
+        .process_in_place(&mut impulse, &ProcessContext::new(48_000, 2_048))
+        .unwrap();
+    plugin
+        .set_parameter(ParameterId::from("delay_ms"), ParameterValue::Float(30.0))
+        .unwrap();
+    let mut transition = vec![0.0; 64];
+    plugin
+        .process_in_place(&mut transition, &ProcessContext::new(48_000, 64))
+        .unwrap();
+    assert!(plugin.clean_transition_active());
+
+    plugin.initialize(48_000).unwrap();
+    assert_eq!(plugin.write_pos, 0);
+    assert!(!plugin.clean_transition_active());
+    let mut silence = vec![0.0; 4_096];
+    plugin
+        .process_in_place(&mut silence, &ProcessContext::new(48_000, 4_096))
+        .unwrap();
+    assert!(silence.iter().all(|sample| *sample == 0.0));
 }
 
 #[test]
@@ -400,6 +712,7 @@ fn lfo_modulation_has_documented_tape_pitch_excursion_without_clicks() {
             mix: 1.0,
             lfo_rate_hz: 2.0,
             lfo_depth_ms: 5.0,
+            pitch_preserving: false,
             allpass_feedback: false,
             allpass_coeff: 0.5,
             channel_delays_ms: Vec::new(),
@@ -515,14 +828,15 @@ fn test_from_params() {
         mix: 0.6,
         lfo_rate_hz: 3.0,
         lfo_depth_ms: 1.5,
+        pitch_preserving: false,
         allpass_feedback: true,
         allpass_coeff: 0.5,
         channel_delays_ms: Vec::new(),
     };
     let p = DelayPlugin::from_params(2, params).unwrap();
     assert_eq!(p.delay_ms, 50.0);
-    assert_eq!(p.lfo_rate_hz, 3.0);
-    assert_eq!(p.lfo_depth_ms, 1.5);
+    assert_eq!(p.modulation.rate_hz, 3.0);
+    assert_eq!(p.modulation.depth_ms, 1.5);
     assert!(p.allpass_feedback);
     assert!(!p.is_per_channel());
 }
@@ -543,6 +857,7 @@ fn test_per_channel_from_params() {
         mix: 1.0,
         lfo_rate_hz: 0.0,
         lfo_depth_ms: 0.0,
+        pitch_preserving: false,
         allpass_feedback: false,
         allpass_coeff: 0.5,
         channel_delays_ms: vec![1.0, 3.0, 7.0],
@@ -560,6 +875,7 @@ fn test_per_channel_from_params_rejects_channels_mismatch() {
         mix: 1.0,
         lfo_rate_hz: 0.0,
         lfo_depth_ms: 0.0,
+        pitch_preserving: false,
         allpass_feedback: false,
         allpass_coeff: 0.5,
         channel_delays_ms: vec![1.0, 3.0, 7.0],
@@ -966,14 +1282,14 @@ fn test_set_parameter_smoke_known_values() {
 
     p.set_parameter(ParameterId::from("lfo_rate_hz"), ParameterValue::Float(2.5))
         .unwrap();
-    assert!((p.lfo_rate_hz - 2.5).abs() < 1e-6);
+    assert!((p.modulation.rate_hz - 2.5).abs() < 1e-6);
 
     p.set_parameter(
         ParameterId::from("lfo_depth_ms"),
         ParameterValue::Float(1.25),
     )
     .unwrap();
-    assert!((p.lfo_depth_ms - 1.25).abs() < 1e-6);
+    assert!((p.modulation.depth_ms - 1.25).abs() < 1e-6);
 
     p.set_parameter(
         ParameterId::from("allpass_feedback"),

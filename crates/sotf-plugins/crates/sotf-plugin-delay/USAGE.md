@@ -20,7 +20,13 @@ A feedback delay line that stores audio and plays it back after a configurable t
 
 ### Smooth Parameter Changes
 
-Delay time, feedback, and mix are smoothed to avoid hard discontinuities during real-time adjustment. Delay-time changes use four-point Lagrange interpolation and have tape-style behavior, so automation or LFO modulation can intentionally produce Doppler/pitch glide.
+Delay time, feedback, and mix are smoothed to avoid hard discontinuities during
+real-time adjustment. The default delay-time path uses four-point Lagrange
+interpolation with tape-style behavior, so automation or LFO modulation can
+intentionally produce Doppler/pitch glide. The structural `pitch_preserving`
+mode instead switches nonidentical delay targets through silence over 20 ms
+while both read heads remain stationary; LFO rate and depth must be zero in
+that mode.
 
 The LFO uses bounded one-sided clamping at the minimum and maximum delay: the
 feasible half-cycle remains active while only the portion outside the declared
@@ -28,9 +34,9 @@ delay range is clipped. Allpass enable/bypass and coefficient changes crossfade
 over 20 ms, and the filter state runs continuously to avoid stale-tail clicks.
 
 Per-channel mode is reserved for pure RoomEQ routing delays: mix is fixed wet,
-feedback and LFO are zero, and allpass feedback is disabled. Its delay memory is
-sized from the declared per-channel automation maximum rather than the global
-five-second effect range.
+feedback and LFO are zero, and allpass and pitch-preserving modes are disabled.
+Its delay memory is sized from the declared per-channel automation maximum
+rather than the global five-second effect range.
 
 ## Demos
 

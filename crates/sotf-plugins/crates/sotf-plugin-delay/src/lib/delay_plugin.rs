@@ -2,6 +2,7 @@ use super::allpass_state::AllpassState;
 use super::misc::MAX_DELAY_MS;
 use super::misc::parse_channel_delay_id;
 use super::types::DelayPluginParams;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
@@ -12,6 +13,43 @@ use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
 
 const ALLPASS_SMOOTH_MS: f32 = 20.0;
+const CLEAN_CROSSFADE_MS: f32 = 20.0;
+pub(super) const MAX_DELAY_CHANNELS: usize = 64;
+const MAX_DELAY_SAMPLE_RATE: u32 = 768_000;
+
+/// Preallocated dual-read-head state for pitch-preserving delay changes.
+/// Read positions remain fixed throughout a transition; only their gains move.
+struct CleanTransitionState {
+    current_delay_samples: Vec<f32>,
+    next_delay_samples: Vec<f32>,
+    fade_position: usize,
+    fade_samples: usize,
+    active: bool,
+}
+
+impl CleanTransitionState {
+    fn new(channels: usize, initial_delay_samples: f32, sample_rate: u32) -> Self {
+        Self {
+            current_delay_samples: vec![initial_delay_samples; channels],
+            next_delay_samples: vec![initial_delay_samples; channels],
+            fade_position: 0,
+            fade_samples: ((CLEAN_CROSSFADE_MS * sample_rate as f32 / 1000.0).round() as usize)
+                .max(1),
+            active: false,
+        }
+    }
+}
+
+pub(super) struct ModulationState {
+    param_rate_hz: ParameterId,
+    pub(super) rate_hz: f32,
+    param_depth_ms: ParameterId,
+    pub(super) depth_ms: f32,
+    param_pitch_preserving: ParameterId,
+    pitch_preserving: bool,
+    phase: f32,
+    clean_transition: CleanTransitionState,
+}
 
 pub struct DelayPlugin {
     pub(super) channels: usize,
@@ -22,10 +60,7 @@ pub struct DelayPlugin {
     pub(super) feedback: f32,
     pub(super) param_mix: ParameterId,
     pub(super) mix: f32,
-    pub(super) param_lfo_rate_hz: ParameterId,
-    pub(super) lfo_rate_hz: f32,
-    pub(super) param_lfo_depth_ms: ParameterId,
-    pub(super) lfo_depth_ms: f32,
+    pub(super) modulation: ModulationState,
     pub(super) param_allpass_feedback: ParameterId,
     pub(super) allpass_feedback: bool,
     pub(super) param_allpass_coeff: ParameterId,
@@ -43,22 +78,27 @@ pub struct DelayPlugin {
     pub(super) max_samples: usize,
     /// Maximum delay that this instance promises to automate without resizing.
     pub(super) max_delay_ms: f32,
-    /// Shared phase accumulator (0..1). Applying one phase to every channel
-    /// preserves stereo image/coherence; independent phases would rotate the
-    /// image and belong in a dedicated chorus topology.
-    pub(super) lfo_phase: f32,
     /// Per-channel allpass filter states for the feedback path
     pub(super) allpass_states: Vec<AllpassState>,
     pub(super) allpass_mix_smoother: Smoother,
     pub(super) allpass_coeff_smoother: Smoother,
     pub(super) cached_parameters: Vec<Parameter>,
+    initialized: bool,
 }
 
 impl DelayPlugin {
+    #[cfg(test)]
+    pub(super) fn clean_transition_active(&self) -> bool {
+        self.modulation.clean_transition.active
+    }
+
     #[inline]
     fn ring_samples(max_delay_ms: f32, sample_rate: u32) -> usize {
-        ((max_delay_ms * 0.001 * sample_rate as f32).ceil() as usize + 4)
-            .next_power_of_two()
+        let required = (max_delay_ms * 0.001 * sample_rate as f32).ceil() as usize;
+        required
+            .checked_add(4)
+            .and_then(usize::checked_next_power_of_two)
+            .unwrap_or(usize::MAX)
             .max(8)
     }
 
@@ -72,14 +112,21 @@ impl DelayPlugin {
     }
 
     fn validate_params(channels: usize, params: &DelayPluginParams) -> Result<(), String> {
-        if channels == 0 {
-            return Err("channels must be greater than zero".into());
+        if !(1..=MAX_DELAY_CHANNELS).contains(&channels) {
+            return Err(format!(
+                "channels must be in [1, {MAX_DELAY_CHANNELS}], got {channels}"
+            ));
         }
         Self::validate_float("delay_ms", params.delay_ms, 0.0, MAX_DELAY_MS)?;
         Self::validate_float("feedback", params.feedback, -0.95, 0.95)?;
         Self::validate_float("mix", params.mix, 0.0, 1.0)?;
         Self::validate_float("lfo_rate_hz", params.lfo_rate_hz, 0.0, 20.0)?;
         Self::validate_float("lfo_depth_ms", params.lfo_depth_ms, 0.0, 10.0)?;
+        if params.pitch_preserving && (params.lfo_rate_hz != 0.0 || params.lfo_depth_ms != 0.0) {
+            return Err(
+                "pitch_preserving mode requires lfo_rate_hz and lfo_depth_ms to be zero".into(),
+            );
+        }
         Self::validate_float("allpass_coeff", params.allpass_coeff, 0.0, 0.99)?;
         for (channel, &delay_ms) in params.channel_delays_ms.iter().enumerate() {
             Self::validate_float(
@@ -123,11 +170,21 @@ impl DelayPlugin {
         Self::validate_float("delay_ms", delay_ms, 0.0, max_delay_ms)?;
         Self::validate_float("feedback", feedback, -0.95, 0.95)?;
         Self::validate_float("mix", mix, 0.0, 1.0)?;
-        if channels == 0 {
-            return Err("channels must be greater than zero".into());
+        if !(1..=MAX_DELAY_CHANNELS).contains(&channels) {
+            return Err(format!(
+                "channels must be in [1, {MAX_DELAY_CHANNELS}], got {channels}"
+            ));
         }
         let sr = 44100;
         let max_samples = Self::ring_samples(max_delay_ms, sr);
+        let buffer_len = max_samples
+            .checked_mul(channels)
+            .ok_or_else(|| "delay buffer capacity overflow".to_string())?;
+        let mut buffer = Vec::new();
+        buffer
+            .try_reserve_exact(buffer_len)
+            .map_err(|error| format!("failed to reserve delay buffer: {error}"))?;
+        buffer.resize(buffer_len, 0.0);
         let mut p = Self {
             channels,
             sample_rate: sr,
@@ -137,10 +194,20 @@ impl DelayPlugin {
             feedback,
             param_mix: ParameterId::from("mix"),
             mix,
-            param_lfo_rate_hz: ParameterId::from("lfo_rate_hz"),
-            lfo_rate_hz: 0.0,
-            param_lfo_depth_ms: ParameterId::from("lfo_depth_ms"),
-            lfo_depth_ms: 0.0,
+            modulation: ModulationState {
+                param_rate_hz: ParameterId::from("lfo_rate_hz"),
+                rate_hz: 0.0,
+                param_depth_ms: ParameterId::from("lfo_depth_ms"),
+                depth_ms: 0.0,
+                param_pitch_preserving: ParameterId::from("pitch_preserving"),
+                pitch_preserving: false,
+                phase: 0.0,
+                clean_transition: CleanTransitionState::new(
+                    channels,
+                    delay_ms * sr as f32 / 1000.0,
+                    sr,
+                ),
+            },
             param_allpass_feedback: ParameterId::from("allpass_feedback"),
             allpass_feedback: false,
             param_allpass_coeff: ParameterId::from("allpass_coeff"),
@@ -150,15 +217,15 @@ impl DelayPlugin {
             mix_smoother: Smoother::new(mix, 5.0, sr),
             channel_delays_ms: Vec::new(),
             channel_delay_smoothers: Vec::new(),
-            buffer: vec![0.0; max_samples * channels],
+            buffer,
             write_pos: 0,
             max_samples,
             max_delay_ms,
-            lfo_phase: 0.0,
             allpass_states: vec![AllpassState::new(0.5); channels],
             allpass_mix_smoother: Smoother::new(0.0, ALLPASS_SMOOTH_MS, sr),
             allpass_coeff_smoother: Smoother::new(0.5, ALLPASS_SMOOTH_MS, sr),
             cached_parameters: Vec::new(),
+            initialized: false,
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -180,6 +247,12 @@ impl DelayPlugin {
         if channel_delays_ms.is_empty() {
             return Err("channel_delays_ms must not be empty".into());
         }
+        if channel_delays_ms.len() > MAX_DELAY_CHANNELS {
+            return Err(format!(
+                "channel_delays_ms length must not exceed {MAX_DELAY_CHANNELS}, got {}",
+                channel_delays_ms.len()
+            ));
+        }
         Self::validate_float("max_delay_ms", max_delay_ms, 0.0, MAX_DELAY_MS)?;
         for (channel, &delay_ms) in channel_delays_ms.iter().enumerate() {
             Self::validate_float(
@@ -192,9 +265,21 @@ impl DelayPlugin {
         let channels = channel_delays_ms.len();
         let sr = 44100u32;
         let max_samples = Self::ring_samples(max_delay_ms, sr);
+        let buffer_len = max_samples
+            .checked_mul(channels)
+            .ok_or_else(|| "delay buffer capacity overflow".to_string())?;
+        let mut buffer = Vec::new();
+        buffer
+            .try_reserve_exact(buffer_len)
+            .map_err(|error| format!("failed to reserve delay buffer: {error}"))?;
+        buffer.resize(buffer_len, 0.0);
         let smoothers: Vec<Smoother> = channel_delays_ms
             .iter()
             .map(|&ms| Smoother::new(ms * sr as f32 / 1000.0, 50.0, sr))
+            .collect();
+        let clean_delays: Vec<f32> = channel_delays_ms
+            .iter()
+            .map(|ms| ms * sr as f32 / 1000.0)
             .collect();
         let mut p = Self {
             channels,
@@ -207,10 +292,23 @@ impl DelayPlugin {
             param_mix: ParameterId::from("mix"),
             // Per-channel RoomEQ delays are dry: mix=1.0, no feedback.
             mix: 1.0,
-            param_lfo_rate_hz: ParameterId::from("lfo_rate_hz"),
-            lfo_rate_hz: 0.0,
-            param_lfo_depth_ms: ParameterId::from("lfo_depth_ms"),
-            lfo_depth_ms: 0.0,
+            modulation: ModulationState {
+                param_rate_hz: ParameterId::from("lfo_rate_hz"),
+                rate_hz: 0.0,
+                param_depth_ms: ParameterId::from("lfo_depth_ms"),
+                depth_ms: 0.0,
+                param_pitch_preserving: ParameterId::from("pitch_preserving"),
+                pitch_preserving: false,
+                phase: 0.0,
+                clean_transition: CleanTransitionState {
+                    current_delay_samples: clean_delays.clone(),
+                    next_delay_samples: clean_delays,
+                    fade_position: 0,
+                    fade_samples: ((CLEAN_CROSSFADE_MS * sr as f32 / 1000.0).round() as usize)
+                        .max(1),
+                    active: false,
+                },
+            },
             param_allpass_feedback: ParameterId::from("allpass_feedback"),
             allpass_feedback: false,
             param_allpass_coeff: ParameterId::from("allpass_coeff"),
@@ -220,15 +318,15 @@ impl DelayPlugin {
             mix_smoother: Smoother::new(1.0, 5.0, sr),
             channel_delays_ms,
             channel_delay_smoothers: smoothers,
-            buffer: vec![0.0; max_samples * channels],
+            buffer,
             write_pos: 0,
             max_samples,
             max_delay_ms,
-            lfo_phase: 0.0,
             allpass_states: vec![AllpassState::new(0.5); channels],
             allpass_mix_smoother: Smoother::new(0.0, ALLPASS_SMOOTH_MS, sr),
             allpass_coeff_smoother: Smoother::new(0.5, ALLPASS_SMOOTH_MS, sr),
             cached_parameters: Vec::new(),
+            initialized: false,
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -250,15 +348,22 @@ impl DelayPlugin {
             ),
             Parameter::new_float("feedback", "Feedback", self.feedback, -0.95, 0.95),
             Parameter::new_float("mix", "Mix", self.mix, 0.0, 1.0),
-            Parameter::new_float("lfo_rate_hz", "LFO Rate", self.lfo_rate_hz, 0.0, 20.0)
-                .with_unit("Hz"),
-            Parameter::new_float("lfo_depth_ms", "LFO Depth", self.lfo_depth_ms, 0.0, 10.0)
-                .with_unit("ms"),
-            Parameter::new_bool(
-                "allpass_feedback",
-                "Allpass Feedback",
-                self.allpass_feedback,
-            ),
+            Parameter::new_float(
+                "lfo_rate_hz",
+                "LFO Rate",
+                self.modulation.rate_hz,
+                0.0,
+                20.0,
+            )
+            .with_unit("Hz"),
+            Parameter::new_float(
+                "lfo_depth_ms",
+                "LFO Depth",
+                self.modulation.depth_ms,
+                0.0,
+                10.0,
+            )
+            .with_unit("ms"),
             Parameter::new_float(
                 "allpass_coeff",
                 "Allpass Coeff",
@@ -266,6 +371,17 @@ impl DelayPlugin {
                 0.0,
                 0.99,
             ),
+            Parameter::new_bool(
+                "allpass_feedback",
+                "Allpass Feedback",
+                self.allpass_feedback,
+            ),
+            Parameter::new_bool(
+                "pitch_preserving",
+                "Pitch Preserving",
+                self.modulation.pitch_preserving,
+            )
+            .with_update_mode(UpdateMode::Structural),
         ];
         if self.is_per_channel() {
             for (ch, &ms) in self.channel_delays_ms.iter().enumerate() {
@@ -287,9 +403,10 @@ impl DelayPlugin {
                 || params.lfo_rate_hz != 0.0
                 || params.lfo_depth_ms != 0.0
                 || params.allpass_feedback
+                || params.pitch_preserving
             {
                 return Err(
-                    "per-channel delay mode is a pure routing delay: feedback and LFO must be zero, mix must be one, and allpass must be disabled"
+                    "per-channel delay mode is a pure routing delay: feedback and LFO must be zero, mix must be one, and allpass/pitch-preserving modes must be disabled"
                         .into(),
                 );
             }
@@ -313,8 +430,9 @@ impl DelayPlugin {
             Ok(p)
         } else {
             let mut p = Self::try_new(channels, params.delay_ms, params.feedback, params.mix)?;
-            p.lfo_rate_hz = params.lfo_rate_hz;
-            p.lfo_depth_ms = params.lfo_depth_ms;
+            p.modulation.rate_hz = params.lfo_rate_hz;
+            p.modulation.depth_ms = params.lfo_depth_ms;
+            p.modulation.pitch_preserving = params.pitch_preserving;
             p.allpass_feedback = params.allpass_feedback;
             p.allpass_coeff = params.allpass_coeff;
             for ap in &mut p.allpass_states {
@@ -353,10 +471,35 @@ impl DelayPlugin {
         self.buffer[ch * self.max_samples + pos]
     }
 
+    #[inline]
+    fn read_delayed_sample(&self, delay_samples: f32, ch: usize, input: f32) -> f32 {
+        if delay_samples <= f32::EPSILON {
+            return input;
+        }
+        let int_delay = delay_samples.floor() as usize;
+        let frac = delay_samples - int_delay as f32;
+        let mask = self.max_samples - 1;
+        let r0 = (self.write_pos + self.max_samples - int_delay) & mask;
+        if frac <= f32::EPSILON {
+            return self.read_buffer(r0, ch);
+        }
+        let r_m1 = (r0 + 1) & mask;
+        let r1 = (r0 + self.max_samples - 1) & mask;
+        let r2 = (r1 + self.max_samples - 1) & mask;
+        Self::lagrange4(
+            self.read_buffer(r_m1, ch),
+            self.read_buffer(r0, ch),
+            self.read_buffer(r1, ch),
+            self.read_buffer(r2, ch),
+            frac,
+        )
+    }
+
     /// Compute the effective delay in samples for a given frame, including LFO modulation.
     #[inline]
     pub(super) fn effective_delay_samples(&self, base_delay_samples: f32, lfo_val: f32) -> f32 {
-        let lfo_offset_samples = lfo_val * self.lfo_depth_ms * self.sample_rate as f32 / 1000.0;
+        let lfo_offset_samples =
+            lfo_val * self.modulation.depth_ms * self.sample_rate as f32 / 1000.0;
 
         let min_delay = 0.0_f32;
         let max_delay = (self.max_delay_ms * self.sample_rate as f32 / 1000.0)
@@ -418,11 +561,15 @@ impl ParametricInPlacePlugin for DelayPlugin {
         values.insert(ParameterId::from("mix"), ParameterValue::Float(self.mix));
         values.insert(
             ParameterId::from("lfo_rate_hz"),
-            ParameterValue::Float(self.lfo_rate_hz),
+            ParameterValue::Float(self.modulation.rate_hz),
         );
         values.insert(
             ParameterId::from("lfo_depth_ms"),
-            ParameterValue::Float(self.lfo_depth_ms),
+            ParameterValue::Float(self.modulation.depth_ms),
+        );
+        values.insert(
+            ParameterId::from("pitch_preserving"),
+            ParameterValue::Bool(self.modulation.pitch_preserving),
         );
         values.insert(
             ParameterId::from("allpass_feedback"),
@@ -444,8 +591,88 @@ impl ParametricInPlacePlugin for DelayPlugin {
     }
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
-        for (id, value) in values {
-            self.apply_one_value(id, value)?;
+        let mut delay_ms = self.delay_ms;
+        let mut feedback = self.feedback;
+        let mut mix = self.mix;
+        let mut pitch_preserving = self.modulation.pitch_preserving;
+        let mut lfo_rate_hz = self.modulation.rate_hz;
+        let mut lfo_depth_ms = self.modulation.depth_ms;
+        let mut allpass_feedback = self.allpass_feedback;
+        let mut allpass_coeff = self.allpass_coeff;
+        let mut channel_delays_ms = self.channel_delays_ms.clone();
+        for (id, value) in &values {
+            self.parametric_validate_parameter(id, value)?;
+            if id == &self.param_delay_ms {
+                delay_ms = value
+                    .as_float()
+                    .ok_or_else(|| "delay_ms must be a float".to_string())?;
+            } else if id == &self.param_feedback {
+                feedback = value
+                    .as_float()
+                    .ok_or_else(|| "feedback must be a float".to_string())?;
+            } else if id == &self.param_mix {
+                mix = value
+                    .as_float()
+                    .ok_or_else(|| "mix must be a float".to_string())?;
+            } else if id == &self.modulation.param_pitch_preserving {
+                if self.initialized {
+                    return Err(
+                        "pitch_preserving is structural; rebuild the initialized plugin".into(),
+                    );
+                }
+                pitch_preserving = value
+                    .as_bool()
+                    .ok_or_else(|| "pitch_preserving must be a bool".to_string())?;
+            } else if id == &self.modulation.param_rate_hz {
+                lfo_rate_hz = value
+                    .as_float()
+                    .ok_or_else(|| "lfo_rate_hz must be a float".to_string())?;
+            } else if id == &self.modulation.param_depth_ms {
+                lfo_depth_ms = value
+                    .as_float()
+                    .ok_or_else(|| "lfo_depth_ms must be a float".to_string())?;
+            } else if id == &self.param_allpass_feedback {
+                allpass_feedback = value
+                    .as_bool()
+                    .ok_or_else(|| "allpass_feedback must be a bool".to_string())?;
+            } else if id == &self.param_allpass_coeff {
+                allpass_coeff = value
+                    .as_float()
+                    .ok_or_else(|| "allpass_coeff must be a float".to_string())?;
+            } else if let Some(ch) = parse_channel_delay_id(id.as_str()) {
+                channel_delays_ms[ch] = value
+                    .as_float()
+                    .ok_or_else(|| "channel delay must be a float".to_string())?;
+            }
+        }
+        if pitch_preserving && (lfo_rate_hz != 0.0 || lfo_depth_ms != 0.0) {
+            return Err(
+                "pitch_preserving mode requires lfo_rate_hz and lfo_depth_ms to be zero".into(),
+            );
+        }
+
+        self.delay_ms = delay_ms;
+        self.delay_smoother
+            .set_target(delay_ms * self.sample_rate as f32 / 1000.0);
+        self.feedback = feedback;
+        self.feedback_smoother.set_target(feedback);
+        self.mix = mix;
+        self.mix_smoother.set_target(mix);
+        self.modulation.pitch_preserving = pitch_preserving;
+        self.modulation.rate_hz = lfo_rate_hz;
+        self.modulation.depth_ms = lfo_depth_ms;
+        self.allpass_feedback = allpass_feedback;
+        self.allpass_mix_smoother
+            .set_target(if allpass_feedback { 1.0 } else { 0.0 });
+        self.allpass_coeff = allpass_coeff;
+        self.allpass_coeff_smoother.set_target(allpass_coeff);
+        self.channel_delays_ms = channel_delays_ms;
+        for (smoother, &delay_ms) in self
+            .channel_delay_smoothers
+            .iter_mut()
+            .zip(&self.channel_delays_ms)
+        {
+            smoother.set_target(delay_ms * self.sample_rate as f32 / 1000.0);
         }
         Ok(())
     }
@@ -480,20 +707,48 @@ impl ParametricInPlacePlugin for DelayPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if !(1..=MAX_DELAY_SAMPLE_RATE).contains(&sample_rate) {
+            return Err(format!(
+                "sample rate must be in [1, {MAX_DELAY_SAMPLE_RATE}], got {sample_rate}"
+            ));
+        }
+        if !(1..=MAX_DELAY_CHANNELS).contains(&self.channels) {
+            return Err(format!(
+                "channels must be in [1, {MAX_DELAY_CHANNELS}], got {}",
+                self.channels
+            ));
+        }
+        let max_samples = Self::ring_samples(self.max_delay_ms, sample_rate);
+        let buffer_len = max_samples
+            .checked_mul(self.channels)
+            .ok_or_else(|| "delay buffer capacity overflow".to_string())?;
+        if buffer_len > self.buffer.capacity() {
+            self.buffer
+                .try_reserve_exact(buffer_len - self.buffer.len())
+                .map_err(|error| format!("failed to reserve delay buffer: {error}"))?;
+        }
         self.sample_rate = sample_rate;
-        self.max_samples = Self::ring_samples(self.max_delay_ms, sample_rate);
-        self.buffer.resize(self.max_samples * self.channels, 0.0);
+        self.max_samples = max_samples;
+        self.buffer.resize(buffer_len, 0.0);
+        self.buffer.fill(0.0);
+        self.write_pos = 0;
         self.delay_smoother = Smoother::new(
             self.delay_ms * sample_rate as f32 / 1000.0,
             50.0,
             sample_rate,
         );
         if self.is_per_channel() {
-            self.channel_delay_smoothers = self
-                .channel_delays_ms
-                .iter()
-                .map(|&ms| Smoother::new(ms * sample_rate as f32 / 1000.0, 50.0, sample_rate))
-                .collect();
+            if self.channel_delay_smoothers.len() != self.channels {
+                return Err("per-channel delay smoother state is inconsistent".into());
+            }
+            for (smoother, &delay_ms) in self
+                .channel_delay_smoothers
+                .iter_mut()
+                .zip(&self.channel_delays_ms)
+            {
+                *smoother =
+                    Smoother::new(delay_ms * sample_rate as f32 / 1000.0, 50.0, sample_rate);
+            }
         }
         self.feedback_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
@@ -504,15 +759,45 @@ impl ParametricInPlacePlugin for DelayPlugin {
         );
         self.allpass_coeff_smoother =
             Smoother::new(self.allpass_coeff, ALLPASS_SMOOTH_MS, sample_rate);
-        self.lfo_phase = 0.0;
-        self.allpass_states = vec![AllpassState::new(self.allpass_coeff); self.channels];
+        if self.modulation.clean_transition.current_delay_samples.len() != self.channels
+            || self.modulation.clean_transition.next_delay_samples.len() != self.channels
+        {
+            return Err("delay transition channel state is inconsistent".into());
+        }
+        for ch in 0..self.channels {
+            let delay_ms = if self.is_per_channel() {
+                self.channel_delays_ms[ch]
+            } else {
+                self.delay_ms
+            };
+            let delay_samples = delay_ms * sample_rate as f32 / 1000.0;
+            self.modulation.clean_transition.current_delay_samples[ch] = delay_samples;
+            self.modulation.clean_transition.next_delay_samples[ch] = delay_samples;
+        }
+        self.modulation.clean_transition.fade_position = 0;
+        self.modulation.clean_transition.fade_samples =
+            ((CLEAN_CROSSFADE_MS * sample_rate as f32 / 1000.0).round() as usize).max(1);
+        self.modulation.clean_transition.active = false;
+        self.modulation.phase = 0.0;
+        if self.allpass_states.len() != self.channels {
+            return Err("delay allpass channel state is inconsistent".into());
+        }
+        for state in &mut self.allpass_states {
+            state.reset();
+            state.set_coeff(self.allpass_coeff);
+        }
+        let feedback_target = self.feedback_smoother.target();
+        self.feedback_smoother.reset(feedback_target);
+        let mix_target = self.mix_smoother.target();
+        self.mix_smoother.reset(mix_target);
+        self.initialized = true;
         Ok(())
     }
 
     fn reset(&mut self) {
         self.buffer.fill(0.0);
         self.write_pos = 0;
-        self.lfo_phase = 0.0;
+        self.modulation.phase = 0.0;
         let global_target = self.delay_smoother.target();
         self.delay_smoother.reset(global_target);
         let fb_target = self.feedback_smoother.target();
@@ -531,6 +816,20 @@ impl ParametricInPlacePlugin for DelayPlugin {
             ap.reset();
             ap.set_coeff(allpass_coeff_target);
         }
+        for ch in 0..self.channels {
+            let delay_ms = if self.is_per_channel() {
+                self.channel_delays_ms[ch]
+            } else {
+                self.delay_ms
+            };
+            let delay_samples = delay_ms * self.sample_rate as f32 / 1000.0;
+            self.modulation.clean_transition.current_delay_samples[ch] = delay_samples;
+            self.modulation.clean_transition.next_delay_samples[ch] = delay_samples;
+        }
+        self.modulation.clean_transition.fade_position = 0;
+        self.modulation.clean_transition.fade_samples =
+            ((CLEAN_CROSSFADE_MS * self.sample_rate as f32 / 1000.0).round() as usize).max(1);
+        self.modulation.clean_transition.active = false;
     }
 
     fn process_in_place(
@@ -569,9 +868,10 @@ impl ParametricInPlacePlugin for DelayPlugin {
             return Err("per-channel delay arrays drifted out of sync".into());
         }
 
-        let lfo_active = self.lfo_rate_hz > 0.0 && self.lfo_depth_ms > 0.0 && self.sample_rate > 0;
+        let lfo_active =
+            self.modulation.rate_hz > 0.0 && self.modulation.depth_ms > 0.0 && self.sample_rate > 0;
         let lfo_phase_inc = if lfo_active {
-            self.lfo_rate_hz / self.sample_rate as f32
+            self.modulation.rate_hz / self.sample_rate as f32
         } else {
             0.0
         };
@@ -588,48 +888,80 @@ impl ParametricInPlacePlugin for DelayPlugin {
             }
 
             let lfo_val = if lfo_active {
-                let val = (self.lfo_phase * std::f32::consts::TAU).sin();
-                self.lfo_phase += lfo_phase_inc;
-                self.lfo_phase = self.lfo_phase.fract();
+                let val = (self.modulation.phase * std::f32::consts::TAU).sin();
+                self.modulation.phase += lfo_phase_inc;
+                self.modulation.phase = self.modulation.phase.fract();
                 val
             } else {
                 0.0
             };
 
-            let global_base_delay = self.delay_smoother.advance();
+            let global_base_delay = if self.modulation.pitch_preserving {
+                self.delay_smoother.target()
+            } else {
+                self.delay_smoother.advance()
+            };
+
+            if self.modulation.pitch_preserving && !self.modulation.clean_transition.active {
+                let mut changed = false;
+                for ch in 0..self.channels {
+                    let base_delay_samples = if per_channel {
+                        self.channel_delay_smoothers[ch].target()
+                    } else {
+                        global_base_delay
+                    };
+                    let desired = self.effective_delay_samples(base_delay_samples, 0.0);
+                    self.modulation.clean_transition.next_delay_samples[ch] = desired;
+                    changed |= (desired
+                        - self.modulation.clean_transition.current_delay_samples[ch])
+                        .abs()
+                        > 1.0e-4;
+                }
+                if changed {
+                    self.modulation.clean_transition.fade_position = 0;
+                    self.modulation.clean_transition.active = true;
+                    // Two differently delayed taps have an input-dependent
+                    // phase relationship. No finite correlation window can
+                    // prove that summing them will remain phase-safe, so every
+                    // nonidentical transition conservatively switches through
+                    // silence while both read heads stay stationary.
+                }
+            }
+
+            let clean_fade =
+                if self.modulation.pitch_preserving && self.modulation.clean_transition.active {
+                    (self.modulation.clean_transition.fade_position + 1) as f32
+                        / self.modulation.clean_transition.fade_samples as f32
+                } else {
+                    0.0
+                };
 
             for ch in 0..self.channels {
-                let base_delay_samples = if per_channel {
+                let base_delay_samples = if per_channel && !self.modulation.pitch_preserving {
                     self.channel_delay_smoothers[ch].advance()
                 } else {
                     global_base_delay
                 };
-                let delay_samples = self.effective_delay_samples(base_delay_samples, lfo_val);
                 let idx = frame * self.channels + ch;
                 let input = buffer[idx];
 
-                let delayed = if delay_samples <= f32::EPSILON {
-                    input
-                } else {
-                    let int_delay = delay_samples.floor() as usize;
-                    let frac = delay_samples - int_delay as f32;
-                    let mask = self.max_samples - 1;
-                    let r0 = (self.write_pos + self.max_samples - int_delay) & mask;
-
-                    if frac <= f32::EPSILON {
-                        self.read_buffer(r0, ch)
+                let delayed = if self.modulation.pitch_preserving {
+                    let current_delay = self.modulation.clean_transition.current_delay_samples[ch];
+                    let current = self.read_delayed_sample(current_delay, ch, input);
+                    if self.modulation.clean_transition.active {
+                        let next_delay = self.modulation.clean_transition.next_delay_samples[ch];
+                        let next = self.read_delayed_sample(next_delay, ch, input);
+                        if clean_fade < 0.5 {
+                            current * (1.0 - 2.0 * clean_fade)
+                        } else {
+                            next * (2.0 * clean_fade - 1.0)
+                        }
                     } else {
-                        let r_m1 = (r0 + 1) & mask;
-                        let r1 = (r0 + self.max_samples - 1) & mask;
-                        let r2 = (r1 + self.max_samples - 1) & mask;
-                        Self::lagrange4(
-                            self.read_buffer(r_m1, ch),
-                            self.read_buffer(r0, ch),
-                            self.read_buffer(r1, ch),
-                            self.read_buffer(r2, ch),
-                            frac,
-                        )
+                        current
                     }
+                } else {
+                    let delay_samples = self.effective_delay_samples(base_delay_samples, lfo_val);
+                    self.read_delayed_sample(delay_samples, ch, input)
                 };
 
                 let direct_feedback = delayed * fb;
@@ -639,6 +971,19 @@ impl ParametricInPlacePlugin for DelayPlugin {
 
                 self.buffer[ch * self.max_samples + self.write_pos] = input + feedback_signal;
                 buffer[idx] = input * (1.0 - mix) + delayed * mix;
+            }
+            if self.modulation.pitch_preserving && self.modulation.clean_transition.active {
+                self.modulation.clean_transition.fade_position += 1;
+                if self.modulation.clean_transition.fade_position
+                    >= self.modulation.clean_transition.fade_samples
+                {
+                    self.modulation
+                        .clean_transition
+                        .current_delay_samples
+                        .copy_from_slice(&self.modulation.clean_transition.next_delay_samples);
+                    self.modulation.clean_transition.fade_position = 0;
+                    self.modulation.clean_transition.active = false;
+                }
             }
             self.write_pos = (self.write_pos + 1) & (self.max_samples - 1);
         }
@@ -675,20 +1020,41 @@ impl DelayPlugin {
                 self.mix = v;
                 self.mix_smoother.set_target(self.mix);
             }
-        } else if id == self.param_lfo_rate_hz {
+        } else if id == self.modulation.param_rate_hz {
             let v = value
                 .as_float()
                 .ok_or_else(|| "lfo_rate_hz must be a float".to_string())?;
             if v.is_finite() {
-                self.lfo_rate_hz = v;
+                if self.modulation.pitch_preserving && v != 0.0 {
+                    return Err("pitch_preserving mode requires lfo_rate_hz to remain zero".into());
+                }
+                self.modulation.rate_hz = v;
             }
-        } else if id == self.param_lfo_depth_ms {
+        } else if id == self.modulation.param_depth_ms {
             let v = value
                 .as_float()
                 .ok_or_else(|| "lfo_depth_ms must be a float".to_string())?;
             if v.is_finite() {
-                self.lfo_depth_ms = v;
+                if self.modulation.pitch_preserving && v != 0.0 {
+                    return Err("pitch_preserving mode requires lfo_depth_ms to remain zero".into());
+                }
+                self.modulation.depth_ms = v;
             }
+        } else if id == self.modulation.param_pitch_preserving {
+            if self.initialized {
+                return Err(
+                    "pitch_preserving is structural; rebuild the initialized plugin".into(),
+                );
+            }
+            let v = value
+                .as_bool()
+                .ok_or_else(|| "pitch_preserving must be a bool".to_string())?;
+            if v && (self.modulation.rate_hz != 0.0 || self.modulation.depth_ms != 0.0) {
+                return Err(
+                    "pitch_preserving mode requires lfo_rate_hz and lfo_depth_ms to be zero".into(),
+                );
+            }
+            self.modulation.pitch_preserving = v;
         } else if id == self.param_allpass_feedback {
             let v = value
                 .as_bool()

@@ -1,5 +1,28 @@
 # Delay plugin code review — 2026-08-12
 
+## Optional quality gap closure — 0.5.11 (2026-08-13)
+
+The retained pitch-preserving automation recommendation is implemented as the
+opt-in structural `pitch_preserving` mode. It transitions between two fixed
+fractional-delay taps for 20 ms, so a target change does not sweep the read
+head. Every nonidentical change conservatively fades fully through silence
+before the exact target resumes; a finite history window cannot prove arbitrary
+future input phase compatibility. LFO rate and depth must remain zero in this
+mode because an input-agnostic blend of differently delayed taps cannot retain
+both carrier and phase without nulls. The legacy moving-head sound remains the
+default, and schema version 2 appends the boolean without changing existing
+parameter indexes.
+
+`pitch_preserving_transition_matches_stationary_taps_for_full_bass_fade` checks
+the exact output of every fade frame at 20 Hz for aligned, quarter-period, and
+half-period changes at several automation phases.
+`pitch_preserving_transition_is_callback_partition_invariant` compares one
+large callback with `[1, 64, 511, 73, 997]` partitions byte-for-byte. The
+LFO compatibility regression verifies that carrier/phase-unsafe combinations
+are rejected. Focused workspace allocation regressions cover the active
+transition and reset; QA also exercises stereo pitch-preserving processing.
+Engine settings, accessors, and config conversion carry the appended field.
+
 ## Remediation status
 
 All P1-P3 findings are remediated and regression-tested in 0.5.10:
