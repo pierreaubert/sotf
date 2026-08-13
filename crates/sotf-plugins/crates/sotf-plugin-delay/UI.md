@@ -17,23 +17,25 @@ Not used — no setup parameters.
 
 ## Main (Center, always visible)
 
-Three vertical sliders side-by-side, horizontally centered.
+Delay and feedback sliders with allpass controls.
 
 | Parameter | engine_key | Control | Shortcut | Notes |
 |-----------|-----------|---------|----------|-------|
-| Delay Time | delay_ms | Vertical slider with ticks | d | 0.1 to 5000 ms. Logarithmic scale recommended for display |
-| Feedback | feedback | Vertical slider with ticks | f | 0 to 95% (display_scale: 100.0) |
-| Mix | mix | Vertical slider with ticks | x | 0 to 100% (display_scale: 100.0) |
+| Delay Time | delay_ms | Vertical slider with ticks | d | 0 to the instance maximum; 5000 ms for the standard effect |
+| Feedback | feedback | Vertical slider with ticks | f | -95 to 95% |
+| Allpass Coeff | allpass_coeff | Knob | a | 0 to 0.99; live changes are smoothed |
+| Allpass Feedback | allpass_feedback | Toggle | p | Crossfades over 20 ms |
 
 Slider height: 180px
 
 ## Output (Right Column)
 
-Not used — no output meters.
+Dry/wet mix knob (`mix`, 0 to 100%).
 
 ## Diagnostic
 
-Not used.
+`Modulation` tab with LFO rate (`lfo_rate_hz`, 0-20 Hz) and depth
+(`lfo_depth_ms`, 0-10 ms) knobs.
 
 ## Tabs
 
@@ -50,3 +52,7 @@ Not used.
 | Delay Time | delay_ms | Primary | General |
 | Feedback | feedback | Primary | General |
 | Mix | mix | Primary | General |
+| LFO Rate | lfo_rate_hz | Secondary | Modulation |
+| LFO Depth | lfo_depth_ms | Secondary | Modulation |
+| Allpass Coeff | allpass_coeff | Primary | General |
+| Allpass Feedback | allpass_feedback | Primary | General |

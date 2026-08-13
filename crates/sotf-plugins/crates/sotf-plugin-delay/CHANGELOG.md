@@ -1,3 +1,42 @@
+# 0.5.10
+
+## Fixes
+
+- Per-channel routing delays now allocate against an explicit automation range
+  instead of reserving the five-second global maximum for every channel.
+- LFO modulation preserves the feasible half-cycle at delay boundaries and
+  remains continuous when the other half-cycle reaches the ring limit.
+- Allpass enable/bypass and coefficient changes now use 20 ms smoothers while
+  the filter state runs continuously, avoiding feedback-tail state jumps.
+- Realtime parameter writes validate against the cached schema and update DSP
+  state directly without rebuilding or allocating parameter metadata.
+- Exact integer delays bypass the four-point interpolator and its guard reads.
+- Per-channel RoomEQ mode rejects feedback, wet/dry, LFO, and allpass settings
+  that violate its pure routing-delay contract.
+- Plugin metadata now reports the crate version rather than a stale hard-coded
+  version string.
+
+# 0.5.9
+
+## Fixes
+
+- Delay compile metadata now preserves its linear classification while
+  conservatively marking the stateful, time-varying processor as a scheduling
+  boundary. Compiled plans no longer treat it as block-invariant or move gain
+  operations across its delay state.
+
+# 0.5.8
+
+## Fixes
+
+- Zero delay is now a sample-exact wet passthrough instead of an unreported
+  one-sample delay, including mixed per-channel zero/nonzero routes.
+- Factory parameters and per-channel constructors reject non-finite and
+  out-of-range values before allocating or initializing DSP state.
+- Processing validates the exact interleaved buffer length and internal
+  channel/ring invariants before advancing smoothers or delay state.
+- Runtime parameter metadata now matches the authoritative parameter specs.
+
 # 0.5.7
 
 ## Fixes

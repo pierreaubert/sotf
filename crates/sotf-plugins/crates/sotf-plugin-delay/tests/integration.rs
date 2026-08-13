@@ -42,6 +42,87 @@ fn instantiate_and_declare_metadata() {
     assert!(ids.contains(&"mix"));
 }
 
+fn assert_conservative_delay_metadata(plugin: &DelayPlugin, state: &str) {
+    let metadata = plugin.compile_metadata();
+    assert!(
+        metadata.linear,
+        "Delay remains a linear transform in {state} state"
+    );
+    assert!(
+        !metadata.time_invariant_for_block,
+        "Delay must not claim block-invariant coefficients in {state} state"
+    );
+    assert!(
+        metadata.stateful,
+        "Delay state must be ordered in {state} state"
+    );
+    assert!(
+        metadata.boundary,
+        "Delay must be a scheduling boundary in {state} state"
+    );
+    assert!(
+        !metadata.can_absorb_input_gain,
+        "input gain cannot cross Delay state in {state} state"
+    );
+    assert!(
+        !metadata.can_absorb_output_gain,
+        "output gain cannot be folded through Delay in {state} state"
+    );
+    assert!(!metadata.can_merge_with_eq);
+    assert_eq!(metadata.latency_samples, 0);
+}
+
+#[test]
+fn compile_metadata_is_conservative_for_every_delay_state() {
+    let static_plugin = DelayPlugin::new(2, 100.0, 0.0, 1.0);
+    assert_conservative_delay_metadata(&static_plugin, "static");
+
+    let mut automated_plugin = DelayPlugin::new(2, 100.0, 0.0, 1.0);
+    automated_plugin.initialize(SR).unwrap();
+    automated_plugin
+        .set_parameter(ParameterId::from("delay_ms"), ParameterValue::Float(200.0))
+        .unwrap();
+    assert_conservative_delay_metadata(&automated_plugin, "automated");
+
+    let lfo_plugin = DelayPlugin::from_params(
+        2,
+        DelayPluginParams {
+            delay_ms: 100.0,
+            feedback: 0.0,
+            mix: 1.0,
+            lfo_rate_hz: 2.0,
+            lfo_depth_ms: 5.0,
+            allpass_feedback: false,
+            allpass_coeff: 0.5,
+            channel_delays_ms: Vec::new(),
+        },
+    )
+    .unwrap();
+    assert_conservative_delay_metadata(&lfo_plugin, "LFO");
+
+    let feedback_plugin = DelayPlugin::new(2, 100.0, 0.75, 1.0);
+    assert_conservative_delay_metadata(&feedback_plugin, "feedback");
+
+    let allpass_plugin = DelayPlugin::from_params(
+        2,
+        DelayPluginParams {
+            delay_ms: 100.0,
+            feedback: 0.0,
+            mix: 1.0,
+            lfo_rate_hz: 0.0,
+            lfo_depth_ms: 0.0,
+            allpass_feedback: true,
+            allpass_coeff: 0.75,
+            channel_delays_ms: Vec::new(),
+        },
+    )
+    .unwrap();
+    assert_conservative_delay_metadata(&allpass_plugin, "allpass");
+
+    let per_channel_plugin = DelayPlugin::new_per_channel(vec![0.0, 100.0]).unwrap();
+    assert_conservative_delay_metadata(&per_channel_plugin, "per-channel");
+}
+
 #[test]
 fn instantiate_per_channel() {
     let plugin = DelayPlugin::new_per_channel(vec![10.0, 20.0, 30.0]).unwrap();
@@ -127,7 +208,7 @@ fn parameter_roundtrip_scalar() {
 
 #[test]
 fn parameter_roundtrip_per_channel() {
-    let mut plugin = DelayPlugin::new_per_channel(vec![10.0, 20.0]).unwrap();
+    let mut plugin = DelayPlugin::new_per_channel_with_max_delay(vec![10.0, 20.0], 25.0).unwrap();
     plugin.initialize(SR).unwrap();
 
     plugin

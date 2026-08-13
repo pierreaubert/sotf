@@ -103,21 +103,343 @@ fn test_effective_delay_samples_scales_depth_to_preserve_symmetry() {
 }
 
 #[test]
-fn test_effective_delay_samples_degenerate_near_min_delay() {
+fn test_effective_delay_samples_preserves_feasible_half_cycle_near_min_delay() {
     let mut p = DelayPlugin::new(1, 0.0, 0.0, 1.0);
     p.initialize(48000).unwrap();
     p.lfo_depth_ms = 10.0;
 
-    let base_delay = 1.0;
+    let base_delay = 0.0;
+    let positive = p.effective_delay_samples(base_delay, 1.0);
+    let negative = p.effective_delay_samples(base_delay, -1.0);
     assert!(
-        p.effective_delay_samples(base_delay, 1.0).to_bits()
-            == p.effective_delay_samples(base_delay, -1.0).to_bits(),
-        "when near minimum delay, LFO depth should be reduced to avoid asymmetry"
+        positive > base_delay,
+        "the feasible half-cycle must remain active"
     );
     assert_eq!(
-        p.effective_delay_samples(base_delay, 1.0),
-        base_delay,
-        "degenerate lower-bound case should still satisfy interpolation guard"
+        negative, base_delay,
+        "the out-of-range half-cycle must clamp"
+    );
+}
+
+#[test]
+fn effective_delay_is_continuous_at_both_boundaries() {
+    let mut p = DelayPlugin::new(1, 0.0, 0.0, 1.0);
+    p.initialize(48_000).unwrap();
+    p.lfo_depth_ms = 10.0;
+    let max_delay = p.max_delay_ms * p.sample_rate as f32 / 1000.0;
+
+    for base in [0.0, 0.25, max_delay - 0.25, max_delay] {
+        let mut previous = p.effective_delay_samples(base, -1.0);
+        for step in 1..=2_000 {
+            let lfo = -1.0 + 2.0 * step as f32 / 2_000.0;
+            let current = p.effective_delay_samples(base, lfo);
+            assert!((current - previous).abs() <= 0.5, "boundary mapping jumped");
+            assert!((0.0..=max_delay).contains(&current));
+            previous = current;
+        }
+    }
+}
+
+#[test]
+fn short_per_channel_delay_uses_bounded_memory_at_192khz() {
+    let mut p = DelayPlugin::new_per_channel(vec![10.0; 12]).unwrap();
+    p.initialize(192_000).unwrap();
+    assert!(
+        p.max_samples <= 2_048,
+        "unexpected ring size: {}",
+        p.max_samples
+    );
+    assert!(p.buffer.len() <= 2_048 * 12);
+}
+
+#[test]
+fn integer_delay_read_ignores_fractional_guard_samples() {
+    let mut p = DelayPlugin::new(1, 1.0, 0.0, 1.0);
+    p.initialize(1_000).unwrap();
+    p.reset();
+    p.buffer[1] = f32::NAN;
+    p.buffer[p.max_samples - 1] = f32::NAN;
+    p.buffer[p.max_samples - 2] = f32::NAN;
+    p.buffer[0] = 0.75;
+    p.write_pos = 1;
+    let mut sample = [0.0];
+    p.process_in_place(&mut sample, &ProcessContext::new(1_000, 1))
+        .unwrap();
+    assert_eq!(
+        sample[0], 0.75,
+        "integer taps must read only the exact sample"
+    );
+}
+
+#[test]
+fn allpass_live_changes_are_smoothed() {
+    let mut p = DelayPlugin::new(1, 10.0, 0.8, 1.0);
+    p.initialize(48_000).unwrap();
+    p.set_parameter(
+        ParameterId::from("allpass_feedback"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    p.set_parameter(
+        ParameterId::from("allpass_coeff"),
+        ParameterValue::Float(0.9),
+    )
+    .unwrap();
+
+    assert_eq!(p.allpass_mix_smoother.current(), 0.0);
+    assert_eq!(p.allpass_coeff_smoother.current(), 0.5);
+    let mut sample = [0.25];
+    p.process_in_place(&mut sample, &ProcessContext::new(48_000, 1))
+        .unwrap();
+    assert!((0.0..1.0).contains(&p.allpass_mix_smoother.current()));
+    assert!((0.5..0.9).contains(&p.allpass_coeff_smoother.current()));
+    assert!(sample[0].is_finite());
+}
+
+#[test]
+fn allpass_transition_during_feedback_tail_is_finite_and_bounded() {
+    let mut p = DelayPlugin::new(1, 1.0, 0.9, 1.0);
+    let mut reference = DelayPlugin::new(1, 1.0, 0.9, 1.0);
+    let mut abrupt = DelayPlugin::new(1, 1.0, 0.9, 1.0);
+    p.initialize(48_000).unwrap();
+    reference.initialize(48_000).unwrap();
+    abrupt.initialize(48_000).unwrap();
+    let mut warmup = vec![0.0; 256];
+    warmup[0] = 1.0;
+    let mut reference_warmup = warmup.clone();
+    let mut abrupt_warmup = warmup.clone();
+    let warmup_len = warmup.len();
+    p.process_in_place(&mut warmup, &ProcessContext::new(48_000, warmup_len))
+        .unwrap();
+    reference
+        .process_in_place(
+            &mut reference_warmup,
+            &ProcessContext::new(48_000, warmup_len),
+        )
+        .unwrap();
+    abrupt
+        .process_in_place(&mut abrupt_warmup, &ProcessContext::new(48_000, warmup_len))
+        .unwrap();
+
+    p.set_parameter(
+        ParameterId::from("allpass_feedback"),
+        ParameterValue::Bool(true),
+    )
+    .unwrap();
+    p.set_parameter(
+        ParameterId::from("allpass_coeff"),
+        ParameterValue::Float(0.9),
+    )
+    .unwrap();
+    abrupt
+        .set_parameter(
+            ParameterId::from("allpass_feedback"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    abrupt
+        .set_parameter(
+            ParameterId::from("allpass_coeff"),
+            ParameterValue::Float(0.9),
+        )
+        .unwrap();
+    abrupt.allpass_mix_smoother.reset(1.0);
+    abrupt.allpass_coeff_smoother.reset(0.9);
+    for state in &mut abrupt.allpass_states {
+        state.set_coeff(0.9);
+    }
+    let mut tail = vec![0.0; 1_024];
+    let mut reference_tail = vec![0.0; 1_024];
+    let mut abrupt_tail = vec![0.0; 1_024];
+    let tail_len = tail.len();
+    p.process_in_place(&mut tail, &ProcessContext::new(48_000, tail_len))
+        .unwrap();
+    reference
+        .process_in_place(&mut reference_tail, &ProcessContext::new(48_000, tail_len))
+        .unwrap();
+    abrupt
+        .process_in_place(&mut abrupt_tail, &ProcessContext::new(48_000, tail_len))
+        .unwrap();
+
+    let peak = tail
+        .iter()
+        .map(|sample| sample.abs())
+        .fold(0.0_f32, f32::max);
+    let transition_delta: Vec<f32> = tail
+        .iter()
+        .zip(&reference_tail)
+        .map(|(transitioned, baseline)| transitioned - baseline)
+        .collect();
+    let max_transition_step = transition_delta
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .fold(0.0_f32, f32::max);
+    let abrupt_delta: Vec<f32> = abrupt_tail
+        .iter()
+        .zip(&reference_tail)
+        .map(|(transitioned, baseline)| transitioned - baseline)
+        .collect();
+    let max_abrupt_step = abrupt_delta
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(tail.iter().all(|sample| sample.is_finite()));
+    assert!(
+        peak <= 1.0,
+        "allpass transition amplified the tail to {peak}"
+    );
+    assert!(
+        max_transition_step < max_abrupt_step,
+        "smoothed step {max_transition_step} was not below abrupt step {max_abrupt_step}"
+    );
+}
+
+#[test]
+fn per_channel_factory_rejects_effect_controls() {
+    let params = DelayPluginParams {
+        delay_ms: 0.0,
+        feedback: 0.1,
+        mix: 1.0,
+        lfo_rate_hz: 0.0,
+        lfo_depth_ms: 0.0,
+        allpass_feedback: false,
+        allpass_coeff: 0.5,
+        channel_delays_ms: vec![1.0, 2.0],
+    };
+    assert!(DelayPlugin::from_params(2, params).is_err());
+}
+
+#[test]
+fn zero_delay_is_sample_exact_wet_passthrough() {
+    let mut p = DelayPlugin::new(1, 0.0, 0.0, 1.0);
+    p.initialize(48_000).unwrap();
+    let expected = vec![0.25, -0.5, 0.75, -1.0, 0.125];
+    let mut buffer = expected.clone();
+    p.process_in_place(&mut buffer, &ProcessContext::new(48_000, expected.len()))
+        .unwrap();
+    assert_eq!(buffer, expected);
+}
+
+#[test]
+fn per_channel_zero_and_one_sample_delays_are_exact() {
+    let one_sample_ms = 1000.0 / 48_000.0;
+    let mut p = DelayPlugin::new_per_channel(vec![0.0, one_sample_ms]).unwrap();
+    p.initialize(48_000).unwrap();
+    let mut buffer = vec![1.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+    p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 3))
+        .unwrap();
+    assert_eq!(buffer, vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+}
+
+#[test]
+fn process_rejects_wrong_buffer_length_without_advancing_state() {
+    let mut p = DelayPlugin::new(2, 10.0, 0.0, 1.0);
+    p.initialize(48_000).unwrap();
+    for len in [7, 9] {
+        let mut buffer = vec![0.0; len];
+        assert!(
+            p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 4))
+                .is_err()
+        );
+        assert_eq!(p.write_pos, 0);
+    }
+}
+
+#[test]
+fn factory_params_reject_invalid_values() {
+    let valid = || DelayPluginParams {
+        delay_ms: 10.0,
+        feedback: 0.0,
+        mix: 1.0,
+        lfo_rate_hz: 0.0,
+        lfo_depth_ms: 0.0,
+        allpass_feedback: false,
+        allpass_coeff: 0.5,
+        channel_delays_ms: Vec::new(),
+    };
+    let mut params = valid();
+    params.delay_ms = f32::NAN;
+    assert!(DelayPlugin::from_params(1, params).is_err());
+    let mut params = valid();
+    params.feedback = 0.96;
+    assert!(DelayPlugin::from_params(1, params).is_err());
+    let mut params = valid();
+    params.mix = -0.1;
+    assert!(DelayPlugin::from_params(1, params).is_err());
+    let mut params = valid();
+    params.lfo_rate_hz = 20.1;
+    assert!(DelayPlugin::from_params(1, params).is_err());
+    let mut params = valid();
+    params.allpass_coeff = f32::INFINITY;
+    assert!(DelayPlugin::from_params(1, params).is_err());
+    assert!(DelayPlugin::from_params(0, valid()).is_err());
+    assert!(DelayPlugin::new_per_channel(vec![-1.0]).is_err());
+    assert!(DelayPlugin::new_per_channel(vec![f32::NAN]).is_err());
+}
+
+#[test]
+fn fallible_constructor_rejects_every_invalid_scalar_boundary() {
+    assert!(DelayPlugin::try_new(0, 10.0, 0.0, 1.0).is_err());
+    assert!(DelayPlugin::try_new(1, f32::NAN, 0.0, 1.0).is_err());
+    assert!(DelayPlugin::try_new(1, 5_001.0, 0.0, 1.0).is_err());
+    assert!(DelayPlugin::try_new(1, 10.0, f32::INFINITY, 1.0).is_err());
+    assert!(DelayPlugin::try_new(1, 10.0, -0.96, 1.0).is_err());
+    assert!(DelayPlugin::try_new(1, 10.0, 0.0, 1.01).is_err());
+    assert!(DelayPlugin::try_new_with_max_delay(1, 11.0, 0.0, 1.0, 10.0).is_err());
+}
+
+#[test]
+fn lfo_modulation_has_documented_tape_pitch_excursion_without_clicks() {
+    let sample_rate = 48_000_u32;
+    let frames = sample_rate as usize * 2;
+    let mut p = DelayPlugin::from_params(
+        1,
+        DelayPluginParams {
+            delay_ms: 100.0,
+            feedback: 0.0,
+            mix: 1.0,
+            lfo_rate_hz: 2.0,
+            lfo_depth_ms: 5.0,
+            allpass_feedback: false,
+            allpass_coeff: 0.5,
+            channel_delays_ms: Vec::new(),
+        },
+    )
+    .unwrap();
+    p.initialize(sample_rate).unwrap();
+    let mut audio: Vec<f32> = (0..frames)
+        .map(|i| (std::f32::consts::TAU * 1_000.0 * i as f32 / sample_rate as f32).sin())
+        .collect();
+    p.process_in_place(&mut audio, &ProcessContext::new(sample_rate, frames))
+        .unwrap();
+
+    let window = 4_096;
+    let mut min_hz = f32::INFINITY;
+    let mut max_hz = 0.0_f32;
+    for chunk in audio[sample_rate as usize / 4..].chunks_exact(window) {
+        let crossings = chunk
+            .windows(2)
+            .filter(|pair| pair[0] <= 0.0 && pair[1] > 0.0)
+            .count();
+        let hz = crossings as f32 * sample_rate as f32 / window as f32;
+        min_hz = min_hz.min(hz);
+        max_hz = max_hz.max(hz);
+    }
+    let max_step = audio
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_hz - min_hz > 20.0,
+        "expected Doppler excursion, got {min_hz}..{max_hz} Hz"
+    );
+    assert!(
+        min_hz > 850.0 && max_hz < 1_150.0,
+        "unexpected modulation spectrum: {min_hz}..{max_hz} Hz"
+    );
+    assert!(
+        max_step < 0.3,
+        "modulation produced a click-sized step: {max_step}"
     );
 }
 
@@ -560,7 +882,7 @@ fn test_parameter_validation() {
     assert!(
         p.set_parameter(
             ParameterId::from("lfo_rate_hz"),
-            ParameterValue::Float(15.0)
+            ParameterValue::Float(20.1)
         )
         .is_err()
     );
@@ -569,7 +891,7 @@ fn test_parameter_validation() {
     assert!(
         p.set_parameter(
             ParameterId::from("lfo_depth_ms"),
-            ParameterValue::Float(10.0)
+            ParameterValue::Float(10.1)
         )
         .is_err()
     );
@@ -695,12 +1017,12 @@ fn test_set_parameter_rejects_non_finite() {
 fn test_process_in_place_zero_frames() {
     let mut p = DelayPlugin::new(1, 10.0, 0.0, 0.0);
     p.initialize(48000).unwrap();
-    let mut buffer = vec![0.1, 0.2, 0.3];
+    let mut buffer = Vec::new();
     let processed = p
         .process_in_place(&mut buffer, &ProcessContext::new(48000, 0))
         .unwrap();
     assert_eq!(processed, 0);
-    assert_eq!(buffer, vec![0.1, 0.2, 0.3]);
+    assert!(buffer.is_empty());
 }
 
 /// get_parameter round-trips values set by set_parameter.
@@ -762,7 +1084,7 @@ fn test_process_in_place_step_known_output() {
 
 #[test]
 fn test_set_parameter_per_channel_delay_roundtrip() {
-    let mut p = DelayPlugin::new_per_channel(vec![5.0, 10.0]).unwrap();
+    let mut p = DelayPlugin::new_per_channel_with_max_delay(vec![5.0, 10.0], 30.0).unwrap();
     p.initialize(48000).unwrap();
 
     p.set_parameter(ParameterId::from("delay_ms_0"), ParameterValue::Float(20.0))
@@ -876,7 +1198,7 @@ fn test_set_parameter_allpass_coeff_boundaries() {
 #[test]
 fn test_set_parameter_per_channel_delay_affects_processing() {
     let sr = 48000u32;
-    let mut p = DelayPlugin::new_per_channel(vec![5.0, 10.0]).unwrap();
+    let mut p = DelayPlugin::new_per_channel_with_max_delay(vec![5.0, 10.0], 15.0).unwrap();
     p.initialize(sr).unwrap();
     p.reset();
 

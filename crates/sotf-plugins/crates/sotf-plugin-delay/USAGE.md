@@ -2,7 +2,7 @@
 
 ## Overview
 
-An audio delay effect with adjustable delay time, feedback, and dry/wet mix. Use it for echo effects, slapback, doubling, or creative rhythmic patterns. Supports fractional-sample delay via linear interpolation for smooth delay time changes.
+An audio delay effect with adjustable delay time, feedback, and dry/wet mix. Use it for echo effects, slapback, doubling, or creative rhythmic patterns. Supports fractional-sample delay via four-point Lagrange interpolation.
 
 ## Features
 
@@ -20,7 +20,17 @@ A feedback delay line that stores audio and plays it back after a configurable t
 
 ### Smooth Parameter Changes
 
-All parameters are smoothed to prevent clicks when adjusting delay time, feedback, or mix in real time. Delay time uses fractional-sample linear interpolation for artifact-free modulation.
+Delay time, feedback, and mix are smoothed to avoid hard discontinuities during real-time adjustment. Delay-time changes use four-point Lagrange interpolation and have tape-style behavior, so automation or LFO modulation can intentionally produce Doppler/pitch glide.
+
+The LFO uses bounded one-sided clamping at the minimum and maximum delay: the
+feasible half-cycle remains active while only the portion outside the declared
+delay range is clipped. Allpass enable/bypass and coefficient changes crossfade
+over 20 ms, and the filter state runs continuously to avoid stale-tail clicks.
+
+Per-channel mode is reserved for pure RoomEQ routing delays: mix is fixed wet,
+feedback and LFO are zero, and allpass feedback is disabled. Its delay memory is
+sized from the declared per-channel automation maximum rather than the global
+five-second effect range.
 
 ## Demos
 
