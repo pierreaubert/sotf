@@ -971,3 +971,14 @@ fn test_per_channel_mode_from_str_invalid_errors() {
     assert!(PerChannelOpMode::from_str("notamode").is_err());
     assert!(PerChannelOpMode::from_str("").is_err());
 }
+
+#[test]
+fn fir_multiway_does_not_retain_unused_two_way_or_lr_banks() {
+    let plugin =
+        CrossoverPlugin::new_multiway(8, "FIR", 200.0, "both", &[1_200.0, 6_000.0]).unwrap();
+    assert!(plugin.fir_multiband.is_some());
+    assert!(plugin.fir_crossover_2way.is_none());
+    assert!(plugin.multiband.is_none());
+    assert!(plugin.is_multiway());
+    assert!(plugin.fir_memory_report().unwrap().total_bytes > 0);
+}

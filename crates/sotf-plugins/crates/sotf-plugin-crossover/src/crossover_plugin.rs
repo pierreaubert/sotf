@@ -13,6 +13,21 @@ use sotf_host::plugin::{
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::LogSmoother;
 
+/// Estimated persistent FIR DSP payload owned by a compiled crossover.
+///
+/// The report counts coefficient arrays, convolution histories/write
+/// positions, alignment delay samples, and steady-processing scratch. It does
+/// not include allocator bookkeeping or the `Vec` headers stored inline in the
+/// plugin, so hosts can use it as a stable pre-admission lower bound.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct FirMemoryReport {
+    pub coefficient_bytes: usize,
+    pub history_bytes: usize,
+    pub alignment_bytes: usize,
+    pub scratch_bytes: usize,
+    pub total_bytes: usize,
+}
+
 /// Delays the early branches of a cascaded FIR crossover so every emitted
 /// band has the same cumulative group delay as the final branch.
 struct FirBandAlignment {
@@ -193,24 +208,28 @@ impl CrossoverPlugin {
         let num_bands = all_freqs.len() + 1;
 
         let (multiband, extra_smoothers) = if all_freqs.len() > 1 {
-            let mb = (0..num_bands)
-                .map(|_| {
-                    all_freqs
-                        .iter()
-                        .map(|&frequency| Lr4Crossover::new(frequency, sr as f32, num_channels))
-                        .collect()
-                })
-                .collect();
+            // FIR and LR banks are mutually exclusive runtime topologies. Do
+            // not retain an unused phase-coherent IIR bank in FIR instances.
+            let mb = (kind == CrossoverKind::Lr24).then(|| {
+                (0..num_bands)
+                    .map(|_| {
+                        all_freqs
+                            .iter()
+                            .map(|&frequency| Lr4Crossover::new(frequency, sr as f32, num_channels))
+                            .collect()
+                    })
+                    .collect()
+            });
             let smoothers: Vec<LogSmoother> = all_freqs
                 .iter()
                 .skip(1) // first freq uses the primary smoother
                 .map(|&f| LogSmoother::new(f, 20.0, sr))
                 .collect();
-            (Some(mb), smoothers)
+            (mb, smoothers)
         } else {
             (None, Vec::new())
         };
-        let fir_crossover_2way = (kind == CrossoverKind::LinearPhase)
+        let fir_crossover_2way = (kind == CrossoverKind::LinearPhase && all_freqs.len() == 1)
             .then(|| FirCrossover::new(frequency as f32, sr as f32, num_channels, fir_taps));
         let fir_multiband = (kind == CrossoverKind::LinearPhase && all_freqs.len() > 1)
             .then(|| MultibandFirCrossover::new(&all_freqs, sr as f32, num_channels, fir_taps));
@@ -408,12 +427,8 @@ impl CrossoverPlugin {
             .first()
             .copied()
             .unwrap_or_else(|| self.freq_smoother.target());
-        self.fir_crossover_2way = Some(FirCrossover::new(
-            primary,
-            sr,
-            self.num_channels,
-            self.fir_taps,
-        ));
+        self.fir_crossover_2way = (self.all_frequencies.len() == 1)
+            .then(|| FirCrossover::new(primary, sr, self.num_channels, self.fir_taps));
         self.fir_multiband = (self.all_frequencies.len() > 1).then(|| {
             MultibandFirCrossover::new(&self.all_frequencies, sr, self.num_channels, self.fir_taps)
         });
@@ -483,7 +498,55 @@ impl CrossoverPlugin {
 
     /// Returns true if operating in multi-way (3+ bands) mode.
     pub(super) fn is_multiway(&self) -> bool {
-        self.multiband.is_some()
+        self.all_frequencies.len() > 1
+    }
+
+    /// Report the persistent FIR DSP payload before the graph is admitted.
+    /// Returns `None` for LR/per-channel instances.
+    pub fn fir_memory_report(&self) -> Option<FirMemoryReport> {
+        if self.kind != CrossoverKind::LinearPhase || self.is_per_channel() {
+            return None;
+        }
+        let sample_bytes = std::mem::size_of::<f32>();
+        let index_bytes = std::mem::size_of::<usize>();
+        let splits = self.all_frequencies.len();
+        let bands = splits + 1;
+
+        let coefficient_bytes = splits
+            .saturating_mul(self.fir_taps)
+            .saturating_mul(sample_bytes);
+        let history_bytes = splits.saturating_mul(self.num_channels).saturating_mul(
+            self.fir_taps
+                .saturating_mul(sample_bytes)
+                .saturating_add(index_bytes),
+        );
+        let split_latency = (self.fir_taps - 1) / 2;
+        let alignment_frames = (0..bands)
+            .map(|band| {
+                let intrinsic_splits = (band + 1).min(splits);
+                (splits - intrinsic_splits).saturating_mul(split_latency)
+            })
+            .sum::<usize>();
+        let alignment_bytes = alignment_frames
+            .saturating_mul(self.num_channels)
+            .saturating_mul(sample_bytes);
+        // Plugin low/high/band-flat storage plus the multiband FIR's three
+        // channel-sized scratch buffers (the latter are absent for two-way).
+        let scratch_channels = if splits == 1 { 2 } else { bands + 5 };
+        let scratch_bytes = scratch_channels
+            .saturating_mul(self.num_channels)
+            .saturating_mul(sample_bytes);
+        let total_bytes = coefficient_bytes
+            .saturating_add(history_bytes)
+            .saturating_add(alignment_bytes)
+            .saturating_add(scratch_bytes);
+        Some(FirMemoryReport {
+            coefficient_bytes,
+            history_bytes,
+            alignment_bytes,
+            scratch_bytes,
+            total_bytes,
+        })
     }
 
     /// Parse "frequency_N" into an extra smoother index (0-based).
@@ -493,6 +556,55 @@ impl CrossoverPlugin {
         s.strip_prefix("frequency_")
             .and_then(|idx_str| idx_str.parse::<usize>().ok())
             .and_then(|idx| if idx >= 2 { Some(idx - 2) } else { None })
+    }
+
+    /// Process a coefficient-stable LR24 two-way segment. Output mode is
+    /// selected once for the segment and the external frame-slice adapter is
+    /// bypassed in favor of the crossover's scalar channel primitive.
+    fn process_lr_two_way_segment(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        first_frame: usize,
+        frames: usize,
+    ) {
+        let channels = self.num_channels;
+        let output_channels = self.calc_output_channels();
+        let end_frame = first_frame + frames;
+        match self.mode {
+            CrossoverMode::Lowpass => {
+                for frame in first_frame..end_frame {
+                    for channel in 0..channels {
+                        let (low, _) = self
+                            .crossover_2way
+                            .process(input[frame * channels + channel], channel);
+                        output[frame * output_channels + channel] = low;
+                    }
+                }
+            }
+            CrossoverMode::Highpass => {
+                for frame in first_frame..end_frame {
+                    for channel in 0..channels {
+                        let (_, high) = self
+                            .crossover_2way
+                            .process(input[frame * channels + channel], channel);
+                        output[frame * output_channels + channel] = high;
+                    }
+                }
+            }
+            CrossoverMode::Both => {
+                for frame in first_frame..end_frame {
+                    let output_offset = frame * output_channels;
+                    for channel in 0..channels {
+                        let (low, high) = self
+                            .crossover_2way
+                            .process(input[frame * channels + channel], channel);
+                        output[output_offset + channel] = low;
+                        output[output_offset + channels + channel] = high;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1016,36 +1128,16 @@ impl Plugin for CrossoverPlugin {
             // 2-way processing
             const SUBBLOCK: usize = 16;
 
-            for frame in 0..num_frames {
+            let mut frame = 0;
+            while frame < num_frames {
                 if self.smoother_subblock_phase == 0 {
                     let new_freq = self.freq_smoother.next_n(SUBBLOCK);
                     self.crossover_2way.set_frequency(new_freq);
                 }
-                self.smoother_subblock_phase = (self.smoother_subblock_phase + 1) % SUBBLOCK;
-                let in_off = frame * in_ch;
-                let out_off = frame * out_ch;
-                let frame_slice = &input[in_off..in_off + in_ch];
-
-                self.crossover_2way.process_frame(
-                    frame_slice,
-                    &mut self.low_buf,
-                    &mut self.high_buf,
-                );
-
-                match self.mode {
-                    CrossoverMode::Lowpass => {
-                        output[out_off..out_off + in_ch].copy_from_slice(&self.low_buf);
-                    }
-                    CrossoverMode::Highpass => {
-                        output[out_off..out_off + in_ch].copy_from_slice(&self.high_buf);
-                    }
-                    CrossoverMode::Both => {
-                        // Low band first, then high band
-                        output[out_off..out_off + in_ch].copy_from_slice(&self.low_buf);
-                        output[out_off + in_ch..out_off + 2 * in_ch]
-                            .copy_from_slice(&self.high_buf);
-                    }
-                }
+                let segment = (SUBBLOCK - self.smoother_subblock_phase).min(num_frames - frame);
+                self.process_lr_two_way_segment(input, output, frame, segment);
+                frame += segment;
+                self.smoother_subblock_phase = (self.smoother_subblock_phase + segment) % SUBBLOCK;
             }
         }
 

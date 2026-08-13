@@ -1,3 +1,16 @@
+# 0.5.30
+
+- Process coefficient-stable LR24 two-way spans with a block kernel that
+  selects output routing once and calls the scalar channel primitive directly;
+  scalar-reference, callback-partition, and allocation tests protect exact DSP
+  behavior.
+- Add a Criterion block matrix for LR/FIR, 32--2048 frames, two/four bands,
+  per-channel routing, 2/8 channels, and 63/511-tap FIR configurations.
+- Expose `fir_memory_report()` so graph admission can account for coefficients,
+  histories, multiband alignment, and scratch separately and in total.
+- Stop retaining an unused two-way FIR and phase-coherent LR bank inside
+  multiway FIR instances.
+
 # 0.5.29
 
 - Make LR multiway splitting phase coherent: every emitted band now traverses

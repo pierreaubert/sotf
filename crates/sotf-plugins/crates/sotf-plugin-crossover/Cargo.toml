@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-crossover"
 description = "SOTF Crossover plugin - frequency band splitting"
-version = "0.5.29"
+version = "0.5.30"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -25,4 +25,9 @@ sotf-host = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 proptest = { workspace = true }
+
+[[bench]]
+name = "crossover-block-benchmark"
+harness = false

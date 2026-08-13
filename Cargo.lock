@@ -10599,8 +10599,9 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-crossover"
-version = "0.5.29"
+version = "0.5.30"
 dependencies = [
+ "criterion",
  "proptest 1.11.0",
  "serde",
  "sotf-host",

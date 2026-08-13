@@ -1,6 +1,23 @@
 # Crossover plugin review — 2026-08-12
 
-## Remediation status — 0.5.29 complete
+## Remediation status — 0.5.30 complete
+
+Performance follow-up in version 0.5.30:
+
+- A Criterion matrix now measures interleaved 32/512/2048-frame callbacks for
+  two- and four-band LR24, mixed per-channel routing, and 63/511-tap two- and
+  four-band FIR configurations. The retained two-way LR24 block kernel measured
+  roughly 25--35% faster at 32/512 frames in the initial controlled comparison,
+  with exact scalar-reference and callback-partition regressions.
+- Multiway and per-channel loop-order prototypes produced mixed/regressive
+  results and were removed; their generic scalar paths remain unchanged.
+- `fir_memory_report()` gives graph admission an implementation-derived
+  lower-bound breakdown for coefficients, convolution histories/write indices,
+  multiband alignment delays, scratch, and total persistent DSP bytes. Focused
+  tests pin representative two- and four-way reports and monotonic scaling.
+- Multiway FIR construction no longer retains an unused two-way FIR instance or
+  a complete unused LR phase-coherent bank. All steady block paths remain
+  allocation-free and partition invariant.
 
 Remediated in 0.5.28: one-to-four-band construction limits, unique finite
 Nyquist-valid crossover points, bounded overflow-safe FIR tap validation,
