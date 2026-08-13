@@ -22,6 +22,7 @@ use sotf_plugins::param_specs::crossover as crossover_specs;
 use sotf_plugins::param_specs::de_esser as de_esser_specs;
 use sotf_plugins::param_specs::declick as declick_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
+use sotf_plugins::param_specs::dither as dither_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::dynamic_eq as dynamic_eq_specs;
 use sotf_plugins::param_specs::expander as expander_specs;

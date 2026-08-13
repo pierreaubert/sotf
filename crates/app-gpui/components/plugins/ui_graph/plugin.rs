@@ -49,6 +49,7 @@ pub(super) fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::DeEsser => theme.warning,
         PluginType::TransientShaper => theme.warning,
         PluginType::Saturation => theme.warning,
+        PluginType::Dither => theme.success,
         PluginType::DynamicEq => theme.warning,
         PluginType::LinearPhaseEq => theme.success,
         PluginType::SpectralCompressor => theme.warning,
@@ -106,7 +107,8 @@ pub(super) fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) 
         | PluginType::Declick
         | PluginType::HissReducer
         | PluginType::SpeechDenoiser
-        | PluginType::Pnd => (2, 2),
+        | PluginType::Pnd
+        | PluginType::Dither => (2, 2),
         // Upmixer/AAE: stereo in, multi-channel out
         PluginType::Upmixer | PluginType::AAE => (2, 5),
         // Binaural decoder: multi-channel in, stereo out

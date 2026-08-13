@@ -1,6 +1,41 @@
 use crate::plugins::{PluginSettings, PluginType};
 use sotf_plugins::param_specs;
 
+#[test]
+fn dither_parameters_round_trip_through_engine_accessors() {
+    let mut settings = PluginSettings::default_for(&PluginType::Dither).unwrap();
+    let specs = settings.param_specs();
+    assert_eq!(specs.len(), 3);
+    assert_eq!(
+        specs.iter().map(|spec| spec.engine_key).collect::<Vec<_>>(),
+        ["bit_depth", "noise_shaping", "dither_type"]
+    );
+
+    assert_eq!(settings.param_value(0), Some(0.0));
+    assert_eq!(settings.param_value(1), Some(1.0));
+    assert_eq!(settings.param_value(2), Some(0.0));
+
+    settings.set_param_value(0, 2.0);
+    settings.set_param_value(1, 0.0);
+    settings.set_param_value(2, 2.0);
+
+    assert_eq!(settings.param_value(0), Some(2.0));
+    assert_eq!(settings.param_value(1), Some(0.0));
+    assert_eq!(settings.param_value(2), Some(2.0));
+    assert_eq!(
+        settings.engine_param_at(0),
+        Some(("bit_depth".to_string(), "2".to_string()))
+    );
+    assert_eq!(
+        settings.engine_param_at(1),
+        Some(("noise_shaping".to_string(), "false".to_string()))
+    );
+    assert_eq!(
+        settings.engine_param_at(2),
+        Some(("dither_type".to_string(), "2".to_string()))
+    );
+}
+
 /// Validate that every plugin's LAYOUT indices are within bounds of its PARAMS.
 ///
 /// Iterates all plugin types dynamically so new plugins are automatically covered.

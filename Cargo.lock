@@ -10654,8 +10654,9 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-dither"
-version = "0.5.9"
+version = "0.5.12"
 dependencies = [
+ "rustfft 6.4.1",
  "serde",
  "serde_json",
  "sotf-host",

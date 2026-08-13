@@ -10,7 +10,7 @@ When reducing audio bit depth (e.g., 24-bit to 16-bit for CD), quantization dist
 
 - **TPDF dither**: Triangular Probability Density Function for optimal quantization noise decorrelation
 - **F-weighted noise shaping**: Pushes noise to less audible frequencies
-- **Configurable target bit depth**: 8, 16, 20, 24 bit targets
+- **Configurable target bit depth**: 16, 20, and 24 bit targets
 
 ## Architecture
 

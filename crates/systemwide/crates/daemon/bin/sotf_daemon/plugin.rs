@@ -52,6 +52,7 @@ pub(super) fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
         PluginType::DeEsser => "de_esser",
         PluginType::TransientShaper => "transient_shaper",
         PluginType::Saturation => "saturation",
+        PluginType::Dither => "dither",
         PluginType::DynamicEq => "dynamic_eq",
         PluginType::LinearPhaseEq => "linear_phase_eq",
         PluginType::SpectralCompressor => "spectral_compressor",
@@ -97,6 +98,7 @@ pub(super) fn plugin_type_category(pt: &PluginType) -> &'static str {
         PluginType::DeEsser => "Dynamics",
         PluginType::TransientShaper => "Dynamics",
         PluginType::Saturation => "Effects",
+        PluginType::Dither => "Utility",
         PluginType::DynamicEq => "Dynamics",
         PluginType::LinearPhaseEq => "EQ",
         PluginType::SpectralCompressor => "Dynamics",
@@ -113,5 +115,13 @@ mod tests {
         assert_eq!(plugin_type_to_engine_str(&PluginType::External), "external");
         assert_eq!(plugin_type_category(&PluginType::External), "External");
         assert!(!PluginType::all().contains(&PluginType::External));
+    }
+
+    #[test]
+    fn dither_has_canonical_daemon_wire_and_picker_metadata() {
+        assert_eq!(plugin_type_to_engine_str(&PluginType::Dither), "dither");
+        assert_eq!(plugin_type_category(&PluginType::Dither), "Utility");
+        assert_eq!(PluginType::Dither.name(), "Dither");
+        assert!(PluginType::all().contains(&PluginType::Dither));
     }
 }

@@ -536,6 +536,25 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
         )
     ),
     entry!(
+        "dither",
+        ["dither"],
+        Processor,
+        builtin_metadata!(
+            "sotf-plugin-dither",
+            "Dither",
+            Beta,
+            PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
+            PluginChannelOutputModel::PreservesInput,
+            PluginLatencyModel::Zero,
+            "sotf_plugin_dither::params::PARAMS",
+            Generated,
+            true,
+        ),
+        zero_alloc_evidence(
+            "sotf-plugin-dither TPDF statistics, signed-PCM endpoint, frequency-domain noise-shaping, parameter, and realtime-allocation regressions"
+        )
+    ),
+    entry!(
         "delay",
         ["delay"],
         Processor,

@@ -117,6 +117,27 @@ fn out_of_range_ints_are_clamped_not_rejected() {
         plugin.get_parameter(&ParameterId::from("bit_depth")),
         Some(ParameterValue::Int(2))
     );
+    plugin
+        .set_parameter(ParameterId::from("bit_depth"), ParameterValue::Int(-100))
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("bit_depth")),
+        Some(ParameterValue::Int(0))
+    );
+    plugin
+        .set_parameter(ParameterId::from("dither_type"), ParameterValue::Int(100))
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dither_type")),
+        Some(ParameterValue::Int(2))
+    );
+    plugin
+        .set_parameter(ParameterId::from("dither_type"), ParameterValue::Int(-100))
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("dither_type")),
+        Some(ParameterValue::Int(0))
+    );
 }
 
 // ----------------------------------------------------------------------------

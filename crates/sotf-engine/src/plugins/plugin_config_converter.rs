@@ -53,6 +53,7 @@ impl PluginConfigConverterRegistry {
         registry.register("gain", convert_gain);
         registry.register("eq", convert_eq);
         registry.register("delay", convert_delay);
+        registry.register("dither", effects::convert_dither);
         registry.register("crossfeed", convert_crossfeed);
         registry.register("aec", effects::convert_aec);
         registry.register("beamformer", spatial::convert_beamformer);

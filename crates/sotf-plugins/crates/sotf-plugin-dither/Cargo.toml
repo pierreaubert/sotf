@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-dither"
 description = "SOTF Dither plugin - TPDF dither with F-weighted noise shaping for bit-depth reduction"
-version = "0.5.9"
+version = "0.5.12"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -25,3 +25,6 @@ required-features = ["qa"]
 sotf-host = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+rustfft = { workspace = true }

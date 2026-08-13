@@ -4,6 +4,25 @@ use super::PluginConfig;
 use crate::plugins::PluginSettings;
 use serde_json::json;
 
+pub fn convert_dither(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
+    let PluginSettings::Dither {
+        bit_depth,
+        noise_shaping,
+        dither_type,
+    } = settings
+    else {
+        return None;
+    };
+    Some(PluginConfig::new(
+        "dither",
+        json!({
+            "bit_depth": bit_depth,
+            "noise_shaping": noise_shaping,
+            "dither_type": dither_type,
+        }),
+    ))
+}
+
 pub fn convert_aec(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
     let PluginSettings::Aec {
         echo_tail_ms,

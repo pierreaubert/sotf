@@ -1,3 +1,46 @@
+# 0.5.12
+
+## Fixes
+
+- Make the Wannamaker third-order F-weighted error-feedback taps sample-rate
+  aware. At and above the 44.1 kHz reference rate, fractional error-history
+  delays scale in seconds so the noise-transfer curve remains anchored to
+  absolute frequency; lower rates retain the normalized curve because its
+  ultrasonic destination band is not representable.
+- Add an averaged Hann-windowed FFT regression proving that shaping reduces
+  quantization-error power from 200 Hz to 8 kHz and moves it into 16–23 kHz.
+- Register Dither in the canonical plugin catalog and facade factory, including
+  its parameter schema, channel-preserving contract, and serialized settings.
+- Integrate Dither with the engine's typed plugin inventory, canonical settings
+  defaults, parameter accessors/layout, and factory configuration conversion,
+  with focused settings and runtime-parameter round-trip regressions.
+- Use wrapping arithmetic when deriving per-channel RNG seeds, preventing debug
+  overflow panics at the catalog's 4/6/8/12-channel layouts.
+
+# 0.5.11
+
+## Fixes
+
+- Saturate rounded/truncated quantization codes to the signed PCM range
+  (`-2^(N-1)` through `2^(N-1)-1`) before converting back to normalized
+  floating point. This prevents `+1.0` and noise-shaping overshoot from
+  emitting an unrepresentable positive code, and feeds the emitted saturated
+  code into the shaping error state.
+- Added endpoint, near-full-scale, and shaping-overshoot regression coverage
+  at 16-, 20-, and 24-bit depths.
+
+# 0.5.10
+
+## Fixes
+
+- TPDF now uses two independent uniform random values per output sample, removing
+  the prior lag-1 anticorrelation and making the first sample genuinely TPDF.
+- Noise-shaping feedback stores `quantized - dithered`, so explicit dither is
+  excluded from the error-shaper state as documented.
+- Negative bit-depth and dither-type choices clamp to the minimum option rather
+  than wrapping through `usize` and selecting the maximum.
+- Reset now restores deterministic per-channel RNG seeds as well as shaping state.
+
 # 0.5.9
 
 ## Fixes
