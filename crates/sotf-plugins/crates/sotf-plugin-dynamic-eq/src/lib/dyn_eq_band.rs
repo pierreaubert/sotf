@@ -122,11 +122,21 @@ impl DynEqBand {
         if target_gain_db.abs() < 0.01 {
             return 0.0;
         }
-        (gain_reduction_db / target_gain_db.abs()).clamp(0.0, 1.0)
+        let applied_db =
+            gain_reduction_db.clamp(0.0, target_gain_db.abs()) * target_gain_db.signum();
+        let full_amplitude = 10.0f32.powf(target_gain_db / 20.0);
+        let desired_amplitude = 10.0f32.powf(applied_db / 20.0);
+        ((desired_amplitude - 1.0) / (full_amplitude - 1.0)).clamp(0.0, 1.0)
+    }
+
+    fn max_frequency(sample_rate: u32) -> f32 {
+        (sample_rate as f32 * 0.475).min(20_000.0)
     }
 
     pub(super) fn rebuild_sidechain_filters(&mut self, sample_rate: u32) {
+        self.frequency = self.frequency.clamp(20.0, Self::max_frequency(sample_rate));
         let (f_low, f_high) = bandpass_edges(self.frequency, self.q);
+        let f_high = f_high.min(Self::max_frequency(sample_rate));
         for hp in &mut self.sidechain_bp_hp {
             *hp = Biquad::new(
                 BiquadFilterType::Highpass,
@@ -148,6 +158,7 @@ impl DynEqBand {
     }
 
     pub(super) fn rebuild_eq_filters(&mut self, sample_rate: u32) {
+        self.frequency = self.frequency.clamp(20.0, Self::max_frequency(sample_rate));
         // EQ filters are held at target_gain_db; modulation is a dry/wet blend
         for eq in &mut self.eq_filters {
             *eq = Biquad::new(

@@ -12,6 +12,12 @@ A parametric EQ where each filter band only activates when the signal in that fr
 - **Parametric EQ base**: Standard frequency, Q, and gain per band
 - **Adaptive processing**: Gain changes dynamically based on signal level
 
+Band count, channel linking, filter frequency/Q/gain and active/solo routing
+are structural: rebuild the plugin to change them. Threshold, ratio, attack,
+release, knee, per-band dynamics overrides and mix remain realtime controls.
+Zero-target-gain bands and a settled fully dry mix use exact transparent fast
+paths; wet re-entry begins from deterministic reset detector/filter state.
+
 ## Architecture
 
 ```

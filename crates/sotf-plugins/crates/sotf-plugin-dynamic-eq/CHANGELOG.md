@@ -1,3 +1,44 @@
+# 0.5.11
+
+## Fixes (2026-08-12 review closure)
+
+- Made band count, channel linking, filter frequency/Q/gain and active/solo
+  topology structural, eliminating destructive live filter resets and stale
+  linked/unlinked or bypassed detector state transitions.
+- Added exact settled-dry and zero-target-gain fast paths. Wet re-entry resets
+  state deterministically before the mix ramp.
+- Reset now publishes cleared monitoring data immediately; plugin metadata uses
+  the package version.
+- Added structural-transition, fast-path state, monitoring publication, and
+  full 1/2/8/16/32-channel × 1/4/8-band × linked/unlinked × block-size QA.
+
+# 0.5.10
+
+## Fixes (2026-08-12 factory validation follow-up)
+
+- Added a fallible, sample-rate-aware constructor for serialized Dynamic EQ
+  state. The canonical facade and bridge factories now reject invalid global
+  and per-band values, malformed band counts, non-finite numbers, and bands
+  whose detector edge cannot be represented at the host rate.
+
+# 0.5.9
+
+## Fixes
+
+- Live per-band gain changes now rebuild the peaking filter so reported state and audio agree.
+- Dynamic depth blending now converts the requested dB depth to a linear-amplitude interpolation
+  coefficient, giving symmetric and accurate boost/cut magnitude at the filter centre.
+- Per-band updates now share schema validation, reject malformed IDs, wrong types, inactive band
+  indices, and non-finite values, and validate bulk updates before any mutation.
+- Filter centres and sidechain upper edges are constrained below Nyquist at the active sample rate;
+  invalid near-zero sample rates are rejected.
+- Reset now snaps mix and threshold smoothers to their stored targets and resets cache throttling.
+
+## Tests
+
+- Added public live-gain response parity, signed dB-depth interpolation, invalid band update,
+  Nyquist-safe initialization, and smoother-reset regressions.
+
 # 0.5.8
 
 ## Fixes
@@ -62,3 +103,10 @@
 - Band frequency / q live updates now rebuild sidechain and EQ filters immediately.
 - Reset() now clears current_gain_db before rebuilding EQ filters, so reset returns the band to neutral gain.
 - Process_in_place now checks frame/channel overflow and exact buffer length, returning Err instead of panicking.
+# 0.5.12
+
+- Mark rebuild-only band-count and channel-link controls structural in host-visible metadata, with regression coverage.
+- Align the player parameter mapper with that host metadata: structural globals
+  no longer have a stale realtime test expectation, realtime globals retain
+  canonical engine updates, and encoded band rows stay on the validated
+  dynamic-band adjust/set path.

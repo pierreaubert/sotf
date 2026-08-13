@@ -1,6 +1,7 @@
 use sotf_host::plugin::{InPlacePluginAdapter, ProcessContext};
 use sotf_host::{
-    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, run_standard_tests,
+    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, assert_no_allocs,
+    run_standard_tests,
 };
 use sotf_plugin_dynamic_eq::{DynEqBandParams, DynamicEqPlugin, DynamicEqPluginParams};
 use std::f32::consts::PI;
@@ -54,6 +55,46 @@ fn main() {
     // Run standard QA tests
     let mut plugin = InPlacePluginAdapter::new(ParametricInPlacePluginAdapter::new(inner));
     run_standard_tests(&mut plugin, "DynamicEqPlugin");
+
+    println!("\n[Test 3] Layout/band/link/block realtime matrix");
+    for channels in [1, 2, 8, 16, 32] {
+        for num_bands in [1, 4, 8] {
+            for link_channels in [false, true] {
+                for zero_gain in [false, true] {
+                    let mut candidate = DynamicEqPlugin::from_params(
+                        channels,
+                        DynamicEqPluginParams {
+                            num_bands,
+                            link_channels,
+                            bands: (0..num_bands)
+                                .map(|band| DynEqBandParams {
+                                    frequency: 100.0 * 2.0_f32.powi(band as i32),
+                                    gain: if zero_gain { 0.0 } else { 6.0 },
+                                    ..Default::default()
+                                })
+                                .collect(),
+                            ..Default::default()
+                        },
+                    );
+                    candidate.initialize(sample_rate).unwrap();
+                    for frames in [32, 64, 127, 256, 512, 1_024, 2_048] {
+                        let mut audio = vec![0.0; frames * channels];
+                        let context = ProcessContext::new(sample_rate, frames);
+                        candidate.process_in_place(&mut audio, &context).unwrap();
+                        assert_no_allocs("DynamicEqPlugin matrix process", || {
+                            candidate.process_in_place(&mut audio, &context).unwrap();
+                        });
+                        let started = std::time::Instant::now();
+                        candidate.process_in_place(&mut audio, &context).unwrap();
+                        assert!(
+                            started.elapsed().as_secs_f64() < frames as f64 / sample_rate as f64
+                        );
+                    }
+                }
+            }
+        }
+    }
+    println!("  all layouts/modes zero-allocation and below deadline: PASS");
 
     println!("\n[ALL PASS] DynamicEQ QA Complete.");
 }

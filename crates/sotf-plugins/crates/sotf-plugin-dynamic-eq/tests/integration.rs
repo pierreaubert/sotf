@@ -44,9 +44,7 @@ fn global_parameter_roundtrip() {
         ("attack", ParameterValue::Float(25.0)),
         ("release", ParameterValue::Float(200.0)),
         ("knee", ParameterValue::Float(6.0)),
-        ("link_channels", ParameterValue::Bool(false)),
         ("mix", ParameterValue::Float(0.5)),
-        ("num_bands", ParameterValue::Int(6)),
     ];
 
     for &(id, ref value) in cases {
@@ -69,13 +67,8 @@ fn per_band_parameter_roundtrip() {
     plugin.initialize(48000).unwrap();
 
     let cases: &[(&str, ParameterValue)] = &[
-        ("band_0_frequency", ParameterValue::Float(500.0)),
-        ("band_0_q", ParameterValue::Float(2.0)),
-        ("band_0_gain", ParameterValue::Float(6.0)),
         ("band_0_threshold", ParameterValue::Float(-40.0)),
         ("band_0_ratio", ParameterValue::Float(8.0)),
-        ("band_0_active", ParameterValue::Bool(false)),
-        ("band_0_solo", ParameterValue::Bool(true)),
     ];
 
     for &(id, ref value) in cases {
@@ -89,6 +82,26 @@ fn per_band_parameter_roundtrip() {
             "roundtrip failed for parameter {}",
             id
         );
+    }
+}
+
+#[test]
+fn filter_and_topology_parameters_require_rebuild() {
+    let mut plugin = DynamicEqPlugin::new(2);
+    plugin.initialize(48_000).unwrap();
+    for (id, value) in [
+        ("num_bands", ParameterValue::Int(1)),
+        ("link_channels", ParameterValue::Bool(false)),
+        ("band_0_frequency", ParameterValue::Float(2_000.0)),
+        ("band_0_q", ParameterValue::Float(2.0)),
+        ("band_0_gain", ParameterValue::Float(12.0)),
+        ("band_0_active", ParameterValue::Bool(false)),
+        ("band_0_solo", ParameterValue::Bool(true)),
+    ] {
+        let error = plugin
+            .set_parameter(ParameterId::from(id), value)
+            .unwrap_err();
+        assert!(error.contains("structural"), "{id}: {error}");
     }
 }
 

@@ -10,7 +10,9 @@ use crate::params::{
 };
 use math_audio_dsp::fast_math::fast_log10;
 use sotf_host::analyzer::RealTimeCache;
+use sotf_host::param_bridge::apply_spec_update_modes;
 use sotf_host::param_specs::ParamType;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
@@ -66,6 +68,37 @@ pub struct DynamicEqPlugin {
 }
 
 impl DynamicEqPlugin {
+    fn validate_value(&self, id: &ParameterId, value: &ParameterValue) -> PluginResult<()> {
+        let canonical = if let Some(rest) = id.0.strip_prefix("band_") {
+            let (index, field) = rest
+                .split_once('_')
+                .ok_or_else(|| format!("Invalid dynamic EQ band parameter: {id}"))?;
+            let index = index
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid dynamic EQ band parameter: {id}"))?;
+            if index >= self.num_bands {
+                return Err(format!("Dynamic EQ band index {index} is not active"));
+            }
+            let field = match field {
+                "freq" => "frequency",
+                "threshold" => "band_threshold",
+                "ratio" => "band_ratio",
+                "frequency" | "q" | "gain" | "band_threshold" | "band_ratio" | "active"
+                | "solo" => field,
+                _ => return Err(format!("Unknown dynamic EQ band parameter: {id}")),
+            };
+            ParameterId::from(format!("band_{index}_{field}"))
+        } else {
+            id.clone()
+        };
+        let parameter = self
+            .cached_parameters
+            .iter()
+            .find(|parameter| parameter.id == canonical)
+            .ok_or_else(|| format!("Unknown parameter: {id}"))?;
+        parameter.validate(value)
+    }
+
     pub fn new(channels: usize) -> Self {
         let sr = 44100u32;
         let num_bands = default_num_bands();
@@ -172,6 +205,98 @@ impl DynamicEqPlugin {
 
         p.rebuild_cached_parameters();
         p
+    }
+
+    /// Construct from serialized/factory state without silently clamping an
+    /// invalid value.  The legacy `from_params` constructor remains available
+    /// for callers that intentionally use its clamping behaviour; factories
+    /// and state-restore paths must use this fallible entry point instead.
+    pub fn try_from_params(channels: usize, params: DynamicEqPluginParams) -> PluginResult<Self> {
+        Self::validate_params(channels, &params, 48_000)?;
+        Ok(Self::from_params(channels, params))
+    }
+
+    /// Factory variant that validates frequencies against the rate at which
+    /// the instance will be used.  This prevents a valid-at-48 kHz preset from
+    /// constructing invalid detector/EQ coefficients at low sample rates.
+    pub fn try_from_params_at_sample_rate(
+        channels: usize,
+        params: DynamicEqPluginParams,
+        sample_rate: u32,
+    ) -> PluginResult<Self> {
+        Self::validate_params(channels, &params, sample_rate)?;
+        let mut plugin = Self::from_params(channels, params);
+        plugin.initialize(sample_rate)?;
+        Ok(plugin)
+    }
+
+    fn validate_params(
+        channels: usize,
+        params: &DynamicEqPluginParams,
+        sample_rate: u32,
+    ) -> PluginResult<()> {
+        if channels == 0 {
+            return Err("Dynamic EQ requires at least one channel".to_string());
+        }
+        if sample_rate < 100 {
+            return Err(format!("Unsupported Dynamic EQ sample rate: {sample_rate}"));
+        }
+        if !(1..=MAX_BANDS).contains(&params.num_bands) {
+            return Err(format!(
+                "Dynamic EQ num_bands must be in 1..={MAX_BANDS}, got {}",
+                params.num_bands
+            ));
+        }
+        if params.bands.len() > params.num_bands || params.bands.len() > MAX_BANDS {
+            return Err(format!(
+                "Dynamic EQ has {} band entries for num_bands {}",
+                params.bands.len(),
+                params.num_bands
+            ));
+        }
+
+        fn finite_range(name: &str, value: f32, min: f32, max: f32) -> PluginResult<()> {
+            if value.is_finite() && (min..=max).contains(&value) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Dynamic EQ {name} must be finite and in {min}..={max}, got {value}"
+                ))
+            }
+        }
+
+        finite_range("threshold", params.threshold, -60.0, 0.0)?;
+        finite_range("ratio", params.ratio, 1.0, 20.0)?;
+        finite_range("attack_ms", params.attack_ms, 0.1, 100.0)?;
+        finite_range("release_ms", params.release_ms, 10.0, 1000.0)?;
+        finite_range("knee", params.knee, 0.0, 20.0)?;
+        finite_range("mix", params.mix, 0.0, 1.0)?;
+
+        let max_frequency = (sample_rate as f32 * 0.475).min(20_000.0);
+        for (index, band) in params.bands.iter().enumerate() {
+            finite_range(
+                &format!("band_{index}_frequency"),
+                band.frequency,
+                20.0,
+                max_frequency,
+            )?;
+            finite_range(&format!("band_{index}_q"), band.q, 0.1, 10.0)?;
+            finite_range(&format!("band_{index}_gain"), band.gain, -24.0, 24.0)?;
+            finite_range(
+                &format!("band_{index}_threshold"),
+                band.band_threshold,
+                -60.0,
+                0.0,
+            )?;
+            finite_range(&format!("band_{index}_ratio"), band.band_ratio, 1.0, 20.0)?;
+            let (_, high_edge) = super::misc::bandpass_edges(band.frequency, band.q);
+            if high_edge >= max_frequency {
+                return Err(format!(
+                    "Dynamic EQ band_{index} detector upper edge {high_edge} must be below {max_frequency} Hz"
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
@@ -281,18 +406,25 @@ impl DynamicEqPlugin {
                 params.push(
                     p.with_description(spec.doc)
                         .with_group(spec.group)
+                        .with_update_mode(match spec.engine_key {
+                            "frequency" | "q" | "gain" | "active" | "solo" => {
+                                UpdateMode::Structural
+                            }
+                            _ => UpdateMode::Realtime,
+                        })
                         .with_importance(ParameterImportance::Useful),
                 );
             }
         }
 
+        apply_spec_update_modes(&mut params, DQ);
         self.cached_parameters = params;
     }
 }
 
 impl ParametricInPlacePlugin for DynamicEqPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("DynamicEQ", "1.0.0", "SotF")
+        PluginInfo::new("DynamicEQ", env!("CARGO_PKG_VERSION"), "SotF")
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -370,13 +502,13 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
     }
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
+        // Validate the whole batch before mutating so bulk preset application is atomic.
+        for (id, value) in &values {
+            self.validate_value(id, value)?;
+        }
         for (id, value) in values {
             if id == self.param_num_bands {
-                let v = value
-                    .as_int()
-                    .or_else(|| value.as_float().map(|f| f as i32))
-                    .unwrap_or(pk(DQ, "num_bands").default_f64() as i32);
-                self.num_bands = (v as usize).clamp(1, MAX_BANDS);
+                return Err("num_bands is structural; rebuild the plugin to change it".into());
             } else if id == self.param_threshold {
                 let v = value
                     .as_float()
@@ -434,13 +566,21 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
                     self.knee_db = v.clamp(0.0, 20.0);
                 }
             } else if id == self.param_link_channels {
-                self.link_channels = value.as_bool().unwrap_or(default_link_channels());
+                return Err("link_channels is structural; rebuild the plugin to change it".into());
             } else if id == self.param_mix {
                 let v = value
                     .as_float()
                     .unwrap_or(pk(DQ, "mix").default_f64() as f32);
                 if v.is_finite() {
+                    let leaving_settled_dry = self.mix_smoother.current().abs() < 1.0e-6
+                        && self.mix_smoother.target().abs() < 1.0e-6
+                        && v > 0.0;
                     self.mix = v.clamp(0.0, 1.0);
+                    if leaving_settled_dry {
+                        for band in &mut self.bands {
+                            band.reset(self.sample_rate);
+                        }
+                    }
                     self.mix_smoother.set_target(self.mix);
                 }
             } else if let Some(rest) = id.0.strip_prefix("band_") {
@@ -451,24 +591,10 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
                     if b_idx < self.bands.len() {
                         let band = &mut self.bands[b_idx];
                         match field {
-                            "frequency" | "freq" => {
-                                if let Some(v) = value.as_float() {
-                                    band.frequency = v.clamp(20.0, 20000.0);
-                                    band.rebuild_sidechain_filters(self.sample_rate);
-                                    band.rebuild_eq_filters(self.sample_rate);
-                                }
-                            }
-                            "q" => {
-                                if let Some(v) = value.as_float() {
-                                    band.q = v.clamp(0.1, 10.0);
-                                    band.rebuild_sidechain_filters(self.sample_rate);
-                                    band.rebuild_eq_filters(self.sample_rate);
-                                }
-                            }
-                            "gain" => {
-                                if let Some(v) = value.as_float() {
-                                    band.target_gain_db = v.clamp(-24.0, 24.0);
-                                }
+                            "frequency" | "freq" | "q" | "gain" | "active" | "solo" => {
+                                return Err(format!(
+                                    "band_{b_idx}_{field} is structural; rebuild the plugin to change it"
+                                ));
                             }
                             "threshold" | "band_threshold" => {
                                 if let Some(v) = value.as_float() {
@@ -484,19 +610,12 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
                                         (band.band_ratio - self.ratio).abs() > 0.01;
                                 }
                             }
-                            "active" => {
-                                band.active = value.as_bool().unwrap_or(true);
-                            }
-                            "solo" => {
-                                band.solo = value.as_bool().unwrap_or(false);
-                            }
                             _ => {}
                         }
                     }
                 }
             }
         }
-        self.rebuild_cached_parameters();
         Ok(())
     }
 
@@ -532,19 +651,16 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
         id: ParameterId,
         value: ParameterValue,
     ) -> PluginResult<()> {
-        if id.0.starts_with("band_") {
-            let mut values = ParameterSet::new();
-            values.insert(id, value);
-            self.apply_values(values)
-        } else {
-            self.parametric_validate_parameter(&id, &value)?;
-            let mut values = ParameterSet::new();
-            values.insert(id, value);
-            self.apply_values(values)
-        }
+        self.validate_value(&id, &value)?;
+        let mut values = ParameterSet::new();
+        values.insert(id, value);
+        self.apply_values(values)
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate < 100 {
+            return Err(format!("Unsupported Dynamic EQ sample rate: {sample_rate}"));
+        }
         self.sample_rate = sample_rate;
 
         for band in &mut self.bands {
@@ -573,6 +689,10 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
             band.reset(self.sample_rate);
         }
         self.monitoring_gr.fill(0.0);
+        self.mix_smoother.reset(self.mix);
+        self.threshold_smoother.reset(self.threshold_db);
+        self.cache_counter = 0;
+        self.cache.update(|data| data.update(&self.monitoring_gr));
     }
 
     fn process_in_place(
@@ -606,6 +726,14 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
         // Save dry signal
         self.dry_buf[..total].copy_from_slice(&buffer[..total]);
 
+        // A fully dry settled state is exactly transparent. Detector and EQ
+        // state are deterministically reset before a later wet ramp begins.
+        if self.mix_smoother.current().abs() < 1.0e-6 && self.mix_smoother.target().abs() < 1.0e-6 {
+            self.monitoring_gr[..self.num_bands].fill(0.0);
+            flush_denormals_inplace(buffer);
+            return Ok(nf);
+        }
+
         let knee = self.knee_db;
         let ratio = self.ratio;
 
@@ -620,6 +748,10 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
                     continue;
                 }
                 if any_solo && !band.solo {
+                    continue;
+                }
+                if band.target_gain_db.abs() < 0.01 {
+                    self.monitoring_gr[band_idx] = 0.0;
                     continue;
                 }
 
@@ -705,7 +837,7 @@ impl ParametricInPlacePlugin for DynamicEqPlugin {
         if self.cache_counter >= 10 {
             self.cache_counter = 0;
             self.cache.update(|d| {
-                d.update(&self.monitoring_gr[..self.num_bands]);
+                d.update(&self.monitoring_gr);
             });
         }
 

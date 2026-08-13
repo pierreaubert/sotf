@@ -10677,7 +10677,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-dynamic-eq"
-version = "0.5.6"
+version = "0.5.12"
 dependencies = [
  "math-dsp",
  "math-iir-fir",

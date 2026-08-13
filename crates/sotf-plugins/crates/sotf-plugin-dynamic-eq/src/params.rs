@@ -27,6 +27,7 @@ pub const MAX_BANDS: usize = 8;
 pub const PARAMS: &[ParamSpec] = &[
     // Global: num_bands
     ParamSpec::int("Num Bands", "num_bands", 4, 1, 8, 1, "Bands", "Setup")
+        .structural()
         .setup()
         .doc("Number of dynamic EQ bands"),
     // Global: threshold
@@ -63,6 +64,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Unlinked",
         "Channels",
     )
+    .structural()
     .setup()
     .doc("Stereo-link detection"),
     // Global: mix
@@ -87,9 +89,13 @@ pub const BAND_PARAMS: &[ParamSpec] = &[
         "Hz",
         "EQ",
     )
+    .structural()
     .doc("Band center frequency"),
-    ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.01, "", "EQ").doc("Band Q factor (bandwidth)"),
+    ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.01, "", "EQ")
+        .structural()
+        .doc("Band Q factor (bandwidth)"),
     ParamSpec::float("Gain", "gain", 0.0, -24.0, 24.0, 0.1, "dB", "EQ")
+        .structural()
         .doc("Target EQ gain when triggered"),
     ParamSpec::float(
         "Threshold",
@@ -104,8 +110,12 @@ pub const BAND_PARAMS: &[ParamSpec] = &[
     .doc("Band-specific threshold (overrides global)"),
     ParamSpec::float("Ratio", "band_ratio", 2.0, 1.0, 20.0, 0.1, ":1", "Dynamics")
         .doc("Band-specific ratio (overrides global)"),
-    ParamSpec::bool_param("Active", "active", true, "Band").doc("Enable/disable this band"),
-    ParamSpec::bool_param("Solo", "solo", false, "Band").doc("Solo this band"),
+    ParamSpec::bool_param("Active", "active", true, "Band")
+        .structural()
+        .doc("Enable/disable this band"),
+    ParamSpec::bool_param("Solo", "solo", false, "Band")
+        .structural()
+        .doc("Solo this band"),
 ];
 
 /// Number of parameters per band.

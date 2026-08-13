@@ -5,11 +5,25 @@ use super::dynamic_eq_plugin::DynamicEqPlugin;
 use super::dynamic_eq_plugin_params::DynamicEqPluginParams;
 use super::misc::bandpass_edges;
 use super::params::MAX_BANDS;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 
 mod misc;
+
+#[test]
+fn rebuild_only_global_parameters_are_structural_in_host_metadata() {
+    let plugin = DynamicEqPlugin::new(2);
+    for id in ["num_bands", "link_channels"] {
+        let parameter = plugin
+            .parameters()
+            .into_iter()
+            .find(|parameter| parameter.id.as_str() == id)
+            .unwrap_or_else(|| panic!("missing {id}"));
+        assert_eq!(parameter.update_mode, UpdateMode::Structural, "{id}");
+    }
+}
 
 #[test]
 fn test_parameter_roundtrip() {
@@ -37,22 +51,36 @@ fn test_parameter_roundtrip() {
     let val = plugin.get_parameter(&ParameterId::from("mix"));
     assert_eq!(val, Some(ParameterValue::Float(0.5)));
 
-    // Set link_channels
+    assert!(
     plugin
         .set_parameter(
             ParameterId::from("link_channels"),
-            ParameterValue::Bool(false),
+                ParameterValue::Bool(false)
         )
-        .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("link_channels"));
-    assert_eq!(val, Some(ParameterValue::Bool(false)));
-
-    // Set num_bands
+            .is_err()
+    );
+    assert!(
     plugin
         .set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(6))
-        .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("num_bands"));
-    assert_eq!(val, Some(ParameterValue::Int(6)));
+            .is_err()
+    );
+}
+
+#[test]
+fn fallible_factory_constructor_rejects_invalid_serialized_state() {
+    let invalid = DynamicEqPluginParams {
+        threshold: 1.0,
+        ..Default::default()
+    };
+    assert!(DynamicEqPlugin::try_from_params_at_sample_rate(1, invalid, 48_000).is_err());
+
+    let mut invalid_band = DynamicEqPluginParams::default();
+    invalid_band.bands[0].frequency = 0.0;
+    assert!(DynamicEqPlugin::try_from_params_at_sample_rate(1, invalid_band, 48_000).is_err());
+
+    let mut low_rate = DynamicEqPluginParams::default();
+    low_rate.bands[0].frequency = 10_000.0;
+    assert!(DynamicEqPlugin::try_from_params_at_sample_rate(1, low_rate, 16_000).is_err());
 }
 
 #[test]
@@ -152,12 +180,19 @@ fn test_modulation_proportion_edge_cases() {
     assert!((DynEqBand::modulation_proportion(6.0, 6.0) - 1.0).abs() < 1e-6);
     // Value larger than target -> clamped to 1
     assert_eq!(DynEqBand::modulation_proportion(6.0, 12.0), 1.0);
-    // Half value -> half proportion
-    assert!((DynEqBand::modulation_proportion(6.0, 3.0) - 0.5).abs() < 1e-6);
+    // The blend coefficient is amplitude-domain: at the filter centre it must
+    // turn the full +6 dB response into exactly +3 dB, not use a 0.5 sample blend.
+    let positive = DynEqBand::modulation_proportion(6.0, 3.0);
+    let full = 10.0f32.powf(6.0 / 20.0);
+    let resulting = 1.0 + positive * (full - 1.0);
+    assert!((20.0 * resulting.log10() - 3.0).abs() < 1e-5);
     // Negative values are clamped to 0
     assert_eq!(DynEqBand::modulation_proportion(6.0, -3.0), 0.0);
     // Negative target uses absolute value
-    assert_eq!(DynEqBand::modulation_proportion(-6.0, 3.0), 0.5);
+    let negative = DynEqBand::modulation_proportion(-6.0, 3.0);
+    let full = 10.0f32.powf(-6.0 / 20.0);
+    let resulting = 1.0 + negative * (full - 1.0);
+    assert!((20.0 * resulting.log10() + 3.0).abs() < 1e-5);
     assert_eq!(DynEqBand::modulation_proportion(-6.0, 6.0), 1.0);
 }
 
@@ -356,14 +391,12 @@ fn test_link_channels_uses_shared_gr() {
 fn test_link_channels_can_be_disabled_before_processing_stereo() {
     let sr = 48_000u32;
     let num_frames = 480;
-    let mut plugin = DynamicEqPlugin::new(2);
+    let params = DynamicEqPluginParams {
+        link_channels: false,
+        ..Default::default()
+    };
+    let mut plugin = DynamicEqPlugin::from_params(2, params);
     plugin.initialize(sr).unwrap();
-    plugin
-        .set_parameter(
-            ParameterId::from("link_channels"),
-            ParameterValue::Bool(false),
-        )
-        .unwrap();
 
     let mut buf = vec![0.25f32; num_frames * 2];
     let ctx = ProcessContext::new(sr, num_frames);
@@ -506,27 +539,25 @@ fn test_get_parameter_band_solo() {
 fn test_set_parameter_band_solo() {
     let mut plugin = DynamicEqPlugin::new(1);
     plugin.initialize(48000).unwrap();
+    assert!(
     plugin
         .set_parameter(ParameterId::from("band_0_solo"), ParameterValue::Bool(true))
-        .unwrap();
-    assert!(plugin.bands[0].solo);
-    let val = plugin.get_parameter(&ParameterId::from("band_0_solo"));
-    assert_eq!(val, Some(ParameterValue::Bool(true)));
+            .is_err()
+    );
 }
 
 #[test]
 fn test_set_parameter_band_active() {
     let mut plugin = DynamicEqPlugin::new(1);
     plugin.initialize(48000).unwrap();
+    assert!(
     plugin
         .set_parameter(
             ParameterId::from("band_0_active"),
             ParameterValue::Bool(false),
         )
-        .unwrap();
-    assert!(!plugin.bands[0].active);
-    let val = plugin.get_parameter(&ParameterId::from("band_0_active"));
-    assert_eq!(val, Some(ParameterValue::Bool(false)));
+            .is_err()
+    );
 }
 
 #[test]
@@ -534,14 +565,15 @@ fn test_set_parameter_band_frequency_alias() {
     let mut plugin = DynamicEqPlugin::new(1);
     plugin.initialize(48000).unwrap();
     let original = plugin.bands[0].frequency;
+    assert!(
     plugin
         .set_parameter(
             ParameterId::from("band_0_frequency"),
             ParameterValue::Float(500.0),
         )
-        .unwrap();
-    assert!((plugin.bands[0].frequency - 500.0).abs() < 1e-6);
-    assert_ne!(plugin.bands[0].frequency, original);
+            .is_err()
+    );
+    assert_eq!(plugin.bands[0].frequency, original);
 }
 
 #[test]
@@ -567,6 +599,63 @@ fn test_set_parameter_non_finite_rejected() {
 }
 
 #[test]
+fn zero_gain_and_settled_dry_fast_paths_preserve_dsp_state() {
+    let mut zero_gain = DynamicEqPlugin::new(2);
+    zero_gain.initialize(48_000).unwrap();
+    let mut input = vec![0.0; 2_048];
+    for (frame, pair) in input.chunks_exact_mut(2).enumerate() {
+        pair[0] = (std::f32::consts::TAU * 1_000.0 * frame as f32 / 48_000.0).sin();
+        pair[1] = -pair[0];
+    }
+    let reference = input.clone();
+    zero_gain
+        .process_in_place(&mut input, &ProcessContext::new(48_000, 1_024))
+        .unwrap();
+    assert_eq!(input, reference);
+    assert!(
+        zero_gain
+            .bands
+            .iter()
+            .take(zero_gain.num_bands)
+            .flat_map(|band| &band.cores)
+            .all(|core| core.envelope_db(0).abs() < 1.0e-7)
+    );
+
+    let mut dry = DynamicEqPlugin::from_params(
+        1,
+        DynamicEqPluginParams {
+            num_bands: 1,
+            mix: 0.0,
+            bands: vec![DynEqBandParams {
+                gain: 12.0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    );
+    dry.initialize(48_000).unwrap();
+    let mut audio = vec![0.5; 1_024];
+    let original = audio.clone();
+    dry.process_in_place(&mut audio, &ProcessContext::new(48_000, 1_024))
+        .unwrap();
+    assert_eq!(audio, original);
+    assert!(dry.bands[0].cores[0].envelope_db(0).abs() < 1.0e-7);
+}
+
+#[test]
+fn reset_publishes_zero_monitoring_immediately() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.monitoring_gr[0] = 12.0;
+    plugin.reset();
+    let data = plugin
+        .get_data()
+        .unwrap()
+        .downcast::<DynamicEqData>()
+        .unwrap();
+    assert!(data.gain_reduction_db.iter().all(|value| *value == 0.0));
+}
+
+#[test]
 fn test_process_block_too_large_rejected() {
     let mut plugin = DynamicEqPlugin::new(1);
     plugin.initialize(48000).unwrap();
@@ -588,17 +677,52 @@ fn test_get_data_returns_cache() {
 }
 
 #[test]
-fn test_set_parameter_band_unknown_field_ignored() {
+fn test_set_parameter_rejects_invalid_band_values() {
     let mut plugin = DynamicEqPlugin::new(1);
     plugin.initialize(48000).unwrap();
-    let original_freq = plugin.bands[0].frequency;
+    for (id, value) in [
+        ("band_0_unknown", ParameterValue::Float(1.0)),
+        ("band_99_gain", ParameterValue::Float(1.0)),
+        ("band_0_frequency", ParameterValue::Float(f32::NAN)),
+        ("band_0_q", ParameterValue::Float(f32::INFINITY)),
+        ("band_0_gain", ParameterValue::Bool(true)),
+    ] {
+        assert!(
+            plugin.set_parameter(ParameterId::from(id), value,).is_err(),
+            "{id} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn reset_snaps_parameter_smoothers_to_targets() {
+    let mut plugin = DynamicEqPlugin::new(1);
+    plugin.initialize(48_000).unwrap();
+    plugin
+        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.25))
+        .unwrap();
+    plugin
+        .set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-40.0))
+        .unwrap();
+    let _ = plugin.mix_smoother.advance();
+    let _ = plugin.threshold_smoother.advance();
+    plugin.reset();
+    assert_eq!(plugin.mix_smoother.advance(), 0.25);
+    assert_eq!(plugin.threshold_smoother.advance(), -40.0);
+}
+
+#[test]
+fn initialize_clamps_filter_centres_below_nyquist() {
+    let mut plugin = DynamicEqPlugin::new(1);
     plugin
         .set_parameter(
             ParameterId::from("band_0_unknown"),
             ParameterValue::Float(1.0),
         )
-        .unwrap();
-    assert!((plugin.bands[0].frequency - original_freq).abs() < 1e-6);
+        .unwrap_err();
+    plugin.bands[0].frequency = 20_000.0;
+    plugin.initialize(32_000).unwrap();
+    assert!(plugin.bands[0].frequency < 16_000.0);
 }
 
 #[test]
