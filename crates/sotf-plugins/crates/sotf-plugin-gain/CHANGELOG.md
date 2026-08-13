@@ -1,5 +1,43 @@
 # [Unreleased]
 
+## Verification
+
+- Document legacy infallible global setters' invalid-input contract: NaN,
+  infinities, and out-of-range values are atomic no-ops. Focused coverage
+  preserves global/per-channel mode, smoother current/target, host-visible
+  values, and rendered audio; validated parametric setters remain the
+  error-reporting API.
+
+# 0.5.8
+
+## Performance
+
+- Apply settled global and per-channel gains with one whole-block SIMD kernel
+  call. Gain ramps retain the sample-accurate per-frame path, with deterministic
+  tests covering path selection and block-partition equivalence.
+
+## Fixes
+
+- Source the runtime plugin version from `CARGO_PKG_VERSION` and test that it
+  remains identical to the crate manifest version.
+- Align the executable QA scenario with the public `-60..=20 dB` gain range and
+  canonical 10 ms smoothing documentation.
+
+# 0.5.7
+
+## Fixes
+
+- Validate preset/config gain and smoothing values, including channel counts and
+  non-finite values, before constructing DSP state.
+- Preserve active gain ramps when switching between global and per-channel
+  automation modes.
+- Make regular processing use the same checked active-buffer contract as the
+  compiled path, preserving oversized output tails and returning errors for
+  undersized buffers.
+- Reset gain smoothers deterministically to their declared targets.
+- Align package/plugin metadata and usage documentation with the shipped 10 ms
+  default smoothing behavior.
+
 ## Changed
 
 - Default gain smoothing time is now 10 ms (from `params::PARAMS`) instead of the

@@ -10,7 +10,7 @@ src/
   params.rs -- Centralized parameter specs (behind params module)
 ```
 
-Data flow: Global gain OR per-channel gains -> `Smoother` for click-free transitions -> SIMD-optimized gain application per frame.
+Data flow: Global gain OR per-channel gains -> `Smoother` for click-free transitions -> sample-accurate frame processing while moving, or one whole-block SIMD kernel once settled.
 
 **Key types:**
 
@@ -47,5 +47,7 @@ cargo test -p sotf-plugin-gain
 
 - Calling `set_gain_db()` or `set_gain_linear()` clears per-channel mode (switches back to global).
 - The plugin uses deferred sample rate initialization: created with 48kHz placeholder, real rate set in `plugin_initialize()`. Smoother timing adjusts accordingly.
-- SIMD paths: `apply_gain_simd` for global mode, `apply_per_channel_gain_simd` for per-channel mode.
+- SIMD paths: settled global blocks use `apply_gain_simd`; settled per-channel
+  blocks use `apply_per_channel_gain_simd`. Moving smoothers retain the
+  sample-accurate frame path.
 - Gain range: -60 dB to +20 dB. Smoothing range: 0 to 100 ms.

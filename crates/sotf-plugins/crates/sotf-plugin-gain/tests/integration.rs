@@ -23,7 +23,7 @@ fn new_plugin_has_expected_metadata() {
     let plugin = GainPlugin::new(2, 0.0);
     let info = plugin.plugin_info();
     assert_eq!(info.name, "Gain");
-    assert_eq!(info.version, "1.2.0");
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(info.author, "Sotf");
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.latency_samples(), 0);
@@ -281,13 +281,12 @@ fn zero_frames_returns_zero_and_leaves_buffer() {
     let mut plugin = GainPlugin::new(2, 6.0);
     plugin.plugin_initialize(SR).unwrap();
     let input = vec![0.5f32, 0.6, 0.7, 0.8];
-    let original = input.clone();
     let mut buffer = vec![0.0f32; input.len()];
     let processed = plugin
         .process(&input, &mut buffer, &ProcessContext::new(SR, 0))
         .unwrap();
     assert_eq!(processed, 0);
-    assert_eq!(buffer, original);
+    assert_eq!(buffer, vec![0.0; input.len()]);
 }
 
 // ----------------------------------------------------------------------------

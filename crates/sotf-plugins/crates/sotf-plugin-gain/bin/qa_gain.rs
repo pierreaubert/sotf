@@ -32,11 +32,11 @@ fn main() {
     assert!((peak + 6.00).abs() < 0.01);
 
     // Test 2: Per-Channel Gain
-    println!("\n[Test 2] Per-Channel Gain (Ch0: 0dB, Ch1: -100dB)");
+    println!("\n[Test 2] Per-Channel Gain (Ch0: 0dB, Ch1: -60dB)");
     inner.set_channel_gain_db(0, 0.0).unwrap();
-    inner.set_channel_gain_db(1, -100.0).unwrap();
+    inner.set_channel_gain_db(1, -60.0).unwrap();
 
-    // Process enough frames for convergence (5 * 20ms = 100ms minimum, but -100dB needs more)
+    // Process enough frames for the canonical 10 ms smoother to converge.
     let input = vec![1.0; num_frames * channels];
     let mut buffer = vec![0.0; input.len()];
     inner.process(&input, &mut buffer, &ctx).unwrap();
@@ -48,7 +48,7 @@ fn main() {
         peak0, peak1
     );
     assert!(peak0.abs() < 0.01);
-    assert!(peak1 < -99.0);
+    assert!((peak1 + 60.0).abs() < 0.01);
 
     // Run standard QA tests
     let mut plugin = ParametricPluginAdapter::new(inner);

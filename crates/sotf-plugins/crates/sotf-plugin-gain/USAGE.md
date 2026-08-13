@@ -23,7 +23,7 @@ When per-channel gains are configured, each channel can have its own independent
 
 ### Smoothing
 
-All gain changes are smoothed over 20 ms to prevent clicks and pops during parameter changes. SIMD-optimized processing ensures minimal CPU usage.
+Gain changes use the configured smoothing time (10 ms by default) to prevent clicks and pops during parameter changes. SIMD-optimized processing ensures minimal CPU usage.
 
 ## Demos
 

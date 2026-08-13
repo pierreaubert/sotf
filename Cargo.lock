@@ -10704,7 +10704,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-gain"
-version = "0.5.5"
+version = "0.5.8"
 dependencies = [
  "proptest 1.11.0",
  "serde",

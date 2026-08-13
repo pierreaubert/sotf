@@ -17,6 +17,13 @@ use sotf_host::smoothing::Smoother;
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GainProcessPath {
+    SettledBlock,
+    SmoothedFrames,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GainPluginParams {
     /// Global gain in dB.
@@ -50,9 +57,35 @@ pub struct GainPlugin {
     channel_param_keys: Vec<(ParameterId, String)>,
     cached_gains: Vec<f32>,
     smoothing_ms: f32,
+    #[cfg(test)]
+    last_process_path: GainProcessPath,
 }
 
 impl GainPlugin {
+    fn validate_gain_db(db: f32) -> Result<(), String> {
+        let min = pk(GN, "gain_db").min_f64() as f32;
+        let max = pk(GN, "gain_db").max_f64() as f32;
+        if db.is_finite() && (min..=max).contains(&db) {
+            Ok(())
+        } else {
+            Err(format!(
+                "gain must be finite and in {min}..={max} dB, got {db}"
+            ))
+        }
+    }
+
+    fn validate_smoothing_ms(smoothing_ms: f32) -> Result<(), String> {
+        let min = pk(GN, "smoothing_ms").min_f64() as f32;
+        let max = pk(GN, "smoothing_ms").max_f64() as f32;
+        if smoothing_ms.is_finite() && (min..=max).contains(&smoothing_ms) {
+            Ok(())
+        } else {
+            Err(format!(
+                "smoothing must be finite and in {min}..={max} ms, got {smoothing_ms}"
+            ))
+        }
+    }
+
     /// Create a gain plugin in global-gain mode using the canonical default
     /// smoothing time from `params::PARAMS`.
     pub fn new(channels: usize, gain_db: f32) -> Self {
@@ -75,6 +108,8 @@ impl GainPlugin {
             channel_param_keys: Self::build_channel_param_keys(channels),
             cached_gains: vec![0.0; channels],
             smoothing_ms,
+            #[cfg(test)]
+            last_process_path: GainProcessPath::SmoothedFrames,
         }
     }
 
@@ -101,6 +136,10 @@ impl GainPlugin {
         if channel_gains.is_empty() {
             return Err("Empty".into());
         }
+        Self::validate_smoothing_ms(smoothing_ms)?;
+        for &gain_db in &channel_gains {
+            Self::validate_gain_db(gain_db)?;
+        }
         let channels = channel_gains.len();
         // Placeholder rate; real rate is set in initialize()
         let sr = 48000;
@@ -120,10 +159,17 @@ impl GainPlugin {
             channel_param_keys: Self::build_channel_param_keys(channels),
             cached_gains: vec![0.0; channels],
             smoothing_ms,
+            #[cfg(test)]
+            last_process_path: GainProcessPath::SmoothedFrames,
         })
     }
 
     pub fn from_params(channels: usize, params: GainPluginParams) -> Result<Self, String> {
+        if channels == 0 {
+            return Err("gain plugin requires at least one channel".into());
+        }
+        Self::validate_gain_db(params.gain_db)?;
+        Self::validate_smoothing_ms(params.smoothing_ms)?;
         if params.channel_gains.is_empty() {
             Ok(Self::with_smoothing(
                 channels,
@@ -144,21 +190,44 @@ impl GainPlugin {
     pub fn is_per_channel(&self) -> bool {
         !self.channel_gains_db.is_empty()
     }
+    /// Set global gain while preserving this legacy infallible API.
+    ///
+    /// Non-finite and out-of-range values are deliberate atomic no-ops: mode,
+    /// smoother state, reported values, and rendered audio remain unchanged.
+    /// New callers that need an error should use the validated parametric API.
     pub fn set_gain_db(&mut self, db: f32) {
+        if Self::validate_gain_db(db).is_err() {
+            return;
+        }
+        if let Some(channel) = self.channel_gains_smoothers.first() {
+            self.global_gain_smoother.reset(channel.current());
+        }
         self.global_gain_db = db;
         self.global_gain_smoother.set_target(Self::db_to_linear(db));
         self.channel_gains_db.clear();
         self.channel_gains_smoothers.clear();
     }
+    /// Set global linear gain; invalid values follow [`Self::set_gain_db`]'s
+    /// compatibility no-op contract.
     pub fn set_gain_linear(&mut self, g: f32) {
+        let db = Self::linear_to_db(g);
+        if !g.is_finite() || g <= 0.0 || Self::validate_gain_db(db).is_err() {
+            return;
+        }
+        if let Some(channel) = self.channel_gains_smoothers.first() {
+            self.global_gain_smoother.reset(channel.current());
+        }
         self.global_gain_smoother.set_target(g);
-        self.global_gain_db = Self::linear_to_db(g);
+        self.global_gain_db = db;
         self.channel_gains_db.clear();
         self.channel_gains_smoothers.clear();
     }
     pub fn set_channel_gains(&mut self, dbs: Vec<f32>) -> Result<(), String> {
         if dbs.len() != self.channels {
             return Err("Mismatch".into());
+        }
+        for &db in &dbs {
+            Self::validate_gain_db(db)?;
         }
         self.channel_gains_smoothers = dbs
             .iter()
@@ -175,16 +244,16 @@ impl GainPlugin {
         if ch >= self.channels {
             return Err("OOB".into());
         }
+        Self::validate_gain_db(db)?;
         if self.channel_gains_db.is_empty() {
             self.channel_gains_db = vec![self.global_gain_db; self.channels];
-            self.channel_gains_smoothers = vec![
-                Smoother::new(
-                    self.global_gain_smoother.current(),
-                    self.smoothing_ms,
-                    self.sample_rate
-                );
-                self.channels
-            ];
+            let mut smoother = Smoother::new(
+                self.global_gain_smoother.current(),
+                self.smoothing_ms,
+                self.sample_rate,
+            );
+            smoother.set_target(self.global_gain_smoother.target());
+            self.channel_gains_smoothers = vec![smoother; self.channels];
         }
         self.channel_gains_db[ch] = db;
         self.channel_gains_smoothers[ch].set_target(Self::db_to_linear(db));
@@ -236,6 +305,11 @@ impl GainPlugin {
         }
     }
 
+    #[inline]
+    fn smoother_is_settled(smoother: &Smoother) -> bool {
+        (smoother.current() - smoother.target()).abs() < 1e-5
+    }
+
     fn process_in_place(
         &mut self,
         buffer: &mut [f32],
@@ -243,6 +317,30 @@ impl GainPlugin {
     ) -> PluginResult<usize> {
         let nf = context.num_frames;
         if self.is_per_channel() {
+            if self
+                .channel_gains_smoothers
+                .iter()
+                .all(Self::smoother_is_settled)
+            {
+                for (gain, smoother) in self
+                    .cached_gains
+                    .iter_mut()
+                    .zip(&mut self.channel_gains_smoothers)
+                {
+                    *gain = smoother.target();
+                    smoother.reset(*gain);
+                }
+                apply_per_channel_gain_simd(buffer, self.channels, &self.cached_gains);
+                #[cfg(test)]
+                {
+                    self.last_process_path = GainProcessPath::SettledBlock;
+                }
+                return Ok(nf);
+            }
+            #[cfg(test)]
+            {
+                self.last_process_path = GainProcessPath::SmoothedFrames;
+            }
             for frame in 0..nf {
                 for ch in 0..self.channels {
                     self.cached_gains[ch] = self.channel_gains_smoothers[ch].advance();
@@ -254,6 +352,20 @@ impl GainPlugin {
                 );
             }
         } else {
+            if Self::smoother_is_settled(&self.global_gain_smoother) {
+                let gain = self.global_gain_smoother.target();
+                self.global_gain_smoother.reset(gain);
+                apply_gain_simd(buffer, gain);
+                #[cfg(test)]
+                {
+                    self.last_process_path = GainProcessPath::SettledBlock;
+                }
+                return Ok(nf);
+            }
+            #[cfg(test)]
+            {
+                self.last_process_path = GainProcessPath::SmoothedFrames;
+            }
             for frame in 0..nf {
                 let g = self.global_gain_smoother.advance();
                 let off = frame * self.channels;
@@ -266,7 +378,7 @@ impl GainPlugin {
 
 impl ParametricPlugin for GainPlugin {
     fn plugin_info(&self) -> PluginInfo {
-        PluginInfo::new("Gain", "1.2.0", "Sotf")
+        PluginInfo::new("Gain", env!("CARGO_PKG_VERSION"), "Sotf")
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -411,14 +523,42 @@ impl ParametricPlugin for GainPlugin {
         Ok(())
     }
 
+    fn plugin_reset(&mut self) {
+        self.global_gain_smoother
+            .reset(Self::db_to_linear(self.global_gain_db));
+        for (smoother, &gain_db) in self
+            .channel_gains_smoothers
+            .iter_mut()
+            .zip(&self.channel_gains_db)
+        {
+            smoother.reset(Self::db_to_linear(gain_db));
+        }
+    }
+
     fn process(
         &mut self,
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        output.copy_from_slice(input);
-        self.process_in_place(output, context)
+        let sample_len = context
+            .num_frames
+            .checked_mul(self.channels)
+            .ok_or_else(|| "Gain block sample count overflow".to_string())?;
+        if input.len() < sample_len {
+            return Err(format!(
+                "Gain input too small: need {sample_len} samples, got {}",
+                input.len()
+            ));
+        }
+        if output.len() < sample_len {
+            return Err(format!(
+                "Gain output too small: need {sample_len} samples, got {}",
+                output.len()
+            ));
+        }
+        output[..sample_len].copy_from_slice(&input[..sample_len]);
+        self.process_in_place(&mut output[..sample_len], context)
     }
 
     fn process_compiled_f32(
@@ -799,7 +939,7 @@ mod tests {
         );
     }
 
-    /// process_in_place with zero frames must return 0 and leave the buffer untouched.
+    /// Zero-frame processing must return 0 and leave the output untouched.
     #[test]
     fn test_process_in_place_zero_frames() {
         let mut p = GainPlugin::new(2, 6.0);
@@ -810,7 +950,7 @@ mod tests {
             .process(&input, &mut buffer, &ProcessContext::new(48000, 0))
             .unwrap();
         assert_eq!(processed, 0);
-        assert_eq!(buffer, input);
+        assert_eq!(buffer, vec![0.0; input.len()]);
     }
 
     /// get_parameter must round-trip the values set by set_parameter.
@@ -913,6 +1053,304 @@ mod tests {
         assert!(
             (params.smoothing_ms - pk(GN, "smoothing_ms").default_f64() as f32).abs() < 1e-6,
             "deserialized default smoothing_ms should come from PARAMS"
+        );
+    }
+
+    #[test]
+    fn from_params_rejects_invalid_numeric_values_and_zero_channels() {
+        let params = |gain_db, smoothing_ms, channel_gains| GainPluginParams {
+            gain_db,
+            smoothing_ms,
+            channel_gains,
+        };
+        assert!(GainPlugin::from_params(0, params(0.0, 10.0, vec![])).is_err());
+        for gain in [f32::NAN, f32::INFINITY, -61.0, 21.0] {
+            assert!(GainPlugin::from_params(2, params(gain, 10.0, vec![])).is_err());
+            assert!(GainPlugin::from_params(2, params(0.0, 10.0, vec![gain, 0.0])).is_err());
+        }
+        for smoothing in [f32::NAN, f32::INFINITY, -0.1, 100.1] {
+            assert!(GainPlugin::from_params(2, params(0.0, smoothing, vec![])).is_err());
+        }
+        assert!(GainPlugin::from_params(2, params(-60.0, 0.0, vec![])).is_ok());
+        assert!(GainPlugin::from_params(2, params(20.0, 100.0, vec![])).is_ok());
+    }
+
+    #[test]
+    fn invalid_infallible_global_setters_are_atomic_no_ops() {
+        let invalid_db = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -60.1, 20.1];
+        let invalid_linear = [
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            -1.0,
+            0.0,
+            GainPlugin::db_to_linear(-60.1),
+            GainPlugin::db_to_linear(20.1),
+        ];
+
+        for starts_per_channel in [false, true] {
+            let mut plugin = if starts_per_channel {
+                GainPlugin::new_per_channel_with_smoothing(vec![-3.0, -12.0], 100.0).unwrap()
+            } else {
+                GainPlugin::with_smoothing(2, -3.0, 100.0)
+            };
+            plugin.plugin_initialize(1_000).unwrap();
+            if starts_per_channel {
+                plugin.set_channel_gain_db(0, -18.0).unwrap();
+            } else {
+                plugin.set_gain_db(-18.0);
+            }
+
+            let mode_before = plugin.is_per_channel();
+            let db_before = plugin.global_gain_db;
+            let current_before = plugin.global_gain_smoother.current();
+            let target_before = plugin.global_gain_smoother.target();
+            let channel_db_before = plugin.channel_gains_db.clone();
+            let channel_smoothers_before: Vec<(f32, f32)> = plugin
+                .channel_gains_smoothers
+                .iter()
+                .map(|smoother| (smoother.current(), smoother.target()))
+                .collect();
+            let values_before = plugin.current_values();
+
+            for &db in &invalid_db {
+                plugin.set_gain_db(db);
+                assert_eq!(plugin.is_per_channel(), mode_before);
+                assert_eq!(plugin.global_gain_db.to_bits(), db_before.to_bits());
+                assert_eq!(
+                    plugin.global_gain_smoother.current().to_bits(),
+                    current_before.to_bits()
+                );
+                assert_eq!(
+                    plugin.global_gain_smoother.target().to_bits(),
+                    target_before.to_bits()
+                );
+                assert_eq!(plugin.channel_gains_db, channel_db_before);
+                assert_eq!(
+                    plugin
+                        .channel_gains_smoothers
+                        .iter()
+                        .map(|smoother| (smoother.current(), smoother.target()))
+                        .collect::<Vec<_>>(),
+                    channel_smoothers_before
+                );
+                assert_eq!(plugin.current_values(), values_before);
+            }
+            for &gain in &invalid_linear {
+                plugin.set_gain_linear(gain);
+                assert_eq!(plugin.is_per_channel(), mode_before);
+                assert_eq!(plugin.global_gain_db.to_bits(), db_before.to_bits());
+                assert_eq!(
+                    plugin.global_gain_smoother.current().to_bits(),
+                    current_before.to_bits()
+                );
+                assert_eq!(
+                    plugin.global_gain_smoother.target().to_bits(),
+                    target_before.to_bits()
+                );
+                assert_eq!(plugin.channel_gains_db, channel_db_before);
+                assert_eq!(
+                    plugin
+                        .channel_gains_smoothers
+                        .iter()
+                        .map(|smoother| (smoother.current(), smoother.target()))
+                        .collect::<Vec<_>>(),
+                    channel_smoothers_before
+                );
+                assert_eq!(plugin.current_values(), values_before);
+            }
+
+            let mut actual = [0.25_f32, -0.5];
+            plugin
+                .process_in_place(&mut actual, &ProcessContext::new(1_000, 1))
+                .unwrap();
+
+            let mut reference = if starts_per_channel {
+                GainPlugin::new_per_channel_with_smoothing(vec![-3.0, -12.0], 100.0).unwrap()
+            } else {
+                GainPlugin::with_smoothing(2, -3.0, 100.0)
+            };
+            reference.plugin_initialize(1_000).unwrap();
+            if starts_per_channel {
+                reference.set_channel_gain_db(0, -18.0).unwrap();
+            } else {
+                reference.set_gain_db(-18.0);
+            }
+            let mut expected = [0.25_f32, -0.5];
+            reference
+                .process_in_place(&mut expected, &ProcessContext::new(1_000, 1))
+                .unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn entering_per_channel_mode_preserves_global_ramp_for_untouched_channels() {
+        let mut plugin = GainPlugin::with_smoothing(2, 0.0, 100.0);
+        plugin.plugin_initialize(1_000).unwrap();
+        plugin.set_gain_db(-20.0);
+        let input = vec![1.0; 20];
+        let mut output = vec![0.0; 20];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(1_000, 10))
+            .unwrap();
+        let transition_gain = output[19];
+
+        plugin.set_channel_gain_db(0, -6.0).unwrap();
+        let mut output = vec![0.0; 20];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(1_000, 10))
+            .unwrap();
+
+        assert!(
+            output[1] < transition_gain,
+            "untouched channel must keep ramping"
+        );
+        assert_eq!(plugin.channel_gain_db(1), Some(-20.0));
+    }
+
+    #[test]
+    fn returning_to_global_mode_starts_from_current_channel_gain() {
+        let mut plugin =
+            GainPlugin::new_per_channel_with_smoothing(vec![-20.0, 0.0], 100.0).unwrap();
+        plugin.plugin_initialize(1_000).unwrap();
+        plugin.set_channel_gain_db(0, 0.0).unwrap();
+        let input = vec![1.0; 20];
+        let mut output = vec![0.0; 20];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(1_000, 10))
+            .unwrap();
+        let channel_zero_gain = output[18];
+
+        plugin.set_gain_db(-6.0);
+        let mut next = vec![0.0; 2];
+        plugin
+            .process(&[1.0, 1.0], &mut next, &ProcessContext::new(1_000, 1))
+            .unwrap();
+        assert!((next[0] - channel_zero_gain).abs() < 0.02);
+    }
+
+    #[test]
+    fn process_checks_active_prefix_and_preserves_output_tail() {
+        let mut plugin = GainPlugin::with_smoothing(2, 0.0, 0.0);
+        let input = [1.0, 2.0, 3.0, 4.0, 99.0];
+        let mut output = [0.0, 0.0, 0.0, 0.0, 77.0, 88.0];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+            .unwrap();
+        assert_eq!(output, [1.0, 2.0, 3.0, 4.0, 77.0, 88.0]);
+        assert!(
+            plugin
+                .process(&input[..3], &mut output, &ProcessContext::new(48_000, 2))
+                .is_err()
+        );
+        assert!(
+            plugin
+                .process(&input, &mut output[..3], &ProcessContext::new(48_000, 2))
+                .is_err()
+        );
+
+        let mut zero_frame_output = [7.0, 8.0];
+        plugin
+            .process(
+                &input,
+                &mut zero_frame_output,
+                &ProcessContext::new(48_000, 0),
+            )
+            .unwrap();
+        assert_eq!(zero_frame_output, [7.0, 8.0]);
+    }
+
+    #[test]
+    fn reset_snaps_global_and_channel_ramps_to_targets() {
+        let mut global = GainPlugin::with_smoothing(1, 0.0, 100.0);
+        global.plugin_initialize(1_000).unwrap();
+        global.set_gain_db(-20.0);
+        global.plugin_reset();
+        let mut output = [0.0];
+        global
+            .process(&[1.0], &mut output, &ProcessContext::new(1_000, 1))
+            .unwrap();
+        assert!((output[0] - GainPlugin::db_to_linear(-20.0)).abs() < 1e-6);
+
+        let mut per_channel =
+            GainPlugin::new_per_channel_with_smoothing(vec![0.0, 0.0], 100.0).unwrap();
+        per_channel.set_channel_gain_db(0, -20.0).unwrap();
+        per_channel.plugin_reset();
+        let mut output = [0.0; 2];
+        per_channel
+            .process(&[1.0; 2], &mut output, &ProcessContext::new(1_000, 1))
+            .unwrap();
+        assert!((output[0] - GainPlugin::db_to_linear(-20.0)).abs() < 1e-6);
+        assert!((output[1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn settled_global_gain_uses_one_block_kernel() {
+        let mut plugin = GainPlugin::with_smoothing(2, -6.0, 10.0);
+        plugin.plugin_initialize(48_000).unwrap();
+        let input = vec![0.25; 4096 * 2];
+        let mut output = vec![0.0; input.len()];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 4096))
+            .unwrap();
+        assert_eq!(plugin.last_process_path, GainProcessPath::SettledBlock);
+    }
+
+    #[test]
+    fn settled_per_channel_gain_uses_one_block_kernel() {
+        let mut plugin = GainPlugin::new_per_channel_with_smoothing(vec![0.0, -6.0], 10.0).unwrap();
+        plugin.plugin_initialize(48_000).unwrap();
+        let input = vec![0.25; 4096 * 2];
+        let mut output = vec![0.0; input.len()];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 4096))
+            .unwrap();
+        assert_eq!(plugin.last_process_path, GainProcessPath::SettledBlock);
+    }
+
+    #[test]
+    fn moving_gain_keeps_sample_accurate_smoothed_path() {
+        let mut plugin = GainPlugin::with_smoothing(2, 0.0, 100.0);
+        plugin.plugin_initialize(48_000).unwrap();
+        plugin.set_gain_db(-12.0);
+        let input = vec![0.25; 64 * 2];
+        let mut output = vec![0.0; input.len()];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 64))
+            .unwrap();
+        assert_eq!(plugin.last_process_path, GainProcessPath::SmoothedFrames);
+        assert_ne!(output[0], output[output.len() - 2]);
+    }
+
+    #[test]
+    fn settled_fast_path_preserves_ramp_partition_invariance() {
+        fn render(partitions: &[usize]) -> Vec<f32> {
+            let mut plugin = GainPlugin::with_smoothing(2, 0.0, 10.0);
+            plugin.plugin_initialize(1_000).unwrap();
+            plugin.set_gain_db(-12.0);
+            let mut rendered = Vec::new();
+            for &frames in partitions {
+                let input = vec![0.25; frames * 2];
+                let mut output = vec![0.0; input.len()];
+                plugin
+                    .process(&input, &mut output, &ProcessContext::new(1_000, frames))
+                    .unwrap();
+                rendered.extend(output);
+            }
+            rendered
+        }
+
+        let contiguous = render(&[256]);
+        let partitioned = render(&[16; 16]);
+        assert_eq!(contiguous, partitioned);
+    }
+
+    #[test]
+    fn runtime_plugin_version_matches_manifest_version() {
+        assert_eq!(
+            GainPlugin::new(1, 0.0).plugin_info().version,
+            env!("CARGO_PKG_VERSION")
         );
     }
 }
