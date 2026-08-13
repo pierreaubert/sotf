@@ -242,16 +242,22 @@ fn integration_from_params_applies_initial_state() {
 
 #[test]
 fn integration_try_from_params_rejects_non_finite_and_invalid_values() {
-    let mut params = PndPluginParams::default();
-    params.drift_smoothing = f32::NAN;
+    let params = PndPluginParams {
+        drift_smoothing: f32::NAN,
+        ..PndPluginParams::default()
+    };
     assert!(PndPlugin::try_from_params(1, params).is_err());
 
-    let mut params = PndPluginParams::default();
-    params.analysis_window_ms = f32::INFINITY;
+    let params = PndPluginParams {
+        analysis_window_ms: f32::INFINITY,
+        ..PndPluginParams::default()
+    };
     assert!(PndPlugin::try_from_params(1, params).is_err());
 
-    let mut params = PndPluginParams::default();
-    params.confidence_threshold = -0.1;
+    let params = PndPluginParams {
+        confidence_threshold: -0.1,
+        ..PndPluginParams::default()
+    };
     assert!(PndPlugin::try_from_params(1, params).is_err());
 
     assert!(PndPlugin::try_from_params(0, PndPluginParams::default()).is_err());

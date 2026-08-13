@@ -17,6 +17,12 @@
   channels are excluded, remaining observations use confidence-weighted
   consensus, and each previous peak can be matched once. The matching
   invariant has a focused regression test.
+- P1 phase-vocoder spectral translation fixed in 0.5.8: positive-frequency
+  instantaneous frequencies and magnitudes are remapped to target bins,
+  collisions are accumulated, and target synthesis phases advance at the
+  shifted frequencies. Numeric 440→880 Hz, 440→220 Hz, and unity-frequency
+  regressions replace the former finiteness-only evidence. Formant preservation
+  is no longer claimed.
 - P0 partially mitigated: bounded output-ring overflow now drops the oldest
   complete frames, and SRC underruns use corresponding input samples rather
   than zeros. This bounds memory and avoids silence, but it does not satisfy a
@@ -25,8 +31,8 @@
 - P1 fixed: processing now rejects a `ProcessContext` sample-rate mismatch.
 - Verification after remediation: focused PND tests pass, including the new
   sustained-correction and sample-rate-contract regressions. The remaining
-  findings below (reference-free drift identifiability, pitch-vocoder quality,
-  level-robust peak/SNR modeling, exact queue transaction semantics, and
+  findings below (reference-free drift identifiability, transient/phase-locking
+  vocoder quality, level-robust peak/SNR modeling, exact queue transaction semantics, and
   broader algorithmic limits) remain open for a subsequent design batch.
 
 ### P0 — A persistent correction ratio cannot satisfy the fixed-frame plugin contract
@@ -58,6 +64,13 @@ The resampler reports a fixed 1024 samples and the phase vocoder reports 2048+51
 Use sample-accurate input/output queues with a fixed startup prefill independent of callback size, include the SRC/filter group delay, and derive latency from queue state. Measure it with impulses for host blocks of 1, 64, 511, 512, 1024, and irregular partitions, then assert identical delay and stable metadata.
 
 ### P1 — The phase-vocoder pitch shifter is incomplete and will smear or misplace nontrivial spectra
+
+Status: the fundamental spectral-translation defect is fixed in 0.5.8. The
+vocoder now remaps positive-bin energy and instantaneous frequency, handles
+collisions, discards out-of-band targets, restores conjugate symmetry, and has
+bidirectional frequency-oracle tests. Transient phase locking and an optional
+formant-envelope stage remain quality improvements rather than being claimed by
+the implementation.
 
 `process_hop` retains every magnitude in its original FFT bin and only multiplies the phase advance by `pitch_shift` (`phase_vocoder_channel.rs:88-126`). Energy is never mapped to shifted bins, collisions/out-of-band bins are not handled, and there is no identity/peak phase locking or transient treatment. Small within-bin shifts may move a stationary partial, but larger corrections and polyphonic/transient content cannot produce a coherent spectral translation. The code processes the redundant negative half before overwriting it with conjugate symmetry, doubling much of the trigonometric/norm work. “Preserving formants” in the docs is unsupported; an ordinary uniform pitch shift generally moves formants unless a separate envelope estimator is used.
 

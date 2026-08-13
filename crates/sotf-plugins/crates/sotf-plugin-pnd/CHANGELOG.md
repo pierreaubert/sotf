@@ -1,3 +1,12 @@
+# 0.5.8
+
+- Replace the incomplete phase-only vocoder transform with positive-frequency
+  instantaneous-frequency analysis, magnitude/frequency bin remapping,
+  collision accumulation, and target-bin synthesis-phase propagation.
+- Add numeric frequency-oracle regressions for octave-up, octave-down, and
+  unity pitch processing. These fail if spectral energy remains in its source
+  bins and cover both shift directions independently of the drift detector.
+
 # 0.5.7
 
 - Reject malformed factory parameters (non-finite values, out-of-range values,
