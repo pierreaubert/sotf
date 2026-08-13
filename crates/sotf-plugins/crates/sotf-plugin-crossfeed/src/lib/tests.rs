@@ -18,6 +18,350 @@ fn test_crossfeed_basic() {
 }
 
 #[test]
+fn test_yaw_only_itd_advances_delay_for_every_algorithm() {
+    for mode in [
+        CrossfeedMode::Bauer,
+        CrossfeedMode::Meier,
+        CrossfeedMode::Mb,
+    ] {
+        let params = CrossfeedPluginParams {
+            mode,
+            head_yaw_deg: 45.0,
+            itd_delay_ms: 0.0,
+            ..Default::default()
+        };
+        let mut plugin = CrossfeedPlugin::new(params).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let mut buffer = vec![0.0; 128 * 2];
+        buffer[0] = 1.0;
+        plugin
+            .process_in_place(&mut buffer, &ProcessContext::new(48_000, 128))
+            .unwrap();
+        assert_ne!(
+            plugin.itd_delay_l.write_pos, 0,
+            "yaw-only ITD must run the delay line in {mode:?} mode"
+        );
+    }
+}
+
+/// Regression for block-rate yaw/ITD automation: processing the same ramp in
+/// different callback partitions must produce the same samples.  The delay
+/// must follow the yaw smoother at sample rate, not jump to the end-of-block
+/// value once per callback.
+#[test]
+fn test_yaw_itd_automation_is_partition_invariant() {
+    const SAMPLE_RATE: u32 = 48_000;
+    const FRAMES: usize = 1_024;
+
+    fn render(partitions: &[usize]) -> Vec<f32> {
+        let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+        params.mode = CrossfeedMode::Bauer;
+        params.bauer_feed_db = 6.0;
+        params.itd_delay_ms = 0.0;
+        params.head_yaw_deg = 0.0;
+        params.mix = 1.0;
+        let mut plugin = CrossfeedPlugin::new(params).unwrap();
+        plugin.initialize(SAMPLE_RATE).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("head_yaw_deg"),
+                ParameterValue::Float(45.0),
+            )
+            .unwrap();
+
+        let mut output = Vec::with_capacity(FRAMES * 2);
+        let mut frame = 0;
+        let mut partition = 0;
+        while frame < FRAMES {
+            let block = partitions[partition % partitions.len()].min(FRAMES - frame);
+            let mut buffer = Vec::with_capacity(block * 2);
+            for i in 0..block {
+                let absolute = frame + i;
+                let phase =
+                    2.0 * std::f32::consts::PI * 311.0 * absolute as f32 / SAMPLE_RATE as f32;
+                buffer.extend_from_slice(&[phase.sin() * 0.5, (phase * 0.73).cos() * 0.25]);
+            }
+            plugin
+                .process_in_place(&mut buffer, &ProcessContext::new(SAMPLE_RATE, block))
+                .unwrap();
+            output.extend_from_slice(&buffer);
+            frame += block;
+            partition += 1;
+        }
+        output
+    }
+
+    let one_block = render(&[FRAMES]);
+    let varied_blocks = render(&[1, 7, 31, 64, 3, 127, 17]);
+    assert_eq!(one_block.len(), varied_blocks.len());
+    let max_error = one_block
+        .iter()
+        .zip(&varied_blocks)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_error < 1e-5,
+        "yaw/ITD automation must be callback-partition invariant; max error={max_error}"
+    );
+}
+
+#[test]
+fn test_public_preset_selection_applies_complete_preset() {
+    let cases = [
+        (0, CrossfeedPreset::Default),
+        (1, CrossfeedPreset::Cmoy),
+        (2, CrossfeedPreset::Meier),
+        (3, CrossfeedPreset::Mb),
+        (4, CrossfeedPreset::Off),
+    ];
+    for (index, preset) in cases {
+        let mut plugin = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("crossfeed_preset"),
+                ParameterValue::Int(index),
+            )
+            .unwrap();
+        let expected = CrossfeedPluginParams::from_preset(preset);
+        assert_eq!(plugin.params.preset, preset);
+        assert_eq!(plugin.params.mode, expected.mode);
+        assert_eq!(plugin.params.bauer_fcut_hz, expected.bauer_fcut_hz);
+        assert_eq!(plugin.params.bauer_feed_db, expected.bauer_feed_db);
+        assert_eq!(plugin.params.meier_level, expected.meier_level);
+        assert_eq!(plugin.params.mb_low_feed_db, expected.mb_low_feed_db);
+    }
+}
+
+#[test]
+fn public_presets_converge_to_fresh_reference_audio() {
+    const SR: u32 = 48_000;
+    const FRAMES: usize = 8_192;
+    for (index, preset) in [
+        (0, CrossfeedPreset::Default),
+        (1, CrossfeedPreset::Cmoy),
+        (2, CrossfeedPreset::Meier),
+        (3, CrossfeedPreset::Mb),
+        (4, CrossfeedPreset::Off),
+    ] {
+        let mut selected = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
+        selected.initialize(SR).unwrap();
+        selected
+            .set_parameter(
+                ParameterId::from("crossfeed_preset"),
+                ParameterValue::Int(index),
+            )
+            .unwrap();
+        let mut reference =
+            CrossfeedPlugin::new(CrossfeedPluginParams::from_preset(preset)).unwrap();
+        reference.initialize(SR).unwrap();
+
+        let input: Vec<f32> = (0..FRAMES)
+            .flat_map(|frame| {
+                let phase = 2.0 * std::f32::consts::PI * 347.0 * frame as f32 / SR as f32;
+                [phase.sin() * 0.4, (phase * 0.73).cos() * 0.2]
+            })
+            .collect();
+        let mut actual = input.clone();
+        let mut expected = input;
+        selected
+            .process_in_place(&mut actual, &ProcessContext::new(SR, FRAMES))
+            .unwrap();
+        reference
+            .process_in_place(&mut expected, &ProcessContext::new(SR, FRAMES))
+            .unwrap();
+        let tail_start = (FRAMES - 512) * 2;
+        let max_error = actual[tail_start..]
+            .iter()
+            .zip(&expected[tail_start..])
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_error < 2e-3,
+            "preset {preset:?} did not converge to its fresh reference; max error={max_error}"
+        );
+    }
+}
+
+#[test]
+fn test_unrelated_parameter_update_preserves_filter_history() {
+    let params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+    let mut changed = CrossfeedPlugin::new(params.clone()).unwrap();
+    let mut control = CrossfeedPlugin::new(params).unwrap();
+    changed.initialize(48_000).unwrap();
+    control.initialize(48_000).unwrap();
+    let mut warm_a = vec![0.0; 256 * 2];
+    let mut warm_b = vec![0.0; 256 * 2];
+    warm_a[0] = 1.0;
+    warm_b[0] = 1.0;
+    changed
+        .process_in_place(&mut warm_a, &ProcessContext::new(48_000, 256))
+        .unwrap();
+    control
+        .process_in_place(&mut warm_b, &ProcessContext::new(48_000, 256))
+        .unwrap();
+    changed
+        .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+        .unwrap();
+    let mut tail_a = vec![0.0; 256 * 2];
+    let mut tail_b = tail_a.clone();
+    changed
+        .process_in_place(&mut tail_a, &ProcessContext::new(48_000, 256))
+        .unwrap();
+    control
+        .process_in_place(&mut tail_b, &ProcessContext::new(48_000, 256))
+        .unwrap();
+    assert_eq!(tail_a, tail_b, "mix setter must not reset DSP filters");
+}
+
+#[test]
+fn test_process_rejects_non_exact_stereo_buffer_lengths() {
+    let cases = [(true, CrossfeedMode::Bauer), (false, CrossfeedMode::Off)];
+    for (enabled, mode) in cases {
+        let mut plugin = CrossfeedPlugin::new(CrossfeedPluginParams {
+            enabled,
+            mode,
+            ..Default::default()
+        })
+        .unwrap();
+        plugin.initialize(48_000).unwrap();
+        for len in [7, 9] {
+            let mut buffer = vec![0.0; len];
+            assert!(
+                plugin
+                    .process_in_place(&mut buffer, &ProcessContext::new(48_000, 4))
+                    .is_err()
+            );
+        }
+        let mut empty = [];
+        assert_eq!(
+            plugin
+                .process_in_place(&mut empty, &ProcessContext::new(48_000, 0))
+                .unwrap(),
+            0
+        );
+        assert!(
+            plugin
+                .process_in_place(&mut empty, &ProcessContext::new(48_000, usize::MAX))
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn test_non_finite_yaw_is_rejected() {
+    let mut plugin = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("head_yaw_deg"),
+                ParameterValue::Float(f32::NAN),
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn test_invalid_construction_and_sample_rate_are_rejected() {
+    let invalid = CrossfeedPluginParams {
+        mb_low_freq_hz: 6_000.0,
+        mb_mid_high_freq_hz: 5_000.0,
+        ..Default::default()
+    };
+    assert!(CrossfeedPlugin::new(invalid).is_err());
+
+    let mut plugin = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
+    assert!(plugin.initialize(0).is_err());
+}
+
+#[test]
+fn process_requires_initialized_matching_sample_rate() {
+    let mut plugin = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
+    let mut buffer = vec![0.0; 8];
+    assert!(
+        plugin
+            .process_in_place(&mut buffer, &ProcessContext::new(44_100, 4))
+            .is_err()
+    );
+    plugin.initialize(48_000).unwrap();
+    assert!(
+        plugin
+            .process_in_place(&mut buffer, &ProcessContext::new(44_100, 4))
+            .is_err()
+    );
+}
+
+#[test]
+fn failed_parameter_batch_is_transactional() {
+    use sotf_host::parametric_plugin::ParameterSet;
+
+    let mut plugin = CrossfeedPlugin::new(CrossfeedPluginParams::default()).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let before = plugin.current_values();
+    let mut update = ParameterSet::new();
+    update.insert(ParameterId::from("mix"), ParameterValue::Float(0.25));
+    update.insert(ParameterId::from("zz_unknown"), ParameterValue::Float(1.0));
+    assert!(plugin.apply_values(update).is_err());
+    assert_eq!(plugin.current_values(), before);
+}
+
+#[test]
+fn scratch_capacity_matches_setup_contract() {
+    let params = CrossfeedPluginParams {
+        max_block_frames: 257,
+        ..Default::default()
+    };
+    let mut plugin = CrossfeedPlugin::new(params).unwrap();
+    assert_eq!(plugin.dry_l.len(), 257);
+    plugin.initialize(48_000).unwrap();
+    let mut exact = vec![0.0; 257 * 2];
+    assert_eq!(
+        plugin
+            .process_in_place(&mut exact, &ProcessContext::new(48_000, 257))
+            .unwrap(),
+        257
+    );
+    let mut too_large = vec![0.0; 258 * 2];
+    assert!(
+        plugin
+            .process_in_place(&mut too_large, &ProcessContext::new(48_000, 258))
+            .is_err()
+    );
+}
+
+#[test]
+fn non_finite_audio_is_sanitized_before_dsp_state() {
+    let params = CrossfeedPluginParams {
+        mode: CrossfeedMode::Meier,
+        ..Default::default()
+    };
+    let mut plugin = CrossfeedPlugin::new(params).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let mut poisoned = vec![f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.25];
+    plugin
+        .process_in_place(&mut poisoned, &ProcessContext::new(48_000, 2))
+        .unwrap();
+    assert!(poisoned.iter().all(|sample| sample.is_finite()));
+
+    let mut follow_up = vec![0.1; 128 * 2];
+    plugin
+        .process_in_place(&mut follow_up, &ProcessContext::new(48_000, 128))
+        .unwrap();
+    assert!(follow_up.iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
+fn test_zero_delay_still_advances_delay_history() {
+    let mut delay = DelayLine::new(0.0, 48_000);
+    assert_eq!(delay.process(0.25), 0.25);
+    assert_eq!(delay.write_pos, 1);
+    delay.set_delay(0.5, 48_000);
+    let peak = (0..25)
+        .map(|_| delay.process(0.0).abs())
+        .fold(0.0, f32::max);
+    assert!(peak > 0.1);
+}
+
+#[test]
 fn test_mb_feed_linear_cache_updates_on_parameter_change() {
     let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Mb);
     params.mode = CrossfeedMode::Mb;
@@ -237,6 +581,28 @@ fn test_mb_mono_signal_is_headroom_normalized() {
         tail_peak <= 0.75,
         "default multiband mono output should stay headroom-normalized, got peak {tail_peak}"
     );
+}
+
+#[test]
+fn test_mb_feed_has_true_off_endpoint_and_per_band_constant_power_norm() {
+    let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Mb);
+    params.mode = CrossfeedMode::Mb;
+    params.mb_low_feed_db = -60.0;
+    params.mb_mid_feed_db = 0.0;
+    params.mb_high_feed_db = 6.0;
+    let plugin = CrossfeedPlugin::new(params).unwrap();
+
+    // -60 dB is the UI's explicit Off endpoint, not a merely very quiet bleed.
+    assert_eq!(plugin.mb_feed_linear[0], 0.0);
+    assert!((plugin.mb_feed_linear[1] - 1.0).abs() < 1e-6);
+    assert!((plugin.mb_feed_linear[2] - 10.0_f32.powf(6.0 / 20.0)).abs() < 1e-2);
+
+    // Each band is normalized independently, so changing one feed cannot
+    // attenuate unrelated bands.  The constant-power factor is 1/sqrt(1+g²).
+    assert!((plugin.mb_wet_norm[0] - 1.0).abs() < 1e-6);
+    assert!((plugin.mb_wet_norm[1] - 1.0 / 2.0_f32.sqrt()).abs() < 1e-6);
+    let high_gain = 10.0_f32.powf(6.0 / 20.0);
+    assert!((plugin.mb_wet_norm[2] - 1.0 / (1.0 + high_gain * high_gain).sqrt()).abs() < 5e-3);
 }
 
 #[test]
@@ -609,6 +975,179 @@ fn test_mix_ramp_no_step_discontinuity() {
     );
 }
 
+/// Changing a Bauer cutoff while processing must not reset the shelf history.
+/// A reset changes the first output sample at the automation boundary by much
+/// more than the surrounding sine-wave slope, which is audible as a click.
+#[test]
+fn test_bauer_frequency_automation_is_click_free() {
+    let sr = 48_000u32;
+    let block = 1024usize;
+    let freq = 440.0f32;
+    let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+    params.mode = CrossfeedMode::Bauer;
+    params.mix = 1.0;
+    params.bauer_feed_db = 12.0;
+    params.bauer_fcut_hz = 400.0;
+    let mut plugin = CrossfeedPlugin::new(params).unwrap();
+    plugin.initialize(sr).unwrap();
+
+    let render = |start: usize| -> Vec<f32> {
+        (0..block)
+            .flat_map(|i| {
+                let phase = 2.0 * std::f32::consts::PI * freq * (start + i) as f32 / sr as f32;
+                let sample = phase.sin() * 0.5;
+                [sample, -sample]
+            })
+            .collect()
+    };
+
+    let mut before = render(0);
+    plugin
+        .process_in_place(&mut before, &ProcessContext::new(sr, block))
+        .unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("bauer_fcut_hz"),
+            ParameterValue::Float(1000.0),
+        )
+        .unwrap();
+    let mut after = render(block);
+    plugin
+        .process_in_place(&mut after, &ProcessContext::new(sr, block))
+        .unwrap();
+
+    let previous = before[(block - 1) * 2];
+    let boundary_jump = (after[0] - previous).abs();
+    let local_slope = (1..32)
+        .map(|i| (before[i * 2] - before[(i - 1) * 2]).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        boundary_jump <= local_slope * 2.0 + 1.0e-3,
+        "Bauer cutoff automation produced a discontinuity: boundary={boundary_jump}, local_slope={local_slope}"
+    );
+}
+
+#[test]
+fn test_multiband_frequency_automation_preserves_crossover_state() {
+    let sr = 48_000u32;
+    let block = 1024usize;
+    let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Mb);
+    params.mode = CrossfeedMode::Mb;
+    params.mix = 1.0;
+    let mut plugin = CrossfeedPlugin::new(params).unwrap();
+
+    plugin.initialize(sr).unwrap();
+    let render = |start: usize| -> Vec<f32> {
+        (0..block)
+            .flat_map(|i| {
+                let phase = 2.0 * std::f32::consts::PI * 220.0 * (start + i) as f32 / sr as f32;
+                let sample = phase.sin() * 0.5;
+                [sample, -sample]
+            })
+            .collect()
+    };
+    let mut before = render(0);
+    plugin
+        .process_in_place(&mut before, &ProcessContext::new(sr, block))
+        .unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("mb_low_freq_hz"),
+            ParameterValue::Float(500.0),
+        )
+        .unwrap();
+    let mut after = render(block);
+    plugin
+        .process_in_place(&mut after, &ProcessContext::new(sr, block))
+        .unwrap();
+
+    let boundary_jump = (after[0] - before[(block - 1) * 2]).abs();
+    let local_slope = (1..32)
+        .map(|i| (before[i * 2] - before[(i - 1) * 2]).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        boundary_jump <= local_slope * 3.0 + 0.02,
+        "multiband cutoff automation lost crossover state: boundary={boundary_jump}, local_slope={local_slope}"
+    );
+}
+
+#[test]
+fn disabled_crossfeed_resets_state_before_reentry() {
+    let sr = 48_000;
+    let n = 128;
+    let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Default);
+    params.mode = CrossfeedMode::Bauer;
+    let mut plugin = CrossfeedPlugin::new(params).unwrap();
+    plugin.initialize(sr).unwrap();
+
+    let mut warm = vec![0.0; n * 2];
+    warm[0] = 1.0;
+    plugin
+        .process_in_place(&mut warm, &ProcessContext::new(sr, n))
+        .unwrap();
+    plugin
+        .set_parameter(ParameterId::from("enabled"), ParameterValue::Bool(false))
+        .unwrap();
+    let mut bypass = vec![0.0; n * 2];
+    plugin
+        .process_in_place(&mut bypass, &ProcessContext::new(sr, n))
+        .unwrap();
+    plugin
+        .set_parameter(ParameterId::from("enabled"), ParameterValue::Bool(true))
+        .unwrap();
+    let mut silent = vec![0.0; n * 2];
+    plugin
+        .process_in_place(&mut silent, &ProcessContext::new(sr, n))
+        .unwrap();
+    assert!(silent.iter().all(|sample| sample.abs() < 1e-7));
+}
+
+/// Mode changes must not resurrect filter history from an earlier activation
+/// of that mode.  Switching away from Meier and back while processing silence
+/// should therefore remain silent rather than replaying the old LPF/all-pass
+/// tail.
+#[test]
+fn mode_transition_resets_inactive_filter_state() {
+    let sr = 48_000;
+    let n = 8;
+    let mut params = CrossfeedPluginParams::from_preset(CrossfeedPreset::Meier);
+    params.mode = CrossfeedMode::Meier;
+    params.mix = 1.0;
+    let mut plugin = CrossfeedPlugin::new(params).unwrap();
+    plugin.initialize(sr).unwrap();
+
+    let mut impulse = vec![0.0; n * 2];
+    impulse[0] = 1.0;
+    plugin
+        .process_in_place(&mut impulse, &ProcessContext::new(sr, n))
+        .unwrap();
+    assert!(
+        impulse.iter().any(|sample| sample.abs() > 1e-5),
+        "warm-up impulse must exercise the Meier state"
+    );
+
+    plugin
+        .set_parameter(ParameterId::from("crossfeed_mode"), ParameterValue::Int(1))
+        .unwrap();
+    let mut bauer = vec![0.0; n * 2];
+    plugin
+        .process_in_place(&mut bauer, &ProcessContext::new(sr, n))
+        .unwrap();
+
+    plugin
+        .set_parameter(ParameterId::from("crossfeed_mode"), ParameterValue::Int(2))
+        .unwrap();
+    let mut silent = vec![0.0; n * 2];
+    plugin
+        .process_in_place(&mut silent, &ProcessContext::new(sr, n))
+        .unwrap();
+    assert!(
+        silent.iter().all(|sample| sample.abs() < 1e-7),
+        "mode re-entry must not replay stale filter state: max={:.9e}",
+        silent.iter().map(|sample| sample.abs()).fold(0.0, f32::max)
+    );
+}
+
 /// Regression: reset() must clear all filter state so that a second
 /// playback pass starts from the same deterministic state as a fresh
 /// plugin. Previously bauer_shelf, meier LPF/allpass, and yaw_smoother
@@ -749,6 +1288,63 @@ fn test_process_in_place_autogain_enabled() {
         buffer.iter().all(|s| s.is_finite()),
         "autogain should produce finite output"
     );
+}
+
+#[test]
+fn autogain_target_lufs_changes_compensation() {
+    fn converged_gain(target_lufs: f32) -> f32 {
+        let params = CrossfeedPluginParams {
+            mode: CrossfeedMode::Bauer,
+            bauer_feed_db: 4.5,
+            autogain_enabled: true,
+            autogain_target_lufs: target_lufs,
+            autogain_smoothing_ms: 20.0,
+            ..Default::default()
+        };
+        let mut plugin = CrossfeedPlugin::new(params).unwrap();
+        plugin.initialize(48_000).unwrap();
+
+        let block_size = 1024;
+        for block in 0..120 {
+            let mut buffer = vec![0.0_f32; block_size * 2];
+            for frame in 0..block_size {
+                let phase =
+                    2.0 * std::f32::consts::PI * 440.0 * (block * block_size + frame) as f32
+                        / 48_000.0;
+                buffer[2 * frame] = phase.sin() * 0.25;
+                buffer[2 * frame + 1] = phase.sin() * 0.25;
+            }
+            plugin
+                .process_in_place(&mut buffer, &ProcessContext::new(48_000, block_size))
+                .unwrap();
+        }
+
+        plugin.auto_gain.current_gain_db()
+    }
+
+    let quiet_target_gain = converged_gain(-36.0);
+    let loud_target_gain = converged_gain(-12.0);
+    assert!(
+        (quiet_target_gain - loud_target_gain).abs() > 6.0,
+        "autogain target must affect converged compensation: -36={quiet_target_gain} dB, -12={loud_target_gain} dB"
+    );
+}
+
+#[test]
+fn autogain_target_lufs_updates_the_helper() {
+    let params = CrossfeedPluginParams {
+        autogain_enabled: true,
+        ..Default::default()
+    };
+    let mut plugin = CrossfeedPlugin::new(params).unwrap();
+    plugin.initialize(48_000).unwrap();
+    plugin
+        .set_parameter(
+            ParameterId::from("autogain_target_lufs"),
+            ParameterValue::Float(-24.0),
+        )
+        .unwrap();
+    assert_eq!(plugin.auto_gain.target_lufs(), Some(-24.0));
 }
 
 #[test]

@@ -4,13 +4,13 @@ Stereo crossfeed for headphones — simulates speaker-like stereo.
 
 ## Architecture
 
-- `lib.rs` — Main plugin struct, implements `ParametricParametricInPlacePlugin` trait
+- `lib.rs` — Main plugin struct, implements `ParametricInPlacePlugin`
 - `params.rs` — Parameter definitions and JSON deserialization
 
 
 ## Key Public API
 
-- Main plugin struct implementing `sotf_host::parametric_in_place_plugin::ParametricParametricInPlacePlugin`
+- Main plugin struct implementing `sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin`
 - Plugin parameters via `params.rs`
 
 ## Testing

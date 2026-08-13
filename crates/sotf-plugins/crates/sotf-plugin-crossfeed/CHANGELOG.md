@@ -1,3 +1,89 @@
+# 0.5.13
+
+## Fixes (2026-08-12 review closure)
+
+- Make parameter batches transactional and keep single-parameter automation and reset
+  allocation-free, including Auto Gain enable/disable and preset changes.
+- Require initialization and matching callback sample rates, sanitize non-finite audio before it
+  reaches filter state, and report the package version in plugin metadata.
+- Replace ten fixed 65,536-frame scratch buffers with four buffers sized by the setup-time
+  `max_block_frames` contract (16,384 by default).
+- Replace per-sample general multiband dispatcher calls with scalar LR4 stages while preserving
+  crossover state, and make preset transitions apply new filter coefficients after reset.
+- Reject unknown serialized fields and add lifecycle, allocation, memory, preset-audio, and
+  transactional regression tests.
+
+# 0.5.12
+
+## Fixes (2026-08-12 review follow-up)
+
+- Give the mode selector control group a non-empty label so responsive render
+  plans validate and narrow layouts remain deterministic.
+
+# 0.5.11
+
+## Fixes (2026-08-12 review remediation)
+
+- Multiband feed controls now expose a finite -60 dB Off endpoint that maps to
+  exactly zero crossfeed, including for mid and high bands.
+- Multiband wet gain now uses independent constant-power normalization per band,
+  so changing one feed no longer attenuates unrelated bands.
+
+# 0.5.10
+
+## Fixes (2026-08-12 review remediation)
+
+- Mode changes now reset all algorithm state, preventing stale filter tails from
+  resurfacing when a previously inactive mode is selected again.
+
+# 0.5.9
+
+## Fixes (2026-08-12 review remediation)
+
+- Bauer filter frequency and feed automation now interpolates stable biquad
+  coefficients over 128 samples while preserving filter history, preventing
+  boundary clicks without allocating on the realtime path.
+- Multiband crossover frequency updates now preserve LR4 state through the
+  in-place frequency-update API instead of reinitializing the crossover bank.
+
+# 0.5.8
+
+## Fixes
+
+- Disabled and Off transitions now reset delay, filter, and AutoGain history before
+  re-entry, preventing stale audio from leaking after bypass.
+
+# 0.5.7
+
+## Fixes (2026-08-12 review remediation)
+
+- Head-yaw ITD automation now advances and updates both fractional delay paths
+  per sample, keeping the realtime path allocation-free and making output
+  independent of callback partitioning.
+
+# 0.5.6
+
+## Fixes (2026-08-12 review remediation)
+
+- Auto Gain now honors `autogain_target_lufs` through the shared AutoGain
+  helper, so different target settings converge to different compensation
+  levels. Auto Gain measurement errors are propagated to the host.
+
+# 0.5.5
+
+## Fixes (from code review 2026-08-12)
+
+- Apply yaw-derived ITD even when the static ITD control is zero in Bauer, Meier, and Multiband
+  modes. Delay lines now advance while their delay is zero so re-enabling delay cannot expose stale
+  ring-buffer history.
+- Make the public preset selector apply the complete selected preset rather than changing only its
+  displayed name.
+- Preserve filter histories for unrelated parameter changes; Bauer and Multiband filters are now
+  rebuilt only when their coefficients actually change.
+- Validate construction and initialization parameters, reject non-finite yaw, and require exact
+  interleaved stereo buffer lengths before active or bypass processing.
+- Align the plugin documentation with its actual defaults, parameter ranges, and DSP topology.
+
 # 0.5.4
 
 ## Fixes

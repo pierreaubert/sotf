@@ -45,15 +45,16 @@ impl DelayLine {
 
     #[inline]
     pub(super) fn process(&mut self, sample: f32) -> f32 {
-        if self.delay_samples <= f32::EPSILON {
-            return sample;
-        }
         self.buffer[self.write_pos] = sample;
-        let int_delay = self.delay_samples.floor() as usize;
-        let fract = self.delay_samples - int_delay as f32;
-        let read_pos_base = (self.write_pos + self.capacity - int_delay) % self.capacity;
-        let read_pos_next = (read_pos_base + self.capacity - 1) % self.capacity;
-        let out = self.buffer[read_pos_base] * (1.0 - fract) + self.buffer[read_pos_next] * fract;
+        let out = if self.delay_samples <= f32::EPSILON {
+            sample
+        } else {
+            let int_delay = self.delay_samples.floor() as usize;
+            let fract = self.delay_samples - int_delay as f32;
+            let read_pos_base = (self.write_pos + self.capacity - int_delay) % self.capacity;
+            let read_pos_next = (read_pos_base + self.capacity - 1) % self.capacity;
+            self.buffer[read_pos_base] * (1.0 - fract) + self.buffer[read_pos_next] * fract
+        };
         self.write_pos = (self.write_pos + 1) % self.capacity;
         out
     }

@@ -10,7 +10,7 @@ A headphone crossfeed plugin that blends a portion of each stereo channel into t
 
 Three algorithms for different listening preferences:
 
-**Bauer Mode:** Classic crossfeed based on Bauer's bs2b algorithm. A high-pass filtered version of each channel is fed to the opposite ear. Simple and effective.
+**Bauer Mode:** A low-shelf cut is applied to the stereo difference signal, reducing low-frequency width while preserving mono content.
 
 **Meier Mode:** Jan Meier's natural crossfeed. Uses a low-pass filter followed by an all-pass for frequency-dependent crossfeed that better models natural acoustic crosstalk.
 
@@ -20,15 +20,15 @@ Three algorithms for different listening preferences:
 
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
-| Mode | Off/Bauer/Meier/Multiband | Bauer | — | Crossfeed algorithm selection |
+| Mode | Off/Bauer/Meier/Multiband | Multiband | — | Crossfeed algorithm selection |
 | Mix | 0 to 1.0 | 1.0 | — | Dry/wet blend |
 
 ### Bauer Parameters
 
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
-| Bauer Cutoff | 300 to 2000 | 700 | Hz | High-pass filter cutoff for the crossfeed signal |
-| Bauer Feed | 0 to 12 | 4.5 | dB | Crossfeed level (how much opposite channel is mixed in) |
+| Bauer Cutoff | 400 to 1000 | 700 | Hz | Low-shelf transition frequency on the stereo difference |
+| Bauer Feed | 0 to 15 | 4.5 | dB | Low-frequency difference attenuation |
 
 ### Meier Parameters
 
@@ -41,16 +41,19 @@ Three algorithms for different listening preferences:
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
 | MB Low Freq | 50 to 500 | 150 | Hz | Low/mid crossover frequency |
-| MB Mid-High Freq | 1000 to 10000 | 5700 | Hz | Mid/high crossover frequency |
-| MB Low Feed | -12 to 12 | 0 | dB | Low band crossfeed level |
-| MB Mid Feed | -12 to 12 | 6 | dB | Mid band crossfeed level |
-| MB High Feed | -12 to 12 | 3 | dB | High band crossfeed level |
+| MB Mid-High Freq | 2000 to 15000 | 5700 | Hz | Mid/high crossover frequency |
+| MB Low Feed | -60 to 15 | 0 | dB | Opposite-channel low-band gain; -60 dB is Off and 0 dB is unity |
+| MB Mid Feed | -60 to 15 | 6 | dB | Opposite-channel mid-band gain; -60 dB is Off |
+| MB High Feed | -60 to 15 | 3 | dB | Opposite-channel high-band gain; -60 dB is Off |
 
 ### Auto Gain
 
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
 | Auto Gain | On/Off | Off | — | Automatic loudness compensation |
+| Target LUFS | -40 to -12 | -18 | LUFS | Reserved compatibility control; currently has no DSP effect |
+| Max Gain | 0 to 24 | 12 | dB | Maximum compensation |
+| Smoothing | 10 to 5000 | 100 | ms | Compensation transition time |
 
 ## Demos
 
@@ -85,16 +88,16 @@ Three algorithms for different listening preferences:
 
 ### Demo: Frequency-Selective Crossfeed
 
-**Scenario:** Bass should remain wide (no crossfeed) while mids and highs need more natural blending.
-**Before:** Uniform crossfeed reduces bass impact.
-**After:** Bass stays wide and punchy, mids and highs blend naturally.
+**Scenario:** Bass needs less opposite-channel feed than mids and highs.
+**Before:** Uniform crossfeed narrows every band equally.
+**After:** Bass receives the minimum available feed while mids and highs blend more strongly.
 **Config:**
 ```json
 {
   "mode": "Mb",
   "mb_low_freq_hz": 150.0,
   "mb_mid_high_freq_hz": 5700.0,
-  "mb_low_feed_db": 0.0,
+  "mb_low_feed_db": -60.0,
   "mb_mid_feed_db": 6.0,
   "mb_high_feed_db": 3.0,
   "mix": 1.0
@@ -145,13 +148,13 @@ Three algorithms for different listening preferences:
   "mode": "Mb",
   "mb_low_freq_hz": 150.0,
   "mb_mid_high_freq_hz": 5700.0,
-  "mb_low_feed_db": 0.0,
+  "mb_low_feed_db": -20.0,
   "mb_mid_feed_db": 6.0,
   "mb_high_feed_db": 3.0,
   "mix": 1.0
 }
 ```
-**Tips:** Set low feed to 0 dB to keep bass width. Increase mid feed for more vocal blending.
+**Tips:** Use -60 dB for a true low-band Off endpoint. A 0 dB setting is unity crossfeed, not bypass. Increase mid feed for more vocal blending.
 
 ## Tips & Best Practices
 
@@ -162,11 +165,20 @@ Three algorithms for different listening preferences:
 - Auto Gain compensates for any loudness change from the crossfeed processing.
 - Presets select the mode and set appropriate parameters — changing a preset overrides mode-specific settings.
 
+## Realtime and block-size contract
+
+`max_block_frames` is a setup-time serialized field, not an automatable control. The plugin
+allocates four scratch buffers at exactly that size during construction (default 16,384 frames)
+and rejects larger callbacks instead of allocating on the audio thread. Set it to the graph's
+known maximum callback size for tighter memory use or large offline blocks. Parameter changes and
+`reset()` are allocation-free; enabled and mode changes use a deterministic reset-on-transition
+policy rather than replaying inactive filter history.
+
 ## Signal Flow
 
 ```
 Bauer:
-  Input L/R → HPF → Crossfeed (L→R, R→L) × feed_gain → Sum with original → Mix → Output
+  Input L/R → Difference (L-R) → Low-shelf attenuation → Width reconstruction → Mix → Output
 
 Meier:
   Input L/R → LPF → AllPass → Crossfeed × meier_level → Sum with original → Mix → Output

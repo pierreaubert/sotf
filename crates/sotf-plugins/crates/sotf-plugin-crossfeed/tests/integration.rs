@@ -25,7 +25,18 @@ fn default_plugin_has_expected_metadata() {
     let info = plugin.info();
     assert_eq!(info.name, "Crossfeed");
     assert_eq!(info.author, "SotF");
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(plugin.channels(), 2);
+}
+
+#[test]
+fn serialized_state_rejects_unknown_fields() {
+    assert!(
+        serde_json::from_value::<CrossfeedPluginParams>(serde_json::json!({
+            "unexpected": true
+        }))
+        .is_err()
+    );
 }
 
 #[test]

@@ -9,7 +9,10 @@ static A: CountingAlloc = CountingAlloc;
 
 fn main() {
     let sample_rate = 48000;
-    let params = CrossfeedPluginParams::default();
+    let params = CrossfeedPluginParams {
+        max_block_frames: 48_000,
+        ..Default::default()
+    };
 
     let mut inner = CrossfeedPlugin::new(params).unwrap();
     inner.initialize(sample_rate).unwrap();

@@ -65,6 +65,9 @@ pub struct AutoGain {
     loudness_type: AutoGainLoudnessType,
     max_gain_db: f32,
     smoothing_ms: f32,
+    /// Optional absolute loudness target. When unset, AutoGain matches the
+    /// measured output to the measured input as before.
+    target_lufs: Option<f32>,
     /// Fast attack coefficient (~20ms) for gain decreases (output too loud)
     attack_coeff: f32,
     /// Slow release coefficient (~300ms) for gain increases (output recovered)
@@ -113,6 +116,7 @@ impl AutoGain {
             loudness_type: params.loudness_type,
             max_gain_db: params.max_gain_db,
             smoothing_ms: params.smoothing_ms,
+            target_lufs: None,
             attack_coeff: (-1.0 / (20.0 * 0.001 * sample_rate as f32)).exp(),
             release_coeff: (-1.0 / (300.0 * 0.001 * sample_rate as f32)).exp(),
             cached_target_db: 0.0,
@@ -167,6 +171,22 @@ impl AutoGain {
         self.smoothing_ms = s;
         self.gain_smoother.set_time(s, self.sample_rate);
     }
+    /// Set an optional absolute loudness target. `None` restores the original
+    /// input/output matching behavior.
+    pub fn set_target_lufs(&mut self, target: Option<f32>) -> Result<(), String> {
+        if let Some(value) = target
+            && (!value.is_finite() || !(-120.0..=0.0).contains(&value))
+        {
+            return Err(format!(
+                "target LUFS must be finite and in -120..=0, got {value}"
+            ));
+        }
+        self.target_lufs = target;
+        Ok(())
+    }
+    pub fn target_lufs(&self) -> Option<f32> {
+        self.target_lufs
+    }
     pub fn set_loudness_type(&mut self, t: AutoGainLoudnessType) {
         self.loudness_type = t;
     }
@@ -189,7 +209,18 @@ impl AutoGain {
     }
 
     pub fn measure_input(&mut self, input: &[f32]) -> Result<(), String> {
-        self.input_monitor.add_frames(input)?;
+        self.ingest_input(input)?;
+        self.refresh_input_measurement();
+        Ok(())
+    }
+
+    /// Advance the persistent input loudness timeline without publishing the
+    /// comparatively expensive derived EBU statistics.
+    pub fn ingest_input(&mut self, input: &[f32]) -> Result<(), String> {
+        self.input_monitor.add_frames(input)
+    }
+
+    pub fn refresh_input_measurement(&mut self) {
         self.input_monitor
             .update_loudness_data(&mut self.input_data);
         self.last_input_lufs = if self.loudness_type == AutoGainLoudnessType::Momentary {
@@ -198,11 +229,21 @@ impl AutoGain {
             self.input_data.shortterm_lufs
         };
         self.last_input_peak = self.input_data.peak;
-        Ok(())
     }
 
     pub fn measure_output(&mut self, output: &[f32]) -> Result<(), String> {
-        self.output_monitor.add_frames(output)?;
+        self.ingest_output(output)?;
+        self.refresh_output_measurement();
+        Ok(())
+    }
+
+    /// Advance the persistent output loudness timeline without publishing the
+    /// comparatively expensive derived EBU statistics.
+    pub fn ingest_output(&mut self, output: &[f32]) -> Result<(), String> {
+        self.output_monitor.add_frames(output)
+    }
+
+    pub fn refresh_output_measurement(&mut self) {
         self.output_monitor
             .update_loudness_data(&mut self.output_data);
         self.last_output_lufs = if self.loudness_type == AutoGainLoudnessType::Momentary {
@@ -213,11 +254,15 @@ impl AutoGain {
         self.last_output_peak = self.output_data.peak;
 
         if !self.enabled {
-            return Ok(());
+            return;
         }
 
         if self.last_input_lufs.is_finite() && self.last_output_lufs.is_finite() {
-            let target = (self.last_input_lufs - self.last_output_lufs) as f32;
+            let target = if let Some(target_lufs) = self.target_lufs {
+                target_lufs - self.last_output_lufs as f32
+            } else {
+                self.last_input_lufs as f32 - self.last_output_lufs as f32
+            };
             self.gain_smoother
                 .set_target(target.clamp(-self.max_gain_db, self.max_gain_db));
         } else {
@@ -227,7 +272,6 @@ impl AutoGain {
             // so the smoother converges to a safe value during silence.
             self.gain_smoother.set_target(0.0);
         }
-        Ok(())
     }
 
     /// Cached `fast_pow10(gain_smoother.target() / 20)`. Recomputes only when

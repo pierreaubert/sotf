@@ -18,7 +18,12 @@ use serde::{Deserialize, Serialize};
 use sotf_host::param_specs::find_by_key as pk;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CrossfeedPluginParams {
+    /// Maximum callback size reserved during construction. This is a setup-time
+    /// graph contract, not an automatable audio parameter.
+    #[serde(default = "default_max_block_frames")]
+    pub max_block_frames: usize,
     #[serde(default)]
     pub mode: CrossfeedMode,
     #[serde(default)]
@@ -76,6 +81,7 @@ pub struct CrossfeedPluginParams {
 impl Default for CrossfeedPluginParams {
     fn default() -> Self {
         Self {
+            max_block_frames: default_max_block_frames(),
             mode: CrossfeedMode::Mb,
             preset: CrossfeedPreset::Default,
             enabled: true,
@@ -98,9 +104,13 @@ impl Default for CrossfeedPluginParams {
     }
 }
 
+fn default_max_block_frames() -> usize {
+    16_384
+}
+
 impl CrossfeedPluginParams {
     pub fn from_preset(preset: CrossfeedPreset) -> Self {
-        match preset {
+        let mut params = match preset {
             CrossfeedPreset::Off => Self {
                 mode: CrossfeedMode::Off,
                 ..Default::default()
@@ -131,6 +141,8 @@ impl CrossfeedPluginParams {
                 mb_high_feed_db: 3.0,
                 ..Default::default()
             },
-        }
+        };
+        params.preset = preset;
+        params
     }
 }

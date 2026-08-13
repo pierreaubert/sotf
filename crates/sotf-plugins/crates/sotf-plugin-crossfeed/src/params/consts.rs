@@ -82,8 +82,8 @@ pub const PARAMS: &[ParamSpec] = &[
         "MB Low Feed",
         "mb_low_feed_db",
         0.0,
-        -20.0,
-        0.0,
+        -60.0,
+        15.0,
         0.5,
         "dB",
         "Multiband",
@@ -93,7 +93,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "MB Mid Feed",
         "mb_mid_feed_db",
         6.0,
-        0.0,
+        -60.0,
         15.0,
         0.5,
         "dB",
@@ -104,7 +104,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "MB High Feed",
         "mb_high_feed_db",
         3.0,
-        0.0,
+        -60.0,
         15.0,
         0.5,
         "dB",
@@ -185,7 +185,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         ),
         ControlGroup::new(
             "mode-selector",
-            "",
+            "MODE",
             &[
                 ControlSpec::button_set(0, MODE_LABELS), // mode
             ],

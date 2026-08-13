@@ -38,8 +38,8 @@ custom
 
 | Parameter | engine_key | Control | Notes |
 |-----------|-----------|---------|-------|
-| Bauer Cutoff | bauer_fcut_hz | Knob | 300 to 2000 Hz |
-| Bauer Feed | bauer_feed_db | Knob | 0 to 12 dB |
+| Bauer Cutoff | bauer_fcut_hz | Knob | 400 to 1000 Hz |
+| Bauer Feed | bauer_feed_db | Knob | 0 to 15 dB |
 
 ### Meier Mode
 
@@ -52,10 +52,10 @@ custom
 | Parameter | engine_key | Control | Notes |
 |-----------|-----------|---------|-------|
 | MB Low Freq | mb_low_freq_hz | Knob | 50 to 500 Hz |
-| MB Mid-High Freq | mb_mid_high_freq_hz | Knob | 1000 to 10000 Hz |
-| MB Low Feed | mb_low_feed_db | Knob | -12 to 12 dB |
-| MB Mid Feed | mb_mid_feed_db | Knob | -12 to 12 dB |
-| MB High Feed | mb_high_feed_db | Knob | -12 to 12 dB |
+| MB Mid-High Freq | mb_mid_high_freq_hz | Knob | 2000 to 15000 Hz |
+| MB Low Feed | mb_low_feed_db | Knob | -20 to 0 dB |
+| MB Mid Feed | mb_mid_feed_db | Knob | 0 to 15 dB |
+| MB High Feed | mb_high_feed_db | Knob | 0 to 15 dB |
 
 ### Disable Mode
 
@@ -66,7 +66,14 @@ No parameters shown. Plugin passes audio through unchanged.
 | Parameter | engine_key | Control | Notes |
 |-----------|-----------|---------|-------|
 | Auto Gain | autogain_enabled | Toggle | Loudness compensation |
+| Auto Gain Target | autogain_target_lufs | Knob | Absolute loudness target used by compensation DSP |
+| Auto Gain Max | autogain_max_gain_db | Knob | 0 to 24 dB |
+| Auto Gain Smoothing | autogain_smoothing_ms | Knob | 10 to 5000 ms |
 | Mix | mix | Knob | 0 to 1.0 |
+
+Head yaw (`head_yaw_deg`, -90 to +90 degrees) and static ITD (`itd_delay_ms`, 0 to 1 ms) are
+available as host parameters. The current generated layout exposes static ITD; head yaw is intended
+for head-tracking automation.
 
 ## Responsive Behavior
 - **Compact:** Mode selector wraps to 2x2 grid. Knobs stack vertically.
