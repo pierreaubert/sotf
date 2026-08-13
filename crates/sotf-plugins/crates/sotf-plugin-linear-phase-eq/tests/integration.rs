@@ -66,36 +66,13 @@ fn parameter_roundtrip() {
         Some(ParameterValue::Float(0.75))
     );
 
-    adapter
-        .set_parameter(ParameterId::from("auto_gain"), ParameterValue::Bool(true))
-        .unwrap();
-    assert_eq!(
-        adapter.get_parameter(&ParameterId::from("auto_gain")),
-        Some(ParameterValue::Bool(true))
-    );
-
-    adapter
-        .set_parameter(ParameterId::from("num_filters"), ParameterValue::Int(3))
-        .unwrap();
-    assert_eq!(
-        adapter.get_parameter(&ParameterId::from("num_filters")),
-        Some(ParameterValue::Int(3))
-    );
-
-    adapter
-        .set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(2))
-        .unwrap();
-    assert_eq!(
-        adapter.get_parameter(&ParameterId::from("fir_length")),
-        Some(ParameterValue::Int(2))
-    );
-
-    adapter
-        .set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(6.0))
-        .unwrap();
-    match adapter.get_parameter(&ParameterId::from("band_0_gain")) {
-        Some(ParameterValue::Float(v)) => assert!((v - 6.0).abs() < 0.01),
-        other => panic!("Expected Float, got {:?}", other),
+    for (id, value) in [
+        ("auto_gain", ParameterValue::Bool(true)),
+        ("num_filters", ParameterValue::Int(3)),
+        ("fir_length", ParameterValue::Int(2)),
+        ("band_0_gain", ParameterValue::Float(6.0)),
+    ] {
+        assert!(adapter.set_parameter(ParameterId::from(id), value).is_err());
     }
 }
 
@@ -114,7 +91,7 @@ fn dry_mix_passthrough() {
     let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
     adapter.initialize(48000).unwrap();
 
-    let num_frames = 256;
+    let num_frames = 1024;
     let input = sine_buffer(num_frames, 2, 440.0, 48000);
     let mut output = vec![0.0_f32; input.len()];
 
@@ -122,15 +99,68 @@ fn dry_mix_passthrough() {
         .process(&input, &mut output, &ProcessContext::new(48000, num_frames))
         .unwrap();
 
-    let max_error = input
-        .iter()
-        .zip(output.iter())
-        .map(|(a, b)| (a - b).abs())
+    let latency = 544usize;
+    let max_error = output
+        .chunks_exact(2)
+        .enumerate()
+        .map(|(frame, out)| {
+            let expected = if frame >= latency {
+                input[(frame - latency) * 2]
+            } else {
+                0.0
+            };
+            (out[0] - expected).abs()
+        })
         .fold(0.0_f32, f32::max);
     assert!(
         max_error < 1e-6,
-        "mix=0 should be a dry passthrough: max_error={}",
+        "mix=0 should preserve the reported FIR latency: max_error={}",
         max_error
+    );
+}
+
+#[test]
+fn dry_wet_mix_aligns_dry_with_linear_phase_latency() {
+    let params = LinearPhaseEqPluginParams {
+        num_filters: 1,
+        fir_length_index: 0, // 1024 taps -> 512 group delay + 32 partition latency
+        phase_mode_index: 0,
+        auto_gain: false,
+        mix: 0.5,
+        filters: vec![],
+    };
+    let plugin = LinearPhaseEqPlugin::from_params(1, 48_000, params).unwrap();
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
+    adapter.initialize(48_000).unwrap();
+
+    let block_size = 64;
+    let total_frames = 1_024;
+    let mut output = vec![0.0_f32; total_frames];
+    for block_start in (0..total_frames).step_by(block_size) {
+        let mut input = vec![0.0_f32; block_size];
+        if block_start == 0 {
+            input[0] = 1.0;
+        }
+        let mut block_output = vec![0.0_f32; block_size];
+        adapter
+            .process(
+                &input,
+                &mut block_output,
+                &ProcessContext::new(48_000, block_size),
+            )
+            .unwrap();
+        output[block_start..block_start + block_size].copy_from_slice(&block_output);
+    }
+
+    let latency = adapter.latency_samples();
+    assert_eq!(latency, 544);
+    assert!(
+        output[..latency].iter().all(|sample| sample.abs() < 1e-6),
+        "a partially dry linear-phase signal must not contain an undelayed impulse"
+    );
+    assert!(
+        output[latency..].iter().any(|sample| sample.abs() > 0.1),
+        "the aligned dry/wet impulse should appear at the reported latency"
     );
 }
 
@@ -187,7 +217,7 @@ fn latency_matches_fir_length() {
     let adapter = ParametricInPlacePluginAdapter::new(plugin);
 
     let fir_length = 4096;
-    let expected = (fir_length - 1) / 2;
+    let expected = fir_length / 2 + 32;
     assert_eq!(adapter.latency_samples(), expected);
 }
 
@@ -273,7 +303,96 @@ fn minimum_phase_processes_finite_audio() {
         .process(&input, &mut output, &ProcessContext::new(48_000, 2_048))
         .unwrap();
 
-    assert_eq!(adapter.latency_samples(), 0);
+    assert_eq!(adapter.latency_samples(), 32);
     assert!(output.iter().all(|sample| sample.is_finite()));
     assert!(output.iter().any(|sample| sample.abs() > 1.0e-6));
+}
+
+#[test]
+fn wet_impulse_peak_matches_reported_even_tap_latency() {
+    let plugin = LinearPhaseEqPlugin::from_params(
+        1,
+        48_000,
+        LinearPhaseEqPluginParams {
+            num_filters: 1,
+            fir_length_index: 0,
+            phase_mode_index: 0,
+            auto_gain: false,
+            mix: 1.0,
+            filters: vec![],
+        },
+    )
+    .unwrap();
+    let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
+    let latency = adapter.latency_samples();
+    let mut input = vec![0.0; latency + 1_024];
+    input[0] = 1.0;
+    let mut output = vec![0.0; input.len()];
+    adapter
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(48_000, input.len()),
+        )
+        .unwrap();
+    let peak = output
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+        .unwrap()
+        .0;
+    assert_eq!(peak, latency);
+}
+
+#[test]
+fn mix_automation_is_block_partition_invariant() {
+    fn render(block: usize) -> Vec<f32> {
+        let plugin = LinearPhaseEqPlugin::from_params(
+            1,
+            48_000,
+            LinearPhaseEqPluginParams {
+                num_filters: 1,
+                fir_length_index: 0,
+                phase_mode_index: 0,
+                auto_gain: false,
+                mix: 0.0,
+                filters: vec![BandConfig {
+                    filter_type: "Peak".into(),
+                    frequency: 1_000.0,
+                    q: 1.0,
+                    gain_db: 12.0,
+                    active: true,
+                }],
+            },
+        )
+        .unwrap();
+        let mut adapter = ParametricInPlacePluginAdapter::new(plugin);
+        adapter
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+            .unwrap();
+        let input = sine_buffer(4_096, 1, 1_000.0, 48_000);
+        let mut rendered = vec![0.0; input.len()];
+        for start in (0..input.len()).step_by(block) {
+            let end = (start + block).min(input.len());
+            adapter
+                .process(
+                    &input[start..end],
+                    &mut rendered[start..end],
+                    &ProcessContext::new(48_000, end - start),
+                )
+                .unwrap();
+        }
+        rendered
+    }
+
+    let reference = render(1);
+    for block in [16, 63, 64, 127, 256, 1_024] {
+        let candidate = render(block);
+        let max_error = reference
+            .iter()
+            .zip(candidate)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(max_error < 1.0e-5, "block {block}: {max_error}");
+    }
 }

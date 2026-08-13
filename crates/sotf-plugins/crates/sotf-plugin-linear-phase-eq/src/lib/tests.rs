@@ -11,7 +11,80 @@ use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
 
+#[path = "tests/misc.rs"]
 mod misc;
+
+#[test]
+fn test_reducing_num_filters_removes_band_from_design_and_schema() {
+    let mut plugin = LinearPhaseEqPlugin::new(1, 48_000);
+    plugin.bands[4].update(
+        BiquadFilterType::Highpass,
+        500.0,
+        0.707,
+        0.0,
+        true,
+        48_000.0,
+    );
+    plugin.rebuild_fir();
+    let before: f32 = plugin.fir_coeffs.iter().sum();
+
+    plugin.num_filters = 1;
+    plugin.rebuild_cached_parameters();
+    assert!(
+    plugin
+            .get_parameter(&ParameterId::from("band_4_gain"))
+            .is_none()
+    );
+    plugin.rebuild_fir();
+    let after: f32 = plugin.fir_coeffs.iter().sum();
+    assert!(
+        (after - 1.0).abs() < 0.05,
+        "inactive bands must not affect FIR: {after}"
+    );
+    assert!(
+        (before - after).abs() > 0.1,
+        "test setup must exercise the removed band"
+    );
+}
+
+#[test]
+fn test_process_rejects_short_and_preserves_oversized_buffer_tail() {
+    let mut plugin = LinearPhaseEqPlugin::new(2, 48_000);
+    let context = ProcessContext::new(48_000, 4);
+    let mut short = vec![0.0; 7];
+    assert!(plugin.process_in_place(&mut short, &context).is_err());
+
+    let mut oversized = vec![0.25; 10];
+    oversized[8] = f32::from_bits(1); // subnormal sentinel outside active span
+    oversized[9] = 0.5;
+    plugin.process_in_place(&mut oversized, &context).unwrap();
+    assert_eq!(oversized[8].to_bits(), f32::from_bits(1).to_bits());
+    assert_eq!(oversized[9], 0.5);
+}
+
+#[test]
+fn test_from_params_rejects_nonfinite_and_above_nyquist_values() {
+    let mut params = LinearPhaseEqPluginParams {
+        num_filters: 1,
+        fir_length_index: 0,
+        phase_mode_index: 0,
+        auto_gain: false,
+        mix: 1.0,
+        filters: vec![BandConfig {
+            filter_type: "Peak".into(),
+            frequency: f64::NAN,
+            q: 1.0,
+            gain_db: 0.0,
+            active: true,
+        }],
+    };
+    assert!(LinearPhaseEqPlugin::from_params(1, 48_000, params.clone()).is_err());
+    params.filters[0].frequency = 12_000.0;
+    assert!(LinearPhaseEqPlugin::from_params(1, 22_050, params.clone()).is_err());
+    params.filters[0].frequency = 1_000.0;
+    params.filters[0].q = 0.0;
+    assert!(LinearPhaseEqPlugin::from_params(1, 48_000, params).is_err());
+}
 
 #[cfg(test)]
 const DEFAULT_SAMPLE_RATE: u32 = 48000;
@@ -124,14 +197,11 @@ fn test_overlap_buffers_match_fir_tail_length() {
         assert_eq!(overlap.len(), expected_tail);
     }
 
+    assert!(
     plugin
         .set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(3))
-        .unwrap();
-    let expected_tail = plugin.fir_length() - 1;
-    assert!(expected_tail < plugin.fft_size);
-    for overlap in &plugin.overlap {
-        assert_eq!(overlap.len(), expected_tail);
-    }
+            .is_err()
+    );
 }
 
 #[test]
@@ -145,9 +215,7 @@ fn test_rebuild_fir_reuses_design_scratch_vectors() {
     assert!(initial_freq_capacity >= plugin.design_freqs.len());
     assert!(initial_mag_capacity >= plugin.design_magnitudes_db.len());
 
-    plugin
-        .set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(6.0))
-        .unwrap();
+    plugin.bands[0].update(BiquadFilterType::Peak, 1_000.0, 1.0, 6.0, true, 48_000.0);
     plugin.rebuild_fir();
 
     assert_eq!(plugin.design_freqs.capacity(), initial_freq_capacity);
@@ -158,7 +226,7 @@ fn test_rebuild_fir_reuses_design_scratch_vectors() {
 fn test_linear_phase_eq_latency() {
     let plugin = LinearPhaseEqPlugin::new(2, 48000);
     let fir_len = plugin.fir_length();
-    assert_eq!(plugin.latency_samples(), (fir_len - 1) / 2);
+    assert_eq!(plugin.latency_samples(), fir_len / 2 + 32);
 }
 
 #[test]
@@ -175,18 +243,14 @@ fn test_parameter_roundtrip() {
         other => panic!("Expected Float(0.5), got {other:?}"),
     }
 
-    // Set band frequency
+    assert!(
     plugin
         .set_parameter(
             ParameterId::from("band_0_freq"),
-            ParameterValue::Float(2000.0),
+                ParameterValue::Float(2000.0)
         )
-        .unwrap();
-    let val = plugin.get_parameter(&ParameterId::from("band_0_freq"));
-    match val {
-        Some(ParameterValue::Float(v)) => assert!((v - 2000.0).abs() < 1.0),
-        other => panic!("Expected Float(2000.0), got {other:?}"),
-    }
+            .is_err()
+    );
 }
 
 #[test]
@@ -382,44 +446,25 @@ fn test_fir_length_from_index_bounds() {
 }
 
 #[test]
-fn test_set_parameter_num_filters_grows_bands() {
+fn test_fir_response_parameters_are_structural() {
     let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
-    let original = plugin.num_filters;
-    plugin
-        .set_parameter(ParameterId::from("num_filters"), ParameterValue::Int(8))
-        .unwrap();
-    assert_eq!(plugin.num_filters, 8);
-    assert!(plugin.bands.len() >= 8);
-    plugin
-        .set_parameter(
-            ParameterId::from("num_filters"),
-            ParameterValue::Int(original as i32),
-        )
-        .unwrap();
-    assert_eq!(plugin.num_filters, original);
-}
-
-#[test]
-fn test_set_parameter_fir_length_resizes() {
-    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
-    let original_fft = plugin.fft_size;
-    plugin
-        .set_parameter(ParameterId::from("fir_length"), ParameterValue::Int(3))
-        .unwrap();
-    assert_eq!(plugin.fir_length_index, 3);
-    assert_eq!(plugin.fir_length(), 8192);
-    assert!(plugin.fft_size > original_fft);
-    assert_eq!(plugin.overlap[0].len(), 8191);
-}
-
-#[test]
-fn test_set_parameter_auto_gain() {
-    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
-    assert!(!plugin.auto_gain);
-    plugin
-        .set_parameter(ParameterId::from("auto_gain"), ParameterValue::Bool(true))
-        .unwrap();
-    assert!(plugin.auto_gain);
+    for (id, value) in [
+        ("num_filters", ParameterValue::Int(8)),
+        ("fir_length", ParameterValue::Int(3)),
+        ("phase_mode", ParameterValue::Int(1)),
+        ("auto_gain", ParameterValue::Bool(true)),
+        ("band_0_type", ParameterValue::Int(1)),
+        ("band_0_freq", ParameterValue::Float(2_000.0)),
+        ("band_0_q", ParameterValue::Float(2.0)),
+        ("band_0_gain", ParameterValue::Float(6.0)),
+        ("band_0_active", ParameterValue::Bool(false)),
+    ] {
+        let error = plugin
+            .set_parameter(ParameterId::from(id), value)
+            .unwrap_err();
+        assert!(error.contains("structural"), "{id}: {error}");
+    }
+    assert!(!plugin.fir_dirty);
 }
 
 #[test]
@@ -530,85 +575,6 @@ fn test_band_contribution_db_skips_inactive() {
 }
 
 #[test]
-fn test_set_parameter_band_type() {
-    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
-    plugin
-        .set_parameter(ParameterId::from("band_0_type"), ParameterValue::Int(1))
-        .unwrap();
-    assert_eq!(plugin.bands[0].filter_type, BiquadFilterType::Lowshelf);
-    assert!(plugin.fir_dirty);
-    let val = plugin.get_parameter(&ParameterId::from("band_0_type"));
-    assert_eq!(val, Some(ParameterValue::Int(1)));
-}
-
-#[test]
-fn test_set_parameter_band_q() {
-    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
-    plugin
-        .set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(2.0))
-        .unwrap();
-    assert!((plugin.bands[0].q - 2.0).abs() < 1e-6);
-    assert!(plugin.fir_dirty);
-    let val = plugin.get_parameter(&ParameterId::from("band_0_q"));
-    assert_eq!(val, Some(ParameterValue::Float(2.0)));
-}
-
-#[test]
-fn test_set_parameter_band_gain() {
-    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
-    plugin
-        .set_parameter(ParameterId::from("band_0_gain"), ParameterValue::Float(6.0))
-        .unwrap();
-    assert!((plugin.bands[0].gain_db - 6.0).abs() < 1e-6);
-    assert!(plugin.fir_dirty);
-    let val = plugin.get_parameter(&ParameterId::from("band_0_gain"));
-    assert_eq!(val, Some(ParameterValue::Float(6.0)));
-}
-
-#[test]
-fn test_set_parameter_band_active() {
-    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
-    plugin
-        .set_parameter(
-            ParameterId::from("band_0_active"),
-            ParameterValue::Bool(false),
-        )
-        .unwrap();
-    assert!(!plugin.bands[0].active);
-    assert!(plugin.fir_dirty);
-    let val = plugin.get_parameter(&ParameterId::from("band_0_active"));
-    assert_eq!(val, Some(ParameterValue::Bool(false)));
-}
-
-#[test]
-fn test_set_parameter_num_filters_noop() {
-    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
-    plugin.fir_dirty = false;
-    let original = plugin.num_filters;
-    plugin
-        .set_parameter(
-            ParameterId::from("num_filters"),
-            ParameterValue::Int(original as i32),
-        )
-        .unwrap();
-    assert!(!plugin.fir_dirty, "same num_filters should not mark dirty");
-}
-
-#[test]
-fn test_set_parameter_fir_length_noop() {
-    let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
-    plugin.fir_dirty = false;
-    let original = plugin.fir_length_index as i32;
-    plugin
-        .set_parameter(
-            ParameterId::from("fir_length"),
-            ParameterValue::Int(original),
-        )
-        .unwrap();
-    assert!(!plugin.fir_dirty, "same fir_length should not mark dirty");
-}
-
-#[test]
 fn test_set_parameter_mix() {
     let mut plugin = LinearPhaseEqPlugin::new(1, 48000);
     plugin
@@ -683,4 +649,21 @@ fn test_initialize_same_sample_rate_no_rebuild() {
     plugin.fir_dirty = false;
     plugin.initialize(48000).unwrap();
     assert!(!plugin.fir_dirty);
+}
+
+#[test]
+fn rebuild_only_quality_controls_are_structural_in_host_metadata() {
+    let plugin = LinearPhaseEqPlugin::new(1, 48000);
+    for id in ["fir_length", "phase_mode"] {
+        let parameter = plugin
+            .parameters()
+            .into_iter()
+            .find(|parameter| parameter.id.as_str() == id)
+            .unwrap_or_else(|| panic!("missing {id}"));
+        assert_eq!(
+            parameter.update_mode,
+            sotf_host::param_specs::UpdateMode::Structural,
+            "{id}"
+        );
+    }
 }

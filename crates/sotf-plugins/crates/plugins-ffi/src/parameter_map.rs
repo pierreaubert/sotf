@@ -304,7 +304,9 @@ fn get_band_template(
         }
         "MultibandExpander" | "multiband_expander" => Some((multiband_expander::BAND_TEMPLATE, 5)),
         "DynamicEQ" | "dynamic_eq" => Some((dynamic_eq::BAND_PARAMS, 8)),
-        "LinearPhaseEQ" | "linear_phase_eq" => Some((linear_phase_eq::BAND_TEMPLATE, 20)),
+        "LinearPhaseEQ" | "linear_phase_eq" => {
+            Some((linear_phase_eq::BAND_TEMPLATE, linear_phase_eq::MAX_FILTERS))
+        }
         _ => None,
     }
 }

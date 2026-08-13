@@ -1,7 +1,7 @@
 use sotf_host::plugin::ProcessContext;
 use sotf_host::{
-    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, measure_peak_db,
-    run_standard_tests,
+    CountingAlloc, ParametricInPlacePlugin, ParametricInPlacePluginAdapter, assert_no_allocs,
+    measure_peak_db, run_standard_tests,
 };
 use sotf_plugin_linear_phase_eq::{BandConfig, LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 use std::f32::consts::PI;
@@ -57,6 +57,42 @@ fn main() {
     // Run standard QA tests
     let mut plugin = ParametricInPlacePluginAdapter::new(inner);
     run_standard_tests(&mut plugin, "LinearPhaseEqPlugin");
+
+    println!("\n[Test 5] Partitioned-convolution layout/block matrix");
+    for channels in [1, 2, 8, 12] {
+        for fir_length_index in 0..4 {
+            let mut candidate = LinearPhaseEqPlugin::from_params(
+                channels,
+                sample_rate,
+                LinearPhaseEqPluginParams {
+                    num_filters: 1,
+                    fir_length_index,
+                    phase_mode_index: 0,
+                    auto_gain: false,
+                    mix: 1.0,
+                    filters: vec![],
+                },
+            )
+            .unwrap();
+            for frames in [16, 32, 64, 127, 256, 512, 1_024] {
+                let mut audio = vec![0.0; frames * channels];
+                let context = ProcessContext::new(sample_rate, frames);
+                candidate.process_in_place(&mut audio, &context).unwrap();
+                assert_no_allocs("LinearPhaseEqPlugin partitioned process", || {
+                    candidate.process_in_place(&mut audio, &context).unwrap();
+                });
+                let started = std::time::Instant::now();
+                candidate.process_in_place(&mut audio, &context).unwrap();
+                let elapsed = started.elapsed().as_secs_f64();
+                let deadline = frames as f64 / sample_rate as f64;
+                assert!(
+                    elapsed < deadline,
+                    "{channels}ch length-index {fir_length_index} block {frames}: {elapsed:.6}s >= {deadline:.6}s"
+                );
+            }
+        }
+    }
+    println!("  all channels/taps/blocks zero-allocation and below deadline: PASS");
 
     println!("\n[ALL PASS] LinearPhaseEQ QA Complete.");
 }

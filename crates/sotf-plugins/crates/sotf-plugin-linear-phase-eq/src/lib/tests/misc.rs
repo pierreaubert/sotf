@@ -1,11 +1,10 @@
-use sotf_host :: plugin :: { ProcessContext } ;
-use super::super::params;
 use super::super::linear_phase_eq_plugin::LinearPhaseEqPlugin;
 use super::super::types::BandConfig;
 use super::super::types::LinearPhaseEqPluginParams;
-    use super::super::*;
 # [cfg (test)]
 use super::DEFAULT_SAMPLE_RATE;
+use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
+use sotf_host::plugin::ProcessContext;
 
     fn make_context(num_frames: usize) -> ProcessContext<'static> {
         ProcessContext::new(DEFAULT_SAMPLE_RATE, num_frames)
@@ -58,11 +57,11 @@ use super::DEFAULT_SAMPLE_RATE;
         for block in 0..blocks_needed {
             let mut buffer = vec![0.0f32; num_frames * channels];
             let start_frame = block * num_frames;
-            for frame in 0..num_frames {
+        for (frame, output) in buffer.chunks_exact_mut(channels).enumerate() {
                 let t = (start_frame + frame) as f32 / sr as f32;
                 let sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
-                buffer[frame * channels] = sample; // L
-                buffer[frame * channels + 1] = sample; // R
+            output[0] = sample;
+            output[1] = sample;
             }
             let ctx = make_context(num_frames);
             plugin.process_in_place(&mut buffer, &ctx).unwrap();
@@ -126,10 +125,10 @@ use super::DEFAULT_SAMPLE_RATE;
         for block in 0..blocks_needed {
             let mut buffer = vec![0.0f32; num_frames * channels];
             let start_frame = block * num_frames;
-            for frame in 0..num_frames {
+        for (frame, output) in buffer.iter_mut().enumerate() {
                 let t = (start_frame + frame) as f32 / sr as f32;
                 let sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
-                buffer[frame] = sample;
+            *output = sample;
             }
 
             // Measure input RMS (after latency region)
@@ -247,12 +246,10 @@ use super::DEFAULT_SAMPLE_RATE;
         for block in 0..blocks_total {
             let mut buf = vec![0.0f32; num_frames * nc];
             let base = block * num_frames;
-            for frame in 0..num_frames {
+        for (frame, output) in buf.chunks_exact_mut(nc).enumerate() {
                 let t = (base + frame) as f32 / sr as f32;
                 let s = (2.0 * std::f32::consts::PI * freq_hz * t).sin() * 0.5;
-                for ch in 0..nc {
-                    buf[frame * nc + ch] = s;
-                }
+            output.fill(s);
             }
             let ctx = ProcessContext::new(sr, num_frames);
             plugin.process_in_place(&mut buf, &ctx).unwrap();
@@ -398,11 +395,11 @@ use super::DEFAULT_SAMPLE_RATE;
         for block in 0..blocks_needed {
             let mut buffer = vec![0.0f32; num_frames * channels];
             let start_frame = block * num_frames;
-            for frame in 0..num_frames {
+        for (frame, output) in buffer.iter_mut().enumerate() {
                 let t = (start_frame + frame) as f32 / sr as f32;
                 // 5 kHz sine, well above 1 kHz cutoff
                 let sample = (2.0 * std::f32::consts::PI * 5000.0 * t).sin() * 0.5;
-                buffer[frame] = sample;
+            *output = sample;
             }
 
             if block * num_frames > latency + num_frames {
@@ -435,4 +432,3 @@ use super::DEFAULT_SAMPLE_RATE;
             );
         }
     }
-

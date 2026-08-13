@@ -5,16 +5,17 @@ use super::eq_band::EqBand;
 use super::misc::MAG_RESPONSE_POINTS;
 use super::misc::filter_type_to_index;
 use super::misc::fir_length_from_index;
-use super::misc::index_to_filter_type;
 use super::misc::parse_filter_type;
 use super::types::LinearPhaseEqPluginParams;
-use crate::params::{FIR_LENGTH_OPTIONS, PARAMS as LP_PARAMS, PHASE_MODE_OPTIONS};
+use crate::params::{FIR_LENGTH_OPTIONS, MAX_FILTERS, PARAMS as LP_PARAMS, PHASE_MODE_OPTIONS};
 use math_audio_iir_fir::{
     Biquad, BiquadFilterType, FirDesignConfig, FirPhase, WindowType, generate_fir_from_response,
 };
 use num_complex::Complex;
+use plugins_spatial::nupc::NupcEngine;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use sotf_host::param_bridge::apply_spec_update_modes;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
@@ -27,6 +28,10 @@ use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::sync::Arc;
 
+#[allow(
+    dead_code,
+    reason = "legacy OLA buffers retained for state-format compatibility"
+)]
 pub struct LinearPhaseEqPlugin {
     pub(super) channels: usize,
     pub(super) sample_rate: u32,
@@ -43,6 +48,8 @@ pub struct LinearPhaseEqPlugin {
     pub(super) fir_coeffs: Vec<f32>,
     pub(super) fir_spectrum: Vec<Complex<f32>>,
     pub(super) fir_dirty: bool,
+    /// Non-uniform partitioned convolvers with a bounded 32-sample head.
+    pub(super) convolvers: Vec<NupcEngine>,
 
     // FFT planners (Arc'd, no mutex)
     pub(super) fft_forward: Arc<dyn RealToComplex<f32>>,
@@ -65,6 +72,9 @@ pub struct LinearPhaseEqPlugin {
 
     // Dry buffer for mix
     pub(super) dry_buf: Vec<f32>,
+    // Per-channel dry delay used to align the dry branch with linear-phase FIR latency.
+    pub(super) dry_delay: Vec<Vec<f32>>,
+    pub(super) dry_delay_pos: usize,
 
     // Smoothers
     pub(super) mix_smoother: Smoother,
@@ -96,10 +106,19 @@ impl LinearPhaseEqPlugin {
         sample_rate: u32,
         params: LinearPhaseEqPluginParams,
     ) -> Result<Self, String> {
+        if sample_rate == 0 {
+            return Err("sample rate must be positive".into());
+        }
+        if !params.mix.is_finite() || !(0.0..=1.0).contains(&params.mix) {
+            return Err(format!(
+                "mix must be finite and within [0, 1], got {}",
+                params.mix
+            ));
+        }
         let fir_length_index = params.fir_length_index.min(FIR_LENGTH_OPTIONS.len() - 1);
         let phase_mode_index = params.phase_mode_index.min(PHASE_MODE_OPTIONS.len() - 1);
         let fir_length = fir_length_from_index(fir_length_index);
-        let num_filters = params.num_filters.clamp(1, 10);
+        let num_filters = params.num_filters.clamp(1, MAX_FILTERS);
         let sr = sample_rate as f64;
 
         let mut bands = Vec::with_capacity(num_filters);
@@ -108,6 +127,7 @@ impl LinearPhaseEqPlugin {
                 break;
             }
             let ft = parse_filter_type(&fc.filter_type)?;
+            Self::validate_band(fc.frequency, fc.q, fc.gain_db, sr)?;
             bands.push(EqBand::new(
                 ft,
                 fc.frequency,
@@ -140,6 +160,24 @@ impl LinearPhaseEqPlugin {
             params.mix,
             bands,
         ))
+    }
+
+    fn validate_band(frequency: f64, q: f64, gain_db: f64, sample_rate: f64) -> Result<(), String> {
+        let max_frequency = (sample_rate * 0.5 * 0.99).min(20_000.0);
+        if !frequency.is_finite() || frequency < 20.0 || frequency > max_frequency {
+            return Err(format!(
+                "frequency must be finite and within [20, {max_frequency}], got {frequency}"
+            ));
+        }
+        if !q.is_finite() || !(0.1..=10.0).contains(&q) {
+            return Err(format!("Q must be finite and within [0.1, 10], got {q}"));
+        }
+        if !gain_db.is_finite() || !(-24.0..=24.0).contains(&gain_db) {
+            return Err(format!(
+                "gain must be finite and within [-24, 24], got {gain_db}"
+            ));
+        }
+        Ok(())
     }
 
     #[allow(
@@ -184,6 +222,16 @@ impl LinearPhaseEqPlugin {
 
         // Max buffer size: generous allocation for typical audio frame sizes
         let max_buf = fft_size * channels;
+        // Fixed-capacity dry ring: reserve the largest supported linear-phase
+        // latency during construction so phase/FIR changes never allocate in
+        // the processing callback.
+        let dry_delay_len = FIR_LENGTH_OPTIONS
+            .iter()
+            .filter_map(|length| length.parse::<usize>().ok())
+            .map(|length| length / 2 + 32)
+            .max()
+            .unwrap_or(1)
+            .max(1);
 
         let mut plugin = Self {
             channels,
@@ -197,6 +245,7 @@ impl LinearPhaseEqPlugin {
             fir_coeffs: vec![0.0; fir_length],
             fir_spectrum: vec![Complex::new(0.0, 0.0); freq_size],
             fir_dirty: true,
+            convolvers: Vec::new(),
             fft_forward,
             fft_inverse,
             fft_size,
@@ -209,6 +258,8 @@ impl LinearPhaseEqPlugin {
             design_freqs: Vec::new(),
             design_magnitudes_db: Vec::new(),
             dry_buf: vec![0.0; max_buf],
+            dry_delay: vec![vec![0.0; dry_delay_len]; channels],
+            dry_delay_pos: 0,
             mix_smoother: Smoother::new(mix, 20.0, sample_rate),
             cached_parameters: Vec::new(),
         };
@@ -260,8 +311,9 @@ impl LinearPhaseEqPlugin {
         // Include DC (1 Hz to avoid log-space interpolation issues with 0)
         // while still using the real combined response at the low end.
         self.design_freqs.push(1.0);
+        let active_bands = &self.bands[..self.num_filters.min(self.bands.len())];
         self.design_magnitudes_db
-            .push(Self::band_contribution_db(&self.bands, 1.0));
+            .push(Self::band_contribution_db(active_bands, 1.0));
 
         let log_min = 1.0_f64.ln();
         let log_max = nyquist.ln();
@@ -272,7 +324,7 @@ impl LinearPhaseEqPlugin {
             self.design_freqs.push(freq);
 
             self.design_magnitudes_db
-                .push(Self::band_contribution_db(&self.bands, freq));
+                .push(Self::band_contribution_db(active_bands, freq));
         }
 
         let phase = match self.phase_mode_index {
@@ -331,6 +383,9 @@ impl LinearPhaseEqPlugin {
 
         // Pre-compute FFT of the FIR
         self.compute_fir_spectrum();
+        self.convolvers = (0..self.channels)
+            .map(|_| NupcEngine::new(&self.fir_coeffs, 32))
+            .collect();
     }
 
     /// Compute the frequency-domain representation of the FIR.
@@ -395,7 +450,7 @@ impl LinearPhaseEqPlugin {
         ];
 
         // Per-band parameters
-        for (i, band) in self.bands.iter().enumerate() {
+        for (i, band) in self.bands.iter().take(self.num_filters).enumerate() {
             let group = format!("Band {}", i + 1);
             params.push(
                 Parameter::new_int(
@@ -405,7 +460,8 @@ impl LinearPhaseEqPlugin {
                     0,
                     4,
                 )
-                .with_group(&group),
+                .with_group(&group)
+                .with_update_mode(UpdateMode::Structural),
             );
             params.push(
                 Parameter::new_float(
@@ -415,11 +471,13 @@ impl LinearPhaseEqPlugin {
                     20.0,
                     20000.0,
                 )
-                .with_group(&group),
+                .with_group(&group)
+                .with_update_mode(UpdateMode::Structural),
             );
             params.push(
                 Parameter::new_float(&format!("band_{}_q", i), "Q", band.q as f32, 0.1, 10.0)
-                    .with_group(&group),
+                    .with_group(&group)
+                    .with_update_mode(UpdateMode::Structural),
             );
             params.push(
                 Parameter::new_float(
@@ -429,11 +487,13 @@ impl LinearPhaseEqPlugin {
                     -24.0,
                     24.0,
                 )
-                .with_group(&group),
+                .with_group(&group)
+                .with_update_mode(UpdateMode::Structural),
             );
             params.push(
                 Parameter::new_bool(&format!("band_{}_active", i), "Active", band.active)
-                    .with_group(&group),
+                    .with_group(&group)
+                    .with_update_mode(UpdateMode::Structural),
             );
         }
 
@@ -442,6 +502,7 @@ impl LinearPhaseEqPlugin {
     }
 
     /// Resize FFT buffers when FIR length changes.
+    #[allow(dead_code, reason = "retained for compatible prepared-state migration")]
     pub(super) fn resize_fft_buffers(&mut self) {
         let fir_length = self.fir_length();
         let fft_size = (fir_length * 2).next_power_of_two();
@@ -467,6 +528,7 @@ impl LinearPhaseEqPlugin {
             ch_overlap.resize(overlap_len, 0.0);
             ch_overlap.fill(0.0);
         }
+        // The dry ring has fixed capacity independent of FFT/FIR sizing.
     }
 }
 
@@ -481,12 +543,6 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
     }
 
     fn compile_metadata(&self) -> PluginCompileMetadata {
-        if self.auto_gain {
-            return PluginCompileMetadata::boundary(
-                PluginCostClass::Convolution,
-                self.latency_samples(),
-            );
-        }
         PluginCompileMetadata::linear_transform(
             PluginCostClass::Convolution,
             None,
@@ -527,7 +583,7 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
             ParameterId::from("mix"),
             ParameterValue::Float(self.mix_value),
         );
-        for (i, band) in self.bands.iter().enumerate() {
+        for (i, band) in self.bands.iter().take(self.num_filters).enumerate() {
             values.insert(
                 ParameterId::from(format!("band_{}_type", i).as_str()),
                 ParameterValue::Int(filter_type_to_index(band.filter_type) as i32),
@@ -557,122 +613,36 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
             let id_str = id.as_str();
 
             match id_str {
-                "num_filters" => {
-                    if let ParameterValue::Int(v) = value {
-                        let new_count = (v as usize).clamp(1, 10);
-                        if new_count != self.num_filters {
-                            let sr = self.sample_rate as f64;
-                            self.num_filters = new_count;
-                            // Grow bands if needed
-                            while self.bands.len() < new_count {
-                                self.bands.push(EqBand::new(
-                                    BiquadFilterType::Peak,
-                                    1000.0,
-                                    1.0,
-                                    0.0,
-                                    true,
-                                    sr,
+                "num_filters" | "fir_length" | "phase_mode" | "auto_gain" => {
+                    return Err(format!(
+                        "{id_str} is structural; rebuild the plugin to change it"
                                 ));
                             }
-                            // Shrink if needed (just adjust num_filters, keep bands allocated)
-                            self.fir_dirty = true;
-                            self.rebuild_cached_parameters();
-                        }
-                    }
-                }
-                "fir_length" => {
-                    if let ParameterValue::Int(v) = value {
-                        let idx = (v as usize).min(FIR_LENGTH_OPTIONS.len() - 1);
-                        if idx != self.fir_length_index {
-                            self.fir_length_index = idx;
-                            self.fir_coeffs.resize(self.fir_length(), 0.0);
-                            self.resize_fft_buffers();
-                            self.fir_dirty = true;
-                            self.rebuild_cached_parameters();
-                        }
-                    }
-                }
-                "phase_mode" => {
-                    if let ParameterValue::Int(v) = value {
-                        let idx = (v as usize).min(PHASE_MODE_OPTIONS.len() - 1);
-                        if idx != self.phase_mode_index {
-                            self.phase_mode_index = idx;
-                            self.fir_dirty = true;
-                            self.rebuild_cached_parameters();
-                        }
-                    }
-                }
-                "auto_gain" => {
-                    if let ParameterValue::Bool(v) = value {
-                        self.auto_gain = v;
-                        self.fir_dirty = true;
-                        self.rebuild_cached_parameters();
-                    }
-                }
                 "mix" => {
                     if let ParameterValue::Float(v) = value {
+                        if !v.is_finite() || !(0.0..=1.0).contains(&v) {
+                            return Err(format!("mix must be finite and within [0, 1], got {v}"));
+                        }
                         self.mix_value = v;
                         self.mix_smoother.set_target(v);
                         self.rebuild_cached_parameters();
                     }
                 }
-                _ => {
-                    // Try per-band parameters: band_{i}_{param}
-                    if let Some(rest) = id_str.strip_prefix("band_")
-                        && let Some((idx_str, param)) = rest.split_once('_')
-                        && let Ok(idx) = idx_str.parse::<usize>()
-                        && idx < self.bands.len()
-                    {
-                        let sr = self.sample_rate as f64;
-                        let band = &self.bands[idx];
-                        let mut ft = band.filter_type;
-                        let mut freq = band.frequency;
-                        let mut q = band.q;
-                        let mut gain = band.gain_db;
-                        let mut active = band.active;
-
-                        match param {
-                            "type" => {
-                                if let ParameterValue::Int(v) = value {
-                                    ft = index_to_filter_type(v as usize);
-                                }
-                            }
-                            "freq" => {
-                                if let ParameterValue::Float(v) = value {
-                                    freq = v as f64;
-                                }
-                            }
-                            "q" => {
-                                if let ParameterValue::Float(v) = value {
-                                    q = v as f64;
-                                }
-                            }
-                            "gain" => {
-                                if let ParameterValue::Float(v) = value {
-                                    gain = v as f64;
-                                }
-                            }
-                            "active" => {
-                                if let ParameterValue::Bool(v) = value {
-                                    active = v;
-                                }
-                            }
-                            _ => return Err(format!("Unknown band parameter: {param}")),
-                        }
-
-                        self.bands[idx].update(ft, freq, q, gain, active, sr);
-                        self.fir_dirty = true;
-                        self.rebuild_cached_parameters();
-                    } else {
-                        return Err(format!("Unknown parameter: {}", id));
-                    }
+                _ if id_str.starts_with("band_") => {
+                    return Err(format!(
+                        "{id_str} is structural; rebuild the plugin to change it"
+                    ));
                 }
+                _ => return Err(format!("Unknown parameter: {id}")),
             }
         }
         Ok(())
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("sample rate must be positive".into());
+        }
         if sample_rate != self.sample_rate {
             self.sample_rate = sample_rate;
             self.mix_smoother = Smoother::new(self.mix_value, 20.0, sample_rate);
@@ -682,7 +652,8 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
                 band.biquad =
                     Biquad::new(band.filter_type, band.frequency, sr, band.q, band.gain_db);
             }
-            self.fir_dirty = true;
+            self.rebuild_fir();
+            self.fir_dirty = false;
         }
         Ok(())
     }
@@ -692,6 +663,14 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
         for ch_overlap in &mut self.overlap {
             ch_overlap.fill(0.0);
         }
+        for convolver in &mut self.convolvers {
+            convolver.reset();
+        }
+        for delay in &mut self.dry_delay {
+            delay.fill(0.0);
+        }
+        self.dry_delay_pos = 0;
+        self.mix_smoother = Smoother::new(self.mix_value, 20.0, self.sample_rate);
     }
 
     fn process_in_place(
@@ -707,119 +686,68 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
             return Ok(nf);
         }
 
-        // Guard: FFT convolution is only valid while `nf + fir_len - 1 <= fft_size`.
-        // Larger blocks must be chunked before the transform or the FIR tail wraps
-        // circularly into the current block.
-        let max_chunk_frames = self.fft_size.saturating_sub(self.fir_length() - 1);
-        if nf > max_chunk_frames {
-            let mut frame = 0;
-            while frame < nf {
-                let chunk_frames = (nf - frame).min(max_chunk_frames);
-                let start = frame * nc;
-                let end = start + chunk_frames * nc;
-                let chunk_context = ProcessContext::new(context.sample_rate, chunk_frames)
-                    .with_sample_position(context.transport.sample_position + frame as u64)
-                    .with_transport(context.transport)
-                    .with_midi_events(context.midi_events);
-                self.process_in_place(&mut buffer[start..end], &chunk_context)?;
-                frame += chunk_frames;
-            }
-            return Ok(nf);
+        let total_samples = nf
+            .checked_mul(nc)
+            .ok_or_else(|| "audio buffer size overflow".to_string())?;
+        if buffer.len() < total_samples {
+            return Err(format!(
+                "audio buffer too short: need {total_samples}, got {}",
+                buffer.len()
+            ));
+        }
+        if context.sample_rate != self.sample_rate {
+            return Err(format!(
+                "sample-rate mismatch: initialized for {}, got {}",
+                self.sample_rate, context.sample_rate
+            ));
         }
 
-        // Rebuild FIR if parameters changed (outside per-sample loop)
         if self.fir_dirty {
-            self.rebuild_fir();
-            self.fir_dirty = false;
+            return Err(
+                "FIR state is dirty; rebuild or initialize the plugin off the audio thread".into(),
+            );
         }
 
-        let total_samples = nf * nc;
-
-        // Save dry for mix (dry_buf is pre-allocated to fft_size * channels)
-        self.dry_buf[..total_samples].copy_from_slice(&buffer[..total_samples]);
-
-        let mix = self.mix_smoother.next_n(nf);
-
-        // Process each channel independently
-        for ch in 0..nc {
-            // De-interleave: extract this channel from interleaved buffer
-            for frame in 0..nf {
-                self.input_buf[frame] = buffer[frame * nc + ch];
-            }
-            // Zero-pad rest of FFT buffer
-            self.input_buf[nf..self.fft_size].fill(0.0);
-
-            // FFT the input
-            if let Err(e) = self.fft_forward.process_with_scratch(
-                &mut self.input_buf,
-                &mut self.freq_buf,
-                &mut self.fft_scratch_fwd,
-            ) {
-                return Err(format!("Forward FFT failed: {:?}", e));
-            }
-
-            // Multiply with pre-computed FIR spectrum (frequency-domain convolution)
-            for (f, h) in self.freq_buf.iter_mut().zip(self.fir_spectrum.iter()) {
-                *f *= *h;
-            }
-
-            // IFFT
-            if let Err(e) = self.fft_inverse.process_with_scratch(
-                &mut self.freq_buf,
-                &mut self.output_buf,
-                &mut self.fft_scratch_inv,
-            ) {
-                return Err(format!("Inverse FFT failed: {:?}", e));
-            }
-
-            // Normalize IFFT output
-            let norm = 1.0 / self.fft_size as f32;
-            for s in &mut self.output_buf[..self.fft_size] {
-                *s *= norm;
-            }
-
-            // Overlap-add. The overlap buffer stores exactly `fir_len - 1`
-            // pending tail samples, shifted forward by each processed block.
-            let fir_len = self.fir_length();
-            let tail_len = fir_len.saturating_sub(1);
-            let overlap_buf = &mut self.overlap[ch];
-            debug_assert_eq!(overlap_buf.len(), tail_len);
-
-            // Add old overlap to output (first nf samples).
-            let add_len = nf.min(tail_len);
-            for (i, &ov) in overlap_buf.iter().enumerate().take(add_len) {
-                self.output_buf[i] += ov;
-            }
-
-            // Store the new convolution tail plus any unconsumed old tail.
-            for i in 0..tail_len {
-                let new_val = self.output_buf[nf + i];
-                let old_val = if nf + i < tail_len {
-                    overlap_buf[nf + i]
+        // Save a latency-aligned dry signal for mix. Linear-phase FIR output has
+        // group delay; delaying the dry branch avoids comb filtering at partial mix.
+        let dry_delay = self.latency_samples();
+        let ring_len = self.dry_delay.first().map_or(1, Vec::len);
+        for frame in 0..nf {
+            let ring_pos = self.dry_delay_pos % ring_len;
+            let mix = self.mix_smoother.next_n(1);
+            let read_pos = if dry_delay == 0 {
+                ring_pos
+            } else {
+                (ring_pos + ring_len - dry_delay % ring_len) % ring_len
+            };
+            for ch in 0..nc {
+                let index = frame * nc + ch;
+                let sample = buffer[index];
+                let dry = if dry_delay == 0 {
+                    sample
                 } else {
-                    0.0
+                    self.dry_delay[ch][read_pos]
                 };
-                overlap_buf[i] = new_val + old_val;
+                // Keep history in every phase mode so a later switch to
+                // linear phase has a valid dry signal without allocation.
+                self.dry_delay[ch][ring_pos] = sample;
+                let wet = self.convolvers[ch].process_sample(sample);
+                buffer[index] = dry * (1.0 - mix) + wet * mix;
             }
-
-            // Write back to interleaved buffer with dry/wet mix
-            for frame in 0..nf {
-                let wet = self.output_buf[frame];
-                let dry = self.dry_buf[frame * nc + ch];
-                buffer[frame * nc + ch] = dry * (1.0 - mix) + wet * mix;
-            }
+            self.dry_delay_pos = (self.dry_delay_pos + 1) % ring_len;
         }
 
-        flush_denormals_inplace(buffer);
+        flush_denormals_inplace(&mut buffer[..total_samples]);
         Ok(nf)
     }
 
     fn latency_samples(&self) -> usize {
         if self.phase_mode_index == 0 {
-            // Linear-phase FIR has symmetrical impulse response.
-            (self.fir_length() - 1) / 2
+            // The even-tap designer centers its impulse at N/2. NUPC adds one
+            // 32-sample head partition of streaming latency.
+            self.fir_length() / 2 + 32
         } else {
-            0
+            32
         }
     }
 

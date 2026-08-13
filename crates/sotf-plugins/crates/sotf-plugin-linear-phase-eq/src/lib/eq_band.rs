@@ -30,6 +30,7 @@ impl EqBand {
         }
     }
 
+    #[allow(dead_code, reason = "used by prepared-state construction tests")]
     pub(super) fn update(
         &mut self,
         filter_type: BiquadFilterType,

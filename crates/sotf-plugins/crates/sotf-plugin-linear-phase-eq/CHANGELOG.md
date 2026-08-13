@@ -1,5 +1,34 @@
 # Unreleased
 
+## 0.5.6 — 2026-08-12
+
+- Replaced callback-sized full-FIR FFT convolution with 32-sample-head
+  non-uniform partitioned convolution.
+- Made every FIR-response control structural so FIR design/planning and state
+  replacement never run from a warmed callback or splice filter generations.
+- Corrected even-tap and partition latency, per-sample mix smoothing, and stable
+  Auto Gain compile metadata.
+- Added impulse-latency, block-invariant automation, structural-control,
+  malformed-state, zero-allocation, and channels/taps/block deadline coverage.
+
+## 0.5.5
+
+- Align the dry mix branch with the reported linear-phase FIR group delay using
+  preallocated per-channel delay storage; reset clears the delay history.
+- Update passthrough regressions to assert the latency contract rather than an
+  impossible immediate dry signal.
+
+## Fixed
+
+- Validate serialized FIR-EQ parameters (including finite values and the
+  sample-rate-dependent Nyquist limit) before constructing biquads or FIRs.
+- Restrict FIR design and host parameter exposure to the configured active
+  band count; align the shared band keys with the DSP (`type`, `freq`, `q`,
+  `gain`, `active`) and expose exactly ten bands through FFI.
+- Reject malformed audio buffers without panicking, preserve oversized-buffer
+  tails, reset mix smoothing with convolution state, and activate the nested
+  DSP regression module.
+
 ## Changed
 
 - Added selectable linear and minimum-phase FIR design modes.
@@ -77,3 +106,6 @@
 - Process blocks larger than the FFT size by chunking them through the overlap-add path.
 - Avoid silently passing oversized blocks through dry while still reporting FIR latency.
 - Add regression coverage that verifies large blocks are processed.
+# 0.5.7
+
+- Mark FIR length and phase mode structural in host-visible metadata, matching their rebuild-only setters.

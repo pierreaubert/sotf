@@ -19,6 +19,6 @@ cargo test -p sotf-plugin-linear-phase-eq
 
 ## Important Notes
 
-- Linear phase preserves phase coherence and reports `(fir_length - 1) / 2` latency.
-- Minimum phase reports no fixed group delay and avoids pre-ringing.
+- Linear phase preserves phase coherence and reports `fir_length / 2 + 32` samples, including partition latency.
+- Minimum phase reports the 32-sample partition latency and avoids pre-ringing.
 - FIR convolution remains more CPU-intensive than the standard IIR EQ.

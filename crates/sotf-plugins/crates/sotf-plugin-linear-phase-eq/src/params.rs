@@ -21,22 +21,36 @@ use sotf_host::plugin_params::PluginParamDef;
 
 pub const FIR_LENGTH_OPTIONS: &[&str] = &["1024", "2048", "4096", "8192"];
 pub const PHASE_MODE_OPTIONS: &[&str] = &["Linear", "Minimum"];
+pub const MAX_FILTERS: usize = 10;
 
 // ============================================================================
 // Parameter Specifications
 // ============================================================================
 
 pub const PARAMS: &[ParamSpec] = &[
-    ParamSpec::int("Num Filters", "num_filters", 5, 1, 10, 1, "", "EQ")
+    ParamSpec::int(
+        "Num Filters",
+        "num_filters",
+        5,
+        1,
+        MAX_FILTERS as i64,
+        1,
+        "",
+        "EQ",
+    )
         .structural()
         .doc("Number of EQ bands"),
     ParamSpec::choice("FIR Length", "fir_length", 1, FIR_LENGTH_OPTIONS, "Quality")
+        .structural()
         .setup()
         .doc("FIR length in taps (higher = better bass resolution, more latency)"),
     ParamSpec::choice("Phase Mode", "phase_mode", 0, PHASE_MODE_OPTIONS, "Phase")
+        .structural()
         .setup()
         .doc("FIR phase design mode"),
-    ParamSpec::bool_param("Auto Gain", "auto_gain", false, "Output").doc("Compensate output level"),
+    ParamSpec::bool_param("Auto Gain", "auto_gain", false, "Output")
+        .structural()
+        .doc("Compensate output level"),
     ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output")
         .scaled(100.0)
         .output()
@@ -51,15 +65,16 @@ pub const PARAMS: &[ParamSpec] = &[
 pub const BAND_TEMPLATE: &[ParamSpec] = &[
     ParamSpec::choice(
         "Type",
-        "filter_type",
+        "type",
         0,
         &["Peak", "Lowshelf", "Highshelf", "Lowpass", "Highpass"],
         "Band",
     )
+    .structural()
     .doc("Filter type"),
     ParamSpec::float(
         "Frequency",
-        "frequency",
+        "freq",
         1000.0,
         20.0,
         20000.0,
@@ -67,10 +82,17 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
         "Hz",
         "Band",
     )
+    .structural()
     .doc("Center frequency"),
-    ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.05, "", "Band").doc("Bandwidth"),
-    ParamSpec::float("Gain", "gain_db", 0.0, -24.0, 24.0, 0.5, "dB", "Band").doc("Boost/cut"),
-    ParamSpec::bool_param("Active", "active", true, "Band").doc("Enable this band"),
+    ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.05, "", "Band")
+        .structural()
+        .doc("Bandwidth"),
+    ParamSpec::float("Gain", "gain", 0.0, -24.0, 24.0, 0.5, "dB", "Band")
+        .structural()
+        .doc("Boost/cut"),
+    ParamSpec::bool_param("Active", "active", true, "Band")
+        .structural()
+        .doc("Enable this band"),
 ];
 
 // ============================================================================

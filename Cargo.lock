@@ -10769,10 +10769,11 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-linear-phase-eq"
-version = "0.5.3"
+version = "0.5.7"
 dependencies = [
  "math-iir-fir",
  "num-complex 0.4.6",
+ "plugins-spatial",
  "proptest 1.11.0",
  "realfft",
  "serde",
