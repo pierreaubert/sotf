@@ -67,7 +67,6 @@ fn main() {
         correction_strength: 0.9,  // strong correction
         drift_smoothing: 0.85,     // smooth out rapid jitter
         confidence_threshold: 0.3, // lower threshold = correct even uncertain drift
-        phase_vocoder: true,       // duration-preserving pitch shift
         ..PndPluginParams::default()
     };
 
@@ -75,7 +74,7 @@ fn main() {
     println!("  Correction strength:  {}", params.correction_strength);
     println!("  Drift smoothing:      {}", params.drift_smoothing);
     println!("  Confidence threshold: {}", params.confidence_threshold);
-    println!("  Phase vocoder:        {}", params.phase_vocoder);
+    println!("  Engine:               duration-preserving pitch correction");
     println!();
 
     let mut plugin = PndPlugin::from_params(channels, params);

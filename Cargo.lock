@@ -10840,11 +10840,9 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-pnd"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
- "audioadapter-buffers",
  "hound",
- "rubato",
  "rustfft 6.4.1",
  "serde",
  "serde_json",

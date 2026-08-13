@@ -4,6 +4,34 @@
 
 ## Remediation status — 2026-08-12
 
+- P0/P1 architecture and latency closed in 0.5.10: PND is now exclusively a
+  fixed-frame, duration-preserving correction insert. The variable-duration
+  rubato SRC, bounded frame dropping, and dry underrun fallback were removed;
+  device-clock SRC belongs at a stream boundary with independent clocks. A
+  1536-frame causal prefill yields a measured 2047-frame WOLA delay, invariant
+  across 1/64/511/512/1024 and irregular callback partitions.
+- Preset migration is explicit: canonical parameter schema v2 removes the
+  `phase_vocoder` control, and both legacy false and true values migrate to the
+  sole duration-preserving engine. Compatibility input accepts the old field
+  but new plugin and engine state no longer serializes it.
+- Sustained minimum/maximum corrections now run for two minutes each with exact
+  fixed-frame counts, finite nonzero steady output, and no queue whose fill can
+  drift. Buffer validation is pre-state and retry-equivalent. Process and reset
+  have allocation-counter regressions.
+- Detector evidence now covers a 60 dB amplitude span, noisy FFT-bin-edge
+  pilots, a controlled 40/20/10 dB white-noise SNR sweep, silence-to-tone
+  authority, and musical motion outside the reference guard. Loss of referenced
+  pilot authority now returns correction toward unity on each completed hop.
+  Analyzer decisions and vocoder input advance on the same sample clock, with
+  onset/step output and ratio regressions across all latency-test partitions.
+  Vocoder evidence covers bidirectional frequency, unity amplitude/SNR, impulse
+  latency, and transient-energy localization. All channels retain their order
+  and duration and use one confidence-consensus correction ratio. Reset
+  immediately publishes unity/default diagnostics through a preallocated
+  three-generation cache even when readers hold the preceding generations.
+- Transient identity/peak phase locking remains unimplemented and is not
+  claimed. Formant preservation also remains explicitly unsupported.
+
 - P1 factory validation fixed in 0.5.7: `try_from_params` applies finite,
   schema-range, and non-zero-channel checks, and both workspace factories use
   the fallible constructor. Malformed factory regressions are covered.

@@ -1,5 +1,6 @@
 use super::consts::PV_FFT_SIZE;
 use super::consts::PV_HOP_SIZE;
+use super::consts::PV_PREFILL_FRAMES;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use std::sync::Arc;
@@ -51,7 +52,7 @@ impl PhaseVocoderChannel {
             fft_inverse,
             analysis_window,
             input_buf: vec![0.0; PV_FFT_SIZE],
-            input_fill: 0,
+            input_fill: PV_PREFILL_FRAMES,
             output_accum: vec![0.0; PV_FFT_SIZE * 4],
             output_read: 0,
             output_fill: 0,
@@ -67,7 +68,7 @@ impl PhaseVocoderChannel {
 
     pub(super) fn reset(&mut self) {
         self.input_buf.fill(0.0);
-        self.input_fill = 0;
+        self.input_fill = PV_PREFILL_FRAMES;
         self.output_accum.fill(0.0);
         self.output_read = 0;
         self.output_fill = 0;
@@ -246,5 +247,68 @@ mod tests {
                 "ratio {ratio} should produce {expected_hz} Hz, got {frequency} Hz"
             );
         }
+    }
+
+    #[test]
+    fn unity_ratio_preserves_tone_amplitude_and_snr_after_fixed_latency() {
+        use super::super::consts::PV_LATENCY_FRAMES;
+
+        let sample_rate = 48_000.0;
+        let frequency = 997.0;
+        let frames = 96_000;
+        let rendered = render_tone(frequency, 1.0, sample_rate, frames);
+        let start = PV_LATENCY_FRAMES + PV_FFT_SIZE * 4;
+        let mut signal_energy = 0.0_f64;
+        let mut error_energy = 0.0_f64;
+        for (output_index, &actual) in rendered.iter().enumerate().skip(start) {
+            let input_index = output_index - PV_LATENCY_FRAMES;
+            let expected = 0.5
+                * (2.0 * std::f32::consts::PI * frequency * input_index as f32 / sample_rate).sin();
+            signal_energy += f64::from(expected * expected);
+            let error = actual - expected;
+            error_energy += f64::from(error * error);
+        }
+        let snr_db = 10.0 * (signal_energy / error_energy.max(f64::MIN_POSITIVE)).log10();
+        let rms = (signal_energy / (frames - start) as f64).sqrt();
+        let output_rms = (rendered[start..]
+            .iter()
+            .map(|sample| f64::from(sample * sample))
+            .sum::<f64>()
+            / (frames - start) as f64)
+            .sqrt();
+        assert!((output_rms - rms).abs() < 0.01, "RMS {output_rms} vs {rms}");
+        assert!(snr_db > 35.0, "unity phase-vocoder SNR was {snr_db:.1} dB");
+    }
+
+    #[test]
+    fn impulse_transient_energy_remains_localized_without_a_formant_claim() {
+        use super::super::consts::PV_LATENCY_FRAMES;
+
+        let mut channel = PhaseVocoderChannel::new();
+        let frames = PV_LATENCY_FRAMES + PV_FFT_SIZE * 3;
+        let mut output = vec![0.0; frames];
+        for (frame, output_sample) in output.iter_mut().enumerate() {
+            channel.input_buf[channel.input_fill] = if frame == 0 { 1.0 } else { 0.0 };
+            channel.input_fill += 1;
+            if channel.input_fill >= PV_FFT_SIZE {
+                channel.process_hop(1.0);
+            }
+            if channel.output_fill > 0 {
+                let index = channel.output_read % channel.output_accum.len();
+                *output_sample = channel.output_accum[index];
+                channel.output_accum[index] = 0.0;
+                channel.output_read += 1;
+                channel.output_fill -= 1;
+            }
+        }
+        let total_energy: f32 = output.iter().map(|sample| sample * sample).sum();
+        let local_start = PV_LATENCY_FRAMES.saturating_sub(PV_HOP_SIZE);
+        let local_end = (PV_LATENCY_FRAMES + PV_HOP_SIZE + 1).min(output.len());
+        let local_energy: f32 = output[local_start..local_end]
+            .iter()
+            .map(|sample| sample * sample)
+            .sum();
+        assert!(total_energy > 0.5);
+        assert!(local_energy / total_energy > 0.95);
     }
 }

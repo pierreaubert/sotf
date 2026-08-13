@@ -1111,7 +1111,9 @@ pub enum PluginSettings {
         confidence_threshold: f64,
         #[serde(default = "default_pnd_reference_frequency_hz")]
         reference_frequency_hz: f64,
-        #[serde(default)]
+        /// Legacy v1 preset input only. Both values migrate to PND's sole
+        /// duration-preserving engine and the field is not serialized again.
+        #[serde(default, skip_serializing)]
         phase_vocoder: bool,
     },
     ABCompare {
@@ -2002,7 +2004,7 @@ impl PluginSettings {
                     multi_channel_analysis: p(pn, "multi_channel_analysis").default_bool(),
                     confidence_threshold: p(pn, "confidence_threshold").default_f64(),
                     reference_frequency_hz: p(pn, "reference_frequency_hz").default_f64(),
-                    phase_vocoder: p(pn, "phase_vocoder").default_bool(),
+                    phase_vocoder: true,
                 }
             }
             PluginType::ABCompare => {
@@ -2329,6 +2331,25 @@ mod tests {
         let serialized = serde_json::to_value(settings).unwrap();
         assert!(serialized.get("LinearPhaseEq").is_some());
         assert!(serialized.get("FirDesigner").is_none());
+    }
+
+    #[test]
+    fn pnd_legacy_engine_selector_is_accepted_but_not_reserialized() {
+        for legacy in [false, true] {
+            let settings: PluginSettings = serde_json::from_value(serde_json::json!({
+                "Pnd": {
+                    "phase_vocoder": legacy
+                }
+            }))
+            .expect("deserialize legacy PND settings");
+
+            assert!(matches!(settings, PluginSettings::Pnd { .. }));
+            let serialized = serde_json::to_value(settings).expect("serialize migrated PND");
+            let pnd = serialized["Pnd"]
+                .as_object()
+                .expect("PND variant should serialize as an object");
+            assert!(!pnd.contains_key("phase_vocoder"));
+        }
     }
 
     #[test]

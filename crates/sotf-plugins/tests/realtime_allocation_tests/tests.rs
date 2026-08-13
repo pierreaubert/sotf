@@ -477,6 +477,10 @@ fn test_pnd_zero_alloc() {
             let _ = plugin.get_data();
         }
     });
+
+    assert_no_allocs("PndPlugin::reset", || {
+        plugin.reset();
+    });
 }
 
 #[test]

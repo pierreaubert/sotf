@@ -1,3 +1,27 @@
+# 0.5.10
+
+## Breaking semantic correction
+
+- Redefined PND as a fixed-frame, duration-preserving correction insert and removed the
+  unsustainable variable-duration rubato SRC rings, oldest-frame dropping, and dry underrun
+  fallback. Device-clock correction/SRC now explicitly belongs outside the plugin.
+- Made the preallocated 2048-point/512-hop phase vocoder the sole correction engine. Every
+  successful callback overwrites and returns exactly the requested frame count.
+- Added a fixed 1536-frame causal prefill and report the measured 2047-frame WOLA latency,
+  invariant for 1/64/511/512/1024 and irregular callback partitions.
+- Bumped the canonical parameter schema to v2. Legacy `phase_vocoder: false` and `true` states
+  both migrate explicitly to the duration-preserving engine; new state omits the retired toggle.
+- Made analyzer decisions and correction-strength smoothing sample-clock based, so onset/step
+  output and ratio state are identical across callback partitions.
+- Release referenced correction toward unity on every completed low-confidence hop after pilot
+  authority disappears. Reset is allocation-free and immediately publishes default diagnostics,
+  including while readers hold the two preceding cache generations.
+- Documented the shared-ratio/per-channel multichannel policy and the absence of formant
+  preservation and transient phase locking.
+- Added multi-minute correction-extreme, transactional error, detector amplitude/SNR/bin-edge/
+  silence-tone-motion, controlled 40/20/10 dB SNR sweep, unity amplitude/SNR, transient
+  localization, multichannel, callback-partition, process, and reset allocation evidence.
+
 # 0.5.9
 
 - Correct the absolute-reference resampler direction and add end-to-end

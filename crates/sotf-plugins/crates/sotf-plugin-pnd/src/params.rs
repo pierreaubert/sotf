@@ -82,10 +82,6 @@ pub const PARAMS: &[ParamSpec] = &[
         "Correction",
     )
     .doc("Known pilot/note frequency for absolute correction; 0 uses change-only tracking"),
-    ParamSpec::bool_param("Phase Vocoder", "phase_vocoder", false, "Correction")
-        .structural()
-        .setup()
-        .doc("Use phase vocoder for correction"),
 ];
 
 // ============================================================================
@@ -99,10 +95,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             "CORRECTION",
             "CORRECTION",
             &[
-                ControlSpec::knob(0),   // correction_strength
-                ControlSpec::knob(4),   // confidence_threshold
-                ControlSpec::knob(5),   // reference_frequency_hz
-                ControlSpec::toggle(6), // phase_vocoder
+                ControlSpec::knob(0), // correction_strength
+                ControlSpec::knob(4), // confidence_threshold
+                ControlSpec::knob(5), // reference_frequency_hz
             ],
         ),
         ControlGroup::new(
@@ -145,8 +140,6 @@ pub struct Params {
     pub confidence_threshold: f64,
     #[serde(default = "d_reference_frequency_hz")]
     pub reference_frequency_hz: f64,
-    #[serde(default = "d_phase_vocoder")]
-    pub phase_vocoder: bool,
 }
 
 fn d_correction_strength() -> f64 {
@@ -167,9 +160,6 @@ fn d_confidence_threshold() -> f64 {
 fn d_reference_frequency_hz() -> f64 {
     pk(PARAMS, "reference_frequency_hz").default_f64()
 }
-fn d_phase_vocoder() -> bool {
-    pk(PARAMS, "phase_vocoder").default_bool()
-}
 
 impl Default for Params {
     fn default() -> Self {
@@ -180,7 +170,6 @@ impl Default for Params {
             multi_channel_analysis: d_multi_channel_analysis(),
             confidence_threshold: d_confidence_threshold(),
             reference_frequency_hz: d_reference_frequency_hz(),
-            phase_vocoder: d_phase_vocoder(),
         }
     }
 }
@@ -192,7 +181,7 @@ impl Default for Params {
 impl PluginParamDef for Params {
     const PARAMS: &'static [ParamSpec] = PARAMS;
     const LAYOUT: Option<&'static PluginLayout> = Some(&LAYOUT);
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
     const PLUGIN_TYPE_KEY: &'static str = "pnd";
 
     fn param_value(&self, index: usize) -> Option<f64> {
@@ -207,7 +196,6 @@ impl PluginParamDef for Params {
             }),
             4 => Some(self.confidence_threshold),
             5 => Some(self.reference_frequency_hz),
-            6 => Some(if self.phase_vocoder { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -220,9 +208,19 @@ impl PluginParamDef for Params {
             3 => self.multi_channel_analysis = value > 0.5,
             4 => self.confidence_threshold = value,
             5 => self.reference_frequency_hz = value,
-            6 => self.phase_vocoder = value > 0.5,
             _ => {}
         }
+    }
+
+    fn migrate(mut value: serde_json::Value, from_version: u32) -> serde_json::Value {
+        if from_version < 2
+            && let Some(object) = value.as_object_mut()
+        {
+            // Both legacy values selected behavior that is now replaced by
+            // the sole fixed-frame, duration-preserving correction engine.
+            object.remove("phase_vocoder");
+        }
+        value
     }
 }
 
@@ -267,7 +265,6 @@ mod tests {
             original.reference_frequency_hz,
             restored.reference_frequency_hz
         );
-        assert_eq!(original.phase_vocoder, restored.phase_vocoder);
     }
 
     #[test]
@@ -297,6 +294,22 @@ mod tests {
             p.reference_frequency_hz,
             pk(PARAMS, "reference_frequency_hz").default_f64()
         );
-        assert_eq!(p.phase_vocoder, pk(PARAMS, "phase_vocoder").default_bool());
+    }
+
+    #[test]
+    fn legacy_phase_vocoder_values_migrate_explicitly_to_v2_schema() {
+        for legacy in [false, true] {
+            let migrated = Params::migrate(
+                serde_json::json!({
+                    "correction_strength": 0.75,
+                    "phase_vocoder": legacy,
+                }),
+                1,
+            );
+            assert_eq!(migrated["correction_strength"], 0.75);
+            assert!(migrated.get("phase_vocoder").is_none());
+            let params: Params = serde_json::from_value(migrated).unwrap();
+            assert_eq!(params.correction_strength, 0.75);
+        }
     }
 }

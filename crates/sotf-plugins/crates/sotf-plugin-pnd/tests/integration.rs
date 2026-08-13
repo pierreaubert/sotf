@@ -27,7 +27,7 @@ fn integration_default_parameters() {
     assert!(ids.contains(&"multi_channel_analysis"));
     assert!(ids.contains(&"confidence_threshold"));
     assert!(ids.contains(&"reference_frequency_hz"));
-    assert!(ids.contains(&"phase_vocoder"));
+    assert!(!ids.contains(&"phase_vocoder"));
 }
 
 #[test]
@@ -161,20 +161,13 @@ fn integration_parameter_validation_errors() {
 }
 
 #[test]
-fn integration_phase_vocoder_state_transition() {
+fn integration_legacy_phase_vocoder_false_uses_duration_preserving_engine() {
     let mut plugin = PndPlugin::new(2);
-    // Toggle phase vocoder on and off through the public parameter API.
-    plugin
-        .set_parameter(
-            ParameterId::from("phase_vocoder"),
-            ParameterValue::Bool(true),
-        )
-        .unwrap();
     plugin.initialize(44100).unwrap();
-    let v = plugin
-        .get_parameter(&ParameterId::from("phase_vocoder"))
-        .unwrap();
-    assert_eq!(v, ParameterValue::Bool(true));
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("phase_vocoder")),
+        None
+    );
 
     let num_frames = 4096;
     let mut input = vec![0.0f32; num_frames * 2];
@@ -189,15 +182,26 @@ fn integration_phase_vocoder_state_transition() {
     let written = plugin.process(&input, &mut output, &ctx).unwrap();
     assert_eq!(written, num_frames);
     assert!(output.iter().all(|s| s.is_finite()));
+}
 
-    assert!(
-        plugin
-            .set_parameter(
-                ParameterId::from("phase_vocoder"),
-                ParameterValue::Bool(false),
-            )
-            .is_err()
-    );
+#[test]
+fn legacy_phase_vocoder_values_deserialize_identically_and_are_not_reserialized() {
+    for legacy in [false, true] {
+        let params: PndPluginParams = serde_json::from_value(serde_json::json!({
+            "phase_vocoder": legacy,
+            "correction_strength": 0.5
+        }))
+        .unwrap();
+        let serialized = serde_json::to_value(&params).unwrap();
+        assert!(serialized.get("phase_vocoder").is_none());
+        let mut plugin = PndPlugin::try_from_params(1, params).unwrap();
+        plugin.initialize(48_000).unwrap();
+        assert_eq!(plugin.latency_samples(), 2047);
+        assert_eq!(
+            plugin.get_parameter(&ParameterId::from("phase_vocoder")),
+            None
+        );
+    }
 }
 
 #[test]
@@ -248,7 +252,7 @@ fn integration_reset_clears_state() {
     assert!(output2.iter().all(|s| s.is_finite()));
 
     // Latency should remain stable across reset.
-    assert_eq!(plugin.latency_samples(), 1024);
+    assert_eq!(plugin.latency_samples(), 2047);
 }
 
 #[test]

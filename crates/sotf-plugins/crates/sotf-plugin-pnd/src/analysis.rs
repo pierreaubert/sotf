@@ -652,4 +652,91 @@ mod tests {
         analyzer.peak_scratch = vec![(500.0, 1.0), (2_000.0, 1.0)];
         assert_eq!(analyzer.estimate_against_reference(440.0), (1.0, 0.0));
     }
+
+    fn tone(frequency: f32, amplitude: f32, frames: usize) -> Vec<f32> {
+        (0..frames)
+            .map(|frame| {
+                amplitude * (2.0 * std::f32::consts::PI * frequency * frame as f32 / 48_000.0).sin()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn reference_detection_is_amplitude_invariant_over_60_db() {
+        for amplitude in [1.0, 0.1, 0.01, 0.001] {
+            let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
+            analyzer.analyze(&tone(444.4, amplitude, 48_000));
+            let (ratio, confidence) = analyzer.estimate_against_reference(440.0);
+            assert!(
+                (ratio - 1.01).abs() < 0.003,
+                "amplitude {amplitude}: {ratio}"
+            );
+            assert!(confidence > 0.7, "amplitude {amplitude}: {confidence}");
+        }
+    }
+
+    #[test]
+    fn reference_detection_tracks_a_tone_at_an_fft_bin_edge_with_noise() {
+        let frequency = (19.5 * 48_000.0 / 2048.0) as f32;
+        let mut seed = 0x1234_5678_u32;
+        let samples: Vec<f32> = tone(frequency, 0.2, 48_000)
+            .into_iter()
+            .map(|sample| {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let noise = (seed as f32 / u32::MAX as f32 - 0.5) * 0.01;
+                sample + noise
+            })
+            .collect();
+        let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
+        analyzer.analyze(&samples);
+        let (ratio, confidence) = analyzer.estimate_against_reference(frequency / 1.01);
+        assert!((ratio - 1.01).abs() < 0.004, "bin-edge ratio {ratio}");
+        assert!(confidence > 0.5, "bin-edge confidence {confidence}");
+    }
+
+    #[test]
+    fn reference_detection_has_a_controlled_white_noise_snr_floor() {
+        let frequency = 444.4;
+        let tone_amplitude = 0.2_f32;
+        for snr_db in [40.0_f32, 20.0, 10.0] {
+            let tone_rms = tone_amplitude / 2.0_f32.sqrt();
+            let noise_rms = tone_rms / 10.0_f32.powf(snr_db / 20.0);
+            let noise_peak_to_peak = noise_rms * 12.0_f32.sqrt();
+            let mut seed = 0x9e37_79b9_u32;
+            let samples: Vec<f32> = tone(frequency, tone_amplitude, 48_000)
+                .into_iter()
+                .map(|sample| {
+                    seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    let uniform = seed as f32 / u32::MAX as f32 - 0.5;
+                    sample + uniform * noise_peak_to_peak
+                })
+                .collect();
+            let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
+            analyzer.analyze(&samples);
+            let (ratio, confidence) = analyzer.estimate_against_reference(440.0);
+            assert!(
+                (ratio - 1.01).abs() < 0.004,
+                "{snr_db} dB SNR ratio was {ratio}"
+            );
+            assert!(
+                confidence > 0.5,
+                "{snr_db} dB SNR confidence was {confidence}"
+            );
+        }
+    }
+
+    #[test]
+    fn silence_tone_and_musical_motion_do_not_create_stale_authority() {
+        let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
+        analyzer.analyze(&vec![0.0; 4096]);
+        assert_eq!(analyzer.estimate_against_reference(440.0), (1.0, 0.0));
+
+        analyzer.analyze(&tone(440.0, 0.25, 8192));
+        assert!(analyzer.estimate_against_reference(440.0).1 > 0.8);
+
+        // A musical move outside the ±5% pilot guard must revoke authority
+        // instead of being interpreted as device-clock correction.
+        analyzer.analyze(&tone(523.25, 0.25, 8192));
+        assert_eq!(analyzer.estimate_against_reference(440.0), (1.0, 0.0));
+    }
 }

@@ -55,7 +55,7 @@ fn test_pnd_processing_signal() {
 
     plugin.process(&input, &mut output, &context).unwrap();
 
-    // Check output has energy (resampler adds some latency but should produce output)
+    // Check output has energy after the duration-preserving engine's startup latency.
     // Note: Due to initial latency, the first block might be quiet or ramp up
     // We check that it's not all zeros or NaN
     let output_energy: f32 = output.iter().map(|x| x * x).sum();

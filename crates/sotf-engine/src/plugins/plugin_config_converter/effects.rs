@@ -437,7 +437,7 @@ pub fn convert_pnd(settings: &PluginSettings, _sample_rate: f64) -> Option<Plugi
         multi_channel_analysis,
         confidence_threshold,
         reference_frequency_hz,
-        phase_vocoder,
+        phase_vocoder: _,
     } = settings
     else {
         return None;
@@ -451,7 +451,6 @@ pub fn convert_pnd(settings: &PluginSettings, _sample_rate: f64) -> Option<Plugi
             "multi_channel_analysis": multi_channel_analysis,
             "confidence_threshold": confidence_threshold,
             "reference_frequency_hz": reference_frequency_hz,
-            "phase_vocoder": phase_vocoder,
         }),
     ))
 }
@@ -529,5 +528,22 @@ mod tests {
 
         let config = convert_saturation(&settings, 48_000.0).unwrap();
         assert_eq!(config.parameters["mode"], "Asymmetric");
+    }
+
+    #[test]
+    fn pnd_legacy_engine_selector_has_one_duration_preserving_conversion() {
+        let mut converted = Vec::new();
+        for legacy in [false, true] {
+            let settings: PluginSettings = serde_json::from_value(serde_json::json!({
+                "Pnd": {
+                    "phase_vocoder": legacy
+                }
+            }))
+            .expect("deserialize legacy PND settings");
+            let config = convert_pnd(&settings, 48_000.0).expect("convert PND settings");
+            assert!(config.parameters.get("phase_vocoder").is_none());
+            converted.push(config.parameters);
+        }
+        assert_eq!(converted[0], converted[1]);
     }
 }

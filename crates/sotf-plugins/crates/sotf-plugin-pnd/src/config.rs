@@ -31,7 +31,7 @@ pub fn default_reference_frequency_hz() -> f32 {
 }
 
 pub fn default_phase_vocoder() -> bool {
-    pk(PD, "phase_vocoder").default_bool()
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,7 +54,9 @@ pub struct PndPluginParams {
     #[serde(default = "default_reference_frequency_hz")]
     pub reference_frequency_hz: f32,
 
-    #[serde(default = "default_phase_vocoder")]
+    /// Legacy preset compatibility only. Both `false` and `true` select the
+    /// duration-preserving engine; new serialization omits this field.
+    #[serde(default = "default_phase_vocoder", skip_serializing)]
     pub phase_vocoder: bool,
 }
 
