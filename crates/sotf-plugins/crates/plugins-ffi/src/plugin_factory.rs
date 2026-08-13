@@ -11,10 +11,24 @@ pub fn create_plugin(
     plugin_type: &str,
     config_json: &str,
     input_channels: usize,
-    _output_channels: usize,
+    output_channels: usize,
     sample_rate: u32,
 ) -> Result<Box<dyn Plugin>, String> {
-    plugins_bridge::create_plugin(plugin_type, input_channels, sample_rate, config_json)
+    let plugin =
+        plugins_bridge::create_plugin(plugin_type, input_channels, sample_rate, config_json)?;
+    if plugin.input_channels() != input_channels {
+        return Err(format!(
+            "Plugin {plugin_type} created with {} input channels, requested {input_channels}",
+            plugin.input_channels()
+        ));
+    }
+    if plugin.output_channels() != output_channels {
+        return Err(format!(
+            "Plugin {plugin_type} created with {} output channels, requested {output_channels}",
+            plugin.output_channels()
+        ));
+    }
+    Ok(plugin)
 }
 
 #[cfg(test)]
@@ -47,5 +61,13 @@ mod tests {
         let config_json = r#"{"filters": []}"#;
         let result = create_plugin("EQ", config_json, 2, 2, 48000);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_downmix_uses_independent_input_and_output_widths() {
+        let plugin = create_plugin("Downmix", "{}", 6, 2, 48_000).unwrap();
+        assert_eq!(plugin.input_channels(), 6);
+        assert_eq!(plugin.output_channels(), 2);
+        assert!(create_plugin("Downmix", "{}", 6, 6, 48_000).is_err());
     }
 }

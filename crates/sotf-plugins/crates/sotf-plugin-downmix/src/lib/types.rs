@@ -11,7 +11,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownmixPluginParams {
+    #[serde(default)]
     pub input_channels: usize,
+    /// Explicit structural channel layout (for example `"5.1.2"`). Required
+    /// when the channel count is ambiguous (currently 8 and 10 channels).
+    #[serde(default)]
+    pub input_layout: Option<String>,
     #[serde(default = "default_center_gain_db")]
     pub center_gain_db: f32,
     #[serde(default = "default_surround_gain_db")]
@@ -34,7 +39,7 @@ pub struct DownmixPluginParams {
     pub matrix_ltrt: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct DownmixCoeffs {
     pub(super) left_gain: f32,
     pub(super) right_gain: f32,

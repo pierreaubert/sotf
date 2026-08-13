@@ -9,6 +9,7 @@ impl PluginFuzzer for DownmixFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let params = DownmixPluginParams {
             input_channels: channels,
+            input_layout: None,
             center_gain_db: rng.random_range(-6.0..3.0),
             surround_gain_db: rng.random_range(-6.0..3.0),
             height_gain_db: rng.random_range(-6.0..3.0),

@@ -1429,6 +1429,10 @@ pub(super) struct DownmixArgs {
     #[arg(id = "downmix_enabled", long = "downmix", default_value_t = false)]
     pub(super) enabled: bool,
 
+    /// Source speaker layout when channel count is ambiguous (for example 7.1 or 5.1.2)
+    #[arg(long = "downmix-input-layout")]
+    pub(super) input_layout: Option<String>,
+
     /// Downmix center channel gain in dB (-12 to 0)
     #[arg(long = "downmix-center-gain-db", default_value = "-3.0")]
     pub(super) center_gain_db: f32,

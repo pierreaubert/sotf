@@ -2265,6 +2265,33 @@ mod tests {
     }
 
     #[test]
+    fn test_update_channels_downmix_preserves_known_upstream_layout() {
+        let mut chain = chain_with_upmixer("5.1.4");
+        chain.add_plugin(&PluginType::Downmix).unwrap();
+        chain.update_channel_dependent_plugins();
+
+        assert!(matches!(
+            &chain.get_plugin(1).unwrap().settings,
+            PluginSettings::Downmix {
+                input_channels: 10,
+                input_layout: Some(layout),
+                ..
+            } if layout == "5.1.4"
+        ));
+
+        let configs = chain.to_plugin_configs(48_000.0);
+        let plugin = sotf_plugins::create_plugin(
+            &configs[1].plugin_type,
+            &configs[1].parameters,
+            10,
+            48_000,
+        )
+        .expect("known 5.1.4 identity must reach Downmix construction");
+        assert_eq!(plugin.input_channels(), 10);
+        assert_eq!(plugin.output_channels(), 2);
+    }
+
+    #[test]
     fn test_update_channels_mono_to_stereo_then_gain() {
         let mut chain = PluginChain::new();
         chain.add_plugin(&PluginType::MonoToStereo).unwrap();

@@ -1,59 +1,59 @@
-use sotf_host :: plugin :: { Plugin , ProcessContext } ;
 use super::super::downmix_plugin::DownmixPlugin;
 use super::super::types::DownmixPluginParams;
+use sotf_host::plugin::{Plugin, ProcessContext};
 
-    /// Helper: create a 5.1.4 downmix plugin with all gains at 0dB, phase_coherence off,
-    /// feed DC=1.0 into a single channel, and return the (left, right) output after settling.
-    fn probe_514_channel(channel: usize) -> (f32, f32) {
-        let input_ch = 10;
-        let mut p = DownmixPlugin::from_params(DownmixPluginParams {
-            input_channels: input_ch,
-            center_gain_db: 0.0,
-            surround_gain_db: 0.0,
-            height_gain_db: 0.0,
-            lfe_gain_db: 0.0,
-            phase_coherence: false,
-            phase_blend_low_hz: 200.0,
-            phase_blend_high_hz: 5000.0,
-            itu_mode: false,
-            matrix_ltrt: false,
-        });
-        p.initialize(48000).unwrap();
+/// Helper: create a 5.1.4 downmix plugin with all gains at 0dB, phase_coherence off,
+/// feed DC=1.0 into a single channel, and return the (left, right) output after settling.
+fn probe_514_channel(channel: usize) -> (f32, f32) {
+    let input_ch = 10;
+    let mut p = DownmixPlugin::from_params(DownmixPluginParams {
+        input_channels: input_ch,
+        input_layout: Some("5.1.4".to_string()),
+        center_gain_db: 0.0,
+        surround_gain_db: 0.0,
+        height_gain_db: 0.0,
+        lfe_gain_db: 0.0,
+        phase_coherence: false,
+        phase_blend_low_hz: 200.0,
+        phase_blend_high_hz: 5000.0,
+        itu_mode: false,
+        matrix_ltrt: false,
+    });
+    p.initialize(48000).unwrap();
 
-        let num_frames = 2048;
-        let mut input = vec![0.0f32; num_frames * input_ch];
-        for k in 0..num_frames {
-            input[k * input_ch + channel] = 1.0;
-        }
-        let mut output = vec![0.0f32; num_frames * 2];
-        p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
-            .unwrap();
-
-        // Return the last frame (after smoother settles)
-        let l = output[(num_frames - 1) * 2];
-        let r = output[(num_frames - 1) * 2 + 1];
-        (l, r)
+    let num_frames = 2048;
+    let mut input = vec![0.0f32; num_frames * input_ch];
+    for k in 0..num_frames {
+        input[k * input_ch + channel] = 1.0;
     }
+    let mut output = vec![0.0f32; num_frames * 2];
+    p.process(&input, &mut output, &ProcessContext::new(48000, num_frames))
+        .unwrap();
 
-    /// Bug 1: Rear height channels (TBL at +150°, TBR at -150°) must NOT produce
-    /// negative gains. Negative gains cause phase inversion and cancellation.
-    #[test]
-    fn test_514_rear_height_no_negative_gains() {
-        // 5.1.4 layout: ch8=TBL(+150°, 45°), ch9=TBR(-150°, 45°)
-        let (l_tbl, r_tbl) = probe_514_channel(8); // TBL
-        let (l_tbr, r_tbr) = probe_514_channel(9); // TBR
+    // Return the last frame (after smoother settles)
+    let l = output[(num_frames - 1) * 2];
+    let r = output[(num_frames - 1) * 2 + 1];
+    (l, r)
+}
 
-        assert!(
-            r_tbl >= 0.0,
-            "TBL right gain must be non-negative, got {r_tbl}"
-        );
-        assert!(
-            l_tbr >= 0.0,
-            "TBR left gain must be non-negative, got {l_tbr}"
-        );
-        // TBL should go primarily to left
-        assert!(l_tbl > r_tbl, "TBL should map more to left than right");
-        // TBR should go primarily to right
-        assert!(r_tbr > l_tbr, "TBR should map more to right than left");
-    }
+/// Bug 1: Rear height channels (TBL at +150°, TBR at -150°) must NOT produce
+/// negative gains. Negative gains cause phase inversion and cancellation.
+#[test]
+fn test_514_rear_height_no_negative_gains() {
+    // 5.1.4 layout: ch8=TBL(+150°, 45°), ch9=TBR(-150°, 45°)
+    let (l_tbl, r_tbl) = probe_514_channel(8); // TBL
+    let (l_tbr, r_tbr) = probe_514_channel(9); // TBR
 
+    assert!(
+        r_tbl >= 0.0,
+        "TBL right gain must be non-negative, got {r_tbl}"
+    );
+    assert!(
+        l_tbr >= 0.0,
+        "TBR left gain must be non-negative, got {l_tbr}"
+    );
+    // TBL should go primarily to left
+    assert!(l_tbl > r_tbl, "TBL should map more to left than right");
+    // TBR should go primarily to right
+    assert!(r_tbr > l_tbr, "TBR should map more to right than left");
+}

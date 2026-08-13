@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-downmix"
 description = "SOTF Downmix plugin - multichannel to stereo downmixing"
-version = "0.5.23"
+version = "0.5.28"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

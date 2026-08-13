@@ -1,3 +1,6 @@
+use super::build::downmix_settings;
+use super::types::DownmixArgs;
+use sotf_audio::plugins::PluginSettings;
 use super::parse::parse_channel_mapping;
 use super::parse::parse_loudness_compensation;
 use super::types::Cli;
@@ -68,3 +71,40 @@ fn parse_loudness_compensation_rejects_wrong_arity() {
     assert!(parse_loudness_compensation(&[70.0]).is_err());
     assert!(parse_loudness_compensation(&[70.0, 3.0, 4.0, 5.0]).is_err());
 }
+
+#[test]
+fn downmix_builder_preserves_explicit_layout_and_defaults_to_unspecified() {
+    let args = DownmixArgs {
+        enabled: true,
+        input_layout: Some("7.1".into()),
+        center_gain_db: -3.0,
+        surround_gain_db: -3.0,
+        height_gain_db: -6.0,
+        lfe_gain_db: -10.0,
+        phase_coherence: false,
+        phase_blend_low_hz: 500.0,
+        phase_blend_high_hz: 2_000.0,
+        itu_mode: false,
+    };
+
+    assert!(matches!(
+        downmix_settings(8, &args),
+        PluginSettings::Downmix {
+            input_channels: 8,
+            input_layout: Some(ref layout),
+            ..
+        } if layout == "7.1"
+    ));
+
+    let mut default_args = args;
+    default_args.input_layout = None;
+    assert!(matches!(
+        downmix_settings(6, &default_args),
+        PluginSettings::Downmix {
+            input_channels: 6,
+            input_layout: None,
+            ..
+        }
+    ));
+}
+

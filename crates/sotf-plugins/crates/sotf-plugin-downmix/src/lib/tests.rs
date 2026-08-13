@@ -1,7 +1,6 @@
 use super::consts::FFT_SIZE;
 use super::consts::HOP_SIZE;
 use super::downmix_plugin::DownmixPlugin;
-use super::lt_rt_allpass::LtRtAllpass;
 use super::types::DownmixPluginParams;
 use sotf_host::plugin::{Plugin, ProcessContext};
 
@@ -78,13 +77,15 @@ fn test_stft_path_advances_coeff_smoothers_per_fft_block() {
     );
 }
 
-/// Bug 2: Normalization should use absolute values of gains so that negative
-/// coefficients don't reduce the perceived sum and under-normalize.
+/// Downmix coefficients are the published matrix gains. Headroom is an
+/// explicit downstream responsibility; changing a height gain must not
+/// silently attenuate the unity front routes.
 #[test]
-fn test_514_normalization_uses_abs() {
+fn test_514_gain_changes_do_not_normalize_front_routes() {
     let input_ch = 10;
     let p = DownmixPlugin::from_params(DownmixPluginParams {
         input_channels: input_ch,
+        input_layout: Some("5.1.4".to_string()),
         center_gain_db: 0.0,
         surround_gain_db: 0.0,
         height_gain_db: 0.0,
@@ -96,15 +97,10 @@ fn test_514_normalization_uses_abs() {
         matrix_ltrt: false,
     });
 
-    // Sum the absolute values of all left gains — should be <= 2.0 after normalization
-    let abs_sum_l: f32 = p.target_coeffs.iter().map(|c| c.left_gain.abs()).sum();
-    let abs_sum_r: f32 = p.target_coeffs.iter().map(|c| c.right_gain.abs()).sum();
-    let max_abs = abs_sum_l.max(abs_sum_r);
-
-    assert!(
-        max_abs <= 2.05, // small epsilon for float
-        "Absolute gain sum should be <= 2.0 after normalization, got L={abs_sum_l}, R={abs_sum_r}"
-    );
+    assert_eq!(p.target_coeffs[0].left_gain, 1.0);
+    assert_eq!(p.target_coeffs[0].right_gain, 0.0);
+    assert_eq!(p.target_coeffs[1].left_gain, 0.0);
+    assert_eq!(p.target_coeffs[1].right_gain, 1.0);
 }
 
 /// Bug 3: Surround panning should preserve constant-power relationships.
@@ -116,10 +112,11 @@ fn test_surround_panning_energy_preservation() {
     let input_ch = 8; // 7.1 layout
     let p = DownmixPlugin::from_params(DownmixPluginParams {
         input_channels: input_ch,
-        center_gain_db: -100.0,
+        input_layout: Some("7.1".to_string()),
+        center_gain_db: -12.0,
         surround_gain_db: 0.0, // s_lin = 1.0
-        height_gain_db: -100.0,
-        lfe_gain_db: -100.0,
+        height_gain_db: -60.0,
+        lfe_gain_db: -60.0,
         phase_coherence: false,
         phase_blend_low_hz: 200.0,
         phase_blend_high_hz: 5000.0,
@@ -209,6 +206,7 @@ fn test_all_configs_valid_coefficients() {
         let config = get_speaker_config(config_id).unwrap();
         let p = DownmixPlugin::from_params(DownmixPluginParams {
             input_channels: config.total_channels,
+            input_layout: Some(config.id.to_string()),
             center_gain_db: 0.0,
             surround_gain_db: 0.0,
             height_gain_db: 0.0,
@@ -421,6 +419,7 @@ fn test_wola_perfect_reconstruction() {
 fn test_process_phase_coherence_small_buffer_zeros_output() {
     let mut p = DownmixPlugin::from_params(DownmixPluginParams {
         input_channels: 2,
+        input_layout: Some("2.0".to_string()),
         center_gain_db: 0.0,
         surround_gain_db: 0.0,
         height_gain_db: 0.0,
@@ -450,68 +449,6 @@ fn test_process_phase_coherence_small_buffer_zeros_output() {
     }
 }
 
-/// Verify that the LtRtAllpass network provides a broadband ~90° phase shift.
-///
-/// The LtRtAllpass produces `(chain_out, x_delayed)`. The 90°-shifted signal is
-/// `chain_out - x_delayed`. We verify its phase stays within ±35° of +90°
-/// across 200 Hz – 8 kHz at 48 kHz.
-///
-/// The original single-stage allpass at 300 Hz would give phases ranging from
-/// ~-90° at 300 Hz to ~-175° at 8 kHz (error up to 85° from the target +90°).
-/// This design achieves ≤ 31° error across the full 200 Hz – 8 kHz band.
-#[test]
-fn test_ltrt_allpass_broadband_phase() {
-    let sample_rate = 48000_u32;
-    let mut ap = LtRtAllpass::new(sample_rate);
-
-    // Test frequencies within the design band (200 Hz – 8 kHz).
-    let test_freqs: &[f32] = &[200.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0];
-
-    for &freq in test_freqs {
-        ap.reset();
-        // Warm up: the low-frequency allpass stages (fc=100 Hz) have long time constants.
-        // Use at least fs/fc periods to fully settle = 480 periods at 48 kHz.
-        // Each period is fs/freq samples. Total warm-up: max(480*fs/freq, fs).
-        let period_samples = (sample_rate as f32 / freq) as usize;
-        let warm_up = (period_samples * 20).max(sample_rate as usize / 10);
-        for k in 0..warm_up {
-            let x = (k as f32 * 2.0 * std::f32::consts::PI * freq / sample_rate as f32).sin();
-            ap.process(x);
-        }
-
-        // Measure for several complete periods (at least 256 samples).
-        let measure_len = (period_samples * 8).max(256);
-        let mut cross_re = 0.0f64;
-        let mut cross_im = 0.0f64;
-
-        for k in 0..measure_len {
-            let t = k as f32 * 2.0 * std::f32::consts::PI * freq / sample_rate as f32;
-            let x = t.sin();
-            let (chain_out, x_delayed) = ap.process(x);
-            let y = (chain_out - x_delayed) as f64; // the ~90°-shifted signal
-            // Cross-correlate with sin (in-phase reference) and cos (90° quadrature).
-            // cross_re ≈ (T/2) * cos(φ),  cross_im ≈ (T/2) * sin(φ)
-            // where φ is the phase of y relative to the input sine.
-            cross_re += y * t.sin() as f64;
-            cross_im += y * t.cos() as f64;
-        }
-
-        // Phase of (chain - z^{-1}) relative to input. For a +90° shift: φ = +90°.
-        // cross_re = Σ(y * sin) ≈ 0,  cross_im = Σ(y * cos) > 0  → φ = +90°.
-        let phase_rad = cross_im.atan2(cross_re) as f32;
-        let phase_deg = phase_rad.to_degrees();
-
-        // Design accuracy: ±31° from +90° over 200-8000 Hz (max theoretical).
-        // The original single-stage allpass at 300 Hz has errors up to 85° at 8 kHz.
-        assert!(
-            (phase_deg - 90.0).abs() < 35.0,
-            "LtRtAllpass phase at {freq} Hz = {phase_deg:.1}° (expected ~+90°, tolerance ±35°). \
-                 The allpass-minus-delay network should approximate +90° from 200 Hz to 8 kHz. \
-                 A single first-order allpass at 300 Hz would deviate by up to 85° at 8 kHz."
-        );
-    }
-}
-
 // ============================================================================
 // Additional tests for param_value, set_param_value, process, set_parameter,
 // get_parameter, initialize, reset, matrix_ltrt, itu_mode, and edge cases.
@@ -522,9 +459,9 @@ use sotf_host::parameters::{ParameterId, ParameterValue};
 #[test]
 fn test_param_value_roundtrip() {
     let mut p = DownmixPlugin::new(6);
-    for i in 0..8 {
+    for i in 0..9 {
         let original = p.param_value(i).unwrap_or(0.0);
-        let is_bool = matches!(i, 4 | 7);
+        let is_bool = matches!(i, 4 | 7 | 8);
         if is_bool {
             p.set_param_value(i, 1.0);
             assert!((p.param_value(i).unwrap() - 1.0).abs() < 1e-6);
@@ -537,7 +474,7 @@ fn test_param_value_roundtrip() {
         p.set_param_value(i, original);
         assert!((p.param_value(i).unwrap() - original).abs() < 1e-6);
     }
-    assert!(p.param_value(8).is_none());
+    assert!(p.param_value(9).is_none());
 }
 
 #[test]
@@ -559,6 +496,7 @@ fn test_set_parameter_get_parameter_roundtrip() {
 fn test_process_matrix_ltrt() {
     let mut p = DownmixPlugin::from_params(DownmixPluginParams {
         input_channels: 6,
+        input_layout: Some("5.1".to_string()),
         center_gain_db: 0.0,
         surround_gain_db: 0.0,
         height_gain_db: 0.0,
@@ -570,12 +508,13 @@ fn test_process_matrix_ltrt() {
         matrix_ltrt: true,
     });
     p.initialize(48000).unwrap();
-    let mut input = vec![0.0_f32; 100 * 6];
-    for k in 0..100 {
+    let frames = FFT_SIZE * 3;
+    let mut input = vec![0.0_f32; frames * 6];
+    for k in 0..frames {
         input[k * 6] = (k as f32 * 0.01).sin();
     }
-    let mut output = vec![0.0_f32; 100 * 2];
-    p.process(&input, &mut output, &ProcessContext::new(48000, 100))
+    let mut output = vec![0.0_f32; frames * 2];
+    p.process(&input, &mut output, &ProcessContext::new(48000, frames))
         .unwrap();
     assert!(output.iter().any(|&s| s.abs() > 1e-5));
 }
@@ -584,6 +523,7 @@ fn test_process_matrix_ltrt() {
 fn test_process_itu_mode() {
     let mut p = DownmixPlugin::from_params(DownmixPluginParams {
         input_channels: 6,
+        input_layout: Some("5.1".to_string()),
         center_gain_db: 0.0,
         surround_gain_db: 0.0,
         height_gain_db: 0.0,
@@ -785,10 +725,11 @@ fn test_advance_coeff_smoothers_by() {
 fn test_compute_standard_coefficients_with_gains() {
     let p = DownmixPlugin::from_params(DownmixPluginParams {
         input_channels: 6,
-        center_gain_db: -100.0, // mute center to avoid normalization
+        input_layout: Some("5.1".to_string()),
+        center_gain_db: -12.0,
         surround_gain_db: -6.0,
         height_gain_db: 0.0,
-        lfe_gain_db: -100.0, // mute LFE to avoid normalization
+        lfe_gain_db: -60.0,
         phase_coherence: false,
         phase_blend_low_hz: 200.0,
         phase_blend_high_hz: 5000.0,
@@ -818,4 +759,98 @@ fn test_compute_standard_coefficients_with_gains() {
     // Ls should go to left, Rs to right
     assert!(p.target_coeffs[4].left_gain > p.target_coeffs[4].right_gain);
     assert!(p.target_coeffs[5].right_gain > p.target_coeffs[5].left_gain);
+}
+
+#[test]
+fn explicit_layout_distinguishes_7_1_from_5_1_2() {
+    let make = |layout: &str| {
+        DownmixPlugin::try_from_params(DownmixPluginParams {
+            input_channels: 8,
+            input_layout: Some(layout.to_string()),
+            center_gain_db: -12.0,
+            surround_gain_db: -12.0,
+            height_gain_db: 0.0,
+            lfe_gain_db: -60.0,
+            phase_coherence: false,
+            phase_blend_low_hz: 500.0,
+            phase_blend_high_hz: 2000.0,
+            itu_mode: false,
+            matrix_ltrt: false,
+        })
+        .unwrap()
+    };
+    let seven_one = make("7.1");
+    let five_one_two = make("5.1.2");
+
+    // Channel 6 is rear-left in 7.1, but top-front-left in 5.1.2.
+    assert!(five_one_two.target_coeffs[6].left_gain > seven_one.target_coeffs[6].left_gain * 2.0);
+    assert!(
+        DownmixPlugin::try_from_params(DownmixPluginParams {
+            input_channels: 8,
+            input_layout: None,
+            center_gain_db: -3.0,
+            surround_gain_db: -3.0,
+            height_gain_db: -6.0,
+            lfe_gain_db: -10.0,
+            phase_coherence: false,
+            phase_blend_low_hz: 500.0,
+            phase_blend_high_hz: 2000.0,
+            itu_mode: false,
+            matrix_ltrt: false,
+        })
+        .is_err()
+    );
+}
+
+#[test]
+fn reinitialize_discards_old_rate_stream_and_filter_state() {
+    let mut reused = DownmixPlugin::new(6);
+    reused.initialize(44_100).unwrap();
+    let input = vec![0.25; (FFT_SIZE + 137) * 6];
+    let mut discarded = vec![0.0; (FFT_SIZE + 137) * 2];
+    reused
+        .process(
+            &input,
+            &mut discarded,
+            &ProcessContext::new(44_100, FFT_SIZE + 137),
+        )
+        .unwrap();
+    reused.initialize(96_000).unwrap();
+
+    let mut fresh = DownmixPlugin::new(6);
+    fresh.initialize(96_000).unwrap();
+    let silence = vec![0.0; (FFT_SIZE * 2) * 6];
+    let mut reused_output = vec![0.0; FFT_SIZE * 4];
+    let mut fresh_output = vec![0.0; FFT_SIZE * 4];
+    let context = ProcessContext::new(96_000, FFT_SIZE * 2);
+    reused
+        .process(&silence, &mut reused_output, &context)
+        .unwrap();
+    fresh
+        .process(&silence, &mut fresh_output, &context)
+        .unwrap();
+    assert_eq!(reused_output, fresh_output);
+}
+
+#[test]
+fn phase_alignment_preserves_ordinary_mix_bin_magnitude() {
+    let mut plugin = DownmixPlugin::new(6);
+    plugin.initialize(48_000).unwrap();
+    for frame in 0..FFT_SIZE {
+        let phase = 2.0 * std::f32::consts::PI * 1200.0 * frame as f32 / 48_000.0;
+        plugin.input_buffer[2 * FFT_SIZE + frame] = phase.sin();
+        plugin.input_buffer[4 * FFT_SIZE + frame] = (phase + 1.2).sin();
+        plugin.input_buffer[5 * FFT_SIZE + frame] = (phase - 0.8).sin();
+    }
+    plugin.process_fft_block();
+    let bin = 1200 * FFT_SIZE / 48_000;
+    let aligned_magnitude = plugin.out_freq_l[bin].norm();
+
+    plugin.phase_coherence = false;
+    plugin.process_fft_block();
+    let ordinary_magnitude = plugin.out_freq_l[bin].norm();
+    assert!(
+        (aligned_magnitude - ordinary_magnitude).abs() <= ordinary_magnitude * 1e-5 + 1e-5,
+        "phase alignment changed bin magnitude: aligned={aligned_magnitude}, ordinary={ordinary_magnitude}"
+    );
 }

@@ -335,6 +335,7 @@ pub fn convert_mono_to_stereo(
 pub fn convert_downmix(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
     let PluginSettings::Downmix {
         input_channels,
+        input_layout,
         center_gain_db,
         surround_gain_db,
         height_gain_db,
@@ -343,6 +344,7 @@ pub fn convert_downmix(settings: &PluginSettings, _sample_rate: f64) -> Option<P
         phase_blend_low_hz,
         phase_blend_high_hz,
         itu_mode,
+        matrix_ltrt,
     } = settings
     else {
         return None;
@@ -351,6 +353,7 @@ pub fn convert_downmix(settings: &PluginSettings, _sample_rate: f64) -> Option<P
         "downmix",
         json!({
             "input_channels": input_channels,
+            "input_layout": input_layout,
             "center_gain_db": center_gain_db,
             "surround_gain_db": surround_gain_db,
             "height_gain_db": height_gain_db,
@@ -359,13 +362,14 @@ pub fn convert_downmix(settings: &PluginSettings, _sample_rate: f64) -> Option<P
             "phase_blend_low_hz": phase_blend_low_hz,
             "phase_blend_high_hz": phase_blend_high_hz,
             "itu_mode": itu_mode,
+            "matrix_ltrt": matrix_ltrt,
         }),
     ))
 }
 
 pub fn convert_band_split(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
     let PluginSettings::BandSplit {
-        channels,
+        channels: _,
         frequency,
         crossover_type,
     } = settings
@@ -375,7 +379,6 @@ pub fn convert_band_split(settings: &PluginSettings, _sample_rate: f64) -> Optio
     Some(PluginConfig::new(
         "band_split",
         json!({
-            "channels": channels,
             "frequency": frequency,
             "type": crossover_type,
         }),
@@ -406,13 +409,12 @@ pub fn convert_crossover(settings: &PluginSettings, _sample_rate: f64) -> Option
 }
 
 pub fn convert_band_merge(settings: &PluginSettings, _sample_rate: f64) -> Option<PluginConfig> {
-    let PluginSettings::BandMerge { channels, bands } = settings else {
+    let PluginSettings::BandMerge { channels: _, bands } = settings else {
         return None;
     };
     Some(PluginConfig::new(
         "band_merge",
         json!({
-            "channels": channels,
             "bands": bands,
         }),
     ))

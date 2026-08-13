@@ -272,6 +272,7 @@ sotf_plugins::serde_param_default! {
     declick_specs::PARAMS;
     fn default_declick_enabled() -> bool = "enabled";
     fn default_declick_sensitivity() -> f64 = "sensitivity";
+    fn default_declick_link_channels() -> bool = "link_channels";
 }
 sotf_plugins::serde_param_default! {
     hiss_reducer_specs::PARAMS;
@@ -303,6 +304,8 @@ sotf_plugins::serde_param_default! {
     fn default_ab_max_auto_gain_db() -> f64 = "max_auto_gain_db";
     fn default_ab_gain_smoothing_ms() -> f64 = "gain_smoothing_ms";
     fn default_ab_mix_transition_ms() -> f64 = "mix_transition_ms";
+    fn default_ab_band_mask_low_hz() -> f64 = "band_mask_low_hz";
+    fn default_ab_band_mask_high_hz() -> f64 = "band_mask_high_hz";
 }
 sotf_plugins::serde_param_default! {
     band_split_specs::PARAMS;
@@ -332,6 +335,7 @@ sotf_plugins::serde_param_default! {
     fn default_downmix_phase_coherence() -> bool = "phase_coherence";
     fn default_downmix_phase_blend_low_hz() -> f64 = "phase_blend_low_hz";
     fn default_downmix_phase_blend_high_hz() -> f64 = "phase_blend_high_hz";
+    fn default_downmix_matrix_ltrt() -> bool = "matrix_ltrt";
 }
 sotf_plugins::serde_param_default! {
     mono_to_stereo_specs::PARAMS;
@@ -366,6 +370,12 @@ sotf_plugins::serde_param_default! {
     fn default_aec_echo_tail_ms() -> f64 = "echo_tail_ms";
     fn default_aec_step_size() -> f64 = "step_size";
     fn default_aec_post_filter_enabled() -> bool = "post_filter_enabled";
+}
+sotf_plugins::serde_param_default! {
+    dither_specs::PARAMS;
+    fn default_dither_bit_depth() -> usize = "bit_depth";
+    fn default_dither_noise_shaping() -> bool = "noise_shaping";
+    fn default_dither_type() -> usize = "dither_type";
 }
 sotf_plugins::serde_param_default! {
     beamformer_specs::PARAMS;

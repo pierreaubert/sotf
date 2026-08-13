@@ -1,3 +1,42 @@
+# 0.5.28
+
+## Fixes
+
+- Require an explicit layout for ambiguous 8- and 10-channel inputs and carry
+  layout identity through engine, factory, FFI, Downmix Audio Unit setup, and
+  the player CLI's optional `--downmix-input-layout` setting.
+- Preserve the published routing coefficients exactly; Downmix no longer
+  silently rescales unrelated routes. Output headroom/limiting is an explicit
+  downstream responsibility.
+- Bound phase alignment to the ordinary downmix magnitude, confidence-gate
+  unstable phase vectors, and remove per-bin trigonometry from the callback.
+- Make realtime coefficient updates, cached snapshot updates, and reset reuse
+  preallocated storage. Structural mode changes now require reconstruction.
+- Validate independent N-to-2 FFI/AU channel widths and clear all streaming and
+  filter state on reset or sample-rate reinitialization.
+- Make engine defaults layout-unspecified and adapt them only to unambiguous
+  live widths; reject explicit layout/width mismatches, retain ambiguous-width
+  rejection, and preserve known upstream layout identity through engine chains.
+
+# 0.5.27
+
+## Fixes
+
+- Synchronized the engine's Downmix parameter accessor and settings/configuration
+  wiring with the canonical nine-entry parameter schema, including `matrix_ltrt`.
+  Added a regression test for host index round-tripping and serialized plugin
+  configuration.
+
+# 0.5.26
+
+## Fixes
+
+- Made phase-coherent WOLA output placement independent of host block partitioning and aligned the reported 2048-sample latency with the actual stream timeline.
+- Replaced the magnitude-distorting Lt/Rt allpass-difference network with a unity-magnitude spectral quadrature rotation; Lt/Rt now uses the same fixed-latency WOLA path at every sample rate.
+- Exposed Lt/Rt on the canonical parameter surface, marked topology-changing phase/LtRt modes structural, and reject incompatible simultaneous modes.
+- Added fallible construction, finite/range/crossover validation, zero-sample-rate rejection, checked dimension arithmetic, and exact input/output buffer validation.
+- Report conservative compile metadata for the signal-dependent/stateful downmixer and synchronize plugin/package versions.
+
 # 0.5.25
 
 ## Fixes

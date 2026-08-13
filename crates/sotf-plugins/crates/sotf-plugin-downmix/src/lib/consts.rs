@@ -4,7 +4,5 @@ pub(super) const HOP_SIZE: usize = FFT_SIZE / 2;
 
 pub(super) const PARAM_SMOOTH_MS: f32 = 20.0;
 
-/// Corner frequency ratio relative to sample rate for the allpass chain stages.
-/// `fc_k = FC_RATIO_HZ[k]` (interpreted as Hz at 48000 Hz; scaled by `fs/48000` internally
-/// via `compute_coeff` which uses `tan(π*fc/fs)`, so the ratio is preserved automatically).
+#[cfg(test)]
 pub(super) const ALLPASS_FC_HZ: [f32; 2] = [100.0, 132.0];

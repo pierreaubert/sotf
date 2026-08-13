@@ -53,6 +53,10 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
         }),
         "downmix" => serde_json::json!({
             "input_channels": channels,
+            "input_layout": match channels {
+                8 => Some("7.1"),
+                _ => None,
+            },
         }),
         "binaural_decoder" => serde_json::json!({
             "input_channels": channels,
@@ -84,7 +88,7 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
         "band_split" => serde_json::json!({
             "num_bands": 2,
             "frequency": 1000.0,
-            "type": "lr4",
+            "type": "LR24",
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -96,10 +100,11 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
             "num_mics": channels,
             "mic_spacing_m": 0.05,
         }),
-        "ambisonics_decoder" => serde_json::json!({
-            "order": 1,
-            "target_layout": "5.1",
-        }),
+        "ambisonics_decoder" => match channels {
+            9 => serde_json::json!({"order": 2, "target_layout": "7.1.4"}),
+            16 => serde_json::json!({"order": 3, "target_layout": "9.1.6"}),
+            _ => serde_json::json!({"order": 1, "target_layout": "5.1"}),
+        },
         _ => serde_json::json!({}),
     }
 }

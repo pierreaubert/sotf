@@ -34,17 +34,24 @@ mod misc;
 mod test;
 
 #[test]
-fn test_downmix_adapts_to_current_chain_channel_count() {
+fn test_downmix_adapts_unspecified_default_to_unambiguous_chain_width() {
     let sample_rate = 48000;
     let settings = PluginSettings::default_for(&PluginType::Downmix).unwrap();
+    assert!(matches!(
+        settings,
+        PluginSettings::Downmix {
+            input_layout: None,
+            ..
+        }
+    ));
     let config = settings.to_plugin_config(sample_rate as f64);
 
-    let plugin = create_plugin(&config.plugin_type, &config.parameters, 10, sample_rate)
+    let plugin = create_plugin(&config.plugin_type, &config.parameters, 2, sample_rate)
         .expect("downmix should adapt default parameters to the chain width");
-    assert_eq!(plugin.input_channels(), 10);
+    assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 2);
 
-    let (host, warnings) = build_plugin_host(std::slice::from_ref(&config), sample_rate, 10)
+    let (host, warnings) = build_plugin_host(std::slice::from_ref(&config), sample_rate, 2)
         .expect("host should load adaptive downmix");
     assert!(
         warnings.is_empty(),
@@ -52,6 +59,33 @@ fn test_downmix_adapts_to_current_chain_channel_count() {
         warnings
     );
     assert_eq!(host.output_channels(), 2);
+}
+
+#[test]
+fn test_downmix_requires_layout_for_ambiguous_adaptive_width() {
+    let sample_rate = 48_000;
+    let settings = PluginSettings::default_for(&PluginType::Downmix).unwrap();
+    let config = settings.to_plugin_config(sample_rate as f64);
+
+    let error = create_plugin(&config.plugin_type, &config.parameters, 10, sample_rate)
+        .err()
+        .expect("unspecified ten-channel input must not guess between 5.1.4 and 7.1.2");
+    assert!(error.contains("input_layout is required for ambiguous 10-channel input"));
+}
+
+#[test]
+fn test_downmix_rejects_explicit_layout_when_chain_width_differs() {
+    let sample_rate = 48_000;
+    let mut config = PluginSettings::default_for(&PluginType::Downmix)
+        .unwrap()
+        .to_plugin_config(sample_rate as f64);
+    config.parameters["input_layout"] = serde_json::json!("5.1");
+
+    let error = create_plugin(&config.plugin_type, &config.parameters, 2, sample_rate)
+        .err()
+        .expect("an explicit layout must never be silently adapted to another chain width");
+    assert!(error.contains("explicit input_layout '5.1'"));
+    assert!(error.contains("current chain width is 2"));
 }
 
 #[test]

@@ -626,13 +626,14 @@ fn test_crossover_zero_alloc() {
 fn test_downmix_zero_alloc() {
     let params = DownmixPluginParams {
         input_channels: 6,
+        input_layout: Some("5.1".to_string()),
         center_gain_db: 0.0,
         surround_gain_db: 0.0,
         height_gain_db: 0.0,
         lfe_gain_db: 0.0,
         phase_coherence: true,
         phase_blend_low_hz: 200.0,
-        phase_blend_high_hz: 500.0,
+        phase_blend_high_hz: 2000.0,
         itu_mode: false,
         matrix_ltrt: false,
     };
@@ -654,6 +655,41 @@ fn test_downmix_zero_alloc() {
             plugin.process(&input, &mut output, &ctx).unwrap();
             let _ = plugin.get_data();
         }
+    });
+}
+
+#[test]
+#[serial]
+fn test_downmix_realtime_setters_and_reset_zero_alloc() {
+    let mut plugin = DownmixPlugin::from_params(DownmixPluginParams {
+        input_channels: 6,
+        input_layout: Some("5.1".to_string()),
+        center_gain_db: -3.0,
+        surround_gain_db: -3.0,
+        height_gain_db: -6.0,
+        lfe_gain_db: -10.0,
+        phase_coherence: false,
+        phase_blend_low_hz: 500.0,
+        phase_blend_high_hz: 2000.0,
+        itu_mode: false,
+        matrix_ltrt: false,
+    });
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    let center_gain = ParameterId::from("center_gain_db");
+    let phase_blend_low = ParameterId::from("phase_blend_low_hz");
+    let itu_mode = ParameterId::from("itu_mode");
+
+    assert_no_allocs("DownmixPlugin realtime setters/reset", || {
+        plugin
+            .set_parameter(center_gain.clone(), ParameterValue::Float(-6.0))
+            .unwrap();
+        plugin
+            .set_parameter(phase_blend_low.clone(), ParameterValue::Float(400.0))
+            .unwrap();
+        plugin
+            .set_parameter(itu_mode.clone(), ParameterValue::Bool(true))
+            .unwrap();
+        plugin.reset();
     });
 }
 
@@ -685,6 +721,12 @@ fn test_expander_zero_alloc() {
 fn test_fletcher_munson_zero_alloc() {
     // Fletcher-Munson merged into LoudnessCompensation with mode=2 (Auto)
     let mut plugin = LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0);
+    plugin
+        .set_parameter(
+            sotf_plugins::ParameterId::from("auto_calibrated"),
+            sotf_plugins::ParameterValue::Bool(true),
+        )
+        .unwrap();
     plugin
         .set_parameter(
             sotf_plugins::ParameterId::from("mode"),

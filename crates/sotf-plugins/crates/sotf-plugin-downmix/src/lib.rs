@@ -1,5 +1,6 @@
 pub mod params;
 
+#[cfg(test)]
 #[path = "lib/allpass_stage.rs"]
 mod allpass_stage;
 #[path = "lib/consts.rs"]
@@ -8,6 +9,7 @@ mod consts;
 mod default;
 #[path = "lib/downmix_plugin.rs"]
 mod downmix_plugin;
+#[cfg(test)]
 #[path = "lib/lt_rt_allpass.rs"]
 mod lt_rt_allpass;
 #[cfg(test)]

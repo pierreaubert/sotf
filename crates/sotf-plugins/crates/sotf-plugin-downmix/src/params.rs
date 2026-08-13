@@ -64,7 +64,8 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .doc("LFE channel fold-down level"),
     ParamSpec::bool_param("Phase Coherence", "phase_coherence", true, "Phase")
-        .doc("Phase-align channels before mix"),
+        .doc("Phase-align channels before mix")
+        .structural(),
     ParamSpec::float(
         "Phase Blend Low",
         "phase_blend_low_hz",
@@ -89,6 +90,9 @@ pub const PARAMS: &[ParamSpec] = &[
     .doc("Phase correction high crossover"),
     ParamSpec::bool_param("ITU-R BS.775 Mode", "itu_mode", false, "Mode")
         .doc("Use ITU standard downmix coeffs"),
+    ParamSpec::bool_param("Matrix Lt/Rt", "matrix_ltrt", false, "Mode")
+        .doc("Encode surrounds with a quadrature Lt/Rt matrix")
+        .structural(),
 ];
 
 // ============================================================================
@@ -99,6 +103,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
     config: &[
         ControlSpec::toggle(4), // phase_coherence
         ControlSpec::toggle(7), // itu_mode
+        ControlSpec::toggle(8), // matrix_ltrt
     ],
     main: &[ControlGroup::new(
         "CHANNEL GAINS",
@@ -153,6 +158,8 @@ pub struct Params {
     pub phase_blend_high_hz: f64,
     #[serde(default = "d_itu_mode")]
     pub itu_mode: bool,
+    #[serde(default = "d_matrix_ltrt", alias = "dolby_ltrt")]
+    pub matrix_ltrt: bool,
 }
 
 fn d_center_gain_db() -> f64 {
@@ -179,6 +186,9 @@ fn d_phase_blend_high_hz() -> f64 {
 fn d_itu_mode() -> bool {
     pk(PARAMS, "itu_mode").default_bool()
 }
+fn d_matrix_ltrt() -> bool {
+    pk(PARAMS, "matrix_ltrt").default_bool()
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -191,6 +201,7 @@ impl Default for Params {
             phase_blend_low_hz: d_phase_blend_low_hz(),
             phase_blend_high_hz: d_phase_blend_high_hz(),
             itu_mode: d_itu_mode(),
+            matrix_ltrt: d_matrix_ltrt(),
         }
     }
 }
@@ -215,6 +226,7 @@ impl PluginParamDef for Params {
             5 => Some(self.phase_blend_low_hz),
             6 => Some(self.phase_blend_high_hz),
             7 => Some(if self.itu_mode { 1.0 } else { 0.0 }),
+            8 => Some(if self.matrix_ltrt { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -229,6 +241,7 @@ impl PluginParamDef for Params {
             5 => self.phase_blend_low_hz = value,
             6 => self.phase_blend_high_hz = value,
             7 => self.itu_mode = value > 0.5,
+            8 => self.matrix_ltrt = value > 0.5,
             _ => {}
         }
     }
@@ -271,6 +284,7 @@ mod tests {
         assert_eq!(original.phase_blend_low_hz, restored.phase_blend_low_hz);
         assert_eq!(original.phase_blend_high_hz, restored.phase_blend_high_hz);
         assert_eq!(original.itu_mode, restored.itu_mode);
+        assert_eq!(original.matrix_ltrt, restored.matrix_ltrt);
     }
 
     #[test]
@@ -296,5 +310,6 @@ mod tests {
             pk(PARAMS, "phase_blend_high_hz").default_f64()
         );
         assert_eq!(p.itu_mode, pk(PARAMS, "itu_mode").default_bool());
+        assert_eq!(p.matrix_ltrt, pk(PARAMS, "matrix_ltrt").default_bool());
     }
 }

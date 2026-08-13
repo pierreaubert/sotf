@@ -44,6 +44,9 @@ auto-layout (with minor customizations)
 
 Phase blend parameters (phase_blend_low_hz, phase_blend_high_hz) are JSON-config only — not exposed in the UI since they rarely need adjustment.
 
+Input layout is structural host/stream metadata rather than an automatable DSP
+control. Ambiguous 8- and 10-channel streams must provide it explicitly.
+
 ## Responsive Behavior
 - **Compact:** 2x2 knob grid for channel gains, phase toggle below
 - **Wide:** 4 knobs in a row with phase toggle to the right

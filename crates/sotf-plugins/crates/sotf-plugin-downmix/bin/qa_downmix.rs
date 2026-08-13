@@ -1,4 +1,4 @@
-use sotf_host::{CountingAlloc, run_standard_tests};
+use sotf_host::{CountingAlloc, ParameterId, ParameterValue, assert_no_allocs, run_standard_tests};
 use sotf_host::{Plugin, ProcessContext};
 use sotf_plugin_downmix::{DownmixPlugin, DownmixPluginParams};
 
@@ -9,10 +9,11 @@ fn main() {
     let sample_rate = 48000;
     let params = DownmixPluginParams {
         input_channels: 6,
+        input_layout: Some("5.1".to_string()),
         center_gain_db: 0.0, // 1.0 linear
-        surround_gain_db: -100.0,
-        height_gain_db: -100.0,
-        lfe_gain_db: -100.0,
+        surround_gain_db: -12.0,
+        height_gain_db: -60.0,
+        lfe_gain_db: -60.0,
         phase_coherence: false,
         phase_blend_low_hz: 200.0,
         phase_blend_high_hz: 5000.0,
@@ -57,6 +58,22 @@ fn main() {
 
     // Run standard QA tests
     run_standard_tests(&mut plugin, "DownmixPlugin");
+
+    let center_gain = ParameterId::from("center_gain_db");
+    let phase_blend_low = ParameterId::from("phase_blend_low_hz");
+    let itu_mode = ParameterId::from("itu_mode");
+    assert_no_allocs("Downmix realtime setters and reset", || {
+        plugin
+            .set_parameter(center_gain.clone(), ParameterValue::Float(-6.0))
+            .unwrap();
+        plugin
+            .set_parameter(phase_blend_low.clone(), ParameterValue::Float(400.0))
+            .unwrap();
+        plugin
+            .set_parameter(itu_mode.clone(), ParameterValue::Bool(true))
+            .unwrap();
+        plugin.reset();
+    });
 
     println!("\n[ALL PASS] Downmix QA Complete.");
 }

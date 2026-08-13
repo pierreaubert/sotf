@@ -794,6 +794,10 @@ pub(super) fn build_rack_mode_plugins(
                         phase_invert_a: false,
                         phase_invert_b: false,
                         difference_mode: false,
+                        // The CLI does not expose mask controls yet, so retain
+                        // the canonical full-band AB Compare defaults.
+                        band_mask_low_hz: 20.0,
+                        band_mask_high_hz: 20_000.0,
                     };
                 }
                 log::info!("Rack: Added ABCompare plugin");
@@ -825,17 +829,7 @@ pub(super) fn build_rack_mode_plugins(
                 let input_channels = chain.output_channels();
                 let idx = chain.add_plugin(&PluginType::Downmix)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
-                    plugin.settings = PluginSettings::Downmix {
-                        input_channels,
-                        center_gain_db: plugins.downmix.center_gain_db as f64,
-                        surround_gain_db: plugins.downmix.surround_gain_db as f64,
-                        height_gain_db: plugins.downmix.height_gain_db as f64,
-                        lfe_gain_db: plugins.downmix.lfe_gain_db as f64,
-                        phase_coherence: plugins.downmix.phase_coherence,
-                        phase_blend_low_hz: plugins.downmix.phase_blend_low_hz as f64,
-                        phase_blend_high_hz: plugins.downmix.phase_blend_high_hz as f64,
-                        itu_mode: false,
-                    };
+                    plugin.settings = downmix_settings(input_channels, &plugins.downmix);
                 }
                 log::info!("Rack: Added Downmix plugin");
             }

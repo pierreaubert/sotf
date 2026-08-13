@@ -8,6 +8,7 @@ fn probe_514_channel(channel: usize) -> (f32, f32) {
     let input_ch = 10;
     let mut p = DownmixPlugin::from_params(DownmixPluginParams {
         input_channels: input_ch,
+        input_layout: Some("5.1.4".to_string()),
         center_gain_db: 0.0,
         surround_gain_db: 0.0,
         height_gain_db: 0.0,

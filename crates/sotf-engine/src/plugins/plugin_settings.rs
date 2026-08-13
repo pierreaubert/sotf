@@ -1148,6 +1148,10 @@ pub enum PluginSettings {
         phase_invert_b: bool,
         #[serde(default)]
         difference_mode: bool,
+        #[serde(default = "default_ab_band_mask_low_hz")]
+        band_mask_low_hz: f64,
+        #[serde(default = "default_ab_band_mask_high_hz")]
+        band_mask_high_hz: f64,
     },
     Crossover {
         /// Crossover type: "LR24" or "LinearPhase"
@@ -1185,6 +1189,8 @@ pub enum PluginSettings {
     Downmix {
         #[serde(default = "default_channels")]
         input_channels: usize,
+        #[serde(default)]
+        input_layout: Option<String>,
         #[serde(default = "default_downmix_center_gain_db")]
         center_gain_db: f64,
         #[serde(default = "default_downmix_surround_gain_db")]
@@ -1201,6 +1207,8 @@ pub enum PluginSettings {
         phase_blend_high_hz: f64,
         #[serde(default)]
         itu_mode: bool,
+        #[serde(default = "default_downmix_matrix_ltrt")]
+        matrix_ltrt: bool,
     },
     MonoToStereo {
         #[serde(default = "default_mono_to_stereo_width")]
@@ -2008,6 +2016,8 @@ impl PluginSettings {
                     phase_invert_a: p(ab, "phase_invert_a").default_bool(),
                     phase_invert_b: p(ab, "phase_invert_b").default_bool(),
                     difference_mode: p(ab, "difference_mode").default_bool(),
+                    band_mask_low_hz: p(ab, "band_mask_low_hz").default_f64(),
+                    band_mask_high_hz: p(ab, "band_mask_high_hz").default_f64(),
                 }
             }
             PluginType::Crossover => {
@@ -2032,6 +2042,9 @@ impl PluginSettings {
                 let dw = downmix_specs::PARAMS;
                 Self::Downmix {
                     input_channels: 6, // Default to 5.1
+                    // Unspecified means "adapt to live engine metadata". Ambiguous
+                    // widths still require the chain/stream to supply a layout.
+                    input_layout: None,
                     center_gain_db: p(dw, "center_gain_db").default_f64(),
                     surround_gain_db: p(dw, "surround_gain_db").default_f64(),
                     height_gain_db: p(dw, "height_gain_db").default_f64(),
@@ -2040,6 +2053,7 @@ impl PluginSettings {
                     phase_blend_low_hz: p(dw, "phase_blend_low_hz").default_f64(),
                     phase_blend_high_hz: p(dw, "phase_blend_high_hz").default_f64(),
                     itu_mode: p(dw, "itu_mode").default_bool(),
+                    matrix_ltrt: p(dw, "matrix_ltrt").default_bool(),
                 }
             }
             PluginType::MonoToStereo => {

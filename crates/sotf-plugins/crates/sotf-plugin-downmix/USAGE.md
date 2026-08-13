@@ -27,7 +27,7 @@ Optional FFT-based phase alignment that reduces comb-filtering artifacts when mu
 
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
-| Phase Coherence | On/Off | On | — | Enable FFT-based phase alignment |
+| Phase Coherence | On/Off | On | — | Structural mode: enable FFT-based phase alignment |
 | Phase Blend Low | 50 to 500 | 200 | Hz | Below this frequency, use direct mixing (no phase alignment) |
 | Phase Blend High | 1000 to 10000 | 5000 | Hz | Above this frequency, use full phase alignment |
 
@@ -142,10 +142,14 @@ Optional FFT-based phase alignment that reduces comb-filtering artifacts when mu
 
 ## Tips & Best Practices
 
-- Phase coherence adds latency (2048 samples) — disable for live monitoring.
+- Phase coherence and matrix Lt/Rt each add a fixed 2048-sample latency and are mutually exclusive structural modes.
 - LFE is low-pass filtered at 120 Hz and split equally to L/R at -3 dB.
 - The plugin automatically detects speaker configurations (5.1, 7.1, 5.1.4, etc.) from channel count.
-- Normalization prevents clipping when many channels sum together — gain sum is capped at 2.0.
+- Matrix gains are exact and are not silently normalized. Reserve downstream
+  headroom or add an explicit limiter when correlated channels can sum above
+  0 dBFS.
+- Supply `input_layout` for ambiguous 8- and 10-channel inputs. Unknown
+  ambiguous layouts are rejected instead of guessed.
 - Constant-power panning ensures no energy loss for surround and height channels.
 - For unknown channel counts without a speaker config, channels are linearly panned across the stereo field.
 
@@ -160,5 +164,5 @@ Phase-coherent mode:
                                               ↓
                         Per-bin: standard sum + phase-aligned sum, blended by frequency
                                               ↓
-                        IFFT → Overlap-Add (75% overlap, Hann window) → Output (stereo)
+                        IFFT → Overlap-Add (50% overlap, sqrt-Hann window) → Output (stereo)
 ```
