@@ -10839,7 +10839,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-pnd"
-version = "0.5.3"
+version = "0.5.9"
 dependencies = [
  "audioadapter-buffers",
  "hound",

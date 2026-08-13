@@ -27,6 +27,7 @@ pub struct PndAnalyzer {
     // Pre-allocated scratch buffers (reused via .clear())
     peak_scratch: Vec<(f32, f32)>,
     ratio_scratch: Vec<f32>,
+    matched_prev_scratch: Vec<bool>,
 
     // Drift history circular buffer (sized by analysis_window_ms)
     drift_history: Vec<f32>,
@@ -70,6 +71,7 @@ impl PndAnalyzer {
             matched_peaks: Vec::with_capacity(spectrum_size),
             peak_scratch: Vec::with_capacity(spectrum_size),
             ratio_scratch: Vec::with_capacity(spectrum_size),
+            matched_prev_scratch: vec![false; spectrum_size],
 
             drift_history: vec![0.0; max_drift_history_capacity],
             drift_write_pos: 0,
@@ -114,7 +116,22 @@ impl PndAnalyzer {
         let bin_hz = self.sample_rate as f32 / self.fft_size as f32;
         self.peak_scratch.clear();
 
-        let threshold = 0.001; // ~-60dB
+        // Derive the gate from this frame instead of raw FFT units. The old
+        // fixed 0.001 threshold changed behavior with channel gain, window
+        // normalization, and FFT size. Four times the spectrum RMS rejects a
+        // flat noise floor; the relative peak floor retains quiet tonal
+        // partials without admitting numerical residue.
+        let mut spectrum_peak = 0.0_f32;
+        let mut spectrum_power = 0.0_f32;
+        for bin in &self.fft.freq_buffer {
+            let power = bin.norm_sqr();
+            spectrum_peak = spectrum_peak.max(power.sqrt());
+            spectrum_power += power;
+        }
+        let spectrum_rms = (spectrum_power / self.fft.spectrum_size as f32).sqrt();
+        let threshold = (4.0 * spectrum_rms)
+            .max(spectrum_peak * 1.0e-3)
+            .max(f32::MIN_POSITIVE);
         for i in 1..self.fft.spectrum_size - 1 {
             let mag_prev = self.fft.freq_buffer[i - 1].norm();
             let mag_curr = self.fft.freq_buffer[i].norm();
@@ -140,40 +157,13 @@ impl PndAnalyzer {
         // using combined frequency + amplitude cost
         self.ratio_scratch.clear();
         self.matched_peaks.clear();
-        let mut matched_partials = 0;
-
-        if !self.prev_peaks.is_empty() {
-            for &(freq, mag) in &self.peak_scratch {
-                let mut min_cost = f32::MAX;
-                let mut best_prev_freq = 0.0_f32;
-
-                for &(prev_freq, prev_mag) in &self.prev_peaks {
-                    let freq_distance = (freq - prev_freq).abs();
-
-                    // Quick reject: beyond 3% frequency change
-                    if freq_distance > prev_freq * 0.03 {
-                        continue;
-                    }
-
-                    // Combined cost: frequency distance + weighted log-amplitude distance
-                    let log_amp_distance = ((mag + 1e-10).ln() - (prev_mag + 1e-10).ln()).abs();
-                    let cost = freq_distance + AMPLITUDE_COST_WEIGHT * log_amp_distance;
-
-                    if cost < min_cost {
-                        min_cost = cost;
-                        best_prev_freq = prev_freq;
-                    }
-                }
-
-                // Within 50 cents (~3% change) → same partial
-                if best_prev_freq > 0.0 && min_cost < f32::MAX {
-                    let ratio = freq / best_prev_freq;
-                    self.ratio_scratch.push(ratio);
-                    self.matched_peaks.push((freq, mag));
-                    matched_partials += 1;
-                }
-            }
-        }
+        let matched_partials = match_peaks_one_to_one(
+            &self.peak_scratch,
+            &self.prev_peaks,
+            &mut self.matched_prev_scratch,
+            &mut self.ratio_scratch,
+            &mut self.matched_peaks,
+        );
 
         // Update confidence tracking
         self.last_total_peaks = self.peak_scratch.len();
@@ -303,6 +293,56 @@ impl PndAnalyzer {
     }
 }
 
+/// Match current spectral peaks to distinct previous peaks.
+///
+/// A previous partial may only authorize one current partial. Without this
+/// constraint a single broad/leaky peak can be counted repeatedly, inflating
+/// the confidence and allowing an unreliable correction through the gate.
+fn match_peaks_one_to_one(
+    current: &[(f32, f32)],
+    previous: &[(f32, f32)],
+    matched_previous: &mut [bool],
+    ratios: &mut Vec<f32>,
+    matched: &mut Vec<(f32, f32)>,
+) -> usize {
+    ratios.clear();
+    matched.clear();
+    matched_previous[..previous.len()].fill(false);
+
+    for &(freq, mag) in current {
+        let mut min_cost = f32::MAX;
+        let mut best_previous = None;
+
+        for (previous_index, &(previous_freq, previous_mag)) in previous.iter().enumerate() {
+            if matched_previous[previous_index] {
+                continue;
+            }
+
+            let frequency_distance = (freq - previous_freq).abs();
+            // Reject changes beyond roughly 50 cents.
+            if frequency_distance > previous_freq * 0.03 {
+                continue;
+            }
+
+            let log_amplitude_distance = ((mag + 1e-10).ln() - (previous_mag + 1e-10).ln()).abs();
+            let cost = frequency_distance + AMPLITUDE_COST_WEIGHT * log_amplitude_distance;
+            if cost < min_cost {
+                min_cost = cost;
+                best_previous = Some(previous_index);
+            }
+        }
+
+        if let Some(previous_index) = best_previous {
+            matched_previous[previous_index] = true;
+            let previous_frequency = previous[previous_index].0;
+            ratios.push(freq / previous_frequency);
+            matched.push((freq, mag));
+        }
+    }
+
+    ratios.len()
+}
+
 /// Compute drift history capacity: how many FFT frames fit in `analysis_window_ms`.
 fn compute_drift_history_capacity(
     analysis_window_ms: f32,
@@ -346,6 +386,62 @@ mod tests {
             (drift - 1.0).abs() < 0.01,
             "Stable 440Hz tone should produce drift ~1.0, got {drift}"
         );
+    }
+
+    #[test]
+    fn peak_detection_is_invariant_to_signal_level() {
+        fn analyze_at_level(level: f32) -> (f32, usize, f32) {
+            let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
+            let samples: Vec<f32> = (0..48_000)
+                .map(|i| {
+                    let phase = 2.0 * std::f32::consts::PI * i as f32 / 48_000.0;
+                    level * ((440.0 * phase).sin() + 0.5 * (880.0 * phase).sin())
+                })
+                .collect();
+            let drift = analyzer.analyze(&samples);
+            (drift, analyzer.total_peaks(), analyzer.confidence())
+        }
+
+        let loud = analyze_at_level(0.5);
+        let quiet = analyze_at_level(1.0e-7);
+        assert_eq!(quiet.1, loud.1, "quiet={quiet:?}, loud={loud:?}");
+        assert!(quiet.1 >= 2, "expected both controlled partials: {quiet:?}");
+        assert!((quiet.0 - loud.0).abs() < 1e-5);
+        assert!((quiet.2 - loud.2).abs() < 1e-5);
+    }
+
+    #[test]
+    fn broadband_noise_does_not_create_a_confident_drift_observation() {
+        let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
+        let mut state = 0x1234_5678_u32;
+        let noise: Vec<f32> = (0..48_000)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (state as i32) as f32 / i32::MAX as f32 * 0.1
+            })
+            .collect();
+        let drift = analyzer.analyze(&noise);
+        assert!((drift - 1.0).abs() < 1e-6, "drift={drift}");
+        assert!(
+            analyzer.confidence() < 0.5,
+            "confidence={}",
+            analyzer.confidence()
+        );
+    }
+
+    #[test]
+    fn silence_to_low_tone_transition_recovers_without_stale_drift() {
+        let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
+        analyzer.analyze(&vec![0.0; 4096]);
+        let tone: Vec<f32> = (0..48_000)
+            .map(|i| {
+                let phase = 2.0 * std::f32::consts::PI * i as f32 / 48_000.0;
+                0.4 * ((62.5 * phase).sin() + 0.4 * (125.0 * phase).sin())
+            })
+            .collect();
+        let drift = analyzer.analyze(&tone);
+        assert!((drift - 1.0).abs() < 0.01, "drift={drift}");
+        assert!(analyzer.total_peaks() >= 2);
     }
 
     #[test]
@@ -494,5 +590,26 @@ mod tests {
         // Very small window should clamp to 1
         let cap_min = compute_drift_history_capacity(1.0, 44100, 512);
         assert_eq!(cap_min, 1);
+    }
+
+    #[test]
+    fn peak_matching_assigns_each_previous_peak_at_most_once() {
+        let current = [(440.0_f32, 1.0_f32), (440.5_f32, 0.9_f32)];
+        let previous = [(440.0_f32, 1.0_f32)];
+        let mut matched_previous = vec![false; previous.len()];
+        let mut ratios = Vec::new();
+        let mut matched = Vec::new();
+
+        let count = match_peaks_one_to_one(
+            &current,
+            &previous,
+            &mut matched_previous,
+            &mut ratios,
+            &mut matched,
+        );
+
+        assert_eq!(count, 1);
+        assert_eq!(ratios.len(), 1);
+        assert_eq!(matched.len(), 1);
     }
 }

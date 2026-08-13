@@ -2,7 +2,6 @@ use super::analysis::PndAnalyzer;
 pub use super::config::PndPluginParams;
 use super::consts::CORRECTION_STRENGTH_SMOOTH_MS;
 use super::consts::PV_FFT_SIZE;
-use super::consts::PV_HOP_SIZE;
 use super::consts::RESAMPLER_CHUNK_SIZE;
 use super::phase_vocoder::PhaseVocoder;
 use super::types::PndData;
@@ -20,6 +19,8 @@ use sotf_host::simd::{deinterleave_stereo, interleave_stereo};
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::sync::Arc;
+
+const MAX_PND_CHANNELS: usize = 64;
 
 pub struct PndPlugin {
     // Configuration
@@ -54,6 +55,8 @@ pub struct PndPlugin {
 
     // Scratch buffer for median computation across channels
     pub(super) channel_drift_scratch: Vec<f32>,
+    // Scratch buffer for confidence-weighted channel consensus
+    pub(super) channel_consensus_scratch: Vec<(f32, f32)>,
 
     // Parameters
     pub(super) param_correction_strength: ParameterId,
@@ -79,6 +82,7 @@ pub struct PndPlugin {
     pub(super) cache: RealTimeCache<PndData>,
     pub(super) cache_update_counter: usize,
     pub(super) cached_parameters: Vec<Parameter>,
+    pub(super) initialized: bool,
 }
 
 impl PndPlugin {
@@ -102,6 +106,7 @@ impl PndPlugin {
             output_ring_count: 0,
             interleaved_chunk_buffer: Vec::new(),
             channel_drift_scratch: vec![0.0; channels],
+            channel_consensus_scratch: vec![(1.0, 0.0); channels],
 
             param_correction_strength: ParameterId::from("correction_strength"),
             correction_strength: pk(PD, "correction_strength").default_f64() as f32,
@@ -131,6 +136,7 @@ impl PndPlugin {
             cache: RealTimeCache::new(PndData::default()),
             cache_update_counter: 0,
             cached_parameters: Vec::new(),
+            initialized: false,
         };
         p.rebuild_cached_parameters();
         p
@@ -188,7 +194,42 @@ impl PndPlugin {
         apply_spec_update_modes(&mut self.cached_parameters, PD);
     }
 
-    pub fn from_params(channels: usize, params: PndPluginParams) -> Self {
+    /// Construct a plugin from serialized parameters after applying the same
+    /// finite/range checks used by the live parameter schema.
+    pub fn try_from_params(channels: usize, params: PndPluginParams) -> PluginResult<Self> {
+        if channels == 0 {
+            return Err("PND requires at least one channel".to_string());
+        }
+        if channels > MAX_PND_CHANNELS {
+            return Err(format!(
+                "PND supports at most {MAX_PND_CHANNELS} channels, got {channels}"
+            ));
+        }
+        for (name, value) in [
+            ("correction_strength", params.correction_strength),
+            ("analysis_window_ms", params.analysis_window_ms),
+            ("drift_smoothing", params.drift_smoothing),
+            ("confidence_threshold", params.confidence_threshold),
+        ] {
+            let spec = pk(PD, name);
+            if !value.is_finite()
+                || f64::from(value) < spec.min_f64()
+                || f64::from(value) > spec.max_f64()
+            {
+                return Err(format!(
+                    "Invalid PND parameter {name}={value}; expected a finite value in [{}, {}]",
+                    spec.min_f64(),
+                    spec.max_f64()
+                ));
+            }
+        }
+        if params.phase_vocoder {
+            return Err(
+                "PND phase_vocoder mode is unsupported until its spectral remapping and latency contracts are validated"
+                    .to_string(),
+            );
+        }
+
         let mut plugin = Self::new(channels);
         plugin.correction_strength = params.correction_strength;
         plugin.analysis_window_ms = params.analysis_window_ms;
@@ -197,7 +238,17 @@ impl PndPlugin {
         plugin.confidence_threshold = params.confidence_threshold;
         plugin.phase_vocoder = params.phase_vocoder;
         plugin.rebuild_cached_parameters();
-        plugin
+        Ok(plugin)
+    }
+
+    /// Backwards-compatible infallible constructor. New factory code should
+    /// use [`Self::try_from_params`] so malformed serialized state is rejected
+    /// instead of reaching DSP initialization.
+    pub fn from_params(channels: usize, params: PndPluginParams) -> Self {
+        Self::try_from_params(channels, params).unwrap_or_else(|_| {
+            Self::try_from_params(channels.max(1), PndPluginParams::default())
+                .expect("default PND parameters are valid")
+        })
     }
 
     /// Phase vocoder processing path: uses STFT analysis/synthesis to shift pitch
@@ -265,22 +316,13 @@ impl PndPlugin {
         } else if self.multi_channel_analysis && self.analyzers.len() > 1 {
             let n = self.analyzers.len().min(self.channels);
             for (ch, analyzer) in self.analyzers.iter_mut().enumerate().take(n) {
-                self.channel_drift_scratch[ch] =
-                    analyzer.analyze(&self.planar_input[ch][..num_frames]);
+                let drift = analyzer.analyze(&self.planar_input[ch][..num_frames]);
+                self.channel_consensus_scratch[ch] = (drift, analyzer.confidence());
             }
-            let mid = n / 2;
-            self.channel_drift_scratch[..n].select_nth_unstable_by(mid, |a, b| {
-                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let median_drift = self.channel_drift_scratch[mid];
-            let avg_confidence = self
-                .analyzers
-                .iter()
-                .take(n)
-                .map(|a| a.confidence())
-                .sum::<f32>()
-                / n as f32;
-            (median_drift, avg_confidence)
+            weighted_channel_consensus(
+                &mut self.channel_consensus_scratch[..n],
+                self.confidence_threshold,
+            )
         } else {
             let drift = self.analyzers[0].analyze(&self.planar_input[0][..num_frames]);
             let conf = self.analyzers[0].confidence();
@@ -291,8 +333,8 @@ impl PndPlugin {
         // Calculate correction ratio
         if confidence >= self.confidence_threshold {
             let target_correction = 1.0 / drift_ratio as f64;
-            let alpha = self.drift_smoothing as f64;
-            self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
+            self.current_ratio =
+                smooth_drift_ratio(self.current_ratio, target_correction, self.drift_smoothing);
         }
 
         // Advance the smoother to prevent zipper noise on rapid strength changes.
@@ -355,6 +397,68 @@ impl PndPlugin {
         Ok(nf)
     }
 
+    /// Reference-free monitoring path. Absolute pitch or clock error is not
+    /// identifiable from adjacent spectra, and variable-duration SRC cannot
+    /// satisfy a fixed-frame insert contract. Keep the observable analysis,
+    /// but preserve the programme sample-for-sample until the host supplies an
+    /// explicit clock/pilot reference and an asynchronous render boundary.
+    fn process_monitoring(&mut self, input: &[f32], output: &mut [f32], num_frames: usize) {
+        output.copy_from_slice(input);
+        let capacity = self.planar_input.first().map_or(0, Vec::len);
+        if capacity == 0 || self.analyzers.is_empty() {
+            return;
+        }
+
+        let mut frame_offset = 0;
+        let mut drift_ratio = 1.0_f32;
+        let mut confidence = 0.0_f32;
+        while frame_offset < num_frames {
+            let chunk_frames = (num_frames - frame_offset).min(capacity);
+            for channel in 0..self.channels {
+                for frame in 0..chunk_frames {
+                    self.planar_input[channel][frame] =
+                        input[(frame_offset + frame) * self.channels + channel];
+                }
+            }
+
+            if self.multi_channel_analysis && self.analyzers.len() > 1 {
+                let count = self.analyzers.len().min(self.channels);
+                for (channel, analyzer) in self.analyzers.iter_mut().enumerate().take(count) {
+                    let drift = analyzer.analyze(&self.planar_input[channel][..chunk_frames]);
+                    self.channel_consensus_scratch[channel] = (drift, analyzer.confidence());
+                }
+                (drift_ratio, confidence) = weighted_channel_consensus(
+                    &mut self.channel_consensus_scratch[..count],
+                    self.confidence_threshold,
+                );
+            } else {
+                drift_ratio = self.analyzers[0].analyze(&self.planar_input[0][..chunk_frames]);
+                confidence = self.analyzers[0].confidence();
+            }
+            frame_offset += chunk_frames;
+        }
+
+        self.last_drift_ratio = f64::from(drift_ratio);
+        self.current_ratio = 1.0;
+        self.cache_update_counter += 1;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            let total_matched = self
+                .analyzers
+                .iter()
+                .map(PndAnalyzer::matched_partials)
+                .sum();
+            let total_peaks = self.analyzers.iter().map(PndAnalyzer::total_peaks).sum();
+            self.cache.update(|data| {
+                data.drift_ratio = f64::from(drift_ratio);
+                data.correction_ratio = 1.0;
+                data.confidence = confidence;
+                data.matched_partials = total_matched;
+                data.total_peaks = total_peaks;
+            });
+        }
+    }
+
     pub(super) fn init_resampler(&mut self) -> PluginResult<()> {
         let resampler = Async::<f32>::new_poly(
             1.0, // Initial ratio
@@ -386,6 +490,8 @@ impl PndPlugin {
             ));
         }
         self.channel_drift_scratch.resize(num_analyzers.max(1), 0.0);
+        self.channel_consensus_scratch
+            .resize(num_analyzers.max(1), (1.0, 0.0));
     }
 
     /// Process one resampler chunk from the input ring buffer.
@@ -435,23 +541,13 @@ impl PndPlugin {
             // Analyze each channel independently and take the median drift ratio
             let n = self.analyzers.len().min(self.channels);
             for (ch, analyzer) in self.analyzers.iter_mut().enumerate().take(n) {
-                self.channel_drift_scratch[ch] =
-                    analyzer.analyze(&self.planar_input[ch][..chunk_frames]);
+                let drift = analyzer.analyze(&self.planar_input[ch][..chunk_frames]);
+                self.channel_consensus_scratch[ch] = (drift, analyzer.confidence());
             }
-            let mid = n / 2;
-            self.channel_drift_scratch[..n].select_nth_unstable_by(mid, |a, b| {
-                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            let median_drift = self.channel_drift_scratch[mid];
-            // Average confidence across all analyzers
-            let avg_confidence = self
-                .analyzers
-                .iter()
-                .take(n)
-                .map(|a| a.confidence())
-                .sum::<f32>()
-                / n as f32;
-            (median_drift, avg_confidence)
+            weighted_channel_consensus(
+                &mut self.channel_consensus_scratch[..n],
+                self.confidence_threshold,
+            )
         } else {
             // Single-channel mode: analyze channel 0 only
             let drift = self.analyzers[0].analyze(&self.planar_input[0][..chunk_frames]);
@@ -465,8 +561,8 @@ impl PndPlugin {
         // instead of applying an unreliable correction.
         if confidence >= self.confidence_threshold {
             let target_correction = 1.0 / drift_ratio as f64;
-            let alpha = self.drift_smoothing as f64;
-            self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
+            self.current_ratio =
+                smooth_drift_ratio(self.current_ratio, target_correction, self.drift_smoothing);
         }
         // else: current_ratio stays frozen at its last reliable value
 
@@ -476,10 +572,6 @@ impl PndPlugin {
         resampler
             .set_resample_ratio(final_ratio, true)
             .map_err(|e| format!("{:?}", e))?;
-
-        // Update read position (Circular)
-        self.input_ring_read_pos = (self.input_ring_read_pos + chunk_samples) % cap_in;
-        self.input_ring_count -= chunk_samples;
 
         // 5. Resample
         let max_output_frames = resampler.output_frames_max();
@@ -506,12 +598,30 @@ impl PndPlugin {
         // 6. Re-interleave into output ring (Circular)
         let out_samples = out_written * self.channels;
         let cap_out = self.output_ring.len();
-        if self.output_ring_count + out_samples > cap_out {
+        if out_samples > cap_out {
             return Err(format!(
-                "Output ring overflow: need {}, available {}",
-                out_samples,
-                cap_out.saturating_sub(self.output_ring_count)
+                "Resampler output chunk ({out_samples} samples) exceeds prepared ring ({cap_out})"
             ));
+        }
+        // Commit the queue only after every fallible SRC operation and the
+        // prepared output-capacity check have succeeded. On error, the input
+        // chunk remains available for an explicit retry or reset.
+        self.input_ring_read_pos = (self.input_ring_read_pos + chunk_samples) % cap_in;
+        self.input_ring_count -= chunk_samples;
+        // A fixed-frame host cannot wait for a variable-rate SRC. Keep the
+        // queue bounded by discarding the oldest complete frames when a
+        // sustained correction produces faster than the callback consumes.
+        // The callback has a dry fallback for the opposite (underrun) case,
+        // so this policy preserves the frame contract without overflow errors
+        // or unbounded latency.
+        let required_drop = self
+            .output_ring_count
+            .saturating_add(out_samples)
+            .saturating_sub(cap_out);
+        if required_drop > 0 {
+            let drop_samples = (required_drop / self.channels) * self.channels;
+            self.output_ring_read_pos = (self.output_ring_read_pos + drop_samples) % cap_out;
+            self.output_ring_count -= drop_samples;
         }
 
         if self.channels == 2 {
@@ -552,10 +662,59 @@ impl PndPlugin {
     }
 }
 
+/// Apply one drift update using the documented smoothing convention:
+/// larger values track more slowly, while zero tracks the target immediately.
+pub(super) fn smooth_drift_ratio(current: f64, target: f64, smoothing: f32) -> f64 {
+    let smoothing = f64::from(smoothing.clamp(0.0, 1.0));
+    current + (target - current) * (1.0 - smoothing)
+}
+
+/// Combine channel observations without allowing silent or low-confidence
+/// channels to outvote a reliable tonal channel. Observations are compacted
+/// and sorted in the caller-owned scratch buffer, so this remains allocation
+/// free in the processing callback.
+fn weighted_channel_consensus(
+    observations: &mut [(f32, f32)],
+    confidence_threshold: f32,
+) -> (f32, f32) {
+    let mut valid = 0;
+    for index in 0..observations.len() {
+        let (ratio, confidence) = observations[index];
+        if ratio.is_finite()
+            && ratio > 0.0
+            && confidence.is_finite()
+            && confidence >= confidence_threshold
+        {
+            observations[valid] = (ratio, confidence);
+            valid += 1;
+        }
+    }
+
+    if valid == 0 {
+        return (1.0, 0.0);
+    }
+
+    observations[..valid]
+        .sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let total_weight: f32 = observations[..valid].iter().map(|(_, c)| *c).sum();
+    let target_weight = total_weight * 0.5;
+    let mut accumulated = 0.0;
+    let mut weighted_median = observations[valid - 1].0;
+    for &(ratio, confidence) in &observations[..valid] {
+        accumulated += confidence;
+        if accumulated >= target_weight {
+            weighted_median = ratio;
+            break;
+        }
+    }
+
+    (weighted_median, total_weight / valid as f32)
+}
+
 impl Plugin for PndPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Pitch Drift Corrector", "0.2.0", "SotF")
-            .with_description("Polyphonic note detection and varispeed correction")
+        PluginInfo::new("Pitch Motion Monitor", env!("CARGO_PKG_VERSION"), "SotF")
+            .with_description("Reference-free polyphonic pitch-motion monitoring")
     }
 
     fn input_channels(&self) -> usize {
@@ -586,6 +745,12 @@ impl Plugin for PndPlugin {
                     .set_target(self.correction_strength);
             }
         } else if id == self.param_analysis_window_ms {
+            if self.initialized {
+                return Err(
+                    "analysis_window_ms is a structural setup parameter; rebuild the plugin"
+                        .to_string(),
+                );
+            }
             let v = value
                 .as_float()
                 .unwrap_or(pk(PD, "analysis_window_ms").default_f64() as f32);
@@ -603,6 +768,12 @@ impl Plugin for PndPlugin {
                 self.drift_smoothing = v;
             }
         } else if id == self.param_multi_channel_analysis {
+            if self.initialized {
+                return Err(
+                    "multi_channel_analysis is a structural setup parameter; rebuild the plugin"
+                        .to_string(),
+                );
+            }
             let v = value
                 .as_bool()
                 .unwrap_or(pk(PD, "multi_channel_analysis").default_bool());
@@ -617,13 +788,21 @@ impl Plugin for PndPlugin {
                 self.confidence_threshold = v;
             }
         } else if id == self.param_phase_vocoder {
+            if self.initialized {
+                return Err(
+                    "phase_vocoder is a structural setup parameter; rebuild the plugin".to_string(),
+                );
+            }
             let v = value
                 .as_bool()
                 .unwrap_or(pk(PD, "phase_vocoder").default_bool());
-            self.phase_vocoder = v;
-            if v && self.vocoder.is_none() {
-                self.vocoder = Some(PhaseVocoder::new(self.channels));
+            if v {
+                return Err(
+                    "PND phase_vocoder mode is unsupported until its spectral remapping and latency contracts are validated"
+                        .to_string(),
+                );
             }
+            self.phase_vocoder = v;
         }
         self.rebuild_cached_parameters();
         Ok(())
@@ -648,6 +827,9 @@ impl Plugin for PndPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("PND sample rate must be non-zero".to_string());
+        }
         self.sample_rate = sample_rate;
         self.init_resampler()?;
         self.init_analyzers();
@@ -692,6 +874,8 @@ impl Plugin for PndPlugin {
             self.vocoder = Some(PhaseVocoder::new(self.channels));
         }
 
+        self.initialized = true;
+
         Ok(())
     }
 
@@ -723,9 +907,20 @@ impl Plugin for PndPlugin {
                 output.len()
             ));
         }
+        if context.sample_rate != self.sample_rate {
+            return Err(format!(
+                "Process context sample rate {} does not match initialized sample rate {}",
+                context.sample_rate, self.sample_rate
+            ));
+        }
 
         if self.phase_vocoder {
             return self.process_phase_vocoder(input, output, context);
+        }
+
+        if self.correction_strength == 0.0 {
+            self.process_monitoring(input, output, num_frames);
+            return Ok(num_frames);
         }
 
         let input_space = self.input_ring.len().saturating_sub(self.input_ring_count);
@@ -778,10 +973,13 @@ impl Plugin for PndPlugin {
             self.output_ring_count -= drain_samples;
         }
 
-        // Zero remaining output if not enough data (initial latency period)
+        // The SRC may temporarily underrun while its variable-rate output
+        // catches up. Preserve the fixed-frame contract with the corresponding
+        // input samples instead of synthesizing silence.
         if drain_frames < num_frames {
             let zero_start = drain_frames * self.channels;
-            output[zero_start..total_output_samples].fill(0.0);
+            output[zero_start..total_output_samples]
+                .copy_from_slice(&input[zero_start..total_output_samples]);
         }
 
         // Report num_frames to prevent ring buffer underruns in host
@@ -832,22 +1030,20 @@ impl Plugin for PndPlugin {
         self.output_ring_count = 0;
         self.correction_strength_smoother
             .reset(self.correction_strength);
-        // Re-create the resampler to flush rubato's internal delay lines.
-        // Errors are ignored here (init_resampler only fails if parameters are
-        // out of range, which cannot change between initialize() and reset()).
-        let _ = self.init_resampler();
+        if let Some(resampler) = &mut self.resampler {
+            resampler.reset();
+        }
         if let Some(v) = &mut self.vocoder {
             v.reset();
         }
     }
 
     fn latency_samples(&self) -> usize {
-        if self.phase_vocoder {
-            // Phase vocoder latency: one full FFT frame plus one hop of overlap-add.
-            PV_FFT_SIZE + PV_HOP_SIZE
-        } else {
-            RESAMPLER_CHUNK_SIZE
-        }
+        // The fixed-frame wrapper emits corresponding dry input whenever its
+        // variable-rate queue has no frame ready, so no fixed positive delay
+        // can be compensated by the host. Unsupported phase-vocoder state is
+        // rejected at construction.
+        0
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {

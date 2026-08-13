@@ -1,3 +1,42 @@
+# 0.5.8
+
+- Narrow the public contract to reference-free pitch-motion monitoring with
+  exact fixed-frame passthrough; reject non-zero correction and the incomplete
+  phase-vocoder mode instead of dropping/substituting programme frames.
+- Make reset allocation-free with Rubato's in-place reset and make queued-input
+  commit transactional after SRC/capacity success.
+- Replace raw FFT-unit peak gating with a level-normalized RMS/relative gate.
+- Correct latency and runtime version metadata, and add identifiability,
+  two-minute irregular-partition, quiet/loud invariance, allocation, malformed
+  factory, and queue-transaction regressions.
+
+# 0.5.7
+
+- Reject malformed factory parameters (non-finite values, out-of-range values,
+  and zero channels) through the same schema bounds used by live updates.
+- Enforce graph-rebuild-only application for structural analysis/topology
+  parameters after initialization, avoiding live FFT/vocoder allocations and
+  latency changes.
+- Correct drift smoothing semantics so larger smoothing values track more
+  slowly, and use confidence-weighted channel consensus with one-to-one peak
+  matching to prevent duplicate or silent channels from authorizing corrections.
+
+# 0.5.6
+
+- Clarify that bounded-ring overflow handling is only a mitigation. The full
+  no-drop fixed-frame clock-correction contract remains deferred to a host/SRC
+  architecture change and is not represented as fully fixed.
+
+# 0.5.5
+
+- Fixed sustained variable-rate correction overflowing the bounded output ring
+  under the fixed-frame host contract. Oldest queued frames are dropped to keep
+  latency bounded, and temporary SRC underruns preserve corresponding input
+  samples instead of inserting silence.
+- Reject processing contexts whose sample rate differs from the initialized
+  rate; added regression coverage for long-running correction and mismatch
+  handling.
+
 # 0.5.4
 
 - Fixed the phase-vocoder path rejecting host blocks larger than its 1024-frame planar scratch
@@ -58,3 +97,7 @@
 - Preallocated analyzer peak/ratio scratch and max drift-history storage so analysis-window changes do not reallocate.
 - Marked analysis-window, multi-channel analysis, and phase-vocoder controls as structural/setup.
 - Fixed from_params() returning stale cached parameter values.
+# 0.5.9
+
+- Reject a zero host sample rate at facade construction, before allocating PND state.
+- Keep unavailable compatibility controls hidden but explicitly represented in the layout contract.

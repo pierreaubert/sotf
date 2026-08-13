@@ -1,7 +1,7 @@
 // Integration tests for PND (Varispeed) plugin
 
 use sotf_host::{ParameterId, ParameterValue, Plugin, ProcessContext};
-use sotf_plugin_pnd::{PndPlugin, PndPluginParams};
+use sotf_plugin_pnd::{PndData, PndPlugin, PndPluginParams};
 
 #[test]
 fn test_pnd_instantiation() {
@@ -10,7 +10,7 @@ fn test_pnd_instantiation() {
 
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 2);
-    assert_eq!(plugin.info().name, "Pitch Drift Corrector");
+    assert_eq!(plugin.info().name, "Pitch Motion Monitor");
 
     plugin.initialize(44100).unwrap();
 }
@@ -69,101 +69,49 @@ fn test_pnd_parameters() {
 
     // Check default params
     let str_param = plugin.get_parameter(&ParameterId::from("correction_strength"));
-    assert!(matches!(str_param, Some(ParameterValue::Float(v)) if (v - 1.0).abs() < 0.001));
+    assert!(matches!(str_param, Some(ParameterValue::Float(v)) if v == 0.0));
 
-    // Set param
-    plugin
+    // Reference-free fixed-frame correction is intentionally unavailable.
+    let err = plugin
         .set_parameter(
             ParameterId::from("correction_strength"),
             ParameterValue::Float(0.5),
         )
-        .unwrap();
+        .unwrap_err();
+    assert!(err.contains("maximum 0"), "{err}");
 
     let new_val = plugin.get_parameter(&ParameterId::from("correction_strength"));
-    assert_eq!(new_val, Some(ParameterValue::Float(0.5)));
+    assert_eq!(new_val, Some(ParameterValue::Float(0.0)));
 }
 
 #[test]
-fn test_pnd_known_drift_correction() {
-    // A 440Hz tone with +1% pitch drift (440 * 1.01 ≈ 444.4Hz) should be
-    // corrected toward 440Hz by the PND. We verify the output frequency
-    // is closer to 440Hz than the input.
-    let sr = 44100;
-    let mut plugin = PndPlugin::new(1);
-    plugin.initialize(sr).unwrap();
-
-    // Enable correction
-    plugin
-        .set_parameter(
-            ParameterId::from("correction_strength"),
-            ParameterValue::Float(1.0),
-        )
-        .unwrap();
-
-    // Generate 2 seconds of 444.4Hz sine (440Hz + 1% drift) — mono
-    let total_frames = sr as usize * 2;
-    let drift_freq = 440.0 * 1.01;
-    let mut input = vec![0.0f32; total_frames];
-    for (i, sample) in input.iter_mut().enumerate() {
-        let t = i as f32 / sr as f32;
-        *sample = (2.0 * std::f32::consts::PI * drift_freq * t).sin() * 0.5;
-    }
-    let mut output = vec![0.0f32; total_frames];
-
-    // Process in blocks
-    let block_size = 1024;
-    for pos in (0..total_frames).step_by(block_size) {
-        let end = (pos + block_size).min(total_frames);
-        let nf = end - pos;
-        let ctx = ProcessContext::new(sr, nf);
-        plugin
-            .process(&input[pos..end], &mut output[pos..end], &ctx)
-            .unwrap();
-    }
-
-    // Measure output frequency via zero-crossing rate in the steady-state region
-    // (skip first 0.5s for latency/convergence)
-    let skip = sr as usize / 2;
-    let measure_region = &output[skip..];
-
-    let mut zero_crossings = 0usize;
-    for w in measure_region.windows(2) {
-        if w[0].signum() != w[1].signum() && w[0] != 0.0 {
-            zero_crossings += 1;
+fn stable_tones_without_a_reference_are_not_treated_as_absolute_error() {
+    fn correction_for(freq: f32) -> f64 {
+        let sample_rate = 44_100;
+        let mut plugin = PndPlugin::new(1);
+        plugin.initialize(sample_rate).unwrap();
+        let block_size = 1024;
+        let input: Vec<f32> = (0..block_size)
+            .map(|i| {
+                (2.0 * std::f32::consts::PI * freq * i as f32 / sample_rate as f32).sin() * 0.5
+            })
+            .collect();
+        let mut output = vec![0.0; block_size];
+        let context = ProcessContext::new(sample_rate, block_size);
+        for _ in 0..48 {
+            plugin.process(&input, &mut output, &context).unwrap();
         }
+        plugin
+            .get_data()
+            .unwrap()
+            .downcast_ref::<PndData>()
+            .unwrap()
+            .correction_ratio
     }
 
-    // Frequency ≈ zero_crossings / 2 / duration
-    let duration = measure_region.len() as f32 / sr as f32;
-    let measured_freq = zero_crossings as f32 / 2.0 / duration;
-
-    // The PND may not achieve perfect correction, but the output frequency
-    // should be closer to 440Hz than the input 444.4Hz
-    let input_error = (drift_freq - 440.0).abs();
-    let output_error = (measured_freq - 440.0).abs();
-
-    // Output should have non-zero energy (not silence)
-    let energy: f32 = measure_region.iter().map(|x| x * x).sum();
-    assert!(
-        energy > 0.01,
-        "Output should have signal energy, got {}",
-        energy
-    );
-
-    // Output frequency should be measurable (in a reasonable range)
-    assert!(
-        measured_freq > 400.0 && measured_freq < 500.0,
-        "Measured frequency {} should be near 440Hz",
-        measured_freq
-    );
-
-    // The PND must at minimum not make the frequency error worse.
-    // After 2 seconds at block_size=1024 the corrector has had ample time to
-    // converge, so the output frequency should be closer to 440 Hz than the
-    // raw input (444.4 Hz).
-    assert!(
-        output_error < input_error,
-        "PND should correct drift: output error ({output_error:.2}Hz) should be less than \
-         input error ({input_error:.2}Hz). input_freq={drift_freq:.1}Hz, measured_freq={measured_freq:.1}Hz"
-    );
+    let nominal = correction_for(440.0);
+    let offset = correction_for(444.4);
+    assert!((nominal - 1.0).abs() < 1e-6, "nominal={nominal}");
+    assert!((offset - 1.0).abs() < 1e-6, "offset={offset}");
+    assert!((nominal - offset).abs() < 1e-9);
 }

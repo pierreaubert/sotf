@@ -65,6 +65,67 @@ fn unknown_plugin_type_not_supported() {
 }
 
 #[test]
+fn declick_factory_validates_construction_and_preserves_all_parameters() {
+    assert!(create_plugin("declick", &serde_json::json!({}), 0, SAMPLE_RATE).is_err());
+    assert!(create_plugin("declick", &serde_json::json!({}), 2, 0).is_err());
+
+    let plugin = create_plugin(
+        "declick",
+        &serde_json::json!({
+            "enabled": false,
+            "sensitivity": 25.0,
+            "link_channels": false
+        }),
+        2,
+        SAMPLE_RATE,
+    )
+    .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&"enabled".into()),
+        Some(sotf_plugins::ParameterValue::Bool(false))
+    );
+    assert_eq!(
+        plugin.get_parameter(&"sensitivity".into()),
+        Some(sotf_plugins::ParameterValue::Float(25.0))
+    );
+    assert_eq!(
+        plugin.get_parameter(&"link_channels".into()),
+        Some(sotf_plugins::ParameterValue::Bool(false))
+    );
+}
+
+#[test]
+fn pnd_factory_exposes_monitoring_only_and_rejects_unsupported_modes() {
+    let plugin = create_plugin("pnd", &serde_json::json!({}), 2, SAMPLE_RATE).unwrap();
+    assert_eq!(plugin.latency_samples(), 0);
+    assert_eq!(
+        plugin.get_parameter(&"correction_strength".into()),
+        Some(sotf_plugins::ParameterValue::Float(0.0))
+    );
+
+    assert!(
+        create_plugin(
+            "pnd",
+            &serde_json::json!({"correction_strength": 0.5}),
+            2,
+            SAMPLE_RATE,
+        )
+        .is_err()
+    );
+    assert!(
+        create_plugin(
+            "pnd",
+            &serde_json::json!({"phase_vocoder": true}),
+            2,
+            SAMPLE_RATE,
+        )
+        .is_err()
+    );
+    assert!(create_plugin("pnd", &serde_json::json!({}), 2, 0).is_err());
+    assert!(!is_supported_plugin_type("varispeed"));
+}
+
+#[test]
 fn advertised_factory_types_are_smoke_covered_or_documented_special_cases() {
     let smoke_cases = [
         ("gain", serde_json::json!({}), 2),
@@ -72,6 +133,7 @@ fn advertised_factory_types_are_smoke_covered_or_documented_special_cases() {
         ("parametric_eq", serde_json::json!({"filters": []}), 2),
         ("compressor", serde_json::json!({}), 2),
         ("expander", serde_json::json!({}), 2),
+        ("dither", serde_json::json!({}), 2),
         ("limiter", serde_json::json!({}), 2),
         ("gate", serde_json::json!({}), 2),
         ("delay", serde_json::json!({}), 2),
@@ -105,7 +167,6 @@ fn advertised_factory_types_are_smoke_covered_or_documented_special_cases() {
         ("declick", serde_json::json!({}), 2),
         ("transient_repair", serde_json::json!({}), 2),
         ("pnd", serde_json::json!({}), 2),
-        ("varispeed", serde_json::json!({}), 2),
         (
             "crossover",
             serde_json::json!({
@@ -138,7 +199,11 @@ fn advertised_factory_types_are_smoke_covered_or_documented_special_cases() {
             }),
             2,
         ),
-        ("band_split", serde_json::json!({"bands": 2}), 2),
+        (
+            "band_split",
+            serde_json::json!({"num_bands": 2, "frequency": 1000.0, "type": "LR24"}),
+            2,
+        ),
         ("band_merge", serde_json::json!({"bands": 2}), 4),
         ("ab_compare", serde_json::json!({}), 2),
         ("ab", serde_json::json!({}), 2),

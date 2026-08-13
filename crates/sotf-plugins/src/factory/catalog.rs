@@ -913,7 +913,10 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             "Crosstalk Cancellation",
             Beta,
             PluginSupportedInputLayouts::Enumerated(STEREO_CHANNEL_WIDTH),
-            PluginChannelOutputModel::PreservesInput,
+            PluginChannelOutputModel::Configurable {
+                description: "stereo to configured RoomEQ speaker layout",
+                default_output: PluginDefaultChannelOutput::PreservesInput,
+            },
             PluginLatencyModel::FrameBased("one full FFT frame"),
             "sotf_plugin_xtc::params::PARAMS",
             Generated,
@@ -950,7 +953,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             "sotf-plugin-speech-denoiser",
             "Speech Denoiser",
             Alpha,
-            PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
+            PluginSupportedInputLayouts::Enumerated(&[1, 2]),
             PluginChannelOutputModel::PreservesInput,
             PluginLatencyModel::FrameBased("RNNoise 480-sample frame at 48 kHz"),
             "sotf_plugin_speech_denoiser::params::PARAMS",
@@ -971,13 +974,13 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             Alpha,
             PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
             PluginChannelOutputModel::PreservesInput,
-            PluginLatencyModel::PluginReported("active reduction configuration"),
+            PluginLatencyModel::Zero,
             "sotf_plugin_hiss_reducer::params::PARAMS",
             Generated,
             true,
         ),
         zero_alloc_evidence(
-            "sotf-plugin-hiss-reducer high-frequency attenuation, disabled transparency, state-preserving updates, sample-rate initialization, and reset tests"
+            "sotf-plugin-hiss-reducer power/persistence detector, transient rejection, smoothed cutoff/bypass, sample-rate timing, exact reconstruction, non-finite/denormal, factory, and realtime-allocation tests"
         )
     ),
     entry!(
@@ -1001,21 +1004,21 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
     ),
     entry!(
         "pnd",
-        ["pnd", "varispeed"],
+        ["pnd"],
         Processor,
         builtin_metadata!(
             "sotf-plugin-pnd",
-            "PND Varispeed",
+            "PND Pitch Motion Monitor",
             Alpha,
             PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
             PluginChannelOutputModel::PreservesInput,
-            PluginLatencyModel::FrameBased("phase-vocoder analysis frame"),
+            PluginLatencyModel::Zero,
             "sotf_plugin_pnd::params::PARAMS",
             Generated,
             true,
         ),
         zero_alloc_evidence(
-            "sotf-plugin-pnd stable-tone near-unity, known-drift correction, phase-vocoder transition, smoothing, latency, reset, and block-size tests"
+            "sotf-plugin-pnd identifiability, exact two-minute passthrough, amplitude/noise robustness, transactional queue, zero-allocation reset, zero-latency, malformed-state, and block-partition tests"
         )
     ),
     entry!(
@@ -1026,7 +1029,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             "sotf-plugin-binaural",
             "Binaural Decoder",
             Alpha,
-            PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
+            PluginSupportedInputLayouts::Enumerated(&[1, 2, 3, 5, 6, 8, 10, 12, 14, 16]),
             PluginChannelOutputModel::Fixed(2),
             PluginLatencyModel::FrameBased("HRTF convolution partition"),
             "sotf_plugin_binaural::params::PARAMS",
@@ -1046,7 +1049,10 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             "Crossover",
             Beta,
             PluginSupportedInputLayouts::Enumerated(STANDARD_CHANNEL_WIDTHS),
-            PluginChannelOutputModel::PreservesInput,
+            PluginChannelOutputModel::Configurable {
+                description: "preserves input for low/high selection; input channels multiplied by compiled band count for Both",
+                default_output: PluginDefaultChannelOutput::PreservesInput,
+            },
             PluginLatencyModel::PluginReported("IIR is zero-latency; FIR mode reports its delay"),
             "sotf_plugin_crossover::params::PARAMS",
             Generated,

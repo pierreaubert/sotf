@@ -64,10 +64,10 @@ fn main() {
 
     // ── Configure PND for wow/flutter correction ────────────────────────
     let params = PndPluginParams {
-        correction_strength: 0.9,  // strong correction
-        drift_smoothing: 0.85,     // smooth out rapid jitter
-        confidence_threshold: 0.3, // lower threshold = correct even uncertain drift
-        phase_vocoder: true,       // formant-preserving pitch shift
+        correction_strength: 0.0,
+        drift_smoothing: 0.85,
+        confidence_threshold: 0.3,
+        phase_vocoder: false,
         ..PndPluginParams::default()
     };
 

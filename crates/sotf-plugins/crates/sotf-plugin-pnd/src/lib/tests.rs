@@ -1,47 +1,138 @@
-use super::consts::PV_FFT_SIZE;
-use super::consts::PV_HOP_SIZE;
 use super::consts::RESAMPLER_CHUNK_SIZE;
 use super::pnd_plugin::PndPlugin;
+use super::pnd_plugin::smooth_drift_ratio;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::{CountingAlloc, assert_no_allocs};
 
-/// With high drift_smoothing, the correction ratio should change slowly
-/// (no sudden jumps between frames).
+#[global_allocator]
+static ALLOCATOR: CountingAlloc = CountingAlloc;
+
 #[test]
-fn test_drift_smoothing_slow_correction() {
+fn drift_smoothing_parameter_is_monotonic_and_high_values_are_slow() {
+    let current = 1.0;
+    let target = 1.1;
+    let fast = smooth_drift_ratio(current, target, 0.1);
+    let slow = smooth_drift_ratio(current, target, 0.9);
+
+    assert!(fast > slow, "lower smoothing should track faster");
+    assert!(slow > current, "a finite target should still make progress");
+    assert!(slow < target, "smoothing should not jump to the target");
+}
+
+#[test]
+fn structural_parameters_are_rejected_after_initialization() {
     let mut p = PndPlugin::new(2);
-    p.drift_smoothing = 0.99; // very high smoothing
-    p.correction_strength = 1.0;
-    p.initialize(48000).unwrap();
+    p.initialize(44_100).unwrap();
 
-    let nf = RESAMPLER_CHUNK_SIZE;
-    let ctx = ProcessContext::new(48000, nf);
+    for (id, value) in [
+        (
+            ParameterId::from("analysis_window_ms"),
+            ParameterValue::Float(200.0),
+        ),
+        (
+            ParameterId::from("multi_channel_analysis"),
+            ParameterValue::Bool(false),
+        ),
+        (
+            ParameterId::from("phase_vocoder"),
+            ParameterValue::Bool(true),
+        ),
+    ] {
+        let err = p.set_parameter(id, value).unwrap_err();
+        assert!(err.contains("structural"), "unexpected error: {err}");
+    }
+}
 
-    // Process several blocks and track how current_ratio evolves
-    let mut ratios = Vec::new();
-    for block in 0..10 {
-        let input: Vec<f32> = (0..nf * 2)
-            .map(|i| {
-                0.3 * (2.0 * std::f32::consts::PI * 440.0 * (block * nf * 2 + i) as f32 / 48000.0)
-                    .sin()
+#[test]
+fn two_minutes_of_irregular_monitoring_is_exact_passthrough() {
+    let mut p = PndPlugin::new(2);
+    p.initialize(48_000).unwrap();
+    let partitions = [64, 511, 1024, 1536, 257];
+    let mut processed = 0_usize;
+    let total = 2 * 60 * 48_000;
+    let mut sequence = 0_u32;
+    while processed < total {
+        let frames = partitions[(processed / 64) % partitions.len()].min(total - processed);
+        let input: Vec<f32> = (0..frames * 2)
+            .map(|_| {
+                sequence = sequence.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (sequence as i32) as f32 / i32::MAX as f32
             })
             .collect();
-        let mut output = vec![0.0f32; nf * 2];
-        let _ = p.process(&input, &mut output, &ctx);
-        ratios.push(p.current_ratio);
+        let mut output = vec![f32::NAN; input.len()];
+        let written = p
+            .process(&input, &mut output, &ProcessContext::new(48_000, frames))
+            .unwrap();
+        assert_eq!(written, frames);
+        assert_eq!(output, input);
+        assert_eq!(p.input_ring_count, 0);
+        assert_eq!(p.output_ring_count, 0);
+        processed += frames;
     }
+}
 
-    // With high smoothing, ratio changes should be very small between blocks
-    for i in 1..ratios.len() {
-        let delta = (ratios[i] - ratios[i - 1]).abs();
-        assert!(
-            delta < 0.01,
-            "Correction ratio changed too fast at block {i}: delta={delta:.6}, \
-                 prev={:.6}, curr={:.6}",
-            ratios[i - 1],
-            ratios[i]
-        );
-    }
+#[test]
+fn process_rejects_context_sample_rate_mismatch() {
+    let mut p = PndPlugin::new(1);
+    p.initialize(48_000).unwrap();
+    let input = vec![0.0_f32; RESAMPLER_CHUNK_SIZE];
+    let mut output = vec![0.0_f32; RESAMPLER_CHUNK_SIZE];
+    let err = p
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(44_100, RESAMPLER_CHUNK_SIZE),
+        )
+        .unwrap_err();
+    assert!(err.contains("sample rate"));
+}
+
+#[test]
+fn initialization_rejects_zero_sample_rate() {
+    let mut p = PndPlugin::new(2);
+    let err = p.initialize(0).unwrap_err();
+    assert!(err.contains("sample rate"), "unexpected error: {err}");
+}
+
+#[test]
+fn phase_vocoder_mode_is_rejected_until_a_validated_shifter_exists() {
+    let mut p = PndPlugin::new(2);
+    let err = p
+        .set_parameter(
+            ParameterId::from("phase_vocoder"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap_err();
+    assert!(err.contains("unsupported"), "unexpected error: {err}");
+}
+
+#[test]
+fn resampler_reset_is_in_place() {
+    let mut p = PndPlugin::new(2);
+    p.initialize(48_000).unwrap();
+    assert_no_allocs("PND reset", || p.reset());
+}
+
+#[test]
+fn failed_chunk_does_not_consume_input_queue() {
+    let mut p = PndPlugin::new(1);
+    p.initialize(48_000).unwrap();
+    p.input_ring[..RESAMPLER_CHUNK_SIZE].fill(0.25);
+    p.input_ring_count = RESAMPLER_CHUNK_SIZE;
+    p.input_ring_write_pos = RESAMPLER_CHUNK_SIZE;
+    let original_read = p.input_ring_read_pos;
+    let original_count = p.input_ring_count;
+
+    // Inject a prepared-capacity failure after SRC processing.
+    p.output_ring.clear();
+    let err = p.process_one_chunk().unwrap_err();
+    assert!(
+        err.contains("exceeds prepared ring"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(p.input_ring_read_pos, original_read);
+    assert_eq!(p.input_ring_count, original_count);
 }
 
 /// Setting analysis_window_ms to different values should not cause panics
@@ -74,13 +165,12 @@ fn test_analysis_window_parameter_values() {
 #[test]
 fn test_analysis_window_param_roundtrip() {
     let mut p = PndPlugin::new(1);
-    p.initialize(44100).unwrap();
-
     p.set_parameter(
         ParameterId::from("analysis_window_ms"),
         ParameterValue::Float(75.0),
     )
     .unwrap();
+    p.initialize(44100).unwrap();
 
     let val = p.get_parameter(&ParameterId::from("analysis_window_ms"));
     assert_eq!(val, Some(ParameterValue::Float(75.0)));
@@ -104,7 +194,7 @@ fn test_process_rejects_buffer_size_mismatch() {
 }
 
 #[test]
-fn test_process_rejects_oversized_block_without_panicking() {
+fn monitoring_accepts_oversized_block_by_chunking_analysis() {
     let mut p = PndPlugin::new(2);
     p.initialize(48000).unwrap();
 
@@ -112,37 +202,18 @@ fn test_process_rejects_oversized_block_without_panicking() {
     let ctx = ProcessContext::new(48000, frames);
     let input = vec![0.0f32; frames * p.input_channels()];
     let mut output = vec![0.0f32; frames * p.output_channels()];
-    let err = p.process(&input, &mut output, &ctx).unwrap_err();
-    assert!(err.contains("Input block too large"));
+    let written = p.process(&input, &mut output, &ctx).unwrap();
+    assert_eq!(written, frames);
+    assert_eq!(output, input);
 }
 
-/// §3.4: latency_samples() must return the phase-vocoder latency when the
-/// phase vocoder is active, not the resampler chunk size.
+/// The fixed-frame path substitutes corresponding dry input whenever the
+/// variable-rate SRC has no frame ready, so it has no fixed positive latency.
 #[test]
-fn test_latency_samples_reports_pv_latency_when_vocoder_active() {
+fn fixed_frame_path_reports_zero_latency() {
     let mut p = PndPlugin::new(2);
     p.initialize(44100).unwrap();
-
-    // Resampler path latency
-    let resampler_latency = p.latency_samples();
-    assert_eq!(resampler_latency, RESAMPLER_CHUNK_SIZE);
-
-    // Enable phase vocoder
-    p.set_parameter(
-        ParameterId::from("phase_vocoder"),
-        ParameterValue::Bool(true),
-    )
-    .unwrap();
-    let pv_latency = p.latency_samples();
-    assert!(
-        pv_latency > RESAMPLER_CHUNK_SIZE,
-        "Phase vocoder latency ({pv_latency}) should exceed resampler chunk size ({RESAMPLER_CHUNK_SIZE})"
-    );
-    assert_eq!(
-        pv_latency,
-        PV_FFT_SIZE + PV_HOP_SIZE,
-        "Phase vocoder latency should be PV_FFT_SIZE + PV_HOP_SIZE"
-    );
+    assert_eq!(p.latency_samples(), 0);
 }
 
 /// §3.5: reset() must flush the resampler internal state.
@@ -178,86 +249,6 @@ fn test_reset_reinitializes_resampler() {
         out2.iter().all(|s| s.is_finite()),
         "Post-reset output should be finite"
     );
-}
-
-/// §4.4: correction_strength_smoother must be advanced in the phase vocoder path.
-/// A rapid correction_strength change should not produce a discontinuity larger
-/// than what the smoother allows in one call.
-#[test]
-fn test_pv_path_uses_correction_strength_smoother() {
-    let mut p = PndPlugin::new(2);
-    p.initialize(44100).unwrap();
-    p.set_parameter(
-        ParameterId::from("phase_vocoder"),
-        ParameterValue::Bool(true),
-    )
-    .unwrap();
-
-    // Set correction_strength to 0 first, then jump to 1.0
-    p.set_parameter(
-        ParameterId::from("correction_strength"),
-        ParameterValue::Float(0.0),
-    )
-    .unwrap();
-
-    let nf = 512;
-    let ctx = ProcessContext::new(44100, nf);
-    let input: Vec<f32> = (0..nf * 2)
-        .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
-        .collect();
-    let mut output = vec![0.0f32; nf * 2];
-    // Process with strength=0 to prime the smoother
-    p.process(&input, &mut output, &ctx).unwrap();
-
-    // Now jump strength to 1.0
-    p.set_parameter(
-        ParameterId::from("correction_strength"),
-        ParameterValue::Float(1.0),
-    )
-    .unwrap();
-
-    // Process one block; the smoother should advance (not jump to 1.0 instantly)
-    // We can verify the smoother is "moving" by checking that the cached value
-    // of the smoother is between 0 and 1 after one advance.
-    let mut out2 = vec![0.0f32; nf * 2];
-    p.process(&input, &mut out2, &ctx).unwrap();
-
-    // Verify: output must be finite (no NaN/inf from unsmoothed parameter jump)
-    assert!(
-        out2.iter().all(|s| s.is_finite()),
-        "Phase vocoder output must be finite after correction_strength jump"
-    );
-
-    // The smoother target is 1.0, current is near 0.0 — after one PV block,
-    // it must not be exactly 1.0 (which would mean the smoother was bypassed).
-    // We can't easily inspect the internal smoother state, so we verify
-    // indirectly: smoother.advance() is called by checking that the smoother
-    // would be "in motion" — both bounds bracket 0.0 < smoother < 1.0 would
-    // require a multi-step test, so we just confirm no crash and finite output.
-    // The structural fix is verified by code inspection plus this no-panic test.
-}
-
-#[test]
-fn test_phase_vocoder_accepts_blocks_larger_than_planar_capacity() {
-    let mut p = PndPlugin::new(2);
-    p.initialize(44100).unwrap();
-    p.set_parameter(
-        ParameterId::from("phase_vocoder"),
-        ParameterValue::Bool(true),
-    )
-    .unwrap();
-
-    let frames = RESAMPLER_CHUNK_SIZE + 256;
-    let ctx = ProcessContext::new(44100, frames);
-    let input: Vec<f32> = (0..frames * 2)
-        .map(|i| 0.25 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 44100.0).sin())
-        .collect();
-    let mut output = vec![0.0f32; frames * 2];
-
-    let processed = p.process(&input, &mut output, &ctx).unwrap();
-
-    assert_eq!(processed, frames);
-    assert!(output.iter().all(|s| s.is_finite()));
 }
 
 /// Verify set_parameter / get_parameter round-trip for drift_smoothing.
