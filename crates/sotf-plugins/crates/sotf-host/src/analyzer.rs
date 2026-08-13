@@ -13,13 +13,18 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
 
+const fn default_integrated_window_seconds() -> u32 {
+    3_600
+}
+
 /// A real-time safe cache for data of type T.
 ///
-/// Uses two Arcs to allow the audio thread to update data in-place
-/// if the UI thread is not holding a reference to the previous version.
+/// Uses preallocated Arcs to allow the audio thread to update data in-place
+/// if the UI thread is not holding every previous version.
 pub struct RealTimeCache<T> {
     shared: Arc<ArcSwap<T>>,
     spare: Option<Arc<T>>,
+    fallback_spare: Option<Arc<T>>,
     /// RT diagnostics: contention count (fallback allocation path taken)
     contention_count: u64,
     /// RT diagnostics: total update calls
@@ -32,9 +37,32 @@ impl<T: Clone + Default + Send + Sync> RealTimeCache<T> {
     /// Uses two separate Arcs so the spare starts with strong_count == 1,
     /// guaranteeing the first update succeeds without allocation.
     pub fn new(initial: T) -> Self {
+        Self::new_pair(initial.clone(), initial)
+    }
+
+    /// Create a cache from independently allocated shared and spare values.
+    ///
+    /// This is useful for cache payloads containing nested `Arc` buffers:
+    /// cloning one value would make the two outer cache slots share those
+    /// buffers and force copy-on-write allocation on the first update.
+    pub fn new_pair(shared_value: T, spare_value: T) -> Self {
         Self {
-            shared: Arc::new(ArcSwap::from(Arc::new(initial.clone()))),
-            spare: Some(Arc::new(initial)),
+            shared: Arc::new(ArcSwap::from(Arc::new(shared_value))),
+            spare: Some(Arc::new(spare_value)),
+            fallback_spare: None,
+            contention_count: 0,
+            update_count: 0,
+        }
+    }
+
+    /// Create a cache with a second independently allocated spare. Analyzer
+    /// reset paths use this to publish a cleared generation even while a UI
+    /// reader is holding both normally alternating generations.
+    pub fn new_triplet(shared_value: T, spare_value: T, fallback_value: T) -> Self {
+        Self {
+            shared: Arc::new(ArcSwap::from(Arc::new(shared_value))),
+            spare: Some(Arc::new(spare_value)),
+            fallback_spare: Some(Arc::new(fallback_value)),
             contention_count: 0,
             update_count: 0,
         }
@@ -53,20 +81,27 @@ impl<T: Clone + Default + Send + Sync> RealTimeCache<T> {
         F: FnOnce(&mut T),
     {
         self.update_count += 1;
-        if let Some(mut spare) = self.spare.take() {
-            if let Some(data) = Arc::get_mut(&mut spare) {
-                // Sole owner — mutate in place, swap, keep old as next spare.
-                update_fn(data);
-                let old_arc = self.shared.swap(spare);
-                self.spare = Some(old_arc);
-            } else {
-                // Contention: UI thread still holds this Arc.
-                // Keep the spare for the next attempt and skip this update.
-                // Cost: one frame of stale analyzer data (~21ms) — imperceptible.
-                self.contention_count += 1;
-                self.spare = Some(spare);
-            }
+        let use_fallback = self
+            .spare
+            .as_ref()
+            .is_none_or(|spare| Arc::strong_count(spare) != 1);
+        let slot = if use_fallback {
+            &mut self.fallback_spare
+        } else {
+            &mut self.spare
+        };
+        if slot
+            .as_ref()
+            .is_some_and(|candidate| Arc::strong_count(candidate) == 1)
+        {
+            let mut candidate = slot.take().expect("checked cache spare");
+            let data = Arc::get_mut(&mut candidate).expect("sole cache spare owner");
+            update_fn(data);
+            let old_arc = self.shared.swap(candidate);
+            *slot = Some(old_arc);
+            return;
         }
+        self.contention_count += 1;
     }
 
     /// Get a handle to the shared state for reading

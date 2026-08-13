@@ -3704,7 +3704,7 @@ impl PlayerView {
                                 .playback
                                 .spectrum_info
                                 .as_ref()
-                                .map(|info| info.magnitudes.as_ref().as_slice().to_vec())
+                            .map(|info| info.magnitudes.as_ref().to_vec())
                         } else {
                             None
                         };

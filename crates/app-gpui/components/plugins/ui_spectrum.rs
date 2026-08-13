@@ -50,6 +50,40 @@ fn spectrum_db_axis_spacer(d: &Ds, theme: &Theme) -> impl IntoElement {
     div().w(px(spectrum_axis_theme(d, theme).db_axis_width))
 }
 
+fn corrected_spectrum_magnitudes(
+    data: &SpectrumData,
+    correction: SpectralTiltCorrection,
+    reference: TiltReferenceFreq,
+    min_freq: f32,
+) -> Arc<[f32]> {
+    let slope = match correction {
+        SpectralTiltCorrection::None => 0.0,
+        SpectralTiltCorrection::ThreeDbPerOctave | SpectralTiltCorrection::Pink => 3.0,
+        SpectralTiltCorrection::SixDbPerOctave => 6.0,
+        SpectralTiltCorrection::Custom(value) => value,
+    };
+    let reference_hz = match reference {
+        TiltReferenceFreq::Standard | TiltReferenceFreq::OneKilohertz => 1_000.0,
+        TiltReferenceFreq::TwoKilohertz => 2_000.0,
+        TiltReferenceFreq::MinFreq => min_freq.max(f32::MIN_POSITIVE),
+    };
+    if slope == 0.0 {
+        return data.magnitudes.clone();
+    }
+    data.magnitudes
+        .iter()
+        .zip(data.frequencies.iter())
+        .map(|(&magnitude, &frequency)| {
+            if !magnitude.is_finite() {
+                magnitude
+            } else {
+                magnitude + slope * (frequency / reference_hz).log2()
+            }
+        })
+        .collect::<Vec<_>>()
+        .into()
+}
+
 // ============================================================================
 // Plugin UI
 // ============================================================================
@@ -106,8 +140,7 @@ pub fn render_spectrum_analyzer_plugin(
     // the caller-provided height acting as floor and 3x as ceiling).
     let axis_theme = spectrum_axis_theme(d, theme);
     let chart_width = (state.available_width - axis_theme.db_axis_width).max(160.0);
-    let chart_height =
-        (chart_width * 0.38).clamp(state.chart_height, state.chart_height * 3.0);
+    let chart_height = (chart_width * 0.38).clamp(state.chart_height, state.chart_height * 3.0);
     let spectrum_display = div()
         .flex()
         .flex_col()
@@ -131,8 +164,12 @@ pub fn render_spectrum_analyzer_plugin(
                         .gap_px()
                         .p(d.pad_y)
                         .child(if let Some(data) = state.data {
-                            let magnitudes: Arc<[f32]> =
-                                Arc::from(data.magnitudes.as_ref().as_slice());
+                            let magnitudes = corrected_spectrum_magnitudes(
+                                data,
+                                state.tilt_correction,
+                                state.tilt_reference,
+                                state.min_freq,
+                            );
                             SpectrumElement::new(magnitudes)
                                 .height(px(chart_height))
                                 .frequency_range(state.min_freq, state.max_freq)
@@ -368,6 +405,61 @@ pub fn render_spectrum_analyzer_plugin(
         .child(config_row)
 }
 
+#[cfg(test)]
+mod spectrum_tilt_tests {
+    use super::*;
+
+    fn flat_data() -> SpectrumData {
+        SpectrumData {
+            frequencies: Arc::new(vec![500.0, 1_000.0, 2_000.0, 4_000.0]),
+            magnitudes: Arc::from(vec![-20.0; 4]),
+            peak_magnitude: -20.0,
+        }
+    }
+
+    #[test]
+    fn none_is_unchanged_and_slopes_are_reference_normalized() {
+        let data = flat_data();
+        let unchanged = corrected_spectrum_magnitudes(
+            &data,
+            SpectralTiltCorrection::None,
+            TiltReferenceFreq::OneKilohertz,
+            20.0,
+        );
+        assert!(Arc::ptr_eq(&unchanged, &data.magnitudes));
+        let three = corrected_spectrum_magnitudes(
+            &data,
+            SpectralTiltCorrection::ThreeDbPerOctave,
+            TiltReferenceFreq::OneKilohertz,
+            20.0,
+        );
+        assert_eq!(three.as_ref(), &[-23.0, -20.0, -17.0, -14.0]);
+        let six = corrected_spectrum_magnitudes(
+            &data,
+            SpectralTiltCorrection::SixDbPerOctave,
+            TiltReferenceFreq::TwoKilohertz,
+            20.0,
+        );
+        assert_eq!(six.as_ref(), &[-32.0, -26.0, -20.0, -14.0]);
+    }
+
+    #[test]
+    fn pink_and_minimum_frequency_reference_are_applied() {
+        let data = SpectrumData {
+            frequencies: Arc::new(vec![20.0, 40.0, 80.0]),
+            magnitudes: Arc::from(vec![-30.0; 3]),
+            peak_magnitude: -30.0,
+        };
+        let corrected = corrected_spectrum_magnitudes(
+            &data,
+            SpectralTiltCorrection::Pink,
+            TiltReferenceFreq::MinFreq,
+            20.0,
+        );
+        assert_eq!(corrected.as_ref(), &[-30.0, -27.0, -24.0]);
+    }
+}
+
 impl PlayerView {
     /// Render the full-screen spectrum analyzer display
     /// Uses GPU-accelerated SpectrumElement for high-performance rendering
@@ -399,7 +491,7 @@ impl PlayerView {
             let magnitudes: Arc<[f32]> = if phone_hold && let Some(held) = phone_hold_magnitudes {
                 Arc::from(held.into_boxed_slice())
             } else {
-                Arc::from(info.magnitudes.as_ref().as_slice())
+                Arc::from(info.magnitudes.as_ref())
             };
 
             div()

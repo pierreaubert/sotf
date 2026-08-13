@@ -490,6 +490,7 @@ pub fn available_plugin_types() -> &'static [&'static str] {
         "BandMerge",
         "AEC",
         "Beamformer",
+        "SpectrumAnalyzer",
     ]
 }
 
