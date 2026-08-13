@@ -53,7 +53,9 @@ Controls the gate's response speed. Fast attack opens the gate quickly to preser
   interleaved samples; checked arithmetic errors are reported.
 - `link_channels`, sidechain HPF frequency/order, detection mode, external
   sidechain mode, and lookahead require graph replacement. Writing the current
-  value is an accepted no-op; actual live changes are rejected transactionally.
+  value is an accepted no-op; actual live changes are rejected transactionally
+  without moving or clearing the active delay line. The host must latency-align
+  old and replacement graph plans before any crossfade.
 - External-sidechain samples are read-only. Non-finite programme or detector
   samples are interpreted as silence before filters, detectors, and delay state.
 - Processing, realtime parameter setters, and reset allocate no memory. Reset

@@ -10715,7 +10715,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-gate"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "math-dsp",
  "math-iir-fir",

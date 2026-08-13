@@ -907,6 +907,97 @@ fn test_process_in_place_lookahead_delays_output() {
 }
 
 #[test]
+fn lookahead_replacement_instances_render_their_reported_impulse_latency() {
+    let sample_rate = 48_000;
+    for lookahead_ms in [0.0, 5.0, 20.0] {
+        let mut gate = GatePlugin::try_from_params(
+            1,
+            GatePluginParams {
+                threshold_db: -80.0,
+                mix: 0.0,
+                lookahead_ms,
+                ..GatePluginParams::default()
+            },
+        )
+        .unwrap();
+        gate.initialize(sample_rate).unwrap();
+
+        let expected_latency = (lookahead_ms * 0.001 * sample_rate as f32).round() as usize;
+        assert_eq!(gate.latency_samples(), expected_latency);
+        assert_eq!(gate.compile_metadata().latency_samples, expected_latency);
+
+        let mut impulse = vec![0.0; expected_latency + 32];
+        impulse[0] = 1.0;
+        let frames = impulse.len();
+        gate.process_in_place(&mut impulse, &ProcessContext::new(sample_rate, frames))
+            .unwrap();
+
+        let nonzero: Vec<_> = impulse
+            .iter()
+            .enumerate()
+            .filter(|(_, sample)| sample.abs() > 1.0e-6)
+            .collect();
+        assert_eq!(nonzero.len(), 1, "lookahead_ms={lookahead_ms}");
+        assert_eq!(
+            nonzero[0].0, expected_latency,
+            "lookahead_ms={lookahead_ms}"
+        );
+        assert!((*nonzero[0].1 - 1.0).abs() < 1.0e-6);
+    }
+}
+
+#[test]
+fn rejected_live_lookahead_change_preserves_delay_history_bit_exactly() {
+    fn make_gate() -> GatePlugin {
+        let mut gate = GatePlugin::try_from_params(
+            1,
+            GatePluginParams {
+                threshold_db: -80.0,
+                mix: 0.0,
+                lookahead_ms: 5.0,
+                ..GatePluginParams::default()
+            },
+        )
+        .unwrap();
+        gate.initialize(48_000).unwrap();
+        gate
+    }
+
+    let mut reference = make_gate();
+    let mut rejected = make_gate();
+    let mut prefix: Vec<f32> = (0..512).map(|sample| sample as f32 / 512.0).collect();
+    let mut prefix_reference = prefix.clone();
+    reference
+        .process_in_place(&mut prefix_reference, &ProcessContext::new(48_000, 512))
+        .unwrap();
+    rejected
+        .process_in_place(&mut prefix, &ProcessContext::new(48_000, 512))
+        .unwrap();
+
+    let latency_before = rejected.latency_samples();
+    let error = rejected
+        .parametric_set_parameter(
+            ParameterId::from("lookahead_ms"),
+            ParameterValue::Float(20.0),
+        )
+        .unwrap_err();
+    assert!(error.contains("graph rebuild"));
+    assert_eq!(rejected.latency_samples(), latency_before);
+
+    let mut expected: Vec<f32> = (512..1_024)
+        .map(|sample| (sample as f32 * 0.013).sin())
+        .collect();
+    let mut actual = expected.clone();
+    reference
+        .process_in_place(&mut expected, &ProcessContext::new(48_000, 512))
+        .unwrap();
+    rejected
+        .process_in_place(&mut actual, &ProcessContext::new(48_000, 512))
+        .unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn test_process_in_place_external_sidechain() {
     let sr = 48000u32;
     let mut p = GatePlugin::from_params(

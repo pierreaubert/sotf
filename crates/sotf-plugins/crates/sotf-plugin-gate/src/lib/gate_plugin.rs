@@ -600,7 +600,9 @@ impl GatePlugin {
             if self.structural_value_matches(&id, &value) {
                 return Ok(());
             }
-            return Err("Gate structural parameter change requires graph rebuild".into());
+            return Err(format!(
+                "Gate structural parameter '{id}' change requires graph rebuild; live state and latency are unchanged"
+            ));
         }
 
         let was_linked = self.link_channels;
@@ -697,7 +699,10 @@ impl ParametricInPlacePlugin for GatePlugin {
             Self::stage_parameter(&mut staged, id, value)?;
         }
         if self.initialized && self.structural_differs(&staged) {
-            return Err("Gate structural parameter change requires graph rebuild".into());
+            return Err(
+                "Gate structural parameter batch change requires graph rebuild; live state and latency are unchanged"
+                    .into(),
+            );
         }
         self.apply_staged_params(staged);
         self.rebuild_cached_parameters();
@@ -822,6 +827,7 @@ impl ParametricInPlacePlugin for GatePlugin {
 
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
+                let publish_monitoring_level = frame + 1 == num_frames;
                 let (thresh, threshold_linear) = self.advance_threshold();
                 let mix = self.mix_smoother.advance();
                 let close_threshold_linear = threshold_linear * close_threshold_ratio;
@@ -839,9 +845,13 @@ impl ParametricInPlacePlugin for GatePlugin {
                     let filtered = self.apply_sidechain_filter(ch, sidechain);
                     let level = self.detect_level(ch, filtered);
                     det = det.max(level);
-                    // Update monitoring
-                    self.monitoring_levels[ch] =
-                        DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
+                    // Diagnostics publish at most once per callback. Keep the
+                    // detector kernel in linear space for settled/open frames
+                    // and convert only the final sample retained by the cache.
+                    if publish_monitoring_level {
+                        self.monitoring_levels[ch] =
+                            DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
+                    }
                 }
 
                 // Linear-space gate decision (no fast_log10 on hot path)
@@ -891,6 +901,7 @@ impl ParametricInPlacePlugin for GatePlugin {
             }
         } else {
             for frame in 0..num_frames {
+                let publish_monitoring_level = frame + 1 == num_frames;
                 let (thresh, threshold_linear) = self.advance_threshold();
                 let mix = self.mix_smoother.advance();
                 let close_threshold_linear = threshold_linear * close_threshold_ratio;
@@ -907,8 +918,10 @@ impl ParametricInPlacePlugin for GatePlugin {
                     };
                     let filtered = self.apply_sidechain_filter(ch, sidechain);
                     let level_abs = self.detect_level(ch, filtered);
-                    self.monitoring_levels[ch] =
-                        DB_CONVERSION_FACTOR * fast_log10(level_abs.max(EPSILON));
+                    if publish_monitoring_level {
+                        self.monitoring_levels[ch] =
+                            DB_CONVERSION_FACTOR * fast_log10(level_abs.max(EPSILON));
+                    }
 
                     // Linear-space gate decision (no fast_log10 on hot path)
                     let is_open = if self.hysteresis_db <= 0.0 {
@@ -926,7 +939,11 @@ impl ParametricInPlacePlugin for GatePlugin {
                         self.hold_counter[ch] -= 1;
                         0.0
                     } else {
-                        let idb = self.monitoring_levels[ch];
+                        let idb = if publish_monitoring_level {
+                            self.monitoring_levels[ch]
+                        } else {
+                            DB_CONVERSION_FACTOR * fast_log10(level_abs.max(EPSILON))
+                        };
                         self.calculate_gate_attenuation(idb, thresh)
                     };
 

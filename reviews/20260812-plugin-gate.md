@@ -96,4 +96,13 @@ Read every plugin-owned file without omission: `AGENTS.md`, `README.md`, `USAGE.
 - P2 buffer/zero-channel safety: fixed with fallible construction, checked channel/frame multiplication, exact buffer sizing, initialization/sample-rate enforcement, zero-frame coverage, and oversized/overflow regression tests.
 - P3 publication cadence: fixed; diagnostics publish at a 30 Hz sample-count cadence rather than callback count. Partition-equivalence and held-snapshot tests cover cadence and cache ownership.
 - Additional exhaustive-audit fixes: live setters are direct and allocation-free; lowering Hold clamps active counters; non-finite programme/sidechain input is converted to silence before DSP state; external sidechain samples remain unchanged; plugin version and compile metadata are tested against crate/runtime state.
-- Larger redesigns (crossfade automation and SIMD/linear-domain optimization) remain deferred because structural rejection preserves realtime correctness without introducing an unbounded redesign in this patch.
+- Retained lookahead hardening: replacement instances now have exact impulse
+  coverage at 0/5/20 ms, while rejected live changes are proven to preserve
+  delay history and latency bit-exactly. The error contract explicitly leaves
+  aligned old/new graph crossfading to the host; this base has no plugin latency
+  notification or aligned replacement API.
+- Retained settled-kernel optimization: monitoring dB conversion now runs only
+  for the final sample retained by each callback, keeping open-gate decisions in
+  linear space. Criterion improved by median 71%/81%/64% at 256/512/1024 stereo
+  frames and repeated within noise.
+- SIMD gain application remains deferred pending separate benchmark evidence.

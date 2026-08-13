@@ -1,3 +1,18 @@
+# 0.5.12
+
+## Latency transition hardening and detector performance
+
+- Prove that structural lookahead writes leave the live delay line and reported
+  latency bit-exactly unchanged, and that replacement instances render impulses
+  at their newly compiled 0/5/20 ms latency.
+- Make structural-change errors explicit that graph replacement is required and
+  live state/latency remain unchanged. Aligned crossfading between old and new
+  graph plans remains a host responsibility.
+- Keep the settled/open detector kernel in linear space and convert only the
+  final per-callback level retained for monitoring. Criterion measured median
+  improvements of 71%, 81%, and 64% at 256/512/1024 stereo frames; a repeat run
+  was stable within noise.
+
 # 0.5.11
 
 ## Complete review remediation
