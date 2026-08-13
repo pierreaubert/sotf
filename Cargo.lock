@@ -10911,7 +10911,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-upmixer"
-version = "0.5.116"
+version = "0.5.122"
 dependencies = [
  "criterion",
  "hound",

@@ -62,7 +62,7 @@ Controls how the stereo image is distributed across the surround field.
 | HR Direct | On/Off | On | — | High-resolution FFT for sharper direct-path separation |
 | HR Sharpen | 0 to 1.0 | 1.0 | — | Sharpening intensity for high-resolution direct path |
 | Ambient Boost | 0.5 to 2.0 | 1.2 | x | Multiplier for ambient signal extraction |
-| Safety Cap | -12 to 6 | 0 | dB | Maximum output peak level (prevents clipping) |
+| Safety Cap | 0 to 3 | 3 | dB | Maximum output peak level |
 
 ### Surround Routing (Advanced)
 

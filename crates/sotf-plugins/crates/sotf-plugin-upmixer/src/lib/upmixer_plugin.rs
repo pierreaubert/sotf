@@ -1148,10 +1148,6 @@ impl UpmixerPlugin {
         resolution_scale * latency_scale
     }
 
-    pub(super) fn analysis_smoothing_scale(&self) -> f32 {
-        self.params.cached_analysis_smoothing_scale
-    }
-
     pub(super) fn reset_analysis_state_for_current_resolution(&mut self) {
         let canonical = Self::canonical_frequency_resolution(&self.params.frequency_resolution);
         self.params.frequency_resolution = canonical.to_string();
@@ -1407,15 +1403,22 @@ impl UpmixerPlugin {
         } else {
             params.core.fft_size.next_power_of_two()
         };
+        // Factory JSON can contain independently valid crossover values whose pair is invalid.
+        // Preserve the requested LFE cutoff and clamp the upmix boundary to a safe transition.
+        let lfe_cutoff_hz = params.core.lfe_cutoff_hz.clamp(20.0, 180.0);
+        let bandpass_hz = params
+            .core
+            .bandpass_hz
+            .clamp((lfe_cutoff_hz + 1.0).max(150.0), 350.0);
         let mut plugin = Self::new(
             fft_size,
             &params.core.speaker_config,
             params.gains.gain_front_direct,
             params.gains.gain_front_ambient,
             params.gains.gain_rear_ambient,
-            params.core.lfe_cutoff_hz,
+            lfe_cutoff_hz,
             params.gains.stereo_width,
-            params.core.bandpass_hz,
+            bandpass_hz,
             params.height.height_gain,
             params.gains.lfe_gain,
             params.subharmonic.enable_subharmonic_synth,
@@ -1739,6 +1742,24 @@ impl Plugin for UpmixerPlugin {
             return Ok(());
         }
 
+        // These controls form one crossover topology. Reject invalid targets before the
+        // bridge mutates either smoother so failed automation is transactional.
+        if id.as_str() == "lfe_cutoff_hz" {
+            let candidate = value
+                .as_float()
+                .ok_or_else(|| "lfe_cutoff_hz must be a float".to_string())?;
+            if candidate >= self.param_smoothers.bandpass_hz_smoother.target() {
+                return Err("lfe_cutoff_hz must be below bandpass_hz".to_string());
+            }
+        } else if id.as_str() == "bandpass_hz" {
+            let candidate = value
+                .as_float()
+                .ok_or_else(|| "bandpass_hz must be a float".to_string())?;
+            if candidate <= self.param_smoothers.lfe_cutoff_hz_smoother.target() {
+                return Err("bandpass_hz must be above lfe_cutoff_hz".to_string());
+            }
+        }
+        let bypass_before = self.params.bypass_all_processing;
         let idx = param_bridge::set_parameter(UP, &id, &value, |i, v| self.set_param_value(i, v))?;
         // Side effects based on PARAMS index
         match idx {
@@ -1814,6 +1835,7 @@ impl Plugin for UpmixerPlugin {
                 self.generate_decorrelation_filters();
                 self.decorrelation.prev_decorrelation_strength = -1.0;
             }
+            39 if self.params.bypass_all_processing != bypass_before => self.reset(),
             40 => self.try_start_ml_inference(), // enable_ml_detection
             44 => {
                 if self.safety.auto_gain_enabled {
@@ -1871,6 +1893,8 @@ impl Plugin for UpmixerPlugin {
         self.spectral.pca_cov_xy = vec![Complex::new(0.0, 0.0); num_bands];
         self.steering.coherence_instant = vec![0.0; num_bands];
         self.steering.smoothed_coherence = vec![0.0; num_bands];
+        self.steering.smoothed_diffuseness = vec![0.0; num_bands];
+        self.steering.diffuseness_initialized = vec![false; num_bands];
         self.steering.coherence_history = vec![[0.0; 5]; num_bands];
         self.steering.coherence_history_idx = 0;
 
@@ -2072,7 +2096,16 @@ impl Plugin for UpmixerPlugin {
         self.height.height_prev_magnitude.fill(0.0);
         self.height.height_spectral_flux_smooth = 0.0;
         self.height.height_flux_gate.fill(0.15);
-        self.dialogue.dialogue_spatial_control = self.dialogue.dialogue_probability;
+        self.height.height_transient_env_slow = 0.0;
+        self.dialogue.dialogue_spectral_centroid = 0.0;
+        self.dialogue.dialogue_envelope_variance = 0.0;
+        self.dialogue.dialogue_prev_rms = 0.0;
+        self.dialogue.dialogue_probability = 0.0;
+        self.dialogue.dialogue_spatial_control = 0.0;
+        self.subharmonic.subharmonic_phase = 0.0;
+        self.subharmonic.subharmonic_envelope = 0.0;
+        self.subharmonic.subharmonic_amp_envelope = 0.0;
+        self.decorrelation.decor_lfo_phase = 0.0;
         self.hr_state.prev_hr_scale = 0.0;
         self.steering.coherence_history_idx = 0;
         for h in &mut self.steering.coherence_history {
@@ -2102,6 +2135,10 @@ impl Plugin for UpmixerPlugin {
         if let Some(ref mut extractor) = self.ml.mfcc_extractor {
             extractor.reset();
         }
+        #[cfg(feature = "onnx")]
+        if let Some(ref inference) = self.ml.ml_inference_handle {
+            inference.reset();
+        }
     }
 
     fn process(
@@ -2113,6 +2150,11 @@ impl Plugin for UpmixerPlugin {
         let n = context.num_frames;
         let out_nch = self.effective_output_channels();
 
+        // Hosts may initialize and process on different threads. Set FTZ/DAZ on
+        // the actual callback thread so synthesized denormals are suppressed at
+        // their source without scanning every channel and output buffer.
+        enable_ftz_daz();
+
         let input_samples = context.num_frames * 2;
         if input.len() != input_samples {
             return Err(format!(
@@ -2120,6 +2162,9 @@ impl Plugin for UpmixerPlugin {
                 input_samples,
                 input.len()
             ));
+        }
+        if input.iter().any(|sample| !sample.is_finite()) {
+            return Err("Upmixer input contains a non-finite sample".to_string());
         }
 
         let output_samples = context.num_frames * out_nch;
@@ -2462,11 +2507,14 @@ impl Plugin for UpmixerPlugin {
             self.apply_auto_gain(&mut output[..output_pos * out_nch], output_pos, out_nch)?;
             self.apply_final_safety_cap(&mut output[..output_pos * out_nch], output_pos);
         }
-        flush_denormals_inplace(output);
         Ok(output_pos)
     }
 
     fn latency_samples(&self) -> usize {
-        self.core.fft_size
+        if self.params.bypass_all_processing {
+            0
+        } else {
+            self.core.fft_size
+        }
     }
 }

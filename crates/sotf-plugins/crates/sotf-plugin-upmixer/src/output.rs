@@ -3,7 +3,6 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use sotf_host::simd::flush_denormals_inplace;
 
 impl UpmixerPlugin {
     /// Apply the safety cap to final emitted samples after overlap-add and HR mixing.
@@ -52,10 +51,6 @@ impl UpmixerPlugin {
         // ... (skipping some comments)
         let taper_len = self.main_buffers.edge_taper_table.len();
         for ch in 0..self.core.num_output_channels {
-            // Flush denormals in the time-domain buffers before scaling/limiting.
-            // This prevents performance spikes and keeps the peak detector accurate.
-            flush_denormals_inplace(&mut self.main_buffers.time_out_channels[ch]);
-
             // Synthesis window for WOLA. Frequency-domain routing can change phase
             // and magnitude enough that the analysis window alone no longer
             // guarantees tapered IFFT block edges.

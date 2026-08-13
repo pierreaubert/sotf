@@ -17,6 +17,8 @@ mod panning;
 pub mod params;
 mod process;
 mod setup;
+#[cfg(test)]
+mod test;
 
 #[path = "lib/misc.rs"]
 mod misc;

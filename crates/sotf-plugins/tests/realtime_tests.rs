@@ -148,13 +148,14 @@ fn test_limiter_plugin_timing() {
 #[test]
 fn test_upmixer_plugin_timing() {
     let mut plugin = UpmixerPlugin::new(
-        2048, "5.1.4", 1.0, 0.5, 0.3, 80.0, 0.5, 250.0, 1.0, 1.0, false, 1.0,
+        4096, "9.1.6", 1.0, 0.5, 0.3, 80.0, 0.5, 250.0, 1.0, 1.0, false, 1.0,
     );
+    plugin.initialize(TEST_SAMPLE_RATE).unwrap();
 
     let input = vec![0.5f32; TEST_BUFFER_SIZE * 2];
     let context = ProcessContext::new(TEST_SAMPLE_RATE, TEST_BUFFER_SIZE);
 
-    let output_channels = 10; // 5.1.4 has 10 channels
+    let output_channels = plugin.output_channels();
     let mut times = Vec::with_capacity(ITERATIONS);
 
     for _ in 0..10 {
@@ -172,7 +173,7 @@ fn test_upmixer_plugin_timing() {
 
     let p99 = percentile(&times, 99.0);
 
-    println!("\n=== UpmixerPlugin (5.1.4) ===");
+    println!("\n=== UpmixerPlugin (9.1.6, FFT 4096) ===");
     println!("  P99:  {:.3} µs", p99.as_secs_f64() * 1e6);
 
     assert!(

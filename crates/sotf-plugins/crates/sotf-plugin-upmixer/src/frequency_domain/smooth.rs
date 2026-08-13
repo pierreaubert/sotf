@@ -28,8 +28,8 @@ pub(super) fn smooth_dialogue_spatial_control(previous: f32, target: f32) -> f32
 #[inline(always)]
 pub(super) fn smooth_diffuseness(previous: f32, target: f32, smoothing_scale: f32) -> f32 {
     let target = target.clamp(0.0, 1.0);
-    let alpha = (DIFFUSENESS_SMOOTHING_ALPHA * smoothing_scale).max(0.035);
-    let max_step = (DIFFUSENESS_MAX_STEP * smoothing_scale).max(0.025);
+    let alpha = 1.0 - (1.0 - DIFFUSENESS_SMOOTHING_ALPHA).powf(smoothing_scale);
+    let max_step = DIFFUSENESS_MAX_STEP * smoothing_scale;
     let smoothed = previous + alpha * (target - previous);
     let limited_diff = (smoothed - previous).clamp(-max_step, max_step);
     (previous + limited_diff).clamp(0.0, 1.0)

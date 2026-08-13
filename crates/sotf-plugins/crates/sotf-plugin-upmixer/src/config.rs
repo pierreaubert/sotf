@@ -72,7 +72,7 @@ pub fn default_speaker_config() -> String {
 }
 
 pub fn default_height_gain() -> f32 {
-    0.5
+    1.0
 }
 
 pub fn default_lfe_gain() -> f32 {
@@ -92,7 +92,7 @@ pub fn default_hr_sharpen() -> f32 {
 }
 
 pub fn default_safety_cap_db() -> f32 {
-    0.0 // Set to 0.0dB to strictly prevent clipping by default
+    3.0
 }
 
 // Sub-harmonic synthesis defaults
@@ -131,16 +131,16 @@ pub fn default_height_transient_reduction() -> f32 {
 }
 
 pub fn default_height_direct_leak() -> f32 {
-    0.05 // Reduced from 0.15 to prevent voice leakage
+    0.15
 }
 
 // Surround routing defaults
 pub fn default_surround_direct_bleed() -> f32 {
-    0.15 // Reduced from 0.50 to prevent voice leakage
+    0.5
 }
 
 pub fn default_rear_ambient_boost() -> f32 {
-    1.0
+    1.5
 }
 
 pub fn default_rear_late_reflection() -> f32 {
@@ -149,7 +149,7 @@ pub fn default_rear_late_reflection() -> f32 {
 
 // Ambient gain boost (sqrt(1-coherence) multiplier)
 pub fn default_ambient_boost() -> f32 {
-    1.0
+    1.2
 }
 
 // Dialogue detection defaults

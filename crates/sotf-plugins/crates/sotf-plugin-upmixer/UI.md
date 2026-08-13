@@ -87,7 +87,7 @@ Selected tab stored in `upmixer_tab` (0=none/closed, 1=LFE, 2=Dialogue, 3=Ambien
 |-----------|-----------|---------|-------|
 | Ambient Boost | ambient_boost | Knob | 0.5 to 2.0x |
 | Rear Ambient Boost | rear_ambient_boost | Knob | 1.0 to 3.0x |
-| Safety Cap | safety_cap_db | Knob | -12 to 6 dB |
+| Safety Cap | safety_cap_db | Knob | 0 to 3 dB |
 | Upmix Crossover | bandpass_hz | Knob | 150–350 Hz |
 
 ### Tab: Height

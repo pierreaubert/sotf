@@ -1,6 +1,6 @@
 use super::super::UpmixerPlugin;
 use super::diffuseness_and_doa::compute_diffuseness_and_doa;
-use super::diffuseness_and_doa::update_diffuseness_state;
+use super::diffuseness_and_doa::{stereo_spatial_cue, update_diffuseness_state};
 use super::misc::ambient_gain_with_controls;
 use super::misc::median5;
 use super::misc::normalize_decorrelation_blend;
@@ -39,6 +39,17 @@ pub(super) const DIFFUSENESS_MAX_STEP: f32 = 0.08;
 
 pub(super) const DIFFUSENESS_ENERGY_FLOOR: f32 = 1e-12;
 
+const REFERENCE_HOP_SECONDS: f32 = 1024.0 / 48_000.0;
+
+#[inline(always)]
+pub(super) fn time_scaled_alpha(reference_alpha: f32, hop_samples: usize, sample_rate: u32) -> f32 {
+    if sample_rate == 0 {
+        return reference_alpha;
+    }
+    let intervals = hop_samples as f32 / sample_rate as f32 / REFERENCE_HOP_SECONDS;
+    1.0 - (1.0 - reference_alpha).powf(intervals)
+}
+
 /// Dialogue control smoothing for spatial decomposition. This is intentionally
 /// slower than detector smoothing because it modulates center, ambience, and
 /// decorrelation over the whole sound field.
@@ -54,15 +65,8 @@ pub(super) const DIALOGUE_SPATIAL_DEADBAND: f32 = 0.004;
 
 #[inline(always)]
 pub(super) fn bin_intensity_doa(left: Complex<f32>, right: Complex<f32>) -> Option<f32> {
-    let p = (left + right) * 0.5;
-    let v = (left - right) * 0.5;
-    let energy_product = (p.norm_sqr() * v.norm_sqr()).sqrt();
-    if energy_product <= DIFFUSENESS_ENERGY_FLOOR {
-        return None;
-    }
-
-    let intensity = p * v.conj();
-    Some(fast_atan2(intensity.im, intensity.re))
+    stereo_spatial_cue(left.norm_sqr(), right.norm_sqr(), (left * right.conj()).re)
+        .map(|(_, lateral_balance)| lateral_balance * std::f32::consts::FRAC_PI_2)
 }
 
 impl UpmixerPlugin {
@@ -84,10 +88,18 @@ impl UpmixerPlugin {
         let lfe_cutoff_bin = self.cache.cached_lfe_cutoff_bin;
         let bandpass_bin = self.cache.cached_bandpass_bin;
         let freq_per_bin = self.cache.cached_freq_per_bin;
-        let analysis_smoothing_scale = self.analysis_smoothing_scale();
-        let coherence_smoothing_alpha =
-            (COHERENCE_SMOOTHING_ALPHA * analysis_smoothing_scale).max(0.03);
-        let doa_smoothing_alpha = (DOA_SMOOTHING_ALPHA * analysis_smoothing_scale).max(0.04);
+        let analysis_smoothing_scale =
+            self.core.fft_size as f32 * 0.5 / self.core.sample_rate as f32 / REFERENCE_HOP_SECONDS;
+        let coherence_smoothing_alpha = time_scaled_alpha(
+            COHERENCE_SMOOTHING_ALPHA,
+            self.core.fft_size / 2,
+            self.core.sample_rate,
+        );
+        let doa_smoothing_alpha = time_scaled_alpha(
+            DOA_SMOOTHING_ALPHA,
+            self.core.fft_size / 2,
+            self.core.sample_rate,
+        );
         self.dialogue.dialogue_spatial_control = smooth_dialogue_spatial_control(
             self.dialogue.dialogue_spatial_control,
             self.dialogue.dialogue_probability,
@@ -120,12 +132,16 @@ impl UpmixerPlugin {
             let center_bin = (start_bin + end_bin) / 2;
             let center_freq = center_bin as f32 * freq_per_bin;
             let norm = ((center_freq - 100.0) / (8000.0 - 100.0)).clamp(0.0, 1.0);
-            let attack_alpha = ((STEERING_ATTACK_BASE + STEERING_ATTACK_RANGE * norm)
-                * analysis_smoothing_scale)
-                .max(0.05);
-            let release_alpha = ((STEERING_RELEASE_BASE + STEERING_RELEASE_RANGE * norm)
-                * analysis_smoothing_scale)
-                .max(0.005);
+            let attack_alpha = time_scaled_alpha(
+                STEERING_ATTACK_BASE + STEERING_ATTACK_RANGE * norm,
+                self.core.fft_size / 2,
+                self.core.sample_rate,
+            );
+            let release_alpha = time_scaled_alpha(
+                STEERING_RELEASE_BASE + STEERING_RELEASE_RANGE * norm,
+                self.core.fft_size / 2,
+                self.core.sample_rate,
+            );
             let alpha = if inst_energy > smooth_energy * 1.5 {
                 attack_alpha
             } else {

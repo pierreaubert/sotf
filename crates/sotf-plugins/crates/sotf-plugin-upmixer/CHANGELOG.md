@@ -1,3 +1,59 @@
+# 0.5.122
+
+## Verification
+
+- Stamp published ML probabilities with their transport generation and double-check the generation
+  on read so reset/publication races cannot expose an old inference result.
+- Add a concurrent 100,000-publication/20,000-reset stress regression covering the worker, reset,
+  and reader ordering contract.
+
+# 0.5.121
+
+## Review remediation
+
+- Replace the non-physical reactive-intensity front/back axis with a stereo-valid lateral cue;
+  quadrature and anti-phase material are now spatially uncertain rather than falsely localized.
+- Align empty factory defaults with every catalog parameter and test the real getter surface.
+- Make ML reset invalidate queued and in-flight inference generations.
+- Reject non-finite input before persistent analysis state can be poisoned.
+- Derive critical frequency-analysis smoothing coefficients from hop duration and sample rate.
+- Set FTZ/DAZ on the actual processing thread and remove redundant synthesized-buffer scans.
+- Add multi-source energy-budget scenarios and initialize the worst-case 9.1.6/FFT-4096 timing test.
+
+# 0.5.120
+
+## Bug fixes
+
+- Publish ML vocal-detector probabilities with Release/Acquire ordering so the
+  audio thread cannot observe the ready flag with stale probability bits.
+- Validate that inference returns exactly one f32 output with canonical shape
+  `[1, 1]`; reject extra, empty, or malformed output tensors instead of using
+  an arbitrary first element.
+
+# 0.5.119
+
+## Verification
+
+- Add a non-hop-aligned bypass round-trip regression covering queued-state discard and the
+  zero/FFT latency contract.
+
+# 0.5.118
+
+## Bug fixes (from code review 2026-08-12)
+
+- Rebuild all channel-dependent main/HR rings, output buffers, routing caches, and per-speaker
+  decorrelators on every speaker-layout change, including equal-width role changes.
+- Initialize diffuseness smoothing state on normal startup instead of falling back to raw block
+  diffuseness until a resolution toggle.
+- Validate the LFE/upmix crossover pair transactionally; malformed factory presets are clamped to a
+  one-Hz minimum transition instead of reaching the asserting constructor.
+- Make diagnostic hard bypass explicitly structural, reset queued streaming state on both edges,
+  and report its actual zero latency rather than the inactive FFT latency.
+- Reset dialogue, subharmonic, height-transient, and decorrelation oscillator histories so transport
+  reset is deterministic.
+- Wire the previously dead crate-local test module into the test build and repair stale field paths.
+- Mark spectral-table controls setup-only to keep table regeneration out of realtime automation.
+
 # 0.5.117
 
 ## Bug fixes (from code review 2026-05-16)

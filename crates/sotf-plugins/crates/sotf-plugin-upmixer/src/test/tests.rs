@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod upmixer_tests {
-    use super::*;
     use crate::UpmixerPlugin;
     use crate::params::SPEAKER_CONFIGS;
     use sotf_host::ProcessContext;
@@ -93,9 +92,18 @@ mod upmixer_tests {
             )
             .unwrap();
         assert_eq!(plugin.params.frequency_resolution, "per_bin");
-        assert_eq!(plugin.steering.erb_bands.len(), plugin.core.fft_size / 2 + 1);
-        assert_eq!(plugin.spectral.pca_cov_xx.len(), plugin.steering.erb_bands.len());
-        assert_eq!(plugin.steering.coherence_history.len(), plugin.steering.erb_bands.len());
+        assert_eq!(
+            plugin.steering.erb_bands.len(),
+            plugin.core.fft_size / 2 + 1
+        );
+        assert_eq!(
+            plugin.spectral.pca_cov_xx.len(),
+            plugin.steering.erb_bands.len()
+        );
+        assert_eq!(
+            plugin.steering.coherence_history.len(),
+            plugin.steering.erb_bands.len()
+        );
     }
 
     #[test]
@@ -409,7 +417,9 @@ mod upmixer_tests {
                 2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
             );
             plugin.initialize(44100).unwrap();
-            plugin.gains.center_spread
+            plugin
+                .gains
+                .center_spread
                 .set_target(center_spread.clamp(0.0, 1.0));
             plugin.gains.center_spread.next_n(4096);
 
@@ -491,7 +501,9 @@ mod upmixer_tests {
             .enumerate()
             .take(plugin.core.num_output_channels)
         {
-            for &sample in plugin.hr_buffers.hr_time_out_channels[ch][..plugin.fft.hr_fft_size].iter() {
+            for &sample in
+                plugin.hr_buffers.hr_time_out_channels[ch][..plugin.fft.hr_fft_size].iter()
+            {
                 *energy += sample.powi(2);
             }
         }
@@ -646,11 +658,102 @@ mod upmixer_tests {
         plugin.change_speaker_config("7.1.4").unwrap();
         assert_eq!(plugin.output_channels(), 12);
         assert_eq!(plugin.core.speaker_config.id, "7.1.4");
+        assert_eq!(
+            plugin.hr_buffers.hr_output_accumulator.len(),
+            plugin.core.fft_size * 4 * 12
+        );
+        assert_eq!(plugin.decorrelation.decorrelation_filters.len(), 12);
 
         // Change back to 5.1
         plugin.change_speaker_config("5.1").unwrap();
         assert_eq!(plugin.output_channels(), 6);
         assert_eq!(plugin.core.speaker_config.id, "5.1");
+        assert_eq!(
+            plugin.hr_buffers.hr_output_accumulator.len(),
+            plugin.core.fft_size * 4 * 6
+        );
+        assert_eq!(plugin.decorrelation.decorrelation_filters.len(), 6);
+    }
+
+    #[test]
+    fn test_initialize_sizes_diffuseness_smoothing_state() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(48_000).unwrap();
+        assert_eq!(
+            plugin.steering.smoothed_diffuseness.len(),
+            plugin.steering.erb_bands.len()
+        );
+        assert_eq!(
+            plugin.steering.diffuseness_initialized.len(),
+            plugin.steering.erb_bands.len()
+        );
+    }
+
+    #[test]
+    fn test_crossover_pair_rejection_is_transactional() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        let lfe_before = plugin.param_smoothers.lfe_cutoff_hz_smoother.target();
+        assert!(
+            plugin
+                .set_parameter(
+                    ParameterId::from("lfe_cutoff_hz"),
+                    ParameterValue::Float(300.0),
+                )
+                .is_err()
+        );
+        assert_eq!(
+            plugin.param_smoothers.lfe_cutoff_hz_smoother.target(),
+            lfe_before
+        );
+
+        plugin
+            .set_parameter(
+                ParameterId::from("lfe_cutoff_hz"),
+                ParameterValue::Float(180.0),
+            )
+            .unwrap();
+        let bandpass_before = plugin.param_smoothers.bandpass_hz_smoother.target();
+        assert!(
+            plugin
+                .set_parameter(
+                    ParameterId::from("bandpass_hz"),
+                    ParameterValue::Float(150.0),
+                )
+                .is_err()
+        );
+        assert_eq!(
+            plugin.param_smoothers.bandpass_hz_smoother.target(),
+            bandpass_before
+        );
+    }
+
+    #[test]
+    fn test_hard_bypass_reports_zero_latency_and_resets_streaming_state() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(48_000).unwrap();
+        plugin.main_buffers.input_buffer_fill = 42;
+        plugin
+            .set_parameter(
+                ParameterId::from("bypass_all_processing"),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+        assert_eq!(plugin.latency_samples(), 0);
+        assert_eq!(plugin.main_buffers.input_buffer_fill, 0);
+        plugin
+            .set_parameter(
+                ParameterId::from("bypass_all_processing"),
+                ParameterValue::Bool(false),
+            )
+            .unwrap();
+        assert_eq!(plugin.latency_samples(), plugin.core.fft_size);
+        assert_eq!(plugin.core.startup_padding_remaining, plugin.core.fft_size);
     }
 
     #[test]
@@ -904,7 +1007,7 @@ mod upmixer_tests {
         );
         assert_eq!(plugin_2_0.input_channels(), 2);
         assert_eq!(plugin_2_0.output_channels(), 2);
-        assert_eq!(plugin_2_0.speaker_config.id, "2.0");
+        assert_eq!(plugin_2_0.core.speaker_config.id, "2.0");
 
         // Test creating upmixer with 5.0 configuration
         let plugin_5_0 = UpmixerPlugin::new(
@@ -912,7 +1015,7 @@ mod upmixer_tests {
         );
         assert_eq!(plugin_5_0.input_channels(), 2);
         assert_eq!(plugin_5_0.output_channels(), 5);
-        assert_eq!(plugin_5_0.speaker_config.id, "5.0");
+        assert_eq!(plugin_5_0.core.speaker_config.id, "5.0");
     }
 
     #[test]
@@ -1039,7 +1142,9 @@ mod upmixer_tests {
 
         // Raw LR4 crossover paths preserve the complex summed response. They
         // are intentionally not forced into per-bin power normalization.
-        for (idx, (&low, &high)) in plugin.spectral.lfe_low_gains
+        for (idx, (&low, &high)) in plugin
+            .spectral
+            .lfe_low_gains
             .iter()
             .zip(plugin.spectral.mains_high_gains.iter())
             .enumerate()
@@ -1062,11 +1167,13 @@ mod upmixer_tests {
         let above = (cutoff_bin * 3 / 2).min(nbins - 1);
 
         assert!(
-            plugin.spectral.lfe_low_gains[below].norm() > plugin.spectral.lfe_low_gains[cutoff_bin].norm(),
+            plugin.spectral.lfe_low_gains[below].norm()
+                > plugin.spectral.lfe_low_gains[cutoff_bin].norm(),
             "Low gain should decrease toward cutoff"
         );
         assert!(
-            plugin.spectral.mains_high_gains[above].norm() > plugin.spectral.mains_high_gains[cutoff_bin].norm(),
+            plugin.spectral.mains_high_gains[above].norm()
+                > plugin.spectral.mains_high_gains[cutoff_bin].norm(),
             "High gain should increase above cutoff"
         );
     }
@@ -1079,8 +1186,14 @@ mod upmixer_tests {
         plugin.initialize(44100).unwrap();
 
         let spectrum_size = plugin.core.fft_size / 2 + 1;
-        assert_eq!(plugin.decorrelation.decorrelation_filter_left.len(), spectrum_size);
-        assert_eq!(plugin.decorrelation.decorrelation_filter_right.len(), spectrum_size);
+        assert_eq!(
+            plugin.decorrelation.decorrelation_filter_left.len(),
+            spectrum_size
+        );
+        assert_eq!(
+            plugin.decorrelation.decorrelation_filter_right.len(),
+            spectrum_size
+        );
 
         // Magnitude should be 1.0 for all bins (these are all-pass filters)
         for i in 0..spectrum_size {
@@ -1106,7 +1219,10 @@ mod upmixer_tests {
                 && plugin.decorrelation.decorrelation_filter_right[0].im.abs() < 1e-6
         );
         assert!(
-            plugin.decorrelation.decorrelation_filter_left[spectrum_size - 1].im.abs() < 1e-6
+            plugin.decorrelation.decorrelation_filter_left[spectrum_size - 1]
+                .im
+                .abs()
+                < 1e-6
                 && plugin.decorrelation.decorrelation_filter_right[spectrum_size - 1]
                     .im
                     .abs()
@@ -1216,9 +1332,14 @@ mod upmixer_tests {
             plugin.process_fft_block(&input, &mut output);
         }
 
-        let bandpass_bin = plugin.cache.cached_bandpass_bin
+        let bandpass_bin = plugin
+            .cache
+            .cached_bandpass_bin
             .min(plugin.height.height_band_gains.len());
-        for (bin, &gain) in plugin.height.height_band_gains[..bandpass_bin].iter().enumerate() {
+        for (bin, &gain) in plugin.height.height_band_gains[..bandpass_bin]
+            .iter()
+            .enumerate()
+        {
             assert!(
                 (gain - crate::frequency_domain::HEIGHT_MASK_FLOOR).abs() < 1e-6,
                 "height gain below bandpass should stay at floor, bin {bin} = {gain}"
@@ -2024,7 +2145,10 @@ mod upmixer_tests {
 
         // Set safety_cap_db to 0.0 (strictest cap: 0 dBFS = unity)
         plugin.safety.safety_cap_db = 0.0;
-        plugin.param_smoothers.safety_cap_db_smoother.set_target(0.0);
+        plugin
+            .param_smoothers
+            .safety_cap_db_smoother
+            .set_target(0.0);
         plugin.param_smoothers.safety_cap_db_smoother.next_n(4096);
         plugin.update_safety_cap_cache();
 
@@ -2107,7 +2231,10 @@ mod upmixer_tests {
             );
             plugin.initialize(44100).unwrap();
             plugin.safety.safety_cap_db = 0.0;
-            plugin.param_smoothers.safety_cap_db_smoother.set_target(0.0);
+            plugin
+                .param_smoothers
+                .safety_cap_db_smoother
+                .set_target(0.0);
             plugin.param_smoothers.safety_cap_db_smoother.next_n(4096);
             plugin.update_safety_cap_cache();
 
@@ -2803,4 +2930,3 @@ mod upmixer_tests {
         );
     }
 }
-

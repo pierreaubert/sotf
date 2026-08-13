@@ -1,13 +1,35 @@
 use super::consts::DIFFUSENESS_ENERGY_FLOOR;
 use super::smooth::smooth_diffuseness;
-use math_audio_dsp::fast_math::fast_atan2;
 use rustfft::num_complex::Complex;
+
+/// Derive the spatial information that ordinary stereo actually contains.
+///
+/// `lateral_balance` is the signed L/R energy imbalance. `directness` combines
+/// that cue with positive, in-phase correlation. Negative correlation and
+/// quadrature correlation are deliberately not promoted to physical source
+/// directions: two playback channels do not encode a front/back velocity axis.
+#[inline(always)]
+pub(super) fn stereo_spatial_cue(
+    left_energy: f32,
+    right_energy: f32,
+    cross_real: f32,
+) -> Option<(f32, f32)> {
+    let total_energy = left_energy + right_energy;
+    if !total_energy.is_finite() || total_energy <= DIFFUSENESS_ENERGY_FLOOR {
+        return None;
+    }
+
+    let lateral_balance = ((left_energy - right_energy) / total_energy).clamp(-1.0, 1.0);
+    let positive_correlation = (2.0 * cross_real / total_energy).clamp(0.0, 1.0);
+    let directness = lateral_balance.abs().max(positive_correlation);
+    Some((directness, lateral_balance))
+}
 
 /// Compute diffuseness-based gains from intensity vector analysis.
 ///
 /// For a band of frequency bins, computes:
-/// - Active intensity I = Re(P * V*) where P = pressure (mono), V = velocity (L-R)
-/// - Diffuseness psi = 1 - |I| / sqrt(E_p * E_v), clamped to [0, 1]
+/// - directness = max(positive real L/R correlation, signed level-imbalance magnitude)
+/// - Diffuseness psi = 1 - directness, clamped to [0, 1]
 /// - direct_gain = sqrt(1 - psi), ambient_gain = sqrt(psi)
 ///
 /// The returned base gains satisfy direct^2 + ambient^2 = 1 before user boost controls.
@@ -18,44 +40,29 @@ pub(super) fn compute_diffuseness_and_doa(
     start_bin: usize,
     end_bin: usize,
 ) -> DiffusenessAndDoa {
-    let mut intensity_re = 0.0_f32; // Re part of intensity (left-right axis)
-    let mut intensity_im = 0.0_f32; // Im part of intensity (front-back axis)
-    let mut pressure_energy = 0.0_f32;
-    let mut velocity_energy = 0.0_f32;
+    let mut left_energy = 0.0_f32;
+    let mut right_energy = 0.0_f32;
+    let mut cross_real = 0.0_f32;
 
     for i in start_bin..end_bin {
         let l = freq_left[i];
         let r = freq_right[i];
 
-        // P = (L + R) / 2 (pressure / omnidirectional)
-        let p = (l + r) * 0.5;
-        // V = (L - R) / 2 (velocity / figure-of-eight)
-        let v = (l - r) * 0.5;
-
-        // Active intensity I = Re(P * conj(V))
-        let pv_conj = p * v.conj();
-        intensity_re += pv_conj.re;
-        intensity_im += pv_conj.im;
-
-        pressure_energy += p.norm_sqr();
-        velocity_energy += v.norm_sqr();
+        left_energy += l.norm_sqr();
+        right_energy += r.norm_sqr();
+        cross_real += (l * r.conj()).re;
     }
 
-    let intensity_magnitude = (intensity_re * intensity_re + intensity_im * intensity_im).sqrt();
-
-    // DOA angle from intensity vector
-    let doa = fast_atan2(intensity_im, intensity_re);
-
-    // Diffuseness: psi = 1 - |I| / sqrt(E_p * E_v)
-    // When |I| is large relative to energies, the field is directional (psi -> 0)
-    // When |I| is small, the field is diffuse (psi -> 1)
-    let energy_product = (pressure_energy * velocity_energy).sqrt();
-    let reliable = energy_product > DIFFUSENESS_ENERGY_FLOOR;
-    let diffuseness = if reliable {
-        (1.0 - intensity_magnitude / energy_product).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    let cue = stereo_spatial_cue(left_energy, right_energy, cross_real);
+    let reliable = cue.is_some();
+    let (diffuseness, doa) = cue.map_or((0.0, 0.0), |(directness, lateral_balance)| {
+        // Preserve the existing panner's radians contract while limiting stereo
+        // localization to the physically observable left/right hemisphere.
+        (
+            1.0 - directness,
+            lateral_balance * std::f32::consts::FRAC_PI_2,
+        )
+    });
 
     DiffusenessAndDoa {
         diffuseness,

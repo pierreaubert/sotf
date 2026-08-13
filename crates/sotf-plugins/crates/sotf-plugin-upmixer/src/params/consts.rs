@@ -87,6 +87,8 @@ pub const PARAMS: &[ParamSpec] = &[
         "LFE",
     )
     .secondary("LFE & Bass")
+    .structural()
+    .setup()
     .doc("LFE low-pass filter frequency"),
     // 7: enable_subharmonic_synth
     ParamSpec::bool_param(
@@ -185,6 +187,8 @@ pub const PARAMS: &[ParamSpec] = &[
         "Hz",
         "Spatial",
     )
+    .structural()
+    .setup()
     .doc("Direct/ambient split frequency"),
     // HR Direct
     // 15: enable_hr_direct
@@ -286,6 +290,8 @@ pub const PARAMS: &[ParamSpec] = &[
         "Height",
     )
     .secondary("Height")
+    .structural()
+    .setup()
     .doc("High-frequency limit for heights"),
     // 23: height_transient_reduction
     ParamSpec::float(
@@ -481,6 +487,8 @@ pub const PARAMS: &[ParamSpec] = &[
     // 39: bypass_all_processing
     ParamSpec::bool_param("Bypass All", "bypass_all_processing", false, "Diagnostics")
         .diagnostic()
+        .structural()
+        .setup()
         .doc("Pass audio through unprocessed"),
     // 40: enable_ml_detection
     ParamSpec::bool_param("ML Detection", "enable_ml_detection", false, "Diagnostics")

@@ -43,15 +43,8 @@ impl UpmixerPlugin {
         let new_config = get_speaker_config(config_id)
             .ok_or_else(|| format!("Invalid speaker config: {}", config_id))?;
 
-        if new_config.total_channels == self.core.num_output_channels {
-            // Same channel count, just update config and panning gains
-            self.core.speaker_config = new_config;
-            self.recalculate_panning_gains();
-            self.rebuild_cached_parameters();
-            return Ok(());
-        }
-
-        // Different channel count - need to reallocate buffers
+        // Layout identity affects routing and decorrelation even when width is unchanged.
+        // Rebuild every channel-dependent buffer and clear queued audio atomically.
         self.core.speaker_config = new_config;
         self.core.num_output_channels = new_config.total_channels;
 
@@ -68,6 +61,9 @@ impl UpmixerPlugin {
             vec![0.0; accumulator_frames * self.core.num_output_channels];
         self.output.output_accumulator_mask = accumulator_frames - 1;
         self.output.output_block = vec![0.0; self.core.fft_size * self.core.num_output_channels];
+        self.hr_buffers.hr_output_accumulator =
+            vec![0.0; accumulator_frames * self.core.num_output_channels];
+        self.hr_buffers.hr_output_accumulator_mask = accumulator_frames - 1;
         // Re-allocate blended decorrelation filters for new channel count
         let spectrum_size = self.core.fft_size / 2 + 1;
         self.decorrelation.blended_decorrelation_filters =
@@ -75,6 +71,7 @@ impl UpmixerPlugin {
         self.decorrelation.prev_decorrelation_strength = -1.0; // Force recompute
 
         self.recalculate_panning_gains();
+        self.generate_per_channel_decorrelation_filters();
         self.reset();
         self.rebuild_cached_parameters();
 

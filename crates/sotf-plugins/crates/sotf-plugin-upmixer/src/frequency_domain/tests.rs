@@ -3,6 +3,7 @@ use super::consts::DIALOGUE_SPATIAL_MAX_FALL;
 use super::consts::DIALOGUE_SPATIAL_MAX_RISE;
 use super::consts::DIFFUSENESS_MAX_STEP;
 use super::consts::bin_intensity_doa;
+use super::consts::time_scaled_alpha;
 use super::diffuseness_and_doa::DiffusenessAndDoa;
 use super::diffuseness_and_doa::compute_diffuseness_and_doa;
 use super::diffuseness_and_doa::update_diffuseness_state;
@@ -15,7 +16,7 @@ use super::smooth::smooth_diffuseness;
 use rustfft::num_complex::Complex;
 
 #[test]
-fn quadrature_intensity_counts_as_directional_energy() {
+fn quadrature_stereo_is_diffuse_and_does_not_invent_front_back_doa() {
     let mut left = vec![Complex::new(0.0, 0.0); 4];
     let mut right = vec![Complex::new(0.0, 0.0); 4];
 
@@ -25,18 +26,58 @@ fn quadrature_intensity_counts_as_directional_energy() {
     let analysis = compute_diffuseness_and_doa(&left, &right, 1, 2);
 
     assert!(
-        analysis.diffuseness < 0.01,
-        "quadrature intensity should remain directional, got diffuseness {}",
+        analysis.diffuseness > 0.99,
+        "quadrature stereo should be spatially uncertain, got diffuseness {}",
         analysis.diffuseness
     );
     assert!(
-        analysis.doa.abs() > 1.0,
-        "DOA should preserve the imaginary intensity axis, got {}",
+        analysis.doa.abs() < 1e-6,
+        "equal-level quadrature stereo must not invent front/back DOA, got {}",
         analysis.doa
     );
     assert!(analysis.reliable);
-    assert!(analysis.direct_gain() > 0.99);
-    assert!(analysis.ambient_gain() < 0.1);
+    assert!(analysis.direct_gain() < 0.1);
+    assert!(analysis.ambient_gain() > 0.99);
+}
+
+#[test]
+fn one_pole_smoothing_is_invariant_to_sample_rate_and_fft_hop() {
+    let reference = time_scaled_alpha(0.18, 1024, 48_000);
+    let high_rate = time_scaled_alpha(0.18, 2048, 96_000);
+    assert!((reference - high_rate).abs() < 1e-7);
+
+    let half_hop = time_scaled_alpha(0.18, 512, 48_000);
+    let two_half_hops = 1.0 - (1.0 - half_hop).powi(2);
+    assert!((reference - two_half_hops).abs() < 1e-6);
+}
+
+#[test]
+fn stereo_spatial_scenarios_have_physical_directness_and_lateral_sign() {
+    fn analyze(left: Complex<f32>, right: Complex<f32>) -> DiffusenessAndDoa {
+        compute_diffuseness_and_doa(&[left], &[right], 0, 1)
+    }
+
+    let mono = analyze(Complex::new(1.0, 0.0), Complex::new(1.0, 0.0));
+    assert!(mono.diffuseness < 1e-6 && mono.doa.abs() < 1e-6);
+
+    let anti_phase = analyze(Complex::new(1.0, 0.0), Complex::new(-1.0, 0.0));
+    assert!(anti_phase.diffuseness > 0.99 && anti_phase.doa.abs() < 1e-6);
+
+    let left_panned = analyze(Complex::new(1.0, 0.0), Complex::new(0.2, 0.0));
+    let right_panned = analyze(Complex::new(0.2, 0.0), Complex::new(1.0, 0.0));
+    assert!(left_panned.diffuseness < 0.1 && left_panned.doa > 1.0);
+    assert!(right_panned.diffuseness < 0.1 && right_panned.doa < -1.0);
+
+    // Orthogonal deterministic bins stand in for uncorrelated components;
+    // across a band their real cross-correlation cancels exactly.
+    let independent = compute_diffuseness_and_doa(
+        &[Complex::new(1.0, 0.0), Complex::new(0.0, 1.0)],
+        &[Complex::new(0.0, 1.0), Complex::new(-1.0, 0.0)],
+        0,
+        2,
+    );
+    assert!(independent.diffuseness > 0.99);
+    assert!(independent.doa.abs() < 1e-6);
 }
 
 #[test]

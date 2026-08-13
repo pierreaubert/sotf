@@ -3,7 +3,9 @@
 //! Tests exercise the public `Plugin` trait: instantiation, parameter get/set,
 //! audio processing, output channel configuration, bypass modes and reset.
 
+use sotf_host::param_specs::ParamType;
 use sotf_host::{ParameterId, ParameterValue, Plugin, ProcessContext};
+use sotf_plugin_upmixer::params::PARAMS;
 use sotf_plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams};
 
 #[test]
@@ -13,6 +15,26 @@ fn upmixer_plugin_info_and_channels() {
     assert_eq!(plugin.input_channels(), 2);
     // Default config is 5.1 => 6 channels.
     assert_eq!(plugin.output_channels(), 6);
+}
+
+#[test]
+fn empty_factory_defaults_match_every_catalog_parameter() {
+    let params: UpmixerPluginParams = serde_json::from_str("{}").unwrap();
+    let plugin = UpmixerPlugin::from_params(params);
+
+    for spec in PARAMS {
+        let actual = plugin
+            .get_parameter(&ParameterId::from(spec.engine_key))
+            .unwrap_or_else(|| panic!("catalog parameter {} has no getter", spec.engine_key));
+        let expected = match spec.param_type {
+            ParamType::Float { default, .. } => ParameterValue::Float(default as f32),
+            ParamType::Int { default, .. } => ParameterValue::Int(default as i32),
+            ParamType::Bool { default, .. } => ParameterValue::Bool(default),
+            ParamType::Choice { default_index, .. } => ParameterValue::Int(default_index as i32),
+            ParamType::FilePath => continue,
+        };
+        assert_eq!(actual, expected, "default mismatch for {}", spec.engine_key);
+    }
 }
 
 #[test]
@@ -198,6 +220,82 @@ fn upmixer_bypass_all_processing_passes_stereo() {
 }
 
 #[test]
+fn upmixer_bypass_round_trip_discards_queued_audio_and_restores_latency() {
+    let mut plugin = UpmixerPlugin::from_params(UpmixerPluginParams::default());
+    plugin.initialize(44100).unwrap();
+    let fft_size = UpmixerPluginParams::default().core.fft_size;
+    let out_ch = plugin.output_channels();
+
+    // Build both partial input state and queued overlap-add output before entering
+    // diagnostic bypass. A bypass round trip must not replay either after re-enable.
+    let active_frames = fft_size * 3;
+    let mut active_input = vec![0.0_f32; active_frames * 2];
+    for frame in 0..active_frames {
+        active_input[frame * 2] = 0.7;
+        active_input[frame * 2 + 1] = -0.4;
+    }
+    let mut active_output = vec![0.0_f32; active_frames * out_ch];
+    plugin
+        .process(
+            &active_input,
+            &mut active_output,
+            &ProcessContext::new(44100, active_frames),
+        )
+        .unwrap();
+
+    plugin
+        .set_parameter(
+            ParameterId::from("bypass_all_processing"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    assert_eq!(plugin.latency_samples(), 0);
+
+    // Use a non-hop-aligned host block while bypassed.
+    let bypass_frames = 257;
+    let bypass_input = vec![0.11_f32; bypass_frames * 2];
+    let mut bypass_output = vec![0.0_f32; bypass_frames * out_ch];
+    plugin
+        .process(
+            &bypass_input,
+            &mut bypass_output,
+            &ProcessContext::new(44100, bypass_frames),
+        )
+        .unwrap();
+
+    plugin
+        .set_parameter(
+            ParameterId::from("bypass_all_processing"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+    assert_eq!(plugin.latency_samples(), fft_size);
+
+    // Re-enable with silence. Any non-zero output here indicates stale queued
+    // main/HR ring data leaked across the structural bypass transition.
+    let post_frames = fft_size * 3;
+    let post_input = vec![0.0_f32; post_frames * 2];
+    let mut post_output = vec![0.0_f32; post_frames * out_ch];
+    let written = plugin
+        .process(
+            &post_input,
+            &mut post_output,
+            &ProcessContext::new(44100, post_frames),
+        )
+        .unwrap();
+    assert_eq!(written, post_frames);
+    let residual = post_output
+        .iter()
+        .copied()
+        .map(f32::abs)
+        .fold(0.0, f32::max);
+    assert!(
+        residual < 1e-6,
+        "stale audio survived bypass round trip: {residual}"
+    );
+}
+
+#[test]
 fn upmixer_state_change_low_latency_fft() {
     let mut plugin = UpmixerPlugin::from_params(UpmixerPluginParams::default());
     plugin.initialize(44100).unwrap();
@@ -257,6 +355,67 @@ fn upmixer_invalid_sample_rate_error() {
     let mut plugin = UpmixerPlugin::from_params(UpmixerPluginParams::default());
     let err = plugin.initialize(0).unwrap_err();
     assert!(err.contains("Invalid sample rate"));
+}
+
+#[test]
+fn upmixer_rejects_non_finite_input_without_poisoning_following_audio() {
+    let mut plugin = UpmixerPlugin::from_params(UpmixerPluginParams::default());
+    plugin.initialize(48_000).unwrap();
+    let frames = 64;
+    let channels = plugin.output_channels();
+    let mut invalid = vec![0.0_f32; frames * 2];
+    invalid[17] = f32::NAN;
+    let mut output = vec![0.0_f32; frames * channels];
+    let context = ProcessContext::new(48_000, frames);
+    assert!(plugin.process(&invalid, &mut output, &context).is_err());
+
+    let valid = vec![0.0_f32; frames * 2];
+    plugin.process(&valid, &mut output, &context).unwrap();
+    assert!(output.iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
+fn multi_source_reconstruction_has_a_bounded_energy_budget_for_stereo_extremes() {
+    const FRAMES: usize = 8192;
+    for scenario in ["correlated", "anti_phase", "quadrature", "independent"] {
+        let mut params = UpmixerPluginParams::default();
+        params.spectral.multi_source_extraction = true;
+        let mut plugin = UpmixerPlugin::from_params(params);
+        plugin.initialize(48_000).unwrap();
+        let channels = plugin.output_channels();
+        let mut input = vec![0.0_f32; FRAMES * 2];
+        let mut noise_state = 0x1234_5678_u32;
+        for frame in 0..FRAMES {
+            let phase = frame as f32 * std::f32::consts::TAU * 997.0 / 48_000.0;
+            let left = phase.sin() * 0.25;
+            let right = match scenario {
+                "correlated" => left,
+                "anti_phase" => -left,
+                "quadrature" => phase.cos() * 0.25,
+                _ => {
+                    noise_state = noise_state
+                        .wrapping_mul(1_664_525)
+                        .wrapping_add(1_013_904_223);
+                    (noise_state as f32 / u32::MAX as f32 - 0.5) * 0.5
+                }
+            };
+            input[frame * 2] = left;
+            input[frame * 2 + 1] = right;
+        }
+
+        let mut output = vec![0.0_f32; FRAMES * channels];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, FRAMES))
+            .unwrap();
+        assert!(output.iter().all(|sample| sample.is_finite()), "{scenario}");
+        let input_energy: f32 = input.iter().map(|sample| sample * sample).sum();
+        let output_energy: f32 = output.iter().map(|sample| sample * sample).sum();
+        assert!(output_energy > 0.0, "{scenario} unexpectedly silent");
+        assert!(
+            output_energy <= input_energy * channels as f32 * 2.0,
+            "{scenario} exceeded reconstruction budget: input={input_energy}, output={output_energy}"
+        );
+    }
 }
 
 #[test]

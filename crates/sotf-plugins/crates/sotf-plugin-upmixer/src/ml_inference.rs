@@ -6,7 +6,7 @@
 // audio thread via a lock-free ring buffer (features in) and atomic (V_prob out).
 //
 // The audio thread never blocks: features are pushed non-blocking via rtrb,
-// and V_prob is read via a relaxed atomic load.
+// and V_prob is read after acquiring the publication flag.
 
 use super::ml_features::{CONTEXT_FRAMES, FEATURE_SIZE, FRAME_FEATURE_SIZE};
 use std::sync::Arc;
@@ -24,6 +24,7 @@ const RING_BUFFER_CAPACITY: usize = 4;
 /// A single feature context sent from audio thread to inference thread.
 pub struct MfccFrame {
     pub features: [f32; FEATURE_SIZE],
+    generation: u32,
 }
 
 /// Shared state between audio thread and inference thread
@@ -32,6 +33,10 @@ struct SharedState {
     v_prob_bits: AtomicU32,
     /// Whether at least one inference result is available
     has_result: AtomicBool,
+    /// Generation associated with `v_prob_bits`.
+    result_generation: AtomicU32,
+    /// Transport generation used to invalidate queued/in-flight frames on reset.
+    generation: AtomicU32,
     /// Signal to shut down the inference thread
     shutdown: AtomicBool,
 }
@@ -74,6 +79,8 @@ impl MlInferenceHandle {
         let shared = Arc::new(SharedState {
             v_prob_bits: AtomicU32::new(0.5_f32.to_bits()),
             has_result: AtomicBool::new(false),
+            result_generation: AtomicU32::new(0),
+            generation: AtomicU32::new(0),
             shutdown: AtomicBool::new(false),
         });
 
@@ -100,6 +107,7 @@ impl MlInferenceHandle {
     pub fn send_features(&mut self, features: &[f32; FEATURE_SIZE]) {
         let frame = MfccFrame {
             features: *features,
+            generation: self.shared.generation.load(Ordering::Acquire),
         };
         // Non-blocking push — drop frame if buffer is full
         let _ = self.producer.push(frame);
@@ -111,12 +119,16 @@ impl MlInferenceHandle {
     /// `Some(probability)` with the latest vocal detection probability.
     #[inline]
     pub fn read_v_prob(&self) -> Option<f32> {
-        if self.shared.has_result.load(Ordering::Relaxed) {
-            let bits = self.shared.v_prob_bits.load(Ordering::Relaxed);
-            Some(f32::from_bits(bits))
-        } else {
-            None
-        }
+        read_published_result(&self.shared).map(|(_, probability)| probability)
+    }
+
+    /// Invalidate queued/in-flight features and clear the published result.
+    pub fn reset(&self) {
+        self.shared.generation.fetch_add(1, Ordering::AcqRel);
+        self.shared
+            .v_prob_bits
+            .store(0.5_f32.to_bits(), Ordering::Relaxed);
+        self.shared.has_result.store(false, Ordering::Release);
     }
 
     /// Shut down the inference thread and wait for it to finish.
@@ -168,6 +180,13 @@ fn shape_accepts_feature_size(shape: &[i64]) -> bool {
     shape.len() == 2
         && (shape[0] == 1 || shape[0] == -1)
         && (shape[1] == FEATURE_SIZE as i64 || shape[1] == -1)
+}
+
+/// The model must return exactly one f32 probability in the canonical `[1, 1]`
+/// shape. Other shapes are rejected rather than silently selecting an arbitrary
+/// first element.
+fn output_shape_accepts_probability(shape: &[usize]) -> bool {
+    shape == [1, 1]
 }
 
 fn validate_metadata_contract(
@@ -225,8 +244,10 @@ fn inference_worker(
 
         // Drain all available frames, keeping only the latest
         let mut got_frame = false;
+        let mut frame_generation = 0;
         while let Ok(frame) = consumer.pop() {
             input_data.copy_from_slice(&frame.features);
+            frame_generation = frame.generation;
             got_frame = true;
         }
 
@@ -235,10 +256,7 @@ fn inference_worker(
             match run_inference(&model, &input_data) {
                 Ok(v_prob) => {
                     let clamped = v_prob.clamp(0.0, 1.0);
-                    shared
-                        .v_prob_bits
-                        .store(clamped.to_bits(), Ordering::Relaxed);
-                    shared.has_result.store(true, Ordering::Relaxed);
+                    publish_result(&shared, frame_generation, clamped);
                 }
                 Err(e) => {
                     log::warn!("ML inference error: {}", e);
@@ -251,6 +269,41 @@ fn inference_worker(
     }
 }
 
+#[inline]
+fn publish_result(shared: &SharedState, generation: u32, probability: f32) {
+    if shared.generation.load(Ordering::Acquire) != generation {
+        return;
+    }
+    shared
+        .v_prob_bits
+        .store(probability.to_bits(), Ordering::Relaxed);
+    shared
+        .result_generation
+        .store(generation, Ordering::Relaxed);
+    shared.has_result.store(true, Ordering::Release);
+}
+
+#[inline]
+fn read_published_result(shared: &SharedState) -> Option<(u32, f32)> {
+    if !shared.has_result.load(Ordering::Acquire) {
+        return None;
+    }
+
+    // The acquire load above makes both fields published before the ready flag
+    // visible. Comparing the result stamp with the current transport generation
+    // rejects an old inference even when reset races after the worker's initial
+    // generation check. The second generation load closes the reader/reset race.
+    let result_generation = shared.result_generation.load(Ordering::Relaxed);
+    if shared.generation.load(Ordering::Acquire) != result_generation {
+        return None;
+    }
+    let probability_bits = shared.v_prob_bits.load(Ordering::Relaxed);
+    if shared.generation.load(Ordering::Acquire) != result_generation {
+        return None;
+    }
+    Some((result_generation, f32::from_bits(probability_bits)))
+}
+
 /// Run a single inference pass. Returns the vocal probability (0.0-1.0).
 fn run_inference(model: &RunnableOnnxModel, input_data: &[f32]) -> Result<f32, String> {
     let input = tract_ndarray::Array2::from_shape_vec((1, FEATURE_SIZE), input_data.to_vec())
@@ -260,9 +313,23 @@ fn run_inference(model: &RunnableOnnxModel, input_data: &[f32]) -> Result<f32, S
         .run(tvec!(Tensor::from(input).into()))
         .map_err(|e| format!("Inference error: {}", e))?;
 
+    if outputs.len() != 1 {
+        return Err(format!(
+            "Inference model must return exactly one output tensor, got {}",
+            outputs.len()
+        ));
+    }
+
     let view = outputs[0]
         .to_array_view::<f32>()
         .map_err(|e| format!("Failed to extract output tensor: {}", e))?;
+
+    if !output_shape_accepts_probability(view.shape()) {
+        return Err(format!(
+            "Inference output must have shape [1, 1], got {:?}",
+            view.shape()
+        ));
+    }
 
     view.iter()
         .next()
@@ -279,16 +346,18 @@ mod tests {
         let shared = SharedState {
             v_prob_bits: AtomicU32::new(0.0_f32.to_bits()),
             has_result: AtomicBool::new(false),
+            result_generation: AtomicU32::new(0),
+            generation: AtomicU32::new(0),
             shutdown: AtomicBool::new(false),
         };
 
         // Initially no result
-        assert!(!shared.has_result.load(Ordering::Relaxed));
+        assert!(!shared.has_result.load(Ordering::Acquire));
 
         // Store a probability
         let prob = 0.75_f32;
         shared.v_prob_bits.store(prob.to_bits(), Ordering::Relaxed);
-        shared.has_result.store(true, Ordering::Relaxed);
+        shared.has_result.store(true, Ordering::Release);
 
         // Read it back
         let bits = shared.v_prob_bits.load(Ordering::Relaxed);
@@ -300,6 +369,7 @@ mod tests {
     fn test_mfcc_frame_size() {
         let frame = MfccFrame {
             features: [0.0; FEATURE_SIZE],
+            generation: 0,
         };
         assert_eq!(frame.features.len(), FEATURE_SIZE);
     }
@@ -312,6 +382,38 @@ mod tests {
         assert!(!shape_accepts_feature_size(&[1, 40]));
         assert!(!shape_accepts_feature_size(&[FEATURE_SIZE as i64]));
         assert!(!shape_accepts_feature_size(&[2, FEATURE_SIZE as i64]));
+    }
+
+    #[test]
+    fn output_contract_accepts_only_single_probability_tensor() {
+        assert!(output_shape_accepts_probability(&[1, 1]));
+        assert!(!output_shape_accepts_probability(&[1]));
+        assert!(!output_shape_accepts_probability(&[2, 1]));
+        assert!(!output_shape_accepts_probability(&[1, 2]));
+        assert!(!output_shape_accepts_probability(&[]));
+    }
+
+    #[test]
+    fn result_publication_orders_probability_before_ready_flag() {
+        // The ready flag is the release sequence for the probability bits.  A
+        // reader using acquire must never observe the flag before the value it
+        // describes has been published.
+        let shared = SharedState {
+            v_prob_bits: AtomicU32::new(0.0_f32.to_bits()),
+            has_result: AtomicBool::new(false),
+            result_generation: AtomicU32::new(0),
+            generation: AtomicU32::new(0),
+            shutdown: AtomicBool::new(false),
+        };
+        shared
+            .v_prob_bits
+            .store(0.75_f32.to_bits(), Ordering::Relaxed);
+        shared.has_result.store(true, Ordering::Release);
+        assert!(shared.has_result.load(Ordering::Acquire));
+        assert_eq!(
+            f32::from_bits(shared.v_prob_bits.load(Ordering::Relaxed)),
+            0.75
+        );
     }
 
     #[test]
@@ -367,5 +469,87 @@ mod tests {
         let model_path = "/nonexistent/model.onnx";
         let result = MlInferenceHandle::new(model_path);
         assert!(result.is_err(), "Should fail for nonexistent model");
+    }
+
+    #[test]
+    fn reset_generation_rejects_stale_inference_publication() {
+        let shared = SharedState {
+            v_prob_bits: AtomicU32::new(0.5_f32.to_bits()),
+            has_result: AtomicBool::new(false),
+            result_generation: AtomicU32::new(1),
+            generation: AtomicU32::new(1),
+            shutdown: AtomicBool::new(false),
+        };
+
+        publish_result(&shared, 0, 0.9);
+        assert!(!shared.has_result.load(Ordering::Acquire));
+        assert_eq!(
+            f32::from_bits(shared.v_prob_bits.load(Ordering::Relaxed)),
+            0.5
+        );
+
+        publish_result(&shared, 1, 0.2);
+        assert!(shared.has_result.load(Ordering::Acquire));
+        assert_eq!(
+            f32::from_bits(shared.v_prob_bits.load(Ordering::Relaxed)),
+            0.2
+        );
+    }
+
+    #[test]
+    fn concurrent_publication_and_reset_never_expose_a_stale_generation() {
+        use std::sync::Barrier;
+
+        const PUBLICATIONS: usize = 100_000;
+        const RESETS: usize = 20_000;
+        let shared = Arc::new(SharedState {
+            v_prob_bits: AtomicU32::new(0.5_f32.to_bits()),
+            has_result: AtomicBool::new(false),
+            result_generation: AtomicU32::new(0),
+            generation: AtomicU32::new(0),
+            shutdown: AtomicBool::new(false),
+        });
+        let start = Arc::new(Barrier::new(3));
+
+        let publisher_shared = Arc::clone(&shared);
+        let publisher_start = Arc::clone(&start);
+        let publisher = std::thread::spawn(move || {
+            publisher_start.wait();
+            for iteration in 0..PUBLICATIONS {
+                let generation = publisher_shared.generation.load(Ordering::Acquire);
+                let probability = if generation & 1 == 0 { 0.25 } else { 0.75 };
+                publish_result(&publisher_shared, generation, probability);
+                if iteration & 0xff == 0 {
+                    std::thread::yield_now();
+                }
+            }
+        });
+
+        let reset_shared = Arc::clone(&shared);
+        let reset_start = Arc::clone(&start);
+        let resetter = std::thread::spawn(move || {
+            reset_start.wait();
+            for iteration in 0..RESETS {
+                reset_shared.generation.fetch_add(1, Ordering::AcqRel);
+                reset_shared.has_result.store(false, Ordering::Release);
+                if iteration & 0x3f == 0 {
+                    std::thread::yield_now();
+                }
+            }
+        });
+
+        start.wait();
+        for _ in 0..PUBLICATIONS {
+            if let Some((generation, probability)) = read_published_result(&shared) {
+                let expected = if generation & 1 == 0 { 0.25 } else { 0.75 };
+                assert_eq!(
+                    probability, expected,
+                    "observed stale generation {generation}"
+                );
+            }
+            std::hint::spin_loop();
+        }
+        publisher.join().unwrap();
+        resetter.join().unwrap();
     }
 }
