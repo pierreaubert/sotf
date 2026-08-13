@@ -151,7 +151,9 @@ fn convert_eq(settings: &PluginSettings, sample_rate: f64) -> Option<PluginConfi
         per_channel_mode,
         max_filters: _,
         tdf2,
-        topology: _,
+        topology,
+        auto_gain_enabled,
+        oversampling,
     } = settings
     else {
         return None;
@@ -217,6 +219,9 @@ fn convert_eq(settings: &PluginSettings, sample_rate: f64) -> Option<PluginConfi
                     "channels": channels,
                     "channel_filters": channel_filter_configs,
                     "tdf2": tdf2,
+                    "topology": topology,
+                    "auto_gain": {"enabled": auto_gain_enabled},
+                    "oversampling": oversampling,
                 }),
             ))
         } else {
@@ -227,6 +232,9 @@ fn convert_eq(settings: &PluginSettings, sample_rate: f64) -> Option<PluginConfi
                     "channels": channels,
                     "filters": filter_configs,
                     "tdf2": tdf2,
+                    "topology": topology,
+                    "auto_gain": {"enabled": auto_gain_enabled},
+                    "oversampling": oversampling,
                 }),
             ))
         }
@@ -238,6 +246,9 @@ fn convert_eq(settings: &PluginSettings, sample_rate: f64) -> Option<PluginConfi
                 "channels": channels,
                 "filters": filter_configs,
                 "tdf2": tdf2,
+                "topology": topology,
+                "auto_gain": {"enabled": auto_gain_enabled},
+                "oversampling": oversampling,
             }),
         ))
     }
@@ -395,12 +406,17 @@ mod tests {
             max_filters: 5,
             tdf2: false,
             topology: 0.0,
+            auto_gain_enabled: false,
+            oversampling: 1.0,
         };
         let config = PluginConfigConverterRegistry::global()
             .convert("eq", &settings, 48_000.0)
             .expect("eq converter registered");
         assert_eq!(config.plugin_type, "eq");
         assert!(config.parameters["filters"].is_array());
+        assert_eq!(config.parameters["auto_gain"]["enabled"], false);
+        assert_eq!(config.parameters["oversampling"], 1.0);
+        assert_eq!(config.parameters["topology"], 0.0);
     }
 
     #[test]

@@ -338,7 +338,7 @@ impl_param_accessors! {
     Declick {
         params: param_specs::declick::PARAMS,
         layout: Some(&param_specs::declick::LAYOUT),
-        fields: [enabled: bool, sensitivity: f64]
+        fields: [enabled: bool, sensitivity: f64, link_channels: bool]
     },
     HissReducer {
         params: param_specs::hiss_reducer::PARAMS,
@@ -369,8 +369,9 @@ impl_param_accessors! {
             mix: f64, mix_mode: i32, selected_path: i32, bypass: bool,
             auto_gain_enabled: bool, loudness_type: i32,
             max_auto_gain_db: f64, gain_smoothing_ms: f64, mix_transition_ms: f64,
-            path_a_config: skip, path_b_config: skip,
             phase_invert_a: bool, phase_invert_b: bool, difference_mode: bool,
+            band_mask_low_hz: f64, band_mask_high_hz: f64,
+            path_a_config: skip, path_b_config: skip,
         ]
     },
     Crossover {
@@ -399,7 +400,7 @@ impl_param_accessors! {
         fields: [
             center_gain_db: f64, surround_gain_db: f64, height_gain_db: f64, lfe_gain_db: f64,
             phase_coherence: bool, phase_blend_low_hz: f64, phase_blend_high_hz: f64,
-            itu_mode: bool,
+            itu_mode: bool, matrix_ltrt: bool,
         ]
     },
     MonoToStereo {
@@ -430,6 +431,11 @@ impl_param_accessors! {
         layout: Some(&param_specs::delay::LAYOUT),
         fields: [delay_ms: f64, feedback: f64, mix: f64, lfo_rate_hz: f64, lfo_depth_ms: f64, allpass_coeff: f64, allpass_feedback: bool]
     },
+    Dither {
+        params: param_specs::dither::PARAMS,
+        layout: Some(&param_specs::dither::LAYOUT),
+        fields: [bit_depth: usize, noise_shaping: bool, dither_type: usize]
+    },
     Aec {
         params: param_specs::aec::PARAMS,
         layout: Some(&param_specs::aec::LAYOUT),
@@ -453,7 +459,10 @@ impl_param_accessors! {
     EQ {
         params: param_specs::eq::GLOBAL_PARAMS,
         layout: None,
-        fields: [max_filters: usize, tdf2: bool, topology: f64]
+        fields: [
+            max_filters: usize, tdf2: bool, topology: f64,
+            auto_gain_enabled: bool, oversampling: f64
+        ]
     },
     MultibandCompressor {
         params: param_specs::multiband_compressor::GLOBAL_PARAMS,

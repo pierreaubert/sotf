@@ -110,6 +110,10 @@ pub(super) fn default_max_filters() -> usize {
     10
 }
 
+pub(super) fn default_eq_oversampling() -> f64 {
+    1.0
+}
+
 pub(super) fn default_dyneq_bands() -> Vec<DynEqBandParams> {
     (0..default_dyneq_num_bands() as usize)
         .map(|_| DynEqBandParams::default())

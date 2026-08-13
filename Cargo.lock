@@ -10688,7 +10688,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-eq"
-version = "0.5.66"
+version = "0.5.73"
 dependencies = [
  "gpui",
  "gpui-audio-kit",

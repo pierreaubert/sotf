@@ -8,6 +8,10 @@ pub struct EqBandView {
     pub frequency: f64,
     pub q: f64,
     pub gain_db: f64,
+    /// Even standard-biquad cascade order (2, 4, 6, or 8).
+    pub order: usize,
+    /// Runtime sample rate used to design the preview coefficients.
+    pub sample_rate: f64,
     pub muted: bool,
     pub solo: bool,
 }

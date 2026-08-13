@@ -44,11 +44,13 @@ fn eq_curve_signature(filters: &[EqBandView], freq_count: usize) -> String {
     for filter in filters {
         let _ = write!(
             signature,
-            "|{:?}:{:x}:{:x}:{:x}:{}:{}",
+            "|{:?}:{:x}:{:x}:{:x}:{}:{:x}:{}:{}",
             filter.filter_type,
             filter.frequency.to_bits(),
             filter.q.to_bits(),
             filter.gain_db.to_bits(),
+            filter.order,
+            filter.sample_rate.to_bits(),
             filter.muted,
             filter.solo,
         );
@@ -284,8 +286,7 @@ fn render_eq_visualization<H: PluginViewHost>(
 
                         entity_left.update(cx, |host, cx| {
                             host.set_editing_plugin(plugin_idx);
-                            // Update Q (param index = band_idx * 4 + 1)
-                            host.set_plugin_param(plugin_idx, band_idx * 4 + 1, new_q);
+                            host.set_plugin_param(plugin_idx, band_idx * 5 + 1, new_q);
                             cx.notify();
                         });
                     }
@@ -354,8 +355,7 @@ fn render_eq_visualization<H: PluginViewHost>(
 
                         entity_right.update(cx, |host, cx| {
                             host.set_editing_plugin(plugin_idx);
-                            // Update Q (param index = band_idx * 4 + 1)
-                            host.set_plugin_param(plugin_idx, band_idx * 4 + 1, new_q);
+                            host.set_plugin_param(plugin_idx, band_idx * 5 + 1, new_q);
                             cx.notify();
                         });
                     }
@@ -391,19 +391,19 @@ fn render_eq_visualization<H: PluginViewHost>(
                             // Reset frequency to 1000 Hz
                             host.set_plugin_param(
                                 plugin_idx,
-                                band_idx * 4,
+                                band_idx * 5,
                                 pk(EQ, "freq").default_f64(),
                             );
                             // Reset Q to 1.0
                             host.set_plugin_param(
                                 plugin_idx,
-                                band_idx * 4 + 1,
+                                band_idx * 5 + 1,
                                 pk(EQ, "q").default_f64(),
                             );
                             // Reset gain to 0.0 dB
                             host.set_plugin_param(
                                 plugin_idx,
-                                band_idx * 4 + 2,
+                                band_idx * 5 + 2,
                                 pk(EQ, "gain").default_f64(),
                             );
                             cx.notify();
@@ -473,10 +473,8 @@ fn render_eq_visualization<H: PluginViewHost>(
 
                 entity.update(cx, |host, cx| {
                     host.set_editing_plugin(plugin_idx);
-                    // Update frequency (param index = band_idx * 4 + 0)
-                    host.set_plugin_param(plugin_idx, band_idx * 4, new_freq);
-                    // Update gain (param index = band_idx * 4 + 2)
-                    host.set_plugin_param(plugin_idx, band_idx * 4 + 2, new_gain);
+                    host.set_plugin_param(plugin_idx, band_idx * 5, new_freq);
+                    host.set_plugin_param(plugin_idx, band_idx * 5 + 2, new_gain);
                     cx.notify();
                 });
             }
@@ -938,7 +936,7 @@ pub fn render_eq_plugin<H: PluginViewHost>(
         // Selected band controls
         .when(selected_filter.is_some(), |d| {
             let filter = selected_filter.unwrap();
-            let base_param_idx = selected_band_idx * 4;
+            let base_param_idx = selected_band_idx * 5;
             let midi_overlay = state.midi_overlay;
 
             d.child(

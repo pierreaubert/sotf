@@ -63,6 +63,17 @@ pub const GLOBAL_PARAMS: &[ParamSpec] = &[
     ParamSpec::choice("Topology", "topology", 0, TOPOLOGIES, "Algorithm")
         .structural()
         .doc("Filter topology: Biquad (classic) or SVF (zero-delay feedback, modulation-stable)"),
+    ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Output")
+        .doc("Automatically compensate measured EQ level change"),
+    ParamSpec::choice(
+        "Oversampling",
+        "oversampling",
+        0,
+        &["Off", "2x", "4x"],
+        "Quality",
+    )
+    .structural()
+    .doc("Internal oversampling factor for biquad topology"),
 ];
 
 // ============================================================================
@@ -103,6 +114,9 @@ pub const BAND_TEMPLATE: &[ParamSpec] = &[
         "Filter",
     )
     .doc("Biquad filter shape"),
+    ParamSpec::int("Order", "order", 2, 2, 8, 2, "", "Filter")
+        .structural()
+        .doc("Even filter order: 2, 4, 6, or 8"),
 ];
 
 // ============================================================================
@@ -134,6 +148,21 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn global_params_include_runtime_and_structural_controls() {
+        let keys: Vec<_> = GLOBAL_PARAMS.iter().map(|param| param.engine_key).collect();
+        assert_eq!(
+            keys,
+            vec![
+                "max_filters",
+                "tdf2",
+                "topology",
+                "auto_gain_enabled",
+                "oversampling",
+            ]
+        );
     }
 
     #[test]

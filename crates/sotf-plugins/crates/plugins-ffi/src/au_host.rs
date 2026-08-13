@@ -165,6 +165,7 @@ impl AuHostState {
             let q = self.param_snapshot[base + 1];
             let gain_db = self.param_snapshot[base + 2];
             let filter_type_raw = self.param_snapshot[base + 3] as u32;
+            let order = self.param_snapshot[base + 4] as usize;
 
             let filter_type = match filter_type_raw {
                 0 => BiquadFilterType::Peak,
@@ -185,6 +186,8 @@ impl AuHostState {
                 frequency,
                 q,
                 gain_db,
+                order,
+                sample_rate: sotf_host::DEFAULT_PREVIEW_SAMPLE_RATE,
                 muted: false,
                 solo: false,
             });

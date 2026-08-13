@@ -374,6 +374,8 @@ impl PlayerView {
                     max_filters: 10,
                     tdf2: false,
                     topology: 0.0,
+                    auto_gain_enabled: false,
+                    oversampling: 1.0,
                 };
 
                 // Add to chain (insert before Matrix for proper ordering)

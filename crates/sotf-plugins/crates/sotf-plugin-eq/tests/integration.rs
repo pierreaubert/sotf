@@ -87,7 +87,7 @@ fn info_returns_expected_metadata() {
     let plugin = EqPlugin::new(2, vec![]);
     let info = plugin.plugin_info();
     assert_eq!(info.name, "Parametric EQ");
-    assert_eq!(info.version, "2.0.0");
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(info.author, "SotF");
 }
 
@@ -116,8 +116,8 @@ fn parameters_include_global_and_band_params() {
     assert!(ids.contains(&"band_0_gain"));
     assert!(ids.contains(&"band_0_filter_type"));
     assert!(ids.contains(&"band_0_order"));
-    assert!(!ids.contains(&"auto_gain_enabled"));
-    assert!(!ids.contains(&"oversampling"));
+    assert!(ids.contains(&"auto_gain_enabled"));
+    assert!(ids.contains(&"oversampling"));
 }
 
 // ----------------------------------------------------------------------------
@@ -293,6 +293,9 @@ fn parameter_roundtrip_global_params() {
         plugin.parametric_get_parameter(&ParameterId::from("oversampling")),
         Some(ParameterValue::Int(2))
     );
+    plugin
+        .parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(1))
+        .unwrap();
 
     plugin
         .parametric_set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(true))

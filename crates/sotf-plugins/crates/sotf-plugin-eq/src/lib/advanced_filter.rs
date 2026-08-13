@@ -7,7 +7,10 @@ use super::validate::validate_sample_rate;
 use math_audio_iir_fir::{WarpedBiquad, bark_lambda};
 
 pub(super) enum AdvancedFilter {
-    Warped(WarpedBiquad<f64>),
+    Warped {
+        filter: WarpedBiquad<f64>,
+        automatic_lambda: bool,
+    },
     Kautz(KautzRuntime),
 }
 
@@ -22,20 +25,24 @@ impl AdvancedFilter {
             EqFilterTopology::WarpedBiquad => {
                 validate_freq_q_gain(config.freq, config.q, config.db_gain)?;
                 validate_sample_rate(sample_rate)?;
+                let automatic_lambda = config.lambda.is_none();
                 let lambda = config.lambda.unwrap_or_else(|| bark_lambda(sample_rate));
                 if !lambda.is_finite() || !(-0.9999..=0.9999).contains(&lambda) {
                     return Err(format!(
                         "Invalid warped_biquad lambda {lambda}: expected finite value in [-0.9999, 0.9999]"
                     ));
                 }
-                Ok(Some(Self::Warped(WarpedBiquad::new(
-                    parse_filter_type(&config.filter_type)?,
-                    config.freq,
-                    sample_rate,
-                    config.q,
-                    config.db_gain,
-                    lambda,
-                ))))
+                Ok(Some(Self::Warped {
+                    filter: WarpedBiquad::new(
+                        parse_filter_type(&config.filter_type)?,
+                        config.freq,
+                        sample_rate,
+                        config.q,
+                        config.db_gain,
+                        lambda,
+                    ),
+                    automatic_lambda,
+                }))
             }
             EqFilterTopology::KautzFilter => {
                 let sections = if config.kautz_sections.is_empty() {
@@ -54,21 +61,29 @@ impl AdvancedFilter {
 
     pub(super) fn process(&mut self, sample: f64) -> f64 {
         match self {
-            Self::Warped(filter) => filter.process(sample),
+            Self::Warped { filter, .. } => filter.process(sample),
             Self::Kautz(filter) => filter.process(sample),
         }
     }
 
     pub(super) fn apply_sample_rate(&mut self, sample_rate: f64) -> Result<(), String> {
         match self {
-            Self::Warped(filter) => {
+            Self::Warped {
+                filter,
+                automatic_lambda,
+            } => {
+                let lambda = if *automatic_lambda {
+                    bark_lambda(sample_rate)
+                } else {
+                    filter.lambda
+                };
                 filter.update_params(
                     filter.filter_type,
                     filter.freq,
                     sample_rate,
                     filter.q,
                     filter.db_gain,
-                    filter.lambda,
+                    lambda,
                 );
                 Ok(())
             }
@@ -78,7 +93,7 @@ impl AdvancedFilter {
 
     pub(super) fn reset(&mut self) {
         match self {
-            Self::Warped(filter) => {
+            Self::Warped { filter, .. } => {
                 *filter = WarpedBiquad::new(
                     filter.filter_type,
                     filter.freq,

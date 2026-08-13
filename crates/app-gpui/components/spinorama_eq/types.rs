@@ -35,6 +35,27 @@ type OptimizationOutcome = (
 const SPINORAMA_FETCH_RETRIES: usize = 3;
 const SPINORAMA_RETRY_DELAY: Duration = Duration::from_secs(2);
 
+fn replace_spinorama_eq_filters(
+    settings: &mut sotf_audio_player::PluginSettings,
+    filters: Vec<sotf_audio_player::EQFilter>,
+) -> bool {
+    let sotf_audio_player::PluginSettings::EQ {
+        filters: existing_filters,
+        channel_filters,
+        per_channel_mode,
+        max_filters,
+        ..
+    } = settings
+    else {
+        return false;
+    };
+    *existing_filters = filters;
+    *channel_filters = None;
+    *per_channel_mode = false;
+    *max_filters = 10;
+    true
+}
+
 fn classify_spinorama_fetch_error(error: &str) -> String {
     let lower = error.to_ascii_lowercase();
     if lower.contains("dns")
@@ -1436,23 +1457,10 @@ impl PlayerView {
             {
                 // Update existing EQ plugin
                 if let Some(eq_plugin) = plugin_graph.get_plugin_mut(eq_idx) {
-                    let channels =
-                        if let sotf_audio_player::PluginSettings::EQ { channels, .. } =
-                            &eq_plugin.settings
-                        {
-                            *channels
-                        } else {
-                            2
-                        };
-                    eq_plugin.settings = sotf_audio_player::PluginSettings::EQ {
-                        channels,
-                        filters: eq_filters.clone(),
-                        channel_filters: None,
-                        per_channel_mode: false,
-                        max_filters: 10,
-                        tdf2: false,
-                        topology: 0.0,
-                    };
+                    debug_assert!(replace_spinorama_eq_filters(
+                        &mut eq_plugin.settings,
+                        eq_filters.clone(),
+                    ));
                     log::info!("Updated existing EQ plugin at index {}", eq_idx);
                 }
             } else {
@@ -1470,6 +1478,8 @@ impl PlayerView {
                         max_filters: 10,
                         tdf2: false,
                         topology: 0.0,
+                        auto_gain_enabled: false,
+                        oversampling: 1.0,
                     };
                 }
                 log::info!("Inserted new EQ plugin at index {}", insert_idx);
@@ -1616,5 +1626,59 @@ impl PlayerView {
             })
             .detach();
         }
+    }
+}
+
+#[cfg(test)]
+mod eq_settings_tests {
+    use super::*;
+    use math_audio_iir_fir::BiquadFilterType;
+
+    #[test]
+    fn spinorama_replacement_preserves_eq_global_controls() {
+        let mut settings =
+            sotf_audio_player::PluginSettings::default_for(&sotf_audio_player::PluginType::EQ)
+                .unwrap();
+        let sotf_audio_player::PluginSettings::EQ {
+            auto_gain_enabled,
+            oversampling,
+            tdf2,
+            topology,
+            ..
+        } = &mut settings
+        else {
+            unreachable!();
+        };
+        *auto_gain_enabled = true;
+        *oversampling = 4.0;
+        *tdf2 = true;
+        *topology = 1.0;
+
+        assert!(replace_spinorama_eq_filters(
+            &mut settings,
+            vec![sotf_audio_player::EQFilter::new(
+                BiquadFilterType::Peak,
+                1_000.0,
+                1.2,
+                -3.0,
+            )],
+        ));
+
+        let sotf_audio_player::PluginSettings::EQ {
+            filters,
+            auto_gain_enabled,
+            oversampling,
+            tdf2,
+            topology,
+            ..
+        } = settings
+        else {
+            unreachable!();
+        };
+        assert_eq!(filters.len(), 1);
+        assert!(auto_gain_enabled);
+        assert_eq!(oversampling, 4.0);
+        assert!(tdf2);
+        assert_eq!(topology, 1.0);
     }
 }

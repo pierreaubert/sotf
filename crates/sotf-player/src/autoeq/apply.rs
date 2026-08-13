@@ -88,9 +88,14 @@ pub fn apply_eq_filter_tuples_to_chain(
     };
 
     if let Some(plugin) = graph.get_plugin_mut(target_idx) {
-        let channels = match &plugin.settings {
-            PluginSettings::EQ { channels, .. } => *channels,
-            _ => 2,
+        let (channels, auto_gain_enabled, oversampling) = match &plugin.settings {
+            PluginSettings::EQ {
+                channels,
+                auto_gain_enabled,
+                oversampling,
+                ..
+            } => (*channels, *auto_gain_enabled, *oversampling),
+            _ => (2, false, 1.0),
         };
         plugin.settings = PluginSettings::EQ {
             channels,
@@ -100,6 +105,8 @@ pub fn apply_eq_filter_tuples_to_chain(
             max_filters: n.clamp(1, 20),
             tdf2: false,
             topology: 0.0,
+            auto_gain_enabled,
+            oversampling,
         };
         plugin.enabled = true;
     }
@@ -243,6 +250,17 @@ mod eq_tuple_apply_tests {
         let mut graph = PluginGraph::with_default_rack();
         let idx = graph.user_plugin_insert_index();
         graph.insert_plugin(idx, &PluginType::EQ).unwrap();
+        let plugin = graph.get_plugin_mut(idx).unwrap();
+        let PluginSettings::EQ {
+            auto_gain_enabled,
+            oversampling,
+            ..
+        } = &mut plugin.settings
+        else {
+            panic!("expected EQ settings");
+        };
+        *auto_gain_enabled = true;
+        *oversampling = 4.0;
 
         let message = apply_eq_filter_tuples_to_chain(
             &mut graph,
@@ -260,6 +278,8 @@ mod eq_tuple_apply_tests {
         let PluginSettings::EQ {
             filters,
             max_filters,
+            auto_gain_enabled,
+            oversampling,
             ..
         } = &plugin.settings
         else {
@@ -268,6 +288,14 @@ mod eq_tuple_apply_tests {
         assert_eq!(filters.len(), 2);
         assert_eq!(filters[0].frequency, 125.0);
         assert_eq!(*max_filters, 2);
+        assert!(
+            *auto_gain_enabled,
+            "filter replacement must preserve Auto Gain"
+        );
+        assert_eq!(
+            *oversampling, 4.0,
+            "filter replacement must preserve the oversampling factor"
+        );
     }
 
     #[test]
@@ -731,6 +759,61 @@ mod tests {
             bb_idx,
             main_idx
         );
+        for idx in [bb_idx, main_idx] {
+            let PluginSettings::EQ {
+                auto_gain_enabled,
+                oversampling,
+                ..
+            } = &graph.get_plugin(idx).unwrap().settings
+            else {
+                panic!("expected named EQ settings");
+            };
+            assert!(
+                !auto_gain_enabled,
+                "generated Room EQ must default Auto Gain off"
+            );
+            assert_eq!(
+                *oversampling, 1.0,
+                "generated Room EQ must default to no internal oversampling"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_rack_replacement_preserves_named_eq_global_controls() {
+        let mut graph = PluginGraph::with_default_rack();
+        let dsp = make_dsp_output_for_channels(&[
+            ("FL", vec![json_eq_plugin(None, 100.0)]),
+            ("FR", vec![json_eq_plugin(None, 100.0)]),
+        ]);
+        let names = vec!["FL".to_string(), "FR".to_string()];
+        apply_room_eq_rack_to_chain(&mut graph, &dsp, &names);
+
+        let room_eq = graph.find_plugin_index_by_name("Room EQ").unwrap();
+        let PluginSettings::EQ {
+            auto_gain_enabled,
+            oversampling,
+            ..
+        } = &mut graph.get_plugin_mut(room_eq).unwrap().settings
+        else {
+            panic!("expected Room EQ settings");
+        };
+        *auto_gain_enabled = true;
+        *oversampling = 2.0;
+
+        apply_room_eq_rack_to_chain(&mut graph, &dsp, &names);
+
+        let room_eq = graph.find_plugin_index_by_name("Room EQ").unwrap();
+        let PluginSettings::EQ {
+            auto_gain_enabled,
+            oversampling,
+            ..
+        } = &graph.get_plugin(room_eq).unwrap().settings
+        else {
+            panic!("expected Room EQ settings");
+        };
+        assert!(*auto_gain_enabled);
+        assert_eq!(*oversampling, 2.0);
     }
 
     #[test]
@@ -800,6 +883,8 @@ mod tests {
             max_filters: 10,
             tdf2: false,
             topology: 0.0,
+            auto_gain_enabled: false,
+            oversampling: 1.0,
         };
         let params = serde_json::json!({
             "channel_filters": [

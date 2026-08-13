@@ -68,11 +68,143 @@ fn test_parameter_schema_matches_eq_specs() {
         Some(ParameterValue::Int(0))
     );
 
+    param_by_id(&params, "auto_gain_enabled");
+    param_by_id(&params, "oversampling");
+}
+
+#[test]
+fn test_from_params_rejects_invalid_standard_filter_values() {
+    let base = BiquadFilterConfig {
+        filter_type: "peak".into(),
+        freq: 1_000.0,
+        q: 1.0,
+        db_gain: 0.0,
+        order: 2,
+        topology: EqFilterTopology::Biquad,
+        lambda: None,
+        kautz_sections: Vec::new(),
+    };
+    for invalid in [
+        BiquadFilterConfig {
+            freq: f64::NAN,
+            ..base.clone()
+        },
+        BiquadFilterConfig {
+            freq: 24_000.0,
+            ..base.clone()
+        },
+        BiquadFilterConfig {
+            q: f64::INFINITY,
+            ..base.clone()
+        },
+        BiquadFilterConfig {
+            q: 21.0,
+            ..base.clone()
+        },
+        BiquadFilterConfig {
+            db_gain: 25.0,
+            ..base.clone()
+        },
+    ] {
+        let params = EqPluginParams {
+            filters: vec![invalid],
+            ..Default::default()
+        };
+        assert!(EqPlugin::from_params(1, 48_000, params).is_err());
+    }
+    assert!(EqPlugin::from_params(0, 48_000, EqPluginParams::default()).is_err());
+    assert!(EqPlugin::from_params(1, 0, EqPluginParams::default()).is_err());
+}
+
+#[test]
+fn test_svf_rebuild_preserves_per_channel_filters() {
+    let left = vec![Biquad::new(
+        BiquadFilterType::Peak,
+        500.0,
+        48_000.0,
+        1.0,
+        6.0,
+    )];
+    let right = vec![Biquad::new(
+        BiquadFilterType::Peak,
+        5_000.0,
+        48_000.0,
+        2.0,
+        -6.0,
+    )];
+    let mut plugin = EqPlugin::new_per_channel(2, vec![left, right]).unwrap();
+    plugin.plugin_initialize(48_000).unwrap();
+    plugin
+        .parametric_set_parameter(ParameterId::from("topology"), ParameterValue::Int(1))
+        .unwrap();
+    assert_eq!(plugin.svf_filters[0][0].freq, 500.0);
+    assert_eq!(plugin.svf_filters[1][0].freq, 5_000.0);
+}
+
+#[test]
+fn test_parameter_transition_keeps_per_channel_start_coefficients() {
+    let left = vec![Biquad::new(
+        BiquadFilterType::Peak,
+        500.0,
+        48_000.0,
+        1.0,
+        6.0,
+    )];
+    let right = vec![Biquad::new(
+        BiquadFilterType::Peak,
+        5_000.0,
+        48_000.0,
+        2.0,
+        -6.0,
+    )];
+    let mut plugin = EqPlugin::new_per_channel(2, vec![left, right]).unwrap();
+    plugin.plugin_initialize(48_000).unwrap();
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("band_0_freq"),
+            ParameterValue::Float(2_000.0),
+        )
+        .unwrap();
+    let transition = plugin.transitions[0].as_ref().unwrap();
+    assert_eq!(transition.old_coeffs_per_channel.len(), 2);
+    assert_ne!(
+        transition.old_coeffs_per_channel[0][0].b0,
+        transition.old_coeffs_per_channel[1][0].b0
+    );
+}
+
+#[test]
+fn test_svf_and_oversampling_are_rejected_as_unsupported() {
+    let mut plugin = EqPlugin::new(1, vec![]);
+    plugin.plugin_initialize(48_000).unwrap();
+    plugin
+        .parametric_set_parameter(ParameterId::from("topology"), ParameterValue::Int(1))
+        .unwrap();
     assert!(
-        params
-            .iter()
-            .all(|p| p.id.as_str() != "auto_gain_enabled" && p.id.as_str() != "oversampling"),
-        "EQ schema should not expose params absent from params.rs"
+        plugin
+            .parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
+            .is_err()
+    );
+    assert_eq!(plugin.latency_samples(), 0);
+}
+
+#[test]
+fn test_regular_process_uses_only_active_region() {
+    let mut plugin = EqPlugin::new(2, vec![]);
+    plugin.plugin_initialize(48_000).unwrap();
+    let input = vec![0.25; 10];
+    let mut output = vec![9.0; 12];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 4))
+        .unwrap();
+    assert_eq!(&output[..8], &input[..8]);
+    assert_eq!(&output[8..], &[9.0; 4]);
+
+    let mut short = vec![0.0; 7];
+    assert!(
+        plugin
+            .process(&input, &mut short, &ProcessContext::new(48_000, 4))
+            .is_err()
     );
 }
 
@@ -162,9 +294,7 @@ fn test_eq_allpass_filter_type_parses() {
 }
 
 #[test]
-fn test_from_params_clamps_q_per_filter_type() {
-    // A preset/config with out-of-range Q is clamped on load: peak clamps to
-    // the 20.0 validation ceiling, notch keeps up to 40.
+fn test_from_params_rejects_q_outside_filter_type_range() {
     let params = EqPluginParams {
         filters: vec![
             BiquadFilterConfig {
@@ -191,9 +321,7 @@ fn test_from_params_clamps_q_per_filter_type() {
         channel_filters: None,
         auto_gain: Default::default(),
     };
-    let p = EqPlugin::from_params(1, 48000, params).unwrap();
-    assert_eq!(p.filters[0][0][0].q, 20.0, "peak Q should clamp to 20");
-    assert_eq!(p.filters[0][1][0].q, 25.0, "notch Q should be kept");
+    assert!(EqPlugin::from_params(1, 48000, params).is_err());
 }
 
 #[test]
@@ -304,6 +432,46 @@ fn test_eq_rt_safety() {
 }
 
 #[test]
+fn test_eq_oversampling_max_block_is_allocation_free_and_larger_blocks_fail() {
+    use super::eq_plugin::EQ_MAX_BLOCK_FRAMES;
+    use sotf_host::assert_no_allocs;
+
+    let mut plugin = EqPlugin::new(
+        2,
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1_000.0,
+            48_000.0,
+            1.0,
+            6.0,
+        )],
+    );
+    plugin.plugin_initialize(48_000).unwrap();
+    plugin
+        .parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(4))
+        .unwrap();
+    plugin
+        .parametric_set_parameter(
+            ParameterId::from("band_0_gain"),
+            ParameterValue::Float(-6.0),
+        )
+        .unwrap();
+
+    let context = ProcessContext::new(48_000, EQ_MAX_BLOCK_FRAMES);
+    let mut buffer = vec![0.1; EQ_MAX_BLOCK_FRAMES * 2];
+    assert_no_allocs("EqPlugin::oversampled_process", || {
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+    });
+
+    let too_large = EQ_MAX_BLOCK_FRAMES + 1;
+    let mut oversized = vec![0.0; too_large * 2];
+    let error = plugin
+        .process_in_place(&mut oversized, &ProcessContext::new(48_000, too_large))
+        .unwrap_err();
+    assert!(error.contains("block too large"));
+}
+
+#[test]
 fn test_parameter_smoothing_starts_transition() {
     let f = vec![Biquad::new(
         BiquadFilterType::Peak,
@@ -360,6 +528,250 @@ fn test_parameter_smoothing_completes() {
 
     // Transition should be complete after 512 samples (> 240)
     assert!(p.transitions[0].is_none());
+}
+
+#[test]
+fn audio_transitions_for_q_gain_and_type_last_five_ms_at_all_oversampling_factors() {
+    let edits = [
+        ("band_0_gain", ParameterValue::Float(12.0)),
+        ("band_0_q", ParameterValue::Float(8.0)),
+        ("band_0_filter_type", ParameterValue::Int(6)),
+    ];
+
+    for factor in [1, 2, 4] {
+        for (parameter, value) in &edits {
+            let mut plugin = EqPlugin::new(
+                1,
+                vec![Biquad::new(
+                    BiquadFilterType::Peak,
+                    1_000.0,
+                    48_000.0,
+                    0.7,
+                    6.0,
+                )],
+            );
+            plugin.plugin_initialize(48_000).unwrap();
+            plugin
+                .parametric_set_parameter(
+                    ParameterId::from("auto_gain_enabled"),
+                    ParameterValue::Bool(false),
+                )
+                .unwrap();
+            plugin
+                .parametric_set_parameter(
+                    ParameterId::from("oversampling"),
+                    ParameterValue::Int(factor),
+                )
+                .unwrap();
+            plugin
+                .parametric_set_parameter(ParameterId::from(*parameter), value.clone())
+                .unwrap();
+
+            let transition = plugin.transitions[0].as_ref().unwrap();
+            assert_eq!(transition.total_samples, 240 * factor as usize);
+
+            let mut phase = 0usize;
+            for frames in [17usize, 64, 3, 91, 64] {
+                let mut audio: Vec<f32> = (phase..phase + frames)
+                    .map(|sample| {
+                        (sample as f32 * std::f32::consts::TAU * 1_000.0 / 48_000.0).sin() * 0.25
+                    })
+                    .collect();
+                phase += frames;
+                _process_in_place(
+                    &mut plugin,
+                    &mut audio,
+                    &ProcessContext::new(48_000, frames),
+                );
+                assert!(audio.iter().all(|sample| sample.is_finite()));
+            }
+            assert_eq!(phase, 239);
+            assert!(
+                plugin.transitions[0].is_some(),
+                "{parameter} transition ended before five source milliseconds at {factor}x"
+            );
+
+            let mut final_sample = [0.25_f32];
+            _process_in_place(
+                &mut plugin,
+                &mut final_sample,
+                &ProcessContext::new(48_000, 1),
+            );
+            assert!(final_sample[0].is_finite());
+            assert!(
+                plugin.transitions[0].is_none(),
+                "{parameter} transition exceeded five source milliseconds at {factor}x"
+            );
+        }
+    }
+}
+
+#[test]
+fn audio_transition_duration_is_callback_partition_invariant() {
+    for factor in [1, 2, 4] {
+        for partitions in [vec![240usize], vec![1; 240], vec![37, 19, 83, 101]] {
+            let mut plugin = EqPlugin::new(
+                1,
+                vec![Biquad::new(
+                    BiquadFilterType::Peak,
+                    1_000.0,
+                    48_000.0,
+                    1.0,
+                    0.0,
+                )],
+            );
+            plugin.plugin_initialize(48_000).unwrap();
+            plugin
+                .parametric_set_parameter(
+                    ParameterId::from("oversampling"),
+                    ParameterValue::Int(factor),
+                )
+                .unwrap();
+            plugin
+                .parametric_set_parameter(
+                    ParameterId::from("band_0_gain"),
+                    ParameterValue::Float(12.0),
+                )
+                .unwrap();
+
+            let mut processed = 0usize;
+            for frames in partitions {
+                let mut audio: Vec<f32> = (processed..processed + frames)
+                    .map(|sample| {
+                        (sample as f32 * std::f32::consts::TAU * 1_000.0 / 48_000.0).sin() * 0.25
+                    })
+                    .collect();
+                processed += frames;
+                _process_in_place(
+                    &mut plugin,
+                    &mut audio,
+                    &ProcessContext::new(48_000, frames),
+                );
+                assert!(audio.iter().all(|sample| sample.is_finite()));
+            }
+            assert_eq!(processed, 240);
+            assert!(plugin.transitions[0].is_none(), "factor={factor}");
+        }
+    }
+}
+
+#[test]
+fn per_channel_audio_transitions_match_independent_mono_references() {
+    let edits = [
+        ("band_0_freq", ParameterValue::Float(2_400.0)),
+        ("band_0_q", ParameterValue::Float(5.0)),
+        ("band_0_gain", ParameterValue::Float(-9.0)),
+        ("band_0_filter_type", ParameterValue::Int(6)),
+    ];
+    let partitionings = [vec![320usize], vec![1usize; 320], vec![17, 64, 3, 91, 145]];
+
+    for factor in [1, 2, 4] {
+        for (parameter, value) in &edits {
+            for partitions in &partitionings {
+                let left_filter = || Biquad::new(BiquadFilterType::Peak, 700.0, 48_000.0, 0.8, 6.0);
+                let right_filter =
+                    || Biquad::new(BiquadFilterType::Peak, 4_300.0, 48_000.0, 2.5, -5.0);
+                let mut stereo =
+                    EqPlugin::new_per_channel(2, vec![vec![left_filter()], vec![right_filter()]])
+                        .unwrap();
+                let mut left_mono = EqPlugin::new(1, vec![left_filter()]);
+                let mut right_mono = EqPlugin::new(1, vec![right_filter()]);
+
+                for plugin in [&mut stereo, &mut left_mono, &mut right_mono] {
+                    plugin.plugin_initialize(48_000).unwrap();
+                    plugin
+                        .parametric_set_parameter(
+                            ParameterId::from("auto_gain_enabled"),
+                            ParameterValue::Bool(false),
+                        )
+                        .unwrap();
+                    plugin
+                        .parametric_set_parameter(
+                            ParameterId::from("oversampling"),
+                            ParameterValue::Int(factor),
+                        )
+                        .unwrap();
+                }
+
+                // Establish deliberately different channel histories before
+                // starting the shared parameter transition.
+                let warm_frames = 512usize;
+                let mut left_warm: Vec<f32> = (0..warm_frames)
+                    .map(|sample| {
+                        (sample as f32 * std::f32::consts::TAU * 731.0 / 48_000.0).sin() * 0.2
+                    })
+                    .collect();
+                let mut right_warm: Vec<f32> = (0..warm_frames)
+                    .map(|sample| {
+                        (sample as f32 * std::f32::consts::TAU * 4_127.0 / 48_000.0).cos() * 0.17
+                    })
+                    .collect();
+                let mut stereo_warm = Vec::with_capacity(warm_frames * 2);
+                for (&left, &right) in left_warm.iter().zip(&right_warm) {
+                    stereo_warm.extend_from_slice(&[left, right]);
+                }
+                let warm_context = ProcessContext::new(48_000, warm_frames);
+                stereo
+                    .process_in_place(&mut stereo_warm, &warm_context)
+                    .unwrap();
+                left_mono
+                    .process_in_place(&mut left_warm, &warm_context)
+                    .unwrap();
+                right_mono
+                    .process_in_place(&mut right_warm, &warm_context)
+                    .unwrap();
+
+                for plugin in [&mut stereo, &mut left_mono, &mut right_mono] {
+                    plugin
+                        .parametric_set_parameter(ParameterId::from(*parameter), value.clone())
+                        .unwrap();
+                }
+
+                let mut source_frame = warm_frames;
+                for &frames in partitions {
+                    let mut left: Vec<f32> = (source_frame..source_frame + frames)
+                        .map(|sample| {
+                            let sample = sample as f32;
+                            ((sample * std::f32::consts::TAU * 731.0 / 48_000.0).sin()
+                                + 0.3 * (sample * std::f32::consts::TAU * 2_103.0 / 48_000.0).sin())
+                                * 0.2
+                        })
+                        .collect();
+                    let mut right: Vec<f32> = (source_frame..source_frame + frames)
+                        .map(|sample| {
+                            let sample = sample as f32;
+                            ((sample * std::f32::consts::TAU * 4_127.0 / 48_000.0).cos()
+                                + 0.25
+                                    * (sample * std::f32::consts::TAU * 1_337.0 / 48_000.0).sin())
+                                * 0.17
+                        })
+                        .collect();
+                    source_frame += frames;
+                    let mut stereo_audio = Vec::with_capacity(frames * 2);
+                    for (&left_sample, &right_sample) in left.iter().zip(&right) {
+                        stereo_audio.extend_from_slice(&[left_sample, right_sample]);
+                    }
+
+                    let context = ProcessContext::new(48_000, frames);
+                    stereo
+                        .process_in_place(&mut stereo_audio, &context)
+                        .unwrap();
+                    left_mono.process_in_place(&mut left, &context).unwrap();
+                    right_mono.process_in_place(&mut right, &context).unwrap();
+
+                    for frame in 0..frames {
+                        let left_error = (stereo_audio[frame * 2] - left[frame]).abs();
+                        let right_error = (stereo_audio[frame * 2 + 1] - right[frame]).abs();
+                        assert!(
+                            left_error <= 2e-6 && right_error <= 2e-6,
+                            "{parameter}, {factor}x, partitions={partitions:?}, frame={frame}: \
+                             left error={left_error}, right error={right_error}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -439,14 +851,13 @@ fn test_oversampling_parameter_set_get() {
     let mut p = EqPlugin::new(2, vec![]);
     p.plugin_initialize(48000).unwrap();
 
-    // Default is 1 (no oversampling). Oversampling remains a legacy direct
-    // control, but is no longer exposed through current_values().
+    // Default is 1 (no oversampling), exposed in schema/current values.
     assert_eq!(p.oversampling_factor, 1);
     assert_eq!(
         p.parametric_get_parameter(&ParameterId::from("oversampling")),
         Some(ParameterValue::Int(1))
     );
-    assert_eq!(_get_param(&p, "oversampling"), None);
+    assert_eq!(_get_param(&p, "oversampling"), Some(ParameterValue::Int(1)));
 
     // Set to 2x
     p.parametric_set_parameter(ParameterId::from("oversampling"), ParameterValue::Int(2))
@@ -668,12 +1079,12 @@ fn test_multi_stage_transition_covers_all_stages() {
     assert!(p.transitions[0].is_some());
     let trans = p.transitions[0].as_ref().unwrap();
     assert_eq!(
-        trans.old_coeffs_per_stage.len(),
+        trans.old_coeffs_per_channel[0].len(),
         2,
         "4th-order band should transition 2 stages"
     );
     assert_eq!(
-        trans.new_coeffs_per_stage.len(),
+        trans.new_coeffs_per_channel[0].len(),
         2,
         "4th-order band should transition 2 stages"
     );
@@ -879,6 +1290,34 @@ fn test_process_in_place_zero_frames_returns_zero() {
 }
 
 #[test]
+fn process_contract_checks_active_region_and_preserves_output_tail() {
+    let mut plugin = EqPlugin::new(2, vec![]);
+    plugin.plugin_initialize(48_000).unwrap();
+
+    let mut short = vec![0.0; 3];
+    assert!(
+        plugin
+            .process_in_place(&mut short, &ProcessContext::new(48_000, 2))
+            .unwrap_err()
+            .contains("buffer too small")
+    );
+    assert!(
+        plugin
+            .process_in_place(&mut [], &ProcessContext::new(48_000, usize::MAX))
+            .unwrap_err()
+            .contains("overflow")
+    );
+
+    let input = vec![0.25, -0.5, 99.0, 98.0];
+    let mut output = vec![0.0, 0.0, 7.0, 8.0, 9.0];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 1))
+        .unwrap();
+    assert_eq!(&output[..2], &[0.25, -0.5]);
+    assert_eq!(&output[2..], &[7.0, 8.0, 9.0]);
+}
+
+#[test]
 fn test_process_in_place_single_frame_does_not_panic() {
     let f = vec![Biquad::new(
         BiquadFilterType::Peak,
@@ -1071,7 +1510,10 @@ fn test_set_parameter_auto_gain_roundtrip() {
         p.parametric_get_parameter(&ParameterId::from("auto_gain_enabled")),
         Some(ParameterValue::Bool(false))
     );
-    assert_eq!(_get_param(&p, "auto_gain_enabled"), None);
+    assert_eq!(
+        _get_param(&p, "auto_gain_enabled"),
+        Some(ParameterValue::Bool(false))
+    );
 
     // Enable
     p.parametric_set_parameter(
@@ -1084,7 +1526,10 @@ fn test_set_parameter_auto_gain_roundtrip() {
         p.parametric_get_parameter(&ParameterId::from("auto_gain_enabled")),
         Some(ParameterValue::Bool(true))
     );
-    assert_eq!(_get_param(&p, "auto_gain_enabled"), None);
+    assert_eq!(
+        _get_param(&p, "auto_gain_enabled"),
+        Some(ParameterValue::Bool(true))
+    );
 }
 
 #[test]
@@ -1360,18 +1805,14 @@ fn test_set_parameter_band_q_notch_allows_up_to_40() {
     p.plugin_initialize(48000).unwrap();
 
     // Notch accepts Q above the standard 10.0 limit, up to 40.
-    let result = p.parametric_set_parameter(
-        ParameterId::from("band_0_q"),
-        ParameterValue::Float(25.0),
-    );
+    let result =
+        p.parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(25.0));
     assert!(result.is_ok(), "notch Q of 25 should be accepted");
     let q = p.parametric_get_parameter(&ParameterId::from("band_0_q"));
     assert_eq!(q, Some(ParameterValue::Float(25.0)));
 
-    let result = p.parametric_set_parameter(
-        ParameterId::from("band_0_q"),
-        ParameterValue::Float(45.0),
-    );
+    let result =
+        p.parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(45.0));
     assert!(result.is_err(), "notch Q above 40 should be rejected");
 }
 
@@ -1390,17 +1831,13 @@ fn test_set_parameter_band_q_peak_rejects_above_20() {
     p.plugin_initialize(48000).unwrap();
 
     // Peak accepts up to the optimizer ceiling (20)...
-    let result = p.parametric_set_parameter(
-        ParameterId::from("band_0_q"),
-        ParameterValue::Float(15.0),
-    );
+    let result =
+        p.parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(15.0));
     assert!(result.is_ok(), "peak Q of 15 should be accepted");
 
     // ...but not beyond it.
-    let result = p.parametric_set_parameter(
-        ParameterId::from("band_0_q"),
-        ParameterValue::Float(25.0),
-    );
+    let result =
+        p.parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(25.0));
     assert!(result.is_err(), "peak Q above 20 should be rejected");
 }
 
@@ -1472,11 +1909,160 @@ fn test_set_filters() {
         Biquad::new(BiquadFilterType::Lowpass, 500.0, 48000.0, 0.707, 0.0),
         Biquad::new(BiquadFilterType::Highpass, 8000.0, 48000.0, 0.707, 0.0),
     ];
-    p.set_filters(new_filters);
+    p.set_filters(new_filters).unwrap();
     assert_eq!(p.filters.len(), 2);
     assert_eq!(p.filters[0].len(), 2);
     assert_eq!(p.filters[0][0][0].freq, 500.0);
     assert_eq!(p.band_orders, vec![2, 2]);
+}
+
+#[test]
+fn high_order_bandwidth_and_phase_types_preserve_user_q() {
+    use super::misc::{band_user_q, create_band_stages};
+
+    for filter_type in [
+        BiquadFilterType::Peak,
+        BiquadFilterType::Bandpass,
+        BiquadFilterType::Notch,
+        BiquadFilterType::AllPass,
+    ] {
+        for order in [4, 6, 8] {
+            let low_q = create_band_stages(filter_type, 2_000.0, 48_000.0, 0.7, 6.0, order);
+            let high_q = create_band_stages(filter_type, 2_000.0, 48_000.0, 5.0, 6.0, order);
+            assert!((band_user_q(&low_q, order) - 0.7).abs() < 1e-12);
+            assert!((band_user_q(&high_q, order) - 5.0).abs() < 1e-12);
+
+            let probe_hz = 1_500.0;
+            let low_response: f64 = low_q.iter().map(|stage| stage.log_result(probe_hz)).sum();
+            let high_response: f64 = high_q.iter().map(|stage| stage.log_result(probe_hz)).sum();
+            if filter_type != BiquadFilterType::AllPass {
+                assert!(
+                    (low_response - high_response).abs() > 0.05,
+                    "{filter_type:?} order {order} Q must change off-center magnitude"
+                );
+            } else {
+                let mut low_q = low_q;
+                let mut high_q = high_q;
+                let mut impulse_low = vec![0.0; 64];
+                let mut impulse_high = vec![0.0; 64];
+                impulse_low[0] = 1.0;
+                impulse_high[0] = 1.0;
+                for sample in &mut impulse_low {
+                    let mut value = *sample;
+                    for stage in &mut low_q {
+                        value = stage.process(value);
+                    }
+                    *sample = value;
+                }
+                for sample in &mut impulse_high {
+                    let mut value = *sample;
+                    for stage in &mut high_q {
+                        value = stage.process(value);
+                    }
+                    *sample = value;
+                }
+                let phase_impulse_delta: f64 = impulse_low
+                    .iter()
+                    .zip(&impulse_high)
+                    .map(|(left, right)| (left - right).abs())
+                    .sum();
+                assert!(
+                    phase_impulse_delta > 0.01,
+                    "all-pass Q must change phase response"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn high_order_q_and_order_roundtrip_keep_the_host_value() {
+    let mut plugin = EqPlugin::new(
+        1,
+        vec![Biquad::new(
+            BiquadFilterType::Notch,
+            2_000.0,
+            48_000.0,
+            7.0,
+            0.0,
+        )],
+    );
+    plugin.plugin_initialize(48_000).unwrap();
+    plugin
+        .parametric_set_parameter(ParameterId::from("band_0_order"), ParameterValue::Int(8))
+        .unwrap();
+    assert_eq!(
+        plugin.parametric_get_parameter(&ParameterId::from("band_0_q")),
+        Some(ParameterValue::Float(7.0))
+    );
+    plugin
+        .parametric_set_parameter(ParameterId::from("band_0_q"), ParameterValue::Float(12.0))
+        .unwrap();
+    assert_eq!(
+        plugin.parametric_get_parameter(&ParameterId::from("band_0_q")),
+        Some(ParameterValue::Float(12.0))
+    );
+}
+
+#[test]
+fn structural_filter_replacement_is_transactional_and_runtime_coherent() {
+    let original = Biquad::new(BiquadFilterType::Peak, 1_000.0, 48_000.0, 1.0, 3.0);
+    let mut plugin = EqPlugin::new(2, vec![original]);
+    plugin.plugin_initialize(96_000).unwrap();
+    plugin
+        .parametric_set_parameter(ParameterId::from("tdf2"), ParameterValue::Bool(true))
+        .unwrap();
+    plugin
+        .parametric_set_parameter(ParameterId::from("topology"), ParameterValue::Int(1))
+        .unwrap();
+
+    let invalid = vec![
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            f64::NAN,
+            48_000.0,
+            1.0,
+            0.0,
+        )],
+        vec![Biquad::new(
+            BiquadFilterType::Peak,
+            2_000.0,
+            48_000.0,
+            1.0,
+            0.0,
+        )],
+    ];
+    assert!(plugin.set_channel_filters(invalid).is_err());
+    assert_eq!(plugin.filters[0][0][0].freq, 1_000.0);
+
+    let replacement = vec![
+        vec![Biquad::new(
+            BiquadFilterType::Highpass,
+            300.0,
+            44_100.0,
+            0.8,
+            0.0,
+        )],
+        vec![Biquad::new(
+            BiquadFilterType::Highpass,
+            600.0,
+            44_100.0,
+            1.1,
+            0.0,
+        )],
+    ];
+    plugin.set_channel_filters(replacement).unwrap();
+    assert_eq!(plugin.filters[0][0][0].srate, 96_000.0);
+    assert!(plugin.filters[0][0][0].use_tdf2);
+    assert_eq!(plugin.svf_filters.len(), 2);
+    assert_eq!(plugin.svf_filters[0].len(), 1);
+    let ids: Vec<_> = plugin
+        .parametric_parameters()
+        .into_iter()
+        .map(|parameter| parameter.id)
+        .collect();
+    assert!(ids.contains(&ParameterId::from("band_0_freq")));
+    assert!(!ids.contains(&ParameterId::from("band_1_freq")));
 }
 
 #[test]
@@ -1538,6 +2124,55 @@ fn test_apply_sample_rate_to_advanced_filters() {
     };
     let mut p = EqPlugin::from_params(1, 48000, params).unwrap();
     p.apply_sample_rate_to_advanced_filters(96000.0).unwrap();
+}
+
+#[test]
+fn test_automatic_warped_lambda_tracks_sample_rate() {
+    let params = EqPluginParams {
+        filters: vec![BiquadFilterConfig {
+            filter_type: "peak".to_string(),
+            freq: 1000.0,
+            q: 1.0,
+            db_gain: 6.0,
+            order: 2,
+            topology: EqFilterTopology::WarpedBiquad,
+            lambda: None,
+            kautz_sections: Vec::new(),
+        }],
+        channel_filters: None,
+        auto_gain: Default::default(),
+    };
+    let mut plugin = EqPlugin::from_params(1, 44_100, params.clone()).unwrap();
+
+    let initial_lambda = match &plugin.advanced_filters[0][0] {
+        super::advanced_filter::AdvancedFilter::Warped { filter, .. } => filter.lambda,
+        super::advanced_filter::AdvancedFilter::Kautz(_) => panic!("expected warped filter"),
+    };
+    assert!((initial_lambda - math_audio_iir_fir::bark_lambda(44_100.0)).abs() < 1e-12);
+
+    plugin.plugin_initialize(96_000).unwrap();
+    let reinitialized_lambda = match &plugin.advanced_filters[0][0] {
+        super::advanced_filter::AdvancedFilter::Warped { filter, .. } => filter.lambda,
+        super::advanced_filter::AdvancedFilter::Kautz(_) => panic!("expected warped filter"),
+    };
+    assert!((reinitialized_lambda - math_audio_iir_fir::bark_lambda(96_000.0)).abs() < 1e-12);
+
+    let direct = EqPlugin::from_params(1, 96_000, params.clone()).unwrap();
+    let direct_lambda = match &direct.advanced_filters[0][0] {
+        super::advanced_filter::AdvancedFilter::Warped { filter, .. } => filter.lambda,
+        super::advanced_filter::AdvancedFilter::Kautz(_) => panic!("expected warped filter"),
+    };
+    assert!((reinitialized_lambda - direct_lambda).abs() < 1e-12);
+
+    let mut explicit_params = params;
+    explicit_params.filters[0].lambda = Some(0.5);
+    let mut explicit = EqPlugin::from_params(1, 44_100, explicit_params).unwrap();
+    explicit.plugin_initialize(96_000).unwrap();
+    let explicit_lambda = match &explicit.advanced_filters[0][0] {
+        super::advanced_filter::AdvancedFilter::Warped { filter, .. } => filter.lambda,
+        super::advanced_filter::AdvancedFilter::Kautz(_) => panic!("expected warped filter"),
+    };
+    assert!((explicit_lambda - 0.5).abs() < 1e-12);
 }
 
 #[test]
@@ -1740,8 +2375,8 @@ fn test_parametric_plugin_schema_matches_in_place_params() {
     assert!(schema_ids.contains(&"band_0_freq"));
     assert!(schema_ids.contains(&"band_0_gain"));
     assert!(schema_ids.contains(&"band_0_filter_type"));
-    assert!(!schema_ids.contains(&"auto_gain_enabled"));
-    assert!(!schema_ids.contains(&"oversampling"));
+    assert!(schema_ids.contains(&"auto_gain_enabled"));
+    assert!(schema_ids.contains(&"oversampling"));
 }
 
 #[test]
@@ -1766,8 +2401,11 @@ fn test_parametric_plugin_current_values_roundtrip() {
         values.get(&ParameterId::from("band_0_filter_type")),
         Some(&ParameterValue::Int(0))
     );
-    assert!(!values.contains_key(&ParameterId::from("auto_gain_enabled")));
-    assert!(!values.contains_key(&ParameterId::from("oversampling")));
+    assert!(values.contains_key(&ParameterId::from("auto_gain_enabled")));
+    assert_eq!(
+        values.get(&ParameterId::from("oversampling")),
+        Some(&ParameterValue::Int(1))
+    );
 }
 
 #[test]

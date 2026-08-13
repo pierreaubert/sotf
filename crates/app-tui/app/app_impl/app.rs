@@ -581,18 +581,19 @@ impl App {
             .graph
             .get_plugin_mut(self.plugin_rack.selected_index)
         {
-            if let PluginSettings::EQ { channels, .. } = &plugin.settings {
-                let channels = *channels;
+            if let PluginSettings::EQ {
+                filters: existing_filters,
+                channel_filters,
+                per_channel_mode,
+                max_filters,
+                ..
+            } = &mut plugin.settings
+            {
                 let filter_count = filters.len();
-                plugin.settings = PluginSettings::EQ {
-                    channels,
-                    filters,
-                    channel_filters: None,
-                    per_channel_mode: false,
-                    max_filters: filter_count.clamp(1, 20),
-                    tdf2: false,
-                    topology: 0.0,
-                };
+                *existing_filters = filters;
+                *channel_filters = None;
+                *per_channel_mode = false;
+                *max_filters = filter_count.clamp(1, 20);
                 Ok(())
             } else {
                 Err("Selected plugin is not an EQ".to_string())

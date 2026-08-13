@@ -51,5 +51,5 @@ cargo test -p sotf-plugin-eq
 - Per-channel filters (`channel_filters`) override the global `filters` list for specific channels. If `channel_filters` is set, each channel uses its own filter bank.
 - SVF topology does not support cascading (always single stage per band regardless of order setting).
 - Q bounds are per filter type, with two ceilings (`params.rs` is the single source of truth: `Q_MIN`/`Q_MAX_STANDARD`/`Q_MAX_OPTIMIZED`/`Q_MAX_NOTCH`, `q_max_for`/`q_max_ui`/`clamp_q`): validation/loading accepts 0.1–20 for non-notch types (matching the optimizers' `max_q` ceiling) and 0.1–40 for Notch; UI knobs/drags edit within 0.1–10 for non-notch (`q_max_ui`) and 0.1–40 for Notch. The DSP mirrors the validation ceiling in `lib/consts.rs` (`Q_MAX`/`Q_MAX_NOTCH`, f32). Switching a band away from Notch re-clamps Q to 20.
-- Parameter IDs follow the pattern `filter_{band}_freq`, `filter_{band}_q`, `filter_{band}_gain`, `filter_{band}_type`, `filter_{band}_order`.
+- Parameter IDs follow the pattern `band_{band}_freq`, `band_{band}_q`, `band_{band}_gain`, `band_{band}_filter_type`, `band_{band}_order`.
 - The `gpui-ui` feature adds a GPUI-based UI component (optional dependency).

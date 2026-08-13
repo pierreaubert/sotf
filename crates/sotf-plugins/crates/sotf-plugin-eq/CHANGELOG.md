@@ -1,3 +1,63 @@
+# 0.5.73
+
+## Fixes
+
+- Keep the five-millisecond coefficient transition measured in source audio time at Off, 2x,
+  and 4x oversampling, including oversampler FIR priming callbacks.
+- Add real-audio Q, gain, and filter-type transition tests plus callback-partition invariance
+  coverage at every oversampling factor.
+- Verify processed stereo frequency, Q, gain, and type transitions sample-for-sample against two
+  independently stateful mono references at Off/2x/4x and whole, single-frame, and irregular
+  callback partitions.
+- Preserve Auto Gain and Oversampling when player AutoEQ replaces filters or rebuilds EQ settings
+  after a channel-count change; newly generated Room EQ nodes use the intentional off/1x defaults.
+- Complete the workspace settings-lifecycle sweep: CLI, GPUI headphone/Spinorama, and TUI APO
+  builders now use explicit off/1x defaults for new EQs and preserve every global control when
+  replacing filters in an existing EQ.
+- Keep engine serialization regressions explicit about the off/1x defaults so the complete EQ
+  settings type remains constructible under test.
+
+# 0.5.72
+
+## Fixes (2026-08-12 review completion)
+
+- Preserve the advertised user Q for high-order peak, notch, bandpass, and all-pass
+  cascades, including parameter round-trips and runtime order/Q edits.
+- Make filter-bank replacement a fallible transactional control-thread operation that
+  validates every channel, normalizes the runtime sample rate and realization, rebuilds
+  SVF/schema state, and leaves the previous bank intact on failure.
+- Enforce the oversampling initialization contract at 4096 frames and prove active 4x
+  processing, including coefficient transitions, performs no callback allocation.
+- Align the custom/AU UI with the five per-band fields and render standard-biquad previews
+  using the actual order and supplied sample rate.
+- Carry topology, TDF-II, auto gain, and oversampling through engine and plugin factories.
+- Use the crate version in plugin metadata and tighten direct in-place buffer validation.
+
+# 0.5.71
+
+## Fixes (2026-08-12 review remediation)
+
+- Keep the engine-facing EQ settings schema aligned with all five global EQ
+  controls, including auto-gain and oversampling. These controls now survive
+  settings round-trips and the accessor count check cannot regress silently.
+
+# 0.5.69
+
+## Fixes
+
+- Recompute the automatic Bark warped-biquad lambda when the plugin is reinitialized at a new sample rate; explicit lambda values remain fixed.
+
+## Fixes (2026-08-12 review remediation)
+
+- Preserve each channel's filter configuration when building SVF banks and when capturing
+  coefficient-transition endpoints for smoothed biquad edits.
+- Reject SVF plus internal oversampling, so reported latency always matches the route executed.
+- Validate standard filter construction consistently: nonzero channels/sample rate, finite and
+  documented frequency/Q/gain ranges, and frequency below Nyquist.
+- Process only the host-declared active buffer region and return errors for undersized or
+  overflowing ordinary process buffers.
+- Expose Auto Gain and Oversampling through schema/current-value snapshots.
+
 # 0.5.68
 
 ## Fixes

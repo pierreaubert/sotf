@@ -61,9 +61,9 @@ pub struct EqPluginParams {
 /// smoothly, not just the first one (fixes glitch for order > 2 bands).
 pub(super) struct BandTransition {
     /// Old coefficients for each stage (len = num_stages for this band).
-    pub(super) old_coeffs_per_stage: Vec<BiquadCoefficients>,
+    pub(super) old_coeffs_per_channel: Vec<Vec<BiquadCoefficients>>,
     /// New coefficients for each stage (len = num_stages for this band).
-    pub(super) new_coeffs_per_stage: Vec<BiquadCoefficients>,
+    pub(super) new_coeffs_per_channel: Vec<Vec<BiquadCoefficients>>,
     pub(super) samples_remaining: usize,
     pub(super) total_samples: usize,
 }

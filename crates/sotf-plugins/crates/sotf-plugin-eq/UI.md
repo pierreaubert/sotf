@@ -71,17 +71,20 @@ Per-band knobs for the currently selected band:
 | Frequency | band_{n}_freq | Knob | f | 20–20000 Hz |
 | Q | band_{n}_q | Knob | q | 0.1–10.0 |
 | Gain | band_{n}_gain | Knob | g | -24 to +24 dB |
-| Type | band_{n}_type | Selector | t | Peak/Lowshelf/Highshelf/Lowpass/Highpass/Bandpass/Notch |
+| Type | band_{n}_filter_type | Selector | t | Peak/Lowshelf/Highshelf/Lowpass/Highpass/Bandpass/Notch/AllPass |
+| Order | band_{n}_order | Selector | o | 2/4/6/8; SVF is restricted to 2 |
 | Auto Gain | auto_gain_enabled | Toggle | a | Global toggle |
 
-Param index formula: `selected_band × 4 + field_offset` where offsets are: 0=auto_gain, then per-band: freq, q, gain, type.
+Band-relative parameter indices use `selected_band × 5 + field_offset`, where
+0=frequency, 1=Q, 2=gain, 3=filter type, and 4=order. Global controls are
+mapped separately before the band array.
 
 ## Visualizations
 
 ### Frequency Response Graph
 - **Type:** Interactive parametric EQ curve display
 - **Size:** Full width, 200px minimum height
-- **Curve rendering:** Per-band biquad magnitude response computed from filter coefficients
+- **Curve rendering:** Per-band cascaded-biquad magnitude response computed at the active sample rate and order
 - **Composite:** Sum of all band responses in dB
 - **Grid:** Horizontal dB lines, vertical frequency lines at standard points
 
@@ -97,4 +100,5 @@ Param index formula: `selected_band × 4 + field_offset` where offsets are: 0=au
 | Frequency | band_{n}_freq | Primary | Band N |
 | Q | band_{n}_q | Primary | Band N |
 | Gain | band_{n}_gain | Primary | Band N |
-| Type | band_{n}_type | Setup | Band N |
+| Type | band_{n}_filter_type | Setup | Band N |
+| Order | band_{n}_order | Setup | Band N |

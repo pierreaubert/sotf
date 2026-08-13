@@ -1,3 +1,5 @@
+use super::build::rack_eq_settings;
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use super::build::downmix_settings;
 use super::types::DownmixArgs;
 use sotf_audio::plugins::PluginSettings;
@@ -108,3 +110,24 @@ fn downmix_builder_preserves_explicit_layout_and_defaults_to_unspecified() {
     ));
 }
 
+
+#[test]
+fn rack_eq_builder_uses_canonical_global_control_defaults() {
+    let filter = Biquad::new(BiquadFilterType::Peak, 1_000.0, 48_000.0, 1.2, -3.0);
+    let settings = rack_eq_settings(6, &[filter]);
+
+    let PluginSettings::EQ {
+        channels,
+        filters,
+        auto_gain_enabled,
+        oversampling,
+        ..
+    } = settings
+    else {
+        panic!("rack EQ builder must produce EQ settings");
+    };
+    assert_eq!(channels, 6);
+    assert_eq!(filters.len(), 1);
+    assert!(!auto_gain_enabled, "CLI has no EQ Auto Gain option");
+    assert_eq!(oversampling, 1.0, "CLI has no EQ oversampling option");
+}

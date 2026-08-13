@@ -472,8 +472,8 @@ mod tests {
     fn test_parameter_map_eq() {
         let plugin = plugins_bridge::create_plugin("EQ", 2, 48000, "{}").unwrap();
         let param_map = ParameterMap::from_plugin(&*plugin, "EQ");
-        // 3 global (max_filters, tdf2, topology) + 20 bands × 4 params (frequency, q, gain_db, filter_type)
-        assert_eq!(param_map.count(), 3 + 20 * 4);
+        // Five global controls plus 20 bands × five params.
+        assert_eq!(param_map.count(), 5 + 20 * 5);
     }
 
     #[test]
@@ -486,5 +486,37 @@ mod tests {
         let info = param_map.get_info(0).unwrap();
         assert!(!info.id.is_null());
         assert!(!info.name.is_null());
+    }
+
+    #[test]
+    fn test_parameter_map_linear_phase_eq_matches_dsp_band_ids_and_limit() {
+        assert_eq!(band_template_info("LinearPhaseEQ"), Some((5, 10)));
+        let plugin = plugins_bridge::create_plugin("LinearPhaseEQ", 2, 48_000, "{}").unwrap();
+        let param_map = ParameterMap::from_plugin(&*plugin, "LinearPhaseEQ");
+        assert_eq!(param_map.count(), 5 + 10 * 5);
+    }
+
+    #[test]
+    fn spectral_compressor_target_choice_roundtrips_raw_and_normalized() {
+        let mut plugin =
+            plugins_bridge::create_plugin("SpectralCompressor", 2, 48_000, "{}").unwrap();
+        let param_map = ParameterMap::from_plugin(&*plugin, "SpectralCompressor");
+        let index = (0..param_map.count())
+            .find(|index| param_map.param_id_at(*index) == Some("target_mode"))
+            .expect("target_mode must be exported");
+
+        for (raw, normalized) in [(0.0, 0.0), (1.0, 0.5), (2.0, 1.0)] {
+            param_map
+                .set_denormalized_by_index(&mut *plugin, index, raw)
+                .unwrap();
+            assert_eq!(
+                param_map.get_denormalized_by_index(&*plugin, index),
+                Some(raw)
+            );
+            assert_eq!(
+                param_map.get_normalized(&*plugin, "target_mode"),
+                Some(normalized)
+            );
+        }
     }
 }

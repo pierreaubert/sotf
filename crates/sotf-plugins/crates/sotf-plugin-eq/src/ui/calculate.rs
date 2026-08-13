@@ -1,8 +1,20 @@
 use super::consts::CHART_LEFT_MARGIN;
 use super::consts::CHART_RIGHT_MARGIN;
-use super::consts::SAMPLE_RATE;
 use super::types::EqBandView;
-use math_audio_iir_fir::Biquad;
+
+fn band_response(filter: &EqBandView, freq: f64) -> f64 {
+    crate::misc::create_band_stages(
+        filter.filter_type,
+        filter.frequency,
+        filter.sample_rate,
+        filter.q,
+        filter.gain_db,
+        filter.order,
+    )
+    .iter()
+    .map(|stage| stage.log_result(freq))
+    .sum()
+}
 
 /// Calculate the combined response in dB at a given frequency
 pub fn calculate_response_at_freq(filters: &[EqBandView], freq: f64) -> f64 {
@@ -22,8 +34,7 @@ pub fn calculate_response_at_freq(filters: &[EqBandView], freq: f64) -> f64 {
             true
         })
         .map(|f| {
-            let biquad = Biquad::new(f.filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
-            biquad.log_result(freq)
+            band_response(f, freq)
         })
         .sum()
 }
@@ -33,14 +44,7 @@ pub fn calculate_band_response(filter: &EqBandView, freq: f64) -> f64 {
     if filter.muted {
         return 0.0;
     }
-    let biquad = Biquad::new(
-        filter.filter_type,
-        filter.frequency,
-        SAMPLE_RATE,
-        filter.q,
-        filter.gain_db,
-    );
-    biquad.log_result(freq)
+    band_response(filter, freq)
 }
 
 /// Calculate dynamic y-axis range based on filter gains.
@@ -108,4 +112,34 @@ pub fn calculate_plot_width<'a>(chart_width: f32, labels: impl Iterator<Item = &
 
     // Final plot width
     (chart_width - CHART_LEFT_MARGIN - CHART_RIGHT_MARGIN - width_for_legend).max(0.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use math_audio_iir_fir::BiquadFilterType;
+
+    fn band(order: usize, sample_rate: f64) -> EqBandView {
+        EqBandView {
+            filter_type: BiquadFilterType::Notch,
+            frequency: 2_000.0,
+            q: 4.0,
+            gain_db: 0.0,
+            order,
+            sample_rate,
+            muted: false,
+            solo: false,
+        }
+    }
+
+    #[test]
+    fn preview_uses_actual_order_and_sample_rate() {
+        let second_order = calculate_band_response(&band(2, 48_000.0), 1_500.0);
+        let eighth_order = calculate_band_response(&band(8, 48_000.0), 1_500.0);
+        assert!((second_order - eighth_order).abs() > 0.05);
+
+        let low_rate = calculate_band_response(&band(8, 44_100.0), 18_000.0);
+        let high_rate = calculate_band_response(&band(8, 96_000.0), 18_000.0);
+        assert!((low_rate - high_rate).abs() > 0.01);
+    }
 }

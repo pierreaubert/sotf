@@ -1,8 +1,17 @@
 //! Universal plugin factory for all SOTF audio plugins.
 
-use sotf_host::ParametricPluginAdapter;
+use sotf_host::{ParameterId, ParameterValue, ParametricPlugin, ParametricPluginAdapter};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePluginAdapter;
 use sotf_host::plugin::Plugin;
+
+fn create_nested_plugin(
+    plugin_type: &str,
+    parameters: &serde_json::Value,
+    channels: usize,
+    sample_rate: u32,
+) -> Result<Box<dyn Plugin>, String> {
+    create_plugin(plugin_type, channels, sample_rate, &parameters.to_string())
+}
 
 /// Create a plugin instance from a type name, channel count, sample rate, and JSON config.
 ///
@@ -22,9 +31,32 @@ pub fn create_plugin(
         // Wave 1: Core effects
         // ============================================================
         "EQ" | "eq" => {
+            let json: serde_json::Value = serde_json::from_str(config_json)
+                .map_err(|error| format!("Invalid EQ config: {error}"))?;
             let params: sotf_plugin_eq::EqPluginParams = parse_params(config_json)?;
-            sotf_plugin_eq::EqPlugin::from_params(channels, sample_rate, params)
-                .map(|p| p.into_boxed_plugin())
+            let mut plugin = sotf_plugin_eq::EqPlugin::from_params(channels, sample_rate, params)?;
+            if let Some(tdf2) = json.get("tdf2").and_then(serde_json::Value::as_bool) {
+                plugin.parametric_set_parameter(
+                    ParameterId::from("tdf2"),
+                    ParameterValue::Bool(tdf2),
+                )?;
+            }
+            if let Some(topology) = json.get("topology").and_then(serde_json::Value::as_f64) {
+                plugin.parametric_set_parameter(
+                    ParameterId::from("topology"),
+                    ParameterValue::Int(topology as i32),
+                )?;
+            }
+            if let Some(oversampling) = json
+                .get("oversampling")
+                .and_then(serde_json::Value::as_f64)
+            {
+                plugin.parametric_set_parameter(
+                    ParameterId::from("oversampling"),
+                    ParameterValue::Int(oversampling as i32),
+                )?;
+            }
+            Ok(plugin.into_boxed_plugin())
         }
 
         "Compressor" | "compressor" => {
@@ -32,9 +64,12 @@ pub fn create_plugin(
             let mut params: sotf_plugin_multiband_compressor::MultibandCompressorPluginParams =
                 parse_params(config_json)?;
             params.num_bands = 1;
-            let plugin = sotf_plugin_multiband_compressor::MultibandCompressorPlugin::from_params(
-                channels, params,
-            );
+            let plugin =
+                sotf_plugin_multiband_compressor::MultibandCompressorPlugin::try_from_params(
+                    channels,
+                    params,
+                    sample_rate,
+                )?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 

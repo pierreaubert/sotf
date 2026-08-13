@@ -15,9 +15,10 @@ Each band applies an independent filter to the signal. Bands are processed in se
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
 | Frequency | 20 to 20000 | 1000 | Hz | Center/cutoff frequency |
-| Q | 0.1 to 10.0 | 1.0 | — | Quality factor (bandwidth) |
+| Q | 0.1 to 20.0 (Notch: 40.0) | 1.0 | — | Quality factor (bandwidth) |
 | Gain | -24 to 24 | 0 | dB | Boost/cut amount (peak and shelf types only) |
-| Type | Peak/Lowshelf/Highshelf/Lowpass/Highpass/Bandpass/Notch | Peak | — | Filter type |
+| Type | Peak/Lowshelf/Highshelf/Lowpass/Highpass/Bandpass/Notch/AllPass | Peak | — | Filter type |
+| Order | 2/4/6/8 | 2 | — | Even standard-biquad cascade order |
 | Topology | biquad/warped_biquad/kautz_filter | biquad | — | Runtime filter family |
 | Lambda | -0.9999 to 0.9999 | Bark lambda | — | Warping coefficient for warped biquads |
 
@@ -32,6 +33,12 @@ Each band applies an independent filter to the signal. Bands are processed in se
 | Highpass | Passes frequencies above the cutoff, attenuates below |
 | Bandpass | Passes a narrow band around the center frequency |
 | Notch | Removes a narrow band around the center frequency |
+| AllPass | Changes phase while preserving magnitude |
+
+For orders above two, low/high-pass and shelf filters use Butterworth prototype
+section Q values. Peak, notch, bandpass, and all-pass cascades scale those section
+values by the requested Q, so Q retains its documented bandwidth or phase meaning
+and round-trips as the user value.
 
 ### Advanced Topologies
 
@@ -77,6 +84,13 @@ Kautz filters are configured as a dry signal plus a parallel Kautz correction ba
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
 | Auto Gain | On/Off | On | — | Automatic loudness compensation to match output level to input level |
+
+### Global controls
+
+`tdf2` selects the biquad realization. `topology` selects standard biquad or SVF;
+SVF supports only order 2. `oversampling` accepts 1, 2, or 4 for the biquad route.
+SVF plus oversampling is rejected. Oversampled callbacks support at most 4096 frames;
+larger blocks return an error instead of allocating on the audio thread.
 
 ### Per-Channel Mode
 

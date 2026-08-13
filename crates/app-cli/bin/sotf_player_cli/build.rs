@@ -998,6 +998,23 @@ pub(super) fn build_rack_mode_plugins(
     Ok((plugin_configs, output_channels, actual_loudness_idx))
 }
 
+pub(super) fn rack_eq_settings(channels: usize, filters: &[Biquad]) -> PluginSettings {
+    PluginSettings::EQ {
+        channels,
+        filters: filters
+            .iter()
+            .map(|f| EQFilter::new(f.filter_type, f.freq, f.q, f.db_gain))
+            .collect(),
+        channel_filters: None,
+        per_channel_mode: false,
+        max_filters: 20,
+        tdf2: false,
+        topology: 0.0,
+        auto_gain_enabled: false,
+        oversampling: 1.0,
+    }
+}
+
 /// Build plugin chain using traditional mode (manual PluginConfig building)
 pub(super) fn build_traditional_mode_plugins(
     audio_info: &sotf_audio::AudioFileInfo,

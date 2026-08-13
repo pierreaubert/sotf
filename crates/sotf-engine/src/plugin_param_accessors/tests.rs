@@ -176,6 +176,30 @@ fn spectrum_tilt_params_do_not_emit_engine_updates() {
 }
 
 #[test]
+fn compressor_legacy_link_toggle_does_not_emit_live_engine_updates() {
+    let settings = PluginSettings::default_for(&PluginType::Compressor).unwrap();
+    let link_channels_idx = param_specs::index_of(param_specs::compressor::PARAMS, "link_channels");
+
+    assert_eq!(settings.engine_param_at(link_channels_idx), None);
+
+    let config = settings.to_plugin_config(44_100.0);
+    let plugin = sotf_plugins::create_plugin(
+        &config.plugin_type,
+        &config.parameters,
+        settings.required_input_channels().unwrap_or(2),
+        44_100,
+    )
+    .expect("default Compressor config must construct its DSP plugin");
+    let dsp_keys: std::collections::HashSet<_> = plugin
+        .parameters()
+        .into_iter()
+        .map(|parameter| parameter.id.as_str().to_owned())
+        .collect();
+    assert!(dsp_keys.contains("link_amount"));
+    assert!(!dsp_keys.contains("link_channels"));
+}
+
+#[test]
 fn crossover_is_exposed_with_editable_layout_and_dsp_config() {
     assert!(
         PluginType::all().contains(&PluginType::Crossover),
@@ -202,4 +226,48 @@ fn crossover_is_exposed_with_editable_layout_and_dsp_config() {
     assert_eq!(config.plugin_type, "crossover");
     sotf_plugins::create_plugin(&config.plugin_type, &config.parameters, 2, 48_000)
         .expect("Crossover settings must create the DSP plugin");
+}
+
+#[test]
+fn eq_global_parameters_round_trip_through_engine_accessors() {
+    let mut settings = PluginSettings::default_for(&PluginType::EQ).unwrap();
+    let params = settings.param_specs();
+
+    assert_eq!(params.len(), param_specs::eq::GLOBAL_PARAMS.len());
+    let auto_gain = param_specs::index_of(params, "auto_gain_enabled");
+    let oversampling = param_specs::index_of(params, "oversampling");
+
+    assert_eq!(settings.param_value(auto_gain), Some(0.0));
+    assert_eq!(settings.param_value(oversampling), Some(1.0));
+
+    settings.set_param_value(auto_gain, 1.0);
+    settings.set_param_value(oversampling, 4.0);
+
+    assert_eq!(settings.param_value(auto_gain), Some(1.0));
+    assert_eq!(settings.param_value(oversampling), Some(4.0));
+    assert_eq!(
+        settings.engine_param_at(auto_gain),
+        Some(("auto_gain_enabled".to_string(), "true".to_string()))
+    );
+    assert_eq!(
+        settings.engine_param_at(oversampling),
+        None,
+        "oversampling remains structural and is not sent as a runtime update"
+    );
+}
+
+#[test]
+fn downmix_matrix_ltrt_is_exposed_and_round_trips() {
+    let mut settings = PluginSettings::default_for(&PluginType::Downmix).unwrap();
+    let matrix_ltrt_idx = param_specs::index_of(param_specs::downmix::PARAMS, "matrix_ltrt");
+
+    assert_eq!(matrix_ltrt_idx, 8);
+    assert_eq!(settings.param_specs().len(), 9);
+    assert_eq!(settings.param_value(matrix_ltrt_idx), Some(0.0));
+
+    settings.set_param_value(matrix_ltrt_idx, 1.0);
+    assert_eq!(settings.param_value(matrix_ltrt_idx), Some(1.0));
+
+    let config = settings.to_plugin_config(48_000.0);
+    assert_eq!(config.parameters["matrix_ltrt"], serde_json::json!(true));
 }

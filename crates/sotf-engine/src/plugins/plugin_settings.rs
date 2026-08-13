@@ -2,6 +2,7 @@ use super::default::default_ab_path_config;
 use super::default::default_channels;
 use super::default::default_de_esser_mode;
 use super::default::default_dyneq_bands;
+use super::default::default_eq_oversampling;
 use super::default::default_fm_auto_gain_max_db;
 use super::default::default_fm_auto_gain_smoothing_ms;
 use super::default::default_fm_band1_freq;
@@ -512,6 +513,12 @@ pub enum PluginSettings {
         /// Filter topology: 0 = Biquad (default), 1 = SVF (zero-delay feedback)
         #[serde(default)]
         topology: f64,
+        /// Enable the EQ output auto-gain compensation.
+        #[serde(default)]
+        auto_gain_enabled: bool,
+        /// Internal EQ oversampling factor: 1 (off), 2, or 4.
+        #[serde(default = "default_eq_oversampling")]
+        oversampling: f64,
     },
     Gain {
         #[serde(default = "default_channels")]
@@ -1588,6 +1595,8 @@ impl PluginSettings {
                 max_filters: 5,
                 tdf2: false,
                 topology: 0.0,
+                auto_gain_enabled: false,
+                oversampling: default_eq_oversampling(),
             },
             PluginType::Gain => Self::Gain {
                 channels: default_channels(),

@@ -47,3 +47,15 @@ fn plugins_gpui_owns_eq_curve_cache_and_static_grid() {
         "cache module must stay data-only and not introduce raw UI pixel tokens"
     );
 }
+
+#[test]
+fn eq_ui_uses_the_five_field_dsp_band_mapping() {
+    let render = crate_source("src/ui/render.rs");
+    let params = crate_source("src/params.rs");
+
+    assert!(params.contains("\"Order\", \"order\""));
+    assert!(!render.contains("band_idx * 4"));
+    assert!(!render.contains("selected_band_idx * 4"));
+    assert!(render.contains("band_idx * 5 + 1"));
+    assert!(render.contains("selected_band_idx * 5"));
+}
