@@ -1,3 +1,8 @@
+# 1.0.31 (unreleased)
+
+- Carry PND's optional absolute pilot/reference frequency through typed engine
+  settings, defaults, parameter accessors, and plugin configuration conversion.
+
 # 1.0.30 (unreleased)
 
 ## Release QA

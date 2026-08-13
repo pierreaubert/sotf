@@ -354,7 +354,7 @@ checksum = "fb5dfbc6d8d2675589ccbe4d0fd61df2419075625f8c1a62325e718e2b0049f9"
 
 [[package]]
 name = "app-cli"
-version = "0.5.22"
+version = "0.5.23"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -10103,7 +10103,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.30"
+version = "1.0.31"
 dependencies = [
  "arc-swap",
  "bytemuck",
@@ -10383,7 +10383,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-player"
-version = "0.5.125"
+version = "0.5.126"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
@@ -10838,7 +10838,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-pnd"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "audioadapter-buffers",
  "hound",

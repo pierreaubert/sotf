@@ -67,7 +67,7 @@ fn main() {
         correction_strength: 0.9,  // strong correction
         drift_smoothing: 0.85,     // smooth out rapid jitter
         confidence_threshold: 0.3, // lower threshold = correct even uncertain drift
-        phase_vocoder: true,       // formant-preserving pitch shift
+        phase_vocoder: true,       // duration-preserving pitch shift
         ..PndPluginParams::default()
     };
 

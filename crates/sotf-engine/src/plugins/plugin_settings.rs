@@ -231,6 +231,7 @@ use super::default_pnd_confidence_threshold;
 use super::default_pnd_correction_strength;
 use super::default_pnd_drift_smoothing;
 use super::default_pnd_multi_channel_analysis;
+use super::default_pnd_reference_frequency_hz;
 use super::default_sat_dc_blocker;
 use super::default_sat_drive;
 use super::default_sat_dynamic_attack_ms;
@@ -1108,6 +1109,8 @@ pub enum PluginSettings {
         multi_channel_analysis: bool,
         #[serde(default = "default_pnd_confidence_threshold")]
         confidence_threshold: f64,
+        #[serde(default = "default_pnd_reference_frequency_hz")]
+        reference_frequency_hz: f64,
         #[serde(default)]
         phase_vocoder: bool,
     },
@@ -1998,6 +2001,7 @@ impl PluginSettings {
                     drift_smoothing: p(pn, "drift_smoothing").default_f64(),
                     multi_channel_analysis: p(pn, "multi_channel_analysis").default_bool(),
                     confidence_threshold: p(pn, "confidence_threshold").default_f64(),
+                    reference_frequency_hz: p(pn, "reference_frequency_hz").default_f64(),
                     phase_vocoder: p(pn, "phase_vocoder").default_bool(),
                 }
             }

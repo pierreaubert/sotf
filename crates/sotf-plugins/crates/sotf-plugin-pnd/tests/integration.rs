@@ -26,6 +26,7 @@ fn integration_default_parameters() {
     assert!(ids.contains(&"drift_smoothing"));
     assert!(ids.contains(&"multi_channel_analysis"));
     assert!(ids.contains(&"confidence_threshold"));
+    assert!(ids.contains(&"reference_frequency_hz"));
     assert!(ids.contains(&"phase_vocoder"));
 }
 
@@ -50,6 +51,80 @@ fn integration_parameter_roundtrip() {
         .get_parameter(&ParameterId::from("correction_strength"))
         .unwrap();
     assert_eq!(v, ParameterValue::Float(0.75));
+
+    plugin
+        .set_parameter(
+            ParameterId::from("reference_frequency_hz"),
+            ParameterValue::Float(440.0),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("reference_frequency_hz")),
+        Some(ParameterValue::Float(440.0))
+    );
+    assert!(
+        plugin
+            .set_parameter(
+                ParameterId::from("reference_frequency_hz"),
+                ParameterValue::Float(30_000.0),
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn changing_reference_resets_reference_dependent_control_state() {
+    let mut plugin = PndPlugin::from_params(
+        1,
+        PndPluginParams {
+            reference_frequency_hz: 440.0,
+            drift_smoothing: 0.001,
+            confidence_threshold: 0.2,
+            ..PndPluginParams::default()
+        },
+    );
+    plugin.initialize(44_100).unwrap();
+
+    let block = 1024;
+    let mut phase = 0usize;
+    for _ in 0..50 {
+        let input: Vec<f32> = (0..block)
+            .map(|i| {
+                (2.0 * std::f32::consts::PI * 444.4 * (phase + i) as f32 / 44_100.0).sin() * 0.5
+            })
+            .collect();
+        phase += block;
+        let mut output = vec![0.0; block];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(44_100, block))
+            .unwrap();
+    }
+
+    plugin
+        .set_parameter(
+            ParameterId::from("reference_frequency_hz"),
+            ParameterValue::Float(0.0),
+        )
+        .unwrap();
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("reference_frequency_hz")),
+        Some(ParameterValue::Float(0.0))
+    );
+
+    let silence = vec![0.0; block];
+    let mut output = vec![0.0; block];
+    for _ in 0..12 {
+        plugin
+            .process(&silence, &mut output, &ProcessContext::new(44_100, block))
+            .unwrap();
+    }
+    let data = plugin.get_data().unwrap();
+    let data = data.downcast::<PndData>().unwrap();
+    assert!(
+        (data.correction_ratio - 1.0).abs() < 0.01,
+        "clearing the reference must return correction toward unity, got {}",
+        data.correction_ratio
+    );
 }
 
 #[test]
@@ -233,6 +308,7 @@ fn integration_from_params_applies_initial_state() {
         drift_smoothing: 0.2,
         multi_channel_analysis: false,
         confidence_threshold: 0.75,
+        reference_frequency_hz: 440.0,
         phase_vocoder: true,
     };
     let plugin = PndPlugin::from_params(1, params);

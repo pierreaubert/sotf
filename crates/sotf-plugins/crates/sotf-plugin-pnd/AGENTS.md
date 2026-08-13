@@ -22,7 +22,7 @@ src/
 **Key types:**
 
 - `PndPlugin` -- Main plugin implementing `Plugin`. 2 input -> 2 output channels (stereo).
-- `PhaseVocoderChannel` -- Per-channel phase vocoder state: FFT analysis/synthesis with phase accumulation for formant-preserving pitch shift.
+- `PhaseVocoderChannel` -- Per-channel phase vocoder state: FFT analysis/synthesis with spectral-bin remapping and phase accumulation. It does not preserve formants.
 - `PndAnalyzer` -- Polyphonic note detection: FFT peak picking with magnitude thresholding.
 - `PndPluginParams` -- Config: pitch_semitones, speed, varispeed mode, analysis settings.
 

@@ -1,3 +1,11 @@
+# 0.5.126 (unreleased)
+
+- Preserve all Binaural Decoder acoustic/head-tracking settings while adapting
+  graph input width, and carry A/B Compare band-mask settings into listening
+  test runtime nodes.
+- Bring EQ construction fixtures and AutoEQ/CLI adapters forward with the
+  canonical Auto Gain and oversampling fields rather than dropping state.
+
 # 0.5.125 (unreleased)
 
 ## Signal path model (QA-SOTA-004)

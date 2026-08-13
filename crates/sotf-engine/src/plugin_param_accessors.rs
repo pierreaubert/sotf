@@ -359,6 +359,7 @@ impl_param_accessors! {
         fields: [
             correction_strength: f64, analysis_window_ms: f64, drift_smoothing: f64,
             multi_channel_analysis: bool, confidence_threshold: f64,
+            reference_frequency_hz: f64,
             phase_vocoder: bool,
         ]
     },

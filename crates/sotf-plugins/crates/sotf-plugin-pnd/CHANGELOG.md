@@ -1,3 +1,11 @@
+# 0.5.9
+
+- Correct the absolute-reference resampler direction and add end-to-end
+  444.4-to-440 Hz regressions for both resampler and phase-vocoder paths.
+- Use local guard-band pilot prominence rather than whole-program magnitude,
+  and return reference changes toward unity without leaving stale correction
+  latched.
+
 # 0.5.8
 
 - Replace the incomplete phase-only vocoder transform with positive-frequency
@@ -10,6 +18,9 @@
   updates occur only after a new analysis hop, not once per host callback;
   regressions prove equal elapsed time at 48/96 kHz and split callbacks yields
   the same one-pole state.
+- Add an optional `reference_frequency_hz` pilot/note reference. Stable
+  programme without a reference remains change-only. Live and persisted values
+  are finite/range/Nyquist validated.
 
 # 0.5.7
 

@@ -134,7 +134,7 @@ impl PluginType {
             Self::Declick => "Time-domain click and transient repair",
             Self::HissReducer => "Stationary high-frequency hiss reducer",
             Self::SpeechDenoiser => "RNNoise voice denoiser",
-            Self::Pnd => "Polyphonic note detection and varispeed correction",
+            Self::Pnd => "Referenced drift analysis and duration-preserving pitch correction",
             Self::ABCompare => "A/B comparison with auto-gain loudness matching",
             Self::Crossover => "Linkwitz-Riley / linear-phase crossover",
             Self::BandSplit => "Split audio into low/high frequency bands",

@@ -14,3 +14,7 @@ constant absolute pitch offset.
 `drift_smoothing` is stored in seconds (`0.001..1.0`) and displayed in
 milliseconds. It is an analysis-sample-clock time constant, so host callback
 partitioning does not change correction convergence.
+
+Set `reference_frequency_hz` to a known pilot or note when absolute pitch
+correction is required. Zero leaves the estimator in change-only mode. The
+reference must remain below Nyquist at the initialized sample rate.

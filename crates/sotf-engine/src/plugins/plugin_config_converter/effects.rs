@@ -436,6 +436,7 @@ pub fn convert_pnd(settings: &PluginSettings, _sample_rate: f64) -> Option<Plugi
         drift_smoothing,
         multi_channel_analysis,
         confidence_threshold,
+        reference_frequency_hz,
         phase_vocoder,
     } = settings
     else {
@@ -449,6 +450,7 @@ pub fn convert_pnd(settings: &PluginSettings, _sample_rate: f64) -> Option<Plugi
             "drift_smoothing": drift_smoothing,
             "multi_channel_analysis": multi_channel_analysis,
             "confidence_threshold": confidence_threshold,
+            "reference_frequency_hz": reference_frequency_hz,
             "phase_vocoder": phase_vocoder,
         }),
     ))

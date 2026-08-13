@@ -27,6 +27,11 @@
   shifted frequencies. Numeric 440→880 Hz, 440→220 Hz, and unity-frequency
   regressions replace the former finiteness-only evidence. Formant preservation
   is no longer claimed.
+- P1 reference-free identifiability is made explicit in 0.5.9. The new optional
+  `reference_frequency_hz` is carried through plugin/engine state and lets a
+  known pilot authorize absolute correction. An oracle proves stable 440 and
+  444.4 Hz both remain unity without a reference, while a 440 Hz pilot recovers
+  the latter's +1% offset. Invalid and above-Nyquist references reject.
 - P0 partially mitigated: bounded output-ring overflow now drops the oldest
   complete frames, and SRC underruns use corresponding input samples rather
   than zeros. This bounds memory and avoids silence, but it does not satisfy a
@@ -46,6 +51,14 @@ The resampler consumes fixed 1024-frame chunks and produces a variable number of
 Define the actual system boundary. Clock-domain correction requires independent producer/consumer clocks plus a fill-level controller and an asynchronous SRC that always supplies the render callback; offline varispeed must be allowed to return a different frame count; a fixed-frame insert must use duration-preserving pitch correction. Do not expose the current variable-duration resampler as a general same-frame plugin. Add multi-minute tests at the minimum/maximum correction ratios and assert no underrun, zero insertion, overflow, or unbounded latency.
 
 ### P1 — The detector has no reference from which to infer absolute pitch or clock error
+
+Status: fixed for the supported pilot/note use case in 0.5.9. A zero reference
+is explicitly change-only; a nonzero, Nyquist-validated reference selects the
+nearest detected partial within the bounded correction range and publishes its
+local guard-band prominence/proximity confidence. Both correction engines have
+end-to-end direction tests, and live reference changes discard dependent
+estimator state and return safely toward unity. Device-clock synchronization remains a distinct
+host timestamp/fill-control problem and is not inferred from programme audio.
 
 The analyzer matches spectral peaks only against the immediately previous FFT frame and records `current_frequency / previous_frequency` (`analysis.rs:146-171`). A steady 444.4 Hz sinusoid therefore has the same expected ratio (1.0) as a steady 440 Hz sinusoid; there is no score, reference pitch, pilot tone, timestamp, device-clock measurement, or long-term nominal baseline that says either frequency is wrong. Musical glissando, vibrato, chord changes, and beating create the same local ratios as wow/flutter. Yet the documentation and `test_pnd_known_drift_correction` claim that an arbitrary stable 444.4 Hz tone should be restored to 440 Hz (`tests/test_pnd_plugin.rs:87-166`). That inference is physically underdetermined; any apparent pass is an artifact of estimator/resampler/zero-crossing bias.
 

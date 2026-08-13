@@ -296,6 +296,7 @@ sotf_plugins::serde_param_default! {
     fn default_pnd_drift_smoothing() -> f64 = "drift_smoothing";
     fn default_pnd_multi_channel_analysis() -> bool = "multi_channel_analysis";
     fn default_pnd_confidence_threshold() -> f64 = "confidence_threshold";
+    fn default_pnd_reference_frequency_hz() -> f64 = "reference_frequency_hz";
 }
 sotf_plugins::serde_param_default! {
     ab_compare_specs::PARAMS;

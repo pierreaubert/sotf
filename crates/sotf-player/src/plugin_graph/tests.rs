@@ -606,6 +606,8 @@ fn test_insert_eq_and_configure_per_channel() {
         max_filters: 10,
         tdf2: false,
         topology: 0.0,
+        auto_gain_enabled: false,
+        oversampling: 1.0,
     };
 
     // Verify the graph is still linear
@@ -658,6 +660,8 @@ fn test_update_existing_eq_preserves_position() {
         max_filters: 10,
         tdf2: false,
         topology: 0.0,
+        auto_gain_enabled: false,
+        oversampling: 1.0,
     };
 
     // Verify position unchanged
@@ -701,6 +705,8 @@ fn test_to_plugin_configs_per_channel_eq() {
         max_filters: 10,
         tdf2: false,
         topology: 0.0,
+        auto_gain_enabled: false,
+        oversampling: 1.0,
     };
 
     let configs = g.to_plugin_configs(48000.0);
@@ -741,6 +747,8 @@ fn test_to_plugin_configs_global_eq() {
         max_filters: 10,
         tdf2: false,
         topology: 0.0,
+        auto_gain_enabled: false,
+        oversampling: 1.0,
     };
 
     let configs = g.to_plugin_configs(48000.0);
@@ -1087,6 +1095,63 @@ fn test_update_channel_dependent_plugins_gain_channels_propagate() {
             assert_eq!(*channels, 1, "Gain should adopt mono input channels");
         }
         _ => panic!("Expected Gain settings"),
+    }
+}
+
+#[test]
+fn test_update_channel_dependent_plugins_binaural_preserves_acoustic_settings() {
+    let mut g = PluginGraph::with_default_rack();
+    let binaural_id = g.add_user_plugin(&PluginType::BinauralDecoder).unwrap();
+
+    if let Some(node) = g.nodes.get_mut(&binaural_id) {
+        if let PluginSettings::BinauralDecoder {
+            crossfade_ms,
+            head_yaw_deg,
+            head_pitch_deg,
+            head_roll_deg,
+            hrtf_database_dir,
+            head_width_cm,
+            ear_height_cm,
+            ..
+        } = &mut node.plugin.settings
+        {
+            *crossfade_ms = 17.0;
+            *head_yaw_deg = 11.0;
+            *head_pitch_deg = -7.0;
+            *head_roll_deg = 3.0;
+            *hrtf_database_dir = "fixture/hrtf".into();
+            *head_width_cm = 15.5;
+            *ear_height_cm = 1.25;
+        }
+    }
+
+    if let Some(input) = g.input_node_mut() {
+        input.channels = 1;
+    }
+    g.update_channel_dependent_plugins();
+
+    match &g.nodes[&binaural_id].plugin.settings {
+        PluginSettings::BinauralDecoder {
+            input_channels,
+            crossfade_ms,
+            head_yaw_deg,
+            head_pitch_deg,
+            head_roll_deg,
+            hrtf_database_dir,
+            head_width_cm,
+            ear_height_cm,
+            ..
+        } => {
+            assert_eq!(*input_channels, 1);
+            assert_eq!(*crossfade_ms, 17.0);
+            assert_eq!(*head_yaw_deg, 11.0);
+            assert_eq!(*head_pitch_deg, -7.0);
+            assert_eq!(*head_roll_deg, 3.0);
+            assert_eq!(hrtf_database_dir, "fixture/hrtf");
+            assert_eq!(*head_width_cm, 15.5);
+            assert_eq!(*ear_height_cm, 1.25);
+        }
+        _ => panic!("expected Binaural Decoder settings"),
     }
 }
 

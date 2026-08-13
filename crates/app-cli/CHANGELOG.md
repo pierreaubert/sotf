@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Initialize the new PND reference-frequency field explicitly in CLI-created
+  plugin settings; zero preserves change-only compatibility behavior.
+
 ## [0.5.22] - 2026-07-08
 
 ### Added

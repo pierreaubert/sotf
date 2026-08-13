@@ -71,6 +71,17 @@ pub const PARAMS: &[ParamSpec] = &[
         "Correction",
     )
     .doc("Min detection confidence to apply"),
+    ParamSpec::float(
+        "Reference Pitch",
+        "reference_frequency_hz",
+        0.0,
+        0.0,
+        20_000.0,
+        1.0,
+        "Hz",
+        "Correction",
+    )
+    .doc("Known pilot/note frequency for absolute correction; 0 uses change-only tracking"),
     ParamSpec::bool_param("Phase Vocoder", "phase_vocoder", false, "Correction")
         .structural()
         .setup()
@@ -90,7 +101,8 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             &[
                 ControlSpec::knob(0),   // correction_strength
                 ControlSpec::knob(4),   // confidence_threshold
-                ControlSpec::toggle(5), // phase_vocoder
+                ControlSpec::knob(5),   // reference_frequency_hz
+                ControlSpec::toggle(6), // phase_vocoder
             ],
         ),
         ControlGroup::new(
@@ -131,6 +143,8 @@ pub struct Params {
     pub multi_channel_analysis: bool,
     #[serde(default = "d_confidence_threshold")]
     pub confidence_threshold: f64,
+    #[serde(default = "d_reference_frequency_hz")]
+    pub reference_frequency_hz: f64,
     #[serde(default = "d_phase_vocoder")]
     pub phase_vocoder: bool,
 }
@@ -150,6 +164,9 @@ fn d_multi_channel_analysis() -> bool {
 fn d_confidence_threshold() -> f64 {
     pk(PARAMS, "confidence_threshold").default_f64()
 }
+fn d_reference_frequency_hz() -> f64 {
+    pk(PARAMS, "reference_frequency_hz").default_f64()
+}
 fn d_phase_vocoder() -> bool {
     pk(PARAMS, "phase_vocoder").default_bool()
 }
@@ -162,6 +179,7 @@ impl Default for Params {
             drift_smoothing: d_drift_smoothing(),
             multi_channel_analysis: d_multi_channel_analysis(),
             confidence_threshold: d_confidence_threshold(),
+            reference_frequency_hz: d_reference_frequency_hz(),
             phase_vocoder: d_phase_vocoder(),
         }
     }
@@ -188,7 +206,8 @@ impl PluginParamDef for Params {
                 0.0
             }),
             4 => Some(self.confidence_threshold),
-            5 => Some(if self.phase_vocoder { 1.0 } else { 0.0 }),
+            5 => Some(self.reference_frequency_hz),
+            6 => Some(if self.phase_vocoder { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -200,7 +219,8 @@ impl PluginParamDef for Params {
             2 => self.drift_smoothing = value,
             3 => self.multi_channel_analysis = value > 0.5,
             4 => self.confidence_threshold = value,
-            5 => self.phase_vocoder = value > 0.5,
+            5 => self.reference_frequency_hz = value,
+            6 => self.phase_vocoder = value > 0.5,
             _ => {}
         }
     }
@@ -243,6 +263,10 @@ mod tests {
             restored.multi_channel_analysis
         );
         assert_eq!(original.confidence_threshold, restored.confidence_threshold);
+        assert_eq!(
+            original.reference_frequency_hz,
+            restored.reference_frequency_hz
+        );
         assert_eq!(original.phase_vocoder, restored.phase_vocoder);
     }
 
@@ -268,6 +292,10 @@ mod tests {
         assert_eq!(
             p.confidence_threshold,
             pk(PARAMS, "confidence_threshold").default_f64()
+        );
+        assert_eq!(
+            p.reference_frequency_hz,
+            pk(PARAMS, "reference_frequency_hz").default_f64()
         );
         assert_eq!(p.phase_vocoder, pk(PARAMS, "phase_vocoder").default_bool());
     }

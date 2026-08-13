@@ -89,7 +89,15 @@ fn test_pnd_known_drift_correction() {
     // corrected toward 440Hz by the PND. We verify the output frequency
     // is closer to 440Hz than the input.
     let sr = 44100;
-    let mut plugin = PndPlugin::new(1);
+    let mut plugin = PndPlugin::from_params(
+        1,
+        PndPluginParams {
+            reference_frequency_hz: 440.0,
+            drift_smoothing: 0.001,
+            confidence_threshold: 0.2,
+            ..PndPluginParams::default()
+        },
+    );
     plugin.initialize(sr).unwrap();
 
     // Enable correction
@@ -166,4 +174,51 @@ fn test_pnd_known_drift_correction() {
         "PND should correct drift: output error ({output_error:.2}Hz) should be less than \
          input error ({input_error:.2}Hz). input_freq={drift_freq:.1}Hz, measured_freq={measured_freq:.1}Hz"
     );
+}
+
+#[test]
+fn test_pnd_phase_vocoder_corrects_referenced_sharp_tone() {
+    let sr = 44_100;
+    let mut plugin = PndPlugin::from_params(
+        1,
+        PndPluginParams {
+            reference_frequency_hz: 440.0,
+            drift_smoothing: 0.001,
+            confidence_threshold: 0.2,
+            phase_vocoder: true,
+            ..PndPluginParams::default()
+        },
+    );
+    plugin.initialize(sr).unwrap();
+
+    let total_frames = sr as usize * 2;
+    let input_frequency = 444.4_f32;
+    let input: Vec<f32> = (0..total_frames)
+        .map(|i| (2.0 * std::f32::consts::PI * input_frequency * i as f32 / sr as f32).sin() * 0.5)
+        .collect();
+    let mut output = vec![0.0; total_frames];
+    for pos in (0..total_frames).step_by(1024) {
+        let end = (pos + 1024).min(total_frames);
+        plugin
+            .process(
+                &input[pos..end],
+                &mut output[pos..end],
+                &ProcessContext::new(sr, end - pos),
+            )
+            .unwrap();
+    }
+
+    let measured = zero_crossing_frequency(&output[sr as usize..], sr);
+    assert!(
+        (measured - 440.0).abs() < (input_frequency - 440.0).abs(),
+        "phase vocoder should move {input_frequency:.1} Hz toward 440 Hz, measured {measured:.2} Hz"
+    );
+}
+
+fn zero_crossing_frequency(signal: &[f32], sample_rate: u32) -> f32 {
+    let crossings = signal
+        .windows(2)
+        .filter(|pair| pair[0] != 0.0 && pair[0].signum() != pair[1].signum())
+        .count();
+    crossings as f32 * sample_rate as f32 / (2.0 * signal.len() as f32)
 }

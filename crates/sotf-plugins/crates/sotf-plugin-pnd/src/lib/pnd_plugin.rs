@@ -34,6 +34,7 @@ pub struct PndPlugin {
     pub(super) current_ratio: f64,
     pub(super) last_drift_ratio: f64,
     pub(super) last_analysis_generation: u64,
+    pub(super) reference_transition_pending: bool,
 
     // Pre-allocated buffers for zero-allocation process()
     pub(super) planar_input: Vec<Vec<f32>>,
@@ -75,6 +76,9 @@ pub struct PndPlugin {
     pub(super) param_confidence_threshold: ParameterId,
     pub(super) confidence_threshold: f32,
 
+    pub(super) param_reference_frequency_hz: ParameterId,
+    pub(super) reference_frequency_hz: f32,
+
     pub(super) param_phase_vocoder: ParameterId,
     pub(super) phase_vocoder: bool,
     pub(super) vocoder: Option<PhaseVocoder>,
@@ -95,6 +99,7 @@ impl PndPlugin {
             current_ratio: 1.0,
             last_drift_ratio: 1.0,
             last_analysis_generation: 0,
+            reference_transition_pending: false,
             planar_input: vec![Vec::new(); channels],
             planar_output: Vec::new(),
             input_ring: Vec::new(),
@@ -129,6 +134,9 @@ impl PndPlugin {
 
             param_confidence_threshold: ParameterId::from("confidence_threshold"),
             confidence_threshold: pk(PD, "confidence_threshold").default_f64() as f32,
+
+            param_reference_frequency_hz: ParameterId::from("reference_frequency_hz"),
+            reference_frequency_hz: pk(PD, "reference_frequency_hz").default_f64() as f32,
 
             param_phase_vocoder: ParameterId::from("phase_vocoder"),
             phase_vocoder: pk(PD, "phase_vocoder").default_bool(),
@@ -188,6 +196,15 @@ impl PndPlugin {
             )
             .with_group("Correction")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "reference_frequency_hz",
+                "Reference Pitch",
+                self.reference_frequency_hz,
+                pk(PD, "reference_frequency_hz").min_f64() as f32,
+                pk(PD, "reference_frequency_hz").max_f64() as f32,
+            )
+            .with_group("Correction")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("phase_vocoder", "Phase Vocoder", self.phase_vocoder)
                 .with_group("Correction")
                 .with_importance(ParameterImportance::Useful),
@@ -206,6 +223,7 @@ impl PndPlugin {
             ("analysis_window_ms", params.analysis_window_ms),
             ("drift_smoothing", params.drift_smoothing),
             ("confidence_threshold", params.confidence_threshold),
+            ("reference_frequency_hz", params.reference_frequency_hz),
         ] {
             let spec = pk(PD, name);
             if !value.is_finite()
@@ -226,6 +244,7 @@ impl PndPlugin {
         plugin.drift_smoothing = params.drift_smoothing;
         plugin.multi_channel_analysis = params.multi_channel_analysis;
         plugin.confidence_threshold = params.confidence_threshold;
+        plugin.reference_frequency_hz = params.reference_frequency_hz;
         plugin.phase_vocoder = params.phase_vocoder;
         plugin.rebuild_cached_parameters();
         Ok(plugin)
@@ -242,7 +261,7 @@ impl PndPlugin {
     }
 
     /// Phase vocoder processing path: uses STFT analysis/synthesis to shift pitch
-    /// without changing duration, preserving formants better than simple resampling.
+    /// without changing duration. No separate formant-envelope preservation is applied.
     pub(super) fn process_phase_vocoder(
         &mut self,
         input: &[f32],
@@ -306,17 +325,24 @@ impl PndPlugin {
         } else if self.multi_channel_analysis && self.analyzers.len() > 1 {
             let n = self.analyzers.len().min(self.channels);
             for (ch, analyzer) in self.analyzers.iter_mut().enumerate().take(n) {
-                let drift = analyzer.analyze(&self.planar_input[ch][..num_frames]);
-                self.channel_consensus_scratch[ch] = (drift, analyzer.confidence());
+                let temporal_drift = analyzer.analyze(&self.planar_input[ch][..num_frames]);
+                self.channel_consensus_scratch[ch] = if self.reference_frequency_hz > 0.0 {
+                    analyzer.estimate_against_reference(self.reference_frequency_hz)
+                } else {
+                    (temporal_drift, analyzer.confidence())
+                };
             }
             weighted_channel_consensus(
                 &mut self.channel_consensus_scratch[..n],
                 self.confidence_threshold,
             )
         } else {
-            let drift = self.analyzers[0].analyze(&self.planar_input[0][..num_frames]);
-            let conf = self.analyzers[0].confidence();
-            (drift, conf)
+            let temporal_drift = self.analyzers[0].analyze(&self.planar_input[0][..num_frames]);
+            if self.reference_frequency_hz > 0.0 {
+                self.analyzers[0].estimate_against_reference(self.reference_frequency_hz)
+            } else {
+                (temporal_drift, self.analyzers[0].confidence())
+            }
         };
         self.last_drift_ratio = drift_ratio as f64;
 
@@ -334,6 +360,15 @@ impl PndPlugin {
             self.current_ratio = smooth_drift_ratio(
                 self.current_ratio,
                 target_correction,
+                self.drift_smoothing,
+                elapsed_hops as usize * (2048 / 4),
+                self.sample_rate,
+            );
+            self.reference_transition_pending = false;
+        } else if self.reference_transition_pending && elapsed_hops > 0 {
+            self.current_ratio = smooth_drift_ratio(
+                self.current_ratio,
+                1.0,
                 self.drift_smoothing,
                 elapsed_hops as usize * (2048 / 4),
                 self.sample_rate,
@@ -482,8 +517,12 @@ impl PndPlugin {
             // Analyze each channel independently and take the median drift ratio
             let n = self.analyzers.len().min(self.channels);
             for (ch, analyzer) in self.analyzers.iter_mut().enumerate().take(n) {
-                let drift = analyzer.analyze(&self.planar_input[ch][..chunk_frames]);
-                self.channel_consensus_scratch[ch] = (drift, analyzer.confidence());
+                let temporal_drift = analyzer.analyze(&self.planar_input[ch][..chunk_frames]);
+                self.channel_consensus_scratch[ch] = if self.reference_frequency_hz > 0.0 {
+                    analyzer.estimate_against_reference(self.reference_frequency_hz)
+                } else {
+                    (temporal_drift, analyzer.confidence())
+                };
             }
             weighted_channel_consensus(
                 &mut self.channel_consensus_scratch[..n],
@@ -491,9 +530,12 @@ impl PndPlugin {
             )
         } else {
             // Single-channel mode: analyze channel 0 only
-            let drift = self.analyzers[0].analyze(&self.planar_input[0][..chunk_frames]);
-            let conf = self.analyzers[0].confidence();
-            (drift, conf)
+            let temporal_drift = self.analyzers[0].analyze(&self.planar_input[0][..chunk_frames]);
+            if self.reference_frequency_hz > 0.0 {
+                self.analyzers[0].estimate_against_reference(self.reference_frequency_hz)
+            } else {
+                (temporal_drift, self.analyzers[0].confidence())
+            }
         };
         self.last_drift_ratio = drift_ratio as f64;
 
@@ -509,10 +551,23 @@ impl PndPlugin {
         let elapsed_hops = analysis_generation.saturating_sub(self.last_analysis_generation);
         self.last_analysis_generation = analysis_generation;
         if confidence >= self.confidence_threshold && elapsed_hops > 0 {
-            let target_correction = 1.0 / drift_ratio as f64;
+            // Rubato defines ratios above unity as producing more output
+            // frames, which lowers pitch. A detected/reference ratio above
+            // unity must therefore be passed through, unlike the reciprocal
+            // factor required by the phase vocoder.
+            let target_correction = drift_ratio as f64;
             self.current_ratio = smooth_drift_ratio(
                 self.current_ratio,
                 target_correction,
+                self.drift_smoothing,
+                elapsed_hops as usize * (2048 / 4),
+                self.sample_rate,
+            );
+            self.reference_transition_pending = false;
+        } else if self.reference_transition_pending && elapsed_hops > 0 {
+            self.current_ratio = smooth_drift_ratio(
+                self.current_ratio,
+                1.0,
                 self.drift_smoothing,
                 elapsed_hops as usize * (2048 / 4),
                 self.sample_rate,
@@ -677,8 +732,8 @@ fn weighted_channel_consensus(
 
 impl Plugin for PndPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Pitch Drift Corrector", "0.2.0", "SotF")
-            .with_description("Polyphonic note detection and varispeed correction")
+        PluginInfo::new("Pitch Drift Corrector", env!("CARGO_PKG_VERSION"), "SotF")
+            .with_description("Referenced drift analysis and duration-preserving pitch correction")
     }
 
     fn input_channels(&self) -> usize {
@@ -751,6 +806,25 @@ impl Plugin for PndPlugin {
             if v.is_finite() {
                 self.confidence_threshold = v;
             }
+        } else if id == self.param_reference_frequency_hz {
+            let v = value
+                .as_float()
+                .unwrap_or(pk(PD, "reference_frequency_hz").default_f64() as f32);
+            if self.initialized && v > 0.0 && v >= self.sample_rate as f32 * 0.5 {
+                return Err(format!(
+                    "reference_frequency_hz must be below Nyquist ({:.1} Hz)",
+                    self.sample_rate as f32 * 0.5
+                ));
+            }
+            if v != self.reference_frequency_hz {
+                self.reference_frequency_hz = v;
+                for analyzer in &mut self.analyzers {
+                    analyzer.reset();
+                }
+                self.last_analysis_generation = 0;
+                self.last_drift_ratio = 1.0;
+                self.reference_transition_pending = true;
+            }
         } else if id == self.param_phase_vocoder {
             if self.initialized {
                 return Err(
@@ -780,6 +854,8 @@ impl Plugin for PndPlugin {
             Some(ParameterValue::Bool(self.multi_channel_analysis))
         } else if id == &self.param_confidence_threshold {
             Some(ParameterValue::Float(self.confidence_threshold))
+        } else if id == &self.param_reference_frequency_hz {
+            Some(ParameterValue::Float(self.reference_frequency_hz))
         } else if id == &self.param_phase_vocoder {
             Some(ParameterValue::Bool(self.phase_vocoder))
         } else {
@@ -791,8 +867,17 @@ impl Plugin for PndPlugin {
         if sample_rate == 0 {
             return Err("PND sample rate must be non-zero".to_string());
         }
+        if self.reference_frequency_hz > 0.0
+            && self.reference_frequency_hz >= sample_rate as f32 * 0.5
+        {
+            return Err(format!(
+                "reference_frequency_hz must be below Nyquist ({:.1} Hz)",
+                sample_rate as f32 * 0.5
+            ));
+        }
         self.sample_rate = sample_rate;
         self.last_analysis_generation = 0;
+        self.reference_transition_pending = false;
         self.init_resampler()?;
         self.init_analyzers();
 
@@ -980,6 +1065,7 @@ impl Plugin for PndPlugin {
         self.current_ratio = 1.0;
         self.last_drift_ratio = 1.0;
         self.last_analysis_generation = 0;
+        self.reference_transition_pending = false;
         self.input_ring_write_pos = 0;
         self.input_ring_read_pos = 0;
         self.input_ring_count = 0;

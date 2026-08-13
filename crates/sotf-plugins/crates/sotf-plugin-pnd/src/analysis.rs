@@ -264,6 +264,48 @@ impl PndAnalyzer {
         &self.matched_peaks
     }
 
+    /// Estimate absolute pitch ratio against an observable pilot/reference.
+    /// The closest detected partial within ±5% is selected. Confidence is its
+    /// prominence within a ±10% guard band, weighted by proximity to the
+    /// expected frequency. Unrelated programme energy outside that local band
+    /// therefore cannot hide a low-level pilot.
+    pub fn estimate_against_reference(&self, reference_hz: f32) -> (f32, f32) {
+        if !reference_hz.is_finite() || reference_hz <= 0.0 || self.peak_scratch.is_empty() {
+            return (1.0, 0.0);
+        }
+        let Some(&(frequency, magnitude)) = self.peak_scratch.iter().min_by(|a, b| {
+            (a.0 - reference_hz)
+                .abs()
+                .partial_cmp(&(b.0 - reference_hz).abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) else {
+            return (1.0, 0.0);
+        };
+        let ratio = frequency / reference_hz;
+        const MATCH_FRACTION: f32 = 0.05;
+        const GUARD_FRACTION: f32 = 0.10;
+        let relative_error = (ratio - 1.0).abs();
+        if relative_error > MATCH_FRACTION {
+            return (1.0, 0.0);
+        }
+        let local_magnitude = self
+            .peak_scratch
+            .iter()
+            .filter(|(peak_frequency, _)| {
+                ((*peak_frequency - reference_hz) / reference_hz).abs() <= GUARD_FRACTION
+            })
+            .map(|(_, peak_magnitude)| *peak_magnitude)
+            .sum::<f32>();
+        let confidence = if local_magnitude > f32::EPSILON {
+            let prominence = (magnitude / local_magnitude).clamp(0.0, 1.0);
+            let proximity = (1.0 - relative_error / MATCH_FRACTION).clamp(0.0, 1.0);
+            prominence * proximity
+        } else {
+            0.0
+        };
+        (ratio, confidence)
+    }
+
     pub fn reset(&mut self) {
         self.ring.reset();
 
@@ -551,5 +593,63 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(ratios.len(), 1);
         assert_eq!(matched.len(), 1);
+    }
+
+    #[test]
+    fn explicit_reference_identifies_constant_offset_that_temporal_tracking_cannot() {
+        fn analyze_tone(frequency: f32) -> (f32, (f32, f32)) {
+            let sample_rate = 48_000;
+            let mut analyzer = PndAnalyzer::new(2048, sample_rate, 100.0);
+            let samples = (0..sample_rate)
+                .map(|frame| {
+                    (2.0 * std::f32::consts::PI * frequency * frame as f32 / sample_rate as f32)
+                        .sin()
+                })
+                .collect::<Vec<_>>();
+            let temporal = analyzer.analyze(&samples);
+            (temporal, analyzer.estimate_against_reference(440.0))
+        }
+
+        let (temporal_nominal, (referenced_nominal, nominal_confidence)) = analyze_tone(440.0);
+        let (temporal_offset, (referenced_offset, offset_confidence)) = analyze_tone(444.4);
+        assert!((temporal_nominal - 1.0).abs() < 0.002);
+        assert!((temporal_offset - 1.0).abs() < 0.002);
+        assert!(
+            (referenced_nominal - 1.0).abs() < 0.003,
+            "nominal referenced ratio was {referenced_nominal}"
+        );
+        assert!(
+            (referenced_offset - 1.01).abs() < 0.003,
+            "offset referenced ratio was {referenced_offset}"
+        );
+        assert!(nominal_confidence > 0.9);
+        assert!(offset_confidence > 0.7);
+    }
+
+    #[test]
+    fn reference_confidence_uses_local_prominence_not_whole_program_energy() {
+        let mut analyzer = PndAnalyzer::new(2048, 48_000, 100.0);
+        analyzer.peak_scratch = vec![
+            (444.4, 0.05),
+            (1_000.0, 1.0),
+            (2_000.0, 0.8),
+            (4_000.0, 0.6),
+        ];
+        let (ratio, confidence) = analyzer.estimate_against_reference(440.0);
+        assert!((ratio - 1.01).abs() < 1.0e-4);
+        assert!(
+            confidence > 0.7,
+            "distant programme partials must not hide a local pilot: {confidence}"
+        );
+
+        analyzer.peak_scratch = vec![(444.4, 0.05), (448.0, 0.5), (2_000.0, 1.0)];
+        let (_, masked_confidence) = analyzer.estimate_against_reference(440.0);
+        assert!(
+            masked_confidence < 0.2,
+            "a stronger local interferer must make the pilot unreliable: {masked_confidence}"
+        );
+
+        analyzer.peak_scratch = vec![(500.0, 1.0), (2_000.0, 1.0)];
+        assert_eq!(analyzer.estimate_against_reference(440.0), (1.0, 0.0));
     }
 }

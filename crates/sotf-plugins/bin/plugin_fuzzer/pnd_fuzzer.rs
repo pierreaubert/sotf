@@ -13,6 +13,7 @@ impl PluginFuzzer for PndFuzzer {
             drift_smoothing: rng.random_range(0.001..0.1),
             multi_channel_analysis: true,
             confidence_threshold: 0.5,
+            reference_frequency_hz: 0.0,
             phase_vocoder: false,
         };
 

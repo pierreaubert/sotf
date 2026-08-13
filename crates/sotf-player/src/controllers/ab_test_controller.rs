@@ -285,6 +285,8 @@ fn settings_from_params(params: &ABComparePluginParams) -> Result<PluginSettings
         phase_invert_a: params.phase_invert_a,
         phase_invert_b: params.phase_invert_b,
         difference_mode: params.difference_mode,
+        band_mask_low_hz: f64::from(params.band_mask_low_hz),
+        band_mask_high_hz: f64::from(params.band_mask_high_hz),
     })
 }
 
@@ -389,6 +391,26 @@ mod tests {
             _ => unreachable!(),
         };
         assert_eq!(after, before);
+    }
+
+    #[test]
+    fn runtime_settings_preserve_band_mask() {
+        let mut params = ABComparePluginParams::default();
+        params.band_mask_low_hz = 123.0;
+        params.band_mask_high_hz = 4_567.0;
+
+        let settings = settings_from_params(&params).unwrap();
+        match settings {
+            PluginSettings::ABCompare {
+                band_mask_low_hz,
+                band_mask_high_hz,
+                ..
+            } => {
+                assert_eq!(band_mask_low_hz, 123.0);
+                assert_eq!(band_mask_high_hz, 4_567.0);
+            }
+            _ => panic!("expected A/B Compare settings"),
+        }
     }
 
     #[test]

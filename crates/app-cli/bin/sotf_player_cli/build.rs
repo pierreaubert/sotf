@@ -424,6 +424,13 @@ pub(super) fn build_rack_mode_plugins(
                         late_reverb_mix: 0.3,
                         late_reverb_rt60: 1.0,
                         late_reverb_damping: 0.3,
+                        crossfade_ms: 50.0,
+                        head_yaw_deg: 0.0,
+                        head_pitch_deg: 0.0,
+                        head_roll_deg: 0.0,
+                        hrtf_database_dir: String::new(),
+                        head_width_cm: 14.0,
+                        ear_height_cm: 0.0,
                     };
                 }
                 log::info!("Rack: Added BinauralDecoder plugin");
@@ -450,6 +457,9 @@ pub(super) fn build_rack_mode_plugins(
                             playback_level_db: 70.0,
                             reference_level_db: 83.0,
                             playback_volume_db: 0.0,
+                            auto_gain_position: 0,
+                            headroom_normalized: false,
+                            auto_calibrated: false,
                         };
                     }
                 } else {
@@ -474,6 +484,9 @@ pub(super) fn build_rack_mode_plugins(
                             playback_level_db: 70.0,
                             reference_level_db: 83.0,
                             playback_volume_db: 0.0,
+                            auto_gain_position: 0,
+                            headroom_normalized: false,
+                            auto_calibrated: false,
                         };
                     }
                     let msg = "Note: `loudness` rack item used without --loudness-compensation; \
@@ -499,6 +512,8 @@ pub(super) fn build_rack_mode_plugins(
                         max_filters: 20,
                         tdf2: false,
                         topology: 0.0,
+                        auto_gain_enabled: false,
+                        oversampling: 1.0,
                     };
                 }
                 log::info!("Rack: Added EQ plugin with {} filters", filters.len());
@@ -746,6 +761,7 @@ pub(super) fn build_rack_mode_plugins(
                         drift_smoothing: plugins.pnd.drift_smoothing as f64,
                         multi_channel_analysis: true,
                         confidence_threshold: 0.5,
+                        reference_frequency_hz: 0.0,
                         phase_vocoder: false,
                     };
                 }
@@ -772,6 +788,9 @@ pub(super) fn build_rack_mode_plugins(
                         reference_level_db: 83.0
                             + plugins.fletcher_munson.reference_level_db as f64,
                         playback_volume_db: 0.0,
+                        auto_gain_position: 0,
+                        headroom_normalized: false,
+                        auto_calibrated: false,
                     };
                 }
                 log::info!("Rack: Added LoudnessCompensation (Auto/FM compat) plugin");
@@ -836,6 +855,8 @@ pub(super) fn build_rack_mode_plugins(
                         phase_invert_a: false,
                         phase_invert_b: false,
                         difference_mode: false,
+                        band_mask_low_hz: 20.0,
+                        band_mask_high_hz: 20_000.0,
                     };
                 }
                 log::info!("Rack: Added ABCompare plugin");
@@ -869,6 +890,7 @@ pub(super) fn build_rack_mode_plugins(
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Downmix {
                         input_channels,
+                        input_layout: None,
                         center_gain_db: plugins.downmix.center_gain_db as f64,
                         surround_gain_db: plugins.downmix.surround_gain_db as f64,
                         height_gain_db: plugins.downmix.height_gain_db as f64,
