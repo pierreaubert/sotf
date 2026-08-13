@@ -61,7 +61,10 @@ pub use math_audio_iir_fir::{fir_crossover, lr4_crossover, lr8_crossover};
 pub use gpui_design as design_system;
 
 // Flat re-exports for commonly used types
-pub use analyzer::{AnalyzerData, CorrelationData, LoudnessData, SpectrumData};
+pub use analyzer::{
+    AnalyzerData, CorrelationData, IntegratedLoudnessMode, LoudnessData, LoudnessQueryError,
+    SpectrumData,
+};
 pub use analyzer_channel_correlation::{ChannelCorrelationMonitor, ChannelCorrelationPlugin};
 pub use math_audio_dsp::adaa::{
     Adaa1, Adaa2, adaa1_hardclip, adaa1_softclip, adaa1_tanh, adaa2_hardclip, adaa2_softclip,

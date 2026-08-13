@@ -1,5 +1,31 @@
 # Loudness Monitor plugin review — 2026-08-12
 
+## Exact integrated-mode closure — sotf-host 0.5.104
+
+The deferred integrated-history and publication-contract gap is closed:
+
+- `rolling` remains the compatibility default and is explicitly reported as
+  the latest 3,600 seconds. `whole_program` retains every overlapping 400 ms
+  BS.1770 gating block and applies the exact two-pass absolute/relative gate.
+- Whole-program storage is prepared before realtime processing and bounded to
+  36,000 blocks. It never evicts or bins history: capacity exhaustion makes
+  integrated loudness unavailable and publishes
+  `IntegratedProgramCapacityExceeded` with a monotonic error generation.
+- Momentary, short-term, integrated, sample-peak, and true-peak validity are
+  published independently from enabled state. Incomplete windows are cold and
+  invalid without being misreported as query failures.
+- Reset, disable, and re-enable clear measurement state across three
+  preallocated cache generations. The selected integrated mode survives reset
+  and sample-rate reinitialization, including under held UI snapshots.
+- Factory JSON accepts `"integrated_mode": "rolling"` or
+  `"whole_program"`. Direct users can select the prepared policy with
+  `with_integrated_mode` before processing.
+
+Evidence includes an independent two-level gate reference, equality with the
+pinned rolling reference inside the common history interval, arbitrary callback
+partition equivalence, explicit prepared-capacity failure, lifecycle state
+tests, factory coverage, and allocation-counted whole-program callbacks.
+
 ## True-peak and correlation closure — sotf-host 0.5.103
 
 The remaining sample-rate and deterministic-streaming evidence gap is closed:

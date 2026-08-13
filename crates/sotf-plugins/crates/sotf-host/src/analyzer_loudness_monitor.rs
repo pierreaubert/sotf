@@ -2,7 +2,7 @@
 // Loudness Monitor Analyzer Plugin
 // ============================================================================
 
-use crate::analyzer::{LoudnessData, RealTimeCache};
+use crate::analyzer::{IntegratedLoudnessMode, LoudnessData, LoudnessQueryError, RealTimeCache};
 use crate::analyzer_channel_correlation::ChannelCorrelationMonitor;
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::plugin::{
@@ -16,6 +16,96 @@ use std::any::Any;
 use std::sync::Arc;
 
 const TRUE_PEAK_TAPS: usize = 12;
+pub const INTEGRATED_HISTORY_SECONDS: u32 = 3_600;
+const EXACT_GATING_BLOCK_CAPACITY: usize = INTEGRATED_HISTORY_SECONDS as usize * 10;
+const ABSOLUTE_GATE_LUFS: f64 = -70.0;
+const RELATIVE_GATE_DB: f64 = -10.0;
+
+fn energy_to_loudness(energy: f64) -> f64 {
+    -0.691 + 10.0 * energy.log10()
+}
+
+fn loudness_to_energy(loudness: f64) -> f64 {
+    10.0_f64.powf((loudness + 0.691) / 10.0)
+}
+
+/// Exact two-pass BS.1770 gating over every retained overlapping 400 ms
+/// block. Capacity is prepared before processing; history is never evicted.
+struct WholeProgramIntegrated {
+    gating_blocks: Vec<f64>,
+    cached_loudness: f64,
+    dirty: bool,
+    capacity_exceeded: bool,
+    capacity_error_published: bool,
+}
+
+impl WholeProgramIntegrated {
+    fn new(capacity: usize) -> Self {
+        Self {
+            gating_blocks: Vec::with_capacity(capacity),
+            cached_loudness: f64::NEG_INFINITY,
+            dirty: false,
+            capacity_exceeded: false,
+            capacity_error_published: false,
+        }
+    }
+
+    fn push(&mut self, energy: f64) {
+        if self.capacity_exceeded {
+            return;
+        }
+        if self.gating_blocks.len() == self.gating_blocks.capacity() {
+            self.capacity_exceeded = true;
+            self.cached_loudness = f64::NEG_INFINITY;
+            self.dirty = false;
+            return;
+        }
+        self.gating_blocks.push(energy);
+        self.dirty = true;
+    }
+
+    fn refresh(&mut self) {
+        if !self.dirty || self.capacity_exceeded {
+            return;
+        }
+        self.cached_loudness = gated_loudness(&self.gating_blocks);
+        self.dirty = false;
+    }
+
+    fn reset(&mut self) {
+        self.gating_blocks.clear();
+        self.cached_loudness = f64::NEG_INFINITY;
+        self.dirty = false;
+        self.capacity_exceeded = false;
+        self.capacity_error_published = false;
+    }
+}
+
+fn gated_loudness(blocks: &[f64]) -> f64 {
+    let absolute_gate = loudness_to_energy(ABSOLUTE_GATE_LUFS);
+    let (absolute_sum, absolute_count) = blocks
+        .iter()
+        .filter(|&&energy| energy > absolute_gate)
+        .fold((0.0, 0_u64), |(sum, count), &energy| {
+            (sum + energy, count + 1)
+        });
+    if absolute_count == 0 {
+        return f64::NEG_INFINITY;
+    }
+    let relative_gate =
+        absolute_sum / absolute_count as f64 * 10.0_f64.powf(RELATIVE_GATE_DB / 10.0);
+    let (relative_sum, relative_count) = blocks
+        .iter()
+        .filter(|&&energy| energy > relative_gate)
+        .fold((0.0, 0_u64), |(sum, count), &energy| {
+            (sum + energy, count + 1)
+        });
+    if relative_count == 0 {
+        f64::NEG_INFINITY
+    } else {
+        energy_to_loudness(relative_sum / relative_count as f64)
+    }
+}
 
 // ITU-R BS.1770-4 Table 2. At 44.1/48 kHz all four phases provide the
 // required 4x measurement rate. At 88.2/96 kHz phases 0 and 2 provide the
@@ -166,11 +256,24 @@ pub struct LoudnessMonitor {
     true_peak_meter: Bs1770TruePeakMeter,
     query_error_generation: u64,
     frames_seen: u64,
+    sub_block_frames: usize,
+    frames_into_sub_block: usize,
+    completed_sub_blocks: u64,
+    integrated_mode: IntegratedLoudnessMode,
+    whole_program_integrated: Option<WholeProgramIntegrated>,
 }
 
 impl LoudnessMonitor {
     pub fn new(channels: u32, sr: u32) -> Result<Self, String> {
-        Self::new_inner(channels, sr, None)
+        Self::new_inner(channels, sr, None, IntegratedLoudnessMode::Rolling)
+    }
+
+    pub fn new_with_integrated_mode(
+        channels: u32,
+        sr: u32,
+        integrated_mode: IntegratedLoudnessMode,
+    ) -> Result<Self, String> {
+        Self::new_inner(channels, sr, None, integrated_mode)
     }
 
     pub fn new_with_layout(
@@ -178,19 +281,34 @@ impl LoudnessMonitor {
         sr: u32,
         channel_layout: ChannelLayout,
     ) -> Result<Self, String> {
-        Self::new_inner(channels, sr, Some(channel_layout))
+        Self::new_inner(
+            channels,
+            sr,
+            Some(channel_layout),
+            IntegratedLoudnessMode::Rolling,
+        )
+    }
+
+    pub fn new_with_layout_and_integrated_mode(
+        channels: u32,
+        sr: u32,
+        channel_layout: ChannelLayout,
+        integrated_mode: IntegratedLoudnessMode,
+    ) -> Result<Self, String> {
+        Self::new_inner(channels, sr, Some(channel_layout), integrated_mode)
     }
 
     fn new_inner(
         channels: u32,
         sr: u32,
         channel_layout: Option<ChannelLayout>,
+        integrated_mode: IntegratedLoudnessMode,
     ) -> Result<Self, String> {
         if channels == 0 {
             return Err("loudness monitor requires at least one channel".to_string());
         }
-        if sr == 0 {
-            return Err("loudness monitor sample rate must be non-zero".to_string());
+        if sr < 10 {
+            return Err("loudness monitor sample rate must be at least 10 Hz".to_string());
         }
         if let Some(layout) = &channel_layout {
             layout.validate_for_width(channels as usize)?;
@@ -249,7 +367,17 @@ impl LoudnessMonitor {
             true_peak_meter: Bs1770TruePeakMeter::new(channels as usize, sr),
             query_error_generation: 0,
             frames_seen: 0,
+            sub_block_frames: sr as usize / 10,
+            frames_into_sub_block: 0,
+            completed_sub_blocks: 0,
+            integrated_mode,
+            whole_program_integrated: (integrated_mode == IntegratedLoudnessMode::WholeProgram)
+                .then(|| WholeProgramIntegrated::new(EXACT_GATING_BLOCK_CAPACITY)),
         })
+    }
+
+    pub fn integrated_mode(&self) -> IntegratedLoudnessMode {
+        self.integrated_mode
     }
 
     pub fn channel_layout(&self) -> Option<&ChannelLayout> {
@@ -302,28 +430,43 @@ impl LoudnessMonitor {
             peak_meter
                 .add_frames_f32(samples)
                 .map_err(|error| format!("EBU R128 peak add_frames failed: {error:?}"))?;
-            let input_channels = self.channels as usize;
-            for input in samples.chunks(256 * input_channels) {
-                let frames = input.len() / input_channels;
-                let scratch_len = frames * self.loudness_channels;
-                let scratch = &mut self.weighted_scratch[..scratch_len];
-                scratch.fill(0.0);
-                for (input_frame, output_frame) in input
-                    .chunks_exact(input_channels)
-                    .zip(scratch.chunks_exact_mut(self.loudness_channels))
-                {
-                    for channel in 0..input_channels {
-                        output_frame[channel] = input_frame[channel] * self.loudness_gains[channel];
-                    }
-                }
-                self.ebur128
-                    .add_frames_f32(scratch)
-                    .map_err(|error| format!("EBU R128 loudness add_frames failed: {error:?}"))?;
+        }
+        let input_channels = self.channels as usize;
+        let total_frames = samples.len() / input_channels;
+        let mut frame_offset = 0;
+        while frame_offset < total_frames {
+            let until_boundary = self.sub_block_frames - self.frames_into_sub_block;
+            let mut chunk_frames = (total_frames - frame_offset).min(until_boundary);
+            if self.peak_meter.is_some() {
+                chunk_frames = chunk_frames.min(256);
             }
-        } else {
-            self.ebur128
-                .add_frames_f32(samples)
-                .map_err(|error| format!("EBU R128 add_frames failed: {error:?}"))?;
+            let sample_start = frame_offset * input_channels;
+            let sample_end = (frame_offset + chunk_frames) * input_channels;
+            self.add_loudness_chunk(&samples[sample_start..sample_end])?;
+            frame_offset += chunk_frames;
+            self.frames_into_sub_block += chunk_frames;
+            if self.frames_into_sub_block == self.sub_block_frames {
+                self.frames_into_sub_block = 0;
+                self.completed_sub_blocks = self.completed_sub_blocks.saturating_add(1);
+                if self.completed_sub_blocks >= 4
+                    && let Some(exact) = &mut self.whole_program_integrated
+                {
+                    let momentary = self.ebur128.loudness_momentary().map_err(|error| {
+                        format!("EBU R128 integrated block query failed: {error:?}")
+                    })?;
+                    let energy = if momentary.is_finite() {
+                        loudness_to_energy(momentary)
+                    } else {
+                        0.0
+                    };
+                    exact.push(energy);
+                }
+            }
+        }
+        if let Some(exact) = &mut self.whole_program_integrated {
+            // At most one bounded two-pass scan per callback, irrespective of
+            // how many 100 ms boundaries an offline block crossed.
+            exact.refresh();
         }
         self.frames_seen = self
             .frames_seen
@@ -331,15 +474,44 @@ impl LoudnessMonitor {
         Ok(())
     }
 
+    fn add_loudness_chunk(&mut self, input: &[f32]) -> Result<(), String> {
+        let input_channels = self.channels as usize;
+        if self.peak_meter.is_some() {
+            let frames = input.len() / input_channels;
+            let scratch_len = frames * self.loudness_channels;
+            let scratch = &mut self.weighted_scratch[..scratch_len];
+            scratch.fill(0.0);
+            for (input_frame, output_frame) in input
+                .chunks_exact(input_channels)
+                .zip(scratch.chunks_exact_mut(self.loudness_channels))
+            {
+                for channel in 0..input_channels {
+                    output_frame[channel] = input_frame[channel] * self.loudness_gains[channel];
+                }
+            }
+            self.ebur128
+                .add_frames_f32(scratch)
+                .map_err(|error| format!("EBU R128 loudness add_frames failed: {error:?}"))
+        } else {
+            self.ebur128
+                .add_frames_f32(input)
+                .map_err(|error| format!("EBU R128 add_frames failed: {error:?}"))
+        }
+    }
+
     /// Update LoudnessData in-place to avoid allocations
     pub fn update_loudness_data(&mut self, d: &mut LoudnessData) {
         let momentary = self.ebur128.loudness_momentary();
         let shortterm = self.ebur128.loudness_shortterm();
-        let integrated = self.ebur128.loudness_global();
-        let mut valid = momentary.is_ok()
-            && shortterm.is_ok()
-            && integrated.is_ok()
-            && self.frames_seen >= self.sample_rate as u64 * 3;
+        let integrated = match &self.whole_program_integrated {
+            Some(exact) if exact.capacity_exceeded => Ok(f64::NEG_INFINITY),
+            Some(exact) => Ok(exact.cached_loudness),
+            None => self.ebur128.loudness_global(),
+        };
+        let momentary_ok = momentary.is_ok();
+        let shortterm_ok = shortterm.is_ok();
+        let integrated_ok = integrated.is_ok();
+        let mut meter_query_failed = !momentary_ok || !shortterm_ok || !integrated_ok;
         d.momentary_lufs = momentary.unwrap_or(f64::NEG_INFINITY);
         d.shortterm_lufs = shortterm.unwrap_or(f64::NEG_INFINITY);
         d.integrated_lufs = integrated.unwrap_or(f64::NEG_INFINITY);
@@ -353,12 +525,13 @@ impl LoudnessMonitor {
         }
         let peaks = &mut self.peaks_buf[..nc];
         let tps = &mut self.true_peaks_buf[..nc];
+        let mut sample_peak_failed = false;
 
         for ch in 0..nc {
             let peak_meter = self.peak_meter.as_mut().unwrap_or(&mut self.ebur128);
             let sample_peak = peak_meter.prev_sample_peak(ch as u32);
             let true_peak = self.true_peak_meter.take_interval_peak(ch);
-            valid &= sample_peak.is_ok();
+            sample_peak_failed |= sample_peak.is_err();
             peaks[ch] = sample_peak.unwrap_or(0.0);
             let tp_linear = true_peak.unwrap_or(0.0);
             tps[ch] = if tp_linear > 0.0 {
@@ -367,20 +540,47 @@ impl LoudnessMonitor {
                 f64::NEG_INFINITY
             };
         }
+        meter_query_failed |= sample_peak_failed;
 
         d.update_peaks(peaks);
         d.update_true_peaks(tps);
 
         d.peak = d.channel_peaks.iter().copied().fold(0.0, f64::max);
-        if !valid {
+        let capacity_exceeded = self
+            .whole_program_integrated
+            .as_ref()
+            .is_some_and(|exact| exact.capacity_exceeded);
+        let newly_exceeded = self.whole_program_integrated.as_mut().is_some_and(|exact| {
+            if exact.capacity_exceeded && !exact.capacity_error_published {
+                exact.capacity_error_published = true;
+                true
+            } else {
+                false
+            }
+        });
+        if meter_query_failed || newly_exceeded {
             self.query_error_generation = self.query_error_generation.saturating_add(1);
         }
-        d.measurement_valid = valid;
+        d.query_error = if capacity_exceeded {
+            Some(LoudnessQueryError::IntegratedProgramCapacityExceeded)
+        } else if meter_query_failed {
+            Some(LoudnessQueryError::MeterQueryFailed)
+        } else {
+            None
+        };
+        d.momentary_valid = momentary_ok && self.frames_seen >= (self.sample_rate as u64 * 4 / 10);
+        d.shortterm_valid = shortterm_ok && self.frames_seen >= self.sample_rate as u64 * 3;
+        d.integrated_valid = integrated_ok && !capacity_exceeded && self.completed_sub_blocks >= 4;
+        d.sample_peak_valid = !sample_peak_failed;
+        d.true_peak_valid = self.true_peak_meter.compliant;
+        d.measurement_valid =
+            d.momentary_valid && d.shortterm_valid && d.integrated_valid && d.sample_peak_valid;
         d.measurement_enabled = true;
         d.channel_layout_is_compliant = self.channel_layout.is_some() || self.channels <= 2;
         d.query_error_generation = self.query_error_generation;
         d.true_peak_is_compliant = self.true_peak_meter.compliant;
-        d.integrated_window_seconds = 3_600;
+        d.integrated_mode = self.integrated_mode;
+        d.integrated_window_seconds = INTEGRATED_HISTORY_SECONDS;
         if self.channels == 2 {
             self.correlation_matrix
                 .update_correlation_data(&mut self.matrix_scratch);
@@ -422,6 +622,11 @@ impl LoudnessMonitor {
         self.true_peak_meter.reset();
         self.query_error_generation = 0;
         self.frames_seen = 0;
+        self.frames_into_sub_block = 0;
+        self.completed_sub_blocks = 0;
+        if let Some(exact) = &mut self.whole_program_integrated {
+            exact.reset();
+        }
         Ok(())
     }
 }
@@ -470,7 +675,12 @@ impl LoudnessMonitorPlugin {
             LoudnessMonitor::new(num_channels as u32, sr)?
         };
         let layout_compliant = channel_layout.is_some() || num_channels <= 2;
-        let cache = new_loudness_cache(num_channels, false, layout_compliant);
+        let cache = new_loudness_cache(
+            num_channels,
+            false,
+            layout_compliant,
+            IntegratedLoudnessMode::Rolling,
+        );
         let mut p = Self {
             num_channels,
             sample_rate: sr,
@@ -499,13 +709,15 @@ impl LoudnessMonitorPlugin {
         let spatial = self.monitor.spatial_enabled();
         // Reset both cache slots. Updating only the published half lets a
         // subsequent enable/update swap stale pre-reset measurements back in.
-        for _ in 0..2 {
+        for _ in 0..3 {
             self.cache.update(|data| {
                 reset_loudness_data(
                     data,
                     channels,
                     spatial,
                     self.channel_layout.is_some() || channels <= 2,
+                    self.monitor.integrated_mode(),
+                    false,
                 )
             });
         }
@@ -526,6 +738,7 @@ impl LoudnessMonitorPlugin {
             self.num_channels,
             enabled,
             self.channel_layout.is_some() || self.num_channels <= 2,
+            self.monitor.integrated_mode(),
         );
     }
 
@@ -534,11 +747,40 @@ impl LoudnessMonitorPlugin {
         self.monitor.set_spatial_enabled(true);
         self
     }
+
+    /// Select integrated-history policy before realtime processing begins.
+    /// Whole-program mode prepares its complete bounded store here, never in
+    /// `process`.
+    pub fn with_integrated_mode(mut self, mode: IntegratedLoudnessMode) -> Result<Self, String> {
+        let spatial = self.monitor.spatial_enabled();
+        self.monitor = if let Some(layout) = &self.channel_layout {
+            LoudnessMonitor::new_with_layout_and_integrated_mode(
+                self.num_channels as u32,
+                self.sample_rate,
+                layout.clone(),
+                mode,
+            )?
+        } else {
+            LoudnessMonitor::new_with_integrated_mode(
+                self.num_channels as u32,
+                self.sample_rate,
+                mode,
+            )?
+        };
+        self.monitor.set_spatial_enabled(spatial);
+        self.cache = new_loudness_cache(
+            self.num_channels,
+            spatial,
+            self.channel_layout.is_some() || self.num_channels <= 2,
+            mode,
+        );
+        Ok(self)
+    }
 }
 
 impl Plugin for LoudnessMonitorPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Loudness Monitor", "1.1.0", "Sotf")
+        PluginInfo::new("Loudness Monitor", "1.2.0", "Sotf")
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -574,7 +816,7 @@ impl Plugin for LoudnessMonitorPlugin {
                 if !enabled {
                     self.clear_measurement()?;
                 } else {
-                    for _ in 0..2 {
+                    for _ in 0..3 {
                         self.cache.update(|data| data.measurement_enabled = true);
                     }
                 }
@@ -593,27 +835,40 @@ impl Plugin for LoudnessMonitorPlugin {
         }
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
-        if sr == 0 {
-            return Err("loudness monitor sample rate must be non-zero".to_string());
+        if sr < 10 {
+            return Err("loudness monitor sample rate must be at least 10 Hz".to_string());
         }
         self.sample_rate = sr;
         // Preserve the spatial-enable bit across reinitialisation so callers
         // that opted in once don't silently lose the matrix after a sample-
         // rate or channel-count change.
         let spatial = self.monitor.spatial_enabled();
+        let integrated_mode = self.monitor.integrated_mode();
         self.monitor = if let Some(layout) = &self.channel_layout {
-            LoudnessMonitor::new_with_layout(self.num_channels as u32, sr, layout.clone())?
+            LoudnessMonitor::new_with_layout_and_integrated_mode(
+                self.num_channels as u32,
+                sr,
+                layout.clone(),
+                integrated_mode,
+            )?
         } else {
-            LoudnessMonitor::new(self.num_channels as u32, sr)?
+            LoudnessMonitor::new_with_integrated_mode(
+                self.num_channels as u32,
+                sr,
+                integrated_mode,
+            )?
         };
         self.monitor.set_spatial_enabled(spatial);
         self.cache = new_loudness_cache(
             self.num_channels,
             spatial,
             self.channel_layout.is_some() || self.num_channels <= 2,
+            integrated_mode,
         );
-        self.cache
-            .update(|data| data.measurement_enabled = self.enabled);
+        for _ in 0..3 {
+            self.cache
+                .update(|data| data.measurement_enabled = self.enabled);
+        }
         self.initialized = true;
         Ok(())
     }
@@ -623,13 +878,15 @@ impl Plugin for LoudnessMonitorPlugin {
         }
         let channels = self.num_channels;
         let spatial = self.monitor.spatial_enabled();
-        for _ in 0..2 {
+        for _ in 0..3 {
             self.cache.update(|data| {
                 reset_loudness_data(
                     data,
                     channels,
                     spatial,
                     self.channel_layout.is_some() || channels <= 2,
+                    self.monitor.integrated_mode(),
+                    self.enabled,
                 )
             });
         }
@@ -696,9 +953,15 @@ impl Plugin for LoudnessMonitorPlugin {
     }
 }
 
-fn new_loudness_data(channels: usize, spatial: bool, layout_compliant: bool) -> LoudnessData {
+fn new_loudness_data(
+    channels: usize,
+    spatial: bool,
+    layout_compliant: bool,
+    integrated_mode: IntegratedLoudnessMode,
+) -> LoudnessData {
     let mut data = LoudnessData::new(channels);
     data.channel_layout_is_compliant = layout_compliant;
+    data.integrated_mode = integrated_mode;
     if spatial {
         data.update_correlation_matrix(&vec![0.0; channels.saturating_mul(channels)]);
     }
@@ -709,10 +972,12 @@ fn new_loudness_cache(
     channels: usize,
     spatial: bool,
     layout_compliant: bool,
+    integrated_mode: IntegratedLoudnessMode,
 ) -> RealTimeCache<LoudnessData> {
-    RealTimeCache::new_pair(
-        new_loudness_data(channels, spatial, layout_compliant),
-        new_loudness_data(channels, spatial, layout_compliant),
+    RealTimeCache::new_triplet(
+        new_loudness_data(channels, spatial, layout_compliant, integrated_mode),
+        new_loudness_data(channels, spatial, layout_compliant, integrated_mode),
+        new_loudness_data(channels, spatial, layout_compliant, integrated_mode),
     )
 }
 
@@ -721,19 +986,28 @@ fn reset_loudness_data(
     channels: usize,
     spatial: bool,
     layout_compliant: bool,
+    integrated_mode: IntegratedLoudnessMode,
+    enabled: bool,
 ) {
     data.measurement_valid = false;
     data.query_error_generation = 0;
-    data.measurement_enabled = false;
+    data.query_error = None;
+    data.measurement_enabled = enabled;
+    data.momentary_valid = false;
+    data.shortterm_valid = false;
+    data.integrated_valid = false;
+    data.sample_peak_valid = false;
+    data.true_peak_valid = false;
     data.channel_layout_is_compliant = layout_compliant;
     data.momentary_lufs = f64::NEG_INFINITY;
     data.shortterm_lufs = f64::NEG_INFINITY;
     data.integrated_lufs = f64::NEG_INFINITY;
+    data.integrated_mode = integrated_mode;
     data.peak = 0.0;
     data.correlation_lr = None;
     data.correlation_samples_seen = 0;
     data.true_peak_is_compliant = false;
-    data.integrated_window_seconds = 3_600;
+    data.integrated_window_seconds = INTEGRATED_HISTORY_SECONDS;
 
     if let Some(peaks) = Arc::get_mut(&mut data.channel_peaks) {
         peaks.fill(0.0);
@@ -879,5 +1153,42 @@ mod true_peak_tests {
         meter.add_frames(&fixture(), 1);
         assert!(!meter.compliant);
         assert_eq!(meter.take_interval_peak(0), None);
+    }
+
+    #[test]
+    fn whole_program_gate_matches_independent_two_level_reference() {
+        let quiet = loudness_to_energy(-60.0);
+        let loud = loudness_to_energy(-20.0);
+        let measured = gated_loudness(&[quiet, loud, loud]);
+        assert!((measured - -20.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn whole_program_capacity_failure_is_explicit_and_generation_is_stable() {
+        let mut monitor = LoudnessMonitor::new_with_integrated_mode(
+            1,
+            48_000,
+            IntegratedLoudnessMode::WholeProgram,
+        )
+        .unwrap();
+        monitor.whole_program_integrated = Some(WholeProgramIntegrated::new(2));
+        monitor.add_frames(&vec![0.1; 48_000 * 6 / 10]).unwrap();
+
+        let mut data = LoudnessData::new(1);
+        monitor.update_loudness_data(&mut data);
+        assert_eq!(
+            data.query_error,
+            Some(LoudnessQueryError::IntegratedProgramCapacityExceeded)
+        );
+        assert_eq!(data.query_error_generation, 1);
+        assert!(!data.integrated_valid);
+        assert!(data.integrated_lufs.is_infinite() && data.integrated_lufs.is_sign_negative());
+
+        monitor.update_loudness_data(&mut data);
+        assert_eq!(data.query_error_generation, 1);
+        monitor.reset().unwrap();
+        monitor.update_loudness_data(&mut data);
+        assert!(data.query_error.is_none());
+        assert_eq!(data.query_error_generation, 0);
     }
 }

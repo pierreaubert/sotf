@@ -7,8 +7,8 @@
 // through multiple factory-created plugins.
 
 use sotf_plugins::{
-    DawHost, LoudnessData, PluginHost, ProcessContext, create_plugin, is_supported_plugin_type,
-    supported_plugin_types,
+    DawHost, IntegratedLoudnessMode, LoudnessData, PluginHost, ProcessContext, create_plugin,
+    is_supported_plugin_type, supported_plugin_types,
 };
 use std::collections::HashSet;
 
@@ -72,6 +72,31 @@ fn loudness_factory_accepts_explicit_speaker_config_and_layout_json() {
         ]}
     });
     assert!(create_plugin("loudness_monitor", &explicit, 2, SAMPLE_RATE).is_ok());
+}
+
+#[test]
+fn loudness_factory_selects_exact_whole_program_mode() {
+    let mut plugin = create_plugin(
+        "loudness_monitor",
+        &serde_json::json!({"integrated_mode": "whole_program"}),
+        2,
+        SAMPLE_RATE,
+    )
+    .unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    let input = vec![0.1; SAMPLE_RATE as usize * 4 * 2];
+    let mut output = vec![0.0; input.len()];
+    plugin
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(SAMPLE_RATE, SAMPLE_RATE as usize * 4),
+        )
+        .unwrap();
+    let data = plugin.get_data().unwrap();
+    let data = data.downcast_ref::<LoudnessData>().unwrap();
+    assert_eq!(data.integrated_mode, IntegratedLoudnessMode::WholeProgram);
+    assert!(data.integrated_valid);
 }
 
 #[test]

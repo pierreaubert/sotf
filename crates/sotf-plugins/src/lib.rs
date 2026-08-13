@@ -351,7 +351,10 @@ pub use sotf_host::{
     AUDIBLE_MAX_FREQ, AUDIBLE_MIN_FREQ, DEFAULT_PREVIEW_SAMPLE_RATE, db_to_linear, linear_to_db,
 };
 
-pub use sotf_host::analyzer::{AnalyzerData, CorrelationData, LoudnessData, SpectrumData};
+pub use sotf_host::analyzer::{
+    AnalyzerData, CorrelationData, IntegratedLoudnessMode, LoudnessData, LoudnessQueryError,
+    SpectrumData,
+};
 pub use sotf_host::analyzer_channel_correlation::{
     ChannelCorrelationMonitor, ChannelCorrelationPlugin,
 };

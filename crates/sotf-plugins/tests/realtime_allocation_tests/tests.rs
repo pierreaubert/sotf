@@ -960,6 +960,27 @@ fn test_loudness_monitor_zero_alloc() {
 
 #[test]
 #[serial]
+fn test_whole_program_loudness_monitor_zero_alloc() {
+    let mut plugin = LoudnessMonitorPlugin::new(2)
+        .unwrap()
+        .with_integrated_mode(sotf_plugins::IntegratedLoudnessMode::WholeProgram)
+        .unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let input = generate_test_buffer(BUFFER_SIZE, 2);
+    let mut output = vec![0.0f32; BUFFER_SIZE * 2];
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+
+    assert_no_allocs("WholeProgram LoudnessMonitorPlugin", || {
+        for _ in 0..1000 {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+            let _ = plugin.get_data();
+        }
+    });
+}
+
+#[test]
+#[serial]
 fn test_loudness_monitor_cold_process_reset_and_disable_zero_alloc() {
     let mut plugin = LoudnessMonitorPlugin::new(2).unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();

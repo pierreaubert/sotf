@@ -6,9 +6,9 @@
 // producing audio output.
 
 use sotf_host::{
-    ChannelAssignment, ChannelLayout, ChannelRole, LoudnessData, LoudnessMonitorPlugin,
-    ParameterId, ParameterValue, Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig,
-    SpectrumData,
+    ChannelAssignment, ChannelLayout, ChannelRole, IntegratedLoudnessMode, LoudnessData,
+    LoudnessMonitorPlugin, ParameterId, ParameterValue, Plugin, ProcessContext,
+    SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumData,
 };
 
 fn explicit_5_1(order: [ChannelRole; 6]) -> ChannelLayout {
@@ -446,8 +446,15 @@ fn loudness_data_exposes_validity_true_peak_scope_and_integrated_window() {
             );
         }
         assert_eq!(data.integrated_window_seconds, 3_600);
+        assert_eq!(data.integrated_mode, IntegratedLoudnessMode::Rolling);
         assert!(data.channel_layout_is_compliant);
         assert!(data.measurement_valid);
+        assert!(data.momentary_valid);
+        assert!(data.shortterm_valid);
+        assert!(data.integrated_valid);
+        assert!(data.sample_peak_valid);
+        assert_eq!(data.true_peak_valid, data.true_peak_is_compliant);
+        assert!(data.query_error.is_none());
         assert_eq!(data.query_error_generation, 0);
     }
 }
@@ -565,10 +572,120 @@ fn incomplete_loudness_windows_are_invalid_not_plausible_minus_120() {
     let data = plugin.get_data().unwrap();
     let data = data.downcast_ref::<LoudnessData>().unwrap();
     assert!(!data.measurement_valid);
-    assert!(data.query_error_generation > 0);
+    assert!(!data.momentary_valid);
+    assert!(!data.shortterm_valid);
+    assert!(!data.integrated_valid);
+    assert!(data.query_error.is_none());
+    assert_eq!(data.query_error_generation, 0);
     assert!(data.momentary_lufs.is_infinite() && data.momentary_lufs.is_sign_negative());
     assert!(data.shortterm_lufs.is_infinite() && data.shortterm_lufs.is_sign_negative());
     assert!(data.integrated_lufs.is_infinite() && data.integrated_lufs.is_sign_negative());
+}
+
+#[test]
+fn exact_whole_program_matches_rolling_reference_and_callback_partitions() {
+    fn render(mode: IntegratedLoudnessMode, partitions: &[usize]) -> LoudnessData {
+        let sample_rate = 48_000_u32;
+        let frames = sample_rate as usize * 8;
+        let mut signal = vec![0.0_f32; frames * 2];
+        for (frame, stereo) in signal.chunks_exact_mut(2).enumerate() {
+            let amplitude = match frame / sample_rate as usize {
+                0..=1 => 0.01,
+                2..=4 => 0.2,
+                _ => 0.05,
+            };
+            let sample = (std::f32::consts::TAU * 997.0 * frame as f32 / sample_rate as f32).sin()
+                * amplitude;
+            stereo.fill(sample);
+        }
+        let mut plugin = LoudnessMonitorPlugin::new(2)
+            .unwrap()
+            .with_integrated_mode(mode)
+            .unwrap();
+        plugin.initialize(sample_rate).unwrap();
+        let mut offset = 0;
+        let mut partition_index = 0;
+        while offset < frames {
+            let requested = partitions[partition_index % partitions.len()];
+            let count = requested.min(frames - offset);
+            let mut output = vec![0.0; count * 2];
+            plugin
+                .process(
+                    &signal[offset * 2..(offset + count) * 2],
+                    &mut output,
+                    &ProcessContext::new(sample_rate, count),
+                )
+                .unwrap();
+            offset += count;
+            partition_index += 1;
+        }
+        plugin
+            .get_data()
+            .unwrap()
+            .downcast_ref::<LoudnessData>()
+            .unwrap()
+            .clone()
+    }
+
+    let reference = render(IntegratedLoudnessMode::Rolling, &[usize::MAX]);
+    let exact_whole = render(IntegratedLoudnessMode::WholeProgram, &[usize::MAX]);
+    let exact_partitioned = render(
+        IntegratedLoudnessMode::WholeProgram,
+        &[1, 7, 63, 511, 2_047, 4_093],
+    );
+    assert!(reference.integrated_valid && exact_whole.integrated_valid);
+    assert_eq!(
+        exact_whole.integrated_mode,
+        IntegratedLoudnessMode::WholeProgram
+    );
+    assert!((exact_whole.integrated_lufs - reference.integrated_lufs).abs() < 1.0e-12);
+    assert!((exact_partitioned.integrated_lufs - exact_whole.integrated_lufs).abs() < 1.0e-12);
+}
+
+#[test]
+fn reset_and_reenable_publish_enabled_but_cold_generations() {
+    let mut plugin = LoudnessMonitorPlugin::new(2)
+        .unwrap()
+        .with_integrated_mode(IntegratedLoudnessMode::WholeProgram)
+        .unwrap();
+    plugin.initialize(48_000).unwrap();
+    let input = vec![0.1; 48_000 * 4 * 2];
+    let mut output = vec![0.0; input.len()];
+    plugin
+        .process(
+            &input,
+            &mut output,
+            &ProcessContext::new(48_000, 48_000 * 4),
+        )
+        .unwrap();
+    assert!(
+        plugin
+            .get_data()
+            .unwrap()
+            .downcast_ref::<LoudnessData>()
+            .unwrap()
+            .measurement_valid
+    );
+
+    plugin.reset();
+    let reset = plugin.get_data().unwrap();
+    let reset = reset.downcast_ref::<LoudnessData>().unwrap();
+    assert!(reset.measurement_enabled);
+    assert!(!reset.measurement_valid && !reset.integrated_valid);
+    assert_eq!(reset.integrated_mode, IntegratedLoudnessMode::WholeProgram);
+    assert!(reset.query_error.is_none());
+
+    plugin
+        .set_parameter(ParameterId::from("enabled"), ParameterValue::Bool(false))
+        .unwrap();
+    plugin
+        .set_parameter(ParameterId::from("enabled"), ParameterValue::Bool(true))
+        .unwrap();
+    let reenabled = plugin.get_data().unwrap();
+    let reenabled = reenabled.downcast_ref::<LoudnessData>().unwrap();
+    assert!(reenabled.measurement_enabled);
+    assert!(!reenabled.measurement_valid && !reenabled.integrated_valid);
+    assert!(reenabled.query_error.is_none());
 }
 
 #[test]

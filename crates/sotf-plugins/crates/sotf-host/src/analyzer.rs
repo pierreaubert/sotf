@@ -17,6 +17,33 @@ const fn default_integrated_window_seconds() -> u32 {
     3_600
 }
 
+const fn default_integrated_mode() -> IntegratedLoudnessMode {
+    IntegratedLoudnessMode::Rolling
+}
+
+/// Policy used for the integrated (I) programme-loudness measurement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum IntegratedLoudnessMode {
+    /// Retain approximately the latest hour, evicting older gating blocks.
+    #[default]
+    Rolling,
+    /// Retain the complete programme without eviction. If the prepared
+    /// capacity is exhausted, the result becomes explicitly unavailable.
+    WholeProgram,
+}
+
+/// Current loudness-query failure, separate from ordinary cold-window state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoudnessQueryError {
+    /// The underlying EBU R128 meter rejected one or more queries.
+    MeterQueryFailed,
+    /// Exact whole-program history exceeded its prepared capacity. No rolling
+    /// or histogram approximation is substituted.
+    IntegratedProgramCapacityExceeded,
+}
+
 /// A real-time safe cache for data of type T.
 ///
 /// Uses preallocated Arcs to allow the audio thread to update data in-place
@@ -250,9 +277,25 @@ pub struct LoudnessData {
     /// Monotonic count of failed meter-query generations since reset.
     #[serde(default)]
     pub query_error_generation: u64,
+    /// Current query error. Incomplete momentary/short-term windows are
+    /// represented by their validity flags and are not errors.
+    #[serde(default)]
+    pub query_error: Option<LoudnessQueryError>,
     /// Whether the owning analyzer is currently accumulating measurements.
     #[serde(default)]
     pub measurement_enabled: bool,
+    /// Per-query validity. Valid silence is `-inf` with the corresponding bit
+    /// set; a cold/incomplete window is `-inf` with the bit clear.
+    #[serde(default)]
+    pub momentary_valid: bool,
+    #[serde(default)]
+    pub shortterm_valid: bool,
+    #[serde(default)]
+    pub integrated_valid: bool,
+    #[serde(default)]
+    pub sample_peak_valid: bool,
+    #[serde(default)]
+    pub true_peak_valid: bool,
     /// True only when the channel roles are unambiguous for BS.1770 weighting.
     /// Count-only multichannel construction cannot prove LFE/surround roles.
     #[serde(default)]
@@ -261,9 +304,12 @@ pub struct LoudnessData {
     pub momentary_lufs: f64,
     /// Short-term loudness (S) - 3 second window, LUFS
     pub shortterm_lufs: f64,
-    /// Integrated loudness (I), LUFS. See `integrated_window_seconds`; the
-    /// pinned bounded meter retains approximately the latest hour.
+    /// Integrated loudness (I), LUFS. Interpretation is selected by
+    /// `integrated_mode`; exact mode never substitutes rolling history.
     pub integrated_lufs: f64,
+    /// Integrated-history policy used for this snapshot.
+    #[serde(default = "default_integrated_mode")]
+    pub integrated_mode: IntegratedLoudnessMode,
     /// Current sample peak (0.0 to 1.0+)
     pub peak: f64,
     /// Per-channel sample peaks (0.0 to 1.0+)
@@ -275,8 +321,7 @@ pub struct LoudnessData {
     /// at 48 kHz; other rates remain available as explicitly approximate data.
     #[serde(default)]
     pub true_peak_is_compliant: bool,
-    /// Integrated loudness is a bounded rolling history in the pinned meter,
-    /// not an unbounded whole-program statistic.
+    /// Rolling-history duration or prepared exact-program capacity.
     #[serde(default = "default_integrated_window_seconds")]
     pub integrated_window_seconds: u32,
     /// L/R correlation coefficient (ICC - Inter-Channel Correlation)
@@ -302,11 +347,18 @@ impl LoudnessData {
         Self {
             measurement_valid: false,
             query_error_generation: 0,
+            query_error: None,
             measurement_enabled: true,
+            momentary_valid: false,
+            shortterm_valid: false,
+            integrated_valid: false,
+            sample_peak_valid: false,
+            true_peak_valid: false,
             channel_layout_is_compliant: channels <= 2,
             momentary_lufs: f64::NEG_INFINITY,
             shortterm_lufs: f64::NEG_INFINITY,
             integrated_lufs: f64::NEG_INFINITY,
+            integrated_mode: IntegratedLoudnessMode::Rolling,
             peak: 0.0,
             channel_peaks: Arc::new(vec![0.0; channels]),
             true_peaks_dbtp: Arc::new(vec![f64::NEG_INFINITY; channels]),
@@ -328,10 +380,17 @@ impl LoudnessData {
         self.momentary_lufs = other.momentary_lufs;
         self.measurement_valid = other.measurement_valid;
         self.query_error_generation = other.query_error_generation;
+        self.query_error = other.query_error;
         self.measurement_enabled = other.measurement_enabled;
+        self.momentary_valid = other.momentary_valid;
+        self.shortterm_valid = other.shortterm_valid;
+        self.integrated_valid = other.integrated_valid;
+        self.sample_peak_valid = other.sample_peak_valid;
+        self.true_peak_valid = other.true_peak_valid;
         self.channel_layout_is_compliant = other.channel_layout_is_compliant;
         self.shortterm_lufs = other.shortterm_lufs;
         self.integrated_lufs = other.integrated_lufs;
+        self.integrated_mode = other.integrated_mode;
         self.peak = other.peak;
 
         self.update_peaks(&other.channel_peaks);
@@ -384,11 +443,18 @@ impl Default for LoudnessData {
         Self {
             measurement_valid: false,
             query_error_generation: 0,
+            query_error: None,
             measurement_enabled: false,
+            momentary_valid: false,
+            shortterm_valid: false,
+            integrated_valid: false,
+            sample_peak_valid: false,
+            true_peak_valid: false,
             channel_layout_is_compliant: false,
             momentary_lufs: f64::NEG_INFINITY,
             shortterm_lufs: f64::NEG_INFINITY,
             integrated_lufs: f64::NEG_INFINITY,
+            integrated_mode: IntegratedLoudnessMode::Rolling,
             peak: 0.0,
             channel_peaks: Arc::new(Vec::new()),
             true_peaks_dbtp: Arc::new(Vec::new()),

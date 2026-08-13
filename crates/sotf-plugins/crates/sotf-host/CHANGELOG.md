@@ -1,5 +1,22 @@
 # Unreleased
 
+## Exact whole-program loudness and query status
+
+- Add a selectable `whole_program` integrated-loudness mode that retains every
+  overlapping BS.1770 gating block in a preallocated one-hour store. It never
+  evicts programme history or substitutes a rolling/histogram approximation;
+  exhausting prepared capacity publishes an explicit unavailable/error state.
+- Keep the existing bounded `rolling` mode as the compatibility default and
+  publish the selected mode and capacity with every snapshot.
+- Publish momentary, short-term, integrated, sample-peak, and true-peak
+  validity separately from analyzer enabled state, with a typed query error
+  and monotonic error generation. Cold windows are invalid, not errors.
+- Reset all three preallocated cache generations across reset, disable, and
+  re-enable transitions so stale measurements cannot reappear under UI-held
+  snapshots; whole-program accumulation remains allocation-free in callbacks.
+- Add independent two-level gate, callback-partition, rolling-reference,
+  capacity-failure, factory-selection, state-transition, and allocation tests.
+
 ## Sample-rate-correct true peak and correlation evidence
 
 - Measure true peak with the normative BS.1770 Table-2 polyphase FIR at its

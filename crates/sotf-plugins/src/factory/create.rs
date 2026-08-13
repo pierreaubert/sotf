@@ -48,7 +48,8 @@ use crate::{
     PluginSandboxLaunchBackend,
 };
 use sotf_host::{
-    ChannelLayout, ParameterId, ParameterValue, ParametricInPlacePlugin, ParametricPlugin,
+    ChannelLayout, IntegratedLoudnessMode, ParameterId, ParameterValue, ParametricInPlacePlugin,
+    ParametricPlugin,
 };
 use std::path::PathBuf;
 
@@ -418,6 +419,17 @@ pub fn create_plugin(
         }
 
         "loudness_monitor" => {
+            let integrated_mode = parameters
+                .get("integrated_mode")
+                .map(|value| {
+                    serde_json::from_value::<IntegratedLoudnessMode>(value.clone()).map_err(|e| {
+                        format!(
+                            "Invalid loudness integrated_mode (expected rolling or whole_program): {e}"
+                        )
+                    })
+                })
+                .transpose()?
+                .unwrap_or_default();
             let explicit_layout = match (
                 parameters.get("channel_layout"),
                 parameters.get("speaker_config"),
@@ -457,7 +469,9 @@ pub fn create_plugin(
             } else {
                 LoudnessMonitorPlugin::new(channels)
             }
-            .map_err(|e| format!("Failed to create loudness monitor: {e}"))?;
+            .map_err(|e| format!("Failed to create loudness monitor: {e}"))?
+            .with_integrated_mode(integrated_mode)
+            .map_err(|e| format!("Failed to configure loudness monitor: {e}"))?;
             Ok(Box::new(plugin))
         }
 
