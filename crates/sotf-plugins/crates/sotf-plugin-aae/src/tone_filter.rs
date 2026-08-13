@@ -16,6 +16,10 @@ pub struct ToneFilter {
     b0: f32,
     b1: f32,
     a1: f32,
+    target_b0: f32,
+    target_b1: f32,
+    target_a1: f32,
+    transition_remaining: usize,
     /// Filter state
     x1: f32,
     y1: f32,
@@ -49,6 +53,10 @@ impl ToneFilter {
                 b0: 0.0,
                 b1: 0.0,
                 a1: 0.0,
+                target_b0: 0.0,
+                target_b1: 0.0,
+                target_a1: 0.0,
+                transition_remaining: 0,
                 x1: 0.0,
                 y1: 0.0,
             };
@@ -75,6 +83,10 @@ impl ToneFilter {
             b0,
             b1,
             a1,
+            target_b0: b0,
+            target_b1: b1,
+            target_a1: a1,
+            transition_remaining: 0,
             x1: 0.0,
             y1: 0.0,
         }
@@ -86,6 +98,10 @@ impl ToneFilter {
             b0: 1.0,
             b1: 0.0,
             a1: 0.0,
+            target_b0: 1.0,
+            target_b1: 0.0,
+            target_a1: 0.0,
+            transition_remaining: 0,
             x1: 0.0,
             y1: 0.0,
         }
@@ -94,6 +110,13 @@ impl ToneFilter {
     /// Process one sample.
     #[inline]
     pub fn process(&mut self, input: f32) -> f32 {
+        if self.transition_remaining > 0 {
+            let remaining = self.transition_remaining as f32;
+            self.b0 += (self.target_b0 - self.b0) / remaining;
+            self.b1 += (self.target_b1 - self.b1) / remaining;
+            self.a1 += (self.target_a1 - self.a1) / remaining;
+            self.transition_remaining -= 1;
+        }
         let output = self.b0 * input + self.b1 * self.x1 - self.a1 * self.y1;
         self.x1 = input;
         self.y1 = output;
@@ -102,19 +125,29 @@ impl ToneFilter {
 
     /// Update filter coefficients (e.g., when RT60 parameters change).
     pub fn set_gains(&mut self, g_dc: f32, g_ny: f32) {
+        self.set_gains_smooth(g_dc, g_ny, 0);
+    }
+
+    pub fn set_gains_smooth(&mut self, g_dc: f32, g_ny: f32, samples: usize) {
         let sum = g_dc + g_ny;
         let diff = g_dc - g_ny;
         if sum.abs() < 1e-10 {
-            self.b0 = 0.0;
-            self.b1 = 0.0;
-            self.a1 = 0.0;
-            return;
+            self.target_b0 = 0.0;
+            self.target_b1 = 0.0;
+            self.target_a1 = 0.0;
+        } else {
+            self.target_a1 = (-diff / sum).clamp(-0.999, 0.999);
+            let h_dc = g_dc * (1.0 + self.target_a1);
+            let h_ny = g_ny * (1.0 - self.target_a1);
+            self.target_b0 = (h_dc + h_ny) * 0.5;
+            self.target_b1 = (h_dc - h_ny) * 0.5;
         }
-        self.a1 = (-diff / sum).clamp(-0.999, 0.999);
-        let h_dc = g_dc * (1.0 + self.a1);
-        let h_ny = g_ny * (1.0 - self.a1);
-        self.b0 = (h_dc + h_ny) * 0.5;
-        self.b1 = (h_dc - h_ny) * 0.5;
+        self.transition_remaining = samples;
+        if samples == 0 {
+            self.b0 = self.target_b0;
+            self.b1 = self.target_b1;
+            self.a1 = self.target_a1;
+        }
     }
 
     /// Reset filter state.
@@ -274,5 +307,19 @@ mod tests {
         // After reset, first sample should be b0 * input (no history)
         let out = f.process(1.0);
         assert!((out - f.b0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_gain_updates_interpolate_over_requested_samples() {
+        let mut filter = ToneFilter::new(0.95, 0.8);
+        let old_b0 = filter.b0;
+        filter.set_gains_smooth(0.7, 0.3, 240);
+        assert_eq!(filter.b0, old_b0, "coefficient must not jump at the setter");
+        for _ in 0..240 {
+            filter.process(0.0);
+        }
+        assert!((filter.b0 - filter.target_b0).abs() < 1e-6);
+        assert!((filter.b1 - filter.target_b1).abs() < 1e-6);
+        assert!((filter.a1 - filter.target_a1).abs() < 1e-6);
     }
 }

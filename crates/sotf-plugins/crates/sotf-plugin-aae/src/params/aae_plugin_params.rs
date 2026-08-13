@@ -22,6 +22,7 @@ use super::default_safety_limit_db;
 use super::default_treble_ratio;
 use crate::early_reflections::RoomPreset;
 use serde::{Deserialize, Serialize};
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::Parameter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,7 +111,8 @@ pub fn build_parameters(params: &AaePluginParams) -> Vec<Parameter> {
         ),
         Parameter::new_float("pre_delay_ms", "Pre-delay", params.pre_delay_ms, 0.0, 100.0)
             .with_unit("ms"),
-        Parameter::new_string("room_preset", "Room Preset", params.room_preset.clone()),
+        Parameter::new_string("room_preset", "Room Preset", params.room_preset.clone())
+            .with_update_mode(UpdateMode::Structural),
         Parameter::new_float("dry_level", "Dry Level", params.dry_level, 0.0, 1.0),
         Parameter::new_float(
             "er_level",
@@ -146,7 +148,8 @@ pub fn build_parameters(params: &AaePluginParams) -> Vec<Parameter> {
             "speaker_config",
             "Speaker Config",
             params.speaker_config.clone(),
-        ),
+        )
+        .with_update_mode(UpdateMode::Structural),
         Parameter::new_float("envelopment", "Envelopment", params.envelopment, 0.0, 1.0),
         Parameter::new_float(
             "height_amount",

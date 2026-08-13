@@ -1,9 +1,11 @@
 use super::allpass_diffuser::AllpassDiffuser;
+use super::consts::BYPASS_CROSSFADE_MS;
 use super::consts::DIALOGUE_ANALYSIS_WINDOW_MS;
 use super::consts::DIALOGUE_ATTACK_MS;
 use super::consts::DIALOGUE_HOLD_MS;
 use super::consts::DIALOGUE_LEVEL_FAST_MS;
 use super::consts::DIALOGUE_LEVEL_SLOW_MS;
+use super::consts::DIALOGUE_MAX_CREST_FACTOR;
 use super::consts::DIALOGUE_MIN_CENTER_LEVEL;
 use super::consts::DIALOGUE_MIN_MODULATION;
 use super::consts::DIALOGUE_MOD_SMOOTH_MS;
@@ -13,7 +15,7 @@ use super::consts::FINAL_OUTPUT_CEILING;
 use super::consts::LFE_CROSSOVER_HZ;
 use super::consts::MAX_PRE_DELAY_MS;
 use super::early_reflections;
-use super::misc::compute_lp_coeff;
+use super::misc::LfeLowpass;
 use super::misc::create_auto_gain;
 use super::misc::ms_to_samples;
 use super::misc::signed_rms;
@@ -22,14 +24,14 @@ use super::smoothing::smoothing_coeff_for_samples;
 use super::types::AaeData;
 use crate::early_reflections::EarlyReflections;
 use crate::fdn::{FDN_SIZE, Fdn};
-use crate::params::{AaePluginParams, build_parameters};
+use crate::params::{AaePluginParams, ROOM_PRESETS, SPEAKER_CONFIGS, build_parameters};
 use sotf_host::auto_gain::{AutoGainLoudnessType, AutoGainParams};
 use sotf_host::multichannel_auto_gain::MultichannelAutoGain;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
 };
-use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
+use sotf_host::simd::flush_denormals_inplace;
 use sotf_host::smoothing::Smoother;
 use sotf_host::speaker_config::{
     SourcePosition, SpeakerConfig, compute_vbap_matrix, get_speaker_config, normalize_gains_l2,
@@ -42,25 +44,36 @@ pub struct AaePlugin {
     pub(super) params: AaePluginParams,
     pub(super) speaker_config: &'static SpeakerConfig,
     pub(super) num_output_channels: usize,
+    /// Output channels used by the click-safe bypass dry path.
+    pub(super) bypass_left_channel: usize,
+    pub(super) bypass_right_channel: usize,
+    /// 0.0 is fully processed and 1.0 is fully bypassed.
+    pub(super) bypass_mix: f32,
+    pub(super) bypass_mix_step: f32,
 
     // DSP components
     pub(super) pre_delay: super::delay_line::DelayLine,
     pub(super) pre_delay_samples: usize,
+    pub(super) previous_pre_delay_samples: usize,
+    pub(super) pre_delay_transition_remaining: usize,
+    pub(super) pre_delay_transition_samples: usize,
     pub(super) diffusion_allpass: [AllpassDiffuser; 2],
     pub(super) early_reflections: EarlyReflections,
     pub(super) fdn: Fdn,
 
-    // LFE extraction: one-pole LP filter state
-    pub(super) lfe_filter_state: f32,
-    pub(super) lfe_filter_coeff: f32,
+    // LFE extraction: fourth-order Linkwitz-Riley low-pass.
+    pub(super) lfe_filter: LfeLowpass,
 
     // Per-tap VBAP gains for early reflections (flattened row-major):
     // [tap_index * out_ch + speaker_index]
-    pub(super) er_gains: Vec<f32>,
+    pub(super) er_gains: Vec<SparseRoutingRow>,
 
     // FDN output → speaker routing (flattened row-major):
     // [fdn_line * out_ch + speaker_index]
-    pub(super) fdn_gains: Vec<f32>,
+    pub(super) fdn_gains: Vec<SparseRoutingRow>,
+    /// Immutable normalized VBAP rows. Spatial controls reweight these rows in
+    /// place, avoiding matrix reconstruction and allocation during automation.
+    pub(super) fdn_base_gains: Vec<f32>,
 
     // Direct signal panning gains (stereo L/R to front speakers)
     pub(super) direct_gains_l: Vec<f32>,
@@ -84,6 +97,7 @@ pub struct AaePlugin {
     pub(super) dialogue_window_center_sum: f32,
     pub(super) dialogue_window_side_sum: f32,
     pub(super) dialogue_window_fill: usize,
+    pub(super) dialogue_window_peak: f32,
     pub(super) dialogue_window_samples: usize,
     pub(super) dialogue_voiced_center: bool,
 
@@ -105,12 +119,118 @@ pub struct AaePlugin {
     pub(super) cached_parameters: Vec<Parameter>,
 }
 
+const MAX_VBAP_SPEAKERS: usize = 3;
+
+#[derive(Clone, Default)]
+pub(super) struct SparseRoutingRow {
+    channels: [usize; MAX_VBAP_SPEAKERS],
+    gains: [f32; MAX_VBAP_SPEAKERS],
+    len: usize,
+}
+
+impl SparseRoutingRow {
+    fn from_dense(dense: &[f32], lfe_channel: Option<usize>) -> Self {
+        let mut row = Self::default();
+        for (channel, &gain) in dense.iter().enumerate() {
+            if Some(channel) == lfe_channel || gain.abs() <= 1e-8 {
+                continue;
+            }
+            let insert = (0..row.len)
+                .find(|&index| gain.abs() > row.gains[index].abs())
+                .unwrap_or(row.len);
+            if insert < MAX_VBAP_SPEAKERS {
+                let end = row.len.min(MAX_VBAP_SPEAKERS - 1);
+                for index in (insert..end).rev() {
+                    row.channels[index + 1] = row.channels[index];
+                    row.gains[index + 1] = row.gains[index];
+                }
+                row.channels[insert] = channel;
+                row.gains[insert] = gain;
+                row.len = (row.len + 1).min(MAX_VBAP_SPEAKERS);
+            }
+        }
+        let norm = row.gains[..row.len]
+            .iter()
+            .map(|gain| gain * gain)
+            .sum::<f32>()
+            .sqrt();
+        if norm > 0.0 {
+            for gain in &mut row.gains[..row.len] {
+                *gain /= norm;
+            }
+        }
+        row
+    }
+
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        self.len
+    }
+
+    #[cfg(test)]
+    pub(super) fn channels(&self) -> &[usize] {
+        &self.channels[..self.len]
+    }
+
+    fn entries(&self) -> impl Iterator<Item = (usize, f32)> + '_ {
+        self.channels[..self.len]
+            .iter()
+            .copied()
+            .zip(self.gains[..self.len].iter().copied())
+    }
+}
+
 impl AaePlugin {
+    pub fn try_from_params(params: AaePluginParams) -> PluginResult<Self> {
+        Self::validate_params(&params)?;
+        Ok(Self::from_validated_params(params))
+    }
+
     /// Create a new AAE plugin from parameters.
-    pub fn from_params(params: AaePluginParams) -> Self {
+    pub fn from_params(params: AaePluginParams) -> PluginResult<Self> {
+        Self::try_from_params(params)
+    }
+
+    fn validate_params(params: &AaePluginParams) -> PluginResult<()> {
+        if !SPEAKER_CONFIGS.contains(&params.speaker_config.as_str()) {
+            return Err(format!(
+                "Unsupported AAE speaker config '{}'",
+                params.speaker_config
+            ));
+        }
+        if !ROOM_PRESETS.contains(&params.room_preset.as_str()) {
+            return Err(format!(
+                "Unsupported AAE room preset '{}'",
+                params.room_preset
+            ));
+        }
+        if params.solo_early && params.solo_late {
+            return Err("solo_early and solo_late cannot both be enabled".into());
+        }
+        for parameter in build_parameters(params) {
+            parameter
+                .validate(&parameter.default_value)
+                .map_err(|error| format!("Invalid {}: {error}", parameter.id.as_str()))?;
+        }
+        Ok(())
+    }
+
+    fn from_validated_params(params: AaePluginParams) -> Self {
         let speaker_config = get_speaker_config(&params.speaker_config)
-            .unwrap_or_else(|| get_speaker_config("5.1").unwrap());
+            .expect("validated speaker config must exist");
         let num_output_channels = speaker_config.total_channels;
+        let bypass_left_channel = speaker_config
+            .speakers
+            .iter()
+            .find(|speaker| speaker.label == "FL")
+            .map(|speaker| speaker.channel)
+            .expect("AAE speaker layout must provide FL");
+        let bypass_right_channel = speaker_config
+            .speakers
+            .iter()
+            .find(|speaker| speaker.label == "FR")
+            .map(|speaker| speaker.channel)
+            .expect("AAE speaker layout must provide FR");
 
         // Pre-compute at a default sample rate; re-done in initialize()
         let sr = 48000u32;
@@ -122,10 +242,17 @@ impl AaePlugin {
             sample_rate: sr,
             speaker_config,
             num_output_channels,
+            bypass_left_channel,
+            bypass_right_channel,
+            bypass_mix: if params.bypass { 1.0 } else { 0.0 },
+            bypass_mix_step: 1.0 / (BYPASS_CROSSFADE_MS * 0.001 * sr as f32).round().max(1.0),
             pre_delay: super::delay_line::DelayLine::new(
                 (MAX_PRE_DELAY_MS * 0.001 * sr as f32) as usize + 16,
             ),
             pre_delay_samples,
+            previous_pre_delay_samples: pre_delay_samples,
+            pre_delay_transition_remaining: 0,
+            pre_delay_transition_samples: ms_to_samples(10.0, sr),
             diffusion_allpass: [
                 AllpassDiffuser::new(142, params.input_diffusion * 0.7),
                 AllpassDiffuser::new(379, params.input_diffusion * 0.6),
@@ -144,10 +271,10 @@ impl AaePlugin {
                 params.mod_depth,
                 params.safety_limit_db,
             ),
-            lfe_filter_state: 0.0,
-            lfe_filter_coeff: compute_lp_coeff(LFE_CROSSOVER_HZ, sr as f32),
-            er_gains: vec![0.0; early_reflections::MAX_TAPS * num_output_channels],
-            fdn_gains: vec![0.0; FDN_SIZE * num_output_channels],
+            lfe_filter: LfeLowpass::new(LFE_CROSSOVER_HZ, sr as f32),
+            er_gains: vec![SparseRoutingRow::default(); early_reflections::MAX_TAPS],
+            fdn_gains: vec![SparseRoutingRow::default(); FDN_SIZE],
+            fdn_base_gains: vec![0.0; FDN_SIZE * num_output_channels],
             direct_gains_l: vec![0.0; num_output_channels],
             direct_gains_r: vec![0.0; num_output_channels],
             er_tap_buffer: vec![0.0; early_reflections::MAX_TAPS],
@@ -177,6 +304,7 @@ impl AaePlugin {
             dialogue_window_center_sum: 0.0,
             dialogue_window_side_sum: 0.0,
             dialogue_window_fill: 0,
+            dialogue_window_peak: 0.0,
             dialogue_window_samples,
             dialogue_voiced_center: false,
             final_limiter_gain: 1.0,
@@ -198,8 +326,6 @@ impl AaePlugin {
     /// Pre-compute VBAP panning gains for all routing paths.
     pub(super) fn precompute_gains(&mut self) {
         let cfg = self.speaker_config;
-        let n_ch = self.num_output_channels;
-
         // Direct signal: stereo L at +30° az, R at -30° az.
         let direct_sources = [
             SourcePosition::new(30.0, 0.0),
@@ -229,13 +355,20 @@ impl AaePlugin {
         for row in &mut er {
             normalize_gains_l2(row);
         }
-        er.resize(super::early_reflections::MAX_TAPS, vec![0.0; n_ch]);
-        self.er_gains = er.into_iter().flat_map(|row| row.into_iter()).collect();
+        let lfe_channel = cfg
+            .speakers
+            .iter()
+            .find(|speaker| speaker.is_lfe)
+            .map(|speaker| speaker.channel);
+        for (index, row) in er.iter().enumerate() {
+            self.er_gains[index] = SparseRoutingRow::from_dense(row, lfe_channel);
+        }
+        for row in &mut self.er_gains[er.len()..] {
+            *row = SparseRoutingRow::default();
+        }
 
         // FDN outputs: distributed across speakers with envelopment bias.
         // Lines 0-2: more front, lines 3-7: more surround/rear. Line 7 is overhead.
-        let envelopment = self.params.envelopment;
-        let height_amount = self.params.height_amount;
         let fdn_sources = [
             SourcePosition::new(30.0, 0.0),
             SourcePosition::new(-30.0, 0.0),
@@ -248,27 +381,54 @@ impl AaePlugin {
         ];
         debug_assert_eq!(fdn_sources.len(), FDN_SIZE);
         let mut fdn = compute_vbap_matrix(cfg, &fdn_sources, Some(0.7));
-        for (line_idx, row) in fdn.iter_mut().enumerate() {
-            for sp in cfg.speakers {
-                if sp.is_lfe || sp.channel >= n_ch {
-                    continue;
-                }
-                let g = &mut row[sp.channel];
-                if line_idx >= 3 {
-                    let is_rear = sp.azimuth.abs() > 90.0;
-                    *g *= if is_rear {
-                        0.5 + 0.5 * envelopment
-                    } else {
-                        1.0 - 0.5 * envelopment
-                    };
-                }
-                if sp.elevation > 10.0 {
-                    *g *= height_amount;
-                }
-            }
+        for row in &mut fdn {
             normalize_gains_l2(row);
         }
-        self.fdn_gains = fdn.into_iter().flat_map(|row| row.into_iter()).collect();
+        self.fdn_base_gains = fdn.into_iter().flatten().collect();
+        self.update_fdn_gains();
+    }
+
+    fn update_fdn_gains(&mut self) {
+        debug_assert_eq!(
+            self.fdn_base_gains.len(),
+            FDN_SIZE * self.num_output_channels
+        );
+        debug_assert_eq!(self.fdn_gains.len(), FDN_SIZE);
+        let n_ch = self.num_output_channels;
+        let lfe_channel = self
+            .speaker_config
+            .speakers
+            .iter()
+            .find(|speaker| speaker.is_lfe)
+            .map(|speaker| speaker.channel);
+        for line_idx in 0..FDN_SIZE {
+            let row_start = line_idx * n_ch;
+            let base = &self.fdn_base_gains[row_start..row_start + n_ch];
+            let mut weighted = [0.0_f32; 16];
+            let mut energy = 0.0;
+            for speaker in self.speaker_config.speakers {
+                let mut gain = base[speaker.channel];
+                if !speaker.is_lfe && line_idx >= 3 {
+                    gain *= if speaker.azimuth.abs() > 90.0 {
+                        0.5 + 0.5 * self.params.envelopment
+                    } else {
+                        1.0 - 0.5 * self.params.envelopment
+                    };
+                }
+                if speaker.elevation > 10.0 {
+                    gain *= self.params.height_amount;
+                }
+                weighted[speaker.channel] = gain;
+                energy += gain * gain;
+            }
+            if energy > 0.0 {
+                let scale = energy.sqrt().recip();
+                for gain in &mut weighted[..n_ch] {
+                    *gain *= scale;
+                }
+            }
+            self.fdn_gains[line_idx] = SparseRoutingRow::from_dense(&weighted[..n_ch], lfe_channel);
+        }
     }
 
     pub(super) fn update_cached_parameter(&mut self, id: &ParameterId, value: &ParameterValue) {
@@ -288,6 +448,7 @@ impl AaePlugin {
         let side = ((l - r) * 0.5).abs();
         self.dialogue_window_center_sum += center;
         self.dialogue_window_side_sum += side;
+        self.dialogue_window_peak = self.dialogue_window_peak.max(center);
         self.dialogue_window_fill += 1;
 
         if self.dialogue_window_fill >= self.dialogue_window_samples {
@@ -295,6 +456,7 @@ impl AaePlugin {
             let window_center = self.dialogue_window_center_sum * inv_window;
             let window_side = self.dialogue_window_side_sum * inv_window;
             let centeredness = window_center / (window_center + window_side + 1e-6);
+            let crest_factor = self.dialogue_window_peak / (window_center + 1e-6);
 
             self.dialogue_level_fast = window_center
                 + self.dialogue_level_fast_coeff * (self.dialogue_level_fast - window_center);
@@ -305,8 +467,9 @@ impl AaePlugin {
             self.dialogue_modulation =
                 modulation + self.dialogue_mod_coeff * (self.dialogue_modulation - modulation);
 
-            self.dialogue_voiced_center =
-                self.dialogue_level_slow > DIALOGUE_MIN_CENTER_LEVEL && centeredness > 0.75;
+            self.dialogue_voiced_center = self.dialogue_level_slow > DIALOGUE_MIN_CENTER_LEVEL
+                && centeredness > 0.5
+                && crest_factor < DIALOGUE_MAX_CREST_FACTOR;
             if self.dialogue_voiced_center && self.dialogue_modulation > DIALOGUE_MIN_MODULATION {
                 self.dialogue_hold_remaining = self.dialogue_hold_samples;
             }
@@ -314,6 +477,7 @@ impl AaePlugin {
             self.dialogue_window_center_sum = 0.0;
             self.dialogue_window_side_sum = 0.0;
             self.dialogue_window_fill = 0;
+            self.dialogue_window_peak = 0.0;
         }
 
         let speech_like = self.dialogue_voiced_center && self.dialogue_hold_remaining > 0;
@@ -405,7 +569,7 @@ impl AaePlugin {
 
 impl Plugin for AaePlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("AAE", "0.5.1", "SotF")
+        PluginInfo::new("AAE", env!("CARGO_PKG_VERSION"), "SotF")
     }
 
     fn input_channels(&self) -> usize {
@@ -430,7 +594,14 @@ impl Plugin for AaePlugin {
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        self.validate_parameter(&id, &value)?;
+        let parameter = self
+            .cached_parameters
+            .iter()
+            .find(|parameter| parameter.id == id)
+            .ok_or_else(|| format!("Unknown parameter: {id}"))?;
+        parameter
+            .validate(&value)
+            .map_err(|error| format!("{id}: {error}"))?;
 
         let id_str = id.as_str();
         match id_str {
@@ -469,15 +640,14 @@ impl Plugin for AaePlugin {
             "pre_delay_ms" => {
                 if let Some(v) = value.as_float() {
                     self.params.pre_delay_ms = v;
+                    self.previous_pre_delay_samples = self.pre_delay_samples;
                     self.pre_delay_samples = (v * 0.001 * self.sample_rate as f32).round() as usize;
+                    self.pre_delay_transition_remaining = self.pre_delay_transition_samples;
                 }
             }
             "room_preset" => {
-                if let Some(v) = value.as_string() {
-                    self.params.room_preset = v.to_string();
-                    self.early_reflections
-                        .set_preset(self.params.room_preset_enum());
-                    self.precompute_gains();
+                if value.as_string() != Some(self.params.room_preset.as_str()) {
+                    return Err("room_preset is setup-only and requires a host rebuild".into());
                 }
             }
             "dry_level" => {
@@ -524,25 +694,24 @@ impl Plugin for AaePlugin {
                 }
             }
             "speaker_config" => {
-                if let Some(v) = value.as_string()
-                    && let Some(cfg) = get_speaker_config(v)
-                {
-                    self.params.speaker_config = v.to_string();
-                    self.speaker_config = cfg;
-                    self.num_output_channels = cfg.total_channels;
-                    self.precompute_gains();
+                let requested = value.as_string().expect("validated string parameter");
+                if !SPEAKER_CONFIGS.contains(&requested) {
+                    return Err(format!("Unsupported AAE speaker config '{requested}'"));
+                }
+                if requested != self.params.speaker_config {
+                    return Err("speaker_config is structural and requires a host rebuild".into());
                 }
             }
             "envelopment" => {
                 if let Some(v) = value.as_float() {
                     self.params.envelopment = v;
-                    self.precompute_gains();
+                    self.update_fdn_gains();
                 }
             }
             "height_amount" => {
                 if let Some(v) = value.as_float() {
                     self.params.height_amount = v;
-                    self.precompute_gains();
+                    self.update_fdn_gains();
                 }
             }
             "content_aware" => {
@@ -597,11 +766,17 @@ impl Plugin for AaePlugin {
             }
             "solo_early" => {
                 if let Some(v) = value.as_bool() {
+                    if v && self.params.solo_late {
+                        return Err("solo_early and solo_late cannot both be enabled".into());
+                    }
                     self.params.solo_early = v;
                 }
             }
             "solo_late" => {
                 if let Some(v) = value.as_bool() {
+                    if v && self.params.solo_early {
+                        return Err("solo_early and solo_late cannot both be enabled".into());
+                    }
                     self.params.solo_late = v;
                 }
             }
@@ -650,11 +825,16 @@ impl Plugin for AaePlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         let sr = sample_rate as f32;
+        self.bypass_mix_step = 1.0 / (BYPASS_CROSSFADE_MS * 0.001 * sr).round().max(1.0);
+        self.bypass_mix = if self.params.bypass { 1.0 } else { 0.0 };
 
         // Rebuild pre-delay
         self.pre_delay =
             super::delay_line::DelayLine::new((MAX_PRE_DELAY_MS * 0.001 * sr) as usize + 16);
         self.pre_delay_samples = (self.params.pre_delay_ms * 0.001 * sr).round() as usize;
+        self.previous_pre_delay_samples = self.pre_delay_samples;
+        self.pre_delay_transition_samples = ms_to_samples(10.0, sample_rate);
+        self.pre_delay_transition_remaining = 0;
 
         // Rebuild diffusion allpasses (scale delay times by sample rate)
         let diff_delay_1 = (142.0 * sr / 48000.0).round() as usize;
@@ -683,8 +863,7 @@ impl Plugin for AaePlugin {
         );
 
         // LFE filter
-        self.lfe_filter_coeff = compute_lp_coeff(LFE_CROSSOVER_HZ, sr);
-        self.lfe_filter_state = 0.0;
+        self.lfe_filter = LfeLowpass::new(LFE_CROSSOVER_HZ, sr);
         self.dialogue_duck_gain = 1.0;
         self.dialogue_attack_coeff = smoothing_coeff(DIALOGUE_ATTACK_MS, sr);
         self.dialogue_release_coeff = smoothing_coeff(DIALOGUE_RELEASE_MS, sr);
@@ -694,6 +873,7 @@ impl Plugin for AaePlugin {
         self.dialogue_window_center_sum = 0.0;
         self.dialogue_window_side_sum = 0.0;
         self.dialogue_window_fill = 0;
+        self.dialogue_window_peak = 0.0;
         self.dialogue_window_samples = ms_to_samples(DIALOGUE_ANALYSIS_WINDOW_MS, sample_rate);
         self.dialogue_level_fast_coeff =
             smoothing_coeff_for_samples(DIALOGUE_LEVEL_FAST_MS, sr, self.dialogue_window_samples);
@@ -731,7 +911,9 @@ impl Plugin for AaePlugin {
         }
         self.early_reflections.reset();
         self.fdn.reset();
-        self.lfe_filter_state = 0.0;
+        self.lfe_filter.reset();
+        self.pre_delay_transition_remaining = 0;
+        self.previous_pre_delay_samples = self.pre_delay_samples;
         self.dialogue_duck_gain = 1.0;
         self.dialogue_level_fast = 0.0;
         self.dialogue_level_slow = 0.0;
@@ -740,6 +922,7 @@ impl Plugin for AaePlugin {
         self.dialogue_window_center_sum = 0.0;
         self.dialogue_window_side_sum = 0.0;
         self.dialogue_window_fill = 0;
+        self.dialogue_window_peak = 0.0;
         self.dialogue_voiced_center = false;
         self.final_limiter_gain = 1.0;
         if let Some(auto_gain) = &mut self.auto_gain {
@@ -753,8 +936,6 @@ impl Plugin for AaePlugin {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        enable_ftz_daz();
-
         let num_frames = context.num_frames;
         let in_ch = 2;
         let out_ch = self.num_output_channels;
@@ -779,34 +960,12 @@ impl Plugin for AaePlugin {
         // Zero output
         output.fill(0.0);
 
-        // Bypass: copy L/R to front L/R, silence rest
-        if self.params.bypass {
-            for frame in 0..num_frames {
-                let in_base = frame * in_ch;
-                let out_base = frame * out_ch;
-                let l = input[in_base];
-                let r = input[in_base + 1];
-                // Find front left and front right channels
-                if out_ch >= 2 {
-                    output[out_base] = l;
-                    output[out_base + 1] = r;
-                }
-            }
-            return Ok(num_frames);
-        }
-
         if self.params.auto_gain_enabled {
             self.ensure_auto_gain()?;
             if let Some(auto_gain) = &mut self.auto_gain {
                 auto_gain.measure_input(input)?;
             }
         }
-
-        // Smooth parameters
-        let dry_gain = self.dry_smoother.next_n(num_frames);
-        let er_gain = self.er_smoother.next_n(num_frames);
-        let late_gain = self.late_smoother.next_n(num_frames);
-        let lfe_gain = self.lfe_smoother.next_n(num_frames);
 
         let num_er_taps = self.early_reflections.num_taps();
         self.er_tap_buffer.fill(0.0);
@@ -823,6 +982,10 @@ impl Plugin for AaePlugin {
             let out_base = frame * out_ch;
             let l = input[in_base];
             let r = input[in_base + 1];
+            let dry_gain = self.dry_smoother.next_n(1);
+            let er_gain = self.er_smoother.next_n(1);
+            let late_gain = self.late_smoother.next_n(1);
+            let lfe_gain = self.lfe_smoother.next_n(1);
             let wet_duck = self.dialogue_duck_for_frame(l, r);
 
             // ── Direct path: pan stereo to front speakers ────────────
@@ -842,10 +1005,25 @@ impl Plugin for AaePlugin {
 
             // Pre-delay
             self.pre_delay.push(mono);
-            let delayed = if self.pre_delay_samples > 0 {
+            let new_delayed = if self.pre_delay_samples > 0 {
                 self.pre_delay.read(self.pre_delay_samples)
             } else {
                 mono
+            };
+            let delayed = if self.pre_delay_transition_remaining > 0 {
+                let old_delayed = if self.previous_pre_delay_samples > 0 {
+                    self.pre_delay.read(self.previous_pre_delay_samples)
+                } else {
+                    mono
+                };
+                let progress = 1.0
+                    - self.pre_delay_transition_remaining as f32
+                        / self.pre_delay_transition_samples as f32;
+                self.pre_delay_transition_remaining -= 1;
+                let angle = progress * std::f32::consts::FRAC_PI_2;
+                old_delayed * angle.cos() + new_delayed * angle.sin()
+            } else {
+                new_delayed
             };
 
             // Input diffusion (allpass chain)
@@ -865,7 +1043,7 @@ impl Plugin for AaePlugin {
                 // `er_gains` has MAX_TAPS * out_ch entries and `tap_idx` is bounded
                 // by `num_er_taps ≤ MAX_TAPS`.
                 debug_assert!(
-                    self.er_gains.len() == early_reflections::MAX_TAPS * out_ch,
+                    self.er_gains.len() == early_reflections::MAX_TAPS,
                     "er_gains size mismatch: {}",
                     self.er_gains.len()
                 );
@@ -873,14 +1051,13 @@ impl Plugin for AaePlugin {
                     if tap_val.abs() < 1e-10 {
                         continue;
                     }
-                    let row_start = tap_idx * out_ch;
-                    let gains = &self.er_gains[row_start..row_start + out_ch];
+                    let gains = &self.er_gains[tap_idx];
                     let source_scaled = tap_val * er_gain;
                     let scaled = source_scaled * wet_duck;
                     lfe_wet_sum += source_scaled;
                     lfe_wet_energy += source_scaled * source_scaled;
                     lfe_wet_sources += 1;
-                    for (ch_idx, &g) in gains.iter().enumerate() {
+                    for (ch_idx, g) in gains.entries() {
                         output[out_base + ch_idx] += scaled * g;
                     }
                 }
@@ -900,21 +1077,20 @@ impl Plugin for AaePlugin {
                 // so `line_idx >= fdn_gains.len()` is impossible at runtime.
                 debug_assert_eq!(
                     self.fdn_gains.len(),
-                    FDN_SIZE * out_ch,
+                    FDN_SIZE,
                     "fdn_gains must have FDN_SIZE rows"
                 );
                 for (line_idx, &line_val) in fdn_outputs.iter().enumerate() {
                     if line_val.abs() < 1e-10 {
                         continue;
                     }
-                    let row_start = line_idx * out_ch;
-                    let gains = &self.fdn_gains[row_start..row_start + out_ch];
+                    let gains = &self.fdn_gains[line_idx];
                     let source_scaled = line_val * late_gain;
                     let scaled = source_scaled * wet_duck;
                     lfe_wet_sum += source_scaled;
                     lfe_wet_energy += source_scaled * source_scaled;
                     lfe_wet_sources += 1;
-                    for (ch_idx, &g) in gains.iter().enumerate() {
+                    for (ch_idx, g) in gains.entries() {
                         output[out_base + ch_idx] += scaled * g;
                     }
                 }
@@ -926,10 +1102,8 @@ impl Plugin for AaePlugin {
                 // independent of speaker layout and avoids cancellation from
                 // summing decorrelated routed speaker feeds.
                 let lfe_source = signed_rms(lfe_wet_sum, lfe_wet_energy, lfe_wet_sources, diffused);
-                let lp_coeff = self.lfe_filter_coeff;
-                self.lfe_filter_state =
-                    lp_coeff * self.lfe_filter_state + (1.0 - lp_coeff) * lfe_source;
-                output[out_base + lfe_idx] += self.lfe_filter_state * lfe_gain * wet_duck;
+                let lfe = self.lfe_filter.process(lfe_source);
+                output[out_base + lfe_idx] += lfe * lfe_gain * wet_duck;
             }
         }
 
@@ -937,6 +1111,35 @@ impl Plugin for AaePlugin {
         self.apply_auto_gain(output, num_frames)?;
         self.apply_output_safety_limit(output, num_frames, out_ch);
         flush_denormals_inplace(output);
+
+        // Bypass is a continuous-tail mode: all DSP and metering above keep
+        // advancing, while the audible path crossfades to a metadata-defined
+        // FL/FR dry signal. The fixed-size scalar transition uses no heap
+        // storage and therefore remains safe on the realtime thread.
+        let bypass_target = if self.params.bypass { 1.0 } else { 0.0 };
+        for frame in 0..num_frames {
+            if bypass_target > self.bypass_mix {
+                self.bypass_mix = (self.bypass_mix + self.bypass_mix_step).min(bypass_target);
+            } else if bypass_target < self.bypass_mix {
+                self.bypass_mix = (self.bypass_mix - self.bypass_mix_step).max(bypass_target);
+            }
+            let wet_mix = 1.0 - self.bypass_mix;
+            let in_base = frame * in_ch;
+            let out_base = frame * out_ch;
+            let l = input[in_base];
+            let r = input[in_base + 1];
+            for channel in 0..out_ch {
+                let dry = if channel == self.bypass_left_channel {
+                    l
+                } else if channel == self.bypass_right_channel {
+                    r
+                } else {
+                    0.0
+                };
+                output[out_base + channel] =
+                    output[out_base + channel] * wet_mix + dry * self.bypass_mix;
+            }
+        }
         Ok(num_frames)
     }
 

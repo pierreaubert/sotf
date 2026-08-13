@@ -1,5 +1,5 @@
 use sotf_host::{CountingAlloc, assert_no_allocs};
-use sotf_host::{ParameterValue, Plugin, ProcessContext};
+use sotf_host::{ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugin_aae::{AaePlugin, params::AaePluginParams};
 use std::f32::consts::PI;
 use std::time::Instant;
@@ -11,7 +11,7 @@ fn main() {
     let sample_rate = 48000;
     let params = AaePluginParams::default();
 
-    let mut plugin = AaePlugin::from_params(params);
+    let mut plugin = AaePlugin::from_params(params).unwrap();
     plugin.initialize(sample_rate).unwrap();
 
     println!("=== QA: AAE (Active Acoustic Enhancement) Plugin ===");
@@ -44,7 +44,16 @@ fn main() {
     println!("\n[ALL PASS] AAE QA Complete.");
 }
 
-fn run_aae_standard_tests(plugin: &mut AaePlugin, sample_rate: u32) {
+fn run_aae_standard_tests(_plugin: &mut AaePlugin, sample_rate: u32) {
+    let mut plugin = AaePlugin::try_from_params(AaePluginParams {
+        speaker_config: "9.1.6".into(),
+        room_preset: "cathedral".into(),
+        auto_gain_enabled: true,
+        content_aware: true,
+        ..Default::default()
+    })
+    .unwrap();
+    plugin.initialize(sample_rate).unwrap();
     println!("\n[Test 8] Latency Reporting");
     let reported = plugin.latency_samples();
     println!("  Reported Latency: {} samples", reported);
@@ -62,6 +71,19 @@ fn run_aae_standard_tests(plugin: &mut AaePlugin, sample_rate: u32) {
     assert_no_allocs("AaePlugin::process", || {
         plugin.process(&rt_input, &mut rt_output, &rt_ctx).unwrap();
     });
+    let envelopment_id = ParameterId::from("envelopment");
+    let height_id = ParameterId::from("height_amount");
+    assert_no_allocs("AaePlugin spatial automation", || {
+        for step in 0..100 {
+            let value = step as f32 / 99.0;
+            plugin
+                .set_parameter(envelopment_id.clone(), ParameterValue::Float(value))
+                .unwrap();
+            plugin
+                .set_parameter(height_id.clone(), ParameterValue::Float(1.0 - value))
+                .unwrap();
+        }
+    });
     println!("  Zero Allocations: PASS");
 
     println!("\n[Test 10] Performance Benchmark");
@@ -69,13 +91,18 @@ fn run_aae_standard_tests(plugin: &mut AaePlugin, sample_rate: u32) {
     let bench_input = vec![0.1_f32; bench_frames * plugin.input_channels()];
     let mut bench_output = vec![0.0_f32; bench_frames * plugin.output_channels()];
     let start = Instant::now();
-    process_blocks(
-        plugin,
-        &bench_input,
-        &mut bench_output,
-        sample_rate,
-        rt_block_size,
-    );
+    let mut callback_times = Vec::with_capacity(bench_frames.div_ceil(rt_block_size));
+    for (input, output) in bench_input
+        .chunks(rt_block_size * plugin.input_channels())
+        .zip(bench_output.chunks_mut(rt_block_size * plugin.output_channels()))
+    {
+        let frames = input.len() / plugin.input_channels();
+        let callback_start = Instant::now();
+        plugin
+            .process(input, output, &ProcessContext::new(sample_rate, frames))
+            .unwrap();
+        callback_times.push(callback_start.elapsed());
+    }
     let duration = start.elapsed();
     let audio_duration_sec = bench_frames as f64 / sample_rate as f64;
     let cpu_usage = (duration.as_secs_f64() / audio_duration_sec) * 100.0;
@@ -85,7 +112,20 @@ fn run_aae_standard_tests(plugin: &mut AaePlugin, sample_rate: u32) {
         duration.as_secs_f64() * 1000.0
     );
     println!("  Estimated CPU Usage: {:.2}%", cpu_usage);
+    callback_times.sort_unstable();
+    let p50 = callback_times[callback_times.len() / 2];
+    let p95 = callback_times[callback_times.len() * 95 / 100];
+    let max = *callback_times.last().unwrap();
+    let deadline_ms = rt_block_size as f64 * 1000.0 / sample_rate as f64;
+    println!(
+        "  callback p50/p95/max: {:.3}/{:.3}/{:.3} ms (deadline {:.3} ms)",
+        p50.as_secs_f64() * 1000.0,
+        p95.as_secs_f64() * 1000.0,
+        max.as_secs_f64() * 1000.0,
+        deadline_ms,
+    );
     assert!(cpu_usage < 5.0, "AAE is too slow ({cpu_usage:.2}%)");
+    assert!(max.as_secs_f64() * 1000.0 < deadline_ms);
     println!("  Performance: PASS");
 }
 
@@ -307,14 +347,22 @@ fn test_rt60_parameter(plugin: &mut AaePlugin, sample_rate: u32) {
 fn test_speaker_config_change(plugin: &mut AaePlugin, sample_rate: u32) {
     println!("\n[Test 4] Speaker Config Change (7.1.4)");
 
-    plugin
+    let error = plugin
         .set_parameter(
             "speaker_config".into(),
             ParameterValue::String("7.1.4".to_string()),
         )
-        .unwrap();
+        .unwrap_err();
+    assert!(error.contains("host rebuild"));
+
+    let params = AaePluginParams {
+        speaker_config: "7.1.4".to_string(),
+        ..AaePluginParams::default()
+    };
+    let mut rebuilt = AaePlugin::try_from_params(params).unwrap();
+    rebuilt.initialize(sample_rate).unwrap();
     assert_eq!(
-        plugin.output_channels(),
+        rebuilt.output_channels(),
         12,
         "7.1.4 should have 12 channels"
     );
@@ -325,7 +373,7 @@ fn test_speaker_config_change(plugin: &mut AaePlugin, sample_rate: u32) {
         .map(|i| (i as f32 * 0.01).sin() * 0.3)
         .collect();
     let mut output = vec![0.0_f32; num_frames * 12];
-    process_blocks(plugin, &input, &mut output, sample_rate, block);
+    process_blocks(&mut rebuilt, &input, &mut output, sample_rate, block);
 
     // Check no NaN/Inf
     for (i, v) in output.iter().enumerate() {
@@ -342,15 +390,6 @@ fn test_speaker_config_change(plugin: &mut AaePlugin, sample_rate: u32) {
     }
     println!("  Height channel energy: {:.6}", height_energy);
     println!("  12-channel processing: PASS");
-
-    // Restore 5.1
-    plugin
-        .set_parameter(
-            "speaker_config".into(),
-            ParameterValue::String("5.1".to_string()),
-        )
-        .unwrap();
-    plugin.initialize(sample_rate).unwrap();
 }
 
 fn test_bypass(plugin: &mut AaePlugin, sample_rate: u32) {
@@ -370,15 +409,12 @@ fn test_bypass(plugin: &mut AaePlugin, sample_rate: u32) {
     let ctx = ProcessContext::new(sample_rate, num_frames);
     plugin.process(&input, &mut output, &ctx).unwrap();
 
-    // In bypass, FL should equal input L, FR should equal input R
-    let mut max_diff_l = 0.0_f32;
-    let mut max_diff_r = 0.0_f32;
-    for i in 0..num_frames {
-        let diff_l = (output[i * out_ch] - input[i * 2]).abs();
-        let diff_r = (output[i * out_ch + 1] - input[i * 2 + 1]).abs();
-        max_diff_l = max_diff_l.max(diff_l);
-        max_diff_r = max_diff_r.max(diff_r);
-    }
+    // After the 5 ms click-safe transition, FL should equal input L and FR
+    // should equal input R. The transition samples are intentionally not
+    // expected to be bit-transparent.
+    let last = (num_frames - 1) * out_ch;
+    let max_diff_l = (output[last] - input[(num_frames - 1) * 2]).abs();
+    let max_diff_r = (output[last + 1] - input[(num_frames - 1) * 2 + 1]).abs();
     assert!(
         max_diff_l < 1e-6,
         "Bypass FL should match input L, max_diff={}",
@@ -390,15 +426,13 @@ fn test_bypass(plugin: &mut AaePlugin, sample_rate: u32) {
         max_diff_r
     );
 
-    // Other channels should be silent
-    for i in 0..num_frames {
-        for ch in 2..out_ch {
-            assert!(
-                output[i * out_ch + ch].abs() < 1e-6,
-                "Bypass: channel {} should be silent",
-                ch
-            );
-        }
+    // Other channels should be silent once the transition has completed.
+    for ch in 2..out_ch {
+        assert!(
+            output[last + ch].abs() < 1e-6,
+            "Bypass: channel {} should be silent",
+            ch
+        );
     }
     println!("  Bypass Transparency: PASS");
 

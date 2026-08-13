@@ -21,7 +21,7 @@ pub const PARAMS: &[ParamSpec] = &[
     .doc("Output speaker layout"),
     // 1: room_size
     ParamSpec::float("Room Size", "room_size", 1.0, 0.2, 3.0, 0.1, "x", "Room")
-        .doc("Scales all delay line lengths"),
+        .doc("Scales FDN late-reverb delay lengths; early reflections follow the room preset"),
     // 2: rt60
     ParamSpec::float("RT60", "rt60", 1.8, 0.3, 6.0, 0.1, "s", "Room")
         .doc("Mid-frequency reverberation time"),
@@ -165,7 +165,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Intelligence",
     )
     .output()
-    .doc("FDN feedback limiter threshold"),
+    .doc("Emergency FDN feedback headroom above nominal full scale"),
     // 19: auto_gain_enabled
     ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain")
         .output()

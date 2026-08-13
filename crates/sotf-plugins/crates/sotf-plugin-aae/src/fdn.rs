@@ -33,8 +33,12 @@ pub struct Fdn {
     tone_filters: [ToneFilter; FDN_SIZE],
     /// Current delay lengths in samples (scaled by room_size and sample_rate)
     delay_lengths: [usize; FDN_SIZE],
+    previous_delay_lengths: [usize; FDN_SIZE],
     /// Allpass interpolation states for modulated reads
     interp_states: [f32; FDN_SIZE],
+    previous_interp_states: [f32; FDN_SIZE],
+    delay_transition_remaining: usize,
+    delay_transition_samples: usize,
     /// LFO phases for time-variant modulation (0..1, one per line)
     mod_phases: [f32; FDN_SIZE],
     /// LFO phase increments per sample
@@ -101,14 +105,18 @@ impl Fdn {
         let mod_phase_incs = std::array::from_fn(|i| MOD_FREQUENCIES[i] / sr);
 
         let mod_depth_samples = mod_depth * 8.0;
-        let limiter_threshold = 10.0_f32.powf(-safety_limit_db / 20.0);
+        let limiter_threshold = 10.0_f32.powf(safety_limit_db / 20.0);
         let input_gain = 1.0 / (FDN_SIZE as f32).sqrt();
 
         Self {
             delay_lines,
             tone_filters,
             delay_lengths,
+            previous_delay_lengths: delay_lengths,
             interp_states: [0.0; FDN_SIZE],
+            previous_interp_states: [0.0; FDN_SIZE],
+            delay_transition_remaining: 0,
+            delay_transition_samples: (sr * 0.01).round().max(1.0) as usize,
             mod_phases: std::array::from_fn(|i| i as f32 / FDN_SIZE as f32),
             mod_phase_incs,
             mod_depth_samples,
@@ -136,8 +144,20 @@ impl Fdn {
                 let mod_offset =
                     (self.mod_phases[i] * std::f32::consts::TAU).sin() * self.mod_depth_samples;
                 let effective_delay = (base_delay + mod_offset).max(1.0);
-                outputs[i] =
+                let current =
                     self.delay_lines[i].read_allpass(effective_delay, &mut self.interp_states[i]);
+                outputs[i] = if self.delay_transition_remaining > 0 {
+                    let previous_delay = self.previous_delay_lengths[i] as f32 + mod_offset;
+                    let previous = self.delay_lines[i]
+                        .read_allpass(previous_delay.max(1.0), &mut self.previous_interp_states[i]);
+                    let progress = 1.0
+                        - self.delay_transition_remaining as f32
+                            / self.delay_transition_samples as f32;
+                    let angle = progress * std::f32::consts::FRAC_PI_2;
+                    previous * angle.cos() + current * angle.sin()
+                } else {
+                    current
+                };
 
                 // Advance LFO phase
                 self.mod_phases[i] += self.mod_phase_incs[i];
@@ -146,9 +166,20 @@ impl Fdn {
                 }
             } else {
                 // Static delay — integer read
-                outputs[i] = self.delay_lines[i].read(self.delay_lengths[i]);
+                let current = self.delay_lines[i].read(self.delay_lengths[i]);
+                outputs[i] = if self.delay_transition_remaining > 0 {
+                    let previous = self.delay_lines[i].read(self.previous_delay_lengths[i]);
+                    let progress = 1.0
+                        - self.delay_transition_remaining as f32
+                            / self.delay_transition_samples as f32;
+                    let angle = progress * std::f32::consts::FRAC_PI_2;
+                    previous * angle.cos() + current * angle.sin()
+                } else {
+                    current
+                };
             }
         }
+        self.delay_transition_remaining = self.delay_transition_remaining.saturating_sub(1);
 
         // Apply tone correction (frequency-dependent decay)
         for i in 0..FDN_SIZE {
@@ -177,7 +208,11 @@ impl Fdn {
             let m = self.delay_lengths[i] as f32;
             let g_dc = 10.0_f32.powf(-3.0 * m / (rt60_bass * self.sample_rate));
             let g_ny = 10.0_f32.powf(-3.0 * m / (rt60_treble * self.sample_rate));
-            self.tone_filters[i].set_gains(g_dc, g_ny);
+            self.tone_filters[i].set_gains_smooth(
+                g_dc,
+                g_ny,
+                (self.sample_rate * 0.005).round().max(1.0) as usize,
+            );
         }
     }
 
@@ -186,6 +221,8 @@ impl Fdn {
     /// Keeping delay-line state and modulator state avoids audible tail truncation when
     /// room_size changes at runtime.
     pub fn set_room_size(&mut self, room_size: f32, rt60: f32, bass_ratio: f32, treble_ratio: f32) {
+        self.previous_delay_lengths = self.delay_lengths;
+        self.previous_interp_states = self.interp_states;
         let scale = room_size.clamp(0.2, MAX_ROOM_SIZE) * self.sample_rate / 48000.0;
         for i in 0..FDN_SIZE {
             self.delay_lengths[i] = (BASE_DELAYS_48K[i] as f32 * scale).round() as usize;
@@ -193,7 +230,12 @@ impl Fdn {
                 .max(1)
                 .min(self.delay_lines[i].max_delay_samples());
         }
+        self.delay_transition_remaining = self.delay_transition_samples;
         self.set_rt60(rt60, bass_ratio, treble_ratio);
+    }
+
+    pub fn delay_transition_active(&self) -> bool {
+        self.delay_transition_remaining > 0
     }
 
     /// Update modulation depth (0.0–1.0).
@@ -203,7 +245,7 @@ impl Fdn {
 
     /// Update safety limiter threshold.
     pub fn set_safety_limit_db(&mut self, db: f32) {
-        self.limiter_threshold = 10.0_f32.powf(-db / 20.0);
+        self.limiter_threshold = 10.0_f32.powf(db / 20.0);
     }
 
     /// Reset all internal state (delay lines, filters, LFO phases).
@@ -215,6 +257,9 @@ impl Fdn {
             tf.reset();
         }
         self.interp_states = [0.0; FDN_SIZE];
+        self.previous_interp_states = [0.0; FDN_SIZE];
+        self.previous_delay_lengths = self.delay_lengths;
+        self.delay_transition_remaining = 0;
         self.mod_phases = std::array::from_fn(|i| i as f32 / FDN_SIZE as f32);
     }
 }
@@ -294,23 +339,23 @@ mod tests {
         // Feed impulse
         let _ = fdn.process(1.0);
 
-        // Collect outputs for each line
-        let mut sums = [0.0_f64; FDN_SIZE];
-        let n = 48000;
-        for _ in 0..n {
+        // Measure normalized cross-correlation of two output lines after the
+        // first echo arrivals, rather than comparing only their sums.
+        let mut cross = 0.0_f64;
+        let mut energy_a = 0.0_f64;
+        let mut energy_b = 0.0_f64;
+        for _ in 0..48_000 {
             let outputs = fdn.process(0.0);
-            for i in 0..FDN_SIZE {
-                sums[i] += outputs[i] as f64;
-            }
+            let a = f64::from(outputs[0]);
+            let b = f64::from(outputs[7]);
+            cross += a * b;
+            energy_a += a * a;
+            energy_b += b * b;
         }
-
-        // Outputs should not all be identical (decorrelated)
-        let mean: f64 = sums.iter().sum::<f64>() / FDN_SIZE as f64;
-        let variance: f64 =
-            sums.iter().map(|s| (s - mean) * (s - mean)).sum::<f64>() / FDN_SIZE as f64;
+        let correlation = cross / (energy_a * energy_b).sqrt().max(1e-30);
         assert!(
-            variance > 1e-10,
-            "FDN outputs should be decorrelated, variance={variance}"
+            correlation.abs() < 0.5,
+            "FDN lines should be decorrelated, correlation={correlation}"
         );
     }
 
@@ -368,5 +413,14 @@ mod tests {
         assert!(clipped < 2.0 && clipped > 0.9);
         // Symmetric
         assert!((soft_clip(2.0, 1.0) + soft_clip(-2.0, 1.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_safety_limit_is_headroom_above_nominal() {
+        let fdn = Fdn::new(48_000, 1.0, 1.8, 1.2, 0.5, 0.0, 6.0);
+        let expected = 10.0_f32.powf(6.0 / 20.0);
+        assert!((fdn.limiter_threshold - expected).abs() < 1e-6);
+        assert_eq!(soft_clip(1.0, fdn.limiter_threshold), 1.0);
+        assert!(soft_clip(4.0, fdn.limiter_threshold).abs() < 4.0);
     }
 }

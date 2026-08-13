@@ -24,19 +24,73 @@ pub(super) fn create_auto_gain(
     .ok()
 }
 
-/// Compute one-pole low-pass filter coefficient from cutoff frequency.
-pub(super) fn compute_lp_coeff(cutoff_hz: f32, sample_rate: f32) -> f32 {
-    debug_assert!(sample_rate > 0.0);
-    let nyquist = 0.5 * sample_rate;
-    let max_cutoff = nyquist * 0.25;
-    debug_assert!(
-        (0.0..=max_cutoff).contains(&cutoff_hz),
-        "cutoff_hz {cutoff_hz} is outside valid one-pole range (0..={max_cutoff}) for sample_rate {sample_rate}"
-    );
+#[derive(Clone, Copy)]
+struct BiquadLowpass {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    z1: f32,
+    z2: f32,
+}
 
-    let cutoff_hz = cutoff_hz.clamp(1e-6, max_cutoff);
-    let w = std::f32::consts::PI * cutoff_hz / nyquist;
-    (1.0 - w.sin()) / w.cos()
+impl BiquadLowpass {
+    fn new(cutoff_hz: f32, sample_rate: f32) -> Self {
+        let omega = std::f32::consts::TAU * cutoff_hz / sample_rate;
+        let (sin, cos) = omega.sin_cos();
+        let alpha = sin / std::f32::consts::SQRT_2;
+        let a0 = 1.0 + alpha;
+        Self {
+            b0: ((1.0 - cos) * 0.5) / a0,
+            b1: (1.0 - cos) / a0,
+            b2: ((1.0 - cos) * 0.5) / a0,
+            a1: (-2.0 * cos) / a0,
+            a2: (1.0 - alpha) / a0,
+            z1: 0.0,
+            z2: 0.0,
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, input: f32) -> f32 {
+        let output = self.b0 * input + self.z1;
+        self.z1 = self.b1 * input - self.a1 * output + self.z2;
+        self.z2 = self.b2 * input - self.a2 * output;
+        output
+    }
+
+    fn reset(&mut self) {
+        self.z1 = 0.0;
+        self.z2 = 0.0;
+    }
+}
+
+/// Fourth-order Linkwitz-Riley low-pass used by the synthesized LFE effects send.
+pub(super) struct LfeLowpass {
+    stages: [BiquadLowpass; 2],
+}
+
+impl LfeLowpass {
+    pub(super) fn new(cutoff_hz: f32, sample_rate: f32) -> Self {
+        let stage = BiquadLowpass::new(cutoff_hz, sample_rate);
+        Self {
+            stages: [stage, stage],
+        }
+    }
+
+    #[inline]
+    pub(super) fn process(&mut self, input: f32) -> f32 {
+        self.stages
+            .iter_mut()
+            .fold(input, |sample, stage| stage.process(sample))
+    }
+
+    pub(super) fn reset(&mut self) {
+        for stage in &mut self.stages {
+            stage.reset();
+        }
+    }
 }
 
 pub(super) fn ms_to_samples(time_ms: f32, sample_rate: u32) -> usize {

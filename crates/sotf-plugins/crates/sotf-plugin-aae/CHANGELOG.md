@@ -1,5 +1,49 @@
 # Unreleased
 
+## 0.5.7 complete 2026-08-12 review remediation
+
+- Make every public and bridge construction path fallible and validate all
+  restored values, supported choices, and mutually exclusive solo modes.
+- Preserve the live channel contract by marking layout/preset metadata
+  structural and rejecting live replacement.
+- Add click-safe 10 ms dual-read transitions for pre-delay and room-size
+  changes plus 5 ms RT60 coefficient interpolation.
+- Replace the synthesized LFE one-pole with a fourth-order 120 Hz
+  Linkwitz-Riley low-pass and exclude LFE from spatial VBAP rows.
+- Convert ER/FDN routing to normalized sparse triplets, removing dense
+  source-to-channel loops from the sample path.
+- Interpret the FDN safety control as positive headroom above nominal full
+  scale, keeping normal-level modeled decay linear while retaining an
+  emergency soft guard.
+- Stop mutating caller floating-point control state; hosts remain responsible
+  for processing-thread FTZ policy.
+- Activate the previously uncompiled split unit-test module and add
+  quantitative LFE, correlation, dialogue/percussion, transition, routing,
+  construction, and maximum-layout realtime QA coverage.
+- Align package/plugin version, zero-latency catalog metadata, README, and
+  parameter documentation.
+
+## 0.5.6 review remediation
+
+- Bypass now advances the complete reverb, content-aware detector, auto-gain,
+  and limiter state instead of freezing it. The audible path uses a fixed 5 ms
+  crossfade to metadata-identified FL/FR dry channels, avoiding clicks and stale
+  tail resumption without realtime allocations.
+
+## 0.5.5 review remediation
+
+- Advance dry, early, late, and LFE level smoothing per sample so automation is
+  invariant to host block partitioning.
+- Add `try_from_params` validation for finite/ranged values, supported layouts
+  and presets, and mutually exclusive solo modes; the canonical factory now
+  uses the fallible path.
+- Reject live speaker-layout and room-preset changes because they require host
+  graph reconstruction and prepared DSP state.
+- Preserve immutable FDN VBAP rows and apply envelopment/height weighting in
+  preallocated storage, removing matrix construction and allocation from those
+  ordinary automation setters.
+- Report the crate version through `PluginInfo`.
+
 - Layout opts into the spatial-spider visualiser via `VizSlot::Custom { name: viz_names::SPATIAL_SPIDER, position: VizPosition::FullCenter }`. The app-gpui layout renderer picks this up automatically and appends the spider panel below the main control row.
 - `AaePlugin::process` now hoists per-frame input/output base indices in the
   scalar render loop, trimming repeated offset arithmetic while the larger

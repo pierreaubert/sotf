@@ -1,14 +1,11 @@
-use crate :: params :: { AaePluginParams } ;
-use sotf_host :: parameters :: { ParameterId , ParameterValue } ;
-use sotf_host :: plugin :: { Plugin , ProcessContext } ;
-use super::super::consts;
-use super::super::params;
 use super::super::aae_plugin::AaePlugin;
 use super::super::types::AaeData;
-    use super::super::*;
+use crate::params::AaePluginParams;
+use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::plugin::{Plugin, ProcessContext};
 
     fn make_plugin() -> AaePlugin {
-        let mut p = AaePlugin::from_params(AaePluginParams::default());
+    let mut p = AaePlugin::from_params(AaePluginParams::default()).unwrap();
         p.initialize(48000).unwrap();
         p
     }
@@ -26,13 +23,18 @@ use super::super::types::AaeData;
         p.set_parameter(ParameterId::from("bypass"), ParameterValue::Bool(true))
             .unwrap();
 
-        let input = vec![0.5, -0.3]; // one frame, stereo
-        let mut output = vec![0.0; 6]; // 5.1
-        p.process(&input, &mut output, &ProcessContext::new(48000, 1))
+    let frames = 512;
+    let input: Vec<f32> = (0..frames).flat_map(|_| [0.5, -0.3]).collect();
+    let mut output = vec![0.0; frames * 6];
+    p.process(&input, &mut output, &ProcessContext::new(48000, frames))
             .unwrap();
 
-        assert!((output[0] - 0.5).abs() < 1e-6, "L should pass through");
-        assert!((output[1] - (-0.3)).abs() < 1e-6, "R should pass through");
+    let last = (frames - 1) * 6;
+    assert!((output[last] - 0.5).abs() < 1e-6, "L should pass through");
+    assert!(
+        (output[last + 1] - (-0.3)).abs() < 1e-6,
+        "R should pass through"
+    );
     }
 
     #[test]
@@ -272,26 +274,57 @@ use super::super::types::AaeData;
         );
     }
 
+#[test]
+fn test_dialogue_detector_accepts_panned_voice_and_rejects_impulses() {
+    fn minimum_gain(panned_voice: bool, percussion: bool) -> f32 {
+        let mut plugin = make_plugin();
+        let mut minimum = 1.0_f32;
+        for frame in 0..48_000usize {
+            let carrier = (std::f32::consts::TAU * 180.0 * frame as f32 / 48_000.0).sin();
+            let syllable =
+                0.35 + 0.3 * (std::f32::consts::TAU * 4.0 * frame as f32 / 48_000.0).sin();
+            let sample = if percussion {
+                if frame % 4_800 == 0 { 0.9 } else { 0.0 }
+            } else {
+                carrier * syllable
+            };
+            let (left, right) = if panned_voice {
+                (sample, sample * 0.15)
+            } else {
+                (sample, sample)
+            };
+            minimum = minimum.min(plugin.dialogue_duck_for_frame(left, right));
+        }
+        minimum
+    }
+
+    assert!(
+        minimum_gain(true, false) < 0.8,
+        "panned dialogue should duck wet output"
+    );
+    assert!(
+        minimum_gain(false, true) > 0.98,
+        "sparse percussion should not be classified as dialogue"
+    );
+}
+
     #[test]
     fn test_room_and_routing_parameter_changes_do_not_break_processing() {
         let mut p = make_plugin();
         p.set_parameter(ParameterId::from("room_size"), ParameterValue::Float(3.0))
             .unwrap();
-        p.set_parameter(
+    let error = p
+        .set_parameter(
             ParameterId::from("room_preset"),
             ParameterValue::String("cathedral".to_string()),
         )
-        .unwrap();
+        .unwrap_err();
+    assert!(error.contains("rebuild"));
         p.set_parameter(ParameterId::from("envelopment"), ParameterValue::Float(1.0))
             .unwrap();
         p.set_parameter(
             ParameterId::from("height_amount"),
             ParameterValue::Float(1.0),
-        )
-        .unwrap();
-        p.set_parameter(
-            ParameterId::from("room_preset"),
-            ParameterValue::String("small".to_string()),
         )
         .unwrap();
 
@@ -378,4 +411,3 @@ use super::super::types::AaeData;
             "Output energy {output_energy} should be < 3× input energy {input_energy}"
         );
     }
-

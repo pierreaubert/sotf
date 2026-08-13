@@ -444,7 +444,7 @@ pub(super) fn test_auto_gain_zero_alloc() {
 
 pub(super) fn test_aec_zero_alloc() {
     let params = AecPluginParams::default();
-    let mut plugin = AecPlugin::from_params(SAMPLE_RATE, params);
+    let mut plugin = AecPlugin::from_params(SAMPLE_RATE, params).unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2); // 2-channel: mic + ref
@@ -461,7 +461,7 @@ pub(super) fn test_aec_zero_alloc() {
 }
 
 pub(super) fn test_aae_zero_alloc() {
-    let mut plugin = AaePlugin::from_params(AaePluginParams::default());
+    let mut plugin = AaePlugin::from_params(AaePluginParams::default()).unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
@@ -480,7 +480,7 @@ pub(super) fn test_aae_zero_alloc() {
 }
 
 pub(super) fn test_beamformer_zero_alloc() {
-    let mut plugin = BeamformerPlugin::new(2, SAMPLE_RATE);
+    let mut plugin = BeamformerPlugin::new(2, SAMPLE_RATE).unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     // Use GSC mode (sample-by-sample, simplest hot path)

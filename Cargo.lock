@@ -10448,7 +10448,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-aae"
-version = "0.5.4"
+version = "0.5.7"
 dependencies = [
  "criterion",
  "hound",

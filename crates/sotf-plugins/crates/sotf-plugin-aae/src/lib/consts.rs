@@ -22,6 +22,11 @@ pub(super) const DIALOGUE_MIN_CENTER_LEVEL: f32 = 0.06;
 
 pub(super) const DIALOGUE_MIN_MODULATION: f32 = 0.10;
 
+pub(super) const DIALOGUE_MAX_CREST_FACTOR: f32 = 6.0;
+
 pub(super) const FINAL_OUTPUT_CEILING: f32 = 1.0;
+
+/// Duration of the click-safe dry/wet bypass transition.
+pub(super) const BYPASS_CROSSFADE_MS: f32 = 5.0;
 
 pub(super) const FINAL_LIMITER_RELEASE_MS: f32 = 60.0;

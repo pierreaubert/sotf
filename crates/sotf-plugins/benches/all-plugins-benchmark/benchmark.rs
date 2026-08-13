@@ -698,7 +698,7 @@ pub(super) fn benchmark_aae(c: &mut Criterion) {
 
     // Different buffer sizes (5.1 default)
     for &buf_size in &[256, 512, 1024, 2048] {
-        let mut plugin = AaePlugin::from_params(AaePluginParams::default());
+        let mut plugin = AaePlugin::from_params(AaePluginParams::default()).unwrap();
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(buf_size, 2);
@@ -727,7 +727,7 @@ pub(super) fn benchmark_aae(c: &mut Criterion) {
             speaker_config: "7.1.4".to_string(),
             ..AaePluginParams::default()
         };
-        let mut plugin = AaePlugin::from_params(params);
+        let mut plugin = AaePlugin::from_params(params).unwrap();
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(BUFFER_SIZE, 2);
@@ -757,7 +757,7 @@ pub(super) fn benchmark_aae(c: &mut Criterion) {
             rt60: 4.0,
             ..AaePluginParams::default()
         };
-        let mut plugin = AaePlugin::from_params(params);
+        let mut plugin = AaePlugin::from_params(params).unwrap();
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(BUFFER_SIZE, 2);
