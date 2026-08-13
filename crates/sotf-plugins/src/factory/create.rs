@@ -804,7 +804,7 @@ fn create_matrix_plugin(
             );
             states.resize(needed, crate::ChannelState::default());
         }
-        plugin = plugin.with_channel_states(states);
+        plugin = plugin.with_channel_states(states)?;
     }
 
     Ok(Box::new(plugin))

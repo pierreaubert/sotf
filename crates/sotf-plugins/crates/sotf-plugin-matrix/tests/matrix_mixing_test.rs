@@ -24,6 +24,7 @@ fn test_mono_summing_loudness_correlated() {
     let matrix_data = vec![1.0, 1.0];
     let mut plugin =
         MatrixPlugin::with_matrix(input_channels, output_channels, matrix_data).unwrap();
+    plugin.initialize(44_100).unwrap();
 
     let context = ProcessContext::new(44100, 64);
 
@@ -91,6 +92,7 @@ fn test_mid_side_encoding_decoding() {
     ];
 
     let mut plugin = MatrixPlugin::with_matrix(input_channels, output_channels, ms_matrix).unwrap();
+    plugin.initialize(44_100).unwrap();
     let context = ProcessContext::new(44100, 64);
 
     let num_frames = 64;
@@ -161,8 +163,10 @@ fn test_mid_side_roundtrip() {
     // Decode: [0.5, 0.5; 0.5, -0.5]
 
     let mut encoder = MatrixPlugin::with_matrix(2, 2, vec![1.0, 1.0, 1.0, -1.0]).unwrap();
+    encoder.initialize(44_100).unwrap();
 
     let mut decoder = MatrixPlugin::with_matrix(2, 2, vec![0.5, 0.5, 0.5, -0.5]).unwrap();
+    decoder.initialize(44_100).unwrap();
 
     let context = ProcessContext::new(44100, 64);
     let num_frames = 64;
@@ -197,9 +201,11 @@ fn test_mono_mix_down_laws() {
     // -3dB Law Matrix: [0.707, 0.707]
     let frac_1_sqrt2 = std::f32::consts::FRAC_1_SQRT_2;
     let mut plugin_3db = MatrixPlugin::with_matrix(2, 1, vec![frac_1_sqrt2, frac_1_sqrt2]).unwrap();
+    plugin_3db.initialize(44_100).unwrap();
 
     // -6dB Law Matrix: [0.5, 0.5]
     let mut plugin_6db = MatrixPlugin::with_matrix(2, 1, vec![0.5, 0.5]).unwrap();
+    plugin_6db.initialize(44_100).unwrap();
 
     let mut output_3db = vec![0.0; num_frames];
     let mut output_6db = vec![0.0; num_frames];

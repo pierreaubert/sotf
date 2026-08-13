@@ -194,14 +194,16 @@ pub fn create_plugin(
         "ChannelMuteSolo" | "channel_mute_solo" => {
             let params: sotf_plugin_channel_mute_solo::ChannelMuteSoloParams =
                 parse_params(config_json)?;
-            let plugin =
-                sotf_plugin_channel_mute_solo::ChannelMuteSoloPlugin::from_params(channels, params);
+            let plugin = sotf_plugin_channel_mute_solo::ChannelMuteSoloPlugin::try_from_params(
+                channels, params,
+            )?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Downmix" | "downmix" => {
-            let params: sotf_plugin_downmix::DownmixPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_downmix::DownmixPlugin::from_params(params);
+            let mut params: sotf_plugin_downmix::DownmixPluginParams = parse_params(config_json)?;
+            params.input_channels = channels;
+            let plugin = sotf_plugin_downmix::DownmixPlugin::try_from_params(params)?;
             Ok(Box::new(plugin))
         }
 
@@ -216,7 +218,7 @@ pub fn create_plugin(
 
         "AAE" | "aae" | "active_acoustic_enhancement" => {
             let params: sotf_plugin_aae::params::AaePluginParams = parse_params(config_json)?;
-            let mut plugin = sotf_plugin_aae::AaePlugin::from_params(params);
+            let mut plugin = sotf_plugin_aae::AaePlugin::try_from_params(params)?;
             plugin.initialize(sample_rate)?;
             Ok(Box::new(plugin))
         }
@@ -229,40 +231,73 @@ pub fn create_plugin(
 
         "Binaural" | "binaural" => {
             let params: sotf_plugin_binaural::BinauralDecoderParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_binaural::BinauralDecoderPlugin::from_params(params);
+            let plugin = sotf_plugin_binaural::BinauralDecoderPlugin::try_from_params(params)?;
             Ok(Box::new(plugin))
         }
 
         "Matrix" | "matrix" => {
-            let plugin = sotf_plugin_matrix::MatrixPlugin::new(channels, channels);
+            #[derive(serde::Deserialize, Default)]
+            struct MatrixConfig {
+                input_channels: Option<usize>,
+                output_channels: Option<usize>,
+                input_channel_map: Option<Vec<usize>>,
+                output_channel_map: Option<Vec<usize>>,
+                matrix: Option<Vec<f32>>,
+            }
+            let config: MatrixConfig = parse_params(config_json)?;
+            let MatrixConfig {
+                input_channels,
+                output_channels,
+                input_channel_map,
+                output_channel_map,
+                matrix,
+            } = config;
+            let plugin = match (
+                input_channel_map,
+                output_channel_map,
+                matrix,
+            ) {
+                (Some(input_map), Some(output_map), Some(matrix)) =>
+                    sotf_plugin_matrix::MatrixPlugin::with_sparse_mapping(input_map, output_map, matrix)?,
+                (None, None, Some(matrix)) => {
+                    let input = input_channels.unwrap_or(channels);
+                    let output = output_channels.unwrap_or(channels);
+                    sotf_plugin_matrix::MatrixPlugin::with_matrix(input, output, matrix)?
+                }
+                (None, None, None) if input_channels.is_none() && output_channels.is_none() =>
+                    sotf_plugin_matrix::MatrixPlugin::new(channels, channels),
+                _ => return Err("Matrix requires both channel maps and a matrix, or a full matrix configuration".into()),
+            };
             Ok(Box::new(plugin))
         }
 
         "MonoToStereo" | "mono_to_stereo" => {
             let params: sotf_plugin_mono_to_stereo::MonoToStereoPluginParams =
                 parse_params(config_json)?;
-            let plugin =
-                sotf_plugin_mono_to_stereo::MonoToStereoPlugin::from_params(channels, params);
+            let plugin = sotf_plugin_mono_to_stereo::MonoToStereoPlugin::try_from_params(
+                channels, params,
+            )?;
             Ok(Box::new(plugin))
         }
 
         "PND" | "pnd" => {
             let params: sotf_plugin_pnd::PndPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_pnd::PndPlugin::from_params(channels, params);
+            let plugin = sotf_plugin_pnd::PndPlugin::try_from_params(channels, params)?;
             Ok(Box::new(plugin))
         }
 
         "Denoiser" | "denoiser" => {
             let params: sotf_plugin_denoiser::DenoiserPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_denoiser::DenoiserPlugin::from_params(channels, params);
+            let plugin = sotf_plugin_denoiser::DenoiserPlugin::try_from_params(channels, params)?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "SpeechDenoiser" | "speech_denoiser" | "RNNoise" | "rnnoise" => {
             let params: sotf_plugin_speech_denoiser::SpeechDenoiserPluginParams =
                 parse_params(config_json)?;
-            let plugin =
-                sotf_plugin_speech_denoiser::SpeechDenoiserPlugin::from_params(channels, params);
+            let plugin = sotf_plugin_speech_denoiser::SpeechDenoiserPlugin::try_from_params(
+                channels, params,
+            )?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
@@ -275,13 +310,19 @@ pub fn create_plugin(
 
         "Declick" | "declick" | "TransientRepair" | "transient_repair" => {
             let params: sotf_plugin_declick::DeclickPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_declick::DeclickPlugin::from_params(channels, params);
+            let plugin =
+                sotf_plugin_declick::DeclickPlugin::from_params(channels, sample_rate, params)?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "ABCompare" | "ab_compare" => {
             let params: sotf_plugin_ab_compare::ABComparePluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_ab_compare::ABComparePlugin::from_params(channels, params)?;
+            let plugin = sotf_plugin_ab_compare::ABComparePlugin::from_params_with_factory(
+                channels,
+                sample_rate,
+                params,
+                create_nested_plugin,
+            )?;
             Ok(Box::new(plugin))
         }
 
@@ -302,14 +343,16 @@ pub fn create_plugin(
         "TransientShaper" | "transient_shaper" => {
             let params: sotf_plugin_transient_shaper::TransientShaperPluginParams =
                 parse_params(config_json)?;
-            let plugin =
-                sotf_plugin_transient_shaper::TransientShaperPlugin::from_params(channels, params);
+            let plugin = sotf_plugin_transient_shaper::TransientShaperPlugin::try_from_params(
+                channels, params,
+            )?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
         "Saturation" | "saturation" => {
             let params: sotf_plugin_saturation::SaturationPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_saturation::SaturationPlugin::from_params(channels, params);
+            let plugin =
+                sotf_plugin_saturation::SaturationPlugin::try_from_params(channels, params)?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
@@ -327,9 +370,10 @@ pub fn create_plugin(
         "SpectralCompressor" | "spectral_compressor" => {
             let params: sotf_plugin_spectral_compressor::SpectralCompressorPluginParams =
                 parse_params(config_json)?;
-            let plugin = sotf_plugin_spectral_compressor::SpectralCompressorPlugin::from_params(
-                channels, params,
-            );
+            let plugin =
+                sotf_plugin_spectral_compressor::SpectralCompressorPlugin::try_from_params(
+                    channels, params,
+                )?;
             Ok(Box::new(ParametricInPlacePluginAdapter::new(plugin)))
         }
 
@@ -342,6 +386,13 @@ pub fn create_plugin(
             let config: sotf_plugin_ambisonics::AmbisonicsDecoderConfig =
                 parse_params(config_json)?;
             let mut plugin = sotf_plugin_ambisonics::AmbisonicsDecoderPlugin::new(&config)?;
+            if plugin.input_channels() != channels {
+                return Err(format!(
+                    "Order-{} ambisonics requires {} input channels, got {channels}",
+                    config.order,
+                    plugin.input_channels()
+                ));
+            }
             plugin.initialize(sample_rate)?;
             Ok(Box::new(plugin))
         }
@@ -359,14 +410,36 @@ pub fn create_plugin(
         }
 
         "AEC" | "aec" => {
+            if channels != 2 {
+                return Err(format!(
+                    "AEC requires 2 input channels (microphone + reference), got {channels}"
+                ));
+            }
             let params: sotf_plugin_aec::AecPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_aec::AecPlugin::from_params(sample_rate, params);
+            let plugin = sotf_plugin_aec::AecPlugin::from_params(sample_rate, params)?;
             Ok(Box::new(plugin))
         }
 
         "Beamformer" | "beamformer" => {
             let params: sotf_plugin_beamformer::BeamformerPluginParams = parse_params(config_json)?;
-            let plugin = sotf_plugin_beamformer::BeamformerPlugin::from_params(sample_rate, params);
+            if params.num_mics != channels {
+                return Err(format!(
+                    "Beamformer is configured for {} microphones, got {channels} input channels",
+                    params.num_mics
+                ));
+            }
+            let plugin =
+                sotf_plugin_beamformer::BeamformerPlugin::from_params(sample_rate, params)?;
+            Ok(Box::new(plugin))
+        }
+
+        "SpectrumAnalyzer" | "spectrum_analyzer" => {
+            let config: sotf_host::SpectrumConfig = parse_params(config_json)?;
+            let plugin = sotf_host::SpectrumAnalyzerPlugin::with_config_at_sample_rate(
+                channels,
+                sample_rate,
+                config,
+            )?;
             Ok(Box::new(plugin))
         }
 

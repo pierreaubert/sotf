@@ -9,7 +9,7 @@ custom
 +---------------------------------------------------------------------+
 | menu ui                                        | menu preset | T S X|
 +---------------------------------------------------------------------+
-| Preset: [Identity] [Swap L/R] [Mono] [M/S Enc] [M/S Dec]           |
+| Preset: [Custom] [Stereo/5.1 Downmix] [M/S Enc] [M/S Dec] [5.1]   |
 +---------------------------------------------------------------------+
 |           IN: L     R     C    ...          | M S D              |
 | OUT:  L  [0 dB] [-∞ ] [-∞ ] ...           | [M] [S] [D] Front  |
@@ -28,11 +28,11 @@ custom
 ## Preset Buttons (Top Row)
 | Element | Type | Behavior |
 |---------|------|----------|
-| Identity | Button | Sets diagonal matrix (1:1 pass-through) |
-| Swap L/R | Button | Swaps left and right inputs |
-| Mono Mix | Button | Sums all inputs equally to all outputs |
-| M/S Encode | Button | Mid/Side encoding (disabled if >2 channels) |
-| M/S Decode | Button | Mid/Side decoding (disabled if >2 channels) |
+| Custom | Button | Keeps the current user-defined matrix |
+| Stereo/5.1 Downmix | Button | 2→2 pass-through or normalized SMPTE/WAVE 6→2 downmix |
+| M/S Encode | Button | Operates on the first two inputs/outputs |
+| M/S Decode | Button | Operates on the first two inputs/outputs |
+| 5.1 Remap | Button | Exact 6×6 SMPTE/WAVE-to-AAC order conversion |
 
 Active preset is highlighted with `theme.accent`. Disabled presets (M/S when >2 channels) shown at 50% opacity.
 
@@ -79,7 +79,7 @@ Column width: 80px. Separated from grid by `border_l_1`.
 ## Param Index Mapping
 Matrix cells are indexed as: `output_idx * input_channels + input_idx`
 
-The single ParamSpec entry (`gain`) is used for display scale; actual gain values are stored in the flat matrix array.
+The `gain` ParamSpec is the smoothed global output gain. Crosspoints are exposed as signed linear `gain_{input}_{output}` parameters; the custom grid performs dB display conversion.
 
 ## Responsive Behavior
 - Grid scales with channel count (cell size fixed at 48px)

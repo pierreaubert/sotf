@@ -779,6 +779,7 @@ fn test_loudness_compensation_zero_alloc() {
             let _ = plugin.get_data();
         }
     });
+    assert_no_allocs("LoudnessCompensationPlugin reset", || plugin.reset());
 }
 
 #[test]
@@ -802,6 +803,56 @@ fn test_matrix_zero_alloc() {
             plugin.process(&input, &mut output, &ctx).unwrap();
             let _ = plugin.get_data();
         }
+    });
+}
+
+#[test]
+#[serial]
+fn test_matrix_cold_irregular_process_and_realtime_edits_zero_alloc() {
+    let mut plugin = MatrixPlugin::new(2, 2);
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    let input = generate_test_buffer(4096, 2);
+    let mut output = vec![0.0f32; 4096 * 2];
+    let gain_id = ParameterId::from("gain_0_1");
+    let global_gain_id = ParameterId::from("gain");
+    let preset_id = ParameterId::from("preset");
+    let phase_id = ParameterId::from("phase_invert_0_1");
+    let mute_id = ParameterId::from("mute_0");
+    let solo_id = ParameterId::from("solo_1");
+    let dim_id = ParameterId::from("dim_0");
+    let blocks = [1, 257, 3, 4096, 17];
+    let contexts: Vec<_> = blocks
+        .iter()
+        .map(|&frames| ProcessContext::new(SAMPLE_RATE, frames))
+        .collect();
+
+    assert_no_allocs("MatrixPlugin cold/irregular/edit", || {
+        for (&frames, context) in blocks.iter().zip(&contexts) {
+            plugin
+                .process(&input[..frames * 2], &mut output[..frames * 2], context)
+                .unwrap();
+        }
+        plugin
+            .set_parameter(gain_id.clone(), ParameterValue::Float(0.5))
+            .unwrap();
+        plugin
+            .set_parameter(global_gain_id.clone(), ParameterValue::Float(0.75))
+            .unwrap();
+        plugin
+            .set_parameter(phase_id.clone(), ParameterValue::Bool(true))
+            .unwrap();
+        plugin
+            .set_parameter(mute_id.clone(), ParameterValue::Bool(true))
+            .unwrap();
+        plugin
+            .set_parameter(solo_id.clone(), ParameterValue::Bool(true))
+            .unwrap();
+        plugin
+            .set_parameter(dim_id.clone(), ParameterValue::Bool(true))
+            .unwrap();
+        plugin
+            .set_parameter(preset_id.clone(), ParameterValue::Int(2))
+            .unwrap();
     });
 }
 

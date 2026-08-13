@@ -1,3 +1,29 @@
+# 0.5.93
+
+## Fixes
+
+- Mark preset selection as structural in host-visible metadata, matching its
+  routing-table rebuild contract.
+
+# 0.5.92
+
+## Fixes
+
+- Smooth explicit phase inversion through zero and prune connections after zero-gain fades settle.
+- Make realtime gain, phase, mute, solo, and dim edits allocation-free; remove obsolete block-sized scratch and bypass unity channel-state work.
+- Add the missing `solo_N` controls and require exact channel-state widths atomically.
+- Make presets atomic and truthful: stereo input passes through, 5.1 downmix uses a headroom-normalized SMPTE law, and 5.1 remap converts SMPTE/WAVE order to AAC order.
+- Snap smoothing state on reset/reinitialization, reject a zero initialization rate, publish live parameter values, validate exact process buffers/sample rate, and report the crate version from package metadata.
+
+# 0.5.91
+
+## Fixes
+
+- Apply and smooth the global gain control, and publish current matrix/channel-state values.
+- Reject malformed or out-of-range dynamic IDs, sparse matrix dimensions, invalid preset indices, and channel-state widths without panics.
+- Validate process buffers and avoid growing block-sized scratch during processing; reset now settles routing smoothers.
+- Preserve configured nonsquare Matrix state in the plugins bridge factory.
+
 # 0.5.90
 
 ## Fixes

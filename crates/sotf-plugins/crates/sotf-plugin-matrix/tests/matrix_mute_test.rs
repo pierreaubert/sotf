@@ -32,7 +32,7 @@ mod tests {
                 dimmed: false,
             },
         ];
-        plugin = plugin.with_channel_states(states);
+        plugin = plugin.with_channel_states(states).unwrap();
 
         // 4. Process audio WITH mute
         let mut output_muted = vec![0.0; 2];
@@ -64,7 +64,7 @@ mod tests {
                 dimmed: false,
             },
         ];
-        plugin = plugin.with_channel_states(states);
+        plugin = plugin.with_channel_states(states).unwrap();
 
         // 3. Process
         let mut output_dimmed = vec![0.0; 2];

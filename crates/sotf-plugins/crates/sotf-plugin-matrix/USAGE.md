@@ -8,13 +8,13 @@ A flexible channel routing and mixing matrix that maps N input channels to P out
 
 ### Gain Matrix
 
-An N×P matrix where each cell represents the gain from one input channel to one output channel. Values are stored as linear gains but displayed in dB.
+An N×P matrix where each cell represents the gain from one input channel to one output channel. Values and generic host parameters are bounded linear coefficients. A custom UI may display their magnitude in dB, but converts to/from the linear API explicitly.
 
 **Per-Cell Parameters:**
 
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
-| Gain | -144 to +24 | varies | dB | Gain from input to output (-∞ displayed as mute). Identity matrix: diagonal = 0 dB, off-diagonal = -∞. UI interaction clamps to -60 to +6 dB |
+| Gain | -1.0 to +1.0 | varies | linear | Signed gain from input to output. Identity matrix: diagonal = 1, off-diagonal = 0 |
 
 ### Channel States
 
@@ -32,9 +32,11 @@ Built-in matrix presets for common routing configurations:
 
 | Preset | Description |
 |--------|-------------|
-| Identity | 1:1 pass-through (diagonal = 0 dB) |
-| Swap L/R | Swaps left and right channels |
-| Mono Mix | Sums all inputs to all outputs equally |
+| `custom` | User-defined matrix |
+| `stereo_downmix` | 2→2 pass-through, or normalized SMPTE/WAVE 5.1→2 (LFE omitted) |
+| `ms_encode` | M=(L+R)/2, S=(L-R)/2 in the first two outputs |
+| `ms_decode` | L=M+S, R=M-S from the first two inputs |
+| `5.1_remap` | Exact 6×6 SMPTE/WAVE `[L,R,C,LFE,Ls,Rs]` to AAC `[C,L,R,Ls,Rs,LFE]` |
 
 ## Demos
 
@@ -82,31 +84,7 @@ Built-in matrix presets for common routing configurations:
 
 ## Presets
 
-### Identity
-**Use case:** Pass-through with no routing changes
-```json
-{
-  "matrix": "identity"
-}
-```
-**Tips:** Starting point for custom routing. Modify individual cells from here.
-
-### Swap L/R
-**Use case:** Correct reversed speaker wiring
-```json
-{
-  "matrix": "swap_lr"
-}
-```
-
-### Mono Mix
-**Use case:** Sum all channels to mono
-```json
-{
-  "matrix": "mono_mix"
-}
-```
-**Tips:** Gain is automatically scaled by 1/sqrt(N) to prevent clipping.
+Presets are selected by the `preset` integer parameter in the order listed above. A failed preset selection leaves both the prior matrix and preset unchanged.
 
 ## Tips & Best Practices
 
@@ -126,5 +104,5 @@ For each output channel:
                     for all input channels
 
 Where state_gain = mute(0.0) | solo(1.0/0.0) | dim(0.1) | normal(1.0)
-All gains smoothed over ~5ms
+The global gain, signed connection gain (including phase changes), and state gain are smoothed over ~5 ms.
 ```

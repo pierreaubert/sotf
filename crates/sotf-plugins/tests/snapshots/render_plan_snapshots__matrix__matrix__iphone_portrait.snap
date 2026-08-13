@@ -1,5 +1,6 @@
 ---
 source: crates/sotf-plugins/tests/render_plan_snapshots.rs
+assertion_line: 76
 expression: plan
 ---
 {
@@ -38,7 +39,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     }

@@ -38,7 +38,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     }

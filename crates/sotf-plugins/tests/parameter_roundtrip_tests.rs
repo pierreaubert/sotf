@@ -91,8 +91,9 @@ fn default_params(plugin_type: &str) -> serde_json::Value {
             "matrix": [1.0, 0.0, 0.0, 1.0],
         }),
         "band_split" => serde_json::json!({
-            "bands": 2,
-            "crossover_frequencies": [1000.0],
+            "num_bands": 2,
+            "frequency": 1000.0,
+            "type": "LR24",
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -116,7 +117,6 @@ fn default_params(plugin_type: &str) -> serde_json::Value {
 enum ExceptionContract {
     ConditionalSetter,
     ReadOnly,
-    RequiresProcessFixture,
     Trigger,
 }
 
@@ -145,8 +145,38 @@ const PARAMETER_EXCEPTIONS: &[ParameterException] = &[
     ParameterException {
         plugin_type: "gate",
         parameter_id: "sidechain_external",
-        contract: ExceptionContract::RequiresProcessFixture,
-        reason: "processing requires interleaved main and sidechain channels",
+        contract: ExceptionContract::ConditionalSetter,
+        reason: "sidechain topology requires a graph rebuild",
+    },
+    ParameterException {
+        plugin_type: "spectral_compressor",
+        parameter_id: "fft_size",
+        contract: ExceptionContract::ConditionalSetter,
+        reason: "FFT topology requires a graph rebuild",
+    },
+    ParameterException {
+        plugin_type: "spectrum_analyzer",
+        parameter_id: "num_bins",
+        contract: ExceptionContract::ConditionalSetter,
+        reason: "display shape is setup-only",
+    },
+    ParameterException {
+        plugin_type: "spectrum_analyzer",
+        parameter_id: "min_freq",
+        contract: ExceptionContract::ConditionalSetter,
+        reason: "frequency bounds are setup-only",
+    },
+    ParameterException {
+        plugin_type: "spectrum_analyzer",
+        parameter_id: "max_freq",
+        contract: ExceptionContract::ConditionalSetter,
+        reason: "frequency bounds are setup-only",
+    },
+    ParameterException {
+        plugin_type: "beamformer",
+        parameter_id: "beamformer_type",
+        contract: ExceptionContract::ConditionalSetter,
+        reason: "algorithm topology requires a graph rebuild",
     },
     ParameterException {
         plugin_type: "denoiser",

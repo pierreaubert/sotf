@@ -20,8 +20,8 @@ use sotf_host::plugin_params::PluginParamDef;
 
 pub const PARAMS: &[ParamSpec] =
     &[
-        ParamSpec::float("Gain", "gain", 0.0, 0.0, 1.0, 0.05, "", "Matrix")
-            .doc("Matrix routing coefficient"),
+        ParamSpec::float("Gain", "gain", 1.0, 0.0, 1.0, 0.05, "", "Matrix")
+            .doc("Master output gain (linear)"),
     ];
 
 // ============================================================================
