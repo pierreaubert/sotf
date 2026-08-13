@@ -118,6 +118,100 @@ fn mono_downmix_sums_inputs() {
     assert!((output[1] - 0.5).abs() < 1e-3);
 }
 
+fn scalar_matrix_reference(
+    input: &[f32],
+    input_channels: usize,
+    output_channels: usize,
+    matrix: &[f32],
+) -> Vec<f32> {
+    let frames = input.len() / input_channels;
+    let mut output = vec![0.0; frames * output_channels];
+    for frame in 0..frames {
+        for output_channel in 0..output_channels {
+            for input_channel in 0..input_channels {
+                output[frame * output_channels + output_channel] += input
+                    [frame * input_channels + input_channel]
+                    * matrix[output_channel * input_channels + input_channel];
+            }
+        }
+    }
+    output
+}
+
+fn process_partitioned(plugin: &mut MatrixPlugin, input: &[f32], partitions: &[usize]) -> Vec<f32> {
+    let input_channels = plugin.input_channels();
+    let output_channels = plugin.output_channels();
+    let mut output = Vec::with_capacity(input.len() / input_channels * output_channels);
+    let mut frame_offset = 0;
+    for &frames in partitions {
+        let input_start = frame_offset * input_channels;
+        let input_end = input_start + frames * input_channels;
+        let mut block_output = vec![0.0; frames * output_channels];
+        plugin
+            .process(
+                &input[input_start..input_end],
+                &mut block_output,
+                &ProcessContext::new(SAMPLE_RATE, frames),
+            )
+            .unwrap();
+        output.extend_from_slice(&block_output);
+        frame_offset += frames;
+    }
+    output
+}
+
+#[test]
+fn selected_kernels_match_scalar_reference_and_are_partition_invariant() {
+    let cases = [
+        (2, 2, vec![1.0, 0.0, 0.0, 1.0]),
+        (2, 2, vec![0.0, 1.0, 1.0, 0.0]),
+        (3, 1, vec![0.5, 0.25, -0.25]),
+        (2, 2, vec![0.5, 0.25, -0.25, 0.75]),
+        (3, 2, vec![0.5, 0.0, 0.0, 0.0, 0.25, 0.0]),
+    ];
+    let frames = 17;
+
+    for (input_channels, output_channels, matrix) in cases {
+        let input: Vec<f32> = (0..frames * input_channels)
+            .map(|sample| ((sample * 37 % 101) as f32 - 50.0) / 53.0)
+            .collect();
+        let reference = scalar_matrix_reference(&input, input_channels, output_channels, &matrix);
+
+        let mut whole =
+            MatrixPlugin::with_matrix(input_channels, output_channels, matrix.clone()).unwrap();
+        whole.initialize(SAMPLE_RATE).unwrap();
+        let whole_output = process_partitioned(&mut whole, &input, &[frames]);
+
+        let mut partitioned =
+            MatrixPlugin::with_matrix(input_channels, output_channels, matrix).unwrap();
+        partitioned.initialize(SAMPLE_RATE).unwrap();
+        let partitioned_output = process_partitioned(&mut partitioned, &input, &[1, 3, 7, 6]);
+
+        assert_eq!(whole_output, reference);
+        assert_eq!(partitioned_output, reference);
+    }
+}
+
+#[test]
+fn coefficient_automation_is_partition_invariant_through_settling() {
+    let frames = 512;
+    let input: Vec<f32> = (0..frames * 2)
+        .map(|sample| ((sample * 19 % 67) as f32 - 33.0) / 37.0)
+        .collect();
+    let mut whole = MatrixPlugin::with_matrix(2, 2, vec![0.5, 0.0, 0.0, 0.5]).unwrap();
+    let mut partitioned = MatrixPlugin::with_matrix(2, 2, vec![0.5, 0.0, 0.0, 0.5]).unwrap();
+    for plugin in [&mut whole, &mut partitioned] {
+        plugin.initialize(SAMPLE_RATE).unwrap();
+        plugin.set_gain(0, 0, 1.0).unwrap();
+        plugin.set_gain(1, 1, 1.0).unwrap();
+    }
+
+    let whole_output = process_partitioned(&mut whole, &input, &[frames]);
+    let partitioned_output =
+        process_partitioned(&mut partitioned, &input, &[1, 15, 64, 3, 127, 302]);
+    assert_eq!(partitioned_output, whole_output);
+}
+
 #[test]
 fn sparse_mapping_routes_to_physical_channels() {
     let mut plugin = MatrixPlugin::with_sparse_mapping(
@@ -137,6 +231,32 @@ fn sparse_mapping_routes_to_physical_channels() {
 
     assert_eq!(output[15], 10.0);
     assert_eq!(output[16], 20.0);
+}
+
+#[test]
+fn weighted_sparse_mapping_matches_physical_scalar_oracle() {
+    let mut plugin = MatrixPlugin::with_sparse_mapping(
+        vec![0, 5, 127],
+        vec![2, 126],
+        vec![0.5, -0.25, 0.125, -0.75, 0.375, 0.0],
+    )
+    .unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    let frames = 7;
+    let mut input = vec![0.0; frames * 128];
+    for frame in 0..frames {
+        input[frame * 128] = frame as f32 + 1.0;
+        input[frame * 128 + 5] = 2.0 - frame as f32 * 0.25;
+        input[frame * 128 + 127] = -0.5 * frame as f32;
+    }
+    let output = process_partitioned(&mut plugin, &input, &[1, 2, 4]);
+    for frame in 0..frames {
+        let a = input[frame * 128];
+        let b = input[frame * 128 + 5];
+        let c = input[frame * 128 + 127];
+        assert_eq!(output[frame * 127 + 2], a * 0.5 + b * -0.25 + c * 0.125);
+        assert_eq!(output[frame * 127 + 126], a * -0.75 + b * 0.375);
+    }
 }
 
 // ----------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-matrix"
 description = "SOTF Matrix plugin - channel matrix mixing"
-version = "0.5.92"
+version = "0.5.93"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

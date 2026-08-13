@@ -446,6 +446,97 @@ pub(super) fn benchmark_matrix(c: &mut Criterion) {
         });
     }
 
+    // 8x8 permutation
+    {
+        let mut matrix = vec![0.0; 64];
+        for output in 0..8 {
+            matrix[output * 8 + (7 - output)] = 1.0;
+        }
+        let mut plugin = MatrixPlugin::with_matrix(8, 8, matrix).unwrap();
+        plugin.initialize(SAMPLE_RATE).unwrap();
+        let input = generate_test_buffer(BUFFER_SIZE, 8);
+        let mut output = vec![0.0f32; BUFFER_SIZE * 8];
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+        group.bench_function("permutation_8x8", |b| {
+            b.iter(|| {
+                plugin
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
+                    .unwrap();
+            })
+        });
+    }
+
+    // 8-channel mono sum
+    {
+        let mut plugin = MatrixPlugin::with_matrix(8, 1, vec![0.125; 8]).unwrap();
+        plugin.initialize(SAMPLE_RATE).unwrap();
+        let input = generate_test_buffer(BUFFER_SIZE, 8);
+        let mut output = vec![0.0f32; BUFFER_SIZE];
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+        group.bench_function("mono_sum_8to1", |b| {
+            b.iter(|| {
+                plugin
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
+                    .unwrap();
+            })
+        });
+    }
+
+    // Dense 8x8 mix
+    {
+        let matrix: Vec<f32> = (0..64)
+            .map(|index| (index * 17 % 31 + 1) as f32 / 64.0)
+            .collect();
+        let mut plugin = MatrixPlugin::with_matrix(8, 8, matrix).unwrap();
+        plugin.initialize(SAMPLE_RATE).unwrap();
+        let input = generate_test_buffer(BUFFER_SIZE, 8);
+        let mut output = vec![0.0f32; BUFFER_SIZE * 8];
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+        group.bench_function("dense_8x8", |b| {
+            b.iter(|| {
+                plugin
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
+                    .unwrap();
+            })
+        });
+    }
+
+    // Sparse 16x16 mix with four routes
+    {
+        let mut matrix = vec![0.0; 16 * 16];
+        for channel in [0, 5, 10, 15] {
+            matrix[channel * 16 + channel] = 0.75;
+        }
+        let mut plugin = MatrixPlugin::with_matrix(16, 16, matrix).unwrap();
+        plugin.initialize(SAMPLE_RATE).unwrap();
+        let input = generate_test_buffer(BUFFER_SIZE, 16);
+        let mut output = vec![0.0f32; BUFFER_SIZE * 16];
+        let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+        group.bench_function("sparse_16x16_four_routes", |b| {
+            b.iter(|| {
+                plugin
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
+                    .unwrap();
+            })
+        });
+    }
+
     group.finish();
 }
 

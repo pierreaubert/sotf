@@ -1,3 +1,10 @@
+# 0.5.93
+
+## Performance
+
+- Select identity/copy, permutation, mono-sum, dense, or sparse processing kernels when routing changes, including settled mute/dim/solo states, while retaining the per-sample scalar smoothing path during transitions.
+- Add exact scalar-reference, irregular-partition, per-kernel allocation, Criterion, and p50/p95/worst-callback QA coverage.
+
 # 0.5.92
 
 ## Fixes

@@ -16,6 +16,15 @@ use sotf_plugin_channel_mute_solo::ChannelState;
 
 const MAX_MATRIX_CHANNELS: usize = 128;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MatrixKernel {
+    Identity,
+    Permutation,
+    MonoSum,
+    Dense,
+    Sparse,
+}
+
 /// Matrix mixer plugin that routes N input channels to P output channels
 ///
 /// Gains are linear coefficients. Negative gains are allowed and produce
@@ -39,6 +48,8 @@ pub struct MatrixPlugin {
     /// Resolved (phys_in, phys_out) per active connection, rebuilt
     /// alongside active_connections to avoid per-sample channel-map lookups.
     pub(super) connection_phys: Vec<(usize, usize)>,
+    kernel: MatrixKernel,
+    coefficients_transitioning: bool,
     /// Avoids advancing output-state smoothers in the common all-unity case.
     pub(super) channel_state_processing_active: bool,
     pub(super) cached_parameters: Vec<sotf_host::parameters::Parameter>,
@@ -74,6 +85,8 @@ impl MatrixPlugin {
             ],
             active_connections: Vec::with_capacity(matrix_len),
             connection_phys: Vec::with_capacity(matrix_len),
+            kernel: MatrixKernel::Sparse,
+            coefficients_transitioning: false,
             channel_state_processing_active: false,
             cached_parameters: Vec::new(),
             gain: 1.0,
@@ -125,6 +138,8 @@ impl MatrixPlugin {
             ],
             active_connections: Vec::with_capacity(matrix_len),
             connection_phys: Vec::with_capacity(matrix_len),
+            kernel: MatrixKernel::Sparse,
+            coefficients_transitioning: false,
             channel_state_processing_active: false,
             cached_parameters: Vec::new(),
             gain: 1.0,
@@ -227,6 +242,8 @@ impl MatrixPlugin {
             ],
             active_connections: Vec::with_capacity(matrix_len),
             connection_phys: Vec::with_capacity(matrix_len),
+            kernel: MatrixKernel::Sparse,
+            coefficients_transitioning: false,
             channel_state_processing_active: false,
             cached_parameters: Vec::new(),
             gain: 1.0,
@@ -340,6 +357,163 @@ impl MatrixPlugin {
                         self.output_channel_map[out_ch]
                     };
                     self.connection_phys.push((phys_in, phys_out));
+                }
+            }
+        }
+        self.kernel = self.classify_kernel();
+        self.coefficients_transitioning = self.active_connections.iter().any(|&(_, _, idx)| {
+            (self.gain_smoothers[idx].current() - self.gain_smoothers[idx].target()).abs() > 1e-6
+        });
+    }
+
+    fn classify_kernel(&self) -> MatrixKernel {
+        let unity = |idx: usize| {
+            (self.gain_smoothers[idx].current() - 1.0).abs() <= 1e-6
+                && (self.gain_smoothers[idx].target() - 1.0).abs() <= 1e-6
+        };
+
+        if !self.active_connections.is_empty()
+            && self
+                .active_connections
+                .iter()
+                .zip(&self.connection_phys)
+                .all(|(&(_, _, idx), &(phys_in, phys_out))| phys_in == phys_out && unity(idx))
+        {
+            return MatrixKernel::Identity;
+        }
+
+        let permutation = !self.active_connections.is_empty()
+            && self
+                .active_connections
+                .iter()
+                .enumerate()
+                .all(|(position, &(_, _, idx))| {
+                    let (phys_in, phys_out) = self.connection_phys[position];
+                    unity(idx)
+                        && self.connection_phys[..position].iter().all(
+                            |&(previous_in, previous_out)| {
+                                previous_in != phys_in && previous_out != phys_out
+                            },
+                        )
+                });
+        if permutation {
+            return MatrixKernel::Permutation;
+        }
+        if self.physical_output_channels == 1 && self.active_connections.len() > 1 {
+            return MatrixKernel::MonoSum;
+        }
+        if self.active_connections.len() == self.num_inputs() * self.num_outputs() {
+            MatrixKernel::Dense
+        } else {
+            MatrixKernel::Sparse
+        }
+    }
+
+    #[inline]
+    fn smoothing_is_settled(&self) -> bool {
+        !self.coefficients_transitioning
+            && (self.gain_smoother.current() - self.gain_smoother.target()).abs() <= 1e-6
+            && self
+                .channel_state_smoothers
+                .iter()
+                .all(|smoother| (smoother.current() - smoother.target()).abs() <= 1e-6)
+    }
+
+    fn process_settled_kernel(&self, input: &[f32], output: &mut [f32], num_frames: usize) {
+        let in_channels = self.physical_input_channels;
+        let out_channels = self.physical_output_channels;
+        let global_gain = self.gain_smoother.current();
+        let output_gain = |logical_out: usize| {
+            self.channel_state_smoothers
+                .get(logical_out)
+                .map_or(1.0, Smoother::current)
+                * global_gain
+        };
+
+        if self.kernel == MatrixKernel::Identity
+            && in_channels == out_channels
+            && self.active_connections.len() == in_channels
+            && global_gain == 1.0
+            && self
+                .active_connections
+                .iter()
+                .all(|&(_, _, idx)| self.gain_smoothers[idx].current() == 1.0)
+            && self
+                .channel_state_smoothers
+                .iter()
+                .all(|smoother| smoother.current() == 1.0)
+        {
+            output.copy_from_slice(input);
+            return;
+        }
+
+        output.fill(0.0);
+        match self.kernel {
+            MatrixKernel::Identity | MatrixKernel::Permutation => {
+                for frame in 0..num_frames {
+                    let base_in = frame * in_channels;
+                    let base_out = frame * out_channels;
+                    for (&(_, logical_out, idx), &(phys_in, phys_out)) in self
+                        .active_connections
+                        .iter()
+                        .zip(self.connection_phys.iter())
+                    {
+                        output[base_out + phys_out] = input[base_in + phys_in]
+                            * self.gain_smoothers[idx].current()
+                            * output_gain(logical_out);
+                    }
+                }
+            }
+            MatrixKernel::MonoSum => {
+                let physical_output = self.connection_phys[0].1;
+                let logical_output = self.active_connections[0].1;
+                for frame in 0..num_frames {
+                    let base_in = frame * in_channels;
+                    let mut sum = 0.0;
+                    for (&(_, _, idx), &(phys_in, _)) in self
+                        .active_connections
+                        .iter()
+                        .zip(self.connection_phys.iter())
+                    {
+                        sum += input[base_in + phys_in] * self.gain_smoothers[idx].current();
+                    }
+                    output[frame * out_channels + physical_output] =
+                        sum * output_gain(logical_output);
+                }
+            }
+            MatrixKernel::Dense => {
+                let input_map = &self.input_channel_map;
+                let output_map = &self.output_channel_map;
+                let logical_inputs = self.num_inputs();
+                for frame in 0..num_frames {
+                    let base_in = frame * in_channels;
+                    let base_out = frame * out_channels;
+                    for logical_out in 0..self.num_outputs() {
+                        let phys_out = output_map.get(logical_out).copied().unwrap_or(logical_out);
+                        let row = logical_out * logical_inputs;
+                        let mut sum = 0.0;
+                        for logical_in in 0..logical_inputs {
+                            let phys_in = input_map.get(logical_in).copied().unwrap_or(logical_in);
+                            sum += input[base_in + phys_in]
+                                * self.gain_smoothers[row + logical_in].current();
+                        }
+                        output[base_out + phys_out] = sum * output_gain(logical_out);
+                    }
+                }
+            }
+            MatrixKernel::Sparse => {
+                for frame in 0..num_frames {
+                    let base_in = frame * in_channels;
+                    let base_out = frame * out_channels;
+                    for (&(_, logical_out, idx), &(phys_in, phys_out)) in self
+                        .active_connections
+                        .iter()
+                        .zip(self.connection_phys.iter())
+                    {
+                        output[base_out + phys_out] += input[base_in + phys_in]
+                            * self.gain_smoothers[idx].current()
+                            * output_gain(logical_out);
+                    }
                 }
             }
         }
@@ -880,6 +1054,10 @@ impl Plugin for MatrixPlugin {
                 output_len
             ));
         }
+        if self.smoothing_is_settled() {
+            self.process_settled_kernel(input, output, num_frames);
+            return Ok(num_frames);
+        }
         output.fill(0.0);
 
         // Frames outer, connections inner: keeps the current frame's input/output
@@ -926,6 +1104,14 @@ impl Plugin for MatrixPlugin {
                 && self.gain_smoothers[idx].current().abs() <= 1e-4
         }) {
             self.update_active_connections();
+        } else if self.coefficients_transitioning
+            && self.active_connections.iter().all(|&(_, _, idx)| {
+                (self.gain_smoothers[idx].current() - self.gain_smoothers[idx].target()).abs()
+                    <= 1e-6
+            })
+        {
+            self.coefficients_transitioning = false;
+            self.kernel = self.classify_kernel();
         }
         if self.channel_state_processing_active
             && self
@@ -946,6 +1132,10 @@ impl Plugin for MatrixPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sotf_host::{CountingAlloc, assert_no_allocs};
+
+    #[global_allocator]
+    static ALLOCATOR: CountingAlloc = CountingAlloc;
 
     #[test]
     fn test_identity_matrix_2x2() {
@@ -1645,5 +1835,95 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown parameter"));
+    }
+
+    #[test]
+    fn setup_selects_specialized_kernel_for_each_matrix_shape() {
+        let identity = MatrixPlugin::new(2, 2);
+        assert_eq!(identity.kernel, MatrixKernel::Identity);
+
+        let permutation = MatrixPlugin::with_matrix(2, 2, vec![0.0, 1.0, 1.0, 0.0]).unwrap();
+        assert_eq!(permutation.kernel, MatrixKernel::Permutation);
+
+        let mono_sum = MatrixPlugin::with_matrix(3, 1, vec![0.5, 0.25, -0.25]).unwrap();
+        assert_eq!(mono_sum.kernel, MatrixKernel::MonoSum);
+
+        let dense = MatrixPlugin::with_matrix(2, 2, vec![0.5, 0.25, -0.25, 0.75]).unwrap();
+        assert_eq!(dense.kernel, MatrixKernel::Dense);
+
+        let sparse = MatrixPlugin::with_matrix(3, 2, vec![0.5, 0.0, 0.0, 0.0, 0.25, 0.0]).unwrap();
+        assert_eq!(sparse.kernel, MatrixKernel::Sparse);
+    }
+
+    #[test]
+    fn every_settled_kernel_processes_without_allocating() {
+        let cases = [
+            (2, 2, vec![1.0, 0.0, 0.0, 1.0]),
+            (2, 2, vec![0.0, 1.0, 1.0, 0.0]),
+            (3, 1, vec![0.5, 0.25, -0.25]),
+            (2, 2, vec![0.5, 0.25, -0.25, 0.75]),
+            (3, 2, vec![0.5, 0.0, 0.0, 0.0, 0.25, 0.0]),
+        ];
+        for (input_channels, output_channels, matrix) in cases {
+            let mut plugin =
+                MatrixPlugin::with_matrix(input_channels, output_channels, matrix).unwrap();
+            plugin.initialize(48_000).unwrap();
+            let input = vec![0.25; 257 * input_channels];
+            let mut output = vec![0.0; 257 * output_channels];
+            let context = ProcessContext::new(48_000, 257);
+            assert_no_allocs("Matrix settled kernel process", || {
+                plugin.process(&input, &mut output, &context).unwrap();
+            });
+        }
+    }
+
+    #[test]
+    fn automation_reclassifies_identity_after_nonzero_transition_settles() {
+        let mut plugin = MatrixPlugin::with_matrix(2, 2, vec![0.5, 0.0, 0.0, 0.5]).unwrap();
+        plugin.initialize(48_000).unwrap();
+        plugin.set_gain(0, 0, 1.0).unwrap();
+        plugin.set_gain(1, 1, 1.0).unwrap();
+        assert_ne!(plugin.kernel, MatrixKernel::Identity);
+
+        let input = vec![0.25; 4096 * 2];
+        let mut output = vec![0.0; input.len()];
+        let context = ProcessContext::new(48_000, 4096);
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        assert_eq!(plugin.kernel, MatrixKernel::Identity);
+        assert!(!plugin.coefficients_transitioning);
+    }
+
+    #[test]
+    fn legacy_wide_new_constructor_does_not_panic_during_classification() {
+        let mut plugin = MatrixPlugin::new(MAX_MATRIX_CHANNELS + 1, MAX_MATRIX_CHANNELS + 1);
+        plugin.set_gain(MAX_MATRIX_CHANNELS, 0, 0.5).unwrap();
+        assert_eq!(plugin.kernel, MatrixKernel::Sparse);
+    }
+
+    #[test]
+    fn near_unity_identity_preserves_exact_coefficient() {
+        let coefficient = f32::from_bits(1.0f32.to_bits() - 1);
+        let mut plugin = MatrixPlugin::with_matrix(1, 1, vec![coefficient]).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let mut output = [0.0];
+        plugin
+            .process(&[1.0], &mut output, &ProcessContext::new(48_000, 1))
+            .unwrap();
+        assert_eq!(output[0], coefficient);
+
+        let mut plugin = MatrixPlugin::new(1, 1);
+        plugin
+            .set_parameter(
+                ParameterId::from("gain"),
+                ParameterValue::Float(coefficient),
+            )
+            .unwrap();
+        plugin.reset();
+        let mut output = [0.0];
+        plugin
+            .process(&[1.0], &mut output, &ProcessContext::new(48_000, 1))
+            .unwrap();
+        assert_eq!(output[0], coefficient);
     }
 }

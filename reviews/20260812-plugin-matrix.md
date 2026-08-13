@@ -19,9 +19,17 @@ Verified and remediated on branch `fix/20260812-plugin-review-findings`. Every P
 | P2 misleading/non-atomic presets | Fixed | 2→2 pass-through, normalized SMPTE 5.1→2, defined WAVE→AAC remap; headroom, identifiable-channel, and rollback tests |
 | P2 solo/reset contracts | Fixed | `solo_N` register/set/get and multi-solo tests; `reset_and_reinitialize_snap_transitions_to_configured_targets` |
 | P2 channel-gain hot pass | Fixed | Block scratch removed and all-unity state bypassed; cold/irregular allocation test |
-| P3 docs/version/tests drift | Fixed | Docs match runtime presets/API; crate and `PluginInfo` use 0.5.92; changelog and focused regressions updated |
+| P3 docs/version/tests drift | Fixed | Docs match runtime presets/API; crate and `PluginInfo` use 0.5.93; changelog and focused regressions updated |
 
-The review's suggested deadline-distribution benchmark matrix remains useful future performance characterization, but it is not a correctness defect and is not used as a substitute for any remediation above.
+Performance follow-up in 0.5.93 closes the retained characterization gap:
+control-time classification selects identity/copy, permutation, mono-sum,
+dense, or sparse settled kernels while transitions retain the scalar
+per-sample smoother path. All kernels are compared sample-exactly with the
+row-major scalar reference across irregular partitions, including weighted
+128-channel physical mappings, and have dedicated zero-allocation coverage.
+Criterion now exercises each topology, and the QA binary reports p50, p95, and
+worst callback times at 16, 256, and 4096 frames while gating the scheduler-robust
+p95 against the callback deadline.
 
 Date: 2026-08-12
 
