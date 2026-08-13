@@ -35,10 +35,11 @@ cargo test -p sotf-plugin-limiter
 
 ## Important Notes
 
-- True peak detection uses 4x oversampled `TruePeakDetector` from sotf-host. When enabled, the limiter detects inter-sample peaks that exceed the threshold.
-- ISP mode adds a feedback correction loop: output ISP detectors measure post-limiting peaks, and any violations incrementally lower the effective threshold (`isp_correction_db`).
+- True peak detection uses the ITU-R BS.1770 Table-2 4x polyphase FIR. Its six-sample detector delay is covered by ISP lookahead.
+- ISP mode is predictive and requires hard mode, 100% wet mix, and at least six lookahead samples. Output ISP feedback is supplementary verification/correction, not the primary detector.
 - Dual release uses `DualRelease` from sotf-host with separate fast and slow time constants for natural-sounding gain recovery.
-- Feed-forward mode computes gain from the input signal; feedback mode (default) computes from the output.
+- Every nonzero-lookahead configuration is predictive. Sliding maxima use preallocated monotonic queues with amortized O(1) updates.
 - Link amount controls stereo coupling: 0 = independent channels, 1 = fully linked (max of all channels used).
+- Lookahead is structural after initialization because it changes host latency.
 - Uses fast math (`fast_log10`, `fast_pow10`) from `math-dsp`.
 - FTZ/DAZ enabled and denormals flushed post-processing.

@@ -44,16 +44,18 @@ pub const PARAMS: &[ParamSpec] = &[
         "ms",
         "Timing",
     )
-    .doc("Pre-delay for peak catching"),
+    .structural()
+    .setup()
+    .doc("Graph latency / pre-delay for predictive peak catching"),
     ParamSpec::bool_labeled("Soft Knee", "soft", false, "Soft", "Hard", "Dynamics")
         .setup()
-        .doc("Gradual vs hard limiting onset"),
+        .doc("One-dB gain-computer knee vs hard limiting onset"),
     ParamSpec::bool_labeled("True Peak", "true_peak", false, "On", "Off", "Detection")
         .setup()
-        .doc("Detect inter-sample peaks"),
+        .doc("ITU-R BS.1770 Table-2 4x inter-sample peak detection"),
     ParamSpec::bool_labeled("ISP Limit", "isp_mode", false, "On", "Off", "Detection")
         .setup()
-        .doc("Guarantee output has no inter-sample peaks above ceiling"),
+        .doc("Predictive ISP limiting; requires hard mode, 100% wet, and at least six lookahead samples"),
     ParamSpec::bool_labeled("Dual Release", "dual_release", false, "On", "Off", "Timing")
         .setup()
         .doc("Fast+slow release envelopes"),
@@ -74,7 +76,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Detection",
     )
     .setup()
-    .doc("Scan lookahead buffer for anticipatory gain reduction"),
+    .doc("Compatibility control; nonzero lookahead is always predictive"),
 ];
 
 // ============================================================================

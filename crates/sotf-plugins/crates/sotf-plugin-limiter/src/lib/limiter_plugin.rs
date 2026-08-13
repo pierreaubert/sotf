@@ -4,7 +4,7 @@ use super::types::LimiterPluginParams;
 use crate::params::PARAMS as LM;
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::param_specs::{UpdateMode, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::plugin::{
@@ -13,13 +13,145 @@ use sotf_host::plugin::{
 };
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
-use sotf_host::{DualRelease, ParametricInPlacePlugin, TruePeakDetector};
+use sotf_host::{DualRelease, ParametricInPlacePlugin};
 use std::any::Any;
 use std::sync::Arc;
+
+const TRUE_PEAK_TAPS: usize = 12;
+// Preserve the published BS.1770 Table-2 decimal coefficients verbatim; the
+// f32 conversion is intentional for the plugin's f32 realtime signal path.
+#[allow(clippy::excessive_precision)]
+const TRUE_PEAK_PHASES: [[f32; TRUE_PEAK_TAPS]; 4] = [
+    [
+        0.001708984375,
+        -0.029174804688,
+        -0.018920898438,
+        0.07763671875,
+        0.098388671875,
+        -0.189758300781,
+        -0.395385742188,
+        0.889312744141,
+        0.644409179688,
+        -0.0517578125,
+        -0.024536132813,
+        0.001586914063,
+    ],
+    [
+        -0.029174804688,
+        0.001708984375,
+        0.07763671875,
+        -0.018920898438,
+        -0.189758300781,
+        0.098388671875,
+        0.889312744141,
+        -0.395385742188,
+        -0.0517578125,
+        0.644409179688,
+        0.001586914063,
+        -0.024536132813,
+    ],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [
+        -0.024536132813,
+        0.001586914063,
+        0.644409179688,
+        -0.0517578125,
+        -0.395385742188,
+        0.889312744141,
+        0.098388671875,
+        -0.189758300781,
+        -0.018920898438,
+        0.07763671875,
+        0.001708984375,
+        -0.029174804688,
+    ],
+];
+
+#[derive(Clone)]
+pub(super) struct Bs1770TruePeakDetector {
+    pub(super) history: [f32; TRUE_PEAK_TAPS],
+}
+
+impl Bs1770TruePeakDetector {
+    fn new() -> Self {
+        Self {
+            history: [0.0; TRUE_PEAK_TAPS],
+        }
+    }
+    fn process_linear(&mut self, sample: f32) -> f32 {
+        self.history.copy_within(1.., 0);
+        self.history[TRUE_PEAK_TAPS - 1] = sample;
+        TRUE_PEAK_PHASES
+            .iter()
+            .map(|phase| {
+                phase
+                    .iter()
+                    .zip(self.history)
+                    .map(|(c, x)| c * x)
+                    .sum::<f32>()
+                    .abs()
+            })
+            .fold(sample.abs(), f32::max)
+    }
+    fn reset(&mut self) {
+        self.history.fill(0.0);
+    }
+}
+
+struct SlidingMaximum {
+    values: Vec<f32>,
+    indices: Vec<usize>,
+    head: usize,
+    len: usize,
+    next_index: usize,
+}
+
+impl SlidingMaximum {
+    fn new(capacity: usize) -> Self {
+        Self {
+            values: vec![0.0; capacity + 1],
+            indices: vec![0; capacity + 1],
+            head: 0,
+            len: 0,
+            next_index: 0,
+        }
+    }
+    fn reset(&mut self) {
+        self.head = 0;
+        self.len = 0;
+        self.next_index = 0;
+    }
+    fn push(&mut self, value: f32, window: usize) -> f32 {
+        let capacity = self.values.len();
+        while self.len > 0 {
+            let tail = (self.head + self.len - 1) % capacity;
+            if self.values[tail] > value {
+                break;
+            }
+            self.len -= 1;
+        }
+        let tail = (self.head + self.len) % capacity;
+        self.values[tail] = value;
+        self.indices[tail] = self.next_index;
+        self.len += 1;
+        let oldest = self.next_index.saturating_add(1).saturating_sub(window);
+        while self.len > 0 && self.indices[self.head] < oldest {
+            self.head = (self.head + 1) % capacity;
+            self.len -= 1;
+        }
+        self.next_index += 1;
+        if self.len == 0 {
+            value
+        } else {
+            self.values[self.head]
+        }
+    }
+}
 
 pub struct LimiterPlugin {
     pub(super) channels: usize,
     pub(super) sample_rate: u32,
+    initialized: bool,
     pub(super) param_threshold: ParameterId,
     pub(super) threshold_db: f32,
     pub(super) param_release: ParameterId,
@@ -49,24 +181,27 @@ pub struct LimiterPlugin {
     pub(super) lookahead_buffer: Vec<f32>,
     pub(super) lookahead_pos: usize,
     pub(super) lookahead_len: usize,
-    /// Per-slot peak max used by feed-forward scan — one f32 per lookahead slot.
-    /// Avoids re-scanning the entire lookahead_buffer (which is N*channels) per sample.
-    pub(super) lookahead_peaks: Vec<f32>,
-    pub(super) true_peak_detectors: Vec<TruePeakDetector>,
+    pub(super) true_peak_detectors: Vec<Bs1770TruePeakDetector>,
     /// Output ISP detectors for verifying no inter-sample peaks exceed ceiling
-    pub(super) output_isp_detectors: Vec<TruePeakDetector>,
+    pub(super) output_isp_detectors: Vec<Bs1770TruePeakDetector>,
     /// Accumulated ISP correction in dB from output ISP violations (feedback loop)
     pub(super) isp_correction_db: f32,
     pub(super) dual_release_env: DualRelease,
+    pub(super) channel_dual_release: Vec<DualRelease>,
     pub(super) cached_parameters: Vec<Parameter>,
     pub(super) cache: RealTimeCache<LimiterData>,
     pub(super) cache_update_counter: usize,
     pub(super) monitoring_peak_db: f32,
     pub(super) monitoring_gr_db: f32,
+    meter_peak_db: f32,
+    meter_gr_db: f32,
     /// Per-channel ISP (inter-sample true peak) in linear, tracked across blocks
     pub(super) monitoring_isp_linear: Vec<f32>,
     /// Per-channel peak scratch for the current frame.
     pub(super) channel_peaks: Vec<f32>,
+    /// Per-channel gain-reduction envelopes for independent/partial linking.
+    pub(super) channel_envelopes: Vec<f32>,
+    sliding_maxima: Vec<SlidingMaximum>,
 }
 
 impl LimiterPlugin {
@@ -78,11 +213,12 @@ impl LimiterPlugin {
         soft: bool,
     ) -> Self {
         let sr = 44100;
-        let lookahead_len = ((lookahead_ms * 0.001 * sr as f32) as usize).max(1);
+        let lookahead_len = (lookahead_ms.max(0.0) * 0.001 * sr as f32) as usize;
         let max_lookahead_len = Self::max_lookahead_len(sr);
         let mut p = Self {
             channels,
             sample_rate: sr,
+            initialized: false,
             param_threshold: ParameterId::from("threshold"),
             threshold_db,
             param_release: ParameterId::from("release"),
@@ -110,11 +246,17 @@ impl LimiterPlugin {
             lookahead_buffer: vec![0.0; max_lookahead_len * channels],
             lookahead_pos: 0,
             lookahead_len,
-            lookahead_peaks: vec![0.0; max_lookahead_len],
-            true_peak_detectors: (0..channels).map(|_| TruePeakDetector::new()).collect(),
-            output_isp_detectors: (0..channels).map(|_| TruePeakDetector::new()).collect(),
+            true_peak_detectors: (0..channels)
+                .map(|_| Bs1770TruePeakDetector::new())
+                .collect(),
+            output_isp_detectors: (0..channels)
+                .map(|_| Bs1770TruePeakDetector::new())
+                .collect(),
             isp_correction_db: 0.0,
             dual_release_env: DualRelease::new(release_ms, release_ms * 5.0, sr),
+            channel_dual_release: (0..channels)
+                .map(|_| DualRelease::new(release_ms, release_ms * 5.0, sr))
+                .collect(),
             cached_parameters: Vec::new(),
             cache: RealTimeCache::new(LimiterData {
                 isp_dbtp: vec![-120.0; channels],
@@ -123,8 +265,14 @@ impl LimiterPlugin {
             cache_update_counter: 0,
             monitoring_peak_db: -100.0,
             monitoring_gr_db: 0.0,
+            meter_peak_db: -100.0,
+            meter_gr_db: 0.0,
             monitoring_isp_linear: vec![0.0; channels],
             channel_peaks: vec![0.0; channels],
+            channel_envelopes: vec![0.0; channels],
+            sliding_maxima: (0..channels.max(1))
+                .map(|_| SlidingMaximum::new(max_lookahead_len))
+                .collect(),
         };
         p.rebuild_cached_parameters();
         p
@@ -164,19 +312,20 @@ impl LimiterPlugin {
                 pk(LM, "lookahead").min_f64() as f32,
                 pk(LM, "lookahead").max_f64() as f32,
             )
-            .with_description("Lookahead time for peak detection (ms)")
+            .with_description("Structural predictive lookahead / host latency (ms)")
             .with_group("Timing")
+            .with_update_mode(UpdateMode::Structural)
             .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("soft", "Soft", self.soft)
-                .with_description("Use soft clipping instead of hard limiting")
+                .with_description("Use a one-dB gain-computer knee")
                 .with_group("Dynamics")
                 .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("true_peak", "True Peak", self.true_peak)
-                .with_description("Use 4x oversampled true peak detection")
+                .with_description("Use ITU-R BS.1770 Table-2 4x true-peak detection")
                 .with_group("Detection")
                 .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("isp_mode", "ISP Limit", self.isp_mode)
-                .with_description("Guarantee output has no inter-sample peaks above ceiling")
+                .with_description("Predictive ISP limit (hard, wet, lookahead required)")
                 .with_group("Detection")
                 .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("dual_release", "Dual Release", self.dual_release)
@@ -205,56 +354,68 @@ impl LimiterPlugin {
             .with_group("Detection")
             .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("feed_forward", "Feed Forward", self.feed_forward)
-                .with_description("Scan lookahead buffer for anticipatory gain reduction")
+                .with_description("Compatibility flag; lookahead is always predictive")
                 .with_group("Detection")
                 .with_importance(ParameterImportance::Useful),
         ];
     }
 
     pub fn from_params(channels: usize, params: LimiterPluginParams) -> Self {
-        let mut p = Self::new(
-            channels,
-            params.threshold_db,
-            params.release_ms,
-            params.lookahead_ms,
-            params.soft,
+        let finite_or = |value: f32, key: &str| {
+            if value.is_finite() {
+                value
+            } else {
+                pk(LM, key).default_f64() as f32
+            }
+        };
+        let threshold = finite_or(params.threshold_db, "threshold").clamp(
+            pk(LM, "threshold").min_f64() as f32,
+            pk(LM, "threshold").max_f64() as f32,
         );
+        let release = finite_or(params.release_ms, "release").clamp(
+            pk(LM, "release").min_f64() as f32,
+            pk(LM, "release").max_f64() as f32,
+        );
+        let lookahead = finite_or(params.lookahead_ms, "lookahead").clamp(
+            pk(LM, "lookahead").min_f64() as f32,
+            pk(LM, "lookahead").max_f64() as f32,
+        );
+        let mut p = Self::new(channels, threshold, release, lookahead, params.soft);
         p.true_peak = params.true_peak;
         p.isp_mode = params.isp_mode;
         p.dual_release = params.dual_release;
-        p.mix = params.mix.clamp(0.0, 1.0);
+        p.mix = finite_or(params.mix, "mix").clamp(0.0, 1.0);
         p.mix_smoother.reset(p.mix);
         p.feed_forward = params.feed_forward;
-        p.link_amount = params.link_amount.clamp(0.0, 1.0);
+        p.link_amount = finite_or(params.link_amount, "link_amount").clamp(0.0, 1.0);
         p.rebuild_cached_parameters();
         p
     }
 
     pub(super) fn update_coefficients(&mut self) {
         self.release_coeff = (-1.0 / (self.release_ms * 0.001 * self.sample_rate as f32)).exp();
-        let new_len = ((self.lookahead_ms * 0.001 * self.sample_rate as f32) as usize).max(1);
+        let new_len = (self.lookahead_ms.max(0.0) * 0.001 * self.sample_rate as f32) as usize;
         let required_capacity = Self::max_lookahead_len(self.sample_rate);
-        if self.lookahead_peaks.len() < required_capacity {
-            self.lookahead_peaks.resize(required_capacity, 0.0);
-        }
         let required_buffer_capacity = required_capacity * self.channels;
-        if self.lookahead_buffer.len() < required_buffer_capacity {
+        if !self.initialized && self.lookahead_buffer.len() < required_buffer_capacity {
             self.lookahead_buffer.resize(required_buffer_capacity, 0.0);
         }
         if new_len != self.lookahead_len {
             self.lookahead_len = new_len;
             self.lookahead_buffer.fill(0.0);
-            self.lookahead_peaks.fill(0.0);
             self.lookahead_pos = 0;
         }
         self.dual_release_env
             .set_times(self.release_ms, self.release_ms * 5.0, self.sample_rate);
+        for release in &mut self.channel_dual_release {
+            release.set_times(self.release_ms, self.release_ms * 5.0, self.sample_rate);
+        }
     }
 }
 
 impl ParametricInPlacePlugin for LimiterPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Limiter", "1.3.0", "SotF")
+        PluginInfo::new("Limiter", env!("CARGO_PKG_VERSION"), "SotF")
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -326,6 +487,9 @@ impl ParametricInPlacePlugin for LimiterPlugin {
                     self.update_coefficients();
                 }
             } else if id == self.param_lookahead {
+                if self.initialized {
+                    return Err("lookahead changes latency and requires a graph rebuild".into());
+                }
                 let val = value
                     .as_float()
                     .unwrap_or(pk(LM, "lookahead").default_f64() as f32);
@@ -334,13 +498,21 @@ impl ParametricInPlacePlugin for LimiterPlugin {
                     self.update_coefficients();
                 }
             } else if id == self.param_soft {
-                self.soft = value.as_bool().unwrap_or(pk(LM, "soft").default_bool());
+                let soft = value.as_bool().unwrap_or(pk(LM, "soft").default_bool());
+                if soft && self.isp_mode {
+                    return Err("soft knee is unavailable in guaranteed ISP mode".into());
+                }
+                self.soft = soft;
             } else if id == self.param_true_peak {
                 self.true_peak = value
                     .as_bool()
                     .unwrap_or(pk(LM, "true_peak").default_bool());
             } else if id == self.param_isp_mode {
-                self.isp_mode = value.as_bool().unwrap_or(pk(LM, "isp_mode").default_bool());
+                let enabled = value.as_bool().unwrap_or(pk(LM, "isp_mode").default_bool());
+                if enabled && (self.mix < 1.0 || self.soft || self.lookahead_len < 6) {
+                    return Err("ISP mode requires 100% wet, hard limiting, and at least six lookahead samples".into());
+                }
+                self.isp_mode = enabled;
             } else if id == self.param_dual_release {
                 self.dual_release = value
                     .as_bool()
@@ -350,6 +522,9 @@ impl ParametricInPlacePlugin for LimiterPlugin {
                     .as_float()
                     .unwrap_or(pk(LM, "mix").default_f64() as f32);
                 if val.is_finite() {
+                    if self.isp_mode && val < 1.0 {
+                        return Err("ISP mode requires 100% wet mix".into());
+                    }
                     self.mix = val.clamp(0.0, 1.0);
                     self.mix_smoother.set_target(self.mix);
                 }
@@ -364,32 +539,52 @@ impl ParametricInPlacePlugin for LimiterPlugin {
                 return Err(format!("Unknown parameter: {}", id));
             }
         }
-        self.rebuild_cached_parameters();
         Ok(())
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 || self.channels == 0 {
+            return Err("limiter requires nonzero sample rate and channels".into());
+        }
         self.sample_rate = sample_rate;
+        self.initialized = false;
         self.update_coefficients();
+        if self.isp_mode && (self.mix < 1.0 || self.soft || self.lookahead_len < 6) {
+            return Err(
+                "ISP mode requires 100% wet, hard limiting, and at least six lookahead samples"
+                    .into(),
+            );
+        }
         self.threshold_db_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
         // Resize true peak detectors if channel count changed
         self.true_peak_detectors
-            .resize_with(self.channels, TruePeakDetector::new);
+            .resize_with(self.channels, Bs1770TruePeakDetector::new);
         self.output_isp_detectors
-            .resize_with(self.channels, TruePeakDetector::new);
+            .resize_with(self.channels, Bs1770TruePeakDetector::new);
         self.channel_peaks.resize(self.channels, 0.0);
+        self.channel_envelopes.resize(self.channels, 0.0);
         self.monitoring_isp_linear.resize(self.channels, 0.0);
         self.isp_correction_db = 0.0;
         self.dual_release_env =
             DualRelease::new(self.release_ms, self.release_ms * 5.0, sample_rate);
+        self.channel_dual_release = (0..self.channels)
+            .map(|_| DualRelease::new(self.release_ms, self.release_ms * 5.0, sample_rate))
+            .collect();
+        let capacity = Self::max_lookahead_len(sample_rate);
+        self.sliding_maxima = (0..self.channels.max(1))
+            .map(|_| SlidingMaximum::new(capacity))
+            .collect();
+        self.initialized = true;
+        self.reset();
         Ok(())
     }
 
     fn reset(&mut self) {
         self.envelope = 0.0;
+        self.channel_envelopes.fill(0.0);
         self.lookahead_buffer.fill(0.0);
-        self.lookahead_peaks.fill(0.0);
+        self.lookahead_pos = 0;
         for det in &mut self.true_peak_detectors {
             det.reset();
         }
@@ -398,6 +593,22 @@ impl ParametricInPlacePlugin for LimiterPlugin {
         }
         self.isp_correction_db = 0.0;
         self.dual_release_env.reset();
+        for release in &mut self.channel_dual_release {
+            release.reset();
+        }
+        self.cache_update_counter = 0;
+        self.monitoring_peak_db = -100.0;
+        self.monitoring_gr_db = 0.0;
+        self.meter_peak_db = -100.0;
+        self.meter_gr_db = 0.0;
+        self.monitoring_isp_linear.fill(0.0);
+        for maximum in &mut self.sliding_maxima {
+            maximum.reset();
+        }
+        let threshold = self.threshold_db_smoother.target();
+        self.threshold_db_smoother.reset(threshold);
+        let mix = self.mix_smoother.target();
+        self.mix_smoother.reset(mix);
     }
 
     fn process_in_place(
@@ -407,16 +618,27 @@ impl ParametricInPlacePlugin for LimiterPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
-        let mut max_peak = 0.0f32;
+        let expected_len = num_frames
+            .checked_mul(self.channels)
+            .ok_or_else(|| "limiter buffer length overflow".to_string())?;
+        if self.channels == 0 {
+            return Err("limiter requires at least one channel".into());
+        }
+        if buffer.len() != expected_len {
+            return Err(format!(
+                "limiter expected {expected_len} samples, got {}",
+                buffer.len()
+            ));
+        }
         let use_true_peak = self.true_peak || self.isp_mode;
         let use_dual_release = self.dual_release;
-        let use_feed_forward = self.feed_forward && self.lookahead_len > 1;
+        // Any non-zero pre-delay must use the upcoming window; otherwise gain
+        // releases before the delayed transient reaches the output.
+        let use_feed_forward = self.lookahead_len > 0;
         let use_isp_mode = self.isp_mode;
 
-        // Reset per-block ISP tracking (no resize needed — channels is invariant)
-        self.monitoring_isp_linear.fill(0.0);
-
         let link = self.link_amount;
+        let meter_interval = (self.sample_rate as usize / CACHE_UPDATE_THROTTLE.max(1)).max(1);
 
         #[allow(clippy::needless_range_loop)]
         for frame in 0..num_frames {
@@ -429,7 +651,13 @@ impl ParametricInPlacePlugin for LimiterPlugin {
             if use_true_peak {
                 for ch in 0..nc {
                     let idx = frame * self.channels + ch;
-                    let tp = self.true_peak_detectors[ch].process_linear(buffer[idx]);
+                    let sample = if buffer[idx].is_finite() {
+                        buffer[idx]
+                    } else {
+                        0.0
+                    };
+                    buffer[idx] = sample;
+                    let tp = self.true_peak_detectors[ch].process_linear(sample);
                     self.channel_peaks[ch] = tp;
                     // Track per-channel ISP
                     if tp > self.monitoring_isp_linear[ch] {
@@ -439,103 +667,98 @@ impl ParametricInPlacePlugin for LimiterPlugin {
             } else {
                 for ch in 0..nc {
                     let idx = frame * self.channels + ch;
+                    if !buffer[idx].is_finite() {
+                        buffer[idx] = 0.0;
+                    }
                     self.channel_peaks[ch] = buffer[idx].abs();
                 }
             }
 
-            // Apply channel linking: blend per-channel peaks toward max
+            // Apply channel linking: blend each channel's detector toward the
+            // strict linked maximum. At link=0, each channel retains its own
+            // detector and therefore its own gain-reduction history.
             let max_peak_ch = self.channel_peaks[..nc]
                 .iter()
                 .copied()
                 .fold(0.0f32, f32::max);
-            let frame_peak = if link >= 1.0 || nc <= 1 {
+            let fully_linked = link >= 1.0 || nc <= 1;
+            let linked_peak = if fully_linked {
                 max_peak_ch
             } else {
-                // Single-envelope limiter: link_amount blends the detector from
-                // average channel energy toward the strict linked maximum.
-                // The old per-channel blend took max() after blending, which
-                // always returned max_peak_ch and made link_amount a no-op.
                 let avg_peak = self.channel_peaks[..nc].iter().copied().sum::<f32>() / nc as f32;
                 avg_peak * (1.0 - link) + max_peak_ch * link
             };
-
-            max_peak = max_peak.max(frame_peak);
-
-            // Feed-forward: update the per-slot peak at the current write position,
-            // then scan lookahead_peaks (one f32 per slot, O(lookahead_len) not
-            // O(lookahead_len * channels)) to find the maximum upcoming peak.
-            // This anticipates loud transients before they arrive at the output.
-            let effective_peak = if use_feed_forward {
-                self.lookahead_peaks[self.lookahead_pos] = frame_peak;
-                self.lookahead_peaks[..self.lookahead_len]
-                    .iter()
-                    .copied()
-                    .fold(frame_peak, f32::max)
-            } else {
-                frame_peak
-            };
-
-            // Predictive peak from input (or lookahead scan)
-            // Add ISP correction from previous output ISP violations (feedback loop)
-            let target_gr = if effective_peak > thresh {
-                20.0 * fast_log10(effective_peak / thresh)
-            } else {
-                0.0
-            } + self.isp_correction_db;
-
-            // Instant attack, smoothed release
-            if target_gr > self.envelope {
-                self.envelope = target_gr;
-            } else {
-                let rc = if use_dual_release {
-                    self.dual_release_env.process(self.envelope)
+            for ch in 0..nc {
+                if fully_linked {
+                    self.channel_peaks[ch] = max_peak_ch;
                 } else {
-                    self.release_coeff
-                };
-                self.envelope = target_gr + rc * (self.envelope - target_gr);
+                    self.channel_peaks[ch] =
+                        self.channel_peaks[ch] * (1.0 - link) + linked_peak * link;
+                }
             }
 
-            let gain = fast_pow10(-self.envelope / 20.0);
+            let linked_window_peak = (use_feed_forward && fully_linked)
+                .then(|| self.sliding_maxima[0].push(self.channel_peaks[0], self.lookahead_len));
+
+            // Update the shared envelope for full linking, or one envelope per
+            // channel for partial/independent linking.
+            for ch in 0..nc {
+                let effective_peak = if use_feed_forward {
+                    linked_window_peak.unwrap_or_else(|| {
+                        self.sliding_maxima[ch].push(self.channel_peaks[ch], self.lookahead_len)
+                    })
+                } else {
+                    self.channel_peaks[ch]
+                };
+                let over_db = 20.0 * fast_log10(effective_peak.max(1.0e-20) / thresh);
+                let target_gr = if self.soft {
+                    const KNEE_DB: f32 = 1.0;
+                    if over_db <= -KNEE_DB * 0.5 {
+                        0.0
+                    } else if over_db >= KNEE_DB * 0.5 {
+                        over_db
+                    } else {
+                        (over_db + KNEE_DB * 0.5).powi(2) / (2.0 * KNEE_DB)
+                    }
+                } else {
+                    over_db.max(0.0)
+                } + self.isp_correction_db;
+                let envelope = &mut self.channel_envelopes[ch];
+                if target_gr > *envelope {
+                    *envelope = target_gr;
+                } else {
+                    let rc = if use_dual_release {
+                        if fully_linked {
+                            self.dual_release_env.process(*envelope)
+                        } else {
+                            self.channel_dual_release[ch].process(*envelope)
+                        }
+                    } else {
+                        self.release_coeff
+                    };
+                    *envelope = target_gr + rc * (*envelope - target_gr);
+                }
+            }
+            self.envelope = self.channel_envelopes[..nc]
+                .iter()
+                .copied()
+                .fold(0.0, f32::max);
 
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
                 let input_sample = buffer[idx];
 
-                let buf_idx = self.lookahead_pos * self.channels + ch;
-                let delayed = self.lookahead_buffer[buf_idx];
-                self.lookahead_buffer[buf_idx] = input_sample;
-
-                let wet = if self.soft {
-                    // Soft knee using a cubic Hermite blend over [soft_start, thresh].
-                    // The curve is C1-continuous and passes through:
-                    //   f(soft_start) = soft_start  (slope 1 — identity)
-                    //   f(thresh)     = thresh       (slope 0 — flat ceiling)
-                    // This is strictly bounded by thresh and exactly equals thresh
-                    // when abs_s == thresh, fixing the previous algebraic sqrt curve
-                    // that gave ~0.9707*thresh at the boundary (making soft ~0.25 dB
-                    // stricter than hard mode for the same threshold setting).
-                    let signal = delayed * gain;
-                    let abs_s = signal.abs();
-                    let knee_width = thresh * 0.1;
-                    let soft_start = thresh - knee_width;
-                    let limited = if abs_s >= thresh {
-                        thresh // hard ceiling above the knee
-                    } else if abs_s > soft_start {
-                        // Hermite cubic: t ∈ [0,1] maps [soft_start, thresh]
-                        let t = (abs_s - soft_start) / knee_width;
-                        let t2 = t * t;
-                        let t3 = t2 * t;
-                        // h00*soft_start + h10*knee_width + h01*thresh
-                        (2.0 * t3 - 3.0 * t2 + 1.0) * soft_start
-                            + (t3 - 2.0 * t2 + t) * knee_width
-                            + (-2.0 * t3 + 3.0 * t2) * thresh
-                    } else {
-                        abs_s
-                    };
-                    limited * signal.signum()
+                let delayed = if self.lookahead_len == 0 {
+                    input_sample
                 } else {
-                    (delayed * gain).clamp(-thresh, thresh)
+                    let buf_idx = self.lookahead_pos * self.channels + ch;
+                    let delayed = self.lookahead_buffer[buf_idx];
+                    self.lookahead_buffer[buf_idx] = input_sample;
+                    delayed
                 };
+
+                let gain = fast_pow10(-self.channel_envelopes[ch] / 20.0);
+                let wet = (delayed * gain).clamp(-thresh, thresh);
 
                 buffer[idx] = (1.0 - mix) * delayed + mix * wet;
             }
@@ -558,7 +781,7 @@ impl ParametricInPlacePlugin for LimiterPlugin {
                     // Applying it multiplicatively to a dB value causes double-exponential
                     // decay (too fast). Convert to linear first.
                     let correction_lin = fast_pow10(self.isp_correction_db / 20.0);
-                    let decayed_lin = correction_lin * self.release_coeff;
+                    let decayed_lin = 1.0 + self.release_coeff * (correction_lin - 1.0);
                     self.isp_correction_db = if decayed_lin <= fast_pow10(0.01 / 20.0) {
                         0.0
                     } else {
@@ -567,36 +790,43 @@ impl ParametricInPlacePlugin for LimiterPlugin {
                 }
             }
 
-            self.lookahead_pos = (self.lookahead_pos + 1) % self.lookahead_len;
-        }
+            if self.lookahead_len > 0 {
+                self.lookahead_pos = (self.lookahead_pos + 1) % self.lookahead_len;
+            }
 
-        // Update monitoring cache
-        self.monitoring_peak_db = 20.0 * fast_log10(max_peak.max(1e-10));
-        self.monitoring_gr_db = self.envelope;
-
-        self.cache_update_counter += 1;
-        if self.cache_update_counter >= CACHE_UPDATE_THROTTLE {
-            self.cache_update_counter = 0;
-            self.cache.update(|d| {
-                d.gain_reduction_db = self.monitoring_gr_db;
-                d.peak_db = self.monitoring_peak_db;
-                d.is_limiting = self.monitoring_gr_db > 0.01;
-                if d.isp_dbtp.len() == self.channels {
-                    if use_true_peak {
-                        for (ch, &lin) in self.monitoring_isp_linear.iter().enumerate() {
-                            d.isp_dbtp[ch] = if lin < 1e-12 {
-                                -120.0
-                            } else {
-                                20.0 * lin.log10()
-                            };
-                        }
-                    } else {
-                        for v in &mut d.isp_dbtp {
-                            *v = -120.0;
+            let frame_peak = self.channel_peaks[..nc]
+                .iter()
+                .copied()
+                .fold(0.0_f32, f32::max);
+            self.monitoring_peak_db = 20.0 * fast_log10(frame_peak.max(1.0e-10));
+            self.monitoring_gr_db = self.envelope;
+            self.meter_peak_db = self.meter_peak_db.max(self.monitoring_peak_db);
+            self.meter_gr_db = self.meter_gr_db.max(self.monitoring_gr_db);
+            self.cache_update_counter += 1;
+            if self.cache_update_counter >= meter_interval {
+                self.cache_update_counter = 0;
+                self.cache.update(|d| {
+                    d.gain_reduction_db = self.meter_gr_db;
+                    d.peak_db = self.meter_peak_db;
+                    d.is_limiting = self.meter_gr_db > 0.01;
+                    if d.isp_dbtp.len() == self.channels {
+                        if use_true_peak {
+                            for (ch, &lin) in self.monitoring_isp_linear.iter().enumerate() {
+                                d.isp_dbtp[ch] = if lin < 1e-12 {
+                                    -120.0
+                                } else {
+                                    20.0 * lin.log10()
+                                };
+                            }
+                        } else {
+                            d.isp_dbtp.fill(-120.0);
                         }
                     }
-                }
-            });
+                });
+                self.meter_peak_db = -100.0;
+                self.meter_gr_db = 0.0;
+                self.monitoring_isp_linear.fill(0.0);
+            }
         }
 
         flush_denormals_inplace(buffer);
@@ -653,5 +883,47 @@ impl ParametricInPlacePlugin for LimiterPlugin {
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
+    }
+}
+
+#[cfg(test)]
+mod remediation_tests {
+    use super::*;
+
+    #[test]
+    fn monotonic_window_matches_naive_maximum() {
+        let values = [0.2, 0.8, 0.4, 0.1, 0.9, 0.3, 0.7, 0.6, 0.05];
+        for window in 1..=values.len() {
+            let mut maximum = SlidingMaximum::new(values.len());
+            for (index, &value) in values.iter().enumerate() {
+                let got = maximum.push(value, window);
+                let begin = (index + 1).saturating_sub(window);
+                let expected = values[begin..=index].iter().copied().fold(0.0, f32::max);
+                assert_eq!(got, expected, "window {window}, index {index}");
+            }
+        }
+    }
+
+    #[test]
+    fn bs1770_detector_matches_reference_polyphase_convolution() {
+        let signal = [0.0, 0.7, -0.9, 0.6, -0.2, 0.1, 0.0, -0.4, 0.8];
+        let mut detector = Bs1770TruePeakDetector::new();
+        let mut history = [0.0_f32; TRUE_PEAK_TAPS];
+        for sample in signal {
+            history.copy_within(1.., 0);
+            history[TRUE_PEAK_TAPS - 1] = sample;
+            let expected = TRUE_PEAK_PHASES
+                .iter()
+                .map(|phase| {
+                    phase
+                        .iter()
+                        .zip(history)
+                        .map(|(coefficient, value)| coefficient * value)
+                        .sum::<f32>()
+                        .abs()
+                })
+                .fold(sample.abs(), f32::max);
+            assert!((detector.process_linear(sample) - expected).abs() < 1.0e-7);
+        }
     }
 }

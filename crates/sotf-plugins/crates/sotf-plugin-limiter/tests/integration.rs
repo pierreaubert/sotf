@@ -23,7 +23,7 @@ fn info_and_channels_match_construction() {
     assert_eq!(plugin.channels(), 2);
     let info = plugin.info();
     assert_eq!(info.name, "Limiter");
-    assert_eq!(info.version, "1.3.0");
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
 }
 
 #[test]
@@ -44,10 +44,8 @@ fn parameter_roundtrip() {
     let cases: &[(&str, ParameterValue)] = &[
         ("threshold", ParameterValue::Float(-12.0)),
         ("release", ParameterValue::Float(100.0)),
-        ("lookahead", ParameterValue::Float(10.0)),
         ("soft", ParameterValue::Bool(true)),
         ("true_peak", ParameterValue::Bool(true)),
-        ("isp_mode", ParameterValue::Bool(true)),
         ("dual_release", ParameterValue::Bool(true)),
         ("mix", ParameterValue::Float(0.75)),
         ("feed_forward", ParameterValue::Bool(true)),
@@ -214,13 +212,12 @@ fn mix_zero_is_dry_passthrough() {
     let ctx = ProcessContext::new(sr, num_frames);
     plugin.process_in_place(&mut buf, &ctx).unwrap();
 
-    // With lookahead=0 there is still a 1-sample delay.
-    let max_error = (1..num_frames)
-        .map(|i| (buf[i] - input[i - 1]).abs())
+    let max_error = (0..num_frames)
+        .map(|i| (buf[i] - input[i]).abs())
         .fold(0.0f32, f32::max);
     assert!(
         max_error < 1e-4,
-        "mix=0 should pass dry signal through (delayed by 1), max_error={max_error}"
+        "mix=0 should pass dry signal through, max_error={max_error}"
     );
 }
 
@@ -350,7 +347,9 @@ fn link_amount_zero_preserves_independence() {
     let frames = 1024;
     let mut buf = vec![0.0f32; frames * 2];
     for frame in 0..frames {
-        buf[frame * 2] = 0.9;
+        // The loud channel must drive its own envelope without crosstalk into
+        // the quiet channel when link_amount is zero.
+        buf[frame * 2] = 1.0;
         buf[frame * 2 + 1] = 0.1;
     }
 
@@ -449,20 +448,68 @@ fn parameters_list_contains_expected_ids() {
 }
 
 #[test]
-fn lookahead_parameter_change_uses_preallocated_storage() {
+fn lookahead_parameter_change_requires_graph_rebuild() {
     let mut plugin = LimiterPlugin::new(2, -6.0, 50.0, 5.0, false);
     plugin.initialize(48000).unwrap();
 
     let initial_latency = plugin.latency_samples();
     assert_eq!(initial_latency, 240);
 
-    plugin
-        .set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
-        .unwrap();
-    assert_eq!(plugin.latency_samples(), 960);
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
+            .is_err()
+    );
+    assert_eq!(plugin.latency_samples(), 240);
 
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(1.0))
+            .is_err()
+    );
+    assert_eq!(plugin.latency_samples(), 240);
+}
+
+#[test]
+fn isp_guarantee_rejects_uncontrollable_configurations() {
+    let mut no_lookahead = LimiterPlugin::new(1, -3.0, 50.0, 0.0, false);
+    assert!(
+        no_lookahead
+            .set_parameter(ParameterId::from("isp_mode"), ParameterValue::Bool(true))
+            .is_err()
+    );
+
+    let mut plugin = LimiterPlugin::new(1, -3.0, 50.0, 5.0, false);
+    plugin.initialize(48_000).unwrap();
     plugin
-        .set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(1.0))
+        .set_parameter(ParameterId::from("isp_mode"), ParameterValue::Bool(true))
         .unwrap();
-    assert_eq!(plugin.latency_samples(), 48);
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+            .is_err()
+    );
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("soft"), ParameterValue::Bool(true))
+            .is_err()
+    );
+}
+
+#[test]
+fn non_finite_audio_is_sanitized_without_poisoning_state() {
+    let mut plugin = LimiterPlugin::new(1, -3.0, 50.0, 0.0, false);
+    plugin.initialize(48_000).unwrap();
+    let mut buffer = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.5];
+    let frames = buffer.len();
+    plugin
+        .process_in_place(&mut buffer, &ProcessContext::new(48_000, frames))
+        .unwrap();
+    assert!(buffer.iter().all(|sample| sample.is_finite()));
+    let mut next = [0.25; 16];
+    let frames = next.len();
+    plugin
+        .process_in_place(&mut next, &ProcessContext::new(48_000, frames))
+        .unwrap();
+    assert!(next.iter().all(|sample| sample.is_finite()));
 }

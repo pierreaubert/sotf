@@ -22,6 +22,20 @@ fn test_limiter_basic() {
 }
 
 #[test]
+fn lookahead_is_structural_in_host_metadata() {
+    let plugin = LimiterPlugin::new(2, -1.0, 50.0, 5.0, false);
+    let parameter = plugin
+        .parameters()
+        .into_iter()
+        .find(|parameter| parameter.id.as_str() == "lookahead")
+        .expect("lookahead parameter");
+    assert_eq!(
+        parameter.update_mode,
+        sotf_host::param_specs::UpdateMode::Structural
+    );
+}
+
+#[test]
 fn threshold_smoother_operates_in_decibels() {
     let mut plugin = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
     plugin.initialize(48_000).unwrap();
@@ -58,6 +72,30 @@ fn from_params_seeds_mix_smoother_at_saved_value() {
     );
 
     assert_eq!(plugin.mix_smoother.current(), 0.0);
+}
+
+#[test]
+fn from_params_sanitizes_non_finite_and_out_of_range_values() {
+    let plugin = LimiterPlugin::from_params(
+        1,
+        LimiterPluginParams {
+            threshold_db: f32::NAN,
+            release_ms: -1.0,
+            lookahead_ms: 1000.0,
+            soft: false,
+            true_peak: false,
+            isp_mode: false,
+            dual_release: false,
+            mix: f32::INFINITY,
+            feed_forward: false,
+            link_amount: -10.0,
+        },
+    );
+    assert!(plugin.threshold_db.is_finite());
+    assert_eq!(plugin.release_ms, 10.0);
+    assert_eq!(plugin.lookahead_ms, 20.0);
+    assert!(plugin.mix.is_finite());
+    assert_eq!(plugin.link_amount, 0.0);
 }
 
 #[test]
@@ -112,6 +150,49 @@ fn test_limiter_compile_metadata_tracks_lookahead_latency() {
     assert_eq!(metadata.compiled_op, None);
     assert!(metadata.latency_samples > 0);
     assert!(metadata.boundary);
+}
+
+#[test]
+fn zero_lookahead_is_sample_exact_without_hidden_latency() {
+    let mut plugin = LimiterPlugin::new(1, 0.0, 50.0, 0.0, false);
+    plugin.initialize(48_000).unwrap();
+    let expected = vec![0.1, -0.2, 0.3, -0.4];
+    let mut buffer = expected.clone();
+    plugin
+        .process_in_place(&mut buffer, &ProcessContext::new(48_000, expected.len()))
+        .unwrap();
+    assert_eq!(buffer, expected);
+    assert_eq!(plugin.latency_samples(), 0);
+}
+
+#[test]
+fn process_rejects_wrong_buffer_lengths_without_advancing_state() {
+    let mut plugin = LimiterPlugin::new(2, -1.0, 50.0, 5.0, false);
+    plugin.initialize(48_000).unwrap();
+    for len in [7, 9] {
+        let mut buffer = vec![0.0; len];
+        assert!(
+            plugin
+                .process_in_place(&mut buffer, &ProcessContext::new(48_000, 4))
+                .is_err()
+        );
+        assert_eq!(plugin.lookahead_pos, 0);
+    }
+}
+
+#[test]
+fn reset_matches_fresh_instance_observable_state() {
+    let mut plugin = LimiterPlugin::new(1, -6.0, 10.0, 5.0, false);
+    plugin.initialize(48_000).unwrap();
+    let mut loud = vec![1.0; 512];
+    plugin
+        .process_in_place(&mut loud, &ProcessContext::new(48_000, 512))
+        .unwrap();
+    plugin.reset();
+    assert_eq!(plugin.lookahead_pos, 0);
+    assert_eq!(plugin.cache_update_counter, 0);
+    assert_eq!(plugin.monitoring_peak_db, -100.0);
+    assert_eq!(plugin.monitoring_gr_db, 0.0);
 }
 
 /// Regression: threshold smoother was advanced twice per block (once via
@@ -681,10 +762,10 @@ fn test_soft_knee_not_stricter_than_hard() {
     // Hard mode should pass signal exactly (no gain reduction needed — input at ceiling)
     let hard_out = b_hard[1000];
     let soft_out = b_soft[1000];
-    // Soft output should be >= hard output (soft must not be stricter)
+    // A dB-domain soft knee begins gain reduction below the ceiling.
     assert!(
-        soft_out >= hard_out - 1e-4,
-        "Soft output {soft_out:.5} should be >= hard output {hard_out:.5} at threshold level."
+        soft_out < hard_out && soft_out > hard_out * 0.95,
+        "soft-knee output {soft_out:.5}, hard output {hard_out:.5}"
     );
 }
 
@@ -698,7 +779,7 @@ fn test_isp_correction_decay_speed() {
     // the release time constant implies.
     let release_ms = 100.0f32;
     let sr = 48000u32;
-    let mut p = LimiterPlugin::new(1, -3.0, release_ms, 0.0, false);
+    let mut p = LimiterPlugin::new(1, -3.0, release_ms, 5.0, false);
     p.isp_mode = true;
     p.true_peak = true;
     p.rebuild_cached_parameters();
@@ -787,25 +868,14 @@ fn test_channel_count_above_32() {
 #[test]
 fn test_lookahead_parameter_change_uses_preallocated_storage() {
     let mut p = LimiterPlugin::new(2, -6.0, 50.0, 5.0, false);
-    p.initialize(48000).unwrap();
-
-    let initial_buffer_len = p.lookahead_buffer.len();
-    let initial_peaks_len = p.lookahead_peaks.len();
-    assert_eq!(initial_buffer_len, 960 * 2);
-    assert_eq!(initial_peaks_len, 960);
-    assert_eq!(p.lookahead_len, 240);
-
     p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
         .unwrap();
+    p.initialize(48000).unwrap();
     assert_eq!(p.lookahead_len, 960);
-    assert_eq!(p.lookahead_buffer.len(), initial_buffer_len);
-    assert_eq!(p.lookahead_peaks.len(), initial_peaks_len);
-
-    p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(1.0))
-        .unwrap();
-    assert_eq!(p.lookahead_len, 48);
-    assert_eq!(p.lookahead_buffer.len(), initial_buffer_len);
-    assert_eq!(p.lookahead_peaks.len(), initial_peaks_len);
+    assert!(
+        p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(1.0))
+            .is_err()
+    );
 }
 
 #[test]
@@ -862,7 +932,7 @@ fn test_reset_clears_new_state() {
 
     // After reset, detectors should be zeroed
     for det in &p.true_peak_detectors {
-        assert_eq!(det.peak_linear(), 0.0);
+        assert!(det.history.iter().all(|sample| *sample == 0.0));
     }
     assert_eq!(p.envelope, 0.0);
 }
@@ -991,9 +1061,11 @@ fn test_latency_samples_matches_lookahead() {
     let latency = p.latency_samples();
     assert_eq!(latency, 240);
 
-    p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(0.0))
-        .unwrap();
-    assert_eq!(p.latency_samples(), 0);
+    assert!(
+        p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(0.0))
+            .is_err()
+    );
+    assert_eq!(p.latency_samples(), 240);
 }
 
 // -------------------------------------------------------------------------
@@ -1006,7 +1078,7 @@ fn test_info() {
     let p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
     let info = p.info();
     assert_eq!(info.name, "Limiter");
-    assert_eq!(info.version, "1.3.0");
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(info.author, "SotF");
 }
 
@@ -1072,6 +1144,8 @@ fn test_set_release_below_min_errors() {
 #[test]
 fn test_set_parameter_boundary_values() {
     let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+    p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
+        .unwrap();
     p.initialize(48000).unwrap();
 
     // Threshold boundaries [-20, 0]
@@ -1098,25 +1172,24 @@ fn test_set_parameter_boundary_values() {
         .unwrap();
     assert_eq!(p.link_amount, 1.0);
 
-    // Lookahead boundaries [0, 20]
-    p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(0.0))
-        .unwrap();
-    assert_eq!(p.lookahead_ms, 0.0);
-    p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(20.0))
-        .unwrap();
+    // Lookahead is structural after initialization.
     assert_eq!(p.lookahead_ms, 20.0);
+    assert!(
+        p.parametric_set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(0.0))
+            .is_err()
+    );
 }
 
 /// get_parameter returns current values for all float and bool parameters.
 #[test]
 fn test_get_parameter_all_ids() {
-    let mut p = LimiterPlugin::new(2, -3.0, 100.0, 10.0, true);
+    let mut p = LimiterPlugin::new(2, -3.0, 100.0, 10.0, false);
     p.true_peak = true;
     p.isp_mode = true;
     p.dual_release = true;
     p.feed_forward = true;
     p.link_amount = 0.5;
-    p.mix = 0.75;
+    p.mix = 1.0;
     p.rebuild_cached_parameters();
     p.initialize(48000).unwrap();
 
@@ -1134,7 +1207,7 @@ fn test_get_parameter_all_ids() {
     );
     assert_eq!(
         p.get_parameter(&ParameterId::from("soft")),
-        Some(ParameterValue::Bool(true))
+        Some(ParameterValue::Bool(false))
     );
     assert_eq!(
         p.get_parameter(&ParameterId::from("true_peak")),
@@ -1150,7 +1223,7 @@ fn test_get_parameter_all_ids() {
     );
     assert_eq!(
         p.get_parameter(&ParameterId::from("mix")),
-        Some(ParameterValue::Float(0.75))
+        Some(ParameterValue::Float(1.0))
     );
     assert_eq!(
         p.get_parameter(&ParameterId::from("link_amount")),
@@ -1190,7 +1263,6 @@ fn test_process_silence_no_gr() {
 }
 
 /// Signal well below threshold should pass through with no limiting.
-/// Note: even with lookahead=0 there is a 1-sample delay via the lookahead buffer.
 #[test]
 fn test_process_below_threshold_no_limiting() {
     let sr = 48000u32;
@@ -1209,14 +1281,12 @@ fn test_process_below_threshold_no_limiting() {
     let ctx = ProcessContext::new(sr, frames);
     p.process_in_place(&mut b, &ctx).unwrap();
 
-    // With lookahead=0 there is still a 1-sample delay (lookahead_len=1).
-    // Skip the first sample and compare output[i] with input[i-1].
-    let max_error = (1..frames)
-        .map(|i| (b[i].abs() - input[i - 1].abs()).abs())
+    let max_error = (0..frames)
+        .map(|i| (b[i].abs() - input[i].abs()).abs())
         .fold(0.0f32, f32::max);
     assert!(
         max_error < 1e-5,
-        "signal below threshold should pass through unchanged (delayed by 1), max_error={max_error}"
+        "signal below threshold should pass through unchanged, max_error={max_error}"
     );
     assert!(
         p.monitoring_gr_db < 0.01,
@@ -1226,7 +1296,6 @@ fn test_process_below_threshold_no_limiting() {
 }
 
 /// Soft knee: very quiet signal should stay in the identity region (abs_s <= soft_start).
-/// Note: even with lookahead=0 there is a 1-sample delay via the lookahead buffer.
 #[test]
 fn test_soft_knee_identity_region() {
     let sr = 48000u32;
@@ -1247,17 +1316,16 @@ fn test_soft_knee_identity_region() {
     let ctx = ProcessContext::new(sr, frames);
     p.process_in_place(&mut b, &ctx).unwrap();
 
-    // In the identity region the output should equal input delayed by 1 sample.
-    let max_error = (1..frames)
-        .map(|i| (b[i].abs() - input[i - 1].abs()).abs())
+    let max_error = (0..frames)
+        .map(|i| (b[i].abs() - input[i].abs()).abs())
         .fold(0.0f32, f32::max);
     assert!(
         max_error < 1e-5,
-        "soft knee identity region should not alter signal (delayed by 1), max_error={max_error}"
+        "soft knee identity region should not alter signal, max_error={max_error}"
     );
 }
 
-/// feed_forward=true with lookahead=0 should be disabled (lookahead_len == 1).
+/// feed_forward=true with lookahead=0 should be disabled.
 #[test]
 fn test_feed_forward_disabled_when_lookahead_zero() {
     let mut p = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
@@ -1265,8 +1333,7 @@ fn test_feed_forward_disabled_when_lookahead_zero() {
     p.rebuild_cached_parameters();
     p.initialize(48000).unwrap();
 
-    // lookahead_len should be 1, so use_feed_forward is false
-    assert_eq!(p.lookahead_len, 1);
+    assert_eq!(p.lookahead_len, 0);
 
     let frames = 512;
     let mut b = vec![0.9f32; frames];
@@ -1537,7 +1604,7 @@ fn test_dual_release_envelope_decay() {
 #[test]
 fn test_isp_mode_correction_decay_path() {
     let sr = 48000u32;
-    let mut p = LimiterPlugin::new(1, -3.0, 50.0, 0.0, false);
+    let mut p = LimiterPlugin::new(1, -3.0, 50.0, 5.0, false);
     p.isp_mode = true;
     p.true_peak = true;
     p.rebuild_cached_parameters();

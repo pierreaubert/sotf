@@ -11,19 +11,19 @@ expression: plan
   "toggle_variant": "capsule",
   "label_position": "below",
   "orientation": "horizontal",
-  "knob_size": "xs",
-  "group_direction": "column",
+  "knob_size": "sm",
+  "group_direction": "row",
   "slider_height": 120.0,
   "show_visualizations": false,
   "columns_visible": [
     "config",
-    "main",
-    "output"
+    "main"
   ],
   "columns_collapsed": [],
   "visible_group_ids": [
     "DYNAMICS",
-    "TIMING"
+    "TIMING",
+    "OUTPUT"
   ],
   "overflow_group_ids": [],
   "config_controls": [
@@ -36,7 +36,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 4,
@@ -47,7 +48,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 5,
@@ -58,7 +60,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 6,
@@ -69,7 +72,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 9,
@@ -80,7 +84,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     }
   ],
   "main_groups": [
@@ -97,7 +102,8 @@ expression: plan
             -20.0,
             0.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 8,
@@ -108,7 +114,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     },
@@ -125,7 +132,8 @@ expression: plan
             10.0,
             1000.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 2,
@@ -136,32 +144,40 @@ expression: plan
             0.0,
             20.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "OUTPUT",
+      "title": "OUTPUT",
+      "controls": [
+        {
+          "param_index": 18446744073709551615,
+          "param_name": "(meter)",
+          "control_type": "bar_meter(-20..0)",
+          "unit": "",
+          "range": null,
+          "read_only": true,
+          "enabled": false
+        },
+        {
+          "param_index": 7,
+          "param_name": "Mix",
+          "control_type": "knob",
+          "unit": "%",
+          "range": [
+            0.0,
+            1.0
+          ],
+          "read_only": false,
+          "enabled": true
         }
       ]
     }
   ],
-  "output_controls": [
-    {
-      "param_index": 18446744073709551615,
-      "param_name": "(meter)",
-      "control_type": "bar_meter(-20..0)",
-      "unit": "",
-      "range": null,
-      "read_only": true
-    },
-    {
-      "param_index": 7,
-      "param_name": "Mix",
-      "control_type": "knob",
-      "unit": "%",
-      "range": [
-        0.0,
-        1.0
-      ],
-      "read_only": false
-    }
-  ],
+  "output_controls": [],
   "tabs": [],
   "viz_slots": [
     {

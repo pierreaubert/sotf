@@ -1,3 +1,38 @@
+# 0.5.14
+
+- Replace spline-based peak estimation with the ITU-R BS.1770 Table-2 4x
+  polyphase FIR and cover its detector delay in predictive ISP mode.
+- Replace full lookahead scans with preallocated monotonic maximum queues,
+  preserving independent channel behavior with amortized O(1) updates.
+- Require controllable ISP configurations (hard mode, 100% wet, adequate
+  lookahead), sanitize non-finite input, and keep lookahead graph-structural.
+- Move the soft behavior into a one-dB dB-domain gain-computer knee, avoiding
+  the alias-prone post-gain cubic waveshaper.
+- Publish meters on a sample cadence independent of callback partitioning,
+  make reset/reinitialize deterministic, and stop rebuilding parameter schema
+  storage for ordinary control changes.
+
+# 0.5.13
+
+## Fixes
+
+- `link_amount=0` now uses independent per-channel gain-reduction envelopes and
+  lookahead peak histories, so a loud channel no longer attenuates a quiet channel.
+
+# 0.5.12
+
+## Fixes
+
+- Zero lookahead is now a true zero-latency path instead of an unreported
+  one-sample ring delay.
+- Nonzero lookahead always uses the upcoming peak window, preventing release
+  from occurring before the delayed transient reaches the output.
+- Serialized numeric parameters are made finite and clamped to their
+  authoritative schema bounds before buffer sizing and DSP initialization.
+- Processing rejects mismatched buffers before advancing state; reset now
+  restores ring position, smoothers, meters, counters, and detector state.
+- ISP correction now releases toward unity with the correct one-pole recurrence.
+
 # 0.5.11
 
 ## Fixes
@@ -88,3 +123,6 @@
 - Fixed catastrophic CPU waste in feed-forward lookahead scan: replaced O(lookahead_len × channels) per-sample scan with amortized O(1) running-max update.
 - Fixed 32-channel hard cap: `ch_peaks` now dynamically sized to `channels`, so all channels are analyzed.
 - Fixed ISP correction decay operating in wrong domain: decay now happens in linear gain space before converting back to dB, matching the release time constant.
+# 0.5.15
+
+- Mark latency-changing lookahead structural in host-visible metadata, matching its rebuild-only setter.

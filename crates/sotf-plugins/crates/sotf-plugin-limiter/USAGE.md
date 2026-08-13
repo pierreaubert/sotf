@@ -29,13 +29,13 @@ Reads ahead in the audio stream to anticipate peaks and apply gain reduction bef
 
 ### Clipping Mode
 
-Choose between hard clipping (absolute brick-wall limiting) and soft clipping (algebraic saturation curve for a warmer sound).
+Choose between hard limiting and a one-dB, dB-domain soft knee in the gain computer. The soft mode changes onset without adding a post-gain saturation waveshaper.
 
 **Parameters:**
 
 | Parameter | Range | Default | Unit | Description |
 |-----------|-------|---------|------|-------------|
-| Soft Knee | Soft/Hard | Hard | — | Hard: brick-wall clamp. Soft: smooth saturation curve above 90% of threshold |
+| Soft Knee | Soft/Hard | Hard | — | Hard: brick-wall onset. Soft: gradual one-dB gain-reduction knee |
 
 ### Mix
 
@@ -151,7 +151,8 @@ Choose between hard clipping (absolute brick-wall limiting) and soft clipping (a
 - Place the limiter last in the plugin chain — after EQ, compression, and other processing.
 - The lookahead adds latency equal to the lookahead time. Use 3-5 ms for a good balance.
 - For true peak limiting (inter-sample peaks), set threshold to -1 dBTP or lower.
-- Soft mode creates harmonic distortion — use it intentionally for color, not for transparent limiting.
+- ISP limiting requires hard mode, 100% wet mix, and at least six samples of lookahead.
+- Lookahead changes require a graph rebuild so host latency compensation remains correct.
 - If the GR meter never returns to 0, the input is too hot — reduce gain before the limiter.
 - Release time affects pumping: too short = audible pumping, too long = sustained gain reduction.
 
@@ -162,7 +163,7 @@ Input → Lookahead Buffer → Peak Detection (instant attack)
                                ↓
               Envelope Follower (release smoothing)
                                ↓
-Input (delayed) → Gain Reduction → Soft/Hard Clip → Mix → Output
+Input (delayed) → Gain Reduction (soft/hard knee) → Safety Ceiling → Mix → Output
 ```
 
 The lookahead buffer delays the audio path while the peak detector sees the signal ahead of time. This allows gain reduction to begin before the peak arrives.

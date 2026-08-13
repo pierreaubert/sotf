@@ -65,7 +65,7 @@ proptest! {
         lookahead in 0.0f32..20.0f32,
         mix in 0.0f32..1.0f32,
     ) {
-        let mut p = LimiterPlugin::new(1, -6.0, 50.0, 5.0, false);
+        let mut p = LimiterPlugin::new(1, -6.0, 50.0, lookahead, false);
         p.initialize(48000).unwrap();
 
         p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(threshold))
@@ -86,8 +86,6 @@ proptest! {
             .unwrap();
         prop_assert!((got - release).abs() < 1e-4, "release roundtrip drift");
 
-        p.set_parameter(ParameterId::from("lookahead"), ParameterValue::Float(lookahead))
-            .unwrap();
         let got = p
             .get_parameter(&ParameterId::from("lookahead"))
             .unwrap()
