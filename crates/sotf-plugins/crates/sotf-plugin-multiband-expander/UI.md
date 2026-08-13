@@ -44,6 +44,10 @@ custom
 
 Width: 120px fixed
 
+The standalone `Expander` identity omits this column entirely because it is a
+fixed one-band broadband processor. Processing mode is likewise structural;
+hosts must rebuild rather than send it as realtime automation.
+
 ## Main (Center — "BAND VIEW", always visible)
 
 ### Band Tabs (top)

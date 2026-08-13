@@ -10828,7 +10828,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-multiband-expander"
-version = "0.5.24"
+version = "0.5.26"
 dependencies = [
  "math-dsp",
  "math-iir-fir",

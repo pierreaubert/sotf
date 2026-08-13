@@ -9,15 +9,16 @@ use super::spectral_state::SpectralBandInfo;
 use super::spectral_state::SpectralState;
 use super::types::GateState;
 use super::types::MultibandExpanderPluginParams;
-use crate::params::{BAND_TEMPLATE as MEB, GLOBAL_PARAMS as ME};
+use crate::params::{BAND_TEMPLATE as MEB, GLOBAL_PARAMS as ME, PARAMS as SINGLE_PARAMS};
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use rustfft::num_complex::Complex;
 use sotf_host::LookaheadBuffer;
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_makeup::MeasuredMakeup;
-use sotf_host::detector::LevelDetector;
+use sotf_host::detector::{DetectionMode, LevelDetector};
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_bridge;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::param_specs::find_by_key as pk;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
@@ -50,6 +51,9 @@ pub struct MultibandExpanderPlugin {
     pub(super) lookahead_ms: f32,
     /// Sidechain high-pass frequency (single-band compatibility, not yet applied to DSP)
     pub(super) sidechain_hpf_hz: f32,
+    pub(super) sidechain_hpf_x1: Vec<f32>,
+    pub(super) sidechain_hpf_y1: Vec<f32>,
+    pub(super) detector_frame: Vec<f32>,
     /// Per-band, per-channel lookahead delay buffers.
     pub(super) lookahead_buffers: Vec<Vec<LookaheadBuffer>>,
     /// Per-channel lookahead delay for the dry path (time-domain mode).
@@ -92,10 +96,14 @@ impl MultibandExpanderPlugin {
         Self::with_params(channels, Default::default())
     }
     pub fn with_params(channels: usize, params: MultibandExpanderPluginParams) -> Self {
-        let nb = params.num_bands.clamp(
-            pk(ME, "num_bands").min_f64() as usize,
-            pk(ME, "num_bands").max_f64() as usize,
-        );
+        let nb = if params.num_bands == 1 {
+            1
+        } else {
+            params.num_bands.clamp(
+                pk(ME, "num_bands").min_f64() as usize,
+                pk(ME, "num_bands").max_f64() as usize,
+            )
+        };
         let sr = 44100;
         let default_xfs = [200.0f32, 2000.0, 8000.0, 12000.0];
         let mut xfs = params.crossover_frequencies.clone();
@@ -162,7 +170,7 @@ impl MultibandExpanderPlugin {
         } else {
             &params.detection_mode
         };
-        let det_mode = parse_detection_mode(det_mode_str);
+        let det_mode = parse_detection_mode(det_mode_str).unwrap_or(DetectionMode::Peak);
         let level_detectors = (0..nb)
             .map(|_| {
                 (0..channels)
@@ -205,6 +213,9 @@ impl MultibandExpanderPlugin {
             detection_mode: det_mode_str.to_string(),
             lookahead_ms: params.lookahead_ms.clamp(0.0, MAX_LOOKAHEAD_MS),
             sidechain_hpf_hz: params.sidechain_hpf_hz.unwrap_or(80.0),
+            sidechain_hpf_x1: vec![0.0; nb * channels],
+            sidechain_hpf_y1: vec![0.0; nb * channels],
+            detector_frame: vec![0.0; channels],
             lookahead_buffers: (0..nb)
                 .map(|_| {
                     (0..channels)
@@ -306,7 +317,34 @@ impl MultibandExpanderPlugin {
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
+        if self.num_bands == 1 {
+            self.cached_parameters = param_bridge::build_parameters(SINGLE_PARAMS, |index| {
+                let bp = self.band_params.first();
+                match index {
+                    0 => Some(self.threshold_db as f64),
+                    1 => Some(self.ratio as f64),
+                    2 => Some(self.attack_ms as f64),
+                    3 => Some(self.release_ms as f64),
+                    4 => Some(self.range_db as f64),
+                    5 => Some(self.knee_db as f64),
+                    6 => Some(self.hysteresis_db as f64),
+                    7 => Some(self.hold_ms as f64),
+                    8 => Some(self.mix as f64),
+                    9 => Some(bp.is_some_and(|p| p.auto_makeup) as u8 as f64),
+                    10 => Some(self.link_channels as u8 as f64),
+                    11 => Some(self.sidechain_hpf_hz as f64),
+                    12 => Some(self.lookahead_ms as f64),
+                    13 => Some((self.detection_mode.eq_ignore_ascii_case("rms")) as u8 as f64),
+                    14 => Some(bp.is_some_and(|p| p.measured_auto_makeup) as u8 as f64),
+                    _ => None,
+                }
+            });
+            return;
+        }
         let mut params = param_bridge::build_parameters(ME, |i| self.param_value(i));
+        if let Some(num_bands) = params.iter_mut().find(|p| p.id.as_str() == "num_bands") {
+            num_bands.update_mode = UpdateMode::Structural;
+        }
 
         // processing_mode is not in GLOBAL_PARAMS, add manually
         let proc_mode_idx = if self.processing_mode == "spectral" {
@@ -316,7 +354,8 @@ impl MultibandExpanderPlugin {
         };
         params.push(
             Parameter::new_int("processing_mode", "Processing Mode", proc_mode_idx, 0, 1)
-                .with_group("General"),
+                .with_group("General")
+                .with_update_mode(UpdateMode::Structural),
         );
 
         // Single-band aliases (not in GLOBAL_PARAMS, but needed for Expander PluginSettings)
@@ -467,6 +506,107 @@ impl MultibandExpanderPlugin {
     }
     pub fn from_params(channels: usize, params: MultibandExpanderPluginParams) -> Self {
         Self::with_params(channels, params)
+    }
+
+    pub fn try_from_params(
+        channels: usize,
+        params: MultibandExpanderPluginParams,
+        sample_rate: u32,
+    ) -> Result<Self, String> {
+        if channels == 0 {
+            return Err("expander requires at least one channel".into());
+        }
+        let max_bands = pk(ME, "num_bands").max_f64() as usize;
+        if !(1..=max_bands).contains(&params.num_bands) {
+            return Err(format!(
+                "num_bands must be in 1..={max_bands}, got {}",
+                params.num_bands
+            ));
+        }
+        let finite = |name: &str, value: f32, min: f32, max: f32| {
+            if value.is_finite() && (min..=max).contains(&value) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{name} must be finite and in {min}..={max}, got {value}"
+                ))
+            }
+        };
+        let finite_optional =
+            |name: &str, value: Option<f32>, min: f32, max: f32| -> Result<(), String> {
+                if let Some(value) = value {
+                    finite(name, value, min, max)?;
+                }
+                Ok(())
+            };
+        finite("threshold", params.threshold_db, -80.0, 0.0)?;
+        finite("ratio", params.ratio, 1.0, 20.0)?;
+        finite("attack", params.attack_ms, 0.1, 50.0)?;
+        finite("release", params.release_ms, 10.0, 2_000.0)?;
+        finite("knee", params.knee_db, 0.0, 20.0)?;
+        finite("range", params.range_db, 0.0, 80.0)?;
+        finite("hysteresis", params.hysteresis_db, 0.0, 12.0)?;
+        finite("hold", params.hold_ms, 0.0, 500.0)?;
+        finite("mix", params.mix, 0.0, 1.0)?;
+        finite("lookahead", params.lookahead_ms, 0.0, MAX_LOOKAHEAD_MS)?;
+        finite(
+            "sidechain_hpf_hz",
+            params.sidechain_hpf_hz.unwrap_or(80.0),
+            0.0,
+            500.0,
+        )?;
+        for (index, band) in params.bands.iter().enumerate() {
+            let prefix = |field: &str| format!("band_{index}_{field}");
+            finite_optional(&prefix("threshold"), band.threshold_db, -80.0, 0.0)?;
+            finite_optional(&prefix("ratio"), band.ratio, 1.0, 20.0)?;
+            finite_optional(&prefix("attack"), band.attack_ms, 0.1, 50.0)?;
+            finite_optional(&prefix("release"), band.release_ms, 10.0, 2_000.0)?;
+            finite_optional(&prefix("knee"), band.knee_db, 0.0, 20.0)?;
+            finite_optional(&prefix("range"), band.range_db, 0.0, 80.0)?;
+            finite_optional(&prefix("hysteresis"), band.hysteresis_db, 0.0, 12.0)?;
+            finite_optional(&prefix("hold"), band.hold_ms, 0.0, 500.0)?;
+        }
+        parse_detection_mode(&params.detection_mode)?;
+        if !matches!(
+            params.processing_mode.to_ascii_lowercase().as_str(),
+            "time_domain" | "spectral"
+        ) {
+            return Err(format!(
+                "unknown processing mode: {}",
+                params.processing_mode
+            ));
+        }
+        if params.processing_mode.eq_ignore_ascii_case("spectral") {
+            let unsupported_makeup = params.auto_makeup.unwrap_or(false)
+                || params.measured_auto_makeup.unwrap_or(false)
+                || params
+                    .bands
+                    .iter()
+                    .any(|band| band.auto_makeup || band.measured_auto_makeup);
+            if !params.detection_mode.eq_ignore_ascii_case("peak")
+                || !params.link_channels
+                || params.lookahead_ms != 0.0
+                || params.sidechain_hpf_hz.unwrap_or(0.0) != 0.0
+                || unsupported_makeup
+            {
+                return Err("spectral mode supports Peak linked detection with zero lookahead/sidechain HPF and no auto makeup; rebuild in time_domain mode for those controls".into());
+            }
+        }
+        let needed = params.num_bands.saturating_sub(1);
+        let active = params.crossover_frequencies.iter().take(needed);
+        let mut previous = 0.0;
+        for (index, &frequency) in active.enumerate() {
+            if !frequency.is_finite()
+                || frequency <= previous
+                || frequency >= sample_rate as f32 * 0.5
+            {
+                return Err(format!("invalid crossover frequency {index}: {frequency}"));
+            }
+            previous = frequency;
+        }
+        let mut plugin = Self::with_params(channels, params);
+        plugin.initialize(sample_rate)?;
+        Ok(plugin)
     }
 
     pub(super) fn build_crossovers(&mut self) {
@@ -749,9 +889,8 @@ impl MultibandExpanderPlugin {
         let any_solo =
             (0..self.num_bands).any(|b| self.band_params.get(b).map(|p| p.solo).unwrap_or(false));
 
-        // Ensure dry buffer large enough
         if self.dry_buffer.len() < buffer.len() {
-            self.dry_buffer.resize(buffer.len(), 0.0);
+            return Err("spectral expander block exceeds preallocated capacity".into());
         }
         self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
 
@@ -865,6 +1004,42 @@ impl MultibandExpanderPlugin {
             }
         }
 
+        self.cache_update_counter = self.cache_update_counter.saturating_add(nf);
+        let cache_interval = (self.sample_rate as usize / 30).max(1);
+        if self.cache_update_counter >= cache_interval {
+            self.cache_update_counter %= cache_interval;
+            self.band_levels_db.fill(-120.0);
+            self.attenuation_flattened.fill(0.0);
+            self.is_open_buffer.fill(false);
+            if let Some(ss) = &self.spectral {
+                for ch in 0..channels {
+                    for bin in 0..ss.num_bins {
+                        let band = ss.bin_to_band[bin];
+                        let state = &ss.bin_states[ch][bin];
+                        self.attenuation_flattened[band * channels + ch] =
+                            self.attenuation_flattened[band * channels + ch].max(state.envelope_db);
+                        self.is_open_buffer[band] |= state.gate_state != GateState::Closing;
+                    }
+                }
+            }
+            for band in 0..self.num_bands {
+                let attenuation = self.attenuation_flattened
+                    [band * channels..(band + 1) * channels]
+                    .iter()
+                    .copied()
+                    .fold(0.0_f32, f32::max);
+                self.band_levels_db[band] = self.threshold_db - attenuation;
+            }
+            self.cache.update(|data| {
+                data.update(
+                    &self.attenuation_flattened,
+                    &self.is_open_buffer,
+                    &self.band_levels_db,
+                    &self.crossover_frequencies,
+                );
+            });
+        }
+
         flush_denormals_inplace(buffer);
         Ok(nf)
     }
@@ -879,40 +1054,31 @@ impl MultibandExpanderPlugin {
     pub fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         // Handle processing_mode separately (not in GLOBAL_PARAMS)
         if id.as_str() == "processing_mode" {
-            let idx = value
+            value
                 .as_int()
                 .ok_or_else(|| "processing_mode must be an integer".to_string())?;
-            let mode_str = if idx == 1 { "spectral" } else { "time_domain" };
-            if mode_str != self.processing_mode {
-                self.processing_mode = mode_str.to_string();
-                if mode_str == "spectral" && self.spectral.is_none() {
-                    let fft_size = 1024;
-                    let mut ss = SpectralState::new(
-                        fft_size,
-                        self.channels,
-                        self.sample_rate,
-                        &self.crossover_frequencies,
-                        self.num_bands,
-                    );
-                    ss.update_band_coefficients(
-                        self.num_bands,
-                        &self.band_params,
-                        self.attack_ms,
-                        self.release_ms,
-                        self.sample_rate,
-                    );
-                    self.spectral = Some(ss);
-                } else if mode_str == "time_domain" {
-                    self.spectral = None;
-                }
+            return Err(
+                "processing_mode is structural; rebuild the plugin off the audio thread".into(),
+            );
+        }
+        if id.as_str() == "num_bands" {
+            return Err("num_bands is structural; rebuild the plugin off the audio thread".into());
+        }
+        if id.as_str() == "sidechain_hpf_hz" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "sidechain_hpf_hz must be a float".to_string())?;
+            if !v.is_finite() || !(0.0..=500.0).contains(&v) {
+                return Err("sidechain_hpf_hz must be finite and in 0..=500".into());
             }
-            self.rebuild_cached_parameters();
+            self.sidechain_hpf_hz = v;
             return Ok(());
         }
 
         // Try global params via param_bridge
-        if let Ok(idx) =
-            param_bridge::set_parameter(ME, &id, &value, |i, v| self.set_param_value(i, v))
+        if !id.as_str().starts_with("band_")
+            && let Ok(idx) =
+                param_bridge::set_parameter(ME, &id, &value, |i, v| self.set_param_value(i, v))
         {
             // Side effects for specific global params
             match idx {
@@ -947,7 +1113,7 @@ impl MultibandExpanderPlugin {
                         self.measured_makeups
                             .push(MeasuredMakeup::new(1000.0, self.sample_rate));
                     }
-                    let det_mode = parse_detection_mode(&self.detection_mode);
+                    let det_mode = parse_detection_mode(&self.detection_mode)?;
                     while self.level_detectors.len() < nb {
                         self.level_detectors.push(
                             (0..self.channels)
@@ -1006,7 +1172,7 @@ impl MultibandExpanderPlugin {
                 }
                 16 => {
                     // detection_mode changed
-                    let det_mode = parse_detection_mode(&self.detection_mode);
+                    let det_mode = parse_detection_mode(&self.detection_mode)?;
                     for band_dets in &mut self.level_detectors {
                         for det in band_dets {
                             det.set_mode(det_mode);
@@ -1019,7 +1185,6 @@ impl MultibandExpanderPlugin {
                 }
                 _ => {}
             }
-            self.rebuild_cached_parameters();
             return Ok(());
         }
 
@@ -1033,7 +1198,6 @@ impl MultibandExpanderPlugin {
                 if let Some(bp) = self.band_params.first_mut() {
                     bp.auto_makeup = v;
                 }
-                self.rebuild_cached_parameters();
                 return Ok(());
             }
             "measured_auto_makeup" => {
@@ -1043,15 +1207,16 @@ impl MultibandExpanderPlugin {
                 if let Some(bp) = self.band_params.first_mut() {
                     bp.measured_auto_makeup = v;
                 }
-                self.rebuild_cached_parameters();
                 return Ok(());
             }
             "sidechain_hpf_hz" => {
                 let v = value
                     .as_float()
                     .ok_or_else(|| "sidechain_hpf_hz must be a float".to_string())?;
+                if !v.is_finite() || !(0.0..=500.0).contains(&v) {
+                    return Err("sidechain_hpf_hz must be finite and in 0..=500".into());
+                }
                 self.sidechain_hpf_hz = v;
-                self.rebuild_cached_parameters();
                 return Ok(());
             }
             _ => {}
@@ -1059,13 +1224,13 @@ impl MultibandExpanderPlugin {
 
         // Fall through to band-level param handling
         if name.starts_with("band_") {
-            let parts: Vec<&str> = name.split('_').collect();
-            if parts.len() >= 3 {
-                let b_idx = parts[1]
+            let mut parts = name.split('_');
+            let _band = parts.next();
+            if let (Some(index), Some(field)) = (parts.next(), parts.next()) {
+                let b_idx = index
                     .parse::<usize>()
                     .map_err(|e| format!("Invalid band index: {}", e))?;
                 if b_idx < self.num_bands {
-                    let field = parts[2];
                     let bp = &mut self.band_params[b_idx];
                     match field {
                         "threshold" => {
@@ -1168,7 +1333,6 @@ impl MultibandExpanderPlugin {
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
-        self.rebuild_cached_parameters();
         Ok(())
     }
 
@@ -1209,11 +1373,11 @@ impl MultibandExpanderPlugin {
         // Fall through to band-level params
         let name = id.as_str();
         if name.starts_with("band_") {
-            let parts: Vec<&str> = name.split('_').collect();
-            if parts.len() >= 3 {
-                let b_idx = parts[1].parse::<usize>().unwrap_or(0);
+            let mut parts = name.split('_');
+            let _band = parts.next();
+            if let (Some(index), Some(field)) = (parts.next(), parts.next()) {
+                let b_idx = index.parse::<usize>().unwrap_or(0);
                 if b_idx < self.num_bands {
-                    let field = parts[2];
                     let bp = &self.band_params[b_idx];
                     match field {
                         "threshold" => Some(ParameterValue::Float(
@@ -1255,7 +1419,15 @@ impl MultibandExpanderPlugin {
 
 impl ParametricInPlacePlugin for MultibandExpanderPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Multiband Expander", "1.2.0", "Sotf")
+        PluginInfo::new(
+            if self.num_bands == 1 {
+                "Expander"
+            } else {
+                "Multiband Expander"
+            },
+            env!("CARGO_PKG_VERSION"),
+            "SotF",
+        )
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -1284,6 +1456,22 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
         Ok(())
     }
 
+    fn parametric_set_parameter(
+        &mut self,
+        id: ParameterId,
+        value: ParameterValue,
+    ) -> PluginResult<()> {
+        let parameter = self
+            .cached_parameters
+            .iter()
+            .find(|parameter| parameter.id == id)
+            .ok_or_else(|| format!("Unknown parameter: {id}"))?;
+        parameter
+            .validate(&value)
+            .map_err(|error| format!("{id}: {error}"))?;
+        self.set_parameter(id, value)
+    }
+
     fn current_values(&self) -> ParameterSet {
         let mut values = ParameterSet::new();
         for param in &self.cached_parameters {
@@ -1310,7 +1498,7 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
         }
 
         // Reinitialize level detectors for new sample rate
-        let det_mode = parse_detection_mode(&self.detection_mode);
+        let det_mode = parse_detection_mode(&self.detection_mode).unwrap_or(DetectionMode::Peak);
         for band_dets in &mut self.level_detectors {
             for det in band_dets {
                 *det = LevelDetector::new(det_mode, sr);
@@ -1384,6 +1572,23 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
         }
         self.band_buffers.fill(0.0);
         self.dry_buffer.fill(0.0);
+        for crossover in &mut self.crossover_points {
+            crossover.reset();
+        }
+        let threshold = self.threshold_smoother.target();
+        self.threshold_smoother.reset(threshold);
+        let mix = self.mix_smoother.target();
+        self.mix_smoother.reset(mix);
+        for smoother in &mut self.xover_smoothers {
+            let target = smoother.target();
+            smoother.reset(target);
+        }
+        self.cache_update_counter = 0;
+        self.band_levels_db.fill(-120.0);
+        self.attenuation_flattened.fill(0.0);
+        self.is_open_buffer.fill(false);
+        self.sidechain_hpf_x1.fill(0.0);
+        self.sidechain_hpf_y1.fill(0.0);
 
         if let Some(ss) = &mut self.spectral {
             ss.reset();
@@ -1405,13 +1610,24 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
-        // Dispatch to spectral mode if active
-        if self.processing_mode == "spectral" {
-            return self.process_spectral_in_place(buffer, context);
-        }
-
-        enable_ftz_daz();
         let nf = context.num_frames;
+        let expected_len = nf
+            .checked_mul(self.channels)
+            .ok_or_else(|| "expander buffer length overflow".to_string())?;
+        if self.channels == 0 {
+            return Err("expander requires at least one channel".into());
+        }
+        if buffer.len() != expected_len {
+            return Err(format!(
+                "expander expected {expected_len} samples, got {}",
+                buffer.len()
+            ));
+        }
+        for sample in buffer.iter_mut() {
+            if !sample.is_finite() {
+                *sample = 0.0;
+            }
+        }
         if nf > MAX_BLOCK_FRAMES {
             let mut processed = 0;
             while processed < nf {
@@ -1424,20 +1640,24 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
             }
             return Ok(nf);
         }
+        // Dispatch after chunking so spectral processing never grows scratch buffers.
+        if self.processing_mode == "spectral" {
+            return self.process_spectral_in_place(buffer, context);
+        }
+
+        enable_ftz_daz();
         let stride = nf * self.channels;
         debug_assert!(self.dry_buffer.len() >= buffer.len());
         debug_assert!(self.band_buffers.len() >= self.num_bands * stride);
 
         self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
 
-        // 1. Update crossovers
-        for i in 0..(self.num_bands - 1) {
-            let freq = self.xover_smoothers[i].next_n(nf);
-            self.crossover_points[i].set_frequency(freq);
-        }
-
-        // 2. Perform Crossover Splitting
+        // Advance crossovers per sample so automation is callback-partition invariant.
         for frame in 0..nf {
+            for i in 0..self.num_bands.saturating_sub(1) {
+                let frequency = self.xover_smoothers[i].advance();
+                self.crossover_points[i].set_frequency(frequency);
+            }
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
                 let mut rem = buffer[idx];
@@ -1482,11 +1702,18 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
             }
 
             if is_bypassed || is_passive {
-                // Keep band signal as is, but still track levels
+                // Bypass skips gain computation, not common lookahead latency.
                 let off = b * stride;
                 let mut max_abs = 0.0f32;
-                for i in 0..stride {
-                    max_abs = max_abs.max(self.band_buffers[off + i].abs());
+                for frame in 0..nf {
+                    for ch in 0..self.channels {
+                        let idx = off + frame * self.channels + ch;
+                        max_abs = max_abs.max(self.band_buffers[idx].abs());
+                        if use_lookahead {
+                            self.band_buffers[idx] =
+                                self.lookahead_buffers[b][ch].push(self.band_buffers[idx]);
+                        }
+                    }
                 }
                 self.band_levels_db[b] = 20.0 * fast_log10(max_abs.max(1e-10));
                 continue;
@@ -1530,10 +1757,31 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
 
             for frame in 0..nf {
                 let th = threshold_override.unwrap_or(self.automation_values[frame][0]);
+                let hpf_coeff = if self.sidechain_hpf_hz > 0.0 {
+                    let rc = 1.0 / (std::f32::consts::TAU * self.sidechain_hpf_hz);
+                    rc / (rc + 1.0 / self.sample_rate as f32)
+                } else {
+                    0.0
+                };
+                for ch in 0..self.channels {
+                    let state_idx = b * self.channels + ch;
+                    let input = self.band_buffers[off + frame * self.channels + ch];
+                    let detector = if self.sidechain_hpf_hz > 0.0 {
+                        let output = hpf_coeff
+                            * (self.sidechain_hpf_y1[state_idx] + input
+                                - self.sidechain_hpf_x1[state_idx]);
+                        self.sidechain_hpf_x1[state_idx] = input;
+                        self.sidechain_hpf_y1[state_idx] = output;
+                        output
+                    } else {
+                        input
+                    };
+                    self.detector_frame[ch] = detector;
+                }
                 // Update per-channel peak envelope followers first.
                 // Instant attack (sample-accurate), fast independent release.
                 for ch in 0..self.channels {
-                    let s = self.band_buffers[off + frame * self.channels + ch].abs();
+                    let s = self.detector_frame[ch].abs();
                     bexp.peak_env[ch] = s.max(peak_release_coeff * bexp.peak_env[ch]);
                 }
 
@@ -1542,7 +1790,7 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
                     if use_rms {
                         let mut max_rms_db = -120.0f32;
                         for ch in 0..self.channels {
-                            let s = self.band_buffers[off + frame * self.channels + ch];
+                            let s = self.detector_frame[ch];
                             let ch_db = self.level_detectors[b][ch].process(s);
                             max_rms_db = max_rms_db.max(ch_db);
                         }
@@ -1564,7 +1812,7 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
                     let db = if self.link_channels {
                         det_db
                     } else if use_rms {
-                        self.level_detectors[b][ch].process(self.band_buffers[idx])
+                        self.level_detectors[b][ch].process(self.detector_frame[ch])
                     } else {
                         20.0 * fast_log10(bexp.peak_env[ch].max(1e-10))
                     };
@@ -1663,9 +1911,10 @@ impl ParametricInPlacePlugin for MultibandExpanderPlugin {
         }
 
         // Update diagnostic cache (throttled)
-        self.cache_update_counter += 1;
-        if self.cache_update_counter >= 10 {
-            self.cache_update_counter = 0;
+        self.cache_update_counter = self.cache_update_counter.saturating_add(nf);
+        let cache_interval = (self.sample_rate as usize / 30).max(1);
+        if self.cache_update_counter >= cache_interval {
+            self.cache_update_counter %= cache_interval;
             for b in 0..self.num_bands {
                 self.is_open_buffer[b] = self.band_expanders[b]
                     .gate_state

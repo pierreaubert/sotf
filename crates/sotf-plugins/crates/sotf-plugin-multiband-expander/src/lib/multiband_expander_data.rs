@@ -1,55 +1,34 @@
-use std::sync::Arc;
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MultibandExpanderData {
     /// Attenuation per band and per channel (flattened)
-    pub attenuation_db: Arc<Vec<f32>>,
-    pub is_open: Arc<Vec<bool>>,
-    pub band_levels_db: Arc<Vec<f32>>,
-    pub crossover_frequencies: Arc<Vec<f32>>,
-}
-
-impl Default for MultibandExpanderData {
-    fn default() -> Self {
-        Self {
-            attenuation_db: Arc::new(Vec::new()),
-            is_open: Arc::new(Vec::new()),
-            band_levels_db: Arc::new(Vec::new()),
-            crossover_frequencies: Arc::new(Vec::new()),
-        }
-    }
+    pub attenuation_db: Vec<f32>,
+    pub is_open: Vec<bool>,
+    pub band_levels_db: Vec<f32>,
+    pub crossover_frequencies: Vec<f32>,
 }
 
 impl MultibandExpanderData {
     pub fn new(num_bands: usize, channels: usize) -> Self {
         Self {
-            attenuation_db: Arc::new(vec![0.0; num_bands * channels]),
-            is_open: Arc::new(vec![false; num_bands]),
-            band_levels_db: Arc::new(vec![-120.0; num_bands]),
-            crossover_frequencies: Arc::new(vec![0.0; num_bands.saturating_sub(1)]),
+            attenuation_db: vec![0.0; num_bands * channels],
+            is_open: vec![false; num_bands],
+            band_levels_db: vec![-120.0; num_bands],
+            crossover_frequencies: vec![0.0; num_bands.saturating_sub(1)],
         }
     }
 
     pub fn update(&mut self, atten: &[f32], open: &[bool], levels: &[f32], xovers: &[f32]) {
-        if let Some(mut_atten) = Arc::get_mut(&mut self.attenuation_db)
-            && mut_atten.len() == atten.len()
-        {
-            mut_atten.copy_from_slice(atten);
+        if self.attenuation_db.len() == atten.len() {
+            self.attenuation_db.copy_from_slice(atten);
         }
-        if let Some(mut_open) = Arc::get_mut(&mut self.is_open)
-            && mut_open.len() == open.len()
-        {
-            mut_open.copy_from_slice(open);
+        if self.is_open.len() == open.len() {
+            self.is_open.copy_from_slice(open);
         }
-        if let Some(mut_levels) = Arc::get_mut(&mut self.band_levels_db)
-            && mut_levels.len() == levels.len()
-        {
-            mut_levels.copy_from_slice(levels);
+        if self.band_levels_db.len() == levels.len() {
+            self.band_levels_db.copy_from_slice(levels);
         }
-        if let Some(mut_xovers) = Arc::get_mut(&mut self.crossover_frequencies)
-            && mut_xovers.len() == xovers.len()
-        {
-            mut_xovers.copy_from_slice(xovers);
+        if self.crossover_frequencies.len() == xovers.len() {
+            self.crossover_frequencies.copy_from_slice(xovers);
         }
     }
 }

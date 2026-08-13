@@ -4,6 +4,17 @@
 
 A multiband downward expander that splits the audio into 2-5 frequency bands using Linkwitz-Riley crossovers, expands each band independently, then sums them back together. Use it for frequency-selective noise reduction, tightening specific ranges without affecting others, or isolating bleed in particular bands.
 
+The separate `expander` factory entry is broadband: it uses one detector and one
+gain decision for the complete signal and exposes no crossover/band-count UI.
+Changing the multiband count or switching time-domain/spectral processing
+requires rebuilding the plugin; realtime automation of structural controls is
+rejected.
+
+Time-domain detector input can be high-passed from 0-500 Hz. Lookahead delays
+every active, passive, and bypassed band equally. Spectral mode is intentionally
+restricted to linked Peak detection with lookahead, detector HPF, and auto makeup
+off; presets requesting unsupported feature combinations are rejected.
+
 ## Features
 
 ### Band Splitting

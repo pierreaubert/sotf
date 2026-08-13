@@ -1,6 +1,7 @@
 use super::band_expander_params::BandExpanderParams;
 use super::misc::MAX_BLOCK_FRAMES;
 use super::misc::parse_detection_mode;
+use super::multiband_expander_data::MultibandExpanderData;
 use super::multiband_expander_plugin::MultibandExpanderPlugin;
 use super::spectral_state::SpectralState;
 use super::types::GateState;
@@ -619,10 +620,14 @@ fn test_lookahead_dry_path_is_latency_compensated() {
 fn test_parse_detection_mode() {
     assert_eq!(
         parse_detection_mode("rms"),
-        DetectionMode::Rms { window_ms: 10.0 }
+        Ok(DetectionMode::Rms { window_ms: 10.0 })
     );
-    assert_eq!(parse_detection_mode("peak"), DetectionMode::Peak);
-    assert_eq!(parse_detection_mode("unknown"), DetectionMode::Peak);
+    assert_eq!(parse_detection_mode("peak"), Ok(DetectionMode::Peak));
+    assert_eq!(
+        parse_detection_mode("RMS"),
+        Ok(DetectionMode::Rms { window_ms: 10.0 })
+    );
+    assert!(parse_detection_mode("unknown").is_err());
 }
 
 #[test]
@@ -667,21 +672,20 @@ fn test_global_param_value_roundtrip() {
 }
 
 #[test]
-fn test_set_processing_mode_spectral_creates_state() {
+fn test_processing_mode_is_structural() {
     let mut p = MultibandExpanderPlugin::new(2);
     p.initialize(48000).unwrap();
     assert!(p.spectral.is_none());
 
-    p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(1))
-        .unwrap();
-
-    assert!(p.spectral.is_some());
-    assert_eq!(p.processing_mode, "spectral");
-    assert_eq!(p.latency_samples(), 1024);
+    assert!(
+        p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(1))
+            .is_err()
+    );
+    assert!(p.spectral.is_none());
 }
 
 #[test]
-fn test_set_num_bands_updates_spectral_bin_map() {
+fn test_num_bands_is_structural_in_spectral_mode() {
     let mut p = MultibandExpanderPlugin::with_params(
         2,
         MultibandExpanderPluginParams {
@@ -702,19 +706,11 @@ fn test_set_num_bands_updates_spectral_bin_map() {
         .unwrap();
     assert_eq!(max_band_before, 1);
 
-    p.set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(4))
-        .unwrap();
-
-    let max_band_after = p
-        .spectral
-        .as_ref()
-        .unwrap()
-        .bin_to_band
-        .iter()
-        .max()
-        .copied()
-        .unwrap();
-    assert_eq!(max_band_after, 3);
+    assert!(
+        p.set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(4))
+            .is_err()
+    );
+    assert_eq!(p.num_bands, 2);
 }
 
 #[test]
@@ -1219,7 +1215,7 @@ fn test_set_parameter_sidechain_hpf_alias() {
 }
 
 #[test]
-fn test_set_parameter_processing_mode_time_domain() {
+fn test_set_parameter_processing_mode_time_domain_is_structural() {
     let mut p = MultibandExpanderPlugin::with_params(
         1,
         MultibandExpanderPluginParams {
@@ -1230,14 +1226,15 @@ fn test_set_parameter_processing_mode_time_domain() {
     p.initialize(48000).unwrap();
     assert!(p.spectral.is_some());
 
-    p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(0))
-        .unwrap();
-    assert!(p.spectral.is_none());
-    assert_eq!(p.processing_mode, "time_domain");
+    assert!(
+        p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(0))
+            .is_err()
+    );
+    assert!(p.spectral.is_some());
 }
 
 #[test]
-fn test_set_parameter_num_bands_side_effects() {
+fn test_set_parameter_num_bands_rejected_as_structural() {
     let mut p = MultibandExpanderPlugin::with_params(
         1,
         MultibandExpanderPluginParams {
@@ -1247,15 +1244,11 @@ fn test_set_parameter_num_bands_side_effects() {
     );
     p.initialize(48000).unwrap();
 
-    p.set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(4))
-        .unwrap();
-
-    assert_eq!(p.num_bands, 4);
-    assert_eq!(p.band_expanders.len(), 4);
-    assert_eq!(p.lookahead_buffers.len(), 4);
-    assert_eq!(p.measured_makeups.len(), 4);
-    assert_eq!(p.level_detectors.len(), 4);
-    assert_eq!(p.band_levels_db.len(), 4);
+    assert!(
+        p.set_parameter(ParameterId::from("num_bands"), ParameterValue::Int(4))
+            .is_err()
+    );
+    assert_eq!(p.num_bands, 2);
 }
 
 #[test]
@@ -1337,13 +1330,17 @@ fn test_set_parameter_processing_mode_boundary() {
     let mut p = MultibandExpanderPlugin::new(1);
     p.initialize(48000).unwrap();
 
-    p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(0))
-        .unwrap();
+    assert!(
+        p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(0))
+            .is_err()
+    );
     assert_eq!(p.processing_mode, "time_domain");
 
-    p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(1))
-        .unwrap();
-    assert_eq!(p.processing_mode, "spectral");
+    assert!(
+        p.set_parameter(ParameterId::from("processing_mode"), ParameterValue::Int(1))
+            .is_err()
+    );
+    assert_eq!(p.processing_mode, "time_domain");
 }
 
 #[test]
@@ -1414,6 +1411,397 @@ fn test_process_empty_buffer() {
     let res = p.process_in_place(&mut buf, &ProcessContext::new(48000, 0));
     assert!(res.is_ok());
     assert_eq!(res.unwrap(), 0);
+}
+
+#[test]
+fn test_process_rejects_wrong_buffer_lengths_without_advancing_cache_counter() {
+    let mut p = MultibandExpanderPlugin::new(2);
+    p.initialize(48_000).unwrap();
+    for len in [7, 9] {
+        let mut buffer = vec![0.0; len];
+        assert!(
+            p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 4))
+                .is_err()
+        );
+        assert_eq!(p.cache_update_counter, 0);
+    }
+}
+
+#[test]
+fn test_cache_snapshot_updates_after_processing() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48_000).unwrap();
+    let mut phase = 0.0_f32;
+    let mut buffer: Vec<f32> = (0..4096)
+        .map(|_| {
+            let sample = phase.sin() * 0.5;
+            phase += std::f32::consts::TAU * 1_000.0 / 48_000.0;
+            sample
+        })
+        .collect();
+    for _ in 0..10 {
+        p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 4096))
+            .unwrap();
+    }
+    let data = p.get_data().unwrap();
+    let data = data.downcast::<MultibandExpanderData>().unwrap();
+    assert!(data.band_levels_db.iter().any(|level| *level > -100.0));
+}
+
+#[test]
+fn single_band_identity_schema_and_broadband_path_are_real() {
+    let params = MultibandExpanderPluginParams {
+        num_bands: 1,
+        sidechain_hpf_hz: Some(0.0),
+        ratio: 1.0,
+        ..Default::default()
+    };
+    let mut plugin = MultibandExpanderPlugin::try_from_params(2, params, 48_000).unwrap();
+    assert_eq!(plugin.info().name, "Expander");
+    assert_eq!(plugin.num_bands, 1);
+    assert!(plugin.crossover_points.is_empty());
+    let ids: Vec<_> = plugin.parameters().into_iter().map(|p| p.id).collect();
+    assert!(!ids.iter().any(|id| id.as_str() == "num_bands"));
+    assert!(!ids.iter().any(|id| id.as_str().starts_with("crossover_")));
+
+    let frames = 4096;
+    let mut signal = vec![0.0; frames * 2];
+    for frame in 0..frames {
+        let t = frame as f32 / 48_000.0;
+        let sample = 0.2 * (std::f32::consts::TAU * 100.0 * t).sin()
+            + 0.2 * (std::f32::consts::TAU * 6_000.0 * t).sin();
+        signal[frame * 2] = sample;
+        signal[frame * 2 + 1] = sample;
+    }
+    let expected = signal.clone();
+    plugin
+        .process_in_place(&mut signal, &ProcessContext::new(48_000, frames))
+        .unwrap();
+    let error = signal
+        .iter()
+        .zip(expected)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(error < 1e-5, "single-band unity transfer error: {error}");
+}
+
+#[test]
+fn sidechain_hpf_rejects_low_frequency_trigger() {
+    fn render(hpf: f32) -> f32 {
+        let params = MultibandExpanderPluginParams {
+            num_bands: 1,
+            threshold_db: -30.0,
+            ratio: 8.0,
+            attack_ms: 0.1,
+            release_ms: 10.0,
+            knee_db: 0.0,
+            range_db: 60.0,
+            hysteresis_db: 0.0,
+            hold_ms: 0.0,
+            sidechain_hpf_hz: Some(hpf),
+            ..Default::default()
+        };
+        let mut plugin = MultibandExpanderPlugin::try_from_params(1, params, 48_000).unwrap();
+        let mut signal: Vec<f32> = (0..48_000)
+            .map(|i| 0.1 * (std::f32::consts::TAU * 50.0 * i as f32 / 48_000.0).sin())
+            .collect();
+        plugin
+            .process_in_place(&mut signal, &ProcessContext::new(48_000, 48_000))
+            .unwrap();
+        signal[24_000..].iter().map(|x| x * x).sum::<f32>()
+    }
+    let no_hpf = render(0.0);
+    let strong_hpf = render(500.0);
+    assert!(
+        strong_hpf < no_hpf * 0.2,
+        "HPF did not reject LF detector energy"
+    );
+}
+
+#[test]
+fn bypassed_band_obeys_common_lookahead_latency() {
+    let mut params = MultibandExpanderPluginParams {
+        num_bands: 1,
+        lookahead_ms: 5.0,
+        sidechain_hpf_hz: Some(0.0),
+        ..Default::default()
+    };
+    params.bands = vec![BandExpanderParams {
+        bypass: true,
+        ..Default::default()
+    }];
+    let mut plugin = MultibandExpanderPlugin::try_from_params(1, params, 48_000).unwrap();
+    let mut impulse = vec![0.0; 512];
+    impulse[0] = 1.0;
+    plugin
+        .process_in_place(&mut impulse, &ProcessContext::new(48_000, 512))
+        .unwrap();
+    assert_eq!(impulse.iter().position(|x| x.abs() > 0.5), Some(240));
+}
+
+#[test]
+fn crossover_automation_is_callback_partition_invariant() {
+    let params = MultibandExpanderPluginParams {
+        ratio: 1.0,
+        sidechain_hpf_hz: Some(0.0),
+        ..Default::default()
+    };
+    let mut whole = MultibandExpanderPlugin::try_from_params(2, params.clone(), 48_000).unwrap();
+    let mut split = MultibandExpanderPlugin::try_from_params(2, params, 48_000).unwrap();
+    for plugin in [&mut whole, &mut split] {
+        plugin
+            .set_parameter(
+                ParameterId::from("crossover_freq_1"),
+                ParameterValue::Float(500.0),
+            )
+            .unwrap();
+    }
+    let mut source = vec![0.0; 2048];
+    for frame in 0..1024 {
+        let sample = (std::f32::consts::TAU * 997.0 * frame as f32 / 48_000.0).sin();
+        source[frame * 2] = sample;
+        source[frame * 2 + 1] = -sample;
+    }
+    let mut a = source.clone();
+    let mut b = source;
+    whole
+        .process_in_place(&mut a, &ProcessContext::new(48_000, 1024))
+        .unwrap();
+    for chunk in b.chunks_exact_mut(64 * 2) {
+        split
+            .process_in_place(chunk, &ProcessContext::new(48_000, 64))
+            .unwrap();
+    }
+    let max_error = a
+        .iter()
+        .zip(b)
+        .map(|(x, y)| (x - y).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(max_error < 1e-5, "partition error: {max_error}");
+}
+
+#[test]
+fn malformed_presets_are_rejected_fallibly() {
+    let params = MultibandExpanderPluginParams {
+        detection_mode: "average".into(),
+        ..Default::default()
+    };
+    assert!(MultibandExpanderPlugin::try_from_params(2, params, 48_000).is_err());
+    let params = MultibandExpanderPluginParams {
+        processing_mode: "magic".into(),
+        ..Default::default()
+    };
+    assert!(MultibandExpanderPlugin::try_from_params(2, params, 48_000).is_err());
+    let params = MultibandExpanderPluginParams {
+        crossover_frequencies: vec![2_000.0, 1_000.0, 8_000.0, 12_000.0],
+        ..Default::default()
+    };
+    assert!(MultibandExpanderPlugin::try_from_params(2, params, 48_000).is_err());
+    let params = MultibandExpanderPluginParams {
+        threshold_db: f32::NAN,
+        ..Default::default()
+    };
+    assert!(MultibandExpanderPlugin::try_from_params(2, params, 48_000).is_err());
+}
+
+#[test]
+fn malformed_band_overrides_and_band_counts_are_rejected_fallibly() {
+    for num_bands in [0, 6] {
+        let params = MultibandExpanderPluginParams {
+            num_bands,
+            ..Default::default()
+        };
+        assert!(
+            MultibandExpanderPlugin::try_from_params(2, params, 48_000).is_err(),
+            "accepted invalid band count {num_bands}"
+        );
+    }
+
+    let invalid_bands = [
+        (
+            "threshold",
+            BandExpanderParams {
+                threshold_db: Some(f32::NAN),
+                ..Default::default()
+            },
+        ),
+        (
+            "ratio",
+            BandExpanderParams {
+                ratio: Some(0.5),
+                ..Default::default()
+            },
+        ),
+        (
+            "attack",
+            BandExpanderParams {
+                attack_ms: Some(f32::INFINITY),
+                ..Default::default()
+            },
+        ),
+        (
+            "release",
+            BandExpanderParams {
+                release_ms: Some(9.0),
+                ..Default::default()
+            },
+        ),
+        (
+            "knee",
+            BandExpanderParams {
+                knee_db: Some(21.0),
+                ..Default::default()
+            },
+        ),
+        (
+            "range",
+            BandExpanderParams {
+                range_db: Some(-1.0),
+                ..Default::default()
+            },
+        ),
+        (
+            "hysteresis",
+            BandExpanderParams {
+                hysteresis_db: Some(13.0),
+                ..Default::default()
+            },
+        ),
+        (
+            "hold",
+            BandExpanderParams {
+                hold_ms: Some(501.0),
+                ..Default::default()
+            },
+        ),
+    ];
+    for (name, band) in invalid_bands {
+        let params = MultibandExpanderPluginParams {
+            num_bands: 1,
+            bands: vec![band],
+            ..Default::default()
+        };
+        assert!(
+            MultibandExpanderPlugin::try_from_params(2, params, 48_000).is_err(),
+            "accepted invalid per-band {name} override"
+        );
+    }
+}
+
+#[test]
+fn spectral_mode_publishes_live_analyzer_snapshots() {
+    let params = MultibandExpanderPluginParams {
+        num_bands: 1,
+        processing_mode: "spectral".into(),
+        threshold_db: -10.0,
+        ratio: 8.0,
+        attack_ms: 0.1,
+        release_ms: 10.0,
+        knee_db: 0.0,
+        range_db: 60.0,
+        hysteresis_db: 0.0,
+        hold_ms: 0.0,
+        detection_mode: "Peak".into(),
+        link_channels: true,
+        lookahead_ms: 0.0,
+        sidechain_hpf_hz: Some(0.0),
+        ..Default::default()
+    };
+    let mut plugin = MultibandExpanderPlugin::try_from_params(1, params, 48_000).unwrap();
+    let mut phase = 0.0_f32;
+    for _ in 0..4 {
+        let mut audio: Vec<f32> = (0..4096)
+            .map(|_| {
+                let sample = 0.001 * phase.sin();
+                phase += std::f32::consts::TAU * 1_000.0 / 48_000.0;
+                sample
+            })
+            .collect();
+        plugin
+            .process_in_place(&mut audio, &ProcessContext::new(48_000, 4096))
+            .unwrap();
+    }
+    let data = plugin
+        .get_data()
+        .unwrap()
+        .downcast::<MultibandExpanderData>()
+        .unwrap();
+    assert!(
+        data.attenuation_db[0] > 1.0,
+        "spectral attenuation snapshot remained frozen: {:?}",
+        data.attenuation_db
+    );
+    assert!(data.band_levels_db[0] < -10.0);
+}
+
+#[test]
+fn cache_cadence_depends_on_samples_not_callback_count() {
+    fn counter_after(block: usize, total: usize) -> usize {
+        let mut plugin = MultibandExpanderPlugin::new(1);
+        plugin.initialize(48_000).unwrap();
+        let mut remaining = total;
+        while remaining > 0 {
+            let frames = remaining.min(block);
+            let mut audio = vec![0.0; frames];
+            plugin
+                .process_in_place(&mut audio, &ProcessContext::new(48_000, frames))
+                .unwrap();
+            remaining -= frames;
+        }
+        plugin.cache_update_counter
+    }
+    assert_eq!(counter_after(32, 1_280), counter_after(1_280, 1_280));
+    assert_eq!(counter_after(64, 2_000), counter_after(1_000, 2_000));
+}
+
+#[test]
+fn non_finite_input_is_sanitized_without_poisoning_state() {
+    let mut plugin = MultibandExpanderPlugin::new(2);
+    plugin.initialize(48_000).unwrap();
+    let mut audio = vec![f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.25];
+    plugin
+        .process_in_place(&mut audio, &ProcessContext::new(48_000, 2))
+        .unwrap();
+    assert!(audio.iter().all(|sample| sample.is_finite()));
+    let mut followup = vec![0.25; 256];
+    plugin
+        .process_in_place(&mut followup, &ProcessContext::new(48_000, 128))
+        .unwrap();
+    assert!(followup.iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
+fn spectral_mode_rejects_controls_without_feature_parity() {
+    for mutate in [0, 1, 2, 3] {
+        let mut params = MultibandExpanderPluginParams {
+            processing_mode: "spectral".into(),
+            detection_mode: "Peak".into(),
+            link_channels: true,
+            lookahead_ms: 0.0,
+            sidechain_hpf_hz: Some(0.0),
+            ..Default::default()
+        };
+        match mutate {
+            0 => params.detection_mode = "RMS".into(),
+            1 => params.link_channels = false,
+            2 => params.lookahead_ms = 1.0,
+            _ => params.sidechain_hpf_hz = Some(80.0),
+        }
+        assert!(MultibandExpanderPlugin::try_from_params(2, params, 48_000).is_err());
+    }
+}
+
+#[test]
+fn test_reset_clears_complete_observable_state() {
+    let mut p = MultibandExpanderPlugin::new(1);
+    p.initialize(48_000).unwrap();
+    let mut buffer = vec![0.5; 4096];
+    p.process_in_place(&mut buffer, &ProcessContext::new(48_000, 4096))
+        .unwrap();
+    p.reset();
+    assert_eq!(p.cache_update_counter, 0);
+    assert!(p.band_levels_db.iter().all(|level| *level == -120.0));
+    assert!(p.attenuation_flattened.iter().all(|value| *value == 0.0));
 }
 
 #[test]
@@ -1992,10 +2380,10 @@ fn test_multiband_expander_data() {
 
     let mut data = MultibandExpanderData::new(2, 1);
     data.update(&[1.0, 2.0], &[true, false], &[-10.0, -20.0], &[500.0]);
-    assert_eq!((*data.attenuation_db)[0], 1.0);
-    assert!((*data.is_open)[0]);
-    assert_eq!((*data.band_levels_db)[1], -20.0);
-    assert_eq!((*data.crossover_frequencies)[0], 500.0);
+    assert_eq!(data.attenuation_db[0], 1.0);
+    assert!(data.is_open[0]);
+    assert_eq!(data.band_levels_db[1], -20.0);
+    assert_eq!(data.crossover_frequencies[0], 500.0);
 }
 
 #[test]

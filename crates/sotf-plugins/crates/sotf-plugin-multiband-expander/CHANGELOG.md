@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.5.26
+
+### Review remediation
+
+- The `expander` factory now forces a genuine one-band broadband processor with
+  `Expander` identity and the single-band schema; multiband creation still
+  requires 2-5 bands.
+- Factory construction is fallible and rejects zero channels, non-finite or
+  out-of-range dynamics, unknown detection/processing modes, and non-ascending
+  or above-Nyquist crossovers.
+- `num_bands` and `processing_mode` are structural controls. Live setters reject
+  them instead of planning FFTs, resizing DSP arrays, or deleting state on the
+  audio thread.
+- Bypassed/passive bands now traverse the same lookahead delay as active bands,
+  preserving crossover recombination and reported latency.
+- The advertised sidechain HPF now filters detector input with per-band/channel
+  state and deterministic reset.
+- Crossover smoothing advances per sample and analyzer publication advances by
+  elapsed samples, making automation and UI cadence callback-size invariant.
+- Spectral mode publishes analyzer data and rejects unsupported RMS/unlinked,
+  lookahead, HPF, and auto-makeup configurations instead of silently ignoring
+  those controls.
+- Realtime value writes no longer rebuild dynamic schemas, and band parameter
+  parsing no longer allocates temporary vectors.
+- Non-finite input samples are sanitized before they can poison detector,
+  crossover, or FFT state. Plugin metadata reports the crate version.
+- Corrected the spectral contract documentation: dual Hann windows use 75%
+  overlap (`N/4` hop), `1/(1.5N)` normalization, and `N` samples of streaming
+  and dry-path latency.
+
+## 0.5.25
+
+### Bug fixes
+
+- Analyzer snapshots now own their vectors directly, allowing the realtime
+  double-buffer cache to publish changing attenuation, gate, level, and
+  crossover values instead of permanently retaining the initial snapshot.
+- Processing validates exact frame/channel buffer lengths before advancing DSP
+  state, and oversized spectral blocks are chunked through preallocated scratch
+  rather than resizing inside the realtime path.
+- Reset now clears crossover histories, smoothers, meters, cache cadence, and all
+  existing detector/lookahead/spectral state for deterministic transport reset.
+- Detection-mode preset strings are case-insensitive, so documented `RMS` values
+  no longer silently select peak detection.
+
 ## 0.5.24
 
 ### Bug fixes
