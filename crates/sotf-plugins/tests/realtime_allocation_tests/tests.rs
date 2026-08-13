@@ -1264,6 +1264,41 @@ fn test_hiss_reducer_zero_alloc() {
 
 #[test]
 #[serial]
+fn test_hiss_reducer_spectral_zero_alloc() {
+    let mut plugin = HissReducerPlugin::new(2);
+    plugin
+        .set_parameter(
+            ParameterId::from("spectral_mode"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    assert_parametric_in_place_process_zero_alloc(
+        "HissReducerPlugin::spectral_process_in_place",
+        plugin,
+        2,
+        BUFFER_SIZE,
+    );
+
+    let mut reset_plugin = HissReducerPlugin::new(2);
+    reset_plugin
+        .set_parameter(
+            ParameterId::from("spectral_mode"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+    reset_plugin.initialize(SAMPLE_RATE).unwrap();
+    let mut buffer = generate_test_buffer(BUFFER_SIZE, 2);
+    let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+    reset_plugin
+        .process_in_place(&mut buffer, &context)
+        .unwrap();
+    assert_no_allocs("HissReducerPlugin::spectral_reset", || {
+        reset_plugin.reset();
+    });
+}
+
+#[test]
+#[serial]
 fn test_aec_zero_alloc() {
     let mut plugin = AecPlugin::from_params(SAMPLE_RATE, AecPluginParams::default()).unwrap();
     assert_plugin_process_zero_alloc("AecPlugin::process", &mut plugin, BUFFER_SIZE);

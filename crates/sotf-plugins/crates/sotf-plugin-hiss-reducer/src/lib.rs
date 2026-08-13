@@ -2,6 +2,7 @@ pub mod params;
 
 use crate::params::PARAMS as HP;
 use plugins_denoiser::hiss::HissReducer;
+use plugins_denoiser::spectral_hiss::SpectralHissReducer;
 use serde::{Deserialize, Serialize};
 use sotf_host::param_bridge;
 use sotf_host::param_specs::find_by_key as pk;
@@ -23,6 +24,8 @@ pub struct HissReducerPluginParams {
     pub frequency_hz: f32,
     #[serde(default = "d_strength")]
     pub strength: f32,
+    #[serde(default = "d_spectral_mode")]
+    pub spectral_mode: bool,
 }
 
 fn d_enabled() -> bool {
@@ -37,6 +40,9 @@ fn d_frequency_hz() -> f32 {
 fn d_strength() -> f32 {
     pk(HP, "strength").default_f32()
 }
+fn d_spectral_mode() -> bool {
+    pk(HP, "spectral_mode").default_bool()
+}
 
 impl Default for HissReducerPluginParams {
     fn default() -> Self {
@@ -45,6 +51,7 @@ impl Default for HissReducerPluginParams {
             threshold_db: d_threshold_db(),
             frequency_hz: d_frequency_hz(),
             strength: d_strength(),
+            spectral_mode: d_spectral_mode(),
         }
     }
 }
@@ -55,6 +62,7 @@ pub struct HissReducerPlugin {
     initialized: bool,
     params: HissReducerPluginParams,
     reducer: HissReducer,
+    spectral_reducer: SpectralHissReducer,
     cached_parameters: Vec<Parameter>,
 }
 
@@ -88,11 +96,16 @@ impl HissReducerPlugin {
         let mut reducer = Self::build_reducer(channels, &params);
         reducer.initialize(sample_rate)?;
         reducer.set_enabled(params.enabled, true);
+        let mut spectral_reducer = SpectralHissReducer::new(channels);
+        spectral_reducer.set_enabled(params.enabled);
+        spectral_reducer.initialize(sample_rate)?;
+        spectral_reducer.set_params(params.frequency_hz, params.threshold_db, params.strength);
         let mut plugin = Self {
             channels,
             sample_rate,
             initialized: false,
             reducer,
+            spectral_reducer,
             params,
             cached_parameters: Vec::new(),
         };
@@ -158,6 +171,7 @@ impl HissReducerPlugin {
             1 => Some(self.params.threshold_db as f64),
             2 => Some(self.params.frequency_hz as f64),
             3 => Some(self.params.strength as f64),
+            4 => Some(if self.params.spectral_mode { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -173,12 +187,18 @@ impl HissReducerPlugin {
                     .as_bool()
                     .ok_or_else(|| "enabled must be a bool".to_string())?;
                 self.reducer.set_enabled(self.params.enabled, false);
+                self.spectral_reducer.set_enabled(self.params.enabled);
             }
             "threshold_db" => {
                 self.params.threshold_db = value
                     .as_float()
                     .ok_or_else(|| "threshold_db must be a float".to_string())?;
                 self.reducer.set_params(
+                    self.params.frequency_hz,
+                    self.params.threshold_db,
+                    self.params.strength,
+                );
+                self.spectral_reducer.set_params(
                     self.params.frequency_hz,
                     self.params.threshold_db,
                     self.params.strength,
@@ -193,6 +213,11 @@ impl HissReducerPlugin {
                     self.params.threshold_db,
                     self.params.strength,
                 );
+                self.spectral_reducer.set_params(
+                    self.params.frequency_hz,
+                    self.params.threshold_db,
+                    self.params.strength,
+                );
             }
             "strength" => {
                 self.params.strength = value
@@ -203,6 +228,16 @@ impl HissReducerPlugin {
                     self.params.threshold_db,
                     self.params.strength,
                 );
+                self.spectral_reducer.set_params(
+                    self.params.frequency_hz,
+                    self.params.threshold_db,
+                    self.params.strength,
+                );
+            }
+            "spectral_mode" => {
+                self.params.spectral_mode = value
+                    .as_bool()
+                    .ok_or_else(|| "spectral_mode must be a bool".to_string())?;
             }
             _ => return Err(format!("Unknown parameter: {id}")),
         }
@@ -217,11 +252,15 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
     }
 
     fn cost_class(&self) -> PluginCostClass {
-        PluginCostClass::Iir
+        if self.params.spectral_mode {
+            PluginCostClass::Fft
+        } else {
+            PluginCostClass::Iir
+        }
     }
 
     fn compile_metadata(&self) -> PluginCompileMetadata {
-        PluginCompileMetadata::nonlinear(PluginCostClass::Iir, None, self.latency_samples(), false)
+        PluginCompileMetadata::nonlinear(self.cost_class(), None, self.latency_samples(), false)
     }
 
     fn channels(&self) -> usize {
@@ -250,6 +289,10 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
             ParameterId::from("strength"),
             ParameterValue::Float(self.params.strength),
         );
+        values.insert(
+            ParameterId::from("spectral_mode"),
+            ParameterValue::Bool(self.params.spectral_mode),
+        );
         values
     }
 
@@ -262,12 +305,19 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
                 1 => next.threshold_db = v as f32,
                 2 => next.frequency_hz = v as f32,
                 3 => next.strength = v as f32,
+                4 => next.spectral_mode = v > 0.5,
                 _ => {}
             })?;
         }
         self.params = Self::canonicalize_params(next, self.sample_rate)?;
         self.reducer.set_enabled(self.params.enabled, false);
+        self.spectral_reducer.set_enabled(self.params.enabled);
         self.reducer.set_params(
+            self.params.frequency_hz,
+            self.params.threshold_db,
+            self.params.strength,
+        );
+        self.spectral_reducer.set_params(
             self.params.frequency_hz,
             self.params.threshold_db,
             self.params.strength,
@@ -298,6 +348,16 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
                 ));
             }
         }
+        if id.as_str() == "spectral_mode" && self.initialized {
+            let requested = value
+                .as_bool()
+                .ok_or_else(|| "spectral_mode must be a bool".to_string())?;
+            if requested != self.params.spectral_mode {
+                return Err(
+                    "spectral_mode is structural and requires plugin reconstruction".to_string(),
+                );
+            }
+        }
         Ok(())
     }
 
@@ -314,18 +374,26 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
         self.params = Self::canonicalize_params(self.params.clone(), sample_rate)?;
         self.sample_rate = sample_rate;
         self.reducer.initialize(sample_rate)?;
+        self.spectral_reducer.set_enabled(self.params.enabled);
+        self.spectral_reducer.initialize(sample_rate)?;
         self.reducer.set_params(
             self.params.frequency_hz,
             self.params.threshold_db,
             self.params.strength,
         );
         self.reducer.set_enabled(self.params.enabled, true);
+        self.spectral_reducer.set_params(
+            self.params.frequency_hz,
+            self.params.threshold_db,
+            self.params.strength,
+        );
         self.initialized = true;
         Ok(())
     }
 
     fn reset(&mut self) {
         self.reducer.reset();
+        self.spectral_reducer.reset();
     }
 
     fn process_in_place(
@@ -355,13 +423,21 @@ impl ParametricInPlacePlugin for HissReducerPlugin {
             ));
         }
 
-        // Keep filter and detector state warm while bypassed; HissReducer owns
-        // the click-free wet/dry transition and reaches exact dry output.
-        self.reducer.process(buffer);
+        if self.params.spectral_mode {
+            self.spectral_reducer.process(buffer);
+        } else {
+            // Keep filter and detector state warm while bypassed; HissReducer
+            // owns the click-free wet/dry transition and reaches exact dry.
+            self.reducer.process(buffer);
+        }
         Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {
-        self.reducer.latency_samples()
+        if self.params.spectral_mode {
+            self.spectral_reducer.latency_samples()
+        } else {
+            self.reducer.latency_samples()
+        }
     }
 }

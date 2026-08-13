@@ -346,6 +346,7 @@ impl_param_accessors! {
         fields: [
             enabled: bool, threshold_db: f64, frequency_hz: f64,
             strength: f64,
+            spectral_mode: bool,
         ]
     },
     SpeechDenoiser {

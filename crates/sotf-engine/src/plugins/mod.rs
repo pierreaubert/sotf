@@ -279,6 +279,7 @@ sotf_plugins::serde_param_default! {
     fn default_hiss_reducer_threshold_db() -> f64 = "threshold_db";
     fn default_hiss_reducer_frequency_hz() -> f64 = "frequency_hz";
     fn default_hiss_reducer_strength() -> f64 = "strength";
+    fn default_hiss_reducer_spectral_mode() -> bool = "spectral_mode";
 }
 sotf_plugins::serde_param_default! {
     speech_denoiser_specs::PARAMS;

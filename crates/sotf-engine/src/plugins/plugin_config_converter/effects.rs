@@ -399,6 +399,7 @@ pub fn convert_hiss_reducer(settings: &PluginSettings, _sample_rate: f64) -> Opt
         threshold_db,
         frequency_hz,
         strength,
+        spectral_mode,
     } = settings
     else {
         return None;
@@ -410,6 +411,7 @@ pub fn convert_hiss_reducer(settings: &PluginSettings, _sample_rate: f64) -> Opt
             "threshold_db": threshold_db,
             "frequency_hz": frequency_hz,
             "strength": strength,
+            "spectral_mode": spectral_mode,
         }),
     ))
 }

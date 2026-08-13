@@ -1,3 +1,9 @@
+# 0.5.14
+
+- Add the preallocated `SpectralHissReducer`: a causal 1024-point WOLA path
+  with minimum-statistics noise tracking, smoothed Wiener gains, deterministic
+  1024-sample latency, and sample-exact callback partition behavior.
+
 # 0.5.13
 
 - Expose RNNoise's bounded, release-smoothed 22-band suppression decisions and

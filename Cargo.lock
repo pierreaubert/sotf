@@ -7535,8 +7535,9 @@ dependencies = [
 
 [[package]]
 name = "plugins-denoiser"
-version = "0.5.13"
+version = "0.5.14"
 dependencies = [
+ "math-dsp",
  "nnnoiseless",
 ]
 
@@ -10748,7 +10749,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-hiss-reducer"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "hound",
  "plugins-denoiser",

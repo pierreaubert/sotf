@@ -118,6 +118,7 @@ fn main() {
         threshold_db: -35.0,
         frequency_hz: 3000.0,
         strength: 0.7,
+        spectral_mode: false,
     };
     let hiss = HissReducerPlugin::from_params(1, hiss_params);
     let mut hiss_plugin = ParametricInPlacePluginAdapter::new(hiss);

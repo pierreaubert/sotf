@@ -2,6 +2,18 @@
 
 ## Remediation status
 
+Follow-up in `sotf-plugin-hiss-reducer 0.5.8` / `plugins-denoiser 0.5.14`
+implements the retained higher-quality option without changing the legacy
+default. The appended structural `spectral_mode` selects a causal 1024-point,
+75%-overlap WOLA reducer with bounded minimum-statistics history and smoothed
+Wiener gains above the selected cutoff. It reports and realizes 1024 samples
+of latency, including exact delayed-dry bypass, and is sample-identical across
+1/64/511/512/1024 and irregular callback partitions. Focused tests cover
+impulse latency, reset, non-finite input recovery, stereo independence,
+stationary high-band noise SNR improvement, low-frequency tone preservation,
+and zero process allocation. The existing zero-latency expander remains the
+default for old and new presets.
+
 Completed in `sotf-plugin-hiss-reducer 0.5.7` / `plugins-denoiser 0.5.11`:
 
 - **Fixed P1 detector semantics:** the DSP now tracks fast/slow high-band power,

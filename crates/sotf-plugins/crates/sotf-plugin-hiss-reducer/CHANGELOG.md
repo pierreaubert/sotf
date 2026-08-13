@@ -1,3 +1,15 @@
+# 0.5.8
+
+- Add an opt-in structural Spectral mode using a 1024-point, 75%-overlap
+  WOLA reducer and bounded minimum-statistics noise tracking. The existing
+  zero-latency high-band expander remains the default and preset-compatible.
+- Report and realize exactly 1024 samples of causal spectral latency across
+  arbitrary callback partitions; disabled Spectral mode emits the exactly
+  latency-matched dry signal.
+- Smooth per-bin Wiener gains to reduce musical-noise holes and cover impulse
+  latency, partition equality, delayed bypass, stationary-noise SNR, and
+  realtime allocation behavior.
+
 # 0.5.7
 
 - Replace the waveform-cycle binary gate with fast/slow power tracking,

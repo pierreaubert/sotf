@@ -173,6 +173,7 @@ use super::default_gate_sidechain_hpf_order;
 use super::default_head_taps;
 use super::default_hiss_reducer_enabled;
 use super::default_hiss_reducer_frequency_hz;
+use super::default_hiss_reducer_spectral_mode;
 use super::default_hiss_reducer_strength;
 use super::default_hiss_reducer_threshold_db;
 use super::default_lc_mid_enabled;
@@ -1093,6 +1094,8 @@ pub enum PluginSettings {
         frequency_hz: f64,
         #[serde(default = "default_hiss_reducer_strength")]
         strength: f64,
+        #[serde(default = "default_hiss_reducer_spectral_mode")]
+        spectral_mode: bool,
     },
     SpeechDenoiser {
         #[serde(default = "default_speech_denoiser_enabled")]
@@ -1987,6 +1990,7 @@ impl PluginSettings {
                     threshold_db: p(hr, "threshold_db").default_f64(),
                     frequency_hz: p(hr, "frequency_hz").default_f64(),
                     strength: p(hr, "strength").default_f64(),
+                    spectral_mode: p(hr, "spectral_mode").default_bool(),
                 }
             }
             PluginType::SpeechDenoiser => {
@@ -2519,5 +2523,25 @@ mod tests {
             }
             _ => panic!("expected Upmixer variant"),
         }
+    }
+
+    #[test]
+    fn legacy_hiss_reducer_settings_default_to_zero_latency_mode() {
+        let legacy = serde_json::json!({
+            "HissReducer": {
+                "enabled": true,
+                "threshold_db": -30.0,
+                "frequency_hz": 4000.0,
+                "strength": 0.5
+            }
+        });
+        let settings: PluginSettings = serde_json::from_value(legacy).expect("legacy hiss preset");
+        assert!(matches!(
+            settings,
+            PluginSettings::HissReducer {
+                spectral_mode: false,
+                ..
+            }
+        ));
     }
 }
