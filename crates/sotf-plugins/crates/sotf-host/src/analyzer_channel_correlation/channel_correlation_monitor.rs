@@ -14,9 +14,13 @@ use crate::analyzer::CorrelationData;
 pub struct ChannelCorrelationMonitor {
     pub(super) channels: usize,
     /// Decay factor per frame: state *= (1 - 1/window_samples).
-    /// At equilibrium, `sum_xy / sqrt(sum_xx * sum_yy)` ≈ Pearson r over the
-    /// last `~window_samples` frames.
+    /// At equilibrium, centered weighted covariance/variance approximate a
+    /// Pearson window over the last `~window_samples` frames.
     pub(super) decay: f64,
+    /// Exponentially weighted sample mass used to center covariance.
+    pub(super) weight: f64,
+    /// Per-channel exponentially weighted first moment.
+    pub(super) sum_x: Vec<f64>,
     /// Per-channel sum of squares (rolling).
     pub(super) sum_xx: Vec<f64>,
     /// Strict upper triangle of the cross-product matrix. Length
@@ -41,6 +45,8 @@ impl ChannelCorrelationMonitor {
         Self {
             channels,
             decay: 1.0 - 1.0 / window_samples,
+            weight: 0.0,
+            sum_x: vec![0.0; channels],
             sum_xx: vec![0.0; channels],
             sum_xy: vec![0.0; triangle_len],
             samples_seen: 0,
@@ -52,6 +58,8 @@ impl ChannelCorrelationMonitor {
     pub fn reset(&mut self) {
         self.sum_xx.fill(0.0);
         self.sum_xy.fill(0.0);
+        self.sum_x.fill(0.0);
+        self.weight = 0.0;
         self.samples_seen = 0;
         self.partial_frame.clear();
     }
@@ -124,22 +132,27 @@ impl ChannelCorrelationMonitor {
         if num_frames == 0 {
             return;
         }
-        self.decay_state(num_frames);
         for f in 0..num_frames {
             let base = f * n;
             for ch in 0..n {
                 self.frame_scratch[ch] = body[base + ch] as f64;
             }
+            self.decay_state(1);
             self.fma_frame();
         }
         self.samples_seen = self.samples_seen.saturating_add(num_frames as u64);
     }
 
-    /// Apply `decay ^ num_frames` to all rolling state. Bulk decay is
-    /// numerically equivalent to per-frame decay for the EMA model used here.
+    /// Apply `decay ^ num_frames` to all rolling state. Audio ingestion calls
+    /// this once per frame so newly added samples receive the correct relative
+    /// weights independent of callback partitioning.
     #[inline]
     pub(super) fn decay_state(&mut self, num_frames: usize) {
         let bulk_decay = self.decay.powi(num_frames as i32);
+        self.weight *= bulk_decay;
+        for v in self.sum_x.iter_mut() {
+            *v *= bulk_decay;
+        }
         for v in self.sum_xx.iter_mut() {
             *v *= bulk_decay;
         }
@@ -154,8 +167,10 @@ impl ChannelCorrelationMonitor {
     #[inline]
     pub(super) fn fma_frame(&mut self) {
         let n = self.channels;
+        self.weight += 1.0;
         for i in 0..n {
             let xi = self.frame_scratch[i];
+            self.sum_x[i] += xi;
             self.sum_xx[i] += xi * xi;
             let row_start = (i * (2 * n - i - 1)) / 2;
             #[allow(clippy::needless_range_loop)]
@@ -175,13 +190,16 @@ impl ChannelCorrelationMonitor {
         data.samples_seen = self.samples_seen;
         data.update_matrix_with(n, |out| {
             for i in 0..n {
-                let var_i = self.sum_xx[i];
+                let weight = self.weight.max(1.0e-30);
+                let var_i = (self.sum_xx[i] - self.sum_x[i] * self.sum_x[i] / weight).max(0.0);
                 out[i * n + i] = 1.0;
                 for j in (i + 1)..n {
-                    let var_j = self.sum_xx[j];
+                    let var_j = (self.sum_xx[j] - self.sum_x[j] * self.sum_x[j] / weight).max(0.0);
                     let denom = (var_i * var_j).sqrt();
                     let r = if denom > 1e-12 {
-                        (self.sum_xy[upper_tri_index(i, j, n)] / denom).clamp(-1.0, 1.0)
+                        let covariance = self.sum_xy[upper_tri_index(i, j, n)]
+                            - self.sum_x[i] * self.sum_x[j] / weight;
+                        (covariance / denom).clamp(-1.0, 1.0)
                     } else {
                         0.0
                     };
@@ -413,5 +431,61 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn centered_pearson_ignores_dc_offsets_and_unequal_gain() {
+        let mut monitor = ChannelCorrelationMonitor::new(2, 48_000);
+        let samples = synth_interleaved(24_000, 2, |frame, channel| {
+            let signal = (TAU * 997.0 * frame as f32 / 48_000.0).sin();
+            if channel == 0 {
+                signal + 3.0
+            } else {
+                signal * 0.2 - 7.0
+            }
+        });
+        monitor.add_frames(&samples);
+        let mut data = CorrelationData::new(2);
+        monitor.update_correlation_data(&mut data);
+        assert!(
+            data.matrix[1] > 0.999,
+            "centered Pearson must ignore offset/gain, got {}",
+            data.matrix[1]
+        );
+    }
+
+    #[test]
+    fn centered_pearson_is_callback_partition_invariant() {
+        let frames = 8192;
+        let samples = synth_interleaved(frames, 2, |frame, channel| {
+            let level = if frame < frames / 2 { 0.01 } else { 1.0 };
+            let base = level * (TAU * 733.0 * frame as f32 / 48_000.0).sin();
+            if channel == 0 {
+                base + 0.4
+            } else {
+                -base - 2.0
+            }
+        });
+        let mut whole = ChannelCorrelationMonitor::new(2, 48_000);
+        whole.add_frames(&samples);
+        let mut partitioned = ChannelCorrelationMonitor::new(2, 48_000);
+        let mut offset = 0;
+        for count in [2, 14, 126, 1024, 3334, 4096, 8192] {
+            if offset == samples.len() {
+                break;
+            }
+            let end = (offset + count).min(samples.len());
+            partitioned.add_frames(&samples[offset..end]);
+            offset = end;
+        }
+        if offset < samples.len() {
+            partitioned.add_frames(&samples[offset..]);
+        }
+        let mut a = CorrelationData::new(2);
+        let mut b = CorrelationData::new(2);
+        whole.update_correlation_data(&mut a);
+        partitioned.update_correlation_data(&mut b);
+        assert!((a.matrix[1] - b.matrix[1]).abs() < 1.0e-6);
+        assert!(a.matrix[1] < -0.999);
     }
 }

@@ -349,8 +349,6 @@ impl AutoGain {
         if !self.enabled {
             return;
         }
-        crate::simd::enable_ftz_daz();
-
         let target_linear = self.target_linear_cached();
 
         // Optimization: if gain is already stable at target, use fast SIMD path

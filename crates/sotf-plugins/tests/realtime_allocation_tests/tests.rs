@@ -901,6 +901,52 @@ fn test_loudness_monitor_zero_alloc() {
 
 #[test]
 #[serial]
+fn test_loudness_monitor_cold_process_reset_and_disable_zero_alloc() {
+    let mut plugin = LoudnessMonitorPlugin::new(2).unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let input = generate_test_buffer(BUFFER_SIZE, 2);
+    let mut output = vec![0.0f32; BUFFER_SIZE * 2];
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+
+    assert_no_allocs("LoudnessMonitorPlugin first process", || {
+        plugin.process(&input, &mut output, &ctx).unwrap();
+    });
+    let held_ui_snapshot = plugin.get_data().unwrap();
+    assert_no_allocs("LoudnessMonitorPlugin UI contention", || {
+        plugin.process(&input, &mut output, &ctx).unwrap();
+    });
+    assert_no_allocs("LoudnessMonitorPlugin reset", || plugin.reset());
+
+    let enabled = ParameterId::from("enabled");
+    assert_no_allocs("LoudnessMonitorPlugin disable", || {
+        plugin
+            .set_parameter(enabled.clone(), ParameterValue::Bool(false))
+            .unwrap();
+        plugin
+            .set_parameter(enabled.clone(), ParameterValue::Bool(true))
+            .unwrap();
+    });
+    drop(held_ui_snapshot);
+}
+
+#[test]
+#[serial]
+fn test_loudness_monitor_first_spatial_process_zero_alloc() {
+    let mut plugin = LoudnessMonitorPlugin::new(8).unwrap().with_spatial();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+
+    let input = generate_test_buffer(BUFFER_SIZE, 8);
+    let mut output = vec![0.0f32; BUFFER_SIZE * 8];
+    let ctx = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+
+    assert_no_allocs("LoudnessMonitorPlugin first spatial process", || {
+        plugin.process(&input, &mut output, &ctx).unwrap();
+    });
+}
+
+#[test]
+#[serial]
 fn test_spectrum_analyzer_zero_alloc() {
     let config = SpectrumConfig {
         num_bins: 30,
@@ -927,6 +973,43 @@ fn test_spectrum_analyzer_zero_alloc() {
             let _ = plugin.get_data();
         }
     });
+}
+
+#[test]
+#[serial]
+fn test_spectrum_analyzer_cold_fft_setter_and_contended_reset_zero_alloc() {
+    let mut plugin = SpectrumAnalyzerPlugin::with_config(
+        8,
+        SpectrumConfig {
+            smoothing: 0.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    let frames = 4096;
+    let input = generate_test_buffer(frames, 8);
+    let mut output = vec![0.0f32; input.len()];
+    let ctx = ProcessContext::new(SAMPLE_RATE, frames);
+    let first_generation = plugin.get_data().unwrap();
+
+    assert_no_allocs("SpectrumAnalyzerPlugin first FFT", || {
+        plugin.process(&input, &mut output, &ctx).unwrap();
+    });
+    let second_generation = plugin.get_data().unwrap();
+    let smoothing_id = ParameterId::from("smoothing");
+    assert_no_allocs("SpectrumAnalyzerPlugin smoothing setter", || {
+        plugin
+            .set_parameter(smoothing_id.clone(), ParameterValue::Float(0.5))
+            .unwrap();
+    });
+    assert_no_allocs("SpectrumAnalyzerPlugin contended reset", || plugin.reset());
+    let reset_generation = plugin.get_data().unwrap();
+    let reset_data = reset_generation
+        .downcast_ref::<sotf_plugins::SpectrumData>()
+        .unwrap();
+    assert_eq!(reset_data.peak_magnitude, -100.0);
+    drop((first_generation, second_generation, reset_generation));
 }
 
 #[test]
@@ -968,7 +1051,7 @@ fn test_delay_zero_alloc() {
 #[test]
 #[serial]
 fn test_aae_zero_alloc() {
-    let mut plugin = AaePlugin::from_params(AaePluginParams::default());
+    let mut plugin = AaePlugin::from_params(AaePluginParams::default()).unwrap();
     assert_plugin_process_zero_alloc("AaePlugin::process", &mut plugin, BUFFER_SIZE);
 }
 

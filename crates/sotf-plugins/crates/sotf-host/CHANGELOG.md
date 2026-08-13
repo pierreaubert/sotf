@@ -1,4 +1,4 @@
-<!-- consolidation-transition:external:0.5.98 -->
+<!-- consolidation-transition:loudness-monitor:0.5.99 -->
 # Unreleased
 
 # 0.5.100 - 2026-08-13

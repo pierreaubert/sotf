@@ -6,9 +6,140 @@
 // producing audio output.
 
 use sotf_host::{
-    LoudnessData, LoudnessMonitorPlugin, Plugin, ProcessContext, SpectrumAnalyzerPlugin,
-    SpectrumConfig, SpectrumData,
+    LoudnessData, LoudnessMonitorPlugin, ParameterId, ParameterValue, Plugin, ProcessContext,
+    SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumData,
 };
+
+#[test]
+fn test_loudness_monitor_rejects_invalid_construction_and_initialization() {
+    assert!(LoudnessMonitorPlugin::new(0).is_err());
+
+    let mut monitor = LoudnessMonitorPlugin::new(2).unwrap();
+    assert!(monitor.initialize(0).is_err());
+
+    let input = vec![0.0; 8];
+    let mut output = vec![0.0; 8];
+    let context = ProcessContext::new(48_000, 4);
+    assert!(monitor.process(&input, &mut output, &context).is_err());
+}
+
+#[test]
+fn test_loudness_monitor_validates_context_and_exact_buffer_geometry() {
+    let mut monitor = LoudnessMonitorPlugin::new(2).unwrap();
+    monitor.initialize(48_000).unwrap();
+
+    let context = ProcessContext::new(48_000, 4);
+    let input = vec![0.0; 8];
+    let mut short_output = vec![0.0; 7];
+    assert!(
+        monitor
+            .process(&input, &mut short_output, &context)
+            .is_err()
+    );
+
+    let short_input = vec![0.0; 7];
+    let mut output = vec![0.0; 8];
+    assert!(
+        monitor
+            .process(&short_input, &mut output, &context)
+            .is_err()
+    );
+
+    let long_input = vec![0.0; 9];
+    let mut long_output = vec![0.0; 9];
+    assert!(
+        monitor
+            .process(&long_input, &mut long_output, &context)
+            .is_err()
+    );
+
+    let wrong_rate = ProcessContext::new(44_100, 4);
+    assert!(monitor.process(&input, &mut output, &wrong_rate).is_err());
+
+    let overflow = ProcessContext::new(48_000, usize::MAX);
+    assert!(monitor.process(&[], &mut [], &overflow).is_err());
+}
+
+#[test]
+fn test_loudness_monitor_keeps_frames_across_former_ring_wrap() {
+    let channels = 7;
+    let mut monitor = LoudnessMonitorPlugin::new(channels).unwrap();
+    monitor.initialize(48_000).unwrap();
+
+    // 13,714 * 7 = 95,998 samples. The old 96,000-sample ring then split
+    // the next two frames into 2- and 12-sample slices, neither frame-aligned.
+    let first_frames = 13_714;
+    let first = vec![0.0; first_frames * channels];
+    let mut first_output = vec![0.0; first.len()];
+    monitor
+        .process(
+            &first,
+            &mut first_output,
+            &ProcessContext::new(48_000, first_frames),
+        )
+        .unwrap();
+
+    let second = vec![0.75; 2 * channels];
+    let mut second_output = vec![0.0; second.len()];
+    monitor
+        .process(&second, &mut second_output, &ProcessContext::new(48_000, 2))
+        .unwrap();
+
+    let data = monitor.get_data().unwrap();
+    let loudness = data.downcast_ref::<LoudnessData>().unwrap();
+    assert_eq!(second_output, second);
+    assert!((loudness.peak - 0.75).abs() < 1.0e-6);
+}
+
+#[test]
+fn test_loudness_monitor_does_not_truncate_blocks_larger_than_old_ring() {
+    let channels = 32;
+    let frames = 3_001;
+    let mut monitor = LoudnessMonitorPlugin::new(channels).unwrap();
+    monitor.initialize(48_000).unwrap();
+
+    let mut input = vec![0.0; frames * channels];
+    input[(frames - 1) * channels..].fill(0.9);
+    let mut output = vec![0.0; input.len()];
+    monitor
+        .process(&input, &mut output, &ProcessContext::new(48_000, frames))
+        .unwrap();
+
+    let data = monitor.get_data().unwrap();
+    let loudness = data.downcast_ref::<LoudnessData>().unwrap();
+    assert_eq!(output, input);
+    assert!((loudness.peak - 0.9).abs() < 1.0e-6);
+}
+
+#[test]
+fn test_loudness_monitor_disable_clears_and_reenable_starts_fresh() {
+    let mut monitor = LoudnessMonitorPlugin::new(2).unwrap();
+    monitor.initialize(48_000).unwrap();
+    let input = vec![0.8; 2_048];
+    let mut output = vec![0.0; input.len()];
+    let context = ProcessContext::new(48_000, 1_024);
+    monitor.process(&input, &mut output, &context).unwrap();
+
+    monitor
+        .set_parameter(ParameterId::from("enabled"), ParameterValue::Bool(false))
+        .unwrap();
+    let disabled = monitor.get_data().unwrap();
+    let disabled = disabled.downcast_ref::<LoudnessData>().unwrap();
+    assert_eq!(disabled.peak, 0.0);
+    assert!(disabled.correlation_lr.is_none());
+    assert!(!disabled.measurement_enabled);
+    assert!(!disabled.measurement_valid);
+
+    monitor
+        .set_parameter(ParameterId::from("enabled"), ParameterValue::Bool(true))
+        .unwrap();
+    let silence = vec![0.0; input.len()];
+    monitor.process(&silence, &mut output, &context).unwrap();
+    let reenabled = monitor.get_data().unwrap();
+    let reenabled = reenabled.downcast_ref::<LoudnessData>().unwrap();
+    assert_eq!(reenabled.peak, 0.0);
+    assert!(reenabled.measurement_enabled);
+}
 
 #[test]
 fn test_loudness_monitor_stereo() {
@@ -57,6 +188,141 @@ fn test_loudness_monitor_stereo() {
         "1 kHz stereo sine at -20 dBFS measured {:.3} LUFS",
         loudness.momentary_lufs
     );
+}
+
+#[test]
+fn loudness_monitor_stereo_correlation_is_centered_and_partition_invariant() {
+    fn render(partitions: &[usize]) -> f64 {
+        let mut plugin = LoudnessMonitorPlugin::new(2).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let frames = 8192;
+        let input: Vec<f32> = (0..frames)
+            .flat_map(|frame| {
+                let signal = (std::f32::consts::TAU * 997.0 * frame as f32 / 48_000.0).sin();
+                [signal + 3.0, signal * 0.2 - 7.0]
+            })
+            .collect();
+        let mut offset = 0;
+        for &partition in partitions {
+            if offset == frames {
+                break;
+            }
+            let count = partition.min(frames - offset);
+            let start = offset * 2;
+            let end = (offset + count) * 2;
+            let mut output = vec![0.0; count * 2];
+            plugin
+                .process(
+                    &input[start..end],
+                    &mut output,
+                    &ProcessContext::new(48_000, count),
+                )
+                .unwrap();
+            offset += count;
+        }
+        if offset < frames {
+            let mut output = vec![0.0; (frames - offset) * 2];
+            plugin
+                .process(
+                    &input[offset * 2..],
+                    &mut output,
+                    &ProcessContext::new(48_000, frames - offset),
+                )
+                .unwrap();
+        }
+        let data = plugin.get_data().unwrap();
+        data.downcast_ref::<LoudnessData>()
+            .unwrap()
+            .correlation_lr
+            .unwrap()
+    }
+
+    let whole = render(&[8192]);
+    let partitioned = render(&[1, 7, 63, 511, 2048, 4096]);
+    assert!(
+        whole > 0.999,
+        "DC/gain invariant Pearson expected, got {whole}"
+    );
+    assert!((whole - partitioned).abs() < 1.0e-6);
+}
+
+#[test]
+fn loudness_data_exposes_validity_true_peak_scope_and_integrated_window() {
+    for sample_rate in [44_100, 48_000, 88_200, 96_000, 192_000] {
+        let mut plugin = LoudnessMonitorPlugin::new(2).unwrap();
+        plugin.initialize(sample_rate).unwrap();
+        let frames = sample_rate as usize * 4;
+        let input = vec![0.1; frames * 2];
+        let mut output = vec![0.0; input.len()];
+        plugin
+            .process(
+                &input,
+                &mut output,
+                &ProcessContext::new(sample_rate, frames),
+            )
+            .unwrap();
+        let data = plugin.get_data().unwrap();
+        let data = data.downcast_ref::<LoudnessData>().unwrap();
+        assert_eq!(data.true_peak_is_compliant, sample_rate == 48_000);
+        assert_eq!(data.integrated_window_seconds, 3_600);
+        assert!(data.channel_layout_is_compliant);
+        assert!(data.measurement_valid);
+        assert_eq!(data.query_error_generation, 0);
+    }
+}
+
+#[test]
+fn count_only_multichannel_measurement_is_explicitly_noncompliant() {
+    for channels in [5, 6, 8, 12, 16] {
+        let mut plugin = LoudnessMonitorPlugin::new(channels).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let input = vec![0.1; 48_000 * channels];
+        let mut output = vec![0.0; input.len()];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 48_000))
+            .unwrap();
+        let data = plugin.get_data().unwrap();
+        let data = data.downcast_ref::<LoudnessData>().unwrap();
+        assert!(!data.channel_layout_is_compliant);
+    }
+}
+
+#[test]
+fn incomplete_loudness_windows_are_invalid_not_plausible_minus_120() {
+    let mut plugin = LoudnessMonitorPlugin::new(2).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let input = vec![0.1; 256 * 2];
+    let mut output = vec![0.0; input.len()];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 256))
+        .unwrap();
+    let first_generation = {
+        let data = plugin.get_data().unwrap();
+        let data = data.downcast_ref::<LoudnessData>().unwrap();
+        assert!(!data.measurement_valid);
+        assert!(data.query_error_generation > 0);
+        assert!(data.momentary_lufs.is_infinite() && data.momentary_lufs.is_sign_negative());
+        assert!(data.shortterm_lufs.is_infinite() && data.shortterm_lufs.is_sign_negative());
+        assert!(data.integrated_lufs.is_infinite() && data.integrated_lufs.is_sign_negative());
+        data.query_error_generation
+    };
+
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 256))
+        .unwrap();
+    let second_generation = plugin
+        .get_data()
+        .unwrap()
+        .downcast_ref::<LoudnessData>()
+        .unwrap()
+        .query_error_generation;
+    assert!(second_generation > first_generation);
+
+    plugin.reset();
+    let reset_data = plugin.get_data().unwrap();
+    let reset_data = reset_data.downcast_ref::<LoudnessData>().unwrap();
+    assert_eq!(reset_data.query_error_generation, 0);
+    assert!(!reset_data.measurement_valid);
 }
 
 #[test]

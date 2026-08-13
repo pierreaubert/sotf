@@ -37,6 +37,12 @@ pub(super) fn empty_loudness_json(channels: usize) -> Value {
         "channel_peaks": vec![0.0; channels],
         "true_peaks_dbtp": vec![-120.0; channels],
         "correlation_lr": null,
+        "measurement_valid": false,
+        "measurement_enabled": false,
+        "query_error_generation": 0,
+        "channel_layout_is_compliant": channels <= 2,
+        "true_peak_is_compliant": false,
+        "integrated_window_seconds": 3600,
     })
 }
 

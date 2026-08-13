@@ -207,11 +207,27 @@ impl Default for CorrelationData {
 /// Loudness analyzer data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoudnessData {
+    /// True only when every requested loudness/peak query for this generation
+    /// succeeded. Cold/incomplete windows and meter errors are not encoded as
+    /// plausible silence.
+    #[serde(default)]
+    pub measurement_valid: bool,
+    /// Monotonic count of failed meter-query generations since reset.
+    #[serde(default)]
+    pub query_error_generation: u64,
+    /// Whether the owning analyzer is currently accumulating measurements.
+    #[serde(default)]
+    pub measurement_enabled: bool,
+    /// True only when the channel roles are unambiguous for BS.1770 weighting.
+    /// Count-only multichannel construction cannot prove LFE/surround roles.
+    #[serde(default)]
+    pub channel_layout_is_compliant: bool,
     /// Momentary loudness (M) - 400ms window, LUFS
     pub momentary_lufs: f64,
     /// Short-term loudness (S) - 3 second window, LUFS
     pub shortterm_lufs: f64,
-    /// Integrated loudness (I) - whole program loudness, LUFS
+    /// Integrated loudness (I), LUFS. See `integrated_window_seconds`; the
+    /// pinned bounded meter retains approximately the latest hour.
     pub integrated_lufs: f64,
     /// Current sample peak (0.0 to 1.0+)
     pub peak: f64,
@@ -220,6 +236,14 @@ pub struct LoudnessData {
     /// Per-channel true peaks in dBTP (dB True Peak)
     /// True peaks account for inter-sample peaks via oversampling
     pub true_peaks_dbtp: Arc<Vec<f64>>,
+    /// BS.1770 true-peak FIR compliance. The pinned detector is verified only
+    /// at 48 kHz; other rates remain available as explicitly approximate data.
+    #[serde(default)]
+    pub true_peak_is_compliant: bool,
+    /// Integrated loudness is a bounded rolling history in the pinned meter,
+    /// not an unbounded whole-program statistic.
+    #[serde(default = "default_integrated_window_seconds")]
+    pub integrated_window_seconds: u32,
     /// L/R correlation coefficient (ICC - Inter-Channel Correlation)
     /// Only valid for stereo signals (2 channels)
     /// Range: -1.0 (anti-correlated) to +1.0 (fully correlated)
@@ -241,12 +265,18 @@ pub struct LoudnessData {
 impl LoudnessData {
     pub fn new(channels: usize) -> Self {
         Self {
+            measurement_valid: false,
+            query_error_generation: 0,
+            measurement_enabled: true,
+            channel_layout_is_compliant: channels <= 2,
             momentary_lufs: f64::NEG_INFINITY,
             shortterm_lufs: f64::NEG_INFINITY,
             integrated_lufs: f64::NEG_INFINITY,
             peak: 0.0,
             channel_peaks: Arc::new(vec![0.0; channels]),
             true_peaks_dbtp: Arc::new(vec![f64::NEG_INFINITY; channels]),
+            true_peak_is_compliant: false,
+            integrated_window_seconds: 3_600,
             correlation_lr: None,
             // Spatial correlation is opt-in — kept empty so consumers that
             // never enable it (CLI tools, meters, JSON dumps) don't pay any
@@ -261,12 +291,18 @@ impl LoudnessData {
     /// if Arc::get_mut succeeds on internal arrays).
     pub fn update_from(&mut self, other: &LoudnessData) {
         self.momentary_lufs = other.momentary_lufs;
+        self.measurement_valid = other.measurement_valid;
+        self.query_error_generation = other.query_error_generation;
+        self.measurement_enabled = other.measurement_enabled;
+        self.channel_layout_is_compliant = other.channel_layout_is_compliant;
         self.shortterm_lufs = other.shortterm_lufs;
         self.integrated_lufs = other.integrated_lufs;
         self.peak = other.peak;
 
         self.update_peaks(&other.channel_peaks);
         self.update_true_peaks(&other.true_peaks_dbtp);
+        self.true_peak_is_compliant = other.true_peak_is_compliant;
+        self.integrated_window_seconds = other.integrated_window_seconds;
         self.update_correlation_matrix(&other.correlation_matrix);
         self.correlation_samples_seen = other.correlation_samples_seen;
 
@@ -311,12 +347,18 @@ impl LoudnessData {
 impl Default for LoudnessData {
     fn default() -> Self {
         Self {
+            measurement_valid: false,
+            query_error_generation: 0,
+            measurement_enabled: false,
+            channel_layout_is_compliant: false,
             momentary_lufs: f64::NEG_INFINITY,
             shortterm_lufs: f64::NEG_INFINITY,
             integrated_lufs: f64::NEG_INFINITY,
             peak: 0.0,
             channel_peaks: Arc::new(Vec::new()),
             true_peaks_dbtp: Arc::new(Vec::new()),
+            true_peak_is_compliant: false,
+            integrated_window_seconds: 3_600,
             correlation_lr: None,
             correlation_matrix: Arc::new(Vec::new()),
             correlation_samples_seen: 0,
@@ -330,7 +372,9 @@ pub struct SpectrumData {
     /// Frequency bin centers in Hz
     pub frequencies: Arc<Vec<f32>>,
     /// Magnitude values in dB
-    pub magnitudes: Arc<Vec<f32>>,
+    /// Shared immutable display slice. The UI can pass this directly to its
+    /// spectrum element without allocating a Vec-to-slice copy each render.
+    pub magnitudes: Arc<[f32]>,
     /// Peak magnitude across all bins
     pub peak_magnitude: f32,
 }
@@ -363,7 +407,7 @@ impl SpectrumData {
             mut_mags.copy_from_slice(new_mags);
             return;
         }
-        self.magnitudes = Arc::new(new_mags.to_vec());
+        self.magnitudes = Arc::from(new_mags);
     }
 }
 
@@ -371,7 +415,7 @@ impl Default for SpectrumData {
     fn default() -> Self {
         Self {
             frequencies: Arc::new(Vec::new()),
-            magnitudes: Arc::new(Vec::new()),
+            magnitudes: Arc::from([]),
             peak_magnitude: -100.0,
         }
     }

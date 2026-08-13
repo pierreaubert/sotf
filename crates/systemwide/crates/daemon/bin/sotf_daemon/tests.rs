@@ -46,12 +46,18 @@ fn test_plugin(plugin_type: &str) -> PluginConfig {
 #[test]
 fn loudness_data_json_includes_meter_fields() {
     let loudness = sotf_audio::LoudnessData {
+        measurement_valid: true,
+        query_error_generation: 0,
+        measurement_enabled: true,
+        channel_layout_is_compliant: true,
         momentary_lufs: -18.5,
         shortterm_lufs: -17.25,
         integrated_lufs: -20.0,
         peak: 0.75,
         channel_peaks: Arc::new(vec![0.5, 0.75]),
         true_peaks_dbtp: Arc::new(vec![-2.0, -1.0]),
+        true_peak_is_compliant: true,
+        integrated_window_seconds: 3_600,
         correlation_lr: Some(0.42),
         correlation_matrix: Arc::new(Vec::new()),
         correlation_samples_seen: 0,
@@ -66,6 +72,12 @@ fn loudness_data_json_includes_meter_fields() {
     assert_eq!(json["channel_peaks"], serde_json::json!([0.5, 0.75]));
     assert_eq!(json["true_peaks_dbtp"], serde_json::json!([-2.0, -1.0]));
     assert_eq!(json["correlation_lr"], serde_json::json!(0.42));
+    assert_eq!(json["measurement_valid"], serde_json::json!(true));
+    assert_eq!(json["measurement_enabled"], serde_json::json!(true));
+    assert_eq!(json["query_error_generation"], serde_json::json!(0));
+    assert_eq!(json["channel_layout_is_compliant"], serde_json::json!(true));
+    assert_eq!(json["true_peak_is_compliant"], serde_json::json!(true));
+    assert_eq!(json["integrated_window_seconds"], serde_json::json!(3600));
 }
 
 #[test]

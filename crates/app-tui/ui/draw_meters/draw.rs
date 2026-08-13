@@ -965,12 +965,18 @@ mod tests {
     fn test_app_with_loudness() -> App {
         let mut app = App::new(Theme::default(), /* read_only */ true);
         app.playback.loudness_info = Some(LoudnessData {
+            measurement_valid: true,
+            query_error_generation: 0,
+            measurement_enabled: true,
+            channel_layout_is_compliant: true,
             momentary_lufs: -10.5,
             shortterm_lufs: -12.0,
             integrated_lufs: -14.0,
             peak: 0.5,
             channel_peaks: Arc::new(vec![0.5, 0.3]),
             true_peaks_dbtp: Arc::new(vec![-3.5, -6.0]),
+            true_peak_is_compliant: true,
+            integrated_window_seconds: 3_600,
             correlation_lr: Some(0.8),
             correlation_matrix: Arc::new(Vec::new()),
             correlation_samples_seen: 0,
