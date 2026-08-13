@@ -191,6 +191,7 @@ pub(super) fn test_loudness_compensation_zero_alloc() {
 pub(super) fn test_fletcher_munson_zero_alloc() {
     let params = LoudnessCompensationPluginParams {
         mode: 2, // Auto
+        auto_calibrated: true,
         playback_volume_db: -30.0,
         reference_level_db: 69.0, // 83 + (-14)
         ..Default::default()

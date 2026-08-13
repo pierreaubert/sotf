@@ -11,6 +11,8 @@ mod consts;
 mod default;
 #[path = "lib/fletcher_munson_compat.rs"]
 mod fletcher_munson_compat;
+#[path = "lib/iso_fit.rs"]
+mod iso_fit;
 #[path = "lib/loudness_compensation.rs"]
 mod loudness_compensation;
 #[path = "lib/loudness_compensation_plugin.rs"]

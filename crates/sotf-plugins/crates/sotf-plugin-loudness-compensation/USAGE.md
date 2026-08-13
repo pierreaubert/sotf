@@ -1,133 +1,57 @@
 # Loudness Compensation
 
-## Overview
+## Modes
 
-A simple loudness compensation plugin that applies low-shelf and high-shelf filters to boost bass and treble at lower listening volumes. Based on the principle that human hearing is less sensitive to low and high frequencies at lower volumes (equal-loudness contours). Uses cascaded biquad shelving filters with smoothed gain transitions.
+- **Manual** uses two half-gain low shelves, an optional mid peak, and two
+  half-gain high shelves. The requested shelf gain is the total asymptotic gain;
+  it is not doubled by the cascade.
+- **ISO 226** computes the requested equal-loudness delta at all 29 ISO 226:2003
+  frequencies and jointly fits a 20-biquad bank. The bank is normalized around
+  the standard's 1 kHz phon reference.
+- **Auto** uses the ISO bank and derives playback SPL from a measured SPL at
+  engine volume 0 dB plus `playback_volume_db`. It is rejected until
+  `auto_calibrated` is enabled. Digital dBFS, LUFS, and a volume scalar alone are
+  not acoustic calibration.
 
-## Features
+ISO 226 is a population-average free-field relationship. Headphone or room use
+may require a separate transfer correction and listening validation.
 
-### Shelf EQ
+## Level and AutoGain policies
 
-Two pairs of cascaded biquad shelving filters (2x low shelf + 2x high shelf) apply frequency-dependent gain compensation. The double-cascading provides a steeper shelf slope for more effective compensation.
+`headroom_normalized=false` is the default. It preserves the requested 1 kHz
+reference and may create positive peaks, so provide downstream headroom or a
+limiter. When `headroom_normalized=true`, the plugin scans the realized active
+cascade through Nyquist and applies broadband attenuation equal to its positive
+peak. Cuts never consume headroom. This changes the absolute 1 kHz level and is
+therefore a visible user choice, not an implicit safety correction.
 
-**Parameters:**
+AutoGain has one canonical three-state control: `disabled`, `pre`, or `post`.
+The legacy `auto_gain_enabled` boolean remains accepted for old presets and maps
+to `post`/`disabled`. AutoGain is an LUFS matching loop and is separate from SPL
+calibration and ISO contour generation.
 
-| Parameter | Range | Default | Unit | Description |
-|-----------|-------|---------|------|-------------|
-| Bass Boost | -20 to 20 | 6 | dB | Low-frequency shelf gain |
-| Treble Boost | -20 to 20 | 6 | dB | High-frequency shelf gain |
-| Low Frequency | 20 to 500 | 100 | Hz | Low shelf center frequency |
-| High Frequency | 2000 to 20000 | 10000 | Hz | High shelf center frequency |
+## Realtime contract
 
-### Auto Gain
+All filter design, ISO optimization, and full-band peak scans happen during
+construction or control updates. `process_in_place` only processes prepared
+state. Coefficient and mode changes crossfade old and new banks over 256 samples.
+Processing and reset allocate no memory, return exactly `context.num_frames`, and
+require an exact interleaved buffer length and matching initialized sample rate.
+Frequencies are clamped to 45% of Nyquist-safe sample-rate space at 16–192 kHz.
 
-Optional automatic gain compensation to prevent overall volume increase from the shelving filters.
+## Example
 
-**Parameters:**
-
-| Parameter | Range | Default | Unit | Description |
-|-----------|-------|---------|------|-------------|
-| Auto Gain | On/Off | Off | — | Enable automatic loudness compensation |
-| Max Auto Gain | 0 to 24 | 12 | dB | Maximum auto-gain correction |
-| Smoothing | 1 to 1000 | 100 | ms | Auto-gain transition smoothing |
-
-## Demos
-
-### Demo: Low-Volume Listening
-
-**Scenario:** Listening to music at low volume where bass and treble seem to disappear.
-**Before:** At -30 dB playback, bass is inaudible and highs are dull.
-**After:** Bass and treble are restored to perceptually balanced levels.
-**Config:**
 ```json
 {
-  "low_freq": 100.0,
-  "low_gain": 8.0,
-  "high_freq": 10000.0,
-  "high_gain": 4.0
+  "mode": 2,
+  "reference_level_db": 78.0,
+  "playback_volume_db": -18.0,
+  "auto_calibrated": true,
+  "headroom_normalized": false,
+  "auto_gain_position": "disabled"
 }
 ```
 
-### Demo: Desktop Speaker Correction
-
-**Scenario:** Small desktop speakers lack bass extension.
-**Before:** Thin sound with no low-end presence below 150 Hz.
-**After:** Low shelf boost fills in the missing bass range.
-**Config:**
-```json
-{
-  "low_freq": 120.0,
-  "low_gain": 10.0,
-  "high_freq": 8000.0,
-  "high_gain": 3.0
-}
-```
-
-### Demo: Treble Rolloff Compensation
-
-**Scenario:** Headphones have a noticeable treble rolloff above 8 kHz.
-**Before:** Cymbals and hi-hats sound dull and lifeless.
-**After:** High shelf restores air and sparkle.
-**Config:**
-```json
-{
-  "low_freq": 100.0,
-  "low_gain": 0.0,
-  "high_freq": 8000.0,
-  "high_gain": 6.0
-}
-```
-
-## Presets
-
-### Moderate
-**Use case:** Gentle compensation for moderate listening volumes
-```json
-{
-  "low_freq": 100.0,
-  "low_gain": 4.0,
-  "high_freq": 10000.0,
-  "high_gain": 3.0
-}
-```
-**Tips:** Good starting point. Increase gains if listening at very low volumes.
-
-### Strong Bass
-**Use case:** Significant bass boost for small speakers or very low volumes
-```json
-{
-  "low_freq": 80.0,
-  "low_gain": 10.0,
-  "high_freq": 10000.0,
-  "high_gain": 4.0
-}
-```
-**Tips:** May clip with loud bass-heavy content — enable Auto Gain or reduce source volume.
-
-### Flat (Bypass)
-**Use case:** No compensation applied
-```json
-{
-  "low_freq": 100.0,
-  "low_gain": 0.0,
-  "high_freq": 10000.0,
-  "high_gain": 0.0
-}
-```
-**Tips:** Use for A/B comparison against compensated signal.
-
-## Tips & Best Practices
-
-- This is a simpler alternative to the Fletcher-Munson plugin — it uses fixed gain values rather than volume-dependent curves.
-- The filters preserve delay state on parameter changes for click-free transitions.
-- Each shelf is applied twice (cascaded) for a steeper slope — actual boost is approximately 2x the gain value at the extremes.
-- A built-in compensation gain attenuates the output by the maximum of the two shelf gains to prevent clipping.
-- Use Auto Gain for level-matched comparison when adjusting parameters.
-- For volume-dependent compensation that adapts automatically, use the Fletcher-Munson plugin instead.
-
-## Signal Flow
-
-```
-Input → [Low Shelf 1] → [Low Shelf 2] → [High Shelf 1] → [High Shelf 2]
-      → Compensation Gain (smoothed) → Auto Gain (optional) → Output
-```
+Here `reference_level_db` must be the measured listener-position SPL produced by
+the actual playback chain at engine volume 0 dB. Recalibrate after changing DAC,
+OS/amp gain, speaker placement, listening distance, or headphones.

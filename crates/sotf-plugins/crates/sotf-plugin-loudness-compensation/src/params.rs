@@ -20,6 +20,7 @@ use sotf_host::plugin_params::PluginParamDef;
 
 /// Mode labels: index 0 = "Manual" (backward compat default), index 1 = "ISO 226", index 2 = "Auto".
 pub const MODE_LABELS: &[&str] = &["Manual", "ISO 226", "Auto"];
+pub const AUTO_GAIN_POSITION_LABELS: &[&str] = &["Disabled", "Pre", "Post"];
 
 pub const PARAMS: &[ParamSpec] = &[
     // -- indices 0..10: existing parameters (order preserved for backward compat) --
@@ -132,6 +133,26 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .setup()
     .doc("Engine playback volume (set automatically by the engine)"),
+    ParamSpec::choice(
+        "Auto Gain Position",
+        "auto_gain_position",
+        0,
+        AUTO_GAIN_POSITION_LABELS,
+        "Auto Gain",
+    )
+    .structural()
+    .output()
+    .doc("Canonical AutoGain state and position"),
+    ParamSpec::bool_param(
+        "Headroom Normalized",
+        "headroom_normalized",
+        false,
+        "Compensation",
+    )
+    .doc("Attenuate by the realized positive cascade peak; changes the 1 kHz reference"),
+    ParamSpec::bool_param("SPL Calibrated", "auto_calibrated", false, "Auto")
+        .structural()
+        .doc("Reference level is a measured SPL at digital volume 0 dB"),
 ];
 
 // ============================================================================
@@ -161,8 +182,9 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             "AUTO",
             "AUTO",
             &[
-                ControlSpec::label(14), // playback_volume_db (engine-set, read-only)
-                ControlSpec::knob(13),  // reference_level_db (shared with ISO 226)
+                ControlSpec::label(14),  // playback_volume_db (engine-set, read-only)
+                ControlSpec::knob(13),   // reference_level_db (shared with ISO 226)
+                ControlSpec::toggle(17), // auto_calibrated
             ],
         )
         .visible_when(ParamCondition::choice(11, 2)),
@@ -175,6 +197,11 @@ pub const LAYOUT: PluginLayout = PluginLayout {
             ],
         )
         .visible_when(ParamCondition::choice(11, 0)),
+        ControlGroup::new(
+            "LEVEL POLICY",
+            "LEVEL POLICY",
+            &[ControlSpec::toggle(16)], // headroom_normalized
+        ),
         ControlGroup::new(
             "MID",
             "MID",
@@ -197,9 +224,13 @@ pub const LAYOUT: PluginLayout = PluginLayout {
         .visible_when(ParamCondition::choice(11, 0)),
     ],
     output: &[
-        ControlSpec::toggle(8), // auto_gain_enabled
-        ControlSpec::knob(9).enabled_when(ParamCondition::bool(8, true)), // auto_gain_max_db
-        ControlSpec::knob(10).enabled_when(ParamCondition::bool(8, true)), // auto_gain_smoothing_ms
+        // Serialized/automation compatibility only. `auto_gain_position` is
+        // the canonical three-state control; keep the old boolean referenced
+        // for layout coverage without rendering a second, divergent control.
+        ControlSpec::toggle(8).hide(), // legacy auto_gain_enabled alias
+        ControlSpec::selector(15),     // auto_gain_position
+        ControlSpec::knob(9),          // auto_gain_max_db
+        ControlSpec::knob(10),         // auto_gain_smoothing_ms
     ],
     tabs: &[],
     visualizations: &[],
@@ -253,6 +284,12 @@ pub struct Params {
     /// Engine playback volume in dB (set externally, used in Auto mode)
     #[serde(default = "d_playback_volume_db")]
     pub playback_volume_db: f64,
+    #[serde(default = "d_auto_gain_position")]
+    pub auto_gain_position: usize,
+    #[serde(default = "d_headroom_normalized")]
+    pub headroom_normalized: bool,
+    #[serde(default = "d_auto_calibrated")]
+    pub auto_calibrated: bool,
 }
 
 fn d_low_freq() -> f64 {
@@ -300,6 +337,15 @@ fn d_reference_level_db() -> f64 {
 fn d_playback_volume_db() -> f64 {
     pk(PARAMS, "playback_volume_db").default_f64()
 }
+fn d_auto_gain_position() -> usize {
+    pk(PARAMS, "auto_gain_position").default_usize()
+}
+fn d_headroom_normalized() -> bool {
+    pk(PARAMS, "headroom_normalized").default_bool()
+}
+fn d_auto_calibrated() -> bool {
+    pk(PARAMS, "auto_calibrated").default_bool()
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -319,6 +365,9 @@ impl Default for Params {
             playback_level_db: d_playback_level_db(),
             reference_level_db: d_reference_level_db(),
             playback_volume_db: d_playback_volume_db(),
+            auto_gain_position: d_auto_gain_position(),
+            headroom_normalized: d_headroom_normalized(),
+            auto_calibrated: d_auto_calibrated(),
         }
     }
 }
@@ -343,13 +392,20 @@ impl PluginParamDef for Params {
             5 => Some(self.mid_freq),
             6 => Some(self.mid_gain),
             7 => Some(self.mid_q),
-            8 => Some(if self.auto_gain_enabled { 1.0 } else { 0.0 }),
+            8 => Some(if self.auto_gain_position != 0 {
+                1.0
+            } else {
+                0.0
+            }),
             9 => Some(self.auto_gain_max_db),
             10 => Some(self.auto_gain_smoothing_ms),
             11 => Some(self.mode as f64),
             12 => Some(self.playback_level_db),
             13 => Some(self.reference_level_db),
             14 => Some(self.playback_volume_db),
+            15 => Some(self.auto_gain_position as f64),
+            16 => Some(if self.headroom_normalized { 1.0 } else { 0.0 }),
+            17 => Some(if self.auto_calibrated { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
@@ -364,13 +420,22 @@ impl PluginParamDef for Params {
             5 => self.mid_freq = value,
             6 => self.mid_gain = value,
             7 => self.mid_q = value,
-            8 => self.auto_gain_enabled = value > 0.5,
+            8 => {
+                self.auto_gain_enabled = value > 0.5;
+                self.auto_gain_position = if self.auto_gain_enabled { 2 } else { 0 };
+            }
             9 => self.auto_gain_max_db = value,
             10 => self.auto_gain_smoothing_ms = value,
             11 => self.mode = value as usize,
             12 => self.playback_level_db = value,
             13 => self.reference_level_db = value,
             14 => self.playback_volume_db = value,
+            15 => {
+                self.auto_gain_position = value as usize;
+                self.auto_gain_enabled = self.auto_gain_position != 0;
+            }
+            16 => self.headroom_normalized = value > 0.5,
+            17 => self.auto_calibrated = value > 0.5,
             _ => {}
         }
     }
@@ -401,6 +466,36 @@ mod tests {
     }
 
     #[test]
+    fn legacy_auto_gain_boolean_is_covered_but_not_rendered() {
+        let legacy_enabled = pk(PARAMS, "auto_gain_enabled");
+        assert_eq!(legacy_enabled.name, "Auto Gain");
+
+        let legacy_controls: Vec<_> = LAYOUT
+            .output
+            .iter()
+            .filter(|control| control.param_index == 8)
+            .collect();
+        assert_eq!(legacy_controls.len(), 1);
+        assert!(
+            legacy_controls[0].hidden,
+            "the compatibility boolean must not compete with auto_gain_position"
+        );
+
+        let canonical_controls: Vec<_> = LAYOUT
+            .output
+            .iter()
+            .filter(|control| control.param_index == 15)
+            .collect();
+        assert_eq!(canonical_controls.len(), 1);
+        assert!(!canonical_controls[0].hidden);
+        assert!(
+            LAYOUT
+                .validate_coverage(PARAMS, "loudness_compensation")
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn roundtrip_serde() {
         let original = Params::default();
         let json = serde_json::to_value(&original).unwrap();
@@ -423,6 +518,9 @@ mod tests {
         assert_eq!(original.playback_level_db, restored.playback_level_db);
         assert_eq!(original.reference_level_db, restored.reference_level_db);
         assert_eq!(original.playback_volume_db, restored.playback_volume_db);
+        assert_eq!(original.auto_gain_position, restored.auto_gain_position);
+        assert_eq!(original.headroom_normalized, restored.headroom_normalized);
+        assert_eq!(original.auto_calibrated, restored.auto_calibrated);
     }
 
     #[test]
@@ -461,6 +559,9 @@ mod tests {
             p.playback_volume_db,
             pk(PARAMS, "playback_volume_db").default_f64()
         );
+        assert_eq!(p.auto_gain_position, 0);
+        assert!(!p.headroom_normalized);
+        assert!(!p.auto_calibrated);
     }
 
     #[test]

@@ -102,8 +102,11 @@ pub(super) fn create_loudness_compensation_plugin_config(
         "high_freq": 10000.0,
         "high_gain": lc.high_boost,
         "auto_gain_enabled": auto_gain_enabled,
+        "auto_gain_position": if auto_gain_enabled { "post" } else { "disabled" },
         "auto_gain_max_db": auto_gain_max_db,
         "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
+        "headroom_normalized": false,
+        "auto_calibrated": false,
     });
 
     Ok(PluginConfig {
@@ -412,15 +415,21 @@ pub(super) fn create_pnd_plugin_config(args: &PndArgs) -> Result<PluginConfig, S
 pub(super) fn create_fletcher_munson_plugin_config(
     args: &FletcherMunsonArgs,
 ) -> Result<PluginConfig, String> {
-    use serde_json::json;
     // Fletcher-Munson merged into LoudnessCompensation Auto mode
     Ok(PluginConfig {
         plugin_type: "loudness_compensation".to_string(),
-        parameters: json!({
-            "mode": 2,
-            "playback_volume_db": 0.0,
-            "reference_level_db": 83.0 + args.reference_level_db as f64,
-        }),
+        parameters: fletcher_munson_parameters(args.reference_level_db as f64),
+    })
+}
+
+pub(super) fn fletcher_munson_parameters(reference_level_offset_db: f64) -> serde_json::Value {
+    serde_json::json!({
+        "mode": 2,
+        "playback_volume_db": 0.0,
+        "reference_level_db": 83.0 + reference_level_offset_db,
+        "auto_gain_position": "disabled",
+        "headroom_normalized": false,
+        "auto_calibrated": true,
     })
 }
 

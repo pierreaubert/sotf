@@ -24,11 +24,14 @@ impl fmt::Display for AutoGainPosition {
 }
 
 impl AutoGainPosition {
-    pub(super) fn from_str_lossy(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "pre" => AutoGainPosition::Pre,
-            "disabled" | "off" => AutoGainPosition::Disabled,
-            _ => AutoGainPosition::Post,
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.to_ascii_lowercase().as_str() {
+            "pre" => Ok(AutoGainPosition::Pre),
+            "post" => Ok(AutoGainPosition::Post),
+            "disabled" | "off" => Ok(AutoGainPosition::Disabled),
+            _ => Err(format!(
+                "invalid AutoGain position {s:?}; expected pre, post, or disabled"
+            )),
         }
     }
 }

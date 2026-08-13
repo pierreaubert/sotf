@@ -125,6 +125,9 @@ pub fn convert_loudness_compensation(
         playback_level_db,
         reference_level_db,
         playback_volume_db,
+        auto_gain_position,
+        headroom_normalized,
+        auto_calibrated,
     } = settings
     else {
         return None;
@@ -147,6 +150,9 @@ pub fn convert_loudness_compensation(
             "playback_level_db": playback_level_db,
             "reference_level_db": reference_level_db,
             "playback_volume_db": playback_volume_db,
+            "auto_gain_position": match auto_gain_position { 1 => "pre", 2 => "post", _ => "disabled" },
+            "headroom_normalized": headroom_normalized,
+            "auto_calibrated": auto_calibrated,
         }),
     ))
 }

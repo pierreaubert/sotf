@@ -61,6 +61,14 @@ pub(super) fn default_playback_volume_db() -> f32 {
     pk(LC, "playback_volume_db").default_f32()
 }
 
+pub(super) fn default_headroom_normalized() -> bool {
+    false
+}
+
+pub(super) fn default_auto_calibrated() -> bool {
+    false
+}
+
 pub(super) fn default_fm_compat_reference() -> f32 {
     -14.0
 }

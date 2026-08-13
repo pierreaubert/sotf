@@ -815,6 +815,12 @@ pub enum PluginSettings {
         /// Engine playback volume in dB (used in Auto mode)
         #[serde(default)]
         playback_volume_db: f64,
+        #[serde(default)]
+        auto_gain_position: usize,
+        #[serde(default)]
+        headroom_normalized: bool,
+        #[serde(default)]
+        auto_calibrated: bool,
     },
     FletcherMunson {
         /// Current playback volume (set by engine/UI)

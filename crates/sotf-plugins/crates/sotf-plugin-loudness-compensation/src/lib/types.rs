@@ -1,8 +1,10 @@
 use super::channel_loudness_params::ChannelLoudnessParams;
+use super::default::default_auto_calibrated;
 use super::default::default_auto_gain_enabled;
 use super::default::default_auto_gain_max_db;
 use super::default::default_auto_gain_position;
 use super::default::default_auto_gain_smoothing_ms;
+use super::default::default_headroom_normalized;
 use super::default::default_high_freq;
 use super::default::default_high_gain;
 use super::default::default_low_freq;
@@ -56,6 +58,15 @@ pub struct LoudnessCompensationPluginParams {
     /// Engine playback volume in dB (used in Auto mode)
     #[serde(default = "default_playback_volume_db")]
     pub playback_volume_db: f32,
+    /// Apply broadband attenuation equal to the positive peak of the realized
+    /// filter cascade. Disabled by default so the ISO 226 1 kHz reference is
+    /// preserved; users selecting this policy accept the visible level shift.
+    #[serde(default = "default_headroom_normalized")]
+    pub headroom_normalized: bool,
+    /// Confirms that `reference_level_db` is a measured SPL at digital 0 dB
+    /// volume for the actual playback chain. Required by Auto mode.
+    #[serde(default = "default_auto_calibrated")]
+    pub auto_calibrated: bool,
 }
 
 impl Default for LoudnessCompensationPluginParams {
@@ -78,6 +89,8 @@ impl Default for LoudnessCompensationPluginParams {
             playback_level_db: default_playback_level_db(),
             reference_level_db: default_reference_level_db(),
             playback_volume_db: default_playback_volume_db(),
+            headroom_normalized: default_headroom_normalized(),
+            auto_calibrated: default_auto_calibrated(),
         }
     }
 }

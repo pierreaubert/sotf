@@ -2,4 +2,10 @@
 
 SOTF Loudness Compensation plugin for equal loudness contour compensation.
 
-Applies volume-dependent EQ using ISO 226 equal-loudness curves so that the perceived frequency balance remains consistent across different listening levels.
+Provides Manual tone controls, a jointly fitted ISO 226 contour, and a calibrated
+Auto mode. The default level policy preserves the ISO 226 1 kHz reference;
+optional headroom normalization is explicit and its broadband level shift remains
+visible. Auto mode requires a measured SPL calibration for the playback chain.
+
+See `USAGE.md` for calibration, AutoGain position, headroom, and realtime-update
+contracts.

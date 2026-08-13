@@ -1,3 +1,34 @@
+# 0.5.6
+
+## Fixes
+
+- Preserved canonical AutoGain position, headroom policy, and SPL calibration
+  state in CLI rack/traditional builders; Fletcher-Munson compatibility now
+  explicitly enters calibrated Auto mode.
+- Marked the legacy `auto_gain_enabled` parameter as a hidden layout
+  compatibility alias while keeping `auto_gain_position` as the sole visible,
+  canonical AutoGain control.
+
+# 0.5.5
+
+## Fixes
+
+- Replaced seven independently sampled ISO sections with a jointly optimized 20-section bank and response-error tests over all standard points and 20–90 phon extremes.
+- Made preservation of the 1 kHz reference the default; headroom normalization is now an explicit visible policy based on the realized full-band cascade peak.
+- Added a 256-sample old/new-bank crossfade for coefficient and mode changes, and moved all Auto coefficient preparation out of `process_in_place`.
+- Auto mode now requires an explicit measured SPL-at-0-dB calibration. AutoGain position is the canonical typed runtime state; the old enabled boolean is a compatibility alias only.
+- Filter design is safe at 16–192 kHz, reset is in-place and allocation-free, and standalone processing no longer changes the audio thread floating-point mode.
+- Completed Fletcher–Munson field migration, canonical schema/UI wiring, high-channel QA, tail-latency benchmarks, and focused regressions for every review finding.
+
+# 0.5.4
+
+## Fixes
+
+- Headroom compensation now responds only to positive cascade gain; cuts no longer cause additional broadband attenuation, and identical ISO response scans run once rather than once per channel.
+- Construction rejects unsupported per-channel curves, invalid channel counts, unknown AutoGain positions, non-finite/out-of-range fields, and invalid modes instead of silently accepting them.
+- Initialization validates sample-rate-safe filter frequencies and propagates sample-rate changes into AutoGain monitors and time constants.
+- Pre AutoGain now measures the final post-EQ buffer, reset clears AutoGain and compensation smoother state, and processing requires exact buffer dimensions plus the initialized sample rate.
+
 # 0.5.3
 
 ## Fixes

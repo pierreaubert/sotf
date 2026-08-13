@@ -31,6 +31,7 @@ use super::misc::get_speaker_config_channels;
 use super::parse::parse_channel_mapping;
 use super::parse::parse_crossfeed_mode;
 use super::parse::parse_crossfeed_preset;
+use super::types::DownmixArgs;
 use super::types::PluginArgs;
 use math_audio_iir_fir::Biquad;
 use sotf_audio::LoudnessCompensation;
@@ -44,6 +45,76 @@ use sotf_audio::{AudioEngineManager, PluginConfig, StreamingState};
 use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
+
+pub(super) fn manual_loudness_settings(
+    loudness: Option<&LoudnessCompensation>,
+    auto_gain_params: (bool, f32, f32),
+) -> PluginSettings {
+    let (auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms) = auto_gain_params;
+    let (low_gain, high_gain, mid_enabled, mid_gain) = loudness
+        .map(|lc| (lc.low_boost, lc.high_boost, true, 3.0))
+        .unwrap_or((0.0, 0.0, false, 0.0));
+
+    PluginSettings::LoudnessCompensation {
+        low_freq: 100.0,
+        low_gain,
+        high_freq: 10000.0,
+        high_gain,
+        mid_enabled,
+        mid_freq: 3000.0,
+        mid_gain,
+        mid_q: 0.707,
+        auto_gain_enabled,
+        auto_gain_max_db: auto_gain_max_db as f64,
+        auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
+        mode: 0,
+        playback_level_db: 70.0,
+        reference_level_db: 83.0,
+        playback_volume_db: 0.0,
+        auto_gain_position: usize::from(auto_gain_enabled) * 2,
+        headroom_normalized: false,
+        auto_calibrated: false,
+    }
+}
+
+pub(super) fn fletcher_munson_loudness_settings(reference_level_offset_db: f64) -> PluginSettings {
+    PluginSettings::LoudnessCompensation {
+        low_freq: 100.0,
+        low_gain: 6.0,
+        high_freq: 10000.0,
+        high_gain: 6.0,
+        mid_enabled: true,
+        mid_freq: 3000.0,
+        mid_gain: 3.0,
+        mid_q: 0.707,
+        auto_gain_enabled: false,
+        auto_gain_max_db: 12.0,
+        auto_gain_smoothing_ms: 100.0,
+        mode: 2,
+        playback_level_db: 70.0,
+        reference_level_db: 83.0 + reference_level_offset_db,
+        playback_volume_db: 0.0,
+        auto_gain_position: 0,
+        headroom_normalized: false,
+        auto_calibrated: true,
+    }
+}
+
+pub(super) fn downmix_settings(input_channels: usize, args: &DownmixArgs) -> PluginSettings {
+    PluginSettings::Downmix {
+        input_channels,
+        input_layout: args.input_layout.clone(),
+        center_gain_db: f64::from(args.center_gain_db),
+        surround_gain_db: f64::from(args.surround_gain_db),
+        height_gain_db: f64::from(args.height_gain_db),
+        lfe_gain_db: f64::from(args.lfe_gain_db),
+        phase_coherence: args.phase_coherence,
+        phase_blend_low_hz: f64::from(args.phase_blend_low_hz),
+        phase_blend_high_hz: f64::from(args.phase_blend_high_hz),
+        itu_mode: args.itu_mode,
+        matrix_ltrt: false,
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn play_stream(
@@ -713,24 +784,9 @@ pub(super) fn build_rack_mode_plugins(
                 // FletcherMunson merged into LoudnessCompensation Auto mode
                 let idx = chain.add_plugin(&PluginType::LoudnessCompensation)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
-                    plugin.settings = PluginSettings::LoudnessCompensation {
-                        low_freq: 100.0,
-                        low_gain: 6.0,
-                        high_freq: 10000.0,
-                        high_gain: 6.0,
-                        mid_enabled: true,
-                        mid_freq: 3000.0,
-                        mid_gain: 3.0,
-                        mid_q: 0.707,
-                        auto_gain_enabled: false,
-                        auto_gain_max_db: 12.0,
-                        auto_gain_smoothing_ms: 100.0,
-                        mode: 2, // Auto
-                        playback_level_db: 70.0,
-                        reference_level_db: 83.0
-                            + plugins.fletcher_munson.reference_level_db as f64,
-                        playback_volume_db: 0.0,
-                    };
+                    plugin.settings = fletcher_munson_loudness_settings(
+                        plugins.fletcher_munson.reference_level_db as f64,
+                    );
                 }
                 log::info!("Rack: Added LoudnessCompensation (Auto/FM compat) plugin");
             }

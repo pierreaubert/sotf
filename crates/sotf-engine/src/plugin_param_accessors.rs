@@ -629,6 +629,7 @@ impl_param_accessors! {
                 auto_gain_enabled: bool, auto_gain_max_db: f64, auto_gain_smoothing_ms: f64,
                 mode: usize, playback_level_db: f64, reference_level_db: f64,
                 playback_volume_db: f64,
+                auto_gain_position: usize, headroom_normalized: bool, auto_calibrated: bool,
             ]
         }
     ];
@@ -686,6 +687,9 @@ impl PluginSettings {
             12 => Some(70.0),
             13 => Some(*reference_level_db),
             14 => Some(*playback_volume_db),
+            15 => Some(if *auto_gain_enabled { 2.0 } else { 0.0 }),
+            16 => Some(0.0),
+            17 => Some(1.0),
             _ => None,
         }
     }
@@ -729,6 +733,7 @@ impl PluginSettings {
                 *auto_gain_enabled = mode == 2;
             }
             13 => *reference_level_db = specs[13].clamp_f64(value),
+            15 => *auto_gain_enabled = value as usize != 0,
             _ => {}
         }
     }

@@ -1,11 +1,14 @@
-use super::build::rack_eq_settings;
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use super::build::downmix_settings;
-use super::types::DownmixArgs;
-use sotf_audio::plugins::PluginSettings;
+use super::build::{fletcher_munson_loudness_settings, manual_loudness_settings};
+use super::build::rack_eq_settings;
+use super::create::{create_loudness_compensation_plugin_config, fletcher_munson_parameters};
 use super::parse::parse_channel_mapping;
 use super::parse::parse_loudness_compensation;
 use super::types::Cli;
+use super::types::DownmixArgs;
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use sotf_audio::LoudnessCompensation;
+use sotf_audio::plugins::PluginSettings;
 
 #[test]
 fn cli_definition_has_unique_argument_ids() {
@@ -75,6 +78,55 @@ fn parse_loudness_compensation_rejects_wrong_arity() {
 }
 
 #[test]
+fn rack_manual_loudness_preserves_canonical_level_policy_defaults() {
+    let configured =
+        LoudnessCompensation::new(70.0, 3.0, 4.0).expect("valid loudness configuration");
+    let settings = manual_loudness_settings(Some(&configured), (true, 9.0, 250.0));
+
+    assert!(matches!(
+        settings,
+        PluginSettings::LoudnessCompensation {
+            mode: 0,
+            auto_gain_enabled: true,
+            auto_gain_position: 2,
+            headroom_normalized: false,
+            auto_calibrated: false,
+            ..
+        }
+    ));
+
+    let inert = manual_loudness_settings(None, (false, 12.0, 100.0));
+    assert!(matches!(
+        inert,
+        PluginSettings::LoudnessCompensation {
+            mode: 0,
+            auto_gain_enabled: false,
+            auto_gain_position: 0,
+            headroom_normalized: false,
+            auto_calibrated: false,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rack_fletcher_munson_marks_auto_mode_calibrated_without_hidden_level_changes() {
+    let settings = fletcher_munson_loudness_settings(-3.0);
+    assert!(matches!(
+        settings,
+        PluginSettings::LoudnessCompensation {
+            mode: 2,
+            reference_level_db: 80.0,
+            auto_gain_enabled: false,
+            auto_gain_position: 0,
+            headroom_normalized: false,
+            auto_calibrated: true,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn downmix_builder_preserves_explicit_layout_and_defaults_to_unspecified() {
     let args = DownmixArgs {
         enabled: true,
@@ -110,6 +162,33 @@ fn downmix_builder_preserves_explicit_layout_and_defaults_to_unspecified() {
     ));
 }
 
+#[test]
+fn traditional_loudness_config_serializes_canonical_level_policy_fields() {
+    let configured =
+        LoudnessCompensation::new(70.0, 3.0, 4.0).expect("valid loudness configuration");
+
+    let enabled = create_loudness_compensation_plugin_config(&configured, (true, 9.0, 250.0))
+        .expect("loudness config");
+    assert_eq!(enabled.parameters["auto_gain_position"], "post");
+    assert_eq!(enabled.parameters["headroom_normalized"], false);
+    assert_eq!(enabled.parameters["auto_calibrated"], false);
+
+    let disabled = create_loudness_compensation_plugin_config(&configured, (false, 9.0, 250.0))
+        .expect("loudness config");
+    assert_eq!(disabled.parameters["auto_gain_position"], "disabled");
+    assert_eq!(disabled.parameters["headroom_normalized"], false);
+    assert_eq!(disabled.parameters["auto_calibrated"], false);
+}
+
+#[test]
+fn traditional_fletcher_munson_config_serializes_calibrated_auto_mode() {
+    let parameters = fletcher_munson_parameters(-3.0);
+    assert_eq!(parameters["mode"], 2);
+    assert_eq!(parameters["reference_level_db"], 80.0);
+    assert_eq!(parameters["auto_gain_position"], "disabled");
+    assert_eq!(parameters["headroom_normalized"], false);
+    assert_eq!(parameters["auto_calibrated"], true);
+}
 
 #[test]
 fn rack_eq_builder_uses_canonical_global_control_defaults() {
