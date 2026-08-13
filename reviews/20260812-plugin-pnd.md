@@ -13,6 +13,10 @@
   analyzer/FFT/vocoder allocation and topology/latency changes.
 - P1 drift-smoothing semantics fixed in 0.5.7: the documented convention now
   holds (larger values are slower), with a deterministic monotonic regression.
+  Completed in 0.5.8: the value is now a 1–1000 ms physical time constant,
+  updates are gated by a new analysis-hop generation rather than callback
+  count, and equal elapsed time across split callbacks and 48/96 kHz produces
+  identical state.
 - P2 consensus and duplicate-peak correctness fixed in 0.5.7: low-confidence
   channels are excluded, remaining observations use confidence-weighted
   consensus, and each previous peak can be matched once. The matching
@@ -50,8 +54,9 @@ Require an observable reference: source/render clock timestamps for device drift
 ### P1 — `drift_smoothing` implements the reverse of the documented behavior
 
 Status: fixed in 0.5.7 by `smooth_drift_ratio`; the documented larger-is-
-slower convention is now tested. A sample-rate-aware time-constant redesign
-remains deferred.
+slower convention is tested. Completed in 0.5.8 with a sample-rate-aware
+time-constant coefficient and analysis-generation gating; the callback-rate
+dependency no longer remains deferred.
 
 Both processing paths update `current_ratio = old * (1 - alpha) + target * alpha` (`pnd_plugin.rs:292-295,466-469`). Thus `alpha=1` jumps immediately and `alpha=0.001` is highly smoothed. `USAGE.md` says higher values are “more stable” and “slower to track,” while `test_drift_smoothing_slow_correction` labels 0.99 “very high smoothing” (`src/lib/tests.rs:9-38`). That test only sees a nearly-unity target, so it does not reveal the reversal.
 

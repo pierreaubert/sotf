@@ -49,12 +49,28 @@ fn test_drift_smoothing_slow_correction() {
 fn drift_smoothing_parameter_is_monotonic_and_high_values_are_slow() {
     let current = 1.0;
     let target = 1.1;
-    let fast = smooth_drift_ratio(current, target, 0.1);
-    let slow = smooth_drift_ratio(current, target, 0.9);
+    let fast = smooth_drift_ratio(current, target, 0.1, 512, 48_000);
+    let slow = smooth_drift_ratio(current, target, 0.9, 512, 48_000);
 
     assert!(fast > slow, "lower smoothing should track faster");
     assert!(slow > current, "a finite target should still make progress");
     assert!(slow < target, "smoothing should not jump to the target");
+}
+
+#[test]
+fn drift_smoothing_is_elapsed_time_and_sample_rate_invariant() {
+    let current = 1.0;
+    let target = 1.1;
+    let tau = 0.1;
+
+    let once = smooth_drift_ratio(current, target, tau, 1024, 48_000);
+    let half = smooth_drift_ratio(current, target, tau, 512, 48_000);
+    let twice = smooth_drift_ratio(half, target, tau, 512, 48_000);
+    assert!((once - twice).abs() < 1e-12);
+
+    let at_96k = smooth_drift_ratio(current, target, tau, 2048, 96_000);
+    assert!((once - at_96k).abs() < 1e-12);
+    assert_eq!(smooth_drift_ratio(current, target, tau, 0, 48_000), current);
 }
 
 #[test]

@@ -6,6 +6,10 @@
 - Add numeric frequency-oracle regressions for octave-up, octave-down, and
   unity pitch processing. These fail if spectral energy remains in its source
   bins and cover both shift directions independently of the drift detector.
+- Define `drift_smoothing` as a 1–1000 ms sample-clock time constant. Ratio
+  updates occur only after a new analysis hop, not once per host callback;
+  regressions prove equal elapsed time at 48/96 kHz and split callbacks yields
+  the same one-pole state.
 
 # 0.5.7
 

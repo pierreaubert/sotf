@@ -33,6 +33,7 @@ pub struct PndPlugin {
     // State
     pub(super) current_ratio: f64,
     pub(super) last_drift_ratio: f64,
+    pub(super) last_analysis_generation: u64,
 
     // Pre-allocated buffers for zero-allocation process()
     pub(super) planar_input: Vec<Vec<f32>>,
@@ -93,6 +94,7 @@ impl PndPlugin {
             resampler: None,
             current_ratio: 1.0,
             last_drift_ratio: 1.0,
+            last_analysis_generation: 0,
             planar_input: vec![Vec::new(); channels],
             planar_output: Vec::new(),
             input_ring: Vec::new(),
@@ -319,10 +321,23 @@ impl PndPlugin {
         self.last_drift_ratio = drift_ratio as f64;
 
         // Calculate correction ratio
-        if confidence >= self.confidence_threshold {
+        let analysis_generation = self
+            .analyzers
+            .iter()
+            .map(PndAnalyzer::analysis_generation)
+            .max()
+            .unwrap_or(0);
+        let elapsed_hops = analysis_generation.saturating_sub(self.last_analysis_generation);
+        self.last_analysis_generation = analysis_generation;
+        if confidence >= self.confidence_threshold && elapsed_hops > 0 {
             let target_correction = 1.0 / drift_ratio as f64;
-            self.current_ratio =
-                smooth_drift_ratio(self.current_ratio, target_correction, self.drift_smoothing);
+            self.current_ratio = smooth_drift_ratio(
+                self.current_ratio,
+                target_correction,
+                self.drift_smoothing,
+                elapsed_hops as usize * (2048 / 4),
+                self.sample_rate,
+            );
         }
 
         // Advance the smoother to prevent zipper noise on rapid strength changes.
@@ -485,10 +500,23 @@ impl PndPlugin {
         // 4. Calculate correction ratio (with confidence-based bypass)
         // When confidence is below threshold, freeze the current ratio
         // instead of applying an unreliable correction.
-        if confidence >= self.confidence_threshold {
+        let analysis_generation = self
+            .analyzers
+            .iter()
+            .map(PndAnalyzer::analysis_generation)
+            .max()
+            .unwrap_or(0);
+        let elapsed_hops = analysis_generation.saturating_sub(self.last_analysis_generation);
+        self.last_analysis_generation = analysis_generation;
+        if confidence >= self.confidence_threshold && elapsed_hops > 0 {
             let target_correction = 1.0 / drift_ratio as f64;
-            self.current_ratio =
-                smooth_drift_ratio(self.current_ratio, target_correction, self.drift_smoothing);
+            self.current_ratio = smooth_drift_ratio(
+                self.current_ratio,
+                target_correction,
+                self.drift_smoothing,
+                elapsed_hops as usize * (2048 / 4),
+                self.sample_rate,
+            );
         }
         // else: current_ratio stays frozen at its last reliable value
 
@@ -587,11 +615,22 @@ impl PndPlugin {
     }
 }
 
-/// Apply one drift update using the documented smoothing convention:
-/// larger values track more slowly, while zero tracks the target immediately.
-pub(super) fn smooth_drift_ratio(current: f64, target: f64, smoothing: f32) -> f64 {
-    let smoothing = f64::from(smoothing.clamp(0.0, 1.0));
-    current + (target - current) * (1.0 - smoothing)
+/// Apply a sample-clock-derived one-pole update. `time_seconds` is the time
+/// constant, so callback partitioning cannot alter convergence speed.
+pub(super) fn smooth_drift_ratio(
+    current: f64,
+    target: f64,
+    time_seconds: f32,
+    elapsed_frames: usize,
+    sample_rate: u32,
+) -> f64 {
+    if elapsed_frames == 0 || sample_rate == 0 {
+        return current;
+    }
+    let tau = f64::from(time_seconds.max(f32::MIN_POSITIVE));
+    let elapsed = elapsed_frames as f64 / sample_rate as f64;
+    let alpha = 1.0 - (-elapsed / tau).exp();
+    current + (target - current) * alpha
 }
 
 /// Combine channel observations without allowing silent or low-confidence
@@ -749,7 +788,11 @@ impl Plugin for PndPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("PND sample rate must be non-zero".to_string());
+        }
         self.sample_rate = sample_rate;
+        self.last_analysis_generation = 0;
         self.init_resampler()?;
         self.init_analyzers();
 
@@ -936,6 +979,7 @@ impl Plugin for PndPlugin {
         }
         self.current_ratio = 1.0;
         self.last_drift_ratio = 1.0;
+        self.last_analysis_generation = 0;
         self.input_ring_write_pos = 0;
         self.input_ring_read_pos = 0;
         self.input_ring_count = 0;

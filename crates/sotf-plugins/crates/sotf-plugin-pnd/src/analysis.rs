@@ -46,6 +46,7 @@ pub struct PndAnalyzer {
     last_confidence: f32,
     last_matched_partials: usize,
     last_total_peaks: usize,
+    analysis_generation: u64,
 }
 
 impl PndAnalyzer {
@@ -86,6 +87,7 @@ impl PndAnalyzer {
             last_confidence: 0.0,
             last_matched_partials: 0,
             last_total_peaks: 0,
+            analysis_generation: 0,
         }
     }
 
@@ -103,6 +105,7 @@ impl PndAnalyzer {
     }
 
     fn process_fft_frame(&mut self) {
+        self.analysis_generation = self.analysis_generation.saturating_add(1);
         // Read ring buffer directly into fft.time_buffer, then apply the window
         // in-place — fusing what was two passes (read_window + multiply) into one.
         self.ring.read_window(&mut self.fft.time_buffer);
@@ -249,6 +252,13 @@ impl PndAnalyzer {
         self.last_total_peaks
     }
 
+    /// Number of completed analysis hops. Callers use this sample-clock
+    /// generation to apply control smoothing once per new estimate rather
+    /// than once per arbitrarily partitioned host callback.
+    pub fn analysis_generation(&self) -> u64 {
+        self.analysis_generation
+    }
+
     /// Get the matched peaks (frequency, magnitude) from the last frame.
     pub fn current_matched_peaks(&self) -> &[(f32, f32)] {
         &self.matched_peaks
@@ -275,6 +285,7 @@ impl PndAnalyzer {
         self.last_confidence = 0.0;
         self.last_matched_partials = 0;
         self.last_total_peaks = 0;
+        self.analysis_generation = 0;
     }
 }
 

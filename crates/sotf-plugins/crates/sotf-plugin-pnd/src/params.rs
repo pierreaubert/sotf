@@ -45,17 +45,17 @@ pub const PARAMS: &[ParamSpec] = &[
     .setup()
     .doc("FFT analysis window size"),
     ParamSpec::float(
-        "Drift Smoothing",
+        "Drift Time",
         "drift_smoothing",
         0.1,
         0.001,
         1.0,
         0.001,
-        "",
+        "ms",
         "General",
     )
     .scaled(1000.0)
-    .doc("Pitch drift low-pass smoothing"),
+    .doc("Sample-clock pitch-drift smoothing time constant"),
     ParamSpec::bool_param("Multi-Channel", "multi_channel_analysis", true, "Analysis")
         .structural()
         .setup()
