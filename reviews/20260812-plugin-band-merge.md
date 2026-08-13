@@ -2,6 +2,21 @@
 
 ## Remediation status
 
+Coverage follow-up in version 0.5.7:
+
+- The companion BandSplit -> BandMerge path now has an end-to-end signal
+  corpus covering LR24/LR48, two through four bands, 32/48/96/192 kHz, and
+  1/2/6/12-channel layouts. Deterministic impulse-plus-noise renders are
+  bit-identical across contiguous and irregular callback partitions.
+- Coherent-tone probes at low, mid, high, and sample-rate-relative frequencies
+  establish bounded reconstruction magnitude (within 0.2 dB), finite phase,
+  and greater than 0.999 tonal correlation without pretending that cascaded
+  IIR multiband output is sample-aligned with the input.
+- A once-per-frame dispatch prototype measured about 68% more throughput for
+  6x4 and 47% for 8x8, but about 16% less throughput for the common 2x4 case.
+  Because the result was not a consistent material win, it was removed; the
+  existing explicit 2--8-band reductions and generic scalar fallback remain.
+
 Final exhaustive follow-up in version 0.5.6:
 
 - Processing now requires initialization and the initialized sample rate, in

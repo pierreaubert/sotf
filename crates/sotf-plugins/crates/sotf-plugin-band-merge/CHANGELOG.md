@@ -1,3 +1,16 @@
+# 0.5.7
+
+## Reconstruction corpus and profiling
+
+- Add an end-to-end BandSplit -> BandMerge reconstruction corpus for LR24 and
+  LR48, two through four bands, 32--192 kHz, and 1/2/6/12-channel layouts.
+  Impulse-plus-noise renders are bit-identical across contiguous and irregular
+  callback partitions, while coherent-tone probes bound gain error and verify
+  phase-stable, highly correlated output.
+- Profile a once-per-frame band-count dispatch against the existing unrolled
+  scalar reduction. It materially helped 6x4 and 8x8 layouts, but regressed the
+  common 2x4 layout, so the mixed-result prototype was not retained.
+
 # 0.5.6
 
 ## Exhaustive review follow-up

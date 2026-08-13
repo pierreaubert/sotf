@@ -10500,13 +10500,14 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-band-merge"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "criterion",
  "proptest 1.11.0",
  "serde",
  "serde_json",
  "sotf-host",
+ "sotf-plugin-band-split",
 ]
 
 [[package]]

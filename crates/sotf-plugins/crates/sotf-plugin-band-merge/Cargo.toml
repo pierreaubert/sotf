@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-band-merge"
 description = "SOTF Band Merge plugin - merge frequency bands"
-version = "0.5.6"
+version = "0.5.7"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -28,6 +28,7 @@ serde_json = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 proptest = { workspace = true }
+sotf-plugin-band-split = { workspace = true }
 
 [[bench]]
 name = "band-merge-benchmark"
