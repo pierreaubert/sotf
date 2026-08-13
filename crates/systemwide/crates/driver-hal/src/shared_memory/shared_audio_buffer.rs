@@ -982,7 +982,14 @@ impl SharedAudioBuffer {
         let (_, used) = self.compute_repair(write_pos, read_pos);
         let audio_capacity = self.current_audio_capacity();
         let available = audio_capacity.saturating_sub(used);
-        let to_write = sample_count.min(available);
+        // A committed ring transaction must end on an interleaved frame
+        // boundary. In particular, a nearly-full ring may have a remainder of
+        // free sample slots that is smaller than one complete frame.
+        let to_write = sample_count
+            .min(available)
+            .checked_div(channel_count)
+            .unwrap_or(0)
+            * channel_count;
 
         if to_write == 0 {
             return 0;

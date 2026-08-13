@@ -42,11 +42,27 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 
 /// HAL Output plugin parameters.
 ///
-/// This plugin has no runtime-settable parameters — the channel count is
-/// fixed at construction time. The struct exists to satisfy the
-/// `PluginParamDef` interface required for UI registration.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Params {}
+/// This plugin has no runtime-settable parameters. Channel count is persisted
+/// here so presets can reconstruct the sink layout, but remains construction-only.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Params {
+    /// Construction-only input layout. This is serialized with presets but is
+    /// deliberately absent from `PARAMS`, so hosts cannot automate it.
+    #[serde(default = "default_channels", alias = "output_channels")]
+    pub channels: usize,
+}
+
+const fn default_channels() -> usize {
+    2
+}
+
+impl Default for Params {
+    fn default() -> Self {
+        Self {
+            channels: default_channels(),
+        }
+    }
+}
 
 // ============================================================================
 // PluginParamDef implementation
@@ -89,27 +105,26 @@ mod tests {
 
     #[test]
     fn roundtrip_serde() {
-        // Empty struct serialises to `{}` and deserialises back without error.
-        let original = Params::default();
+        let original = Params { channels: 6 };
         let json = serde_json::to_value(&original).unwrap();
-        let _restored: Params = serde_json::from_value(json).unwrap();
+        let restored: Params = serde_json::from_value(json).unwrap();
+        assert_eq!(restored, original);
     }
 
     #[test]
     fn deserialize_empty_json_uses_defaults() {
         // Old presets with unknown fields (e.g. `output_channels`) must not fail.
-        let _p: Params = serde_json::from_str("{}").unwrap();
+        let p: Params = serde_json::from_str("{}").unwrap();
+        assert_eq!(p.channels, 2);
     }
 
     #[test]
-    fn deserialize_old_preset_with_output_channels_ignores_unknown_field() {
-        // Old presets that serialised `output_channels` must be accepted silently
-        // via serde's default deny_unknown_fields absence.
-        let result: Result<Params, _> = serde_json::from_str(r#"{"output_channels": 4}"#);
-        // serde by default ignores unknown fields, so this should succeed.
-        assert!(
-            result.is_ok(),
-            "Old preset with output_channels should deserialise without error"
+    fn deserialize_old_preset_migrates_output_channels() {
+        let params: Params = serde_json::from_str(r#"{"output_channels": 4}"#).unwrap();
+        assert_eq!(params.channels, 4);
+        assert_eq!(
+            serde_json::to_value(params).unwrap(),
+            serde_json::json!({"channels": 4})
         );
     }
 }

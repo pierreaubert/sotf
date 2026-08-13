@@ -1,3 +1,47 @@
+# 0.5.11
+
+## Fixes
+
+- Add a non-realtime lifecycle service for daemon reconnection, shared-memory
+  replacement, configuration acknowledgement, readiness, and key rotation.
+- Replace the compacting pending vector with a bounded frame-aligned FIFO;
+  deterministic newest-frame drops preserve older audio ordering and are
+  counted rather than returning an error after partial consumption.
+- Move transport diagnostics out of automatable parameters into versioned,
+  lossless 64-bit telemetry with requested, written, queued, dropped,
+  connection, key, and state information.
+- Persist construction-only channel layout in canonical parameters and migrate
+  legacy `output_channels` presets.
+- Make plain shared-memory writes commit complete interleaved frames only.
+
+## Testing
+
+- Added queue saturation/recovery ordering, lifecycle, key/config state,
+  counter-width, serialization migration, invalid writer, zero-allocation
+  maximum-channel, and partial-frame ring-wrap tests.
+
+# 0.5.10
+
+## Fixes
+
+- Treat `HalOutputWriter::write` results as frames, fixing false partial-write
+  diagnostics for every multichannel stream.
+- Validate initialization, transport sample rate/channel count, runtime sample
+  rate, checked frame/sample arithmetic, exact input size, and empty sink output.
+- Retain frame-aligned unwritten tails in a preallocated queue and retry them
+  before newer audio instead of silently discarding partial writes.
+- Stop reporting ring capacity as fixed graph latency and mark engine readiness
+  across plugin initialization/drop.
+- Revalidate transport format-change notifications and reject invalid writer
+  frame counts.
+- Remove realtime warning logs; expose partial writes as bounded lock-free
+  backpressure telemetry instead.
+
+## Testing
+
+- Added an injectable writer seam with cross-platform full/partial write,
+  ordering, format, initialization, overflow, sink-output, and latency tests.
+
 # 0.5.9
 
 ## Fixes (from code review)

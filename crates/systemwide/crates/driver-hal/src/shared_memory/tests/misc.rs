@@ -58,6 +58,36 @@ fn test_shared_memory_roundtrip_bit_exact() {
 }
 
 #[test]
+fn plain_writer_never_commits_a_partial_interleaved_frame() {
+    let temp_file = create_mock_shared_memory(48_000, 4, 2);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+    let capacity = buffer.current_audio_capacity() as u64;
+
+    buffer
+        .header()
+        .write_position
+        .store(capacity - 1, Ordering::Release);
+    buffer.header().read_position.store(0, Ordering::Release);
+    assert_eq!(buffer.write_audio(&[1.0, 2.0]), 0);
+    assert_eq!(
+        buffer.header().write_position.load(Ordering::Acquire),
+        capacity - 1
+    );
+
+    // Three free slots can accept exactly one stereo frame, including across
+    // the physical wrap boundary, while leaving the odd remainder unused.
+    buffer
+        .header()
+        .write_position
+        .store(capacity - 3, Ordering::Release);
+    assert_eq!(buffer.write_audio(&[3.0, 4.0, 5.0, 6.0]), 1);
+    assert_eq!(
+        buffer.header().write_position.load(Ordering::Acquire),
+        capacity - 1
+    );
+}
+
+#[test]
 fn test_config_negotiation_round_trip() {
     let sample_rate = 48000;
     let buffer_frames = 1024;

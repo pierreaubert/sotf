@@ -37,9 +37,40 @@ impl HalOutputWriter {
         }
     }
 
+    /// Re-open the daemon-owned mapping. This may perform filesystem I/O and
+    /// must only be called from a control thread.
+    pub fn reconnect(&mut self) -> std::io::Result<()> {
+        let replacement = Self::new().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "HAL output shared memory is unavailable",
+            )
+        })?;
+        *self = replacement;
+        Ok(())
+    }
+
+    /// Whether plaintext transport is active or the cached cipher matches the
+    /// mapping's current key fingerprint.
+    pub fn encryption_key_ready(&self) -> bool {
+        let Some(buffer) = self.buffer.as_ref() else {
+            return false;
+        };
+        if !buffer.is_encrypted() {
+            return true;
+        }
+        self.cipher
+            .as_ref()
+            .is_some_and(|cipher| cipher.fingerprint() == &buffer.key_fingerprint())
+    }
+
     /// Re-load the session key from disk and replace the cached cipher.
     pub fn reload_cipher(&mut self) -> std::io::Result<()> {
         if let Some(buf) = self.buffer.as_ref() {
+            if !buf.is_encrypted() {
+                self.cipher = None;
+                return Ok(());
+            }
             let key = crate::encryption::load_session_key()?;
             let cipher = crate::encryption::AudioCipher::new(&key);
             if cipher.fingerprint() == &buf.key_fingerprint() {
