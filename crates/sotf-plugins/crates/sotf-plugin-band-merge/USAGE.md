@@ -50,9 +50,22 @@ Each output channel is the sum of all corresponding band channels.
 ## Tips & Best Practices
 
 - The band count must match the number of bands from the splitting plugin.
-- Band Merge simply sums — if the splitting used Linkwitz-Riley filters, the sum perfectly reconstructs the original signal (assuming no per-band processing).
+- Band Merge simply sums. A two-band Linkwitz-Riley split is magnitude-
+  complementary but phase-shifted; cascaded multiband outputs have unequal group
+  delay and are not phase-perfect even without per-band processing.
 - No gain scaling is applied — if per-band processing added gain, the sum may clip.
 - Denormals are flushed after merging to prevent CPU spikes.
+
+## Host and realtime contract
+
+- Initialize before processing. Callback rate must match initialization and both
+  buffers must have exact checked lengths.
+- Band count is limited to 2–8 and changes require graph replacement; exact
+  no-op writes succeed. Presets reject unknown fields and invalid gains.
+- Gain and mute transitions use one allocation-free 10 ms sample-rate-aware
+  smoother. Reset snaps each band to its configured mute/gain target.
+- Reading `reconstruction_error_db` arms one callback to compute normalized
+  RMS(`output - unity-band-sum`) without logging or allocation.
 
 ## Signal Flow
 

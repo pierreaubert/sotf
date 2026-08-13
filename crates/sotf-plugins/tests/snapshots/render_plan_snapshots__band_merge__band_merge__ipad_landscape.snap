@@ -38,7 +38,8 @@ expression: plan
             2.0,
             8.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     }

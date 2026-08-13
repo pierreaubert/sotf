@@ -76,12 +76,14 @@ fn parameters_include_bands_and_per_band_controls() {
 fn bands_roundtrip() {
     let mut plugin = BandMergePlugin::new(1, 2).unwrap();
     plugin.initialize(SR).unwrap();
-    plugin
-        .set_parameter(ParameterId::from("bands"), ParameterValue::Int(4))
-        .unwrap();
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("bands"), ParameterValue::Int(4))
+            .is_err()
+    );
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("bands")),
-        Some(ParameterValue::Int(4))
+        Some(ParameterValue::Int(2))
     );
 }
 
@@ -179,13 +181,14 @@ fn mute_silences_band() {
         .unwrap();
 
     let dc = 0.4f32;
-    let input = vec![dc; FRAMES * 2];
-    let mut output = vec![0.0f32; FRAMES];
+    let frames = 4800;
+    let input = vec![dc; frames * 2];
+    let mut output = vec![0.0f32; frames];
     plugin
-        .process(&input, &mut output, &ProcessContext::new(SR, FRAMES))
+        .process(&input, &mut output, &ProcessContext::new(SR, frames))
         .unwrap();
 
-    let last = output[FRAMES - 1];
+    let last = output[frames - 1];
     assert!(
         (last - dc).abs() < 1e-4,
         "muted band 0 should leave only band 1: expected {} got {}",
@@ -272,15 +275,17 @@ fn reset_then_process_continues() {
 }
 
 #[test]
-fn changing_bands_updates_channel_counts() {
+fn changing_bands_requires_plugin_rebuild() {
     let mut plugin = BandMergePlugin::new(2, 2).unwrap();
     plugin.initialize(SR).unwrap();
     assert_eq!(plugin.input_channels(), 4);
 
-    plugin
-        .set_parameter(ParameterId::from("bands"), ParameterValue::Int(3))
-        .unwrap();
-    assert_eq!(plugin.input_channels(), 6);
+    assert!(
+        plugin
+            .set_parameter(ParameterId::from("bands"), ParameterValue::Int(3))
+            .is_err()
+    );
+    assert_eq!(plugin.input_channels(), 4);
     assert_eq!(plugin.output_channels(), 2);
 }
 

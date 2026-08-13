@@ -11,6 +11,78 @@ use sotf_host::plugin::{
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use std::cell::Cell;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum BandSumPath {
+    Bands2,
+    Bands3,
+    Bands4,
+    Bands5,
+    Bands6,
+    Bands7,
+    Bands8,
+    Generic(usize),
+}
+
+impl BandSumPath {
+    #[inline]
+    pub(super) fn for_bands(bands: usize) -> Self {
+        match bands {
+            2 => Self::Bands2,
+            3 => Self::Bands3,
+            4 => Self::Bands4,
+            5 => Self::Bands5,
+            6 => Self::Bands6,
+            7 => Self::Bands7,
+            8 => Self::Bands8,
+            count => Self::Generic(count),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn is_unrolled(self) -> bool {
+        !matches!(self, Self::Generic(_))
+    }
+}
+
+#[inline(always)]
+pub(super) fn sum_bands(
+    input_frame: &[f32],
+    output_channels: usize,
+    channel: usize,
+    gains: &[f32; MAX_BANDS],
+    path: BandSumPath,
+) -> f32 {
+    macro_rules! term {
+        ($band:expr) => {
+            input_frame[$band * output_channels + channel] * gains[$band]
+        };
+    }
+
+    match path {
+        BandSumPath::Bands2 => term!(0) + term!(1),
+        BandSumPath::Bands3 => (term!(0) + term!(1)) + term!(2),
+        BandSumPath::Bands4 => ((term!(0) + term!(1)) + term!(2)) + term!(3),
+        BandSumPath::Bands5 => (((term!(0) + term!(1)) + term!(2)) + term!(3)) + term!(4),
+        BandSumPath::Bands6 => {
+            ((((term!(0) + term!(1)) + term!(2)) + term!(3)) + term!(4)) + term!(5)
+        }
+        BandSumPath::Bands7 => {
+            (((((term!(0) + term!(1)) + term!(2)) + term!(3)) + term!(4)) + term!(5)) + term!(6)
+        }
+        BandSumPath::Bands8 => {
+            ((((((term!(0) + term!(1)) + term!(2)) + term!(3)) + term!(4)) + term!(5)) + term!(6))
+                + term!(7)
+        }
+        BandSumPath::Generic(bands) => {
+            let mut sum = 0.0;
+            for band in 0..bands {
+                sum += term!(band);
+            }
+            sum
+        }
+    }
+}
+
 pub struct BandMergePlugin {
     pub(super) output_channels: usize,
     pub(super) num_bands: usize,
@@ -33,16 +105,23 @@ pub struct BandMergePlugin {
     pub(super) band_gain_smoothers: [sotf_host::smoothing::Smoother; MAX_BANDS],
     /// Sample rate, needed to reinitialise smoothers on initialize().
     pub(super) sample_rate: u32,
+    pub(super) initialized: bool,
 }
 
 impl BandMergePlugin {
     pub fn new(output_channels: usize, bands: usize) -> Result<Self, String> {
+        if output_channels == 0 {
+            return Err("Band Merge requires at least one output channel".into());
+        }
         if bands < 2 {
             return Err("Min 2 bands".into());
         }
         if bands > MAX_BANDS {
             return Err(format!("Max {} bands", MAX_BANDS));
         }
+        output_channels
+            .checked_mul(bands)
+            .ok_or_else(|| "Band Merge channel count overflow".to_string())?;
         // Default sample rate before initialize() is called.
         const DEFAULT_SR: u32 = 48000;
         let mut p = Self {
@@ -59,6 +138,7 @@ impl BandMergePlugin {
                 sotf_host::smoothing::Smoother::new(1.0, GAIN_SMOOTH_MS, DEFAULT_SR)
             }),
             sample_rate: DEFAULT_SR,
+            initialized: false,
         };
         p.rebuild_cached_parameters();
         Ok(p)
@@ -69,6 +149,16 @@ impl BandMergePlugin {
         params: &BandMergePluginParams,
     ) -> Result<Self, String> {
         let mut p = Self::new(output_channels, params.bands)?;
+        for (index, &gain) in params.band_gains_db.iter().enumerate() {
+            if index >= params.bands {
+                break;
+            }
+            if !gain.is_finite() || !(-60.0..=24.0).contains(&gain) {
+                return Err(format!(
+                    "band_{index}_gain_db must be finite and in [-60, 24], got {gain}"
+                ));
+            }
+        }
         for (i, &g) in params.band_gains_db.iter().enumerate().take(params.bands) {
             p.band_gains_db[i] = g;
             p.band_gains_linear[i] = db_to_linear(g);
@@ -77,6 +167,9 @@ impl BandMergePlugin {
         }
         for (i, &m) in params.band_mutes.iter().enumerate().take(params.bands) {
             p.band_mutes[i] = m;
+            if m {
+                p.band_gain_smoothers[i].reset(0.0);
+            }
         }
         p.rebuild_cached_parameters();
         Ok(p)
@@ -113,7 +206,9 @@ impl BandMergePlugin {
                 -60.0,
                 60.0,
             )
-            .with_description("Deviation from perfect reconstruction in dB (read-only diagnostic)")
+            .with_description(
+                "Normalized RMS(output - unity-band sum) in dB (read-only diagnostic)",
+            )
             .with_group("Diagnostics")
             .with_importance(ParameterImportance::FineTuning),
         );
@@ -123,10 +218,12 @@ impl BandMergePlugin {
 
 impl Plugin for BandMergePlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("BandMerge", "1.1.0", "Sotf")
+        PluginInfo::new("BandMerge", env!("CARGO_PKG_VERSION"), "Sotf")
     }
     fn input_channels(&self) -> usize {
-        self.output_channels * self.num_bands
+        self.output_channels
+            .checked_mul(self.num_bands)
+            .expect("validated Band Merge channel count")
     }
     fn output_channels(&self) -> usize {
         self.output_channels
@@ -152,8 +249,12 @@ impl Plugin for BandMergePlugin {
             if !(2..=MAX_BANDS).contains(&v) {
                 return Err(format!("bands must be 2..={}", MAX_BANDS));
             }
-            self.num_bands = v;
-            self.rebuild_cached_parameters();
+            if v != self.num_bands {
+                return Err(format!(
+                    "bands is structural; rebuild Band Merge to change {} to {v}",
+                    self.num_bands
+                ));
+            }
             return Ok(());
         }
         // Check per-band parameters using prefix parsing (no heap allocation)
@@ -165,13 +266,25 @@ impl Plugin for BandMergePlugin {
                     let v = value
                         .as_float()
                         .ok_or_else(|| format!("band_{}_gain_db must be a float", i))?;
-                    if v.is_finite() {
-                        self.band_gains_db[i] = v;
-                        let linear = db_to_linear(v);
-                        self.band_gains_linear[i] = linear;
-                        // Update smoother target so gain transitions are glitch-free.
-                        self.band_gain_smoothers[i].set_target(linear);
-                        self.rebuild_cached_parameters();
+                    if !v.is_finite() || !(-60.0..=24.0).contains(&v) {
+                        return Err(format!(
+                            "band_{i}_gain_db must be finite and in [-60, 24], got {v}"
+                        ));
+                    }
+                    self.band_gains_db[i] = v;
+                    let linear = db_to_linear(v);
+                    self.band_gains_linear[i] = linear;
+                    self.band_gain_smoothers[i].set_target(if self.band_mutes[i] {
+                        0.0
+                    } else {
+                        linear
+                    });
+                    if let Some(parameter) = self
+                        .cached_parameters
+                        .iter_mut()
+                        .find(|parameter| parameter.id == id)
+                    {
+                        parameter.default_value = ParameterValue::Float(v);
                     }
                     return Ok(());
                 }
@@ -183,7 +296,18 @@ impl Plugin for BandMergePlugin {
                     .as_bool()
                     .ok_or_else(|| format!("band_{}_mute must be a bool", i))?;
                 self.band_mutes[i] = v;
-                self.rebuild_cached_parameters();
+                self.band_gain_smoothers[i].set_target(if v {
+                    0.0
+                } else {
+                    self.band_gains_linear[i]
+                });
+                if let Some(parameter) = self
+                    .cached_parameters
+                    .iter_mut()
+                    .find(|parameter| parameter.id == id)
+                {
+                    parameter.default_value = ParameterValue::Bool(v);
+                }
                 return Ok(());
             }
         }
@@ -214,18 +338,28 @@ impl Plugin for BandMergePlugin {
         None
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("Band Merge sample rate must be greater than zero".into());
+        }
         self.sample_rate = sample_rate;
         for i in 0..MAX_BANDS {
             self.band_gain_smoothers[i].set_time(GAIN_SMOOTH_MS, sample_rate);
         }
+        self.initialized = true;
         Ok(())
     }
     fn reset(&mut self) {
         // Snap all smoothers to their current target so playback resumes
         // without a ramp artefact after a transport reset.
         for i in 0..self.num_bands {
-            self.band_gain_smoothers[i].reset(self.band_gains_linear[i]);
+            self.band_gain_smoothers[i].reset(if self.band_mutes[i] {
+                0.0
+            } else {
+                self.band_gains_linear[i]
+            });
         }
+        self.reconstruction_error_requested.set(false);
+        self.reconstruction_error_db = 0.0;
     }
 
     fn process(
@@ -234,71 +368,82 @@ impl Plugin for BandMergePlugin {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
+        if !self.initialized {
+            return Err("Band Merge must be initialized before processing".into());
+        }
+        if context.sample_rate != self.sample_rate {
+            return Err(format!(
+                "Band Merge context rate {} Hz differs from initialized rate {} Hz",
+                context.sample_rate, self.sample_rate
+            ));
+        }
         enable_ftz_daz();
         let num_frames = context.num_frames;
         let out_ch = self.output_channels;
-        let in_ch = out_ch * self.num_bands;
-
-        // Accumulate RMS for reconstruction validation:
-        // - reference_rms: sum of all bands (unity gain, no mute) -- what perfect reconstruction would be
-        // - output_rms: actual summed output with gains and mutes applied
-        let measure_reconstruction_error = self.reconstruction_error_requested.replace(false);
-        let mut reference_energy = 0.0_f64;
-        let mut output_energy = 0.0_f64;
-
-        // Pre-compute effective gains for this frame block:
-        // muted bands have effective gain 0.0, which eliminates the per-sample branch
-        // and allows the inner loop to be auto-vectorized by the compiler.
-        let mut effective_gains = [0.0f32; MAX_BANDS];
-        for (band, eg) in effective_gains.iter_mut().enumerate().take(self.num_bands) {
-            // Advance the smoother by `num_frames` steps. Using next_n() is
-            // equivalent to advancing sample-by-sample for the purpose of the
-            // block-wise smoother, and avoids calling it inside the innermost loop.
-            let smoothed = self.band_gain_smoothers[band].next_n(num_frames);
-            *eg = if self.band_mutes[band] { 0.0 } else { smoothed };
+        let in_ch = out_ch
+            .checked_mul(self.num_bands)
+            .ok_or_else(|| "Band Merge input channel count overflow".to_string())?;
+        let expected_input = num_frames
+            .checked_mul(in_ch)
+            .ok_or_else(|| "Band Merge input length overflow".to_string())?;
+        let expected_output = num_frames
+            .checked_mul(out_ch)
+            .ok_or_else(|| "Band Merge output length overflow".to_string())?;
+        if input.len() != expected_input {
+            return Err(format!(
+                "Band Merge expected {expected_input} input samples, got {}",
+                input.len()
+            ));
+        }
+        if output.len() != expected_output {
+            return Err(format!(
+                "Band Merge expected {expected_output} output samples, got {}",
+                output.len()
+            ));
         }
 
+        // Accumulate normalized RMS error against the unity-gain, unmuted sum.
+        let measure_reconstruction_error = self.reconstruction_error_requested.replace(false);
+        let mut reference_energy = 0.0_f64;
+        let mut error_energy = 0.0_f64;
+
+        let mut effective_gains = [0.0f32; MAX_BANDS];
+        let band_sum_path = BandSumPath::for_bands(self.num_bands);
+
         for frame in 0..num_frames {
+            for (band, gain) in effective_gains.iter_mut().enumerate().take(self.num_bands) {
+                *gain = self.band_gain_smoothers[band].advance();
+            }
             let in_off = frame * in_ch;
             let out_off = frame * out_ch;
+            let input_frame = &input[in_off..in_off + in_ch];
             for ch in 0..out_ch {
-                let mut sum = 0.0f32;
-                let mut ref_sum = 0.0f32;
-                for band in 0..self.num_bands {
-                    let sample = input[in_off + band * out_ch + ch];
-                    if measure_reconstruction_error {
-                        ref_sum += sample;
-                    }
-                    sum += sample * effective_gains[band];
-                }
+                let sum = sum_bands(input_frame, out_ch, ch, &effective_gains, band_sum_path);
                 output[out_off + ch] = sum;
                 if measure_reconstruction_error {
+                    let mut ref_sum = 0.0_f32;
+                    for band in 0..self.num_bands {
+                        ref_sum += input_frame[band * out_ch + ch];
+                    }
+                    let error = sum - ref_sum;
                     reference_energy += (ref_sum as f64) * (ref_sum as f64);
-                    output_energy += (sum as f64) * (sum as f64);
+                    error_energy += (error as f64) * (error as f64);
                 }
             }
         }
 
-        // Compute reconstruction error in dB
+        // Compute normalized reconstruction error in dB. The floor represents
+        // exact reconstruction; the ceiling keeps a zero-reference mismatch finite.
         if measure_reconstruction_error {
             let total_samples = (num_frames * out_ch) as f64;
-            let ref_rms = (reference_energy / total_samples).sqrt();
-            let out_rms = (output_energy / total_samples).sqrt();
-
-            if ref_rms > 1e-10 {
-                let ratio_db = 20.0 * (out_rms / ref_rms).log10();
-                self.reconstruction_error_db = ratio_db as f32;
-
-                if ratio_db.abs() > 3.0 {
-                    log::warn!(
-                        "[BandMerge] Reconstruction error: {:.1} dB deviation from unity-gain sum. \
-                         Check band gains and mute settings.",
-                        ratio_db
-                    );
-                }
+            if total_samples == 0.0 || error_energy == 0.0 {
+                self.reconstruction_error_db = -60.0;
             } else {
-                // Reference is silence -- no meaningful error to report
-                self.reconstruction_error_db = 0.0;
+                let ref_rms = (reference_energy / total_samples).sqrt();
+                let error_rms = (error_energy / total_samples).sqrt();
+                let normalized_error = error_rms / ref_rms.max(1e-10);
+                self.reconstruction_error_db =
+                    (20.0 * normalized_error.log10()).clamp(-60.0, 60.0) as f32;
             }
         }
 

@@ -23,3 +23,9 @@ cargo test -p sotf-plugin-band-merge
 
 - Companion to sotf-plugin-band-split — must be used in pairs
 - Input channel count = base channels × number of bands; output = base channels
+- Initialize before processing; callbacks must match the initialized sample rate
+  and exact overflow-checked interleaved buffer lengths.
+- `bands` is structural. Gain and mute use the same allocation-free 10 ms
+  smoother and reset preserves the configured mute/gain target.
+- `reconstruction_error_db` is an on-demand normalized RMS error metric; the
+  armed callback path must never allocate or log.

@@ -1,5 +1,5 @@
 /// Maximum number of bands supported.
-pub(super) const MAX_BANDS: usize = 32;
+pub(super) const MAX_BANDS: usize = 8;
 
 /// One-pole gain smoother time constant in milliseconds.
 /// At 10 ms the gain reaches ~63% of a step change in ~10 ms,

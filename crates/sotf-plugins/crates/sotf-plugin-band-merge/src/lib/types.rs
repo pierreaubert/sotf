@@ -2,6 +2,7 @@ use super::misc::default_num_bands;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BandMergePluginParams {
     #[serde(default = "default_num_bands")]
     pub bands: usize,

@@ -50,6 +50,7 @@ pub const LAYOUT: PluginLayout = PluginLayout {
 /// the correct default function is enough to support old presets that
 /// don't have the new field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Params {
     #[serde(default = "d_bands")]
     pub bands: usize,
@@ -125,5 +126,10 @@ mod tests {
     fn deserialize_empty_json_uses_defaults() {
         let p: Params = serde_json::from_str("{}").unwrap();
         assert_eq!(p.bands, pk(PARAMS, "bands").default_usize());
+    }
+
+    #[test]
+    fn strict_state_rejects_unknown_fields() {
+        assert!(serde_json::from_str::<Params>(r#"{"bands":2,"obsolete":true}"#).is_err());
     }
 }

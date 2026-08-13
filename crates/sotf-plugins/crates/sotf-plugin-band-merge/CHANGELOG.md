@@ -1,3 +1,45 @@
+# 0.5.6
+
+## Exhaustive review follow-up
+
+- Require initialization and a callback sample rate matching initialization
+  before processing, with deterministic lifecycle regressions.
+- Reject unknown fields in both canonical and facade preset state, and add public
+  factory coverage for channel/band topology and gain validation.
+- Keep host-visible cached gain/mute values synchronized after successful live
+  updates without rebuilding or allocating parameter schemas.
+- Keep engine channel topology in the graph contract rather than serializing it as an unknown Band Merge runtime parameter.
+- Use checked input-channel reporting and tie plugin version to crate metadata.
+
+# 0.5.5
+
+## Fixes
+
+- The armed reconstruction diagnostic is covered by allocation counting and logger interception;
+  its realtime callback path performs neither heap allocation nor logging.
+- `reconstruction_error_db` now reports normalized RMS of the actual output-minus-reference error,
+  with finite -60 dB and +60 dB bounds for exact reconstruction and a cancelled reference.
+- Supported 2–8-band scalar reductions use explicit unrolled kernels. Deterministic dispatch and
+  scalar-reference tests cover every supported band count and 1/2/6/8-channel layouts, with
+  Criterion coverage for 2x2, 2x4, 6x4, and 8x8 channel-by-band configurations.
+
+# 0.5.4
+
+## Fixes
+
+- Reset now preserves each band's mute target instead of restoring muted bands to their configured
+  gain; transport reset cannot unexpectedly re-enable a muted band.
+
+# 0.5.3
+
+## Fixes
+
+- Gain automation now advances and applies the one-pole smoother per sample, making output independent of host callback partitioning.
+- Mute and unmute transitions share the configured-gain smoother instead of stepping immediately to zero or unity.
+- Construction and runtime gain updates reject non-finite or out-of-range values; zero channels, zero sample rate, arithmetic overflow, and inexact buffers return errors before processing state changes.
+- Band count now follows the canonical 2–8 schema and live structural mutation is rejected with a rebuild-required error.
+- Removed realtime diagnostic logging from `process`; the numeric diagnostic remains available through the parameter cache.
+
 # 0.5.2
 
 ## Fixes

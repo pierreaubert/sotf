@@ -22,12 +22,12 @@ use sotf_plugins::{
     GainPlugin, GatePlugin, HissReducerPlugin, IsolatedExternalPlugin,
     IsolatedExternalPluginConfig, LimiterPlugin, LinearPhaseEqPlugin, LoudnessCompensationPlugin,
     LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin, MultibandCompressorPlugin,
-    MultibandExpanderPlugin, ParametricInPlacePlugin, ParametricPluginAdapter, Plugin,
-    PluginDescriptor, PluginFormat, PluginScanStatus, PndPlugin, ProcessContext, ResamplerPlugin,
-    RoomModel, SPEECH_DENOISER_FRAME_SIZE, SaturationPlugin, SpectralCompressorPlugin,
-    SpectralCompressorPluginParams, SpectrumAnalyzerPlugin, SpectrumConfig, SpeechDenoiserPlugin,
-    StereoImagerPlugin, StereoImagerPluginParams, TransientShaperPlugin, UpmixerPlugin, XtcPlugin,
-    XtcPluginParams,
+    MultibandExpanderPlugin, ParameterId, ParameterValue, ParametricInPlacePlugin,
+    ParametricPluginAdapter, Plugin, PluginDescriptor, PluginFormat, PluginScanStatus, PndPlugin,
+    ProcessContext, ResamplerPlugin, RoomModel, SPEECH_DENOISER_FRAME_SIZE, SaturationPlugin,
+    SpectralCompressorPlugin, SpectralCompressorPluginParams, SpectrumAnalyzerPlugin,
+    SpectrumConfig, SpeechDenoiserPlugin, StereoImagerPlugin, StereoImagerPluginParams,
+    TransientShaperPlugin, UpmixerPlugin, XtcPlugin, XtcPluginParams,
 };
 #[cfg(any(
     feature = "external-plugin-clap",
@@ -35,7 +35,42 @@ use sotf_plugins::{
     feature = "external-plugin-au"
 ))]
 use std::path::PathBuf;
+use std::sync::Once;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
+
+thread_local! {
+    static COUNT_REALTIME_LOGS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+struct RealtimeLogCounter;
+
+static REALTIME_LOG_COUNTER: RealtimeLogCounter = RealtimeLogCounter;
+static REALTIME_LOG_INIT: Once = Once::new();
+static REALTIME_LOG_RECORDS: AtomicUsize = AtomicUsize::new(0);
+
+impl log::Log for RealtimeLogCounter {
+    fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn log(&self, _record: &log::Record<'_>) {
+        COUNT_REALTIME_LOGS.with(|enabled| {
+            if enabled.get() {
+                REALTIME_LOG_RECORDS.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+    }
+
+    fn flush(&self) {}
+}
+
+fn initialize_realtime_log_counter() {
+    REALTIME_LOG_INIT.call_once(|| {
+        log::set_logger(&REALTIME_LOG_COUNTER).expect("test logger should install once");
+        log::set_max_level(log::LevelFilter::Trace);
+    });
+}
 
 fn assert_parametric_in_place_process_zero_alloc<P>(
     name: &str,
@@ -454,6 +489,36 @@ fn test_band_merge_zero_alloc() {
             let _ = plugin.get_data();
         }
     });
+}
+
+#[test]
+#[serial]
+fn test_band_merge_armed_diagnostic_has_no_allocations_or_logs() {
+    initialize_realtime_log_counter();
+    let mut plugin = BandMergePlugin::new(2, 4).unwrap();
+    plugin.initialize(SAMPLE_RATE).unwrap();
+    plugin
+        .set_parameter(ParameterId::from("band_0_mute"), ParameterValue::Bool(true))
+        .unwrap();
+    plugin.reset();
+
+    let input = generate_test_buffer(BUFFER_SIZE, 8);
+    let mut output = vec![0.0_f32; BUFFER_SIZE * 2];
+    let context = ProcessContext::new(SAMPLE_RATE, BUFFER_SIZE);
+    let diagnostic_id = ParameterId::from("reconstruction_error_db");
+    let _ = plugin.get_parameter(&diagnostic_id);
+    REALTIME_LOG_RECORDS.store(0, Ordering::Relaxed);
+
+    COUNT_REALTIME_LOGS.with(|enabled| enabled.set(true));
+    assert_no_allocs("BandMergePlugin armed diagnostic", || {
+        plugin.process(&input, &mut output, &context).unwrap();
+    });
+    COUNT_REALTIME_LOGS.with(|enabled| enabled.set(false));
+    assert_eq!(
+        REALTIME_LOG_RECORDS.load(Ordering::Relaxed),
+        0,
+        "armed Band Merge diagnostic logged from the realtime callback"
+    );
 }
 
 #[test]
