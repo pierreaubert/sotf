@@ -1,3 +1,59 @@
+# 0.5.8
+
+## Review closure
+
+- Replace hand-written normal-equation/Gauss-Jordan inversion with a
+  rank-revealing SVD pseudoinverse. Regularization and rank thresholds scale
+  with the largest singular value; each matrix exposes rank, condition,
+  reconstruction-error, and peak-gain diagnostics and rejects unbounded gain.
+- Support bounded underdetermined decoding, including TOA to current layouts,
+  while explicitly reporting discarded spatial rank.
+- Remove the fixed 8192-frame limit and approximately 1 MiB dual-band scratch
+  reservation. Dual-band splitting and decoding now use two fixed 16-sample
+  Ambisonics frames and remain allocation-free for any validated host block.
+- Flush subnormal dual-band inputs before persistent IIR state and retain the
+  block-wide NaN/Inf rejection policy.
+- Advertise all supported ACN/SN3D input widths (4/9/16), enforce them in both
+  factories, and add catalog, factory, bridge-choice, and exported-layout
+  round-trip coverage.
+- Consolidate serialized/runtime state onto `params::Params`, fix the first
+  out-of-range ACN guard, add dense-direction and all-layout/order matrix
+  quality tests, and expand benchmarks across every output layout plus
+  single/dual-band worst-case TOA at 64/512/2048 frames. QA now gates both the
+  default path and worst-case 16-in/16-out dual-band callback.
+
+# 0.5.7
+
+## Fixes (2026-08-12 follow-up)
+
+- Keep the factory regression aligned with the FOA-only built-in catalog and
+  verify that higher-order layouts remain explicit custom configurations.
+
+# 0.5.6
+
+## Fixes (2026-08-12 review follow-up)
+
+- Align the built-in catalog and channel-count conformance checks with the
+  factory's valid FOA (4-channel) configuration.
+- Do not advertise SOA/TOA until matching built-in target layouts and output
+  contracts are available; the current fixed 5.1 catalog default is FOA-only.
+
+# 0.5.5
+
+## Fixes (2026-08-12 review remediation)
+
+- Correct max-rE degree weights for orders 1–3 using the exact Legendre-root
+  definition, with per-ACN golden tests.
+- Reject invalid orders instead of silently clamping them.
+- Reject live structural changes and require host reconstruction, preventing
+  stale channel topology and uninitialized scratch after parameter updates.
+- Represent `target_layout` as the declared integer choice index and align the
+  canonical parameter type key with `ambisonics_decoder`.
+- Reject invalid dual-band sample rates, process-before-initialize, blocks over
+  8192 frames, and non-finite input before persistent filter state is mutated.
+- Correct product documentation: this decoder uses regularized mode matching,
+  not AllRAD/VBAP.
+
 # 0.5.4
 
 ## Fixes (from code review)

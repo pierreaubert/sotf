@@ -10487,11 +10487,12 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-ambisonics"
-version = "0.5.4"
+version = "0.5.8"
 dependencies = [
  "approx",
  "criterion",
  "log",
+ "nalgebra 0.33.3",
  "plugins-spatial",
  "serde",
  "serde_json",

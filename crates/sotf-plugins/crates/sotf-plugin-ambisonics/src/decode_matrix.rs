@@ -1,14 +1,16 @@
 // ============================================================================
-// AllRAD Decode Matrix Builder
+// Regularized Mode-Matching Decode Matrix Builder
 // ============================================================================
 //
 // Builds a decode matrix from Ambisonics channels to a target speaker layout
 // using the mode-matching (pseudoinverse) approach with optional max-rE
 // weighting for improved energy preservation at high frequencies.
 //
-// Reference: Zotter & Frank (2012), "All-Round Ambisonic Panning and Decoding"
+// This is not an AllRAD decoder: it has no virtual-speaker sphere or VBAP
+// projection stage. The matrix below is a directly regularized mode match.
 
 use crate::spherical_harmonics::{self, channel_count, deg_to_rad, spherical_harmonics_vector};
+use nalgebra::DMatrix;
 use sotf_host::speaker_config::SpeakerConfig;
 
 /// Decode matrix: maps Ambisonics channels to speaker feeds.
@@ -23,6 +25,17 @@ pub struct DecodeMatrix {
     pub matrix: Vec<f32>,
     /// max-rE weights per ACN channel (applied to matrix columns)
     pub max_re_weights: Vec<f32>,
+    quality: DecodeQuality,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DecodeQuality {
+    pub rank: usize,
+    pub largest_singular_value: f64,
+    pub smallest_retained_singular_value: f64,
+    pub condition_number: f64,
+    pub reconstruction_error: f64,
+    pub peak_coefficient: f64,
 }
 
 impl DecodeMatrix {
@@ -51,6 +64,12 @@ impl DecodeMatrix {
         speaker_config: &SpeakerConfig,
         apply_max_re: bool,
     ) -> Result<Self, String> {
+        if order > crate::spherical_harmonics::MAX_ORDER {
+            return Err(format!(
+                "Ambisonics order must be at most {}, got {order}",
+                crate::spherical_harmonics::MAX_ORDER
+            ));
+        }
         let ambi_ch = channel_count(order);
         let speakers: Vec<_> = speaker_config
             .speakers
@@ -62,13 +81,6 @@ impl DecodeMatrix {
         if num_speakers == 0 {
             return Err("No non-LFE speakers in config".into());
         }
-        if num_speakers < ambi_ch {
-            return Err(format!(
-                "Not enough speakers ({}) for Ambisonics order {} ({} channels required)",
-                num_speakers, order, ambi_ch
-            ));
-        }
-
         // Build the Y matrix [num_speakers × ambi_ch]
         // Y[s][n] = Y_n(azimuth_s, elevation_s)
         let mut y_matrix = vec![0.0_f64; num_speakers * ambi_ch];
@@ -84,7 +96,7 @@ impl DecodeMatrix {
         }
 
         // Compute decode matrix via regularized mode-matching: D = Y(YᵀY + εI)⁻¹
-        let decode = mode_matching_decode(&y_matrix, num_speakers, ambi_ch)?;
+        let (decode, mut quality) = mode_matching_decode(&y_matrix, num_speakers, ambi_ch)?;
 
         // Compute max-rE weights
         let max_re = if apply_max_re {
@@ -99,6 +111,16 @@ impl DecodeMatrix {
             for n in 0..ambi_ch {
                 matrix[s * ambi_ch + n] = (decode[s * ambi_ch + n] * max_re[n] as f64) as f32;
             }
+        }
+        quality.peak_coefficient = matrix
+            .iter()
+            .map(|value| value.abs() as f64)
+            .fold(0.0, f64::max);
+        if quality.peak_coefficient > 8.0 {
+            return Err(format!(
+                "Ambisonics decode is ill-conditioned: peak coefficient {:.3} exceeds 8.0 (rank {}/{})",
+                quality.peak_coefficient, quality.rank, ambi_ch
+            ));
         }
 
         // Map decode matrix rows to actual output channel indices
@@ -116,6 +138,7 @@ impl DecodeMatrix {
             speaker_count: total_channels,
             matrix: full_matrix,
             max_re_weights: max_re.into_iter().map(|w| w as f32).collect(),
+            quality,
         })
     }
 
@@ -139,6 +162,10 @@ impl DecodeMatrix {
             *out_sample = sum;
         }
     }
+
+    pub fn quality(&self) -> DecodeQuality {
+        self.quality
+    }
 }
 
 /// Compute max-rE weights for a given Ambisonics order.
@@ -146,16 +173,26 @@ impl DecodeMatrix {
 /// max-rE weighting maximises the energy concentration vector magnitude,
 /// improving spatial resolution at the cost of some diffuseness.
 ///
-/// Weight for degree l: cos(l * pi / (2 * (order + 1)))
-/// (Zotter & Frank, 2012, eq. 10)
+/// For decoder order `N`, the exact degree weight is `P_l(r_E)`, where `r_E`
+/// is the largest root of `P_(N+1)` and `P_l` is a Legendre polynomial.
 fn compute_max_re_weights(order: usize) -> Vec<f64> {
+    let degree_weights: &[f64] = match order {
+        0 => &[1.0],
+        1 => &[1.0, 0.577_350_269_189_625_8],
+        2 => &[1.0, 0.774_596_669_241_483_4, 0.4],
+        3 => &[
+            1.0,
+            0.861_136_311_594_052_6,
+            0.612_333_620_718_713_8,
+            0.304_746_984_955_207_9,
+        ],
+        _ => unreachable!("order must be validated against MAX_ORDER"),
+    };
     let ambi_ch = channel_count(order);
     let mut weights = Vec::with_capacity(ambi_ch);
-    let denom = 2.0 * (order as f64 + 1.0);
     for acn in 0..ambi_ch {
         let (l, _m) = spherical_harmonics::acn_to_degree_index(acn);
-        let w = (l as f64 * std::f64::consts::PI / denom).cos();
-        weights.push(w);
+        weights.push(degree_weights[l as usize]);
     }
     weights
 }
@@ -166,85 +203,74 @@ fn compute_max_re_weights(order: usize) -> Vec<f64> {
 ///
 /// Tikhonov regularization (εI) handles rank-deficient layouts, e.g. 5.1 where
 /// all speakers sit at elevation 0° making the Z-harmonic column zero.
-fn mode_matching_decode(y: &[f64], rows: usize, cols: usize) -> Result<Vec<f64>, String> {
-    // Regularization parameter: small enough to not distort well-conditioned layouts,
-    // large enough to stabilize rank-deficient ones.
-    let epsilon = 1e-6;
-
-    // Compute YᵀY [cols × cols] + εI (Tikhonov regularization)
-    let mut yty = vec![0.0_f64; cols * cols];
-    for i in 0..cols {
-        for j in 0..cols {
-            let mut sum = 0.0;
-            for s in 0..rows {
-                sum += y[s * cols + i] * y[s * cols + j];
-            }
-            yty[i * cols + j] = sum;
-        }
-        yty[i * cols + i] += epsilon; // Tikhonov regularization
+fn mode_matching_decode(
+    y: &[f64],
+    rows: usize,
+    cols: usize,
+) -> Result<(Vec<f64>, DecodeQuality), String> {
+    let y_matrix = DMatrix::from_row_slice(rows, cols, y);
+    let svd = y_matrix.svd(true, true);
+    let u = svd.u.ok_or("SVD did not produce U")?;
+    let v_t = svd.v_t.ok_or("SVD did not produce V^T")?;
+    let sigma_max = svd.singular_values.iter().copied().fold(0.0, f64::max);
+    if !sigma_max.is_finite() || sigma_max <= f64::EPSILON {
+        return Err("Speaker geometry has no usable spherical-harmonic rank".into());
     }
+    let rank_threshold = sigma_max * 1e-7;
+    let lambda = sigma_max * 1e-6;
+    let rank = svd
+        .singular_values
+        .iter()
+        .filter(|&&sigma| sigma > rank_threshold)
+        .count();
+    let sigma_min = svd
+        .singular_values
+        .iter()
+        .copied()
+        .filter(|&sigma| sigma > rank_threshold)
+        .fold(f64::INFINITY, f64::min);
 
-    // Invert (YᵀY + εI) via Gauss-Jordan with partial pivoting
-    let aug_w = 2 * cols;
-    let mut aug = vec![0.0_f64; cols * aug_w];
-    for i in 0..cols {
-        for j in 0..cols {
-            aug[i * aug_w + j] = yty[i * cols + j];
-        }
-        aug[i * aug_w + cols + i] = 1.0; // identity on right
-    }
-
-    for col in 0..cols {
-        // Partial pivoting
-        let mut max_val = aug[col * aug_w + col].abs();
-        let mut max_row = col;
-        for row in (col + 1)..cols {
-            let val = aug[row * aug_w + col].abs();
-            if val > max_val {
-                max_val = val;
-                max_row = row;
-            }
-        }
-        if max_val < 1e-15 {
-            return Err(format!(
-                "Near-singular matrix even with regularization (pivot {col}: {max_val})"
-            ));
-        }
-        if max_row != col {
-            for j in 0..aug_w {
-                aug.swap(col * aug_w + j, max_row * aug_w + j);
-            }
-        }
-        let pivot = aug[col * aug_w + col];
-        for j in 0..aug_w {
-            aug[col * aug_w + j] /= pivot;
-        }
-        for row in 0..cols {
-            if row == col {
-                continue;
-            }
-            let factor = aug[row * aug_w + col];
-            for j in 0..aug_w {
-                aug[row * aug_w + j] -= factor * aug[col * aug_w + j];
-            }
-        }
-    }
-
-    // Extract inv = (YᵀY + εI)⁻¹ [cols × cols]
-    // Then D = Y × inv [rows × cols]
-    let mut d = vec![0.0_f64; rows * cols];
+    // D = U diag(sigma/(sigma^2+lambda^2)) V^T.  This is a
+    // rank-revealing, scale-relative Tikhonov pseudoinverse transpose and does
+    // not square the geometry condition number through normal equations.
+    let mut decode = vec![0.0; rows * cols];
     for s in 0..rows {
         for n in 0..cols {
             let mut sum = 0.0;
-            for k in 0..cols {
-                let inv_kn = aug[k * aug_w + cols + n];
-                sum += y[s * cols + k] * inv_kn;
+            for k in 0..svd.singular_values.len() {
+                let sigma = svd.singular_values[k];
+                if sigma > rank_threshold {
+                    let inverse = sigma / (sigma * sigma + lambda * lambda);
+                    sum += u[(s, k)] * inverse * v_t[(k, n)];
+                }
             }
-            d[s * cols + n] = sum;
+            decode[s * cols + n] = sum;
         }
     }
 
-    Ok(d)
+    let mut reconstruction_error = 0.0;
+    for i in 0..cols {
+        for j in 0..cols {
+            let reconstructed = (0..rows)
+                .map(|s| y[s * cols + i] * decode[s * cols + j])
+                .sum::<f64>();
+            let expected = if i == j { 1.0 } else { 0.0 };
+            reconstruction_error += (reconstructed - expected).powi(2);
+        }
+    }
+    reconstruction_error = (reconstruction_error / cols as f64).sqrt();
+
+    Ok((
+        decode,
+        DecodeQuality {
+            rank,
+            largest_singular_value: sigma_max,
+            smallest_retained_singular_value: sigma_min,
+            condition_number: sigma_max / sigma_min,
+            reconstruction_error,
+            peak_coefficient: 0.0,
+        },
+    ))
 }
 
 #[cfg(test)]
@@ -277,13 +303,11 @@ mod tests {
     }
 
     #[test]
-    fn test_too_few_speakers() {
+    fn test_underdetermined_layout_reports_rank_loss() {
         let config = get_speaker_config("2.0").expect("2.0 config should exist");
-        let result = DecodeMatrix::build(2, config, false);
-        assert!(
-            result.is_err(),
-            "2.0 has only 2 speakers, too few for SOA (9 channels)"
-        );
+        let matrix = DecodeMatrix::build(2, config, false).unwrap();
+        assert!(matrix.quality().rank <= 2);
+        assert!(matrix.matrix.iter().all(|value| value.is_finite()));
     }
 
     #[test]
@@ -335,14 +359,86 @@ mod tests {
 
     #[test]
     fn test_max_re_weights() {
-        let weights = compute_max_re_weights(1);
-        assert_eq!(weights.len(), 4);
-        // Order 0 weight should be 1.0 (cos(0) = 1)
-        assert!((weights[0] - 1.0).abs() < 1e-10);
-        // Order 1 weights should be cos(pi/4) ≈ 0.707
-        let expected = (std::f64::consts::PI / 4.0).cos();
-        assert!((weights[1] - expected).abs() < 1e-10);
-        assert!((weights[2] - expected).abs() < 1e-10);
-        assert!((weights[3] - expected).abs() < 1e-10);
+        let expected_by_order: &[&[f64]] = &[
+            &[1.0, 1.0 / 3.0_f64.sqrt()],
+            &[1.0, (3.0_f64 / 5.0).sqrt(), 0.4],
+            &[
+                1.0,
+                0.861_136_311_594_052_6,
+                0.612_333_620_718_713_8,
+                0.304_746_984_955_207_9,
+            ],
+        ];
+
+        for (order_index, expected_degrees) in expected_by_order.iter().enumerate() {
+            let order = order_index + 1;
+            let weights = compute_max_re_weights(order);
+            assert_eq!(weights.len(), channel_count(order));
+            for (acn, &weight) in weights.iter().enumerate() {
+                let (degree, _) = spherical_harmonics::acn_to_degree_index(acn);
+                assert!(
+                    (weight - expected_degrees[degree as usize]).abs() < 1e-12,
+                    "order={order}, acn={acn}, degree={degree}: {weight}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shipped_layouts_report_bounded_rank_revealing_quality() {
+        for layout in crate::params::TARGET_LAYOUTS {
+            let config = get_speaker_config(layout).unwrap();
+            for order in 1..=crate::spherical_harmonics::MAX_ORDER {
+                let dm = DecodeMatrix::build(order, config, true).unwrap();
+                let quality = dm.quality();
+                assert!(quality.rank > 0 && quality.rank <= dm.ambi_channels);
+                assert!(quality.largest_singular_value.is_finite());
+                assert!(quality.peak_coefficient.is_finite());
+                assert!(
+                    quality.peak_coefficient <= 8.0,
+                    "{layout} order {order}: {quality:?}"
+                );
+                assert!(quality.reconstruction_error.is_finite());
+            }
+        }
+    }
+
+    #[test]
+    fn underdetermined_toa_layout_uses_bounded_pseudoinverse() {
+        let config = get_speaker_config("7.1.4").unwrap();
+        let dm = DecodeMatrix::build(3, config, true).unwrap();
+        assert_eq!(dm.ambi_channels, 16);
+        assert!(dm.quality().rank < dm.ambi_channels);
+        assert!(dm.matrix.iter().all(|value| value.is_finite()));
+    }
+
+    #[test]
+    fn public_matrix_builder_rejects_unsupported_order_without_panicking() {
+        let config = get_speaker_config("9.1.6").unwrap();
+        assert!(
+            DecodeMatrix::build(crate::spherical_harmonics::MAX_ORDER + 1, config, true).is_err()
+        );
+    }
+
+    #[test]
+    fn dense_directional_response_remains_finite_and_bounded() {
+        let config = get_speaker_config("9.1.6").unwrap();
+        let dm = DecodeMatrix::build(3, config, true).unwrap();
+        let mut encoded = vec![0.0_f64; dm.ambi_channels];
+        let mut output = vec![0.0_f32; dm.speaker_count];
+        for az_deg in (-180..180).step_by(15) {
+            for el_deg in (-75..=75).step_by(15) {
+                spherical_harmonics_vector(
+                    3,
+                    deg_to_rad(az_deg as f64),
+                    deg_to_rad(el_deg as f64),
+                    &mut encoded,
+                );
+                let input: Vec<f32> = encoded.iter().map(|value| *value as f32).collect();
+                dm.decode_frame(&input, &mut output);
+                let energy: f32 = output.iter().map(|value| value * value).sum();
+                assert!(energy.is_finite() && energy < 100.0);
+            }
+        }
     }
 }

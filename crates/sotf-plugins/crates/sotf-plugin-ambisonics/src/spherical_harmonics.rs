@@ -27,7 +27,7 @@ pub fn channel_count(order: usize) -> usize {
 /// debug builds.
 pub fn acn_to_degree_index(acn: usize) -> (i32, i32) {
     debug_assert!(
-        acn <= channel_count(MAX_ORDER),
+        acn < channel_count(MAX_ORDER),
         "acn={acn} exceeds channel_count(MAX_ORDER={}); update acn_to_degree_index for larger orders",
         MAX_ORDER
     );
@@ -169,11 +169,10 @@ mod tests {
         assert_eq!(channel_count(3), 16); // TOA
     }
 
-    /// All ACN values up to and including the maximum supported channel count
-    /// must decode without triggering the debug_assert.
+    /// Every valid ACN index below the supported channel count must decode.
     #[test]
     fn test_acn_to_degree_index_all_valid() {
-        for acn in 0..=channel_count(MAX_ORDER) {
+        for acn in 0..channel_count(MAX_ORDER) {
             let (l, m) = acn_to_degree_index(acn);
             // Verify round-trip: l² + l + m == acn
             assert_eq!(
@@ -187,6 +186,12 @@ mod tests {
                 "m={m} out of range [-{l},{l}] for acn={acn}"
             );
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds")]
+    fn first_out_of_range_acn_is_rejected() {
+        let _ = acn_to_degree_index(channel_count(MAX_ORDER));
     }
 
     #[test]

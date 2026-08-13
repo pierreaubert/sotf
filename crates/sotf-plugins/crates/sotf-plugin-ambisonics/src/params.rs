@@ -117,7 +117,7 @@ impl PluginParamDef for Params {
     const PARAMS: &'static [ParamSpec] = PARAMS;
     const LAYOUT: Option<&'static PluginLayout> = Some(&LAYOUT);
     const VERSION: u32 = 1;
-    const PLUGIN_TYPE_KEY: &'static str = "ambisonics";
+    const PLUGIN_TYPE_KEY: &'static str = "ambisonics_decoder";
 
     fn param_value(&self, index: usize) -> Option<f64> {
         match index {
@@ -194,5 +194,10 @@ mod tests {
             pk(PARAMS, "max_re_weighting").default_bool()
         );
         assert_eq!(p.dual_band, pk(PARAMS, "dual_band").default_bool());
+    }
+
+    #[test]
+    fn plugin_type_key_matches_factory_key() {
+        assert_eq!(Params::PLUGIN_TYPE_KEY, "ambisonics_decoder");
     }
 }

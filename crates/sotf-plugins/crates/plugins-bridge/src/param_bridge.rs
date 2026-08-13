@@ -397,6 +397,16 @@ mod tests {
     }
 
     #[test]
+    fn ambisonics_layout_choice_roundtrips_every_raw_and_normalized_value() {
+        let bridge = ParamBridge::new(sotf_plugin_ambisonics::params::PARAMS);
+        let index = bridge.find_index("target_layout").unwrap();
+        for raw in 0..sotf_plugin_ambisonics::params::TARGET_LAYOUTS.len() {
+            let normalized = bridge.normalize(index, raw as f64).unwrap();
+            assert_eq!(bridge.denormalize(index, normalized).unwrap(), raw as f64);
+        }
+    }
+
+    #[test]
     fn test_choice_normalize_degenerate_labels() {
         let empty = ParamSpec::choice("Mode", "mode", 0, &[], "General");
         let single = ParamSpec::choice("Mode", "mode", 0, &["Only"], "General");

@@ -59,7 +59,7 @@ fn parameters_listed_by_trait() {
 }
 
 #[test]
-fn parameter_get_set_roundtrip() {
+fn structural_parameter_changes_are_rejected() {
     let mut plugin = AmbisonicsDecoderPlugin::new(&foa_5_1_config()).unwrap();
 
     assert_eq!(
@@ -75,20 +75,21 @@ fn parameter_get_set_roundtrip() {
         Some(ParameterValue::Bool(false))
     );
 
-    plugin
+    let error = plugin
         .set_parameter(
             ParameterId::from("max_re_weighting"),
             ParameterValue::Bool(false),
         )
-        .unwrap();
+        .unwrap_err();
+    assert!(error.contains("host rebuild"));
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("max_re_weighting")),
-        Some(ParameterValue::Bool(false))
+        Some(ParameterValue::Bool(true))
     );
 }
 
 #[test]
-fn order_change_rebuilds_channels() {
+fn order_change_requires_host_rebuild() {
     // Use a layout with enough speakers for second-order ambisonics.
     let config = AmbisonicsDecoderConfig {
         order: 1,
@@ -99,50 +100,34 @@ fn order_change_rebuilds_channels() {
     let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
     plugin.initialize(48000).unwrap();
 
-    plugin
+    let error = plugin
         .set_parameter(ParameterId::from("order"), ParameterValue::Int(2))
-        .unwrap();
-    assert_eq!(plugin.input_channels(), 9);
+        .unwrap_err();
+    assert!(error.contains("host rebuild"));
+    assert_eq!(plugin.input_channels(), 4);
     assert_eq!(plugin.output_channels(), 12);
-
-    // Process with the new channel count
-    let num_frames = 256;
-    let input = vec![0.1_f32; num_frames * 9];
-    let mut output = vec![0.0_f32; num_frames * 12];
-    let ctx = ProcessContext::new(48000, num_frames);
-    let frames = plugin.process(&input, &mut output, &ctx).unwrap();
-    assert_eq!(frames, num_frames);
-    assert!(output.iter().all(|s| s.is_finite()));
 }
 
 #[test]
-fn layout_change_rebuilds_output_channels() {
+fn layout_choice_change_requires_host_rebuild() {
     let mut plugin = AmbisonicsDecoderPlugin::new(&foa_5_1_config()).unwrap();
     plugin.initialize(48000).unwrap();
 
-    plugin
-        .set_parameter(
-            ParameterId::from("target_layout"),
-            ParameterValue::String("7.1".into()),
-        )
-        .unwrap();
-    assert_eq!(plugin.output_channels(), 8);
-
-    let num_frames = 128;
-    let input = vec![0.1_f32; num_frames * 4];
-    let mut output = vec![0.0_f32; num_frames * 8];
-    let ctx = ProcessContext::new(48000, num_frames);
-    let frames = plugin.process(&input, &mut output, &ctx).unwrap();
-    assert_eq!(frames, num_frames);
+    assert_eq!(
+        plugin.get_parameter(&ParameterId::from("target_layout")),
+        Some(ParameterValue::Int(0))
+    );
+    let error = plugin
+        .set_parameter(ParameterId::from("target_layout"), ParameterValue::Int(1))
+        .unwrap_err();
+    assert!(error.contains("host rebuild"));
+    assert_eq!(plugin.output_channels(), 6);
 }
 
 #[test]
 fn invalid_layout_parameter_rejected() {
     let mut plugin = AmbisonicsDecoderPlugin::new(&foa_5_1_config()).unwrap();
-    let result = plugin.set_parameter(
-        ParameterId::from("target_layout"),
-        ParameterValue::String("does-not-exist".into()),
-    );
+    let result = plugin.set_parameter(ParameterId::from("target_layout"), ParameterValue::Int(999));
     assert!(result.is_err());
 }
 
@@ -192,24 +177,14 @@ fn dual_band_toggle_via_parameter() {
         Some(ParameterValue::Bool(false))
     );
 
-    plugin
+    let error = plugin
         .set_parameter(ParameterId::from("dual_band"), ParameterValue::Bool(true))
-        .unwrap();
+        .unwrap_err();
+    assert!(error.contains("host rebuild"));
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("dual_band")),
-        Some(ParameterValue::Bool(true))
+        Some(ParameterValue::Bool(false))
     );
-
-    // Re-initialize so that dual-band scratch buffers are allocated.
-    plugin.initialize(48000).unwrap();
-
-    let num_frames = 512;
-    let input = vec![0.1_f32; num_frames * 4];
-    let mut output = vec![0.0_f32; num_frames * 6];
-    let ctx = ProcessContext::new(48000, num_frames);
-    let frames = plugin.process(&input, &mut output, &ctx).unwrap();
-    assert_eq!(frames, num_frames);
-    assert!(output.iter().all(|s| s.is_finite()));
 }
 
 #[test]
@@ -269,9 +244,6 @@ fn output_rate_and_frame_mapping() {
 #[test]
 fn invalid_layout_parameter_rejected_by_set() {
     let mut plugin = AmbisonicsDecoderPlugin::new(&foa_5_1_config()).unwrap();
-    let result = plugin.set_parameter(
-        ParameterId::from("target_layout"),
-        ParameterValue::String("does-not-exist".into()),
-    );
+    let result = plugin.set_parameter(ParameterId::from("target_layout"), ParameterValue::Int(999));
     assert!(result.is_err());
 }

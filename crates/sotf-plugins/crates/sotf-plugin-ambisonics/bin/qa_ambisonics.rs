@@ -96,5 +96,17 @@ fn main() {
     // -- Standard tests (latency, zero alloc, performance) --
     run_standard_tests(&mut plugin, "AmbisonicsDecoder");
 
+    // Worst shipped processing shape: 16-channel TOA into 9.1.6 with two
+    // crossover/decode paths. This is the allocation and callback-time gate.
+    let mut worst_case = AmbisonicsDecoderPlugin::new(&AmbisonicsDecoderConfig {
+        order: 3,
+        target_layout: "9.1.6".to_owned(),
+        max_re_weighting: true,
+        dual_band: true,
+    })
+    .unwrap();
+    worst_case.initialize(sample_rate).unwrap();
+    run_standard_tests(&mut worst_case, "AmbisonicsDecoderTOADualBand");
+
     println!("\n[ALL PASS] Ambisonics QA Complete.");
 }

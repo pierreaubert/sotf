@@ -1,10 +1,9 @@
-pub use super::config::AmbisonicsDecoderConfig;
 use super::consts::DUAL_BAND_CROSSOVER_HZ;
 use super::consts::MAX_AMBI_CHANNELS;
-use super::consts::MAX_BLOCK_FRAMES;
 use super::decode_matrix::DecodeMatrix;
+pub use super::params::Params as AmbisonicsDecoderConfig;
 use super::spherical_harmonics::channel_count;
-use crate::params::PARAMS;
+use crate::params::{PARAMS, TARGET_LAYOUTS};
 use plugins_spatial::validate_interleaved_io;
 use sotf_host::lr4_crossover::Lr4Crossover;
 use sotf_host::param_specs::find_by_key as pk;
@@ -32,11 +31,8 @@ pub struct AmbisonicsDecoderPlugin {
     /// LR4 crossover used in dual-band mode.  One filter bank per ambisonics
     /// input channel (each channel processed independently).
     pub(super) crossover: Option<Lr4Crossover<f32>>,
-    /// Scratch buffer for LF-filtered ambisonics channels: `[frame][channel]`
-    /// stored flat as `[frame * in_ch + ch]`, same layout as `input`.
-    pub(super) lf_buffer: Vec<f32>,
-    /// Scratch buffer for HF-filtered ambisonics channels, same layout.
-    pub(super) hf_buffer: Vec<f32>,
+    pub(super) lf_ambi_frame: [f32; MAX_AMBI_CHANNELS],
+    pub(super) hf_ambi_frame: [f32; MAX_AMBI_CHANNELS],
     /// Per-frame LF decode output scratch (length = output_channels)
     pub(super) lf_frame: Vec<f32>,
     /// Per-frame HF decode output scratch (length = output_channels)
@@ -47,7 +43,14 @@ pub struct AmbisonicsDecoderPlugin {
 
 impl AmbisonicsDecoderPlugin {
     pub fn new(config: &AmbisonicsDecoderConfig) -> Result<Self, String> {
-        let order = config.order.clamp(1, super::spherical_harmonics::MAX_ORDER);
+        if !(1..=super::spherical_harmonics::MAX_ORDER).contains(&config.order) {
+            return Err(format!(
+                "Ambisonics order must be between 1 and {}, got {}",
+                super::spherical_harmonics::MAX_ORDER,
+                config.order
+            ));
+        }
+        let order = config.order;
         let input_ch = channel_count(order);
 
         let speaker_config = get_speaker_config(&config.target_layout).ok_or_else(|| {
@@ -76,8 +79,8 @@ impl AmbisonicsDecoderPlugin {
             decode_matrix: Some(dm),
             basic_matrix,
             crossover: None, // created in initialize() when we have the sample rate
-            lf_buffer: Vec::new(),
-            hf_buffer: Vec::new(),
+            lf_ambi_frame: [0.0; MAX_AMBI_CHANNELS],
+            hf_ambi_frame: [0.0; MAX_AMBI_CHANNELS],
             lf_frame: vec![0.0; output_ch],
             hf_frame: vec![0.0; output_ch],
             sample_rate: 48000,
@@ -87,31 +90,11 @@ impl AmbisonicsDecoderPlugin {
         Ok(plugin)
     }
 
-    pub(super) fn rebuild_decode_matrix(&mut self) -> Result<(), String> {
-        let speaker_config = get_speaker_config(&self.target_layout)
-            .ok_or_else(|| format!("Unknown speaker layout '{}'", self.target_layout))?;
-
-        let dm = DecodeMatrix::build(self.order, speaker_config, self.max_re_weighting)?;
-        self.input_channels = channel_count(self.order);
-        self.output_channels = speaker_config.total_channels;
-        self.decode_matrix = Some(dm);
-
-        if self.dual_band {
-            self.basic_matrix = Some(DecodeMatrix::build_basic(self.order, speaker_config)?);
-            // Rebuild crossover for the (possibly changed) channel count.
-            self.crossover = Some(Lr4Crossover::new(
-                DUAL_BAND_CROSSOVER_HZ,
-                self.sample_rate as f32,
-                self.input_channels,
-            ));
-        } else {
-            self.basic_matrix = None;
-            self.crossover = None;
-        }
-        Ok(())
-    }
-
     pub(super) fn rebuild_cached_parameters(&mut self) {
+        let target_layout_index = TARGET_LAYOUTS
+            .iter()
+            .position(|&layout| layout == self.target_layout)
+            .expect("validated target layout must have a parameter choice");
         self.cached_parameters = vec![
             Parameter::new_int("order", "Ambisonics Order", self.order as i32, 1, 3)
                 .with_update_mode(pk(PARAMS, "order").update_mode)
@@ -119,12 +102,18 @@ impl AmbisonicsDecoderPlugin {
                 .with_importance(ParameterImportance::Critical)
                 .with_description("1=FOA(4ch), 2=SOA(9ch), 3=TOA(16ch)")
                 .build(),
-            Parameter::new_string("target_layout", "Target Layout", self.target_layout.clone())
-                .with_update_mode(pk(PARAMS, "target_layout").update_mode)
-                .with_group("Ambisonics")
-                .with_importance(ParameterImportance::Critical)
-                .with_description("Target speaker layout (e.g. 5.1, 7.1.4)")
-                .build(),
+            Parameter::new_int(
+                "target_layout",
+                "Target Layout",
+                target_layout_index as i32,
+                0,
+                (TARGET_LAYOUTS.len() - 1) as i32,
+            )
+            .with_update_mode(pk(PARAMS, "target_layout").update_mode)
+            .with_group("Ambisonics")
+            .with_importance(ParameterImportance::Critical)
+            .with_description("Target speaker layout (e.g. 5.1, 7.1.4)")
+            .build(),
             Parameter::new_bool(
                 "max_re_weighting",
                 "Max-rE Weighting",
@@ -163,7 +152,7 @@ impl Plugin for AmbisonicsDecoderPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: "AmbisonicsDecoder".into(),
-            version: "0.1.0".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
             author: "SotF".into(),
             description: format!(
                 "Ambisonics decoder (order {}, {} -> {}ch)",
@@ -199,56 +188,48 @@ impl Plugin for AmbisonicsDecoderPlugin {
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        match id.as_str() {
+        let changed = match id.as_str() {
             "order" => {
                 let ParameterValue::Int(v) = value else {
                     return Err("order must be an integer".to_string());
                 };
-                let new_order = (v as usize).clamp(1, super::spherical_harmonics::MAX_ORDER);
-                if new_order != self.order {
-                    self.order = new_order;
-                    self.rebuild_decode_matrix()
-                        .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
-                    self.rebuild_cached_parameters();
+                if !(1..=super::spherical_harmonics::MAX_ORDER as i32).contains(&v) {
+                    return Err(format!(
+                        "order must be between 1 and {}",
+                        super::spherical_harmonics::MAX_ORDER
+                    ));
                 }
+                v as usize != self.order
             }
             "target_layout" => {
-                let ParameterValue::String(layout) = value else {
-                    return Err("target_layout must be a string".to_string());
+                let ParameterValue::Int(index) = value else {
+                    return Err("target_layout must be a choice index".to_string());
                 };
-                if layout != self.target_layout {
-                    if get_speaker_config(&layout).is_none() {
-                        return Err(format!("Unknown speaker layout '{layout}'"));
-                    }
-                    self.target_layout = layout;
-                    self.rebuild_decode_matrix()
-                        .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
-                    self.rebuild_cached_parameters();
-                }
+                let layout = usize::try_from(index)
+                    .ok()
+                    .and_then(|index| TARGET_LAYOUTS.get(index))
+                    .ok_or_else(|| format!("target_layout choice index {index} is out of range"))?;
+                *layout != self.target_layout
             }
             "max_re_weighting" => {
                 let ParameterValue::Bool(v) = value else {
                     return Err("max_re_weighting must be a boolean".to_string());
                 };
-                if v != self.max_re_weighting {
-                    self.max_re_weighting = v;
-                    self.rebuild_decode_matrix()
-                        .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
-                    self.rebuild_cached_parameters();
-                }
+                v != self.max_re_weighting
             }
             "dual_band" => {
                 let ParameterValue::Bool(v) = value else {
                     return Err("dual_band must be a boolean".to_string());
                 };
-                if v != self.dual_band {
-                    self.dual_band = v;
-                    self.rebuild_decode_matrix()
-                        .map_err(|e| format!("Failed to rebuild matrix: {e}"))?;
-                    self.rebuild_cached_parameters();
-                }
+                v != self.dual_band
             }
             _ => return Err(format!("Unknown parameter: {}", id)),
+        };
+        if changed {
+            return Err(format!(
+                "{} is structural and requires a host rebuild",
+                id.as_str()
+            ));
         }
         Ok(())
     }
@@ -256,7 +237,10 @@ impl Plugin for AmbisonicsDecoderPlugin {
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         match id.as_str() {
             "order" => Some(ParameterValue::Int(self.order as i32)),
-            "target_layout" => Some(ParameterValue::String(self.target_layout.clone())),
+            "target_layout" => TARGET_LAYOUTS
+                .iter()
+                .position(|&layout| layout == self.target_layout)
+                .map(|index| ParameterValue::Int(index as i32)),
             "max_re_weighting" => Some(ParameterValue::Bool(self.max_re_weighting)),
             "dual_band" => Some(ParameterValue::Bool(self.dual_band)),
             _ => None,
@@ -264,24 +248,27 @@ impl Plugin for AmbisonicsDecoderPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
-        self.sample_rate = sample_rate;
+        if sample_rate == 0 {
+            return Err("sample rate must be greater than zero".into());
+        }
+        if self.dual_band && sample_rate as f32 <= 2.0 * DUAL_BAND_CROSSOVER_HZ {
+            return Err(format!(
+                "dual-band sample rate must exceed {} Hz",
+                2.0 * DUAL_BAND_CROSSOVER_HZ
+            ));
+        }
         if self.dual_band {
-            self.crossover = Some(Lr4Crossover::new(
+            let crossover = Lr4Crossover::new(
                 DUAL_BAND_CROSSOVER_HZ,
                 sample_rate as f32,
                 self.input_channels,
-            ));
-            // Pre-allocate scratch buffers for the worst-case block size
-            // (MAX_BLOCK_FRAMES × MAX_AMBI_CHANNELS).  The process() hot path
-            // must not resize these buffers — a debug_assert! guards that
-            // contract.
-            let max_batch = MAX_BLOCK_FRAMES * MAX_AMBI_CHANNELS;
-            self.lf_buffer.resize(max_batch, 0.0);
-            self.hf_buffer.resize(max_batch, 0.0);
+            );
+            self.crossover = Some(crossover);
         }
         // Pre-allocate per-frame decode scratch
         self.lf_frame.resize(self.output_channels, 0.0);
         self.hf_frame.resize(self.output_channels, 0.0);
+        self.sample_rate = sample_rate;
         Ok(())
     }
 
@@ -289,8 +276,8 @@ impl Plugin for AmbisonicsDecoderPlugin {
         if let Some(xo) = &mut self.crossover {
             xo.reset();
         }
-        self.lf_buffer.fill(0.0);
-        self.hf_buffer.fill(0.0);
+        self.lf_ambi_frame.fill(0.0);
+        self.hf_ambi_frame.fill(0.0);
     }
 
     fn process(
@@ -311,6 +298,17 @@ impl Plugin for AmbisonicsDecoderPlugin {
             output.len(),
         )?;
 
+        if input[..sizes.input_samples]
+            .iter()
+            .any(|sample| !sample.is_finite())
+        {
+            return Err("AmbisonicsDecoder input contains a non-finite sample".into());
+        }
+
+        if self.dual_band && self.crossover.is_none() {
+            return Err("AmbisonicsDecoder dual-band processing requires initialize()".into());
+        }
+
         if self.decode_matrix.is_none() {
             // No matrix — output silence
             output[..sizes.output_samples].fill(0.0);
@@ -326,53 +324,21 @@ impl Plugin for AmbisonicsDecoderPlugin {
         {
             // Dual-band path: split each ambisonics channel into LF and HF,
             // apply the basic matrix to LF and the max-rE matrix to HF, then sum.
-            //
-            // The crossover needs &mut self.  To also read basic_matrix and
-            // decode_matrix after, we take() the crossover (moves it out of self),
-            // run the split loop, then restore it.
-
-            // Scratch buffers were pre-allocated in initialize() for
-            // MAX_BLOCK_FRAMES × MAX_AMBI_CHANNELS.  Resizing here would
-            // allocate on the audio thread; use a debug_assert! instead so
-            // oversized blocks fail loudly in debug builds.
-            let batch_len = num_frames * in_ch;
-            debug_assert!(
-                self.lf_buffer.len() >= batch_len,
-                "lf_buffer too small: {} < {} (call initialize() before process())",
-                self.lf_buffer.len(),
-                batch_len
-            );
-            debug_assert!(
-                self.hf_buffer.len() >= batch_len,
-                "hf_buffer too small: {} < {} (call initialize() before process())",
-                self.hf_buffer.len(),
-                batch_len
-            );
-
-            // --- Phase 1: crossover split ---
-            // The crossover has `in_ch` filter banks (one per ambisonics channel).
-            // Input layout: interleaved [frame * in_ch + ch].
-            for frame in 0..num_frames {
-                let off = frame * in_ch;
-                for ch in 0..in_ch {
-                    let (lf, hf) = crossover.process(input[off + ch], ch);
-                    self.lf_buffer[off + ch] = lf;
-                    self.hf_buffer[off + ch] = hf;
-                }
-            }
-            // --- Phase 2: matrix decode + accumulate ---
-            // Per-frame scratch vectors for summing LF and HF contributions.
-            // out_ch is at most 16 in practice (9.1.6 layout).
-            // Use pre-allocated per-frame scratch (no heap allocation)
             let lf_frame = &mut self.lf_frame;
             let hf_frame = &mut self.hf_frame;
 
             for frame in 0..num_frames {
                 let in_off = frame * in_ch;
                 let out_off = frame * out_ch;
-
-                basic_ref.decode_frame(&self.lf_buffer[in_off..in_off + in_ch], lf_frame);
-                dm_ref.decode_frame(&self.hf_buffer[in_off..in_off + in_ch], hf_frame);
+                for ch in 0..in_ch {
+                    let sample = input[in_off + ch];
+                    let sample = if sample.is_subnormal() { 0.0 } else { sample };
+                    let (lf, hf) = crossover.process(sample, ch);
+                    self.lf_ambi_frame[ch] = lf;
+                    self.hf_ambi_frame[ch] = hf;
+                }
+                basic_ref.decode_frame(&self.lf_ambi_frame[..in_ch], lf_frame);
+                dm_ref.decode_frame(&self.hf_ambi_frame[..in_ch], hf_frame);
 
                 for s in 0..out_ch {
                     output[out_off + s] = lf_frame[s] + hf_frame[s];
@@ -424,9 +390,14 @@ impl Plugin for AmbisonicsDecoderPlugin {
     }
 }
 
+impl AmbisonicsDecoderPlugin {
+    pub fn dual_band_scratch_samples(&self) -> usize {
+        self.lf_ambi_frame.len() + self.hf_ambi_frame.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::super::*;
     use super::*;
 
     fn default_config() -> AmbisonicsDecoderConfig {
@@ -468,6 +439,17 @@ mod tests {
             dual_band: false,
         };
         assert!(AmbisonicsDecoderPlugin::new(&config).is_err());
+    }
+
+    #[test]
+    fn test_invalid_order_is_rejected() {
+        for order in [0, super::super::spherical_harmonics::MAX_ORDER + 1] {
+            let config = AmbisonicsDecoderConfig {
+                order,
+                ..default_config()
+            };
+            assert!(AmbisonicsDecoderPlugin::new(&config).is_err());
+        }
     }
 
     #[test]
@@ -544,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parameter_get_set() {
+    fn test_structural_parameters_require_host_rebuild() {
         // Use 7.1.4 (11 non-LFE speakers) so we can change to SOA (9 channels)
         let config = AmbisonicsDecoderConfig {
             order: 1,
@@ -564,22 +546,31 @@ mod tests {
             Some(ParameterValue::Bool(true))
         );
 
-        // Change order to SOA (needs >= 9 non-LFE speakers)
-        plugin
-            .set_parameter(ParameterId::from("order"), ParameterValue::Int(2))
-            .unwrap();
-        assert_eq!(plugin.input_channels(), 9); // SOA = 9 channels
+        for (id, value) in [
+            ("order", ParameterValue::Int(2)),
+            ("target_layout", ParameterValue::Int(1)),
+            ("max_re_weighting", ParameterValue::Bool(false)),
+            ("dual_band", ParameterValue::Bool(true)),
+        ] {
+            let error = plugin
+                .set_parameter(ParameterId::from(id), value)
+                .unwrap_err();
+            assert!(error.contains("host rebuild"), "{id}: {error}");
+        }
+        assert_eq!(plugin.input_channels(), 4);
+        assert_eq!(plugin.output_channels(), 12);
+        assert_eq!(plugin.order, 1);
+        assert_eq!(plugin.target_layout, "7.1.4");
+        assert!(plugin.max_re_weighting);
+        assert!(!plugin.dual_band);
+    }
 
-        // Change max_re
-        plugin
-            .set_parameter(
-                ParameterId::from("max_re_weighting"),
-                ParameterValue::Bool(false),
-            )
-            .unwrap();
+    #[test]
+    fn test_target_layout_uses_choice_index() {
+        let plugin = AmbisonicsDecoderPlugin::new(&default_config()).unwrap();
         assert_eq!(
-            plugin.get_parameter(&ParameterId::from("max_re_weighting")),
-            Some(ParameterValue::Bool(false))
+            plugin.get_parameter(&ParameterId::from("target_layout")),
+            Some(ParameterValue::Int(0))
         );
     }
 
@@ -711,6 +702,110 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_dual_band_requires_initialize_and_accepts_large_block() {
+        let config = AmbisonicsDecoderConfig {
+            dual_band: true,
+            ..default_config()
+        };
+        let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        let input = vec![0.0; 4];
+        let mut output = vec![0.0; 6];
+        let error = plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, 1))
+            .unwrap_err();
+        assert!(error.contains("initialize"), "{error}");
+
+        plugin.initialize(48_000).unwrap();
+        let frames = 8193;
+        let input = vec![0.0; frames * 4];
+        let mut output = vec![0.0; frames * 6];
+        assert_eq!(
+            plugin
+                .process(&input, &mut output, &ProcessContext::new(48_000, frames))
+                .unwrap(),
+            frames
+        );
+    }
+
+    #[test]
+    fn test_dual_band_rejects_invalid_sample_rate_without_mutation() {
+        let config = AmbisonicsDecoderConfig {
+            dual_band: true,
+            ..default_config()
+        };
+        let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        for sample_rate in [0, 1_400] {
+            assert!(plugin.initialize(sample_rate).is_err());
+            assert_eq!(plugin.sample_rate, 48_000);
+            assert!(plugin.crossover.is_none());
+        }
+    }
+
+    #[test]
+    fn dual_band_is_finite_at_every_supported_rate_boundary() {
+        for sample_rate in [1_401, 44_100, 48_000, 96_000, 192_000] {
+            let config = AmbisonicsDecoderConfig {
+                dual_band: true,
+                ..default_config()
+            };
+            let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+            plugin.initialize(sample_rate).unwrap();
+            let frames = 1024;
+            let mut input = vec![0.0; frames * plugin.input_channels()];
+            input[0] = 1.0;
+            let mut output = vec![0.0; frames * plugin.output_channels()];
+            plugin
+                .process(
+                    &input,
+                    &mut output,
+                    &ProcessContext::new(sample_rate, frames),
+                )
+                .unwrap();
+            assert!(
+                output.iter().all(|sample| sample.is_finite()),
+                "non-finite dual-band output at {sample_rate} Hz"
+            );
+        }
+    }
+
+    #[test]
+    fn test_non_finite_input_does_not_poison_dual_band_state() {
+        let config = AmbisonicsDecoderConfig {
+            dual_band: true,
+            ..default_config()
+        };
+        let mut tested = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        let mut clean = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        tested.initialize(48_000).unwrap();
+        clean.initialize(48_000).unwrap();
+
+        let mut bad_input = vec![0.0; 64 * 4];
+        bad_input[3] = f32::NAN;
+        let mut rejected_output = vec![0.0; 64 * 6];
+        assert!(
+            tested
+                .process(
+                    &bad_input,
+                    &mut rejected_output,
+                    &ProcessContext::new(48_000, 64),
+                )
+                .is_err()
+        );
+
+        let finite_input = vec![0.1; 64 * 4];
+        let mut tested_output = vec![0.0; 64 * 6];
+        let mut clean_output = vec![0.0; 64 * 6];
+        let context = ProcessContext::new(48_000, 64);
+        tested
+            .process(&finite_input, &mut tested_output, &context)
+            .unwrap();
+        clean
+            .process(&finite_input, &mut clean_output, &context)
+            .unwrap();
+        assert_eq!(tested_output, clean_output);
+    }
+
     /// Dual-band processing must succeed for blocks larger than 4096 frames
     /// (the old hard-coded limit) without allocating in the hot path.
     ///
@@ -746,7 +841,45 @@ mod tests {
         assert!(energy > 0.0, "Expected non-zero output for non-zero input");
     }
 
-    /// Toggling dual_band via set_parameter rebuilds the matrices and crossover.
+    #[test]
+    fn dual_band_has_no_fixed_block_limit_or_megabyte_scratch() {
+        let config = AmbisonicsDecoderConfig {
+            dual_band: true,
+            ..default_config()
+        };
+        let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        plugin.initialize(48_000).unwrap();
+        assert!(plugin.dual_band_scratch_samples() <= 2 * MAX_AMBI_CHANNELS);
+        let frames = 8193;
+        let input = vec![0.1; frames * plugin.input_channels()];
+        let mut output = vec![0.0; frames * plugin.output_channels()];
+        assert_eq!(
+            plugin
+                .process(&input, &mut output, &ProcessContext::new(48_000, frames))
+                .unwrap(),
+            frames
+        );
+        assert!(output.iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
+    fn subnormal_input_is_flushed_without_persistent_tail() {
+        let config = AmbisonicsDecoderConfig {
+            dual_band: true,
+            ..default_config()
+        };
+        let mut plugin = AmbisonicsDecoderPlugin::new(&config).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let frames = 64;
+        let input = vec![f32::from_bits(1); frames * plugin.input_channels()];
+        let mut output = vec![1.0; frames * plugin.output_channels()];
+        plugin
+            .process(&input, &mut output, &ProcessContext::new(48_000, frames))
+            .unwrap();
+        assert!(output.iter().all(|sample| *sample == 0.0));
+    }
+
+    /// Structural changes are rejected so host topology cannot become stale.
     #[test]
     fn test_dual_band_parameter_toggle() {
         let config = AmbisonicsDecoderConfig {
@@ -763,34 +896,21 @@ mod tests {
             Some(ParameterValue::Bool(false))
         );
 
-        plugin
+        let error = plugin
             .set_parameter(ParameterId::from("dual_band"), ParameterValue::Bool(true))
-            .unwrap();
+            .unwrap_err();
+        assert!(error.contains("host rebuild"));
 
         assert_eq!(
             plugin.get_parameter(&ParameterId::from("dual_band")),
-            Some(ParameterValue::Bool(true))
+            Some(ParameterValue::Bool(false))
         );
-        assert!(
-            plugin.basic_matrix.is_some(),
-            "basic_matrix should be built after enabling dual_band"
-        );
-        assert!(
-            plugin.crossover.is_some(),
-            "crossover should be created after enabling dual_band"
-        );
+        assert!(plugin.basic_matrix.is_none());
+        assert!(plugin.crossover.is_none());
 
-        // Toggle back off
+        // Re-applying the current structural value is a no-op.
         plugin
             .set_parameter(ParameterId::from("dual_band"), ParameterValue::Bool(false))
             .unwrap();
-        assert!(
-            plugin.basic_matrix.is_none(),
-            "basic_matrix should be cleared after disabling dual_band"
-        );
-        assert!(
-            plugin.crossover.is_none(),
-            "crossover should be cleared after disabling dual_band"
-        );
     }
 }

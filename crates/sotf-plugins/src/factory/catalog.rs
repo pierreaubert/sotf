@@ -91,7 +91,10 @@ pub enum PluginMaturity {
 pub const STANDARD_CHANNEL_WIDTHS: &[usize] = &[1, 2, 4, 6, 8, 12];
 pub const MONO_CHANNEL_WIDTH: &[usize] = &[1];
 pub const STEREO_CHANNEL_WIDTH: &[usize] = &[2];
-pub const FIRST_ORDER_AMBISONIC_WIDTH: &[usize] = &[4];
+pub const AMBISONIC_WIDTHS: &[usize] = &[4, 9, 16];
+/// Backward-compatible alias retained for callers that still name FOA while
+/// using the complete Ambisonics-width admission contract.
+pub const FIRST_ORDER_AMBISONIC_WIDTH: &[usize] = AMBISONIC_WIDTHS;
 pub const MICROPHONE_ARRAY_WIDTHS: &[usize] = &[2, 4, 6, 8];
 pub const EVEN_BAND_CHANNEL_WIDTHS: &[usize] = &[2, 4, 6, 8, 12];
 
@@ -1246,7 +1249,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             "sotf-plugin-ambisonics",
             "Ambisonics Decoder",
             Alpha,
-            PluginSupportedInputLayouts::Enumerated(FIRST_ORDER_AMBISONIC_WIDTH),
+            PluginSupportedInputLayouts::Enumerated(AMBISONIC_WIDTHS),
             PluginChannelOutputModel::Configurable {
                 description: "decoder order and target speaker layout",
                 default_output: PluginDefaultChannelOutput::Fixed(6),

@@ -1,6 +1,3 @@
-pub use config::AmbisonicsDecoderConfig;
-
-pub mod config;
 pub mod decode_matrix;
 pub mod params;
 pub mod spherical_harmonics;
@@ -13,4 +10,5 @@ mod consts;
 mod types;
 
 pub use ambisonics_decoder_plugin::*;
+pub use params::Params as AmbisonicsDecoderConfig;
 pub use types::*;
