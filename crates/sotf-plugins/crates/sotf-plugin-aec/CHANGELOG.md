@@ -1,3 +1,74 @@
+# 0.5.8
+
+## Testing
+
+- Strengthen the two-path transfer-threshold regression to prove that ten
+  consecutive candidate blocks do not promote the background path. This
+  exercises the behavior that the previous five-block threshold got wrong
+  instead of merely checking the configured threshold and process success.
+
+# 0.5.7
+
+## Correctness and DSP
+
+- Keep the foreground echo path stable and freeze it through double-talk; only
+  the background path explores, with adaptation reduced to 5% while double-talk
+  is active, before sustained improvements are promoted. Regression coverage
+  includes balanced double-talk and recovery after an abrupt echo-path delay change.
+- Replace full-echo spectral subtraction with a bounded, smoothed residual
+  leakage estimate and near-end-aware attack/release behavior. Balanced
+  double-talk fixtures at multiple near/far ratios now limit near-end loss.
+- Derive power, detector, gain, leakage, transfer, and wet/dry ramp coefficients
+  from sample rate and block duration instead of fixed per-block constants.
+- Silence non-finite microphone/reference samples at ingress and guarantee they
+  cannot poison adaptive state or output.
+- Keep residual-suppressor state current while dry and crossfade post-filter
+  toggles over 10 ms, preventing stale-state clicks on re-enable.
+
+## Performance and integration
+
+- Share the reference FFT, frequency-domain delay line, and power analysis
+  between foreground and background paths. Repeated AEC QA runs fell from the
+  original failing 5.42% to 2.98–3.22% CPU for the standard 48 kHz / 100 ms-tail
+  fixture while remaining zero-allocation.
+- Use a real inverse FFT for post-filter reconstruction and remove the unused
+  plugin-level forward complex FFT and full redundant spectrum.
+- Make `params::Params` and `params::PARAMS` the runtime/factory schema, remove
+  the duplicate f32 state type, mark structural fields consistently, and add
+  main-factory/bridge layout, range, and round-trip conformance tests.
+
+# 0.5.6
+
+- Project each adaptive frequency-domain partition onto its causal time-domain
+  support after updates, preventing non-causal circular alias energy.
+
+# 0.5.5
+
+## Fixes
+
+- Centralize post-filter reconstruction during `initialize()` so rate changes
+  cannot retain suppressor gains or double-talk history from the previous stream.
+- Add a regression comparing reinitialized output with a fresh plugin after old
+  stream input and queued output have both been exercised.
+
+# 0.5.4
+
+## Fixes
+
+- Preserve the pre-IFFT echo-estimate spectrum used by residual echo suppression.
+- Use previous/current reference blocks for the PBFDAF overlap-save input convention.
+- Make the streaming adapter provide an exact, callback-size-independent 256-sample latency.
+- Bound the realtime output FIFO to one block, removing callback-time growth for oversized buffers.
+- Validate persisted sample rate, echo-tail, and step-size values before allocating adaptive state.
+- Advertise echo-tail and step-size as structural parameters and reject live state-destroying changes.
+- Fully clear adaptive, post-filter, partial-input, and queued-output state on reinitialization.
+- Make AEC construction fallible in both plugin factories and the bridge.
+
+## Tests
+
+- Added spectral identity, callback segmentation/latency, invalid configuration, structural metadata,
+  clean reinitialization, and above-old-capacity streaming regressions.
+
 # 0.5.2
 
 ## Fixes

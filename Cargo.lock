@@ -10476,8 +10476,9 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-aec"
-version = "0.5.3"
+version = "0.5.8"
 dependencies = [
+ "realfft",
  "rustfft 6.4.1",
  "serde",
  "serde_json",

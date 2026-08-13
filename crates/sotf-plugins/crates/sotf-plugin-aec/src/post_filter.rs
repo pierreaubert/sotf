@@ -23,7 +23,8 @@ pub struct ResidualEchoSuppressor {
     /// Smoothed gains per bin
     smoothed_gains: Vec<f32>,
     /// Gain smoothing factor
-    gain_alpha: f32,
+    gain_attack_alpha: f32,
+    gain_release_alpha: f32,
     spectrum_size: usize,
     /// Pre-allocated output buffer (avoids hot-path allocation)
     output_buf: Vec<Complex<f32>>,
@@ -37,6 +38,9 @@ pub struct ResidualEchoSuppressor {
     /// DTD threshold: when mic_power > dtd_threshold * echo_power → double-talk
     /// 6 dB = power ratio 4.0 gives adequate margin.
     dtd_threshold: f32,
+    /// Smoothed fraction of the cancelled echo expected to remain in error.
+    residual_leakage: f32,
+    leakage_alpha: f32,
 }
 
 impl ResidualEchoSuppressor {
@@ -46,18 +50,34 @@ impl ResidualEchoSuppressor {
     /// * `spectrum_size` - Number of frequency bins (fft_size / 2 + 1 or fft_size for complex FFT)
     /// * `beta` - Over-subtraction factor (default 1.5)
     /// * `g_min` - Spectral floor in linear (default 0.056 ≈ -25 dB)
+    #[cfg(test)]
     pub fn new(spectrum_size: usize, beta: f32, g_min: f32) -> Self {
+        Self::new_with_timing(spectrum_size, beta, g_min, 256, 48_000)
+    }
+
+    pub fn new_with_timing(
+        spectrum_size: usize,
+        beta: f32,
+        g_min: f32,
+        block_size: usize,
+        sample_rate: u32,
+    ) -> Self {
+        let block_seconds = block_size as f32 / sample_rate.max(1) as f32;
+        let coefficient = |seconds: f32| (-block_seconds / seconds).exp();
         Self {
             beta,
             g_min,
             smoothed_gains: vec![1.0; spectrum_size],
-            gain_alpha: 0.8,
+            gain_attack_alpha: coefficient(0.010),
+            gain_release_alpha: coefficient(0.080),
             spectrum_size,
             output_buf: vec![Complex::new(0.0, 0.0); spectrum_size],
             dtd_mic_power: 0.0,
             dtd_echo_power: 0.0,
-            dtd_alpha: 0.9,
-            dtd_threshold: 4.0, // 6 dB advantage → near-end speech detected
+            dtd_alpha: coefficient(0.050),
+            dtd_threshold: 1.2,
+            residual_leakage: 0.1,
+            leakage_alpha: coefficient(0.250),
         }
     }
 
@@ -101,9 +121,20 @@ impl ResidualEchoSuppressor {
         self.dtd_echo_power =
             self.dtd_alpha * self.dtd_echo_power + (1.0 - self.dtd_alpha) * raw_echo_pwr;
 
-        // Double-talk detected when mic power >> echo power by dtd_threshold.
+        // Once an echo estimate exists, comparable residual/error power is
+        // evidence of near-end speech.  Unlike the former 6 dB rule this also
+        // protects balanced double-talk.
         // In that case bypass suppression (copy input directly).
-        let double_talk = self.dtd_mic_power > self.dtd_threshold * (self.dtd_echo_power + 1e-20);
+        let echo_active = self.dtd_echo_power > 1e-12;
+        let double_talk = echo_active
+            && (raw_mic_pwr > self.dtd_threshold * (raw_echo_pwr + 1e-20)
+                || self.dtd_mic_power > self.dtd_threshold * self.dtd_echo_power);
+
+        if echo_active && !double_talk {
+            let observed = (raw_mic_pwr / (raw_echo_pwr + 1e-20)).clamp(0.001, 1.0);
+            self.residual_leakage =
+                self.leakage_alpha * self.residual_leakage + (1.0 - self.leakage_alpha) * observed;
+        }
 
         // n == spectrum_size (invariant enforced by debug_assert_eq! above),
         // so the inner `k < self.spectrum_size` branch is always taken.
@@ -116,8 +147,8 @@ impl ResidualEchoSuppressor {
                 .zip(error_spectrum.iter())
                 .enumerate()
             {
-                self.smoothed_gains[k] =
-                    self.gain_alpha * self.smoothed_gains[k] + (1.0 - self.gain_alpha) * 1.0;
+                self.smoothed_gains[k] = self.gain_release_alpha * self.smoothed_gains[k]
+                    + (1.0 - self.gain_release_alpha);
                 *out = e;
             }
         } else {
@@ -128,7 +159,7 @@ impl ResidualEchoSuppressor {
                 .enumerate()
             {
                 let s_error = e.norm_sqr();
-                let s_echo = echo.norm_sqr();
+                let s_echo = echo.norm_sqr() * self.residual_leakage;
 
                 // Wiener-style gain: G = max((|E|² - β|Ê|²) / |E|², G_min)
                 let speech_est = (s_error - self.beta * s_echo).max(0.0);
@@ -139,8 +170,16 @@ impl ResidualEchoSuppressor {
                 };
 
                 // Smooth gains temporally
-                self.smoothed_gains[k] =
-                    self.gain_alpha * self.smoothed_gains[k] + (1.0 - self.gain_alpha) * gain;
+                let alpha = if gain < self.smoothed_gains[k] {
+                    self.gain_attack_alpha
+                } else if raw_mic_pwr > 2.0 * self.residual_leakage * (raw_echo_pwr + 1e-20) {
+                    // Near-end onset: release suppression immediately rather
+                    // than smearing the first phonemes over the release tail.
+                    0.0
+                } else {
+                    self.gain_release_alpha
+                };
+                self.smoothed_gains[k] = alpha * self.smoothed_gains[k] + (1.0 - alpha) * gain;
 
                 *out = e * self.smoothed_gains[k];
             }
@@ -154,16 +193,7 @@ impl ResidualEchoSuppressor {
         self.smoothed_gains.fill(1.0);
         self.dtd_mic_power = 0.0;
         self.dtd_echo_power = 0.0;
-    }
-
-    /// Set over-subtraction factor.
-    pub fn set_beta(&mut self, beta: f32) {
-        self.beta = beta.clamp(0.5, 4.0);
-    }
-
-    /// Set spectral floor.
-    pub fn set_g_min(&mut self, g_min: f32) {
-        self.g_min = g_min.clamp(0.001, 0.5);
+        self.residual_leakage = 0.1;
     }
 }
 
@@ -233,5 +263,35 @@ mod tests {
         for &g in &sup.smoothed_gains {
             assert_eq!(g, 1.0);
         }
+    }
+
+    #[test]
+    fn leakage_model_preserves_near_end_during_balanced_double_talk() {
+        let mut sup = ResidualEchoSuppressor::new_with_timing(33, 1.5, 0.01, 64, 48_000);
+        let echo = vec![Complex::new(0.4, 0.0); 33];
+        let far_only_residual = vec![Complex::new(0.04, 0.0); 33];
+        for _ in 0..50 {
+            let _ = sup.process(&far_only_residual, &echo);
+        }
+        for near_to_far in [0.25_f32, 1.0, 2.0] {
+            let near = 0.4 * near_to_far.sqrt();
+            let error = vec![Complex::new(near + 0.04, 0.0); 33];
+            let output = sup.process(&error, &echo);
+            let near_in_power = near * near * 33.0;
+            let out_power: f32 = output.iter().map(|x| x.norm_sqr()).sum();
+            let loss_db = 10.0 * (near_in_power / out_power.max(1e-20)).log10();
+            assert!(
+                loss_db < 3.0,
+                "near/far={near_to_far} near-end loss was {loss_db} dB"
+            );
+        }
+    }
+
+    #[test]
+    fn smoothing_coefficients_follow_seconds_not_blocks() {
+        let low = ResidualEchoSuppressor::new_with_timing(33, 1.5, 0.01, 64, 48_000);
+        let high = ResidualEchoSuppressor::new_with_timing(33, 1.5, 0.01, 64, 96_000);
+        assert!(high.dtd_alpha > low.dtd_alpha);
+        assert!(high.gain_release_alpha > low.gain_release_alpha);
     }
 }

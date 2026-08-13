@@ -46,7 +46,7 @@ fn new_and_from_params() {
         step_size: 0.7,
         post_filter_enabled: false,
     };
-    let plugin = AecPlugin::from_params(48_000, params);
+    let plugin = AecPlugin::from_params(48_000, params).unwrap();
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("echo_tail_ms")),
         Some(ParameterValue::Float(300.0))

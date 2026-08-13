@@ -1,10 +1,11 @@
-use super::aec_plugin_params::AecPluginParams;
 use super::misc::DEFAULT_BLOCK_SIZE;
 use super::misc::DEFAULT_ECHO_TAIL_MS;
+use crate::params::Params as AecPluginParams;
 use crate::post_filter::ResidualEchoSuppressor;
 use crate::two_path::TwoPathAec;
+use realfft::{ComplexToReal, RealFftPlanner};
 use rustfft::num_complex::Complex;
-use rustfft::{Fft, FftPlanner};
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
@@ -17,6 +18,9 @@ pub struct AecPlugin {
     pub(super) aec: TwoPathAec,
     pub(super) post_filter: ResidualEchoSuppressor,
     pub(super) post_filter_enabled: bool,
+    pub(super) post_filter_mix: f32,
+    pub(super) post_filter_mix_target: f32,
+    pub(super) post_filter_mix_step: f32,
     pub(super) echo_tail_ms: f32,
     pub(super) step_size: f32,
     pub(super) block_size: usize,
@@ -29,9 +33,8 @@ pub struct AecPlugin {
     pub(super) output_read_pos: usize,
     pub(super) output_write_pos: usize,
     pub(super) output_len: usize,
-    /// FFT for post-filter
-    pub(super) fft_forward: Arc<dyn Fft<f32>>,
-    pub(super) fft_inverse: Arc<dyn Fft<f32>>,
+    /// Real inverse FFT for post-filter reconstruction.
+    pub(super) fft_inverse: Arc<dyn ComplexToReal<f32>>,
     pub(super) fft_scratch: Vec<Complex<f32>>,
     /// Pre-allocated buffer for post-filter IFFT output (time domain)
     pub(super) post_filter_time_buf: Vec<f32>,
@@ -42,6 +45,7 @@ pub struct AecPlugin {
     pub(super) param_step_size: ParameterId,
     pub(super) param_post_filter: ParameterId,
     pub(super) cached_parameters: Vec<Parameter>,
+    pub(super) initialized: bool,
 }
 
 impl AecPlugin {
@@ -50,65 +54,106 @@ impl AecPlugin {
         let echo_tail_samples = (DEFAULT_ECHO_TAIL_MS / 1000.0 * sample_rate as f32) as usize;
 
         let fft_size = block_size * 2;
-        let mut planner = FftPlanner::new();
-        let fft_forward = planner.plan_fft_forward(fft_size);
+        let mut planner = RealFftPlanner::<f32>::new();
         let fft_inverse = planner.plan_fft_inverse(fft_size);
-        let scratch_len = fft_forward
-            .get_inplace_scratch_len()
-            .max(fft_inverse.get_inplace_scratch_len());
+        let scratch_len = fft_inverse.get_scratch_len();
 
         let mut p = Self {
             sample_rate,
             aec: TwoPathAec::new(block_size, echo_tail_samples, 0.3, 0.7),
-            post_filter: ResidualEchoSuppressor::new(fft_size, 1.5, 0.056),
+            post_filter: ResidualEchoSuppressor::new_with_timing(
+                block_size + 1,
+                1.5,
+                0.056,
+                block_size,
+                sample_rate,
+            ),
             post_filter_enabled: true,
+            post_filter_mix: 1.0,
+            post_filter_mix_target: 1.0,
+            post_filter_mix_step: 1.0 / (sample_rate as f32 * 0.010).max(1.0),
             echo_tail_ms: DEFAULT_ECHO_TAIL_MS,
             step_size: 0.5,
             block_size,
             mic_buffer: vec![0.0; block_size],
             ref_buffer: vec![0.0; block_size],
             input_fill: 0,
-            // Pre-allocate enough to hold 64 AEC blocks without any runtime
-            // reallocation.  At 48 kHz / 256-sample blocks this covers up to
-            // 16384-sample host callbacks (≈ 341 ms) which exceeds any realistic
-            // host buffer size.  ensure_output_capacity() still exists as a
-            // fallback for extreme configurations, but will not be triggered in
-            // normal use.
-            output_buffer: vec![0.0; block_size * 64],
+            // A bounded FIFO implements exactly one AEC block of latency. It is
+            // consumed sample-by-sample and replenished whenever a block finishes.
+            output_buffer: vec![0.0; block_size],
             output_read_pos: 0,
             output_write_pos: 0,
-            output_len: 0,
-            fft_forward,
+            output_len: block_size,
             fft_inverse,
             fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
-            post_filter_time_buf: vec![0.0; block_size],
-            post_filter_ifft_buf: vec![Complex::new(0.0, 0.0); block_size * 2],
+            post_filter_time_buf: vec![0.0; fft_size],
+            post_filter_ifft_buf: vec![Complex::new(0.0, 0.0); block_size + 1],
             param_echo_tail_ms: ParameterId::from("echo_tail_ms"),
             param_step_size: ParameterId::from("step_size"),
             param_post_filter: ParameterId::from("post_filter_enabled"),
             cached_parameters: Vec::new(),
+            initialized: false,
         };
         p.rebuild_cached_parameters();
         p
     }
 
-    pub fn from_params(sample_rate: u32, params: AecPluginParams) -> Self {
+    pub fn from_params(sample_rate: u32, params: AecPluginParams) -> Result<Self, String> {
+        Self::validate_configuration(sample_rate, &params)?;
         let mut plugin = Self::new(sample_rate);
-        plugin.echo_tail_ms = params.echo_tail_ms;
-        plugin.step_size = params.step_size;
+        plugin.echo_tail_ms = params.echo_tail_ms as f32;
+        plugin.step_size = params.step_size as f32;
         plugin.post_filter_enabled = params.post_filter_enabled;
+        plugin.post_filter_mix = if params.post_filter_enabled { 1.0 } else { 0.0 };
+        plugin.post_filter_mix_target = plugin.post_filter_mix;
         plugin.rebuild_aec();
-        plugin
+        plugin.rebuild_cached_parameters();
+        plugin.initialized = true;
+        Ok(plugin)
+    }
+
+    fn validate_configuration(sample_rate: u32, params: &AecPluginParams) -> Result<(), String> {
+        if sample_rate == 0 {
+            return Err("AEC sample rate must be greater than zero".to_string());
+        }
+        if !params.echo_tail_ms.is_finite() || !(50.0_f64..=500.0).contains(&params.echo_tail_ms) {
+            return Err(format!(
+                "AEC echo_tail_ms must be finite and in 50..=500, got {}",
+                params.echo_tail_ms
+            ));
+        }
+        if !params.step_size.is_finite() || !(0.1_f64..=0.9).contains(&params.step_size) {
+            return Err(format!(
+                "AEC step_size must be finite and in 0.1..=0.9, got {}",
+                params.step_size
+            ));
+        }
+        Ok(())
     }
 
     pub(super) fn rebuild_aec(&mut self) {
         let echo_tail_samples = (self.echo_tail_ms / 1000.0 * self.sample_rate as f32) as usize;
-        self.aec = TwoPathAec::new(
+        self.aec = TwoPathAec::new_with_sample_rate(
             self.block_size,
             echo_tail_samples,
             self.step_size * 0.6,
             self.step_size,
+            self.sample_rate,
         );
+    }
+
+    fn rebuild_post_filter(&mut self) {
+        // The suppressor owns smoothed gains and DTD history. Rebuild it as
+        // part of initialization so no state accumulated at the old stream
+        // rate can influence the first block of the new stream.
+        self.post_filter = ResidualEchoSuppressor::new_with_timing(
+            self.block_size + 1,
+            1.5,
+            0.056,
+            self.block_size,
+            self.sample_rate,
+        );
+        self.post_filter_mix_step = 1.0 / (self.sample_rate as f32 * 0.010).max(1.0);
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
@@ -116,10 +161,12 @@ impl AecPlugin {
             Parameter::new_float("echo_tail_ms", "Echo Tail", self.echo_tail_ms, 50.0, 500.0)
                 .with_description("Echo tail length in milliseconds")
                 .with_group("AEC")
+                .with_update_mode(UpdateMode::Structural)
                 .with_importance(ParameterImportance::Critical),
             Parameter::new_float("step_size", "Step Size", self.step_size, 0.1, 0.9)
                 .with_description("Adaptive filter learning rate")
                 .with_group("AEC")
+                .with_update_mode(UpdateMode::Structural)
                 .with_importance(ParameterImportance::Useful),
             Parameter::new_bool(
                 "post_filter_enabled",
@@ -132,43 +179,25 @@ impl AecPlugin {
         ];
     }
 
-    pub(super) fn available_output(&self) -> usize {
-        self.output_len
-    }
-
-    pub(super) fn ensure_output_capacity(&mut self, additional: usize) {
-        let needed = self.output_len + additional;
-        if needed <= self.output_buffer.len() {
-            return;
-        }
-
-        let new_len = needed
-            .max(self.output_buffer.len() * 2)
-            .max(self.block_size);
-        let old_len = self.output_buffer.len();
-        let mut new_buffer = vec![0.0; new_len];
-        for (i, dst) in new_buffer.iter_mut().enumerate().take(self.output_len) {
-            *dst = self.output_buffer[(self.output_read_pos + i) % old_len];
-        }
-        self.output_buffer = new_buffer;
-        self.output_read_pos = 0;
-        self.output_write_pos = self.output_len;
-    }
-
-    pub(super) fn push_output(&mut self, samples: &[f32]) {
-        self.ensure_output_capacity(samples.len());
-        for &s in samples {
-            self.output_buffer[self.output_write_pos] = s;
-            self.output_write_pos = (self.output_write_pos + 1) % self.output_buffer.len();
-            self.output_len += 1;
-        }
-    }
-
     pub(super) fn pop_output(&mut self) -> f32 {
+        debug_assert!(self.output_len > 0);
         let s = self.output_buffer[self.output_read_pos];
         self.output_read_pos = (self.output_read_pos + 1) % self.output_buffer.len();
         self.output_len -= 1;
         s
+    }
+
+    fn reset_streaming_state(&mut self) {
+        self.input_fill = 0;
+        self.mic_buffer.fill(0.0);
+        self.ref_buffer.fill(0.0);
+        self.output_buffer.fill(0.0);
+        self.output_read_pos = 0;
+        self.output_write_pos = 0;
+        self.output_len = self.block_size;
+        self.post_filter_time_buf.fill(0.0);
+        self.post_filter_ifft_buf.fill(Complex::new(0.0, 0.0));
+        self.fft_scratch.fill(Complex::new(0.0, 0.0));
     }
 }
 
@@ -198,17 +227,40 @@ impl Plugin for AecPlugin {
         self.validate_parameter(&id, &value)?;
         if id == self.param_echo_tail_ms {
             let val = value.as_float().unwrap_or(DEFAULT_ECHO_TAIL_MS);
+            if val == self.echo_tail_ms {
+                return Ok(());
+            }
+            if self.initialized {
+                return Err("echo_tail_ms is structural; recreate the AEC plugin".to_string());
+            }
             self.echo_tail_ms = val.clamp(50.0, 500.0);
             self.rebuild_aec();
             self.rebuild_cached_parameters();
         } else if id == self.param_step_size {
             let val = value.as_float().unwrap_or(0.5);
+            if val == self.step_size {
+                return Ok(());
+            }
+            if self.initialized {
+                return Err("step_size is structural; recreate the AEC plugin".to_string());
+            }
             self.step_size = val.clamp(0.1, 0.9);
             self.rebuild_aec();
             self.rebuild_cached_parameters();
         } else if id == self.param_post_filter {
-            self.post_filter_enabled = value.as_bool().unwrap_or(true);
-            self.rebuild_cached_parameters();
+            let enabled = value.as_bool().unwrap_or(true);
+            if enabled == self.post_filter_enabled {
+                return Ok(());
+            }
+            self.post_filter_enabled = enabled;
+            self.post_filter_mix_target = if enabled { 1.0 } else { 0.0 };
+            if let Some(parameter) = self
+                .cached_parameters
+                .iter_mut()
+                .find(|parameter| parameter.id == self.param_post_filter)
+            {
+                parameter.default_value = ParameterValue::Bool(enabled);
+            }
         } else {
             return Err(format!("Unknown parameter: {id}"));
         }
@@ -228,19 +280,21 @@ impl Plugin for AecPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("AEC sample rate must be greater than zero".to_string());
+        }
         self.sample_rate = sample_rate;
         self.rebuild_aec();
+        self.rebuild_post_filter();
+        self.reset_streaming_state();
+        self.initialized = true;
         Ok(())
     }
 
     fn reset(&mut self) {
         self.aec.reset();
         self.post_filter.reset();
-        self.input_fill = 0;
-        self.output_read_pos = 0;
-        self.output_write_pos = 0;
-        self.output_len = 0;
-        self.output_buffer.fill(0.0);
+        self.reset_streaming_state();
     }
 
     fn process(
@@ -270,24 +324,44 @@ impl Plugin for AecPlugin {
 
         // Deinterleave: input is [mic0, ref0, mic1, ref1, ...]
         for i in 0..nf {
-            let mic_sample = input[i * 2];
-            let ref_sample = input[i * 2 + 1];
+            // Consume before replenishing so the generated block always appears
+            // exactly `block_size` samples after its input, independent of host
+            // callback segmentation.
+            output[i] = self.pop_output();
+            // Explicit realtime policy: non-finite device/plugin input is
+            // replaced by silence before it can poison adaptive state.
+            let mic_sample = if input[i * 2].is_finite() {
+                input[i * 2]
+            } else {
+                0.0
+            };
+            let ref_sample = if input[i * 2 + 1].is_finite() {
+                input[i * 2 + 1]
+            } else {
+                0.0
+            };
 
             self.mic_buffer[self.input_fill] = mic_sample;
             self.ref_buffer[self.input_fill] = ref_sample;
             self.input_fill += 1;
 
             if self.input_fill == self.block_size {
-                self.ensure_output_capacity(self.block_size);
                 // Process one block — copy error output before push (avoids borrow conflict)
                 let error = self.aec.process(&self.mic_buffer, &self.ref_buffer);
                 let error_len = error.len();
+                // The input block has been consumed, so reuse its storage for
+                // the dry path and release the mutable AEC borrow.
+                self.mic_buffer[..error_len].copy_from_slice(error);
 
-                // Apply residual echo suppression post-filter if enabled
-                if self.post_filter_enabled {
+                // Keep suppressor state current in both wet and dry modes;
+                // only the final allocation-free mix is toggled.
+                {
                     let error_freq = self.aec.last_error_freq();
                     let echo_est_freq = self.aec.last_echo_estimate_freq();
-                    let suppressed = self.post_filter.process(error_freq, echo_est_freq);
+                    let unique_bins = self.block_size + 1;
+                    let suppressed = self
+                        .post_filter
+                        .process(&error_freq[..unique_bins], &echo_est_freq[..unique_bins]);
                     // IFFT the suppressed spectrum to get time-domain output
                     // Copy into pre-allocated buffer since IFFT needs mutable access
                     let n_sup = suppressed.len();
@@ -302,25 +376,29 @@ impl Plugin for AecPlugin {
                     );
                     let n_sup = self.post_filter_ifft_buf.len();
                     self.post_filter_ifft_buf[..n_sup].copy_from_slice(&suppressed[..n_sup]);
-                    self.fft_inverse.process_with_scratch(
-                        &mut self.post_filter_ifft_buf[..n_sup],
-                        &mut self.fft_scratch,
-                    );
-                    let inv_n = 1.0 / n_sup as f32;
+                    self.fft_inverse
+                        .process_with_scratch(
+                            &mut self.post_filter_ifft_buf[..n_sup],
+                            &mut self.post_filter_time_buf,
+                            &mut self.fft_scratch,
+                        )
+                        .map_err(|error| format!("AEC post-filter inverse FFT failed: {error}"))?;
+                    let inv_n = 1.0 / (self.block_size * 2) as f32;
                     let b = self.block_size;
                     for i in 0..b.min(error_len) {
-                        // Take last B samples (overlap-save convention)
-                        self.post_filter_time_buf[i] = self.post_filter_ifft_buf[b + i].re * inv_n;
-                    }
-                    for i in 0..error_len {
-                        self.output_buffer[self.output_write_pos] = self.post_filter_time_buf[i];
-                        self.output_write_pos =
-                            (self.output_write_pos + 1) % self.output_buffer.len();
-                        self.output_len += 1;
-                    }
-                } else {
-                    for &sample in &error[..error_len] {
-                        self.output_buffer[self.output_write_pos] = sample;
+                        let target = self.post_filter_mix_target;
+                        if self.post_filter_mix < target {
+                            self.post_filter_mix =
+                                (self.post_filter_mix + self.post_filter_mix_step).min(target);
+                        } else if self.post_filter_mix > target {
+                            self.post_filter_mix =
+                                (self.post_filter_mix - self.post_filter_mix_step).max(target);
+                        }
+                        let wet = self.post_filter_time_buf[b + i] * inv_n;
+                        let dry = self.mic_buffer[i];
+                        let sample = dry + self.post_filter_mix * (wet - dry);
+                        self.output_buffer[self.output_write_pos] =
+                            if sample.is_finite() { sample } else { 0.0 };
                         self.output_write_pos =
                             (self.output_write_pos + 1) % self.output_buffer.len();
                         self.output_len += 1;
@@ -329,15 +407,6 @@ impl Plugin for AecPlugin {
                 self.input_fill = 0;
             }
         }
-
-        // Write available output
-        let available = self.available_output();
-        let to_write = nf.min(available);
-        for out in &mut output[..to_write] {
-            *out = self.pop_output();
-        }
-        // Zero-fill if not enough output yet (initial latency)
-        output[to_write..nf].fill(0.0);
 
         Ok(nf)
     }
@@ -348,6 +417,12 @@ impl Plugin for AecPlugin {
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         None
+    }
+}
+
+impl AecPlugin {
+    pub fn post_filter_mix(&self) -> f32 {
+        self.post_filter_mix
     }
 }
 

@@ -29,8 +29,10 @@ pub const PARAMS: &[ParamSpec] = &[
         "ms",
         "AEC",
     )
+    .structural()
     .doc("Max echo path length to cancel"),
     ParamSpec::float("Step Size", "step_size", 0.5, 0.1, 0.9, 0.05, "", "AEC")
+        .structural()
         .doc("Adaptive filter convergence rate"),
     ParamSpec::bool_param("Post-Filter", "post_filter_enabled", true, "AEC")
         .output()

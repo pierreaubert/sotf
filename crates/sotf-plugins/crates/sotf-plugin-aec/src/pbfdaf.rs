@@ -38,7 +38,9 @@ pub struct Pbfdaf {
     fft_scratch: Vec<Complex<f32>>,
     fft_buf: Vec<Complex<f32>>,
     error_freq: Vec<Complex<f32>>,
+    echo_estimate_freq: Vec<Complex<f32>>,
     output_buf: Vec<Complex<f32>>,
+    previous_reference: Vec<f32>,
 }
 
 impl Pbfdaf {
@@ -76,7 +78,9 @@ impl Pbfdaf {
             fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
             fft_buf: vec![Complex::new(0.0, 0.0); fft_size],
             error_freq: vec![Complex::new(0.0, 0.0); fft_size],
+            echo_estimate_freq: vec![Complex::new(0.0, 0.0); fft_size],
             output_buf: vec![Complex::new(0.0, 0.0); fft_size],
+            previous_reference: vec![0.0; block_size],
         }
     }
 
@@ -88,18 +92,29 @@ impl Pbfdaf {
     ///
     /// # Returns
     /// Error signal (mic with echo cancelled). Length = `block_size`.
+    #[cfg(test)]
     pub fn process(&mut self, mic: &[f32], reference: &[f32]) -> &[f32] {
+        self.process_with_adaptation(mic, reference, 1.0)
+    }
+
+    pub(crate) fn process_with_adaptation(
+        &mut self,
+        mic: &[f32],
+        reference: &[f32],
+        adaptation_scale: f32,
+    ) -> &[f32] {
         let b = self.block_size;
         debug_assert!(mic.len() >= b);
         debug_assert!(reference.len() >= b);
 
-        // FFT reference block (zero-padded to fft_size)
-        for (dst, &src) in self.fft_buf[..b].iter_mut().zip(&reference[..b]) {
+        // Overlap-save input: the previous block followed by the current block.
+        for (dst, &src) in self.fft_buf[..b].iter_mut().zip(&self.previous_reference) {
             *dst = Complex::new(src, 0.0);
         }
-        for i in b..self.fft_size {
-            self.fft_buf[i] = Complex::new(0.0, 0.0);
+        for (dst, &src) in self.fft_buf[b..].iter_mut().zip(&reference[..b]) {
+            *dst = Complex::new(src, 0.0);
         }
+        self.previous_reference.copy_from_slice(&reference[..b]);
         self.fft_forward
             .process_with_scratch(&mut self.fft_buf, &mut self.fft_scratch);
 
@@ -121,6 +136,10 @@ impl Pbfdaf {
                 *out += w * x;
             }
         }
+
+        // Preserve the frequency-domain estimate for the residual suppressor.
+        // `output_buf` is overwritten in-place by the inverse FFT below.
+        self.echo_estimate_freq.copy_from_slice(&self.output_buf);
 
         // IFFT echo estimate
         self.fft_inverse
@@ -166,8 +185,9 @@ impl Pbfdaf {
                 .zip(&self.fdl[fdl_idx])
             {
                 let norm = power + self.delta;
-                let update = error * fdl.conj() * self.mu / norm;
-                *w = (*w + update) * leak;
+                let update = error * fdl.conj() * (self.mu * adaptation_scale) / norm;
+                let effective_leak = 1.0 - (1.0 - leak) * adaptation_scale;
+                *w = (*w + update) * effective_leak;
                 // Prevent NaN propagation
                 if !w.re.is_finite() {
                     w.re = 0.0;
@@ -178,7 +198,103 @@ impl Pbfdaf {
             }
         }
 
+        // Frequency-domain NLMS updates are circular.  Without this
+        // projection, every partition can acquire energy in the second half
+        // of its 2B-point impulse response; that energy is a negative-time
+        // alias when the last B samples of the overlap-save IFFT are used.
+        // Project each updated partition onto its causal B-sample support.
+        // All scratch storage is owned by the filter, so this adds no
+        // realtime allocation.  The normalization is required because
+        // rustfft's inverse transform is intentionally unnormalised.
+        if adaptation_scale > 0.0 {
+            let inv_fft_size = 1.0 / self.fft_size as f32;
+            for partition in 0..self.num_partitions {
+                self.fft_buf.copy_from_slice(&self.weights[partition]);
+                self.fft_inverse
+                    .process_with_scratch(&mut self.fft_buf, &mut self.fft_scratch);
+                for sample in &mut self.fft_buf {
+                    *sample *= inv_fft_size;
+                }
+                self.fft_buf[b..].fill(Complex::new(0.0, 0.0));
+                self.fft_forward
+                    .process_with_scratch(&mut self.fft_buf, &mut self.fft_scratch);
+                self.weights[partition].copy_from_slice(&self.fft_buf);
+            }
+        }
+
         &self.error_buf[..b]
+    }
+
+    /// Process with reference analysis prepared by the other adaptive path.
+    /// This shares the expensive reference FFT, FDL update and per-bin power.
+    pub(crate) fn process_with_shared_reference(
+        &mut self,
+        mic: &[f32],
+        shared: &Self,
+        adaptation_scale: f32,
+    ) -> &[f32] {
+        let b = self.block_size;
+        debug_assert_eq!(self.fft_size, shared.fft_size);
+        debug_assert_eq!(self.num_partitions, shared.num_partitions);
+
+        self.output_buf.fill(Complex::new(0.0, 0.0));
+        for p in 0..self.num_partitions {
+            let fdl_idx = (shared.fdl_head + p) % self.num_partitions;
+            for (out, (&w, &x)) in self
+                .output_buf
+                .iter_mut()
+                .zip(self.weights[p].iter().zip(&shared.fdl[fdl_idx]))
+            {
+                *out += w * x;
+            }
+        }
+        self.echo_estimate_freq.copy_from_slice(&self.output_buf);
+        self.fft_inverse
+            .process_with_scratch(&mut self.output_buf, &mut self.fft_scratch);
+        let inv_n = 1.0 / self.fft_size as f32;
+        for (i, (err, &m)) in self.error_buf.iter_mut().zip(&mic[..b]).enumerate() {
+            *err = m - self.output_buf[b + i].re * inv_n;
+        }
+        self.error_freq[..b].fill(Complex::new(0.0, 0.0));
+        for (dst, &sample) in self.error_freq[b..].iter_mut().zip(&self.error_buf) {
+            *dst = Complex::new(sample, 0.0);
+        }
+        self.fft_forward
+            .process_with_scratch(&mut self.error_freq, &mut self.fft_scratch);
+
+        let leak = 1.0 - 1e-3;
+        let effective_leak = 1.0 - (1.0 - leak) * adaptation_scale;
+        for p in 0..self.num_partitions {
+            let fdl_idx = (shared.fdl_head + p) % self.num_partitions;
+            for ((w, (&power, &error)), &fdl) in self.weights[p]
+                .iter_mut()
+                .zip(shared.power_sum.iter().zip(&self.error_freq))
+                .zip(&shared.fdl[fdl_idx])
+            {
+                let update =
+                    error * fdl.conj() * (self.mu * adaptation_scale) / (power + self.delta);
+                *w = (*w + update) * effective_leak;
+                if !w.re.is_finite() || !w.im.is_finite() {
+                    *w = Complex::new(0.0, 0.0);
+                }
+            }
+        }
+        if adaptation_scale > 0.0 {
+            let inv_fft_size = 1.0 / self.fft_size as f32;
+            for partition in 0..self.num_partitions {
+                self.fft_buf.copy_from_slice(&self.weights[partition]);
+                self.fft_inverse
+                    .process_with_scratch(&mut self.fft_buf, &mut self.fft_scratch);
+                for sample in &mut self.fft_buf {
+                    *sample *= inv_fft_size;
+                }
+                self.fft_buf[b..].fill(Complex::new(0.0, 0.0));
+                self.fft_forward
+                    .process_with_scratch(&mut self.fft_buf, &mut self.fft_scratch);
+                self.weights[partition].copy_from_slice(&self.fft_buf);
+            }
+        }
+        &self.error_buf
     }
 
     /// Reset all adaptive filter state.
@@ -191,27 +307,21 @@ impl Pbfdaf {
         }
         self.fdl_head = 0;
         self.power_sum.fill(self.delta);
+        self.error_buf.fill(0.0);
+        self.error_freq.fill(Complex::new(0.0, 0.0));
+        self.echo_estimate_freq.fill(Complex::new(0.0, 0.0));
+        self.output_buf.fill(Complex::new(0.0, 0.0));
+        self.previous_reference.fill(0.0);
     }
 
-    /// Copy adaptive state from another filter with the same shape.
-    pub(crate) fn copy_adaptive_state_from(&mut self, other: &Self) {
-        assert_eq!(self.block_size, other.block_size);
-        assert_eq!(self.fft_size, other.fft_size);
+    pub(crate) fn copy_weights_from(&mut self, other: &Self) {
         assert_eq!(self.num_partitions, other.num_partitions);
-
         for (dst, src) in self.weights.iter_mut().zip(&other.weights) {
             dst.copy_from_slice(src);
         }
-        for (dst, src) in self.fdl.iter_mut().zip(&other.fdl) {
-            dst.copy_from_slice(src);
-        }
-        self.fdl_head = other.fdl_head;
-        self.power_sum.copy_from_slice(&other.power_sum);
-        self.error_buf.copy_from_slice(&other.error_buf);
-        self.error_freq.copy_from_slice(&other.error_freq);
-        self.output_buf.copy_from_slice(&other.output_buf);
     }
 
+    #[cfg(test)]
     pub(crate) fn adaptive_state_energy(&self) -> f32 {
         self.weights
             .iter()
@@ -222,10 +332,6 @@ impl Pbfdaf {
 
     /// Get current ERLE (Echo Return Loss Enhancement) in dB.
     /// Requires tracking of mic and error power externally.
-    pub fn block_size(&self) -> usize {
-        self.block_size
-    }
-
     /// Last error signal in frequency domain (available after process()).
     /// Length = fft_size.
     pub fn last_error_freq(&self) -> &[Complex<f32>] {
@@ -235,9 +341,10 @@ impl Pbfdaf {
     /// Last echo estimate in frequency domain (available after process()).
     /// Note: this is the *pre-IFFT* echo estimate, length = fft_size.
     pub fn last_echo_estimate_freq(&self) -> &[Complex<f32>] {
-        &self.output_buf
+        &self.echo_estimate_freq
     }
 
+    #[cfg(test)]
     pub fn fft_size(&self) -> usize {
         self.fft_size
     }
@@ -256,6 +363,42 @@ impl std::fmt::Debug for Pbfdaf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn last_echo_estimate_is_frequency_domain_data() {
+        let block_size = 32;
+        let mut filter = Pbfdaf::new(block_size, block_size, 0.5, 1e-6);
+
+        for block in 0..12 {
+            let reference: Vec<f32> = (0..block_size)
+                .map(|i| ((block * block_size + i) as f32 * 0.19).sin())
+                .collect();
+            let mic: Vec<f32> = reference.iter().map(|sample| sample * 0.4).collect();
+            let _ = filter.process(&mic, &reference);
+        }
+
+        let reference: Vec<f32> = (0..block_size)
+            .map(|i| ((12 * block_size + i) as f32 * 0.19).sin())
+            .collect();
+        let mic: Vec<f32> = reference.iter().map(|sample| sample * 0.4).collect();
+        let error = filter.process(&mic, &reference).to_vec();
+        let spectrum = filter.last_echo_estimate_freq().to_vec();
+
+        let mut planner = FftPlanner::new();
+        let inverse = planner.plan_fft_inverse(filter.fft_size());
+        let mut reconstructed = spectrum;
+        inverse.process(&mut reconstructed);
+        let scale = 1.0 / filter.fft_size() as f32;
+
+        for i in 0..block_size {
+            let expected = mic[i] - error[i];
+            let actual = reconstructed[block_size + i].re * scale;
+            assert!(
+                (actual - expected).abs() < 1e-4,
+                "echo spectrum must reconstruct the estimate at sample {i}: expected={expected}, actual={actual}"
+            );
+        }
+    }
 
     #[test]
     fn test_pbfdaf_creation() {
@@ -349,5 +492,89 @@ mod tests {
                 "ERLE should be > 5 dB after convergence, got {erle_db:.1} dB"
             );
         }
+    }
+
+    #[test]
+    fn adaptive_partitions_are_causal_after_frequency_update() {
+        let block_size = 32;
+        let mut filter = Pbfdaf::new(block_size, block_size * 3, 0.7, 1e-6);
+
+        // A broadband block makes the unconstrained frequency-domain update
+        // populate both halves of each partition's time-domain impulse
+        // response.  MDF/PBFDAF must project the update back to the causal
+        // B-sample partition before it is used for the next convolution.
+        for block in 0..4 {
+            let reference: Vec<f32> = (0..block_size)
+                .map(|i| {
+                    let n = (block * block_size + i) as u32;
+                    // Deterministic, broadband-ish sequence without a test
+                    // dependency on a random-number generator.
+                    (((n.wrapping_mul(1_103_515_245).wrapping_add(12_345) >> 8) & 0xffff) as f32
+                        / 32_768.0)
+                        - 1.0
+                })
+                .collect();
+            let mic: Vec<f32> = reference.iter().map(|sample| sample * 0.6).collect();
+            let _ = filter.process(&mic, &reference);
+        }
+
+        let mut planner = FftPlanner::new();
+        let inverse = planner.plan_fft_inverse(filter.fft_size());
+        let scale = 1.0 / filter.fft_size() as f32;
+        for (partition, weights) in filter.weights.iter().enumerate() {
+            let mut impulse = weights.clone();
+            inverse.process(&mut impulse);
+            let noncausal_energy: f32 = impulse[block_size..]
+                .iter()
+                .map(|sample| (sample * scale).norm_sqr())
+                .sum();
+            assert!(
+                noncausal_energy < 1e-8,
+                "partition {partition} contains non-causal weight energy: {noncausal_energy}"
+            );
+        }
+    }
+
+    #[test]
+    fn delayed_echo_in_late_partition_converges_without_circular_alias() {
+        let block_size = 32;
+        let delay = block_size * 2 + 7;
+        let attenuation = 0.6_f32;
+        let mut filter = Pbfdaf::new(block_size, block_size * 4, 0.7, 1e-6);
+        let total_samples = block_size * 500;
+        let reference: Vec<f32> = (0..total_samples)
+            .map(|n| {
+                let n = n as u32;
+                (((n.wrapping_mul(1_103_515_245).wrapping_add(12_345) >> 8) & 0xffff) as f32
+                    / 32_768.0)
+                    - 1.0
+            })
+            .collect();
+
+        let mut mic = vec![0.0_f32; total_samples];
+        for n in delay..total_samples {
+            mic[n] = reference[n - delay] * attenuation;
+        }
+
+        let mut mic_power = 0.0_f32;
+        let mut error_power = 0.0_f32;
+        for block in 0..(total_samples / block_size) {
+            let start = block * block_size;
+            let end = start + block_size;
+            let error = filter.process(&mic[start..end], &reference[start..end]);
+            if block >= 400 {
+                mic_power += mic[start..end]
+                    .iter()
+                    .map(|sample| sample * sample)
+                    .sum::<f32>();
+                error_power += error.iter().map(|sample| sample * sample).sum::<f32>();
+            }
+        }
+
+        let erle_db = 10.0 * (mic_power / error_power.max(1e-20)).log10();
+        assert!(
+            erle_db > 8.0,
+            "late-partition delayed echo should converge without circular aliasing (ERLE={erle_db:.1} dB)"
+        );
     }
 }

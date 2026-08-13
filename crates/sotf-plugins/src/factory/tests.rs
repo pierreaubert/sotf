@@ -620,3 +620,69 @@ fn external_plugin_state_stays_consistent_after_invalid_parameter_changes() {
         .unwrap();
     assert_eq!(frames, 2);
 }
+
+#[test]
+fn beamformer_factory_matches_fallible_constructor_validation() {
+    for params in [
+        serde_json::json!({"num_mics": 1}),
+        serde_json::json!({"num_mics": 2, "mic_spacing_cm": 100.0}),
+        serde_json::json!({"num_mics": 2, "steer_angle_deg": 200.0}),
+        serde_json::json!({"num_mics": 2, "beamformer_type": "unknown"}),
+    ] {
+        assert!(create_plugin("beamformer", &params, 2, 48_000).is_err(), "{params}");
+    }
+    assert!(create_plugin(
+        "beamformer",
+        &serde_json::json!({"num_mics": 2, "beamformer_type": "Superdirective"}),
+        2,
+        48_000,
+    )
+    .is_ok());
+}
+#[test]
+fn aec_catalog_factory_and_runtime_schema_are_canonical() {
+    let entry = catalog_entry("aec").expect("AEC catalog entry");
+    assert_eq!(entry.metadata.owning_crate, "sotf-plugin-aec");
+    assert_eq!(
+        entry.metadata.parameter_schema,
+        super::catalog::PluginParameterSchema::Static("sotf_plugin_aec::params::PARAMS")
+    );
+    assert!(create_plugin("aec", &serde_json::json!({}), 1, 48_000).is_err());
+    assert!(create_plugin("aec", &serde_json::json!({}), 3, 48_000).is_err());
+    let plugin = create_plugin(
+        "aec",
+        &serde_json::json!({
+            "echo_tail_ms": 100.0,
+            "step_size": 0.4,
+            "post_filter_enabled": false
+        }),
+        2,
+        48_000,
+    )
+    .expect("canonical factory must construct AEC");
+    assert_eq!(plugin.input_channels(), 2);
+    assert_eq!(plugin.output_channels(), 1);
+    assert_eq!(
+        plugin.get_parameter(&sotf_host::parameters::ParameterId::from("step_size")),
+        Some(sotf_host::parameters::ParameterValue::Float(0.4))
+    );
+}
+
+#[test]
+fn ambisonics_catalog_admits_every_supported_order() {
+    let entry = catalog_entry("ambisonics_decoder").unwrap();
+    assert_eq!(
+        entry.metadata.channel_layout.supported_inputs,
+        super::catalog::PluginSupportedInputLayouts::Enumerated(&[4, 9, 16])
+    );
+    for (order, channels, layout) in [(1, 4, "5.1"), (2, 9, "7.1.4"), (3, 16, "9.1.6")] {
+        let plugin = create_plugin(
+            "ambisonics_decoder",
+            &serde_json::json!({"order": order, "target_layout": layout}),
+            channels,
+            48_000,
+        )
+        .unwrap();
+        assert_eq!(plugin.input_channels(), channels);
+    }
+}
