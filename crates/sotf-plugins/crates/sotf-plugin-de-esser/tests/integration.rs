@@ -39,13 +39,10 @@ fn parameter_roundtrip() {
     plugin.initialize(48000).unwrap();
 
     let cases: &[(&str, ParameterValue)] = &[
-        ("frequency", ParameterValue::Float(10000.0)),
-        ("q", ParameterValue::Float(2.5)),
         ("threshold", ParameterValue::Float(-30.0)),
         ("ratio", ParameterValue::Float(8.0)),
         ("attack", ParameterValue::Float(2.0)),
         ("release", ParameterValue::Float(50.0)),
-        ("mode", ParameterValue::String("Wideband".to_string())),
         ("mix", ParameterValue::Float(0.25)),
     ];
 
@@ -68,15 +65,16 @@ fn mode_variants_roundtrip() {
     let mut plugin = DeEsserPlugin::new(1);
     plugin.initialize(48000).unwrap();
 
-    plugin
+    let error = plugin
         .parametric_set_parameter(
             ParameterId::from("mode"),
             ParameterValue::String("Wideband".to_string()),
         )
-        .unwrap();
+        .unwrap_err();
+    assert!(error.contains("structural"));
     assert_eq!(
         plugin.parametric_get_parameter(&ParameterId::from("mode")),
-        Some(ParameterValue::String("Wideband".to_string()))
+        Some(ParameterValue::String("Split-Band".to_string()))
     );
 
     plugin

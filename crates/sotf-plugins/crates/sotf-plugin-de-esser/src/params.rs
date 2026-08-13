@@ -36,8 +36,12 @@ pub const PARAMS: &[ParamSpec] = &[
         "Hz",
         "Detection",
     )
+    .structural()
+    .setup()
     .doc("Center frequency for sibilance detection"),
     ParamSpec::float("Q", "q", 1.5, 0.5, 5.0, 0.1, "", "Detection")
+        .structural()
+        .setup()
         .doc("Bandwidth of detection filter"),
     // Dynamics
     ParamSpec::float(
@@ -60,6 +64,7 @@ pub const PARAMS: &[ParamSpec] = &[
     .doc("Release time"),
     // Mode
     ParamSpec::choice("Mode", "mode", 1, MODES, "Mode")
+        .structural()
         .setup()
         .doc("Wideband reduces full signal; Split-band only reduces HF"),
     // Output

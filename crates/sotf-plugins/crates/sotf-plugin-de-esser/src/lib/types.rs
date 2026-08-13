@@ -5,6 +5,7 @@ use crate::params::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeEsserPluginParams {
     #[serde(default = "default_frequency")]
     pub frequency: f32,
@@ -24,6 +25,21 @@ pub struct DeEsserPluginParams {
     pub mix: f32,
 }
 
+impl Default for DeEsserPluginParams {
+    fn default() -> Self {
+        Self {
+            frequency: default_frequency(),
+            q: default_q(),
+            threshold: default_threshold(),
+            ratio: default_ratio(),
+            attack_ms: default_attack_ms(),
+            release_ms: default_release_ms(),
+            mode: default_mode(),
+            mix: default_mix(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -41,5 +57,10 @@ mod tests {
         assert_eq!(p.release_ms, pk(PARAMS, "release").default_f64() as f32);
         assert_eq!(p.mode, crate::params::MODES[1]);
         assert_eq!(p.mix, pk(PARAMS, "mix").default_f64() as f32);
+    }
+
+    #[test]
+    fn deserialize_rejects_unknown_fields() {
+        assert!(serde_json::from_str::<DeEsserPluginParams>(r#"{"future_control":true}"#).is_err());
     }
 }

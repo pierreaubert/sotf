@@ -13,7 +13,7 @@ use sotf_host::analyzer::RealTimeCache;
 use sotf_host::dynamics_core::DynamicsCore;
 use sotf_host::dynamics_core::DynamicsMode;
 use sotf_host::lr4_crossover::Lr4Crossover;
-use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::param_specs::{UpdateMode, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
@@ -24,6 +24,8 @@ use sotf_host::simd::{apply_per_channel_gain_simd, enable_ftz_daz, flush_denorma
 use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::sync::Arc;
+
+const DETECTOR_POLE_Q: f32 = std::f32::consts::FRAC_1_SQRT_2;
 
 pub struct DeEsserPlugin {
     pub(super) channels: usize,
@@ -166,6 +168,62 @@ impl DeEsserPlugin {
         p
     }
 
+    pub fn try_from_params(channels: usize, params: DeEsserPluginParams) -> PluginResult<Self> {
+        Self::try_from_params_at_sample_rate(channels, params, 48_000)
+    }
+
+    /// Factory variant that also validates the detector band for its runtime
+    /// sample rate. This keeps low-rate hosts from accepting a preset that
+    /// only has valid filter edges at the constructor's default rate.
+    pub fn try_from_params_at_sample_rate(
+        channels: usize,
+        params: DeEsserPluginParams,
+        sample_rate: u32,
+    ) -> PluginResult<Self> {
+        if channels == 0 {
+            return Err("De-Esser requires at least one channel".to_string());
+        }
+        if sample_rate == 0 {
+            return Err("De-Esser sample rate must be greater than zero".to_string());
+        }
+        if !matches!(
+            params.mode.as_str(),
+            "Wideband" | "wideband" | "Split-Band" | "split-band"
+        ) {
+            return Err(format!("Unknown De-Esser mode: {}", params.mode));
+        }
+        let ranges = [
+            ("frequency", params.frequency, 2000.0, 16000.0),
+            ("q", params.q, 0.5, 5.0),
+            ("threshold", params.threshold, -60.0, 0.0),
+            ("ratio", params.ratio, 1.0, 20.0),
+            ("attack_ms", params.attack_ms, 0.1, 10.0),
+            ("release_ms", params.release_ms, 5.0, 200.0),
+            ("mix", params.mix, 0.0, 1.0),
+        ];
+        for (name, value, min, max) in ranges {
+            if !value.is_finite() || !(min..=max).contains(&value) {
+                return Err(format!(
+                    "Invalid De-Esser {name}: expected finite value in {min}..={max}, got {value}"
+                ));
+            }
+        }
+        Self::validate_detection_band(params.frequency, params.q, sample_rate)?;
+        Ok(Self::from_params(channels, params))
+    }
+
+    fn validate_detection_band(frequency: f32, q: f32, sample_rate: u32) -> PluginResult<()> {
+        let (_, high_edge) = Self::bandpass_edges(frequency, q);
+        let max_frequency = sample_rate as f32 * 0.475;
+        if frequency >= max_frequency || high_edge >= max_frequency {
+            return Err(format!(
+                "De-Esser detection band must remain below Nyquist: center={}, upper={}, max={max_frequency}",
+                frequency, high_edge
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn mode_string(&self) -> String {
         match self.mode_index {
             0 => "Wideband".to_string(),
@@ -189,22 +247,34 @@ impl DeEsserPlugin {
 
     pub(super) fn make_hp_filters(channels: usize, freq: f32, q: f32, sr: u32) -> BiquadBank<f32> {
         let (f_low, _) = Self::bandpass_edges(freq, q);
-        let template = Biquad::new(BiquadFilterType::Highpass, f_low, sr as f32, q, 0.0);
+        let template = Biquad::new(
+            BiquadFilterType::Highpass,
+            f_low,
+            sr as f32,
+            DETECTOR_POLE_Q,
+            0.0,
+        );
         BiquadBank::new(&template, channels)
     }
 
     pub(super) fn make_lp_filters(channels: usize, freq: f32, q: f32, sr: u32) -> BiquadBank<f32> {
         let (_, f_high) = Self::bandpass_edges(freq, q);
-        let template = Biquad::new(BiquadFilterType::Lowpass, f_high, sr as f32, q, 0.0);
+        let template = Biquad::new(
+            BiquadFilterType::Lowpass,
+            f_high,
+            sr as f32,
+            DETECTOR_POLE_Q,
+            0.0,
+        );
         BiquadBank::new(&template, channels)
     }
 
     pub(super) fn rebuild_detection_filters(&mut self) {
         let (f_low, f_high) = Self::bandpass_edges(self.frequency, self.q);
         self.hp_filters
-            .update_params(f_low, self.sample_rate as f32, self.q, 0.0);
+            .update_params(f_low, self.sample_rate as f32, DETECTOR_POLE_Q, 0.0);
         self.lp_filters
-            .update_params(f_high, self.sample_rate as f32, self.q, 0.0);
+            .update_params(f_high, self.sample_rate as f32, DETECTOR_POLE_Q, 0.0);
     }
 
     pub(super) fn rebuild_crossovers(&mut self) {
@@ -222,6 +292,7 @@ impl DeEsserPlugin {
                 pk(DE, "frequency").min_f64() as f32,
                 pk(DE, "frequency").max_f64() as f32,
             )
+            .with_update_mode(UpdateMode::Structural)
             .with_description("Center frequency for sibilance detection (Hz)")
             .with_group("Detection")
             .with_importance(ParameterImportance::Critical),
@@ -232,6 +303,7 @@ impl DeEsserPlugin {
                 pk(DE, "q").min_f64() as f32,
                 pk(DE, "q").max_f64() as f32,
             )
+            .with_update_mode(UpdateMode::Structural)
             .with_description("Bandwidth of detection filter")
             .with_group("Detection")
             .with_importance(ParameterImportance::Useful),
@@ -276,6 +348,7 @@ impl DeEsserPlugin {
             .with_group("Dynamics")
             .with_importance(ParameterImportance::Useful),
             Parameter::new_string("mode", "Mode", self.mode_string())
+                .with_update_mode(UpdateMode::Structural)
                 .with_description("Wideband reduces full signal; Split-band only reduces HF")
                 .with_group("Mode")
                 .with_importance(ParameterImportance::Critical),
@@ -291,11 +364,73 @@ impl DeEsserPlugin {
             .with_importance(ParameterImportance::Useful),
         ];
     }
+
+    fn apply_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        if id == self.param_frequency {
+            let frequency = value
+                .as_float()
+                .ok_or_else(|| "frequency must be a float".to_string())?;
+            Self::validate_detection_band(frequency, self.q, self.sample_rate)?;
+            if frequency != self.frequency {
+                return Err("frequency is structural and requires a host rebuild".into());
+            }
+        } else if id == self.param_q {
+            let q = value
+                .as_float()
+                .ok_or_else(|| "q must be a float".to_string())?;
+            Self::validate_detection_band(self.frequency, q, self.sample_rate)?;
+            if q != self.q {
+                return Err("q is structural and requires a host rebuild".into());
+            }
+        } else if id == self.param_threshold {
+            self.threshold = value
+                .as_float()
+                .ok_or_else(|| "threshold must be a float".to_string())?;
+        } else if id == self.param_ratio {
+            self.ratio = value
+                .as_float()
+                .ok_or_else(|| "ratio must be a float".to_string())?;
+        } else if id == self.param_attack {
+            self.attack_ms = value
+                .as_float()
+                .ok_or_else(|| "attack must be a float".to_string())?;
+            for core in &mut self.cores {
+                core.set_attack_release(self.attack_ms, self.release_ms);
+            }
+        } else if id == self.param_release {
+            self.release_ms = value
+                .as_float()
+                .ok_or_else(|| "release must be a float".to_string())?;
+            for core in &mut self.cores {
+                core.set_attack_release(self.attack_ms, self.release_ms);
+            }
+        } else if id == self.param_mode {
+            let new_index = match value
+                .as_string()
+                .ok_or_else(|| "mode must be a string".to_string())?
+            {
+                "Wideband" | "wideband" => 0,
+                "Split-Band" | "split-band" => 1,
+                other => return Err(format!("Unknown De-Esser mode: {other}")),
+            };
+            if new_index != self.mode_index {
+                return Err("mode is structural and requires a host rebuild".into());
+            }
+        } else if id == self.param_mix {
+            self.mix = value
+                .as_float()
+                .ok_or_else(|| "mix must be a float".to_string())?;
+            self.mix_smoother.set_target(self.mix);
+        } else {
+            return Err(format!("Unknown parameter: {id}"));
+        }
+        Ok(())
+    }
 }
 
 impl ParametricInPlacePlugin for DeEsserPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("DeEsser", "1.0.0", "SotF")
+        PluginInfo::new("DeEsser", env!("CARGO_PKG_VERSION"), "SotF")
     }
 
     fn cost_class(&self) -> PluginCostClass {
@@ -344,84 +479,38 @@ impl ParametricInPlacePlugin for DeEsserPlugin {
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
         for (id, value) in values {
-            if id == self.param_frequency {
-                let v = value
-                    .as_float()
-                    .unwrap_or(pk(DE, "frequency").default_f64() as f32);
-                if v.is_finite() {
-                    self.frequency = v.clamp(2000.0, 16000.0);
-                    self.rebuild_detection_filters();
-                    self.rebuild_crossovers();
-                }
-            } else if id == self.param_q {
-                let v = value.as_float().unwrap_or(pk(DE, "q").default_f64() as f32);
-                if v.is_finite() {
-                    self.q = v.clamp(0.5, 5.0);
-                    self.rebuild_detection_filters();
-                }
-            } else if id == self.param_threshold {
-                let v = value
-                    .as_float()
-                    .unwrap_or(pk(DE, "threshold").default_f64() as f32);
-                if v.is_finite() {
-                    self.threshold = v.clamp(-60.0, 0.0);
-                }
-            } else if id == self.param_ratio {
-                let v = value
-                    .as_float()
-                    .unwrap_or(pk(DE, "ratio").default_f64() as f32);
-                if v.is_finite() {
-                    self.ratio = v.clamp(1.0, 20.0);
-                }
-            } else if id == self.param_attack {
-                let v = value
-                    .as_float()
-                    .unwrap_or(pk(DE, "attack").default_f64() as f32);
-                if v.is_finite() {
-                    self.attack_ms = v.clamp(0.1, 10.0);
-                    for core in &mut self.cores {
-                        core.set_attack_release(self.attack_ms, self.release_ms);
-                    }
-                }
-            } else if id == self.param_release {
-                let v = value
-                    .as_float()
-                    .unwrap_or(pk(DE, "release").default_f64() as f32);
-                if v.is_finite() {
-                    self.release_ms = v.clamp(5.0, 200.0);
-                    for core in &mut self.cores {
-                        core.set_attack_release(self.attack_ms, self.release_ms);
-                    }
-                }
-            } else if id == self.param_mode {
-                let new_index = if let Some(s) = value.as_string() {
-                    match s {
-                        "Wideband" | "wideband" => 0,
-                        _ => 1,
-                    }
-                } else if let Some(v) = value.as_float() {
-                    (v as usize).min(1)
-                } else {
-                    1
-                };
-                self.mode_index = new_index;
-            } else if id == self.param_mix {
-                let v = value
-                    .as_float()
-                    .unwrap_or(pk(DE, "mix").default_f64() as f32);
-                if v.is_finite() {
-                    self.mix = v.clamp(0.0, 1.0);
-                    self.mix_smoother.set_target(self.mix);
-                }
-            } else {
-                return Err(format!("Unknown parameter: {id}"));
-            }
+            self.apply_parameter(id, value)?;
         }
-        self.rebuild_cached_parameters();
         Ok(())
     }
 
+    fn parametric_validate_parameter(
+        &self,
+        id: &ParameterId,
+        value: &ParameterValue,
+    ) -> PluginResult<()> {
+        self.cached_parameters
+            .iter()
+            .find(|parameter| &parameter.id == id)
+            .ok_or_else(|| format!("Unknown parameter: {id}"))?
+            .validate(value)
+            .map_err(|error| format!("{id}: {error}"))
+    }
+
+    fn parametric_set_parameter(
+        &mut self,
+        id: ParameterId,
+        value: ParameterValue,
+    ) -> PluginResult<()> {
+        self.parametric_validate_parameter(&id, &value)?;
+        self.apply_parameter(id, value)
+    }
+
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        if sample_rate == 0 {
+            return Err("De-Esser sample rate must be greater than zero".to_string());
+        }
+        Self::validate_detection_band(self.frequency, self.q, sample_rate)?;
         self.sample_rate = sample_rate;
 
         // Rebuild detection filters for new sample rate
@@ -445,8 +534,8 @@ impl ParametricInPlacePlugin for DeEsserPlugin {
     }
 
     fn reset(&mut self) {
-        // Rebuild filters to reset state
-        self.rebuild_detection_filters();
+        self.hp_filters.reset();
+        self.lp_filters.reset();
 
         // Reset crossovers
         for xo in &mut self.crossovers {
@@ -459,6 +548,8 @@ impl ParametricInPlacePlugin for DeEsserPlugin {
         }
 
         self.monitoring_gr.fill(0.0);
+        self.cache_counter = 0;
+        self.mix_smoother.reset(self.mix);
     }
 
     fn process_in_place(
@@ -466,11 +557,26 @@ impl ParametricInPlacePlugin for DeEsserPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
-        enable_ftz_daz();
         let num_frames = context.num_frames;
-        if self.channels == 0 {
-            return Ok(num_frames);
+        let sample_len = num_frames
+            .checked_mul(self.channels)
+            .ok_or_else(|| "De-Esser block sample count overflow".to_string())?;
+        if buffer.len() < sample_len {
+            return Err(format!(
+                "De-Esser buffer too small: need {sample_len} samples, got {}",
+                buffer.len()
+            ));
         }
+
+        for sample in &mut buffer[..sample_len] {
+            if !sample.is_finite() {
+                *sample = 0.0;
+            }
+        }
+
+        // Complete all frame/channel arithmetic and buffer validation before
+        // touching DSP state. This keeps rejected host calls transactional.
+        enable_ftz_daz();
 
         if self.mode_index == 0 {
             // ============================================================
@@ -521,10 +627,15 @@ impl ParametricInPlacePlugin for DeEsserPlugin {
             // ============================================================
             for frame in 0..num_frames {
                 let frame_offset = frame * self.channels;
+                self.sidechain_frame[..self.channels]
+                    .copy_from_slice(&buffer[frame_offset..frame_offset + self.channels]);
+                self.hp_filters
+                    .process_interleaved_frame(&mut self.sidechain_frame[..self.channels]);
+                self.lp_filters
+                    .process_interleaved_frame(&mut self.sidechain_frame[..self.channels]);
                 // Advance mix smoother once per frame (not per channel) to avoid
                 // block-constant mix that would cause zipper noise during automation.
                 let mix = self.mix_smoother.advance();
-                let dry_mix = 1.0 - mix;
                 for ch in 0..self.channels {
                     let idx = frame_offset + ch;
                     let input = buffer[idx];
@@ -532,8 +643,9 @@ impl ParametricInPlacePlugin for DeEsserPlugin {
                     // Split into low and high bands
                     let (low, high) = self.crossovers[ch].process(input, 0);
 
-                    // Detect level on the high band
-                    let level = self.cores[ch].detect_level(0, high);
+                    // Use the same Q-defined detector band in both modes while
+                    // still applying gain only to the split high band.
+                    let level = self.cores[ch].detect_level(0, self.sidechain_frame[ch]);
                     let level_db = DB_CONVERSION_FACTOR * fast_log10(level.max(EPSILON));
 
                     // Gain reduction (only on HF)
@@ -546,8 +658,11 @@ impl ParametricInPlacePlugin for DeEsserPlugin {
                     let smoothed_gr = self.cores[ch].apply_envelope(0, gr);
                     let gain = fast_pow10(-smoothed_gr / DB_CONVERSION_FACTOR);
 
-                    let wet = low + high * gain;
-                    buffer[idx] = dry_mix * input + mix * wet;
+                    // The LR4 low+high sum is the phase-matched dry reference.
+                    // Mix controls only the reduction depth, so gain=1 yields
+                    // the same all-pass response for every Mix value and cannot
+                    // comb-filter a phase-rotated wet path against raw input.
+                    buffer[idx] = low + high * (1.0 + mix * (gain - 1.0));
 
                     if frame + 1 == num_frames {
                         self.monitoring_gr[ch] = smoothed_gr;
@@ -557,15 +672,16 @@ impl ParametricInPlacePlugin for DeEsserPlugin {
         }
 
         // Update diagnostic cache (throttled)
-        self.cache_counter += 1;
-        if self.cache_counter >= 10 {
-            self.cache_counter = 0;
+        self.cache_counter = self.cache_counter.saturating_add(num_frames);
+        let cache_interval = (self.sample_rate as usize / 30).max(1);
+        if self.cache_counter >= cache_interval {
+            self.cache_counter %= cache_interval;
             self.cache.update(|d| {
                 d.update(&self.monitoring_gr);
             });
         }
 
-        flush_denormals_inplace(buffer);
+        flush_denormals_inplace(&mut buffer[..sample_len]);
         Ok(num_frames)
     }
 

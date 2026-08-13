@@ -711,7 +711,7 @@ pub const PLUGIN_CATALOG: &[PluginCatalogEntry] = &[
             true,
         ),
         zero_alloc_evidence(
-            "sotf-plugin-de-esser split-band tests verify high-frequency attenuation with low-frequency passthrough, detector, mix, and reset behavior"
+            "sotf-plugin-de-esser split/wide detector response, phase-matched inactive null, structural controls, reset/cache cadence, non-finite recovery, and realtime process/setter allocation tests"
         )
     ),
     entry!(

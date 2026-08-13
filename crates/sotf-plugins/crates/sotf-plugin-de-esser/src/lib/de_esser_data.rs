@@ -1,9 +1,17 @@
 use std::sync::Arc;
 
 /// Monitoring data for UI gain reduction meters.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct DeEsserData {
     pub gain_reduction_db: Arc<Vec<f32>>,
+}
+
+impl Clone for DeEsserData {
+    fn clone(&self) -> Self {
+        Self {
+            gain_reduction_db: Arc::new((*self.gain_reduction_db).clone()),
+        }
+    }
 }
 
 impl Default for DeEsserData {

@@ -1,5 +1,7 @@
 use super::de_esser_plugin::DeEsserPlugin;
 use super::types::DeEsserPluginParams;
+use crate::DeEsserData;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::ProcessContext;
@@ -169,32 +171,12 @@ fn test_de_esser_parameter_set_get() {
     let mut plugin = DeEsserPlugin::new(2);
     plugin.initialize(48000).unwrap();
 
-    // Set frequency
-    plugin
-        .parametric_set_parameter(
-            ParameterId::from("frequency"),
-            ParameterValue::Float(10000.0),
-        )
-        .unwrap();
-    let val = plugin.parametric_get_parameter(&ParameterId::from("frequency"));
-    assert_eq!(val, Some(ParameterValue::Float(10000.0)));
-
     // Set threshold
     plugin
         .parametric_set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-30.0))
         .unwrap();
     let val = plugin.parametric_get_parameter(&ParameterId::from("threshold"));
     assert_eq!(val, Some(ParameterValue::Float(-30.0)));
-
-    // Set mode
-    plugin
-        .parametric_set_parameter(
-            ParameterId::from("mode"),
-            ParameterValue::String("Wideband".to_string()),
-        )
-        .unwrap();
-    let val = plugin.parametric_get_parameter(&ParameterId::from("mode"));
-    assert_eq!(val, Some(ParameterValue::String("Wideband".to_string())));
 
     // Set mix
     plugin
@@ -396,8 +378,6 @@ fn test_set_parameter_all_float_params_roundtrip() {
     plugin.initialize(48000).unwrap();
 
     let cases: &[(&str, f32)] = &[
-        ("frequency", 10000.0),
-        ("q", 2.5),
         ("threshold", -30.0),
         ("ratio", 8.0),
         ("attack", 2.0),
@@ -501,18 +481,14 @@ fn test_set_parameter_mode_variants() {
     let mut plugin = DeEsserPlugin::new(1);
     plugin.initialize(48000).unwrap();
 
-    // Mode is registered as a String parameter
-    plugin
+    let error = plugin
         .parametric_set_parameter(
             ParameterId::from("mode"),
             ParameterValue::String("Wideband".to_string()),
         )
-        .unwrap();
-    assert_eq!(plugin.mode_index, 0);
-    assert_eq!(
-        plugin.parametric_get_parameter(&ParameterId::from("mode")),
-        Some(ParameterValue::String("Wideband".to_string()))
-    );
+        .unwrap_err();
+    assert!(error.contains("structural"));
+    assert_eq!(plugin.mode_index, 1);
 
     plugin
         .parametric_set_parameter(
@@ -564,13 +540,82 @@ fn test_process_empty_buffer_returns_zero() {
 
 #[test]
 fn test_process_zero_channels_returns_num_frames() {
-    let mut plugin = DeEsserPlugin::new(0);
-    plugin.initialize(48000).unwrap();
+    assert!(DeEsserPlugin::try_from_params(0, DeEsserPluginParams::default()).is_err());
+}
 
-    let mut buf = vec![0.0f32; 0];
-    let ctx = ProcessContext::new(48000, 64);
-    let frames = plugin.process_in_place(&mut buf, &ctx).unwrap();
-    assert_eq!(frames, 64);
+#[test]
+fn test_fallible_constructor_rejects_invalid_values() {
+    let invalid = DeEsserPluginParams {
+        frequency: f32::NAN,
+        ..Default::default()
+    };
+    assert!(DeEsserPlugin::try_from_params(1, invalid).is_err());
+    let invalid = DeEsserPluginParams {
+        mode: "Mystery".into(),
+        ..Default::default()
+    };
+    assert!(DeEsserPlugin::try_from_params(1, invalid).is_err());
+}
+
+#[test]
+fn test_short_buffer_returns_error() {
+    let mut plugin = DeEsserPlugin::new(2);
+    plugin.initialize(48_000).unwrap();
+    let mut buffer = vec![0.0; 7];
+    assert!(
+        plugin
+            .process_in_place(&mut buffer, &ProcessContext::new(48_000, 4))
+            .is_err()
+    );
+}
+
+#[test]
+fn test_short_buffer_is_rejected_before_state_or_data_changes() {
+    let mut rejected = DeEsserPlugin::new(2);
+    let mut reference = DeEsserPlugin::new(2);
+    rejected.initialize(48_000).unwrap();
+    reference.initialize(48_000).unwrap();
+
+    let mut short = vec![99.0_f32; 7];
+    let error = rejected
+        .process_in_place(&mut short, &ProcessContext::new(48_000, 4))
+        .unwrap_err();
+    assert!(error.contains("buffer too small"));
+    assert!(short.iter().all(|sample| *sample == 99.0));
+
+    let mut rejected_output = vec![0.1_f32; 8];
+    let mut reference_output = rejected_output.clone();
+    rejected
+        .process_in_place(&mut rejected_output, &ProcessContext::new(48_000, 4))
+        .unwrap();
+    reference
+        .process_in_place(&mut reference_output, &ProcessContext::new(48_000, 4))
+        .unwrap();
+    assert_eq!(rejected_output, reference_output);
+}
+
+#[test]
+fn test_frame_channel_overflow_is_rejected_before_dsp() {
+    let mut plugin = DeEsserPlugin::new(2);
+    plugin.initialize(48_000).unwrap();
+    let mut buffer = vec![0.25_f32; 8];
+    let error = plugin
+        .process_in_place(
+            &mut buffer,
+            &ProcessContext::new(48_000, usize::MAX / 2 + 1),
+        )
+        .unwrap_err();
+    assert!(error.contains("sample count overflow"));
+    assert!(buffer.iter().all(|sample| *sample == 0.25));
+}
+
+#[test]
+fn test_monitoring_cache_vector_updates() {
+    let mut data = DeEsserData::new(2);
+    let snapshot = data.clone();
+    data.update(&[3.0, 6.0]);
+    assert_eq!(&*data.gain_reduction_db, &[3.0, 6.0]);
+    assert_eq!(&*snapshot.gain_reduction_db, &[0.0, 0.0]);
 }
 
 #[test]
@@ -622,19 +667,35 @@ fn test_reset_clears_filter_state() {
 // -------------------------------------------------------------------------
 
 #[test]
-fn test_set_parameter_q_rebuilds_filters() {
+fn test_structural_q_update_requires_host_rebuild() {
     let mut plugin = DeEsserPlugin::new(1);
     plugin.initialize(48000).unwrap();
 
-    let original_hp_freq = plugin.hp_filters.freq;
-    plugin
+    let original_q = plugin.q;
+    let error = plugin
         .parametric_set_parameter(ParameterId::from("q"), ParameterValue::Float(4.0))
-        .unwrap();
-    let new_hp_freq = plugin.hp_filters.freq;
-    assert_ne!(
-        original_hp_freq, new_hp_freq,
-        "HP filter frequency should change when Q changes"
-    );
+        .unwrap_err();
+    assert!(error.contains("structural"));
+    assert_eq!(plugin.q, original_q);
+}
+
+#[test]
+fn test_parameter_updates_reject_detector_band_at_initialized_nyquist() {
+    let mut plugin = DeEsserPlugin::new(1);
+    plugin.initialize(32_000).unwrap();
+    let original_frequency = plugin.frequency;
+
+    // 16 kHz is inside the serialized parameter range, but it is not a valid
+    // detector center at this sample rate. The setter must reject it before
+    // changing the stored value or rebuilding filters at/above Nyquist.
+    let error = plugin
+        .parametric_set_parameter(
+            ParameterId::from("frequency"),
+            ParameterValue::Float(16_000.0),
+        )
+        .unwrap_err();
+    assert!(error.contains("Nyquist"), "unexpected error: {error}");
+    assert_eq!(plugin.frequency, original_frequency);
 }
 
 #[test]
@@ -679,16 +740,17 @@ fn test_initialize_different_sample_rate() {
 }
 
 #[test]
-fn test_set_parameter_mode_unknown_string_defaults_split_band() {
+fn test_set_parameter_mode_unknown_string_is_rejected() {
     let mut plugin = DeEsserPlugin::new(1);
     plugin.initialize(48000).unwrap();
 
-    plugin
+    let error = plugin
         .parametric_set_parameter(
             ParameterId::from("mode"),
             ParameterValue::String("Unknown".to_string()),
         )
-        .unwrap();
+        .unwrap_err();
+    assert!(error.contains("Unknown De-Esser mode"));
     assert_eq!(plugin.mode_index, 1);
     assert_eq!(
         plugin.parametric_get_parameter(&ParameterId::from("mode")),
@@ -706,4 +768,155 @@ fn test_set_parameter_mix_updates_smoother_target() {
         .unwrap();
     assert_eq!(plugin.mix, 0.75);
     assert!((plugin.mix_smoother.target() - 0.75).abs() < 1e-4);
+}
+
+#[test]
+fn split_band_inactive_output_is_mix_invariant() {
+    fn render(mix: f32) -> Vec<f32> {
+        let params = DeEsserPluginParams {
+            frequency: 7_000.0,
+            q: 1.5,
+            threshold: -30.0,
+            ratio: 1.0,
+            attack_ms: 0.5,
+            release_ms: 20.0,
+            mode: "Split-Band".into(),
+            mix,
+        };
+        let mut plugin = DeEsserPlugin::try_from_params_at_sample_rate(1, params, 48_000).unwrap();
+        plugin.initialize(48_000).unwrap();
+        let mut signal: Vec<f32> = (0..16_384)
+            .map(|frame| {
+                0.2 * (std::f32::consts::TAU * 997.0 * frame as f32 / 48_000.0).sin()
+                    + 0.2 * (std::f32::consts::TAU * 8_123.0 * frame as f32 / 48_000.0).sin()
+            })
+            .collect();
+        plugin
+            .process_in_place(&mut signal, &ProcessContext::new(48_000, 16_384))
+            .unwrap();
+        signal
+    }
+
+    let reference = render(0.0);
+    for mix in [0.25, 0.5, 1.0] {
+        let output = render(mix);
+        let max_error = output
+            .iter()
+            .zip(&reference)
+            .map(|(actual, expected)| (actual - expected).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_error < 1e-6,
+            "inactive mix={mix} changed output by {max_error}"
+        );
+    }
+}
+
+#[test]
+fn detector_q_defines_bandwidth_once_with_butterworth_poles() {
+    for q in [0.5, 1.5, 5.0] {
+        let params = DeEsserPluginParams {
+            q,
+            ..Default::default()
+        };
+        let plugin = DeEsserPlugin::try_from_params_at_sample_rate(1, params, 48_000).unwrap();
+        let (low, high) = DeEsserPlugin::bandpass_edges(plugin.frequency, q);
+        assert!(low < plugin.frequency && high > plugin.frequency);
+        assert!((plugin.hp_filters.q - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
+        assert!((plugin.lp_filters.q - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
+    }
+}
+
+#[test]
+fn structural_detector_controls_are_marked_and_transactional() {
+    let mut plugin = DeEsserPlugin::new(1);
+    plugin.initialize(48_000).unwrap();
+    for id in ["frequency", "q", "mode"] {
+        let parameter = plugin
+            .parameter_schema()
+            .into_iter()
+            .find(|parameter| parameter.id.as_str() == id)
+            .unwrap();
+        assert_eq!(parameter.update_mode, UpdateMode::Structural);
+    }
+
+    let old_frequency = plugin.frequency;
+    let old_filter_frequency = plugin.hp_filters.freq;
+    assert!(
+        plugin
+            .parametric_set_parameter(
+                ParameterId::from("frequency"),
+                ParameterValue::Float(8_000.0),
+            )
+            .unwrap_err()
+            .contains("structural")
+    );
+    assert_eq!(plugin.frequency, old_frequency);
+    assert_eq!(plugin.hp_filters.freq, old_filter_frequency);
+}
+
+#[test]
+fn meter_cadence_depends_on_samples_not_callback_count() {
+    fn counter_after(block: usize, total: usize) -> usize {
+        let mut plugin = DeEsserPlugin::new(1);
+        plugin.initialize(48_000).unwrap();
+        let mut remaining = total;
+        while remaining > 0 {
+            let frames = remaining.min(block);
+            let mut buffer = vec![0.0; frames];
+            plugin
+                .process_in_place(&mut buffer, &ProcessContext::new(48_000, frames))
+                .unwrap();
+            remaining -= frames;
+        }
+        plugin.cache_counter
+    }
+
+    assert_eq!(counter_after(32, 5_123), counter_after(1024, 5_123));
+    assert_eq!(counter_after(4096, 5_123), 5_123 % 1_600);
+}
+
+#[test]
+fn held_monitor_snapshot_does_not_freeze_future_publication() {
+    let params = DeEsserPluginParams {
+        frequency: 8_000.0,
+        q: 1.5,
+        threshold: -40.0,
+        ratio: 20.0,
+        attack_ms: 0.1,
+        release_ms: 20.0,
+        mode: "Wideband".into(),
+        mix: 1.0,
+    };
+    let mut plugin = DeEsserPlugin::try_from_params_at_sample_rate(1, params, 48_000).unwrap();
+    plugin.initialize(48_000).unwrap();
+    let held = plugin.get_data().unwrap();
+    let mut signal = make_sine(8_000.0, 48_000, 4_800, 0.8);
+    plugin
+        .process_in_place(&mut signal, &ProcessContext::new(48_000, 4_800))
+        .unwrap();
+    let current = plugin
+        .get_data()
+        .unwrap()
+        .downcast::<DeEsserData>()
+        .unwrap();
+    assert!(current.gain_reduction_db[0] > 1.0);
+    let held = held.downcast::<DeEsserData>().unwrap();
+    assert_eq!(held.gain_reduction_db[0], 0.0);
+}
+
+#[test]
+fn non_finite_audio_is_sanitized_without_poisoning_state() {
+    let mut plugin = DeEsserPlugin::new(1);
+    plugin.initialize(48_000).unwrap();
+    let mut malformed = vec![f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.25];
+    plugin
+        .process_in_place(&mut malformed, &ProcessContext::new(48_000, 4))
+        .unwrap();
+    assert!(malformed.iter().all(|sample| sample.is_finite()));
+    let mut followup = make_sine(8_000.0, 48_000, 4_096, 0.25);
+    plugin
+        .process_in_place(&mut followup, &ProcessContext::new(48_000, 4_096))
+        .unwrap();
+    assert!(followup.iter().all(|sample| sample.is_finite()));
 }
