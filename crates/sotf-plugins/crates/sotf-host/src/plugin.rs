@@ -327,6 +327,22 @@ pub trait Plugin: Send {
         0
     }
 
+    /// Minimum input-rate queued-work horizon for worst-case realtime work.
+    ///
+    /// Plugins may accept smaller and irregular process partitions while
+    /// accumulating work internally. A queued realtime scheduler must keep at
+    /// least this much input-rate audio ahead of hardware consumption. This
+    /// does not manufacture a longer physical callback deadline and is not a
+    /// process-buffer shape requirement: every positive block size remains
+    /// valid.
+    ///
+    /// Any input/output FIFO priming introduced to uphold this contract must
+    /// be included in [`Plugin::latency_samples`] in the plugin's declared
+    /// output-rate domain. The default scalar contract is one frame.
+    fn realtime_quantum_frames(&self) -> usize {
+        1
+    }
+
     /// Coarse cost category for host scheduling. Override for FFT,
     /// convolution, dynamics, and other non-scalar DSP.
     fn cost_class(&self) -> PluginCostClass {

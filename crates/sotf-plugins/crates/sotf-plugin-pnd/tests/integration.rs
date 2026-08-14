@@ -6,7 +6,7 @@ use sotf_plugin_pnd::{PndData, PndPlugin, PndPluginParams};
 
 #[test]
 fn integration_plugin_info_and_channels() {
-    let plugin = PndPlugin::from_params(2, PndPluginParams::default());
+    let plugin = PndPlugin::from_params(2, PndPluginParams::default()).unwrap();
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 2);
     let info = plugin.info();
@@ -94,7 +94,8 @@ fn changing_reference_resets_reference_dependent_control_state() {
             confidence_threshold: 0.2,
             ..PndPluginParams::default()
         },
-    );
+    )
+    .unwrap();
     plugin.initialize(44_100).unwrap();
 
     let block = 1024;
@@ -327,7 +328,7 @@ fn integration_from_params_applies_initial_state() {
         reference_frequency_hz: 440.0,
         phase_vocoder: true,
     };
-    let plugin = PndPlugin::from_params(1, params);
+    let plugin = PndPlugin::from_params(1, params).unwrap();
     assert_eq!(plugin.input_channels(), 1);
     assert_eq!(plugin.output_channels(), 1);
 }
@@ -338,7 +339,7 @@ fn integration_try_from_params_rejects_non_finite_and_invalid_values() {
         drift_smoothing: f32::NAN,
         ..PndPluginParams::default()
     };
-    assert!(PndPlugin::try_from_params(1, params).is_err());
+    assert!(PndPlugin::from_params(1, params).is_err());
 
     let params = PndPluginParams {
         analysis_window_ms: f32::INFINITY,

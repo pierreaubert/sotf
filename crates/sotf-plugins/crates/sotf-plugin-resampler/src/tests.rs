@@ -2,6 +2,7 @@
 use super::resampler_plugin::ResamplerPlugin;
 use super::resampler_quality::ResamplerQuality;
 use rubato::Resampler;
+use sotf_host::PluginHost;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, ProcessContext};
 
@@ -1094,6 +1095,18 @@ fn test_creation_rejects_zero_sample_rate() {
 #[test]
 fn test_creation_rejects_zero_chunk_size() {
     assert!(ResamplerPlugin::new(2, 44100, 48000, 0).is_err());
+}
+
+#[test]
+fn realtime_quantum_exposes_chunk_boundary_work_budget() {
+    let resampler = ResamplerPlugin::new(2, 96_000, 44_100, 64).unwrap();
+    assert_eq!(resampler.realtime_quantum_frames(), 64);
+    assert_eq!(Plugin::realtime_quantum_frames(&resampler), 64);
+
+    let mut host = PluginHost::new(2, 96_000);
+    host.add_plugin(Box::new(resampler)).unwrap();
+    host.build().unwrap();
+    assert_eq!(host.realtime_quantum_frames(), 64);
 }
 
 #[test]

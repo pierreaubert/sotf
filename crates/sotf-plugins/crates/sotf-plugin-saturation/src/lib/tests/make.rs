@@ -35,7 +35,7 @@ fn test_soft_clip_limits_output() {
         mix: 1.0,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     let num_frames = 4800;
@@ -74,7 +74,7 @@ fn test_tape_saturation() {
         mix: 1.0,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     let num_frames = 4800;
@@ -111,7 +111,7 @@ fn test_saturation_passthrough() {
         mix: 0.0,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     let num_frames = 256;
@@ -155,7 +155,7 @@ fn test_oversampling_processes() {
         mix: 1.0,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     let num_frames = 512;
@@ -200,7 +200,7 @@ fn test_exciter_with_oversampling_processes() {
         mix: 1.0,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     let num_frames = 512;
@@ -229,7 +229,7 @@ fn test_exciter_large_block_no_panic() {
         mix: 1.0,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     // Send a block larger than DEFAULT_BUF_SIZE (96000 samples total = 48000 frames * 2 ch)
@@ -254,7 +254,7 @@ fn test_tube_adaa_matches_direct_when_tone_not_one() {
     let channels = 1;
 
     let make_tube_plugin = |use_adaa: bool| {
-        SaturationPlugin::from_params(
+        SaturationPlugin::from_validated_params(
             channels,
             SaturationPluginParams {
                 mode: "Tube".to_string(),
@@ -315,7 +315,7 @@ fn test_drive_smoother_ramps_across_block() {
         dc_blocker_enabled: false,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     // Change drive to maximum — smoother will ramp from 1 to 20 over ~10ms
@@ -360,7 +360,7 @@ fn test_dynamic_saturation_bounded_no_pumping() {
         dc_blocker_enabled: false,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     // Full-scale input: drive modulation should not blow up
@@ -397,7 +397,7 @@ fn test_flush_denormals_limited_to_valid_samples() {
         dc_blocker_enabled: false,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     // Allocate a buffer larger than nf*nc, fill tail with sentinel
@@ -440,7 +440,7 @@ fn test_no_lufs_auto_gain_on_passthrough() {
         dc_blocker_enabled: false,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     let num_frames = 4800;

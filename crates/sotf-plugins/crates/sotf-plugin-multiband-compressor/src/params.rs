@@ -121,6 +121,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "ms",
         "Timing",
     )
+    .structural()
     .doc("Pre-delay for transient catching"),
     ParamSpec::bool_param(
         "Program Dependent Release",
@@ -254,6 +255,7 @@ pub const GLOBAL_PARAMS: &[ParamSpec] = multiband_global_params![
         "ms",
         "Global",
     )
+    .structural()
     .doc("Per-band pre-delay"),
     ParamSpec::bool_param("M/S Mode", "ms_mode", false, "Global")
         .setup()

@@ -119,6 +119,11 @@ pub trait InPlacePlugin: Send {
         0
     }
 
+    /// Minimum input-rate scheduling budget for worst-case realtime work.
+    fn realtime_quantum_frames(&self) -> usize {
+        1
+    }
+
     /// Coarse cost category for host scheduling.
     fn cost_class(&self) -> PluginCostClass {
         PluginCostClass::Scalar

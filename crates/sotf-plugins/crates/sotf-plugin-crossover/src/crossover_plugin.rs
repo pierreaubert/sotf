@@ -6,6 +6,7 @@ use super::per_channel_op_mode::PerChannelOpMode;
 use super::types::CrossoverPluginParams;
 use sotf_host::fir_crossover::{DEFAULT_FIR_CROSSOVER_TAPS, FirCrossover, MultibandFirCrossover};
 use sotf_host::lr4_crossover::Lr4Crossover;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
@@ -348,11 +349,10 @@ impl CrossoverPlugin {
     }
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
-        let mut params = vec![Parameter::new_string(
-            "type",
-            "Type",
-            self.kind.as_str().to_string(),
-        )];
+        let mut params = vec![
+            Parameter::new_string("type", "Type", self.kind.as_str().to_string())
+                .with_update_mode(UpdateMode::Structural),
+        ];
         if !self.is_per_channel() {
             params.extend([
                 Parameter::new_float(

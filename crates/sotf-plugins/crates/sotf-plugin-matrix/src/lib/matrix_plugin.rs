@@ -7,6 +7,7 @@ use super::consts::PRESET_MS_ENCODE;
 use super::consts::PRESET_STEREO_DOWNMIX;
 use crate::params::PARAMS as MX;
 use sotf_host::param_bridge;
+use sotf_host::param_specs::UpdateMode;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::{
     Plugin, PluginCompileMetadata, PluginCostClass, PluginInfo, PluginResult, ProcessContext,
@@ -264,13 +265,16 @@ impl MatrixPlugin {
             .iter()
             .position(|&p| p == self.preset)
             .unwrap_or(0) as i32;
-        params.push(sotf_host::parameters::Parameter::new_int(
-            "preset",
-            "Preset",
-            preset_idx,
-            0,
-            (PRESET_CHOICES.len() - 1) as i32,
-        ));
+        params.push(
+            sotf_host::parameters::Parameter::new_int(
+                "preset",
+                "Preset",
+                preset_idx,
+                0,
+                (PRESET_CHOICES.len() - 1) as i32,
+            )
+            .with_update_mode(UpdateMode::Structural),
+        );
 
         for out_ch in 0..num_outputs {
             for in_ch in 0..num_inputs {

@@ -375,7 +375,7 @@ fn explicit_channel_layouts_cover_every_published_speaker_config() {
         layout.validate_for_width(config.total_channels).unwrap();
         assert_eq!(layout.role_at(config.total_channels), None);
         for speaker in config.speakers {
-            assert_eq!(layout.role_at(speaker.channel).is_some(), true, "{id}");
+            assert!(layout.role_at(speaker.channel).is_some(), "{id}");
             assert_eq!(
                 layout.role_at(speaker.channel) == Some(ChannelRole::Lfe),
                 speaker.is_lfe,

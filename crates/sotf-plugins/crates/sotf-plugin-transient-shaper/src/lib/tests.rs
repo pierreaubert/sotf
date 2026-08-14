@@ -63,12 +63,12 @@ fn test_time_to_coeff_handles_bad_inputs() {
 
 #[test]
 fn test_fallible_constructor_and_buffer_validation() {
-    assert!(
-        TransientShaperPlugin::try_from_params(0, TransientShaperPluginParams::default()).is_err()
-    );
-    let mut invalid = TransientShaperPluginParams::default();
-    invalid.attack = f32::NAN;
-    assert!(TransientShaperPlugin::try_from_params(1, invalid).is_err());
+    assert!(TransientShaperPlugin::from_params(0, TransientShaperPluginParams::default()).is_err());
+    let invalid = TransientShaperPluginParams {
+        attack: f32::NAN,
+        ..Default::default()
+    };
+    assert!(TransientShaperPlugin::from_params(1, invalid).is_err());
 
     let mut plugin = TransientShaperPlugin::new(2);
     plugin.initialize(48_000).unwrap();
@@ -126,7 +126,7 @@ fn asymmetric_stereo_transient_uses_linked_gain() {
         output_gain_db: 0.0,
         mix: 1.0,
     };
-    let mut plugin = TransientShaperPlugin::from_params(2, params);
+    let mut plugin = TransientShaperPlugin::from_validated_params(2, params);
     plugin.initialize(48_000).unwrap();
     plugin.reset();
     let mut buffer = vec![0.8, 0.2];
@@ -147,7 +147,7 @@ fn extreme_shaping_has_bounded_output() {
         output_gain_db: 12.0,
         mix: 1.0,
     };
-    let mut plugin = TransientShaperPlugin::from_params(2, params);
+    let mut plugin = TransientShaperPlugin::from_validated_params(2, params);
     plugin.initialize(48_000).unwrap();
     let mut buffer = vec![1.0; 48_000 * 2];
     plugin
@@ -175,7 +175,7 @@ fn neutral_controls_preserve_overrange_input() {
 #[test]
 fn monitoring_is_sample_cadenced_and_partition_invariant() {
     fn render(block: usize) -> (u64, f32) {
-        let mut plugin = TransientShaperPlugin::from_params(
+        let mut plugin = TransientShaperPlugin::from_validated_params(
             1,
             TransientShaperPluginParams {
                 attack: -100.0,
@@ -208,7 +208,7 @@ fn monitoring_is_sample_cadenced_and_partition_invariant() {
 
 #[test]
 fn attenuation_only_window_is_reported_by_gain_meter() {
-    let mut plugin = TransientShaperPlugin::from_params(
+    let mut plugin = TransientShaperPlugin::from_validated_params(
         1,
         TransientShaperPluginParams {
             attack: 0.0,
@@ -303,7 +303,7 @@ fn test_process_silence_is_silent() {
 #[test]
 fn test_process_stereo_passthrough_when_bypassed() {
     let sr = 48000u32;
-    let mut plugin = TransientShaperPlugin::from_params(
+    let mut plugin = TransientShaperPlugin::from_validated_params(
         2,
         TransientShaperPluginParams {
             attack: 0.0,
@@ -332,7 +332,7 @@ fn test_process_stereo_passthrough_when_bypassed() {
 #[test]
 fn test_attack_boost_increases_transients() {
     let sr = 48000u32;
-    let mut plugin = TransientShaperPlugin::from_params(
+    let mut plugin = TransientShaperPlugin::from_validated_params(
         1,
         TransientShaperPluginParams {
             attack: 100.0, // +100% attack boost
@@ -372,7 +372,7 @@ fn test_attack_boost_increases_transients() {
 #[test]
 fn test_sustain_reduction_lowers_tail() {
     let sr = 48000u32;
-    let mut plugin = TransientShaperPlugin::from_params(
+    let mut plugin = TransientShaperPlugin::from_validated_params(
         1,
         TransientShaperPluginParams {
             attack: 0.0,
@@ -401,7 +401,7 @@ fn test_sustain_reduction_lowers_tail() {
 #[test]
 fn test_output_gain_applies_makeup() {
     let sr = 48000u32;
-    let mut plugin = TransientShaperPlugin::from_params(
+    let mut plugin = TransientShaperPlugin::from_validated_params(
         1,
         TransientShaperPluginParams {
             attack: 0.0,
@@ -425,7 +425,7 @@ fn test_output_gain_applies_makeup() {
 fn test_sensitivity_gates_quiet_signals() {
     let sr = 48000u32;
     // High sensitivity threshold: only loud signals shape
-    let mut plugin = TransientShaperPlugin::from_params(
+    let mut plugin = TransientShaperPlugin::from_validated_params(
         1,
         TransientShaperPluginParams {
             attack: 100.0,
@@ -450,7 +450,7 @@ fn test_sensitivity_gates_quiet_signals() {
 #[test]
 fn test_reset_clears_envelope_state() {
     let sr = 48000u32;
-    let mut plugin = TransientShaperPlugin::from_params(
+    let mut plugin = TransientShaperPlugin::from_validated_params(
         1,
         TransientShaperPluginParams {
             attack: 100.0,
@@ -540,9 +540,8 @@ fn test_set_parameter_out_of_bounds_returns_error() {
 }
 
 #[test]
-fn test_set_parameter_clamps_via_from_params() {
-    // from_params clamps internally, unlike set_parameter which validates first
-    let plugin = TransientShaperPlugin::from_params(
+fn from_params_rejects_out_of_range_values_instead_of_clamping() {
+    let result = TransientShaperPlugin::from_params(
         1,
         TransientShaperPluginParams {
             attack: 200.0,
@@ -552,11 +551,7 @@ fn test_set_parameter_clamps_via_from_params() {
             mix: 2.0,
         },
     );
-    assert_eq!(plugin.attack_amount, 1.0);
-    assert_eq!(plugin.sustain_amount, -1.0);
-    assert_eq!(plugin.sensitivity_db, 12.0);
-    assert_eq!(plugin.output_gain_db, -12.0);
-    assert_eq!(plugin.mix, 1.0);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -605,7 +600,7 @@ fn test_get_parameter_unknown_id_returns_none() {
 
 #[test]
 fn test_from_params_wiring() {
-    let plugin = TransientShaperPlugin::from_params(
+    let plugin = TransientShaperPlugin::from_validated_params(
         2,
         TransientShaperPluginParams {
             attack: 75.0,

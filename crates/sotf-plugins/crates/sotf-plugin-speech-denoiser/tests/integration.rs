@@ -175,7 +175,7 @@ fn first_callback_and_live_toggle_are_allocation_free_without_warmup() {
     let mut values = ParameterSet::new();
     values.insert(ParameterId::from("enabled"), ParameterValue::Bool(false));
     assert_no_allocs("Speech Denoiser live bypass setter", || {
-        plugin.apply_values(values).unwrap();
+        plugin.apply_values_realtime(&values).unwrap();
     });
     assert_no_allocs("Speech Denoiser first bypass-transition callback", || {
         plugin.process_in_place(&mut buffer, &context).unwrap();

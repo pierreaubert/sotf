@@ -83,8 +83,9 @@ fn default_params(plugin_type: &str) -> serde_json::Value {
             "matrix": [1.0, 0.0, 0.0, 1.0],
         }),
         "band_split" => serde_json::json!({
-            "bands": 2,
-            "crossover_frequencies": [1000.0],
+            "num_bands": 2,
+            "frequency": 1000.0,
+            "type": "LR24",
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -193,52 +194,6 @@ const EXPECTED_SET_REJECTIONS: &[(&str, &str, &str)] = &[
         "reconstruction_error_db",
         "parameter is reported but not accepted by set_parameter",
     ),
-    (
-        "convolution",
-        "use_nupc",
-        "structural parameter changed through a host rebuild",
-    ),
-    (
-        "convolution",
-        "zero_latency_head",
-        "structural parameter changed through a host rebuild",
-    ),
-    (
-        "convolution",
-        "head_taps",
-        "structural parameter changed through a host rebuild",
-    ),
-    (
-        "beamformer",
-        "beamformer_type",
-        "structural algorithm selection changed through a host rebuild",
-    ),
-];
-
-/// Parameters that accept a no-op setter but reject a changed value while the
-/// live instance is initialized. They must not be exercised by the realtime
-/// update matrix; the host changes them by recreating the plugin.
-const EXPECTED_LIVE_UPDATE_REJECTIONS: &[(&str, &str, &str)] = &[
-    (
-        "spectral_compressor",
-        "fft_size",
-        "structural FFT size changed through a host rebuild",
-    ),
-    (
-        "spectrum_analyzer",
-        "num_bins",
-        "setup-only display shape changed by recreating the analyzer",
-    ),
-    (
-        "spectrum_analyzer",
-        "min_freq",
-        "setup-only frequency bounds changed by recreating the analyzer",
-    ),
-    (
-        "spectrum_analyzer",
-        "max_freq",
-        "setup-only frequency bounds changed by recreating the analyzer",
-    ),
 ];
 
 #[test]
@@ -268,6 +223,15 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
 
         for param in plugin.parameters() {
             let id = ParameterId::from(param.id.as_str());
+            if param.update_mode == UpdateMode::Structural {
+                if plugin.get_parameter(&id).is_none() {
+                    unexpected_failures.push(format!(
+                        "{plugin_type}/{}: structural parameter has no readable current value",
+                        param.id
+                    ));
+                }
+                continue;
+            }
             if let Some(value) = plugin.get_parameter(&id)
                 && let Err(err) = plugin.set_parameter(id, value)
             {
@@ -305,6 +269,125 @@ fn all_plugins_expose_parameters_and_roundtrip_legal_values() {
     );
 }
 
+fn is_dynamic_eq_structural_band_parameter(id: &str) -> bool {
+    id.starts_with("band_")
+        && ["_frequency", "_q", "_gain", "_active", "_solo"]
+            .iter()
+            .any(|suffix| id.ends_with(suffix))
+}
+
+fn is_fir_eq_structural_band_parameter(id: &str) -> bool {
+    id.starts_with("band_")
+        && ["_type", "_freq", "_q", "_gain", "_active"]
+            .iter()
+            .any(|suffix| id.ends_with(suffix))
+}
+
+#[test]
+fn rebuild_only_parameters_are_declared_structural_and_readable() {
+    const REQUIRED: &[(&str, &[&str])] = &[
+        ("multiband_expander", &["num_bands", "processing_mode"]),
+        ("dynamic_eq", &["num_bands", "link_channels"]),
+        (
+            "linear_phase_eq",
+            &["num_filters", "fir_length", "phase_mode", "auto_gain"],
+        ),
+        (
+            "fir_designer",
+            &["num_filters", "fir_length", "phase_mode", "auto_gain"],
+        ),
+        ("crossover", &["type"]),
+        (
+            "ab_compare",
+            &[
+                "band_mask_low_hz",
+                "band_mask_high_hz",
+                "path_a_config",
+                "path_b_config",
+            ],
+        ),
+        (
+            "ab",
+            &[
+                "band_mask_low_hz",
+                "band_mask_high_hz",
+                "path_a_config",
+                "path_b_config",
+            ],
+        ),
+        (
+            "beamformer",
+            &["num_mics", "mic_spacing_cm", "steer_angle_deg"],
+        ),
+        ("compressor", &["lookahead_ms"]),
+        ("limiter", &["lookahead"]),
+        (
+            "multiband_compressor",
+            &["per_band_lookahead_ms", "lookahead_ms"],
+        ),
+        ("saturation", &["exciter_freq", "dc_blocker", "use_adaa"]),
+        ("matrix", &["preset"]),
+        ("spectral_compressor", &["fft_size"]),
+        ("spectrum_analyzer", &["num_bins", "min_freq", "max_freq"]),
+    ];
+
+    let mut failures = Vec::new();
+    for &(plugin_type, required_ids) in REQUIRED {
+        let channels = channels_for_type(plugin_type);
+        let plugin = match create_plugin(
+            plugin_type,
+            &default_params(plugin_type),
+            channels,
+            SAMPLE_RATE,
+        ) {
+            Ok(plugin) => plugin,
+            Err(error) => {
+                failures.push(format!("{plugin_type}: instantiate failed: {error}"));
+                continue;
+            }
+        };
+        let parameters = plugin.parameters();
+        for &id in required_ids {
+            match parameters
+                .iter()
+                .find(|parameter| parameter.id.as_str() == id)
+            {
+                Some(parameter) => {
+                    if parameter.update_mode != UpdateMode::Structural {
+                        failures.push(format!("{plugin_type}/{id}: advertised as realtime"));
+                    }
+                    if plugin.get_parameter(&parameter.id).is_none() {
+                        failures.push(format!("{plugin_type}/{id}: current value is unreadable"));
+                    }
+                }
+                None => failures.push(format!("{plugin_type}/{id}: missing from schema")),
+            }
+        }
+
+        for parameter in &parameters {
+            let must_be_structural = match plugin_type {
+                "dynamic_eq" => is_dynamic_eq_structural_band_parameter(parameter.id.as_str()),
+                "linear_phase_eq" | "fir_designer" => {
+                    is_fir_eq_structural_band_parameter(parameter.id.as_str())
+                }
+                _ => false,
+            };
+            if must_be_structural && parameter.update_mode != UpdateMode::Structural {
+                failures.push(format!(
+                    "{plugin_type}/{}: rebuild-only band parameter advertised as realtime",
+                    parameter.id
+                ));
+            }
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "rebuild-only parameter metadata failures:\n{}",
+        failures.join("\n")
+    );
+}
+
 #[test]
 fn all_realtime_numeric_and_boolean_parameters_tolerate_rapid_updates() {
     let mut failures = Vec::new();
@@ -336,9 +419,6 @@ fn all_realtime_numeric_and_boolean_parameters_tolerate_rapid_updates() {
         for parameter in plugin.parameters() {
             if parameter.update_mode != UpdateMode::Realtime
                 || EXPECTED_SET_REJECTIONS
-                    .iter()
-                    .any(|(kind, id, _)| *kind == plugin_type && *id == parameter.id.as_str())
-                || EXPECTED_LIVE_UPDATE_REJECTIONS
                     .iter()
                     .any(|(kind, id, _)| *kind == plugin_type && *id == parameter.id.as_str())
             {

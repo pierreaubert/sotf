@@ -326,9 +326,22 @@ fn test_latency() {
 
 #[test]
 fn streamed_impulse_delay_matches_reported_latency_for_varied_blocks() {
-    for block_size in [128usize, 256, 512, 1024, 2048] {
+    // Keep the native matrix broad, but use the low-latency transform and a
+    // smaller irregular-partition matrix under Miri. Interpreting several
+    // full 2048-point FFT streams takes hours and does not add memory-model
+    // coverage beyond exercising multiple non-divisor callback sizes.
+    #[cfg(not(miri))]
+    let block_sizes = [128usize, 256, 512, 1024, 2048];
+    #[cfg(miri)]
+    let block_sizes = [63usize, 127, 257];
+
+    for block_size in block_sizes {
         let mut params = DenoiserPluginParams::default();
         params.reduction_db = 0.0;
+        #[cfg(miri)]
+        {
+            params.low_latency = true;
+        }
         let mut plugin = DenoiserPlugin::from_params(1, params);
         plugin.initialize(SAMPLE_RATE).unwrap();
 

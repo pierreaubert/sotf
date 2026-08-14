@@ -45,12 +45,12 @@ impl PluginIpcHeader {
         self._pad1.store(0, Ordering::Release);
         self.transport_loop_start.store(u64::MAX, Ordering::Release);
         self.transport_loop_end.store(u64::MAX, Ordering::Release);
-        self.control_sequence.store(0, Ordering::Release);
-        self.control_worker_sequence.store(0, Ordering::Release);
-        self.control_state.store(0, Ordering::Release);
-        self.control_request_len.store(0, Ordering::Release);
-        self.control_response_len.store(0, Ordering::Release);
-        self.control_status.store(0, Ordering::Release);
+        self.control.sequence.store(0, Ordering::Release);
+        self.control.worker_sequence.store(0, Ordering::Release);
+        self.control.state.store(0, Ordering::Release);
+        self.control.request_len.store(0, Ordering::Release);
+        self.control.response_len.store(0, Ordering::Release);
+        self.control.status.store(0, Ordering::Release);
         self.reserved[0].store(PluginSandboxStatusCode::Unknown as u32, Ordering::Release);
         self.reserved[1].store(PluginSandboxBackendCode::Unknown as u32, Ordering::Release);
         self.reserved[2].store(0, Ordering::Release);

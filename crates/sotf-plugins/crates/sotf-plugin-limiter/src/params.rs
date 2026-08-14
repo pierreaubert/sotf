@@ -52,10 +52,10 @@ pub const PARAMS: &[ParamSpec] = &[
         .doc("One-dB gain-computer knee vs hard limiting onset"),
     ParamSpec::bool_labeled("True Peak", "true_peak", false, "On", "Off", "Detection")
         .setup()
-        .doc("ITU-R BS.1770 Table-2 4x inter-sample peak detection"),
+        .doc("Rate-appropriate ITU-R BS.1770-compatible inter-sample peak detection"),
     ParamSpec::bool_labeled("ISP Limit", "isp_mode", false, "On", "Off", "Detection")
         .setup()
-        .doc("Predictive ISP limiting; requires hard mode, 100% wet, and at least six lookahead samples"),
+        .doc("Predictive ISP limiting; requires hard mode, 100% wet, and enough lookahead to cover the rate-dependent detector delay"),
     ParamSpec::bool_labeled("Dual Release", "dual_release", false, "On", "Off", "Timing")
         .setup()
         .doc("Fast+slow release envelopes"),

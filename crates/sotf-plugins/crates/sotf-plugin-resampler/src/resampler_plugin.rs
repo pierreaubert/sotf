@@ -62,6 +62,22 @@ pub struct ResamplerPlugin {
 }
 
 impl ResamplerPlugin {
+    /// Minimum queued-work horizon used by the engine scheduler.
+    ///
+    /// The streaming adapter accepts smaller callback partitions and buffers
+    /// them, but sinc work is performed when a complete chunk is assembled.
+    /// A queued engine therefore keeps at least this many input-rate frames
+    /// ahead of hardware consumption instead of assuming the cost is spread
+    /// uniformly over every sub-chunk callback. This is not a longer physical
+    /// callback deadline for fixed-rate plugin-format hosts.
+    pub fn realtime_quantum_frames(&self) -> usize {
+        if self.is_unity_passthrough() {
+            1
+        } else {
+            self.chunk_size
+        }
+    }
+
     /// Create a new resampler plugin
     ///
     /// # Arguments
@@ -758,6 +774,10 @@ impl Plugin for ResamplerPlugin {
         let rubato_delay = self.output_delay_frames();
         let priming_output_frames = (((self.chunk_size - 1) as f64) * self.current_ratio).ceil();
         rubato_delay.saturating_add(priming_output_frames as usize)
+    }
+
+    fn realtime_quantum_frames(&self) -> usize {
+        ResamplerPlugin::realtime_quantum_frames(self)
     }
 
     fn output_frames_for_input(&self, input_frames: usize) -> usize {

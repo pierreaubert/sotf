@@ -120,6 +120,17 @@ pub trait ParametricInPlacePlugin: Send {
         0
     }
 
+    /// Minimum input-rate scheduling budget for worst-case realtime work.
+    ///
+    /// This is forwarded through [`ParametricInPlacePluginAdapter`] to the
+    /// object-safe [`Plugin`] contract. Smaller and irregular blocks remain
+    /// valid. Queued/offline hosts use this value to keep at least this much
+    /// upstream work ahead of a downstream consumer. It is not permission for
+    /// a direct callback host to exceed that callback's physical deadline.
+    fn realtime_quantum_frames(&self) -> usize {
+        1
+    }
+
     /// Coarse cost category for host scheduling.
     fn cost_class(&self) -> PluginCostClass {
         PluginCostClass::Scalar
@@ -302,6 +313,10 @@ impl<T: ParametricInPlacePlugin> InPlacePlugin for ParametricInPlacePluginAdapte
         self.plugin.latency_samples()
     }
 
+    fn realtime_quantum_frames(&self) -> usize {
+        self.plugin.realtime_quantum_frames()
+    }
+
     fn cost_class(&self) -> PluginCostClass {
         self.plugin.cost_class()
     }
@@ -440,6 +455,10 @@ impl<T: ParametricInPlacePlugin> Plugin for ParametricInPlacePluginAdapter<T> {
 
     fn latency_samples(&self) -> usize {
         self.plugin.latency_samples()
+    }
+
+    fn realtime_quantum_frames(&self) -> usize {
+        self.plugin.realtime_quantum_frames()
     }
 
     fn cost_class(&self) -> PluginCostClass {

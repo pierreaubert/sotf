@@ -27,6 +27,7 @@ pub(super) struct RetiredIrState {
     pub(super) fdl_flat: Vec<Complex<f32>>,
     pub(super) fft_scratch: Vec<Complex<f32>>,
     pub(super) rayon_accum_pool: Vec<Vec<Complex<f32>>>,
+    pub(super) ir_file: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -13,6 +13,9 @@ pub struct DynamicParams {
     int_params: Vec<IntParam>,
     /// Map from parameter ID to (kind, index)
     param_map: HashMap<String, ParamEntry>,
+    /// Stable declaration order used by the realtime sync path. Hash-map
+    /// iteration would make same-frame adapter commands nondeterministic.
+    sync_entries: Vec<ParamEntry>,
 }
 
 #[derive(Clone, Copy)]
@@ -35,6 +38,7 @@ impl DynamicParams {
         let mut bool_params = Vec::new();
         let mut int_params = Vec::new();
         let mut param_map = HashMap::new();
+        let mut sync_entries = Vec::new();
 
         for info in infos {
             if info.steps == 1 && info.min_value == 0.0 && info.max_value == 1.0 {
@@ -42,14 +46,13 @@ impl DynamicParams {
                 let idx = bool_params.len();
                 let param = BoolParam::new(&info.name, info.default_value > 0.5);
                 bool_params.push(param);
-                param_map.insert(
-                    info.id.clone(),
-                    ParamEntry {
-                        kind: ParamKind::Bool,
-                        index: idx,
-                        id: ParameterId::from(info.id.as_str()),
-                    },
-                );
+                let entry = ParamEntry {
+                    kind: ParamKind::Bool,
+                    index: idx,
+                    id: ParameterId::from(info.id.as_str()),
+                };
+                sync_entries.push(entry.clone());
+                param_map.insert(info.id.clone(), entry);
             } else if info.steps > 0 && info.steps < 100 {
                 // Int/Choice parameter
                 let idx = int_params.len();
@@ -62,14 +65,13 @@ impl DynamicParams {
                     },
                 );
                 int_params.push(param);
-                param_map.insert(
-                    info.id.clone(),
-                    ParamEntry {
-                        kind: ParamKind::Int,
-                        index: idx,
-                        id: ParameterId::from(info.id.as_str()),
-                    },
-                );
+                let entry = ParamEntry {
+                    kind: ParamKind::Int,
+                    index: idx,
+                    id: ParameterId::from(info.id.as_str()),
+                };
+                sync_entries.push(entry.clone());
+                param_map.insert(info.id.clone(), entry);
             } else {
                 // Float parameter
                 let idx = float_params.len();
@@ -88,14 +90,13 @@ impl DynamicParams {
 
                 let param = FloatParam::new(&info.name, info.default_value as f32, range);
                 float_params.push(param);
-                param_map.insert(
-                    info.id.clone(),
-                    ParamEntry {
-                        kind: ParamKind::Float,
-                        index: idx,
-                        id: ParameterId::from(info.id.as_str()),
-                    },
-                );
+                let entry = ParamEntry {
+                    kind: ParamKind::Float,
+                    index: idx,
+                    id: ParameterId::from(info.id.as_str()),
+                };
+                sync_entries.push(entry.clone());
+                param_map.insert(info.id.clone(), entry);
             }
         }
 
@@ -104,12 +105,13 @@ impl DynamicParams {
             bool_params,
             int_params,
             param_map,
+            sync_entries,
         })
     }
 
     /// Sync all parameter values to a SOTF plugin.
     pub fn sync_to_plugin(&self, plugin: &mut dyn sotf_host::plugin::Plugin) {
-        for (_id, entry) in &self.param_map {
+        for entry in &self.sync_entries {
             let value = match entry.kind {
                 ParamKind::Float => ParameterValue::Float(self.float_params[entry.index].value()),
                 ParamKind::Bool => ParameterValue::Bool(self.bool_params[entry.index].value()),

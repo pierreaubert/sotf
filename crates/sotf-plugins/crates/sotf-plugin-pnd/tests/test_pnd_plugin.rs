@@ -6,7 +6,7 @@ use sotf_plugin_pnd::{PndPlugin, PndPluginParams};
 #[test]
 fn test_pnd_instantiation() {
     let params = PndPluginParams::default();
-    let mut plugin = PndPlugin::from_params(2, params);
+    let mut plugin = PndPlugin::from_params(2, params).unwrap();
 
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.output_channels(), 2);
@@ -97,7 +97,8 @@ fn test_pnd_known_drift_correction() {
             confidence_threshold: 0.2,
             ..PndPluginParams::default()
         },
-    );
+    )
+    .unwrap();
     plugin.initialize(sr).unwrap();
 
     // Enable correction
@@ -188,7 +189,8 @@ fn test_pnd_phase_vocoder_corrects_referenced_sharp_tone() {
             phase_vocoder: true,
             ..PndPluginParams::default()
         },
-    );
+    )
+    .unwrap();
     plugin.initialize(sr).unwrap();
 
     let total_frames = sr as usize * 2;

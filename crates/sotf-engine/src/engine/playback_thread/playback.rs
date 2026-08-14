@@ -1,6 +1,51 @@
-pub(super) fn playback_buffer_capacity(sample_rate: u32, channels: usize, buffer_ms: u32) -> usize {
+/// Sample capacity for the processing-to-playback ring.
+///
+/// `work_horizon_frames` is expressed in this stream's output-rate domain.
+/// Keeping at least twice that horizon lets the existing half-ring silence
+/// prefill reserve one complete horizon before the hardware starts consuming.
+pub(in crate::engine) fn playback_buffer_capacity(
+    sample_rate: u32,
+    channels: usize,
+    buffer_ms: u32,
+    work_horizon_frames: usize,
+) -> usize {
     let samples = sample_rate as u128 * buffer_ms as u128 * channels as u128;
-    samples.div_ceil(1000).min(usize::MAX as u128) as usize
+    let configured = samples.div_ceil(1000);
+    let horizon_floor = (work_horizon_frames.max(1) as u128)
+        .saturating_mul(channels.max(1) as u128)
+        .saturating_mul(2);
+    configured.max(horizon_floor).min(usize::MAX as u128) as usize
+}
+
+pub(super) fn validate_playback_work_horizon(
+    channels: usize,
+    work_horizon_frames: usize,
+) -> Result<(), String> {
+    let required = (channels.max(1) as u128)
+        .saturating_mul(work_horizon_frames.max(1) as u128)
+        .saturating_mul(2);
+    if required > super::super::MAX_ENGINE_PLAYBACK_BUFFER_SAMPLES as u128 {
+        Err(format!(
+            "playback work horizon requires {required} ring samples, exceeding the engine limit of {}",
+            super::super::MAX_ENGINE_PLAYBACK_BUFFER_SAMPLES
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+pub(super) fn convert_work_horizon_frames(
+    frames: usize,
+    source_rate: u32,
+    target_rate: u32,
+) -> usize {
+    if source_rate == 0 {
+        return frames.max(1);
+    }
+    ((frames.max(1) as u128)
+        .saturating_mul(target_rate as u128)
+        .div_ceil(source_rate as u128))
+    .min(usize::MAX as u128) as usize
 }
 
 #[allow(

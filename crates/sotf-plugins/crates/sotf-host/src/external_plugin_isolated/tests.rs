@@ -156,6 +156,18 @@ fn isolated_control_state_and_audio_share_transport_without_stale_sidecar() {
     plugin
         .process(&input, &mut output, &ProcessContext::new(48_000, 8_192))
         .unwrap();
+    let observer = SecurePluginSharedMemory::open_existing(plugin.proxy.shared_path()).unwrap();
+    let ready_deadline = std::time::Instant::now() + Duration::from_secs(1);
+    while observer.worker_state() != crate::external_plugin_ipc::PluginIpcState::WorkerReady {
+        assert!(
+            std::time::Instant::now() < ready_deadline,
+            "worker did not finish primed block"
+        );
+        std::thread::yield_now();
+    }
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 8_192))
+        .unwrap();
     assert!(
         output.iter().all(|sample| (*sample - 1.0).abs() < 1e-6),
         "audio/control interleave timed out or used stale parameter state"
@@ -213,6 +225,7 @@ fn isolated_external_plugin_times_out_to_passthrough_without_worker() {
         descriptor(),
         48_000,
         IsolatedExternalPluginConfig {
+            max_block_frames: 2,
             deadline: Duration::ZERO,
             start_worker: false,
             ..Default::default()
@@ -222,6 +235,10 @@ fn isolated_external_plugin_times_out_to_passthrough_without_worker() {
 
     let input = vec![0.25, -0.5, 1.0, -1.0];
     let mut output = vec![0.0; input.len()];
+    let _frames = plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+        .unwrap();
+    assert_eq!(output, vec![0.0; input.len()]);
     let frames = plugin
         .process(&input, &mut output, &ProcessContext::new(48_000, 2))
         .unwrap();
@@ -299,7 +316,7 @@ fn graph_host_reports_external_worker_with_stable_plugin_instance_id() {
 }
 
 #[test]
-fn isolated_external_plugin_reads_worker_reported_latency() {
+fn isolated_external_plugin_reports_worker_metadata_without_mutating_graph_latency() {
     let plugin = IsolatedExternalPlugin::new(
         descriptor(),
         48_000,
@@ -311,17 +328,17 @@ fn isolated_external_plugin_reads_worker_reported_latency() {
     .unwrap();
 
     assert_eq!(plugin.worker_reported_latency_samples(), None);
-    assert_eq!(plugin.latency_samples(), 0);
+    assert_eq!(plugin.latency_samples(), 8_192);
     let worker_shared =
         SecurePluginSharedMemory::open_existing(plugin.proxy.shared_path()).unwrap();
     worker_shared.publish_worker_latency_samples(320);
     assert_eq!(plugin.worker_reported_latency_samples(), Some(320));
-    assert_eq!(plugin.latency_samples(), 320);
+    assert_eq!(plugin.latency_samples(), 8_192);
 }
 
 #[test]
 fn worker_latency_handshake_precedes_daw_host_latency_cache() {
-    let plugin = IsolatedExternalPlugin::new(
+    let mut plugin = IsolatedExternalPlugin::new(
         descriptor(),
         48_000,
         IsolatedExternalPluginConfig {
@@ -339,16 +356,17 @@ fn worker_latency_handshake_precedes_daw_host_latency_cache() {
 
     assert_eq!(
         plugin
-            .wait_for_worker_latency_metadata(Duration::from_secs(1))
+            .finalize_worker_latency_metadata(Duration::from_secs(1))
             .unwrap(),
         320
     );
     publisher.join().unwrap();
+    assert_eq!(plugin.latency_samples(), 8_192 + 320);
 
     let mut host = DawHost::new(2, 48_000);
     host.add_plugin(Box::new(plugin)).unwrap();
     host.build().unwrap();
-    assert_eq!(host.total_latency_samples(), 320);
+    assert_eq!(host.total_latency_samples(), 8_192 + 320);
 }
 
 #[test]
@@ -377,6 +395,7 @@ fn isolated_external_plugin_exposes_block_failure_counters() {
         descriptor(),
         48_000,
         IsolatedExternalPluginConfig {
+            max_block_frames: 2,
             deadline: Duration::ZERO,
             start_worker: false,
             ..Default::default()
@@ -389,7 +408,9 @@ fn isolated_external_plugin_exposes_block_failure_counters() {
     plugin
         .process(&input, &mut output, &ProcessContext::new(48_000, 2))
         .unwrap();
-
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+        .unwrap();
     assert_eq!(plugin.block_timeout_count(), 1);
     assert_eq!(plugin.block_worker_failure_count(), 0);
     assert_eq!(plugin.block_wrong_sequence_count(), 0);
@@ -401,6 +422,7 @@ fn isolated_external_plugin_quarantines_after_repeated_block_failures() {
         descriptor(),
         48_000,
         IsolatedExternalPluginConfig {
+            max_block_frames: 2,
             deadline: Duration::ZERO,
             start_worker: false,
             max_consecutive_block_failures: 2,
@@ -411,6 +433,9 @@ fn isolated_external_plugin_quarantines_after_repeated_block_failures() {
 
     let input = vec![0.25, -0.5, 1.0, -1.0];
     let mut output = vec![0.0; input.len()];
+    plugin
+        .process(&input, &mut output, &ProcessContext::new(48_000, 2))
+        .unwrap();
     plugin
         .process(&input, &mut output, &ProcessContext::new(48_000, 2))
         .unwrap();

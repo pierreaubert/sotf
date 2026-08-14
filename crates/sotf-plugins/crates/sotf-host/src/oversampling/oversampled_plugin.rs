@@ -186,6 +186,13 @@ impl<P: InPlacePlugin> InPlacePlugin for OversampledPlugin<P> {
         self.oversampler.latency_samples() + inner_latency_1x
     }
 
+    fn realtime_quantum_frames(&self) -> usize {
+        self.inner
+            .realtime_quantum_frames()
+            .div_ceil(self.factor as usize)
+            .max(1)
+    }
+
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         self.inner.get_data()
     }

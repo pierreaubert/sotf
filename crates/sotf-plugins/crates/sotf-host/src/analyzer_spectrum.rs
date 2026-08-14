@@ -3,6 +3,7 @@
 // ============================================================================
 
 use crate::analyzer::{RealTimeCache, SpectrumData};
+use crate::param_specs::UpdateMode;
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::plugin::{
     Plugin, PluginCompileMetadata, PluginCompiledOp, PluginCostClass, PluginInfo, PluginResult,
@@ -247,15 +248,18 @@ impl SpectrumAnalyzerPlugin {
                 self.config.num_bins as i32,
                 MIN_BINS as i32,
                 MAX_BINS as i32,
-            ),
-            Parameter::new_float("min_freq", "Min Freq", self.config.min_freq, 10.0, 500.0),
+            )
+            .with_update_mode(UpdateMode::Structural),
+            Parameter::new_float("min_freq", "Min Freq", self.config.min_freq, 10.0, 500.0)
+                .with_update_mode(UpdateMode::Structural),
             Parameter::new_float(
                 "max_freq",
                 "Max Freq",
                 self.config.max_freq,
                 1000.0,
                 22050.0,
-            ),
+            )
+            .with_update_mode(UpdateMode::Structural),
         ];
     }
 
@@ -1017,6 +1021,26 @@ mod tests {
     #[test]
     fn initialized_shape_parameters_require_recreation_but_unchanged_values_are_ok() {
         let mut plugin = SpectrumAnalyzerPlugin::new(2).unwrap();
+        let parameters = plugin.parameters();
+        for id in ["num_bins", "min_freq", "max_freq"] {
+            assert_eq!(
+                parameters
+                    .iter()
+                    .find(|parameter| parameter.id.as_str() == id)
+                    .unwrap()
+                    .update_mode,
+                UpdateMode::Structural,
+                "{id} must be advertised as rebuild-only"
+            );
+        }
+        assert_eq!(
+            parameters
+                .iter()
+                .find(|parameter| parameter.id.as_str() == "smoothing")
+                .unwrap()
+                .update_mode,
+            UpdateMode::Realtime
+        );
         plugin.initialize(48_000).unwrap();
         assert!(
             plugin

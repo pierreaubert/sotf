@@ -161,7 +161,8 @@ fn reset_clears_state() {
             mode: "Wideband".to_string(),
             mix: 1.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     let mut buf = make_sine(8000.0, sr, 4800, 0.5);
@@ -200,7 +201,8 @@ fn wideband_reduces_sibilance() {
             mode: "Wideband".to_string(),
             mix: 1.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     let mut buf = make_sine(8000.0, sr, num_frames, amplitude);
@@ -236,7 +238,8 @@ fn low_frequency_passthrough() {
             mode: "Wideband".to_string(),
             mix: 1.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     let mut buf = make_sine(200.0, sr, num_frames, amplitude);
@@ -272,7 +275,8 @@ fn split_band_attenuates_hf_passthrough_lf() {
             mode: "Split-Band".to_string(),
             mix: 1.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     let mut hf = make_sine(8000.0, sr, num_frames, amplitude);
@@ -317,7 +321,8 @@ fn mix_zero_is_dry() {
             mode: "Wideband".to_string(),
             mix: 0.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     // Warm up the 5 ms mix smoother so it converges to dry.
@@ -359,7 +364,8 @@ fn stereo_channels_processed_independently() {
             mode: "Wideband".to_string(),
             mix: 1.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     let mut buf = Vec::with_capacity(num_frames * 2);
@@ -405,8 +411,8 @@ fn stereo_channels_processed_independently() {
 }
 
 #[test]
-fn from_params_clamps_out_of_bounds() {
-    let plugin = DeEsserPlugin::from_params(
+fn from_params_rejects_out_of_bounds() {
+    let result = DeEsserPlugin::from_params(
         1,
         DeEsserPluginParams {
             frequency: 100.0,
@@ -419,26 +425,7 @@ fn from_params_clamps_out_of_bounds() {
             mix: -1.0,
         },
     );
-    assert_eq!(
-        plugin.parametric_get_parameter(&ParameterId::from("frequency")),
-        Some(ParameterValue::Float(2000.0))
-    );
-    assert_eq!(
-        plugin.parametric_get_parameter(&ParameterId::from("q")),
-        Some(ParameterValue::Float(5.0))
-    );
-    assert_eq!(
-        plugin.parametric_get_parameter(&ParameterId::from("threshold")),
-        Some(ParameterValue::Float(0.0))
-    );
-    assert_eq!(
-        plugin.parametric_get_parameter(&ParameterId::from("ratio")),
-        Some(ParameterValue::Float(1.0))
-    );
-    assert_eq!(
-        plugin.parametric_get_parameter(&ParameterId::from("mix")),
-        Some(ParameterValue::Float(0.0))
-    );
+    assert!(result.is_err(), "invalid serialized state must be rejected");
 }
 
 #[test]

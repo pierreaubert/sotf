@@ -22,7 +22,8 @@ fn main() {
         mix: 1.0,
     };
 
-    let mut inner = DeEsserPlugin::from_params(channels, params);
+    let mut inner =
+        DeEsserPlugin::from_params(channels, params).expect("valid De-Esser parameters");
     inner.initialize(sample_rate).unwrap();
 
     println!("=== QA: DeEsser Plugin ===");

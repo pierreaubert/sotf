@@ -45,6 +45,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Exciter",
     )
     .setup()
+    .structural()
     .doc("Crossover frequency for exciter mode"),
     ParamSpec::choice(
         "Oversampling",
@@ -106,8 +107,10 @@ pub const PARAMS: &[ParamSpec] = &[
     )
     .doc("Dynamic saturation envelope release time"),
     ParamSpec::bool_labeled("DC Block", "dc_blocker", true, "On", "Off", "Quality")
+        .structural()
         .doc("Remove DC offset from asymmetric saturation"),
     ParamSpec::bool_labeled("ADAA", "use_adaa", true, "On", "Off", "Quality")
+        .structural()
         .doc("Antiderivative anti-aliasing when oversampling is off"),
 ];
 

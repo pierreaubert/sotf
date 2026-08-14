@@ -29,7 +29,7 @@ fn rms(buf: &[f32]) -> f32 {
 
 #[test]
 fn instantiate_and_declare_metadata() {
-    let plugin = SaturationPlugin::from_params(
+    let plugin = SaturationPlugin::from_validated_params(
         2,
         SaturationPluginParams {
             mode: "Tube".to_string(),
@@ -54,7 +54,7 @@ fn instantiate_and_declare_metadata() {
 #[test]
 fn host_wraps_exactly_once_and_aligns_dry_wet_in_one_time_domain() {
     fn wrapped(mix: f32) -> AutoOversampledPlugin {
-        let inner = SaturationPlugin::from_params(
+        let inner = SaturationPlugin::from_validated_params(
             1,
             SaturationPluginParams {
                 mode: "Soft Clip".to_string(),
@@ -111,7 +111,7 @@ fn drive_automation_is_callback_partition_invariant_for_every_topology() {
     for mode in ["Soft Clip", "Tube", "Tape", "Exciter", "Asymmetric"] {
         for oversampling in ["Off", "2x", "4x"] {
             let make_plugin = || {
-                let mut plugin = SaturationPlugin::from_params(
+                let mut plugin = SaturationPlugin::from_validated_params(
                     1,
                     SaturationPluginParams {
                         mode: mode.to_string(),
@@ -167,7 +167,7 @@ fn drive_automation_is_callback_partition_invariant_for_every_topology() {
 #[test]
 fn dynamic_control_survives_every_mode_and_actual_host_oversampling_factor() {
     fn render(mode: &str, factor: u32, dynamic_amount: f32) -> Vec<f32> {
-        let inner = SaturationPlugin::from_params(
+        let inner = SaturationPlugin::from_validated_params(
             1,
             SaturationPluginParams {
                 mode: mode.to_string(),
@@ -229,7 +229,7 @@ fn dynamic_control_survives_every_mode_and_actual_host_oversampling_factor() {
 #[test]
 fn four_x_host_oversampling_reduces_out_of_band_harmonic_aliases() {
     fn render(factor: u32) -> Vec<f32> {
-        let inner = SaturationPlugin::from_params(
+        let inner = SaturationPlugin::from_validated_params(
             1,
             SaturationPluginParams {
                 mode: "Asymmetric".to_string(),
@@ -296,7 +296,7 @@ fn asymmetric_mode_matches_independent_normalized_curve_oracle() {
 
     let drive = 3.5;
     let tone = 2.25;
-    let mut plugin = SaturationPlugin::from_params(
+    let mut plugin = SaturationPlugin::from_validated_params(
         1,
         SaturationPluginParams {
             mode: "Asymmetric".into(),
@@ -328,7 +328,7 @@ fn asymmetric_mode_matches_independent_normalized_curve_oracle() {
 #[test]
 fn asymmetric_even_harmonics_and_dc_blocker_have_measured_contracts() {
     fn render(dc_blocker_enabled: bool) -> Vec<f32> {
-        let mut plugin = SaturationPlugin::from_params(
+        let mut plugin = SaturationPlugin::from_validated_params(
             1,
             SaturationPluginParams {
                 mode: "Asymmetric".into(),
@@ -393,7 +393,7 @@ fn asymmetric_even_harmonics_and_dc_blocker_have_measured_contracts() {
 #[test]
 fn asymmetric_stereo_channels_are_independent() {
     let frames = 2_048;
-    let mut plugin = SaturationPlugin::from_params(
+    let mut plugin = SaturationPlugin::from_validated_params(
         2,
         SaturationPluginParams {
             mode: "Asymmetric".into(),
@@ -482,7 +482,7 @@ fn parameter_roundtrip() {
 
 #[test]
 fn boolean_state_from_params() {
-    let plugin = SaturationPlugin::from_params(
+    let plugin = SaturationPlugin::from_validated_params(
         1,
         SaturationPluginParams {
             mode: "Soft Clip".to_string(),
@@ -503,7 +503,7 @@ fn boolean_state_from_params() {
 
 #[test]
 fn legacy_float_booleans_are_accepted() {
-    let mut plugin = SaturationPlugin::from_params(
+    let mut plugin = SaturationPlugin::from_validated_params(
         1,
         SaturationPluginParams {
             dc_blocker_enabled: true,
@@ -555,7 +555,7 @@ fn set_parameter_type_mismatch_rejected() {
 
 #[test]
 fn process_soft_clip_bounds_output() {
-    let mut plugin = SaturationPlugin::from_params(
+    let mut plugin = SaturationPlugin::from_validated_params(
         1,
         SaturationPluginParams {
             mode: "Soft Clip".to_string(),
@@ -584,7 +584,7 @@ fn process_soft_clip_bounds_output() {
 
 #[test]
 fn bypass_mix_zero_passthrough() {
-    let mut plugin = SaturationPlugin::from_params(
+    let mut plugin = SaturationPlugin::from_validated_params(
         2,
         SaturationPluginParams {
             mode: "Soft Clip".to_string(),
@@ -617,7 +617,7 @@ fn bypass_mix_zero_passthrough() {
 
 #[test]
 fn reset_leaves_plugin_ready() {
-    let mut plugin = SaturationPlugin::from_params(
+    let mut plugin = SaturationPlugin::from_validated_params(
         1,
         SaturationPluginParams {
             mode: "Exciter".to_string(),
@@ -672,7 +672,7 @@ fn mode_switch_and_oversampling_state() {
             .contains("structural")
     );
 
-    let mut plugin = SaturationPlugin::from_params(
+    let mut plugin = SaturationPlugin::from_validated_params(
         1,
         SaturationPluginParams {
             mode: "Exciter".to_string(),
@@ -696,7 +696,7 @@ fn mode_switch_and_oversampling_state() {
 #[test]
 fn output_gain_affects_level() {
     let make_plugin = |gain_db: f32| {
-        let mut p = SaturationPlugin::from_params(
+        let mut p = SaturationPlugin::from_validated_params(
             1,
             SaturationPluginParams {
                 mode: "Soft Clip".to_string(),

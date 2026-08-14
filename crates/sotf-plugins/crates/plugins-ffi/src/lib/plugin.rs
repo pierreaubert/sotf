@@ -52,6 +52,60 @@ use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::slice;
 
+fn replace_linear_phase_eq_from_state(
+    handle: &mut PluginHandle,
+    state: &[u8],
+) -> Result<(), String> {
+    // Match the generic state loader's partial-update contract: values omitted
+    // from the incoming object retain their current live values, including
+    // automation applied after the last structural reconstruction.
+    let mut merged_state: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(&plugins_bridge::state::save_state(&*handle.plugin))
+            .map_err(|error| format!("Failed to capture current LinearPhaseEQ state: {error}"))?;
+    let incoming_state: serde_json::Map<String, serde_json::Value> = serde_json::from_slice(state)
+        .map_err(|error| format!("Failed to parse LinearPhaseEQ state: {error}"))?;
+    if let Some(num_filters) = incoming_state
+        .get("num_filters")
+        .and_then(serde_json::Value::as_u64)
+    {
+        // A smaller incoming structure replaces, rather than preserves, the
+        // now-out-of-range live bands. Explicit incoming out-of-range band
+        // fields remain in the overlay and are rejected by constructor merge.
+        merged_state.retain(|key, _| {
+            key.strip_prefix("band_")
+                .and_then(|rest| rest.split_once('_'))
+                .and_then(|(index, _)| index.parse::<u64>().ok())
+                .is_none_or(|index| index < num_filters)
+        });
+    }
+    merged_state.extend(incoming_state);
+    let merged_state = serde_json::to_vec(&merged_state)
+        .map_err(|error| format!("Failed to merge LinearPhaseEQ state: {error}"))?;
+    let rebuilt_config = super::plugin_factory::merge_linear_phase_eq_state_into_config(
+        &handle.config_json,
+        &merged_state,
+    )?;
+    let mut replacement = super::plugin_factory::create_plugin(
+        &handle.plugin_type,
+        &rebuilt_config,
+        handle.input_channels,
+        handle.output_channels,
+        handle.sample_rate,
+    )?;
+    replacement.initialize(handle.sample_rate)?;
+
+    // LinearPhaseEQ's FFI parameter map is built from static specs and the
+    // maximum band template, so structural changes do not alter it. Retaining
+    // the original allocation also preserves the documented lifetime of
+    // ParameterInfo pointers returned to foreign callers.
+    //
+    // Commit only after parsing, construction, and initialization succeeded.
+    // Any earlier error leaves the live plugin and constructor config intact.
+    handle.plugin = replacement;
+    handle.config_json = rebuilt_config;
+    Ok(())
+}
+
 /// Get the last error message.
 ///
 /// # Returns
@@ -238,6 +292,11 @@ pub extern "C" fn plugin_create(
             }
         };
 
+        // Canonicalize direct-format aliases once so factory policy,
+        // parameter metadata, serialized identity, and adapter selection
+        // cannot disagree.
+        let plugin_type_str = super::plugin_factory::canonical_direct_plugin_type(plugin_type_str);
+
         // Create plugin
         let mut plugin = match super::plugin_factory::create_plugin(
             plugin_type_str,
@@ -266,6 +325,7 @@ pub extern "C" fn plugin_create(
         let handle = Box::new(PluginHandle {
             plugin,
             plugin_type: plugin_type_str.to_string(),
+            config_json: config_str.to_string(),
             parameter_map,
             sample_rate,
             input_channels,
@@ -899,7 +959,12 @@ pub extern "C" fn plugin_load_state(
         let handle_ref = &mut *handle;
         let slice = slice::from_raw_parts(data, len);
 
-        match plugins_bridge::state::load_state(&mut *handle_ref.plugin, slice) {
+        let load_result = if handle_ref.plugin_type == "LinearPhaseEQ" {
+            replace_linear_phase_eq_from_state(handle_ref, slice)
+        } else {
+            plugins_bridge::state::load_state(&mut *handle_ref.plugin, slice)
+        };
+        match load_result {
             Ok(_) => PluginError::Success,
             Err(e) => {
                 set_last_error(&format!("Failed to load state: {e}"));
@@ -1042,7 +1107,12 @@ pub extern "C" fn plugin_import_preset_json(
             state.push(byte);
         }
 
-        match plugins_bridge::state::load_state(&mut *handle_ref.plugin, &state) {
+        let load_result = if handle_ref.plugin_type == "LinearPhaseEQ" {
+            replace_linear_phase_eq_from_state(handle_ref, &state)
+        } else {
+            plugins_bridge::state::load_state(&mut *handle_ref.plugin, &state)
+        };
+        match load_result {
             Ok(_) => PluginError::Success,
             Err(e) => {
                 set_last_error(&format!("Failed to import preset state: {e}"));

@@ -17,7 +17,8 @@ impl PluginFuzzer for PndFuzzer {
             phase_vocoder: false,
         };
 
-        let plugin = PndPlugin::from_params(channels, params.clone());
+        let plugin = PndPlugin::from_params(channels, params.clone())
+            .expect("fuzzer generated valid PND parameters");
 
         let desc = format!(
             "strength={:.2} window={:.1}ms",

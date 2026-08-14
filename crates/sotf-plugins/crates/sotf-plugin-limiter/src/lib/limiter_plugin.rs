@@ -4,7 +4,7 @@ use super::types::LimiterPluginParams;
 use crate::params::PARAMS as LM;
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::param_specs::{UpdateMode, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
 use sotf_host::plugin::{
@@ -17,84 +17,148 @@ use sotf_host::{DualRelease, ParametricInPlacePlugin};
 use std::any::Any;
 use std::sync::Arc;
 
-const TRUE_PEAK_TAPS: usize = 12;
-// Preserve the published BS.1770 Table-2 decimal coefficients verbatim; the
-// f32 conversion is intentional for the plugin's f32 realtime signal path.
+const TRUE_PEAK_HISTORY: usize = 25;
+
+// 49-tap, 4x Hann-windowed sinc interpolator used by libebur128-style
+// BS.1770-compatible true-peak meters, stored [past input offset][output phase].
+// Each kernel is generated off-line from
+//   sinc(d / factor) * 0.5 * (1 + cos(pi * d / 24)),  d = -24..=24.
+// f32 is deliberate for the plugin's f32 realtime path.
 #[allow(clippy::excessive_precision)]
-const TRUE_PEAK_PHASES: [[f32; TRUE_PEAK_TAPS]; 4] = [
-    [
-        0.001708984375,
-        -0.029174804688,
-        -0.018920898438,
-        0.07763671875,
-        0.098388671875,
-        -0.189758300781,
-        -0.395385742188,
-        0.889312744141,
-        0.644409179688,
-        -0.0517578125,
-        -0.024536132813,
-        0.001586914063,
-    ],
-    [
-        -0.029174804688,
-        0.001708984375,
-        0.07763671875,
-        -0.018920898438,
-        -0.189758300781,
-        0.098388671875,
-        0.889312744141,
-        -0.395385742188,
-        -0.0517578125,
-        0.644409179688,
-        0.001586914063,
-        -0.024536132813,
-    ],
-    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    [
-        -0.024536132813,
-        0.001586914063,
-        0.644409179688,
-        -0.0517578125,
-        -0.395385742188,
-        0.889312744141,
-        0.098388671875,
-        -0.189758300781,
-        -0.018920898438,
-        0.07763671875,
-        0.001708984375,
-        -0.029174804688,
-    ],
+const BS1770_4X_HANN_SINC_KERNEL: [[f32; 4]; 13] = [
+    [0.0, -0.000167441976, -0.000986013305, -0.001631726164],
+    [0.0, 0.004895983143, 0.010358978572, 0.01035995497],
+    [0.0, -0.018526005936, -0.033703603628, -0.030107748293],
+    [0.0, 0.046265053486, 0.080138909395, 0.06915846968],
+    [0.0, -0.103456725953, -0.181129655074, -0.16145852729],
+    [0.0, 0.288683355573, 0.625773626012, 0.896465150711],
+    [1.0, 0.896465150711, 0.625773626012, 0.288683355573],
+    [0.0, -0.16145852729, -0.181129655074, -0.103456725953],
+    [0.0, 0.06915846968, 0.080138909395, 0.046265053486],
+    [0.0, -0.030107748293, -0.033703603628, -0.018526005936],
+    [0.0, 0.01035995497, 0.010358978572, 0.004895983143],
+    [0.0, -0.001631726164, -0.000986013305, -0.000167441976],
+    [0.0, 0.0, 0.0, 0.0],
+];
+
+#[allow(clippy::excessive_precision)]
+const BS1770_2X_HANN_SINC_KERNEL: [[f32; 2]; 25] = [
+    [0.0, -0.000118399357],
+    [0.0, 0.001153804635],
+    [0.0, -0.003461982881],
+    [0.0, 0.007325594412],
+    [0.0, -0.013099864426],
+    [0.0, 0.021289392984],
+    [0.0, -0.032714333052],
+    [0.0, 0.048902422887],
+    [0.0, -0.073154952481],
+    [0.0, 0.114168419527],
+    [0.0, -0.204129958342],
+    [0.0, 0.633896587165],
+    [1.0, 0.633896587165],
+    [0.0, -0.204129958342],
+    [0.0, 0.114168419527],
+    [0.0, -0.073154952481],
+    [0.0, 0.048902422887],
+    [0.0, -0.032714333052],
+    [0.0, 0.021289392984],
+    [0.0, -0.013099864426],
+    [0.0, 0.007325594412],
+    [0.0, -0.003461982881],
+    [0.0, 0.001153804635],
+    [0.0, -0.000118399357],
+    [0.0, 0.0],
 ];
 
 #[derive(Clone)]
 pub(super) struct Bs1770TruePeakDetector {
-    pub(super) history: [f32; TRUE_PEAK_TAPS],
+    pub(super) history: [f32; TRUE_PEAK_HISTORY],
+    write_pos: usize,
+    oversample_factor: u8,
 }
 
 impl Bs1770TruePeakDetector {
-    fn new() -> Self {
+    fn new(sample_rate: u32) -> Self {
         Self {
-            history: [0.0; TRUE_PEAK_TAPS],
+            history: [0.0; TRUE_PEAK_HISTORY],
+            write_pos: 0,
+            oversample_factor: Self::factor_for_sample_rate(sample_rate),
         }
     }
-    fn process_linear(&mut self, sample: f32) -> f32 {
-        self.history.copy_within(1.., 0);
-        self.history[TRUE_PEAK_TAPS - 1] = sample;
-        TRUE_PEAK_PHASES
-            .iter()
-            .map(|phase| {
-                phase
-                    .iter()
-                    .zip(self.history)
-                    .map(|(c, x)| c * x)
-                    .sum::<f32>()
-                    .abs()
-            })
-            .fold(sample.abs(), f32::max)
+
+    /// BS.1770 requires the measurement sampling frequency to be at least
+    /// 192 kHz. These factors are the specified operating points for common
+    /// 44.1/48 kHz families and retain a bounded fallback for other rates.
+    fn factor_for_sample_rate(sample_rate: u32) -> u8 {
+        if sample_rate < 96_000 {
+            4
+        } else if sample_rate < 192_000 {
+            2
+        } else {
+            1
+        }
     }
+
+    fn set_sample_rate(&mut self, sample_rate: u32) {
+        self.oversample_factor = Self::factor_for_sample_rate(sample_rate);
+        self.reset();
+    }
+
+    #[inline]
+    fn detector_delay_samples(sample_rate: u32) -> usize {
+        match Self::factor_for_sample_rate(sample_rate) {
+            4 => 6,
+            2 => 12,
+            _ => 0,
+        }
+    }
+
+    #[inline]
+    fn history_sample(&self, past_offset: usize) -> f32 {
+        self.history[(self.write_pos + TRUE_PEAK_HISTORY - past_offset) % TRUE_PEAK_HISTORY]
+    }
+
+    #[inline]
+    fn push_and_interpolate_4x(&mut self, sample: f32) -> [f32; 4] {
+        self.history[self.write_pos] = sample;
+        let mut phases = [0.0f32; 4];
+        for (past_offset, coefficients) in BS1770_4X_HANN_SINC_KERNEL.iter().enumerate() {
+            let history_sample = self.history_sample(past_offset);
+            for (phase, output) in phases.iter_mut().enumerate() {
+                *output += coefficients[phase] * history_sample;
+            }
+        }
+        self.write_pos = (self.write_pos + 1) % TRUE_PEAK_HISTORY;
+        phases
+    }
+
+    #[inline]
+    fn process_linear(&mut self, sample: f32) -> f32 {
+        match self.oversample_factor {
+            4 => self
+                .push_and_interpolate_4x(sample)
+                .into_iter()
+                .map(f32::abs)
+                .fold(0.0, f32::max),
+            2 => {
+                self.history[self.write_pos] = sample;
+                let mut phases = [0.0f32; 2];
+                for (past_offset, coefficients) in BS1770_2X_HANN_SINC_KERNEL.iter().enumerate() {
+                    let history_sample = self.history_sample(past_offset);
+                    for (phase, output) in phases.iter_mut().enumerate() {
+                        *output += coefficients[phase] * history_sample;
+                    }
+                }
+                self.write_pos = (self.write_pos + 1) % TRUE_PEAK_HISTORY;
+                phases[0].abs().max(phases[1].abs())
+            }
+            _ => sample.abs(),
+        }
+    }
+
     fn reset(&mut self) {
         self.history.fill(0.0);
+        self.write_pos = 0;
     }
 }
 
@@ -247,10 +311,10 @@ impl LimiterPlugin {
             lookahead_pos: 0,
             lookahead_len,
             true_peak_detectors: (0..channels)
-                .map(|_| Bs1770TruePeakDetector::new())
+                .map(|_| Bs1770TruePeakDetector::new(sr))
                 .collect(),
             output_isp_detectors: (0..channels)
-                .map(|_| Bs1770TruePeakDetector::new())
+                .map(|_| Bs1770TruePeakDetector::new(sr))
                 .collect(),
             isp_correction_db: 0.0,
             dual_release_env: DualRelease::new(release_ms, release_ms * 5.0, sr),
@@ -314,13 +378,16 @@ impl LimiterPlugin {
             )
             .with_description("Structural predictive lookahead / host latency (ms)")
             .with_group("Timing")
-            .with_importance(ParameterImportance::Useful),
+            .with_importance(ParameterImportance::Useful)
+            .with_update_mode(UpdateMode::Structural),
             Parameter::new_bool("soft", "Soft", self.soft)
                 .with_description("Use a one-dB gain-computer knee")
                 .with_group("Dynamics")
                 .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("true_peak", "True Peak", self.true_peak)
-                .with_description("Use ITU-R BS.1770 Table-2 4x true-peak detection")
+                .with_description(
+                    "Use rate-appropriate ITU-R BS.1770-compatible true-peak detection",
+                )
                 .with_group("Detection")
                 .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("isp_mode", "ISP Limit", self.isp_mode)
@@ -548,19 +615,25 @@ impl ParametricInPlacePlugin for LimiterPlugin {
         self.sample_rate = sample_rate;
         self.initialized = false;
         self.update_coefficients();
-        if self.isp_mode && (self.mix < 1.0 || self.soft || self.lookahead_len < 6) {
-            return Err(
-                "ISP mode requires 100% wet, hard limiting, and at least six lookahead samples"
-                    .into(),
-            );
+        let detector_delay = Bs1770TruePeakDetector::detector_delay_samples(sample_rate);
+        if self.isp_mode && (self.mix < 1.0 || self.soft || self.lookahead_len < detector_delay) {
+            return Err(format!(
+                "ISP mode requires 100% wet, hard limiting, and at least {detector_delay} lookahead samples at {sample_rate} Hz"
+            ));
         }
         self.threshold_db_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
         // Resize true peak detectors if channel count changed
         self.true_peak_detectors
-            .resize_with(self.channels, Bs1770TruePeakDetector::new);
+            .resize_with(self.channels, || Bs1770TruePeakDetector::new(sample_rate));
         self.output_isp_detectors
-            .resize_with(self.channels, Bs1770TruePeakDetector::new);
+            .resize_with(self.channels, || Bs1770TruePeakDetector::new(sample_rate));
+        for detector in &mut self.true_peak_detectors {
+            detector.set_sample_rate(sample_rate);
+        }
+        for detector in &mut self.output_isp_detectors {
+            detector.set_sample_rate(sample_rate);
+        }
         self.channel_peaks.resize(self.channels, 0.0);
         self.channel_envelopes.resize(self.channels, 0.0);
         self.monitoring_isp_linear.resize(self.channels, 0.0);
@@ -889,6 +962,73 @@ impl ParametricInPlacePlugin for LimiterPlugin {
 mod remediation_tests {
     use super::*;
 
+    // Independent f64 reconstruction of libebur128's 49-tap coefficient
+    // generator. It deliberately does not read either production kernel.
+    fn oracle_coefficient(factor: usize, past_offset: usize, phase: usize) -> f64 {
+        let j = factor * past_offset + phase;
+        if j > 48 {
+            return 0.0;
+        }
+        let m = j as f64 - 24.0;
+        let x = m * std::f64::consts::PI / factor as f64;
+        let sinc = if m.abs() <= 1.0e-6 { 1.0 } else { x.sin() / x };
+        let window = 0.5 * (1.0 - (2.0 * std::f64::consts::PI * j as f64 / 48.0).cos());
+        sinc * window
+    }
+
+    struct OracleDetector {
+        history: [f64; TRUE_PEAK_HISTORY],
+        factor: u8,
+    }
+
+    impl OracleDetector {
+        fn new(sample_rate: u32) -> Self {
+            Self {
+                history: [0.0; TRUE_PEAK_HISTORY],
+                factor: if sample_rate < 96_000 {
+                    4
+                } else if sample_rate < 192_000 {
+                    2
+                } else {
+                    1
+                },
+            }
+        }
+
+        fn process(&mut self, sample: f32) -> f64 {
+            if self.factor == 1 {
+                return sample.abs() as f64;
+            }
+            self.history.copy_within(..TRUE_PEAK_HISTORY - 1, 1);
+            self.history[0] = sample as f64;
+            let factor = self.factor as usize;
+            (0..factor)
+                .map(|phase| {
+                    self.history
+                        .iter()
+                        .enumerate()
+                        .map(|(past_offset, value)| {
+                            oracle_coefficient(factor, past_offset, phase) * value
+                        })
+                        .sum::<f64>()
+                        .abs()
+                })
+                .fold(0.0, f64::max)
+        }
+    }
+
+    fn oracle_stream_peak(signal: &[f32], sample_rate: u32) -> f64 {
+        let mut detector = OracleDetector::new(sample_rate);
+        let mut peak = 0.0f64;
+        for &sample in signal {
+            peak = peak.max(detector.process(sample));
+        }
+        for _ in 0..TRUE_PEAK_HISTORY {
+            peak = peak.max(detector.process(0.0));
+        }
+        peak
+    }
+
     #[test]
     fn monotonic_window_matches_naive_maximum() {
         let values = [0.2, 0.8, 0.4, 0.1, 0.9, 0.3, 0.7, 0.6, 0.05];
@@ -904,25 +1044,136 @@ mod remediation_tests {
     }
 
     #[test]
-    fn bs1770_detector_matches_reference_polyphase_convolution() {
-        let signal = [0.0, 0.7, -0.9, 0.6, -0.2, 0.1, 0.0, -0.4, 0.8];
-        let mut detector = Bs1770TruePeakDetector::new();
-        let mut history = [0.0_f32; TRUE_PEAK_TAPS];
-        for sample in signal {
-            history.copy_within(1.., 0);
-            history[TRUE_PEAK_TAPS - 1] = sample;
-            let expected = TRUE_PEAK_PHASES
-                .iter()
-                .map(|phase| {
-                    phase
-                        .iter()
-                        .zip(history)
-                        .map(|(coefficient, value)| coefficient * value)
-                        .sum::<f32>()
-                        .abs()
-                })
-                .fold(sample.abs(), f32::max);
-            assert!((detector.process_linear(sample) - expected).abs() < 1.0e-7);
+    fn bs1770_hann_sinc_impulse_matches_independent_fixed_coefficient_oracle() {
+        let mut phase_detector = Bs1770TruePeakDetector::new(48_000);
+        let mut peak_detector = Bs1770TruePeakDetector::new(48_000);
+        for frame in 0..13 {
+            let sample = if frame == 0 { 1.0 } else { 0.0 };
+            let actual_phases = phase_detector.push_and_interpolate_4x(sample);
+            for (phase, &actual_phase) in actual_phases.iter().enumerate() {
+                let expected = oracle_coefficient(4, frame, phase) as f32;
+                assert!(
+                    (actual_phase - expected).abs() < 2.0e-7,
+                    "impulse frame {frame}, phase {phase}: expected {expected}, got {}",
+                    actual_phase
+                );
+            }
+            let expected_peak = (0..4)
+                .map(|phase| oracle_coefficient(4, frame, phase).abs() as f32)
+                .fold(0.0, f32::max);
+            assert!(
+                (peak_detector.process_linear(sample) - expected_peak).abs() < 2.0e-7,
+                "impulse frame {frame} peak"
+            );
+        }
+        assert!((oracle_coefficient(4, 6, 1) - 0.896_465_150_711).abs() < 1.0e-12);
+        assert_eq!(oracle_coefficient(4, 6, 0), 1.0);
+        assert_eq!(Bs1770TruePeakDetector::detector_delay_samples(48_000), 6);
+        assert_eq!(Bs1770TruePeakDetector::detector_delay_samples(96_000), 12);
+        assert_eq!(Bs1770TruePeakDetector::detector_delay_samples(192_000), 0);
+        assert_eq!(phase_detector.process_linear(0.0), 0.0);
+
+        let mut two_x_detector = Bs1770TruePeakDetector::new(96_000);
+        for frame in 0..25 {
+            let sample = if frame == 0 { 1.0 } else { 0.0 };
+            let expected = (0..2)
+                .map(|phase| oracle_coefficient(2, frame, phase).abs() as f32)
+                .fold(0.0, f32::max);
+            let actual = two_x_detector.process_linear(sample);
+            assert!(
+                (actual - expected).abs() < 2.0e-7,
+                "2x impulse frame {frame}: actual={actual}, expected={expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn bs1770_high_frequency_phase_sweep_meets_rate_appropriate_error_bounds() {
+        let amplitude = 10.0_f32.powf(-3.0 / 20.0);
+        for sample_rate in [44_100_u32, 48_000, 96_000, 192_000] {
+            // 12 kHz is the high-frequency BS.1770/EBU conformance operating
+            // point and remains below the transition band at every rate.
+            let frequency = 12_000.0f32;
+            for phase_index in 0..32 {
+                let phase = std::f32::consts::TAU * phase_index as f32 / 32.0;
+                let mut detector = Bs1770TruePeakDetector::new(sample_rate);
+                let mut peak = 0.0_f32;
+                for frame in 0..8192 {
+                    let sample = amplitude
+                        * (std::f32::consts::TAU * frequency * frame as f32 / sample_rate as f32
+                            + phase)
+                            .sin();
+                    let detected = detector.process_linear(sample);
+                    if frame >= 64 {
+                        peak = peak.max(detected);
+                    }
+                }
+                let error_db = 20.0 * (peak / amplitude).log10();
+                assert!(
+                    (-0.5..=0.2).contains(&error_db),
+                    "{sample_rate} Hz, {frequency} Hz tone, phase {phase_index}: {peak} vs {amplitude} ({error_db} dB)"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn isp_alignment_requirement_tracks_rate_dependent_detector_delay() {
+        for (sample_rate, lookahead_ms, should_initialize) in [
+            (48_000, 0.10, false), // 4 samples cannot cover the 6-sample delay
+            (48_000, 0.13, true),  // 6 samples
+            (96_000, 0.10, false), // 9 samples cannot cover the 12-sample delay
+            (96_000, 0.13, true),  // 12 samples
+            (192_000, 0.0, true),  // native sample peak has no filter delay
+        ] {
+            let mut plugin = LimiterPlugin::new(1, -6.0, 50.0, lookahead_ms, false);
+            plugin.true_peak = true;
+            plugin.isp_mode = true;
+            let result = plugin.initialize(sample_rate);
+            assert_eq!(
+                result.is_ok(),
+                should_initialize,
+                "sample_rate={sample_rate}, lookahead_ms={lookahead_ms}: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn isp_limiter_holds_the_whole_output_below_ceiling_by_independent_dbtp_oracle() {
+        let threshold_db = -6.0f32;
+        let allowed_peak = 10.0f64.powf((threshold_db + 0.1) as f64 / 20.0);
+        for sample_rate in [44_100_u32, 48_000, 96_000, 192_000] {
+            let frequency = 18_000.0f32.min(sample_rate as f32 * 0.4);
+            for phase_index in 0..8 {
+                let mut plugin = LimiterPlugin::new(1, threshold_db, 50.0, 5.0, false);
+                plugin.true_peak = true;
+                plugin.isp_mode = true;
+                plugin.rebuild_cached_parameters();
+                plugin.initialize(sample_rate).unwrap();
+
+                let programme_frames = 4096usize;
+                let tail = plugin.lookahead_len + TRUE_PEAK_HISTORY;
+                let phase = std::f32::consts::TAU * phase_index as f32 / 8.0;
+                let mut output = vec![0.0f32; programme_frames + tail];
+                for (frame, sample) in output[..programme_frames].iter_mut().enumerate() {
+                    *sample = 1.2
+                        * (std::f32::consts::TAU * frequency * frame as f32 / sample_rate as f32
+                            + phase)
+                            .sin();
+                }
+                let frames = output.len();
+                plugin
+                    .process_in_place(&mut output, &ProcessContext::new(sample_rate, frames))
+                    .unwrap();
+
+                let output_peak = oracle_stream_peak(&output, sample_rate);
+                assert!(
+                    output_peak <= allowed_peak,
+                    "{sample_rate} Hz, phase {phase_index}: whole-output peak {:.3} dBTP exceeds {:.1} dBTP ceiling + 0.1 dB",
+                    20.0 * output_peak.log10(),
+                    threshold_db
+                );
+            }
         }
     }
 }

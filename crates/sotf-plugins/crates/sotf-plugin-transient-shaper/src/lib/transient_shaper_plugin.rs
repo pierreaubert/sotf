@@ -90,7 +90,7 @@ impl TransientShaperPlugin {
         p
     }
 
-    pub fn from_params(channels: usize, params: TransientShaperPluginParams) -> Self {
+    fn build_from_validated_params(channels: usize, params: TransientShaperPluginParams) -> Self {
         let mut p = Self::new(channels);
         p.attack_amount = (params.attack / 100.0).clamp(-1.0, 1.0);
         p.sustain_amount = (params.sustain / 100.0).clamp(-1.0, 1.0);
@@ -108,10 +108,7 @@ impl TransientShaperPlugin {
         p
     }
 
-    pub fn try_from_params(
-        channels: usize,
-        params: TransientShaperPluginParams,
-    ) -> PluginResult<Self> {
+    pub fn from_params(channels: usize, params: TransientShaperPluginParams) -> PluginResult<Self> {
         if channels == 0 {
             return Err("Transient Shaper requires at least one channel".to_string());
         }
@@ -129,7 +126,22 @@ impl TransientShaperPlugin {
                 ));
             }
         }
-        Ok(Self::from_params(channels, params))
+        Ok(Self::build_from_validated_params(channels, params))
+    }
+
+    /// Convenience for compile-time/test configurations that are expected to
+    /// be valid. Unlike the old constructor this never clamps malformed state.
+    #[doc(hidden)]
+    pub fn from_validated_params(channels: usize, params: TransientShaperPluginParams) -> Self {
+        Self::from_params(channels, params).expect("Transient Shaper parameters must be valid")
+    }
+
+    /// Compatibility alias for callers already using the explicit fallible name.
+    pub fn try_from_params(
+        channels: usize,
+        params: TransientShaperPluginParams,
+    ) -> PluginResult<Self> {
+        Self::from_params(channels, params)
     }
 
     #[inline]

@@ -1,7 +1,7 @@
 // Integration tests for sotf-plugin-linear-phase-eq exercising the public Plugin trait.
 
 use sotf_host::{
-    ParameterId, ParameterValue, ParametricInPlacePluginAdapter, Plugin, ProcessContext,
+    ParameterId, ParameterValue, ParametricInPlacePluginAdapter, Plugin, PluginHost, ProcessContext,
 };
 use sotf_plugin_linear_phase_eq::{BandConfig, LinearPhaseEqPlugin, LinearPhaseEqPluginParams};
 
@@ -15,6 +15,19 @@ fn sine_buffer(num_frames: usize, channels: usize, freq: f32, sample_rate: u32) 
         }
     }
     buf
+}
+
+#[test]
+fn realtime_quantum_reports_tail_fft_work_budget() {
+    let plugin = LinearPhaseEqPlugin::new(2, 48_000);
+    assert_eq!(plugin.realtime_quantum_frames(), 128);
+    let adapter = ParametricInPlacePluginAdapter::new(plugin);
+    assert_eq!(Plugin::realtime_quantum_frames(&adapter), 128);
+
+    let mut host = PluginHost::new(2, 48_000);
+    host.add_plugin(Box::new(adapter)).unwrap();
+    host.build().unwrap();
+    assert_eq!(host.realtime_quantum_frames(), 128);
 }
 
 fn rms(samples: &[f32]) -> f32 {

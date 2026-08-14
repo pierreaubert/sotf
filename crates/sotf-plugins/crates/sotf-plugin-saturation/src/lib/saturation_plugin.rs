@@ -19,7 +19,7 @@ use sotf_host::adaa::{Adaa1, adaa1_softclip, adaa1_tanh};
 use sotf_host::dc_blocker::DcBlocker;
 use sotf_host::envelope_follower::EnvelopeFollower;
 use sotf_host::lr4_crossover::Lr4Crossover;
-use sotf_host::param_specs::find_by_key as pk;
+use sotf_host::param_specs::{UpdateMode, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::parametric_plugin::{ParameterSchema, ParameterSet};
@@ -153,7 +153,7 @@ impl SaturationPlugin {
         p
     }
 
-    pub fn from_params(channels: usize, params: SaturationPluginParams) -> Self {
+    fn build_from_validated_params(channels: usize, params: SaturationPluginParams) -> Self {
         let mut p = Self::new(channels);
 
         // Mode
@@ -200,8 +200,8 @@ impl SaturationPlugin {
     }
 
     /// Construct a plugin from external configuration without silently repairing
-    /// malformed presets. The legacy `from_params` remains for trusted callers.
-    pub fn try_from_params(channels: usize, params: SaturationPluginParams) -> PluginResult<Self> {
+    /// malformed presets.
+    pub fn from_params(channels: usize, params: SaturationPluginParams) -> PluginResult<Self> {
         if channels == 0 || channels > MAX_CHANNELS {
             return Err(format!(
                 "Saturation channel count must be in 1..={MAX_CHANNELS}, got {channels}"
@@ -248,7 +248,19 @@ impl SaturationPlugin {
                 ));
             }
         }
-        Ok(Self::from_params(channels, params))
+        Ok(Self::build_from_validated_params(channels, params))
+    }
+
+    /// Convenience for compile-time/test configurations that are expected to
+    /// be valid. Unlike the old constructor this never clamps malformed state.
+    #[doc(hidden)]
+    pub fn from_validated_params(channels: usize, params: SaturationPluginParams) -> Self {
+        Self::from_params(channels, params).expect("Saturation parameters must be valid")
+    }
+
+    /// Compatibility alias for callers already using the explicit fallible name.
+    pub fn try_from_params(channels: usize, params: SaturationPluginParams) -> PluginResult<Self> {
+        Self::from_params(channels, params)
     }
 
     pub(super) fn mode_string(&self) -> String {
@@ -305,7 +317,8 @@ impl SaturationPlugin {
             )
             .with_description("Crossover frequency for exciter mode")
             .with_group("Exciter")
-            .with_importance(ParameterImportance::Useful),
+            .with_importance(ParameterImportance::Useful)
+            .with_update_mode(UpdateMode::Structural),
             Parameter::new_string("oversampling", "Oversampling", self.oversampling_string())
                 .with_description("Oversampling factor for alias suppression")
                 .with_group("Quality")
@@ -360,10 +373,12 @@ impl SaturationPlugin {
             .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("dc_blocker", "DC Block", self.dc_blocker_enabled)
                 .with_group("Quality")
-                .with_importance(ParameterImportance::Useful),
+                .with_importance(ParameterImportance::Useful)
+                .with_update_mode(UpdateMode::Structural),
             Parameter::new_bool("use_adaa", "ADAA", self.use_adaa)
                 .with_group("Quality")
-                .with_importance(ParameterImportance::Useful),
+                .with_importance(ParameterImportance::Useful)
+                .with_update_mode(UpdateMode::Structural),
         ];
     }
 
@@ -426,6 +441,91 @@ impl SaturationPlugin {
         let mut values = ParameterSet::new();
         values.insert(id, value);
         self.apply_values(values)
+    }
+
+    /// Apply a batch of continuous controls without taking ownership of the
+    /// caller's map. This is the realtime automation path: topology-changing
+    /// controls remain control-thread operations that require reconstruction.
+    pub fn apply_continuous_values_realtime(&mut self, values: &ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            let parameter = self
+                .cached_parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)
+                .ok_or_else(|| format!("Unknown parameter: {id}"))?;
+            parameter
+                .validate(value)
+                .map_err(|error| format!("{id}: {error}"))?;
+            if !matches!(
+                id.as_str(),
+                "drive"
+                    | "tone"
+                    | "output_gain"
+                    | "mix"
+                    | "dynamic_amount"
+                    | "dynamic_attack_ms"
+                    | "dynamic_release_ms"
+            ) {
+                return Err(format!(
+                    "{id} is structural; recreate Saturation so the host can rebuild topology and latency"
+                ));
+            }
+        }
+
+        for (id, value) in values {
+            let value = value
+                .as_float()
+                .ok_or_else(|| format!("{id} must be a float"))?;
+            match id.as_str() {
+                "drive" => {
+                    self.drive = value;
+                    self.drive_smoother.set_target(value);
+                    self.update_cached_float("drive", value);
+                }
+                "tone" => {
+                    self.tone = value;
+                    self.update_cached_float("tone", value);
+                }
+                "output_gain" => {
+                    self.output_gain_db = value;
+                    self.output_smoother.set_target(value);
+                    self.update_cached_float("output_gain", value);
+                }
+                "mix" => {
+                    self.mix = value;
+                    self.mix_smoother.set_target(value);
+                    self.update_cached_float("mix", value);
+                }
+                "dynamic_amount" => {
+                    self.dynamic_amount = value;
+                    self.update_cached_float("dynamic_amount", value);
+                }
+                "dynamic_attack_ms" => {
+                    self.dynamic_attack_ms = value;
+                    self.update_cached_float("dynamic_attack_ms", value);
+                    for follower in &mut self.envelope_followers {
+                        follower.set_times(
+                            self.dynamic_attack_ms,
+                            self.dynamic_release_ms,
+                            self.sample_rate,
+                        );
+                    }
+                }
+                "dynamic_release_ms" => {
+                    self.dynamic_release_ms = value;
+                    self.update_cached_float("dynamic_release_ms", value);
+                    for follower in &mut self.envelope_followers {
+                        follower.set_times(
+                            self.dynamic_attack_ms,
+                            self.dynamic_release_ms,
+                            self.sample_rate,
+                        );
+                    }
+                }
+                _ => unreachable!("continuous parameter set was validated above"),
+            }
+        }
+        Ok(())
     }
 }
 

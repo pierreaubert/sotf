@@ -282,6 +282,50 @@ fn compressor_catalog_and_factory_expose_true_broadband_mode() {
 }
 
 #[test]
+fn ambisonics_catalog_matches_factory_order_contract() {
+    let entry = catalog_entry("ambisonics_decoder").expect("ambisonics catalog entry");
+    let super::catalog::PluginSupportedInputLayouts::Enumerated(widths) =
+        entry.metadata.channel_layout.supported_inputs
+    else {
+        panic!("Ambisonics channel contract must enumerate supported HOA widths");
+    };
+    assert_eq!(widths, &[4, 9, 16]);
+
+    for (channels, order, layout) in [(4, 1, "5.1"), (9, 2, "7.1.4"), (16, 3, "9.1.6")] {
+        let mut plugin = create_plugin(
+            "ambisonics_decoder",
+            &serde_json::json!({
+                "order": order,
+                "target_layout": layout,
+            }),
+            channels,
+            48_000,
+        )
+        .unwrap_or_else(|error| panic!("order-{order} factory contract failed: {error}"));
+        assert_eq!(plugin.input_channels(), channels);
+        plugin.initialize(48_000).unwrap();
+        let frames = 3;
+        let mut input = vec![0.0; frames * channels];
+        for frame in 0..frames {
+            input[frame * channels] = 1.0;
+        }
+        let mut output = vec![f32::NAN; frames * plugin.output_channels()];
+        assert_eq!(
+            plugin
+                .process(
+                    &input,
+                    &mut output,
+                    &sotf_host::ProcessContext::new(48_000, frames),
+                )
+                .unwrap(),
+            frames
+        );
+        assert!(output.iter().all(|sample| sample.is_finite()));
+        assert!(output.iter().any(|sample| sample.abs() > 1.0e-6));
+    }
+}
+
+#[test]
 fn transient_shaper_facade_factory_validates_constructor_contract() {
     let out_of_range = create_plugin(
         "transient_shaper",
@@ -716,6 +760,7 @@ fn create_external_plugin_from_path() {
         "audio_outputs": 2,
         "name": "External Test",
         "format": "clap",
+        "start_worker": false,
     });
 
     let plugin = create_plugin("external", &params, 2, 48_000).unwrap();
@@ -736,6 +781,7 @@ fn create_external_plugin_from_path_string() {
             "audio_outputs": 2,
             "name": "External Test",
             "format": "clap",
+            "start_worker": false,
         }),
         2,
         48_000,
@@ -766,7 +812,7 @@ fn create_external_plugin_from_embedded_descriptor() {
 
     let plugin = create_plugin(
         "external_plugin",
-        &serde_json::json!({"descriptor": descriptor}),
+        &serde_json::json!({"descriptor": descriptor, "start_worker": false}),
         2,
         48_000,
     )
@@ -834,6 +880,7 @@ fn create_external_plugin_defaults_to_isolated_when_trust_unknown() {
         "plugin_trust": "unknown",
         "start_worker": false,
         "deadline_micros": 0,
+        "max_block_frames": 2,
         "_sotf_instance_id": 37,
     });
 
@@ -845,9 +892,22 @@ fn create_external_plugin_defaults_to_isolated_when_trust_unknown() {
         .and_then(|plugin| plugin.downcast_ref::<crate::IsolatedExternalPlugin>())
         .expect("factory must construct an isolated external plugin");
     assert_eq!(isolated.plugin_instance_id(), Some(37));
+    assert_eq!(plugin.latency_samples(), 2);
 
     let input = vec![0.25, -0.5, 1.0, -1.0];
     let mut output = vec![0.0; input.len()];
+    let frames = plugin
+        .process(
+            &input,
+            &mut output,
+            &sotf_host::ProcessContext::new(48_000, 2),
+        )
+        .unwrap();
+    assert_eq!(frames, 2);
+    assert_eq!(output, vec![0.0; input.len()]);
+
+    // The isolated transport has a declared two-frame fixed latency. With no
+    // worker, the following callback receives the matching delayed fallback.
     let frames = plugin
         .process(
             &input,

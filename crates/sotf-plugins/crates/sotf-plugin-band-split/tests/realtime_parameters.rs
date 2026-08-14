@@ -15,12 +15,12 @@ fn live_frequency_and_gain_updates_do_not_allocate() {
 
     assert_no_allocs("Band Split live frequency update", || {
         plugin
-            .set_parameter(frequency, ParameterValue::Float(3_000.0))
+            .set_parameter(frequency.clone(), ParameterValue::Float(3_000.0))
             .unwrap();
     });
     assert_no_allocs("Band Split live gain update", || {
         plugin
-            .set_parameter(gain, ParameterValue::Float(-6.0))
+            .set_parameter(gain.clone(), ParameterValue::Float(-6.0))
             .unwrap();
     });
 }

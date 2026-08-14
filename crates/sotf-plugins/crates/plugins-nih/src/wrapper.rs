@@ -105,7 +105,7 @@ macro_rules! sotf_nih_plugin {
                 &mut self,
                 _audio_io_layout: &nih_plug::prelude::AudioIOLayout,
                 buffer_config: &nih_plug::prelude::BufferConfig,
-                _context: &mut impl nih_plug::prelude::InitContext<Self>,
+                context: &mut impl nih_plug::prelude::InitContext<Self>,
             ) -> bool {
                 self.sample_rate = buffer_config.sample_rate as u32;
                 let channels: usize = $channels;
@@ -117,6 +117,15 @@ macro_rules! sotf_nih_plugin {
                             log::error!("Failed to initialize {}: {e}", $plugin_type);
                             return false;
                         }
+
+                        let latency = match u32::try_from(plugin.latency_samples()) {
+                            Ok(latency) => latency,
+                            Err(_) => {
+                                log::error!("{} latency does not fit the host ABI", $plugin_type);
+                                return false;
+                            }
+                        };
+                        context.set_latency_samples(latency);
 
                         let max_frames = buffer_config.max_buffer_size as usize;
                         self.interleaved_in = vec![0.0; max_frames * channels];

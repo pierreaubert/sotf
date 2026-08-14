@@ -18,7 +18,7 @@ fn main() {
         mix: 1.0,
     };
 
-    let mut inner = TransientShaperPlugin::from_params(channels, params);
+    let mut inner = TransientShaperPlugin::from_validated_params(channels, params);
     inner.initialize(sample_rate).unwrap();
 
     println!("=== QA: TransientShaper Plugin ===");

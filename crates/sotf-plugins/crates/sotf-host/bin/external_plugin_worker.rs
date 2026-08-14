@@ -7,10 +7,57 @@ mod desktop {
     use sotf_host::{
         ExternalPlugin, ExternalPluginSandboxMode, ExternalPluginSandboxPolicy,
         ExternalPluginSandboxStatus, ExternalPluginSandboxTiming, ExternalPluginState,
-        ExternalPluginWorker, ExternalPluginWorkerStep, PluginDescriptor, PluginSandboxBackendCode,
-        PluginSandboxPolicy, PluginSandboxStatusCode, SecurePluginSharedMemory,
-        enter_external_plugin_sandbox,
+        ExternalPluginWorker, ExternalPluginWorkerStep, Plugin, PluginDescriptor,
+        PluginSandboxBackendCode, PluginSandboxPolicy, PluginSandboxStatusCode,
+        SecurePluginSharedMemory, enter_external_plugin_sandbox,
     };
+    #[cfg(feature = "worker-test-backend")]
+    use sotf_host::{
+        Parameter, ParameterId, ParameterValue, PluginInfo, PluginResult, ProcessContext,
+    };
+
+    #[cfg(feature = "worker-test-backend")]
+    struct TestPassthroughPlugin {
+        channels: usize,
+    }
+
+    #[cfg(feature = "worker-test-backend")]
+    impl Plugin for TestPassthroughPlugin {
+        fn info(&self) -> PluginInfo {
+            PluginInfo::new("External Worker Test Passthrough", "0.1", "SOTF Test")
+        }
+
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+
+        fn parameters(&self) -> Vec<Parameter> {
+            Vec::new()
+        }
+
+        fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> PluginResult<()> {
+            Ok(())
+        }
+
+        fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
+            None
+        }
+
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            context: &ProcessContext,
+        ) -> PluginResult<usize> {
+            let samples = context.num_frames * self.channels;
+            output[..samples].copy_from_slice(&input[..samples]);
+            Ok(context.num_frames)
+        }
+    }
 
     #[derive(Debug, Parser)]
     #[command(
@@ -37,6 +84,17 @@ mod desktop {
         /// Process at most one available block, then exit.
         #[arg(long)]
         once: bool,
+
+        /// Use the deterministic passthrough backend for worker lifecycle tests.
+        /// The descriptor must identify the SOTF Test vendor.
+        #[cfg(feature = "worker-test-backend")]
+        #[arg(long)]
+        test_passthrough: bool,
+
+        /// Exit after the first control request (test backend only).
+        #[cfg(feature = "worker-test-backend")]
+        #[arg(long, requires = "test_passthrough")]
+        exit_after_control: bool,
 
         /// Sleep duration when no block is ready.
         #[arg(long, default_value_t = 0)]
@@ -115,21 +173,54 @@ mod desktop {
             .as_ref()
             .map(worker_restore_state)
             .transpose()?;
-        let plugin = match worker_state.as_ref() {
-            Some(state) if !state.opaque_state.is_empty() => {
-                ExternalPlugin::from_placeholder_state_with_max_block_frames(
-                    state,
+        #[cfg(feature = "worker-test-backend")]
+        let plugin: Box<dyn Plugin> = if args.test_passthrough {
+            if descriptor.vendor != "SOTF Test" {
+                return Err("--test-passthrough requires an SOTF Test descriptor".into());
+            }
+            if descriptor.audio_inputs != descriptor.audio_outputs {
+                return Err("test passthrough requires equal input/output channel counts".into());
+            }
+            Box::new(TestPassthroughPlugin {
+                channels: descriptor.audio_inputs,
+            })
+        } else {
+            Box::new(
+                match worker_state.as_ref() {
+                    Some(state) if !state.opaque_state.is_empty() => {
+                        ExternalPlugin::from_placeholder_state_with_max_block_frames(
+                            state,
+                            sample_rate,
+                            max_block_frames,
+                        )
+                    }
+                    _ => ExternalPlugin::new_with_max_block_frames(
+                        &descriptor,
+                        sample_rate,
+                        max_block_frames,
+                    ),
+                }
+                .map_err(|err| format!("failed to create external plugin wrapper: {err}"))?,
+            )
+        };
+        #[cfg(not(feature = "worker-test-backend"))]
+        let plugin: Box<dyn Plugin> = Box::new(
+            match worker_state.as_ref() {
+                Some(state) if !state.opaque_state.is_empty() => {
+                    ExternalPlugin::from_placeholder_state_with_max_block_frames(
+                        state,
+                        sample_rate,
+                        max_block_frames,
+                    )
+                }
+                _ => ExternalPlugin::new_with_max_block_frames(
+                    &descriptor,
                     sample_rate,
                     max_block_frames,
-                )
+                ),
             }
-            _ => ExternalPlugin::new_with_max_block_frames(
-                &descriptor,
-                sample_rate,
-                max_block_frames,
-            ),
-        }
-        .map_err(|err| format!("failed to create external plugin wrapper: {err}"))?;
+            .map_err(|err| format!("failed to create external plugin wrapper: {err}"))?,
+        );
 
         if sandbox_policy.timing == ExternalPluginSandboxTiming::AfterPluginLoad {
             let status =
@@ -141,7 +232,7 @@ mod desktop {
             publish_sandbox_runtime_status(&shared, &ExternalPluginSandboxStatus::Disabled);
         }
 
-        let mut worker = ExternalPluginWorker::new(shared, Box::new(plugin))?;
+        let mut worker = ExternalPluginWorker::new(shared, plugin)?;
         let idle_sleep = Duration::from_micros(args.idle_sleep_micros);
 
         loop {
@@ -151,16 +242,22 @@ mod desktop {
                         return Ok(());
                     }
                 }
-                ExternalPluginWorkerStep::Controlled => {}
-                ExternalPluginWorkerStep::NoRequest => {
-                    if args.once {
+                ExternalPluginWorkerStep::Controlled =>
+                {
+                    #[cfg(feature = "worker-test-backend")]
+                    if args.exit_after_control {
                         return Ok(());
                     }
-                    if idle_sleep.is_zero() {
-                        std::thread::yield_now();
+                }
+                ExternalPluginWorkerStep::NoRequest => {
+                    // A datagram wakes the worker for both audio and control
+                    // requests. Keep a finite timeout because shared-memory state,
+                    // not the notification, is authoritative.
+                    worker.wait_for_notification(if idle_sleep.is_zero() {
+                        Duration::from_millis(10)
                     } else {
-                        std::thread::sleep(idle_sleep);
-                    }
+                        idle_sleep
+                    });
                 }
             }
         }
@@ -324,6 +421,27 @@ mod desktop {
             assert_eq!(args.idle_sleep_micros, 0);
         }
 
+        #[test]
+        #[cfg(not(feature = "worker-test-backend"))]
+        fn production_cli_rejects_test_backend_options() {
+            assert!(Args::try_parse_from(["worker", "--test-passthrough"]).is_err());
+            assert!(Args::try_parse_from(["worker", "--exit-after-control"]).is_err());
+        }
+
+        #[test]
+        #[cfg(feature = "worker-test-backend")]
+        fn test_backend_cli_keeps_audio_once_and_control_exit_distinct() {
+            let audio_once = Args::try_parse_from(["worker", "--once"]).unwrap();
+            assert!(audio_once.once);
+            assert!(!audio_once.exit_after_control);
+            assert!(Args::try_parse_from(["worker", "--exit-after-control"]).is_err());
+            let control_once =
+                Args::try_parse_from(["worker", "--test-passthrough", "--exit-after-control"])
+                    .unwrap();
+            assert!(!control_once.once);
+            assert!(control_once.exit_after_control);
+        }
+
         fn args_with_external_state_file(path: Option<PathBuf>) -> Args {
             Args {
                 shared_memory: Some(PathBuf::from("/tmp/fake.shm")),
@@ -331,6 +449,10 @@ mod desktop {
                 descriptor_file: None,
                 external_state_file: path,
                 once: true,
+                #[cfg(feature = "worker-test-backend")]
+                test_passthrough: false,
+                #[cfg(feature = "worker-test-backend")]
+                exit_after_control: false,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
                 sandbox_policy_json: None,
@@ -392,6 +514,10 @@ mod desktop {
                 descriptor_file: None,
                 external_state_file: None,
                 once: true,
+                #[cfg(feature = "worker-test-backend")]
+                test_passthrough: false,
+                #[cfg(feature = "worker-test-backend")]
+                exit_after_control: false,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
                 sandbox_policy_json: None,
@@ -414,6 +540,10 @@ mod desktop {
                 descriptor_file: None,
                 external_state_file: None,
                 once: true,
+                #[cfg(feature = "worker-test-backend")]
+                test_passthrough: false,
+                #[cfg(feature = "worker-test-backend")]
+                exit_after_control: false,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
                 sandbox_policy_json: None,
@@ -439,6 +569,10 @@ mod desktop {
                 descriptor_file: None,
                 external_state_file: None,
                 once: true,
+                #[cfg(feature = "worker-test-backend")]
+                test_passthrough: false,
+                #[cfg(feature = "worker-test-backend")]
+                exit_after_control: false,
                 idle_sleep_micros: 1,
                 sandbox_timing: "before-plugin-load".to_string(),
                 sandbox_policy_json: None,
@@ -472,6 +606,10 @@ mod desktop {
                 descriptor_file: None,
                 external_state_file: None,
                 once: true,
+                #[cfg(feature = "worker-test-backend")]
+                test_passthrough: false,
+                #[cfg(feature = "worker-test-backend")]
+                exit_after_control: false,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
                 sandbox_policy_json: Some(serde_json::to_string(&portable).unwrap()),
@@ -503,6 +641,10 @@ mod desktop {
                 descriptor_file: None,
                 external_state_file: None,
                 once: true,
+                #[cfg(feature = "worker-test-backend")]
+                test_passthrough: false,
+                #[cfg(feature = "worker-test-backend")]
+                exit_after_control: false,
                 idle_sleep_micros: 1,
                 sandbox_timing: "disabled".to_string(),
                 sandbox_policy_json: Some(serde_json::to_string(&portable).unwrap()),

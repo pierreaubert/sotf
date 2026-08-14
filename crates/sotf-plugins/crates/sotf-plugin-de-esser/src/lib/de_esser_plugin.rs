@@ -139,21 +139,27 @@ impl DeEsserPlugin {
         p
     }
 
-    pub fn from_params(channels: usize, params: DeEsserPluginParams) -> Self {
+    /// Construct from serialized state using the canonical 48 kHz validation
+    /// contract. Invalid state is rejected rather than silently clamped.
+    pub fn from_params(channels: usize, params: DeEsserPluginParams) -> PluginResult<Self> {
+        Self::try_from_params(channels, params)
+    }
+
+    fn from_validated_params(channels: usize, params: DeEsserPluginParams) -> Self {
         let mut p = Self::new(channels);
-        p.frequency = params.frequency.clamp(2000.0, 16000.0);
-        p.q = params.q.clamp(0.5, 5.0);
-        p.threshold = params.threshold.clamp(-60.0, 0.0);
-        p.ratio = params.ratio.clamp(1.0, 20.0);
-        p.attack_ms = params.attack_ms.clamp(0.1, 10.0);
-        p.release_ms = params.release_ms.clamp(5.0, 200.0);
-        p.mix = params.mix.clamp(0.0, 1.0);
+        p.frequency = params.frequency;
+        p.q = params.q;
+        p.threshold = params.threshold;
+        p.ratio = params.ratio;
+        p.attack_ms = params.attack_ms;
+        p.release_ms = params.release_ms;
+        p.mix = params.mix;
         p.mix_smoother.set_target(p.mix);
 
         // Mode
         p.mode_index = match params.mode.as_str() {
             "Wideband" | "wideband" => 0,
-            _ => 1, // "Split-Band" or unknown
+            _ => 1, // validated Split-Band spelling
         };
 
         // Update dynamics cores
@@ -209,7 +215,7 @@ impl DeEsserPlugin {
             }
         }
         Self::validate_detection_band(params.frequency, params.q, sample_rate)?;
-        Ok(Self::from_params(channels, params))
+        Ok(Self::from_validated_params(channels, params))
     }
 
     fn validate_detection_band(frequency: f32, q: f32, sample_rate: u32) -> PluginResult<()> {

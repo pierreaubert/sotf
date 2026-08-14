@@ -37,7 +37,8 @@ fn test_de_esser_reduces_sibilance() {
             mode: "Wideband".to_string(),
             mix: 1.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     // 8kHz sine in the sibilance range
@@ -78,7 +79,8 @@ fn test_wideband_reduction_is_channel_specific() {
             mode: "Wideband".to_string(),
             mix: 1.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     let mut buf = Vec::with_capacity(sample_count);
@@ -145,7 +147,8 @@ fn test_de_esser_passes_low_frequencies() {
             mode: "Wideband".to_string(),
             mix: 1.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     // 200Hz sine — well below detection range
@@ -208,7 +211,8 @@ fn test_mix_smoother_ramps_per_sample() {
             mode: "Wideband".to_string(),
             mix: 0.0, // fully dry initially
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     // Now request mix = 1.0 (fully wet). The smoother has a 5 ms ramp.
@@ -266,8 +270,8 @@ fn test_mix_smoother_ramps_per_sample() {
     let mut plugin2 = DeEsserPlugin::from_params(
         1,
         DeEsserPluginParams {
-            frequency: 1000.0, // center at test freq
-            q: 0.5,            // wide bandwidth to catch 1kHz
+            frequency: 2000.0, // lower contract edge and test-tone center
+            q: 0.5,            // wide bandwidth around the test tone
             threshold: -60.0,  // extremely low threshold → heavy compression
             ratio: 20.0,       // max ratio → near total gain kill
             attack_ms: 0.1,    // fast attack
@@ -275,7 +279,8 @@ fn test_mix_smoother_ramps_per_sample() {
             mode: "Wideband".to_string(),
             mix: 0.0, // start dry
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin2.initialize(sr).unwrap();
 
     // Ramp to fully wet over 5ms
@@ -285,7 +290,7 @@ fn test_mix_smoother_ramps_per_sample() {
 
     // One block of 100 samples — still in the ramp window
     let mut buf2: Vec<f32> = (0..num_frames)
-        .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr as f32).sin())
+        .map(|i| 0.5 * (2.0 * std::f32::consts::PI * 2000.0 * i as f32 / sr as f32).sin())
         .collect();
     let dry_ref = buf2.clone(); // original input (dry output when mix=0)
 
@@ -334,7 +339,8 @@ fn test_split_band_mode() {
             mode: "Split-Band".to_string(),
             mix: 1.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     // --- Test that HF is attenuated ---
@@ -504,8 +510,8 @@ fn test_set_parameter_mode_variants() {
 }
 
 #[test]
-fn test_from_params_clamps_values() {
-    let plugin = DeEsserPlugin::from_params(
+fn from_params_rejects_out_of_range_values() {
+    let result = DeEsserPlugin::from_params(
         1,
         DeEsserPluginParams {
             frequency: 100.0, // below min
@@ -518,13 +524,7 @@ fn test_from_params_clamps_values() {
             mix: -1.0, // below min
         },
     );
-    assert_eq!(plugin.frequency, 2000.0);
-    assert_eq!(plugin.q, 5.0);
-    assert_eq!(plugin.threshold, 0.0);
-    assert_eq!(plugin.ratio, 1.0);
-    assert_eq!(plugin.attack_ms, 0.1);
-    assert_eq!(plugin.release_ms, 5.0);
-    assert_eq!(plugin.mix, 0.0);
+    assert!(result.is_err(), "invalid serialized state must be rejected");
 }
 
 #[test]
@@ -641,7 +641,8 @@ fn test_reset_clears_filter_state() {
             mode: "Wideband".to_string(),
             mix: 1.0,
         },
-    );
+    )
+    .expect("valid De-Esser parameters");
     plugin.initialize(sr).unwrap();
 
     let mut buf = make_sine(8000.0, sr, 4800, 0.5);

@@ -12,6 +12,26 @@ env:
   JUST_JUSTFILE: $GITHUB_WORKSPACE/Justfile
 
 jobs:
+  denoiser-miri:
+    name: Denoiser varied-block reconstruction (Miri)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly Miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - name: Prepare Miri sysroot
+        run: cargo miri setup
+
+      - name: Check safe varied-block reconstruction
+        run: >-
+          cargo miri test -p sotf-plugin-denoiser --lib
+          streamed_impulse_delay_matches_reported_latency_for_varied_blocks
+
   build:
     runs-on: self-hosted
 

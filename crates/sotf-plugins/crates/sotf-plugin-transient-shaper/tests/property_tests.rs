@@ -86,7 +86,7 @@ proptest! {
 
     #[test]
     fn bypass_preserves_input(sample in -1.0f32..1.0f32) {
-        let mut p = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(
+        let mut p = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_validated_params(
             1,
             TransientShaperPluginParams {
                 attack: 0.0,
@@ -118,7 +118,7 @@ proptest! {
 
     #[test]
     fn output_gain_monotonic(sample in 0.05f32..0.2f32, gain_db in 0.0f32..12.0f32) {
-        let mut p_low = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(
+        let mut p_low = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_validated_params(
             1,
             TransientShaperPluginParams {
                 attack: 0.0,
@@ -130,7 +130,7 @@ proptest! {
         ));
         p_low.initialize(48000).unwrap();
 
-        let mut p_high = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_params(
+        let mut p_high = ParametricInPlacePluginAdapter::new(TransientShaperPlugin::from_validated_params(
             1,
             TransientShaperPluginParams {
                 attack: 0.0,

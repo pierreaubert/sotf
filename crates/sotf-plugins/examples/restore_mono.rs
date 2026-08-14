@@ -185,7 +185,8 @@ fn main() {
         ..PndPluginParams::default()
     };
 
-    let mut pnd_plugin = PndPlugin::from_params(1, pnd_params);
+    let mut pnd_plugin =
+        PndPlugin::from_params(1, pnd_params).expect("PND parameters must be valid");
     pnd_plugin
         .initialize(sample_rate)
         .expect("Failed to initialize PND");

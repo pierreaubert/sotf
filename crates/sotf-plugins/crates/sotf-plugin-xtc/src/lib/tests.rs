@@ -2,6 +2,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
 use super::*;
+use crate::filters::XtcFilters;
 use crate::load::load_roomeq_recommended_filters;
 use crate::types::PendingFilterUpdate;
 use filters::{
@@ -2595,6 +2596,143 @@ fn same_width_filter_adoption_allocates_and_deallocates_nothing() {
     assert_no_allocs("XTC same-width update adoption", || {
         plugin.adopt_pending_filters();
     });
+}
+
+#[test]
+fn first_adoption_retires_initial_auxiliary_resources_off_callback() {
+    let params = XtcPluginParams {
+        room_reflections_enabled: true,
+        ..XtcPluginParams::default()
+    };
+    let mut plugin = XtcPlugin::new(params, 48_000).unwrap();
+    let initial_bundle = plugin
+        .filter_state
+        .active_filter_update
+        .as_ref()
+        .expect("construction must bundle initial filter ownership");
+    assert!(Arc::ptr_eq(
+        &initial_bundle.filters,
+        &plugin.filter_state.cached_current_filters
+    ));
+    assert!(initial_bundle.room_reflection_cache.is_some());
+
+    let generation = 1;
+    plugin
+        .filter_state
+        .filter_update_generation
+        .store(generation, Ordering::Release);
+    plugin
+        .filter_state
+        .pending_filter_update
+        .store(Some(Arc::new(PendingFilterUpdate {
+            generation,
+            filters: Arc::new(compute_xtc_filters_full(
+                &XtcPluginParams::default(),
+                48_000,
+                plugin.fft.fft_size / 2 + 1,
+            )),
+            hrtf_transfer_functions: None,
+            room_reflection_cache: None,
+            room_params_hash: 0,
+        })));
+
+    assert_no_allocs("XTC initial resource retirement", || {
+        plugin.adopt_pending_filters();
+    });
+    assert!(plugin.filter_state.retired_filter_update.load().is_some());
+}
+
+#[test]
+fn mismatched_width_publication_is_rejected_before_mutating_active_state() {
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+    let original = Arc::clone(&plugin.filter_state.cached_current_filters);
+    let num_bins = plugin.fft.fft_size / 2 + 1;
+    let generation = 1;
+    plugin
+        .filter_state
+        .filter_update_generation
+        .store(generation, Ordering::Release);
+    plugin
+        .filter_state
+        .pending_filter_update
+        .store(Some(Arc::new(PendingFilterUpdate {
+            generation,
+            filters: Arc::new(XtcFilters {
+                filter_ll: vec![Complex::new(0.0, 0.0); num_bins],
+                filter_lr: vec![Complex::new(0.0, 0.0); num_bins],
+                filter_rl: None,
+                filter_rr: None,
+                is_symmetric: true,
+                speaker_filters: Some(
+                    (0..3)
+                        .map(|_| {
+                            [
+                                vec![Complex::new(0.0, 0.0); num_bins],
+                                vec![Complex::new(0.0, 0.0); num_bins],
+                            ]
+                        })
+                        .collect(),
+                ),
+            }),
+            hrtf_transfer_functions: None,
+            room_reflection_cache: None,
+            room_params_hash: 0,
+        })));
+
+    assert_no_allocs("XTC mismatched-width rejection", || {
+        plugin.adopt_pending_filters();
+    });
+    assert_eq!(plugin.output_channels(), 2);
+    assert!(Arc::ptr_eq(
+        &original,
+        &plugin.filter_state.cached_current_filters
+    ));
+    assert!(Arc::ptr_eq(
+        &original,
+        &plugin.filter_state.filters.load_full()
+    ));
+}
+
+#[test]
+fn stale_adoption_does_not_overwrite_an_occupied_retirement_slot() {
+    let mut plugin = XtcPlugin::new(XtcPluginParams::default(), 48_000).unwrap();
+    let num_bins = plugin.fft.fft_size / 2 + 1;
+    let make_update = |generation| {
+        Arc::new(PendingFilterUpdate {
+            generation,
+            filters: Arc::new(compute_xtc_filters_full(
+                &XtcPluginParams::default(),
+                48_000,
+                num_bins,
+            )),
+            hrtf_transfer_functions: None,
+            room_reflection_cache: None,
+            room_params_hash: 0,
+        })
+    };
+
+    // Model the scheduling race precisely: the previous adoption has already
+    // retired its active bundle, a newer request advances the generation, and
+    // the callback sees the older pending publication before the new worker's
+    // first reclamation pass runs.
+    plugin
+        .filter_state
+        .retired_filter_update
+        .store(Some(make_update(1)));
+    plugin
+        .filter_state
+        .pending_filter_update
+        .store(Some(make_update(2)));
+    plugin
+        .filter_state
+        .filter_update_generation
+        .store(3, Ordering::Release);
+
+    assert_no_allocs("XTC stale update retirement race", || {
+        plugin.adopt_pending_filters();
+    });
+    assert!(plugin.filter_state.retired_filter_update.load().is_some());
+    assert!(plugin.filter_state.retired_filter_update_2.load().is_some());
 }
 
 fn write_pcm16_wav(path: &std::path::Path, frames: usize) {

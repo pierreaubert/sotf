@@ -94,6 +94,40 @@ impl SpeechDenoiserPlugin {
     fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = param_bridge::build_parameters(SP, |i| self.param_value(i));
     }
+
+    /// Apply already-owned parameter storage without taking ownership of it.
+    /// Hosts that automate on the realtime thread should use this borrowed
+    /// path so destruction of the caller's `BTreeMap` remains off-callback.
+    pub fn apply_values_realtime(&mut self, values: &ParameterSet) -> PluginResult<()> {
+        for (id, value) in values {
+            let parameter = self
+                .cached_parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)
+                .ok_or_else(|| format!("Unknown parameter: {id}"))?;
+            parameter
+                .validate(value)
+                .map_err(|error| format!("{id}: {error}"))?;
+        }
+        for (id, value) in values {
+            match id.as_str() {
+                "enabled" => {
+                    self.enabled = value
+                        .as_bool()
+                        .ok_or_else(|| "enabled must be a boolean".to_string())?;
+                    if let Some(parameter) = self
+                        .cached_parameters
+                        .iter_mut()
+                        .find(|parameter| parameter.id.as_str() == "enabled")
+                    {
+                        parameter.default_value = ParameterValue::Bool(self.enabled);
+                    }
+                }
+                _ => return Err(format!("Unknown parameter: {id}")),
+            }
+        }
+        Ok(())
+    }
 }
 
 impl ParametricInPlacePlugin for SpeechDenoiserPlugin {
@@ -128,34 +162,7 @@ impl ParametricInPlacePlugin for SpeechDenoiserPlugin {
     }
 
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
-        for (id, value) in &values {
-            let parameter = self
-                .cached_parameters
-                .iter()
-                .find(|parameter| &parameter.id == id)
-                .ok_or_else(|| format!("Unknown parameter: {id}"))?;
-            parameter
-                .validate(value)
-                .map_err(|error| format!("{id}: {error}"))?;
-        }
-        for (id, value) in values {
-            match id.as_str() {
-                "enabled" => {
-                    self.enabled = value
-                        .as_bool()
-                        .ok_or_else(|| "enabled must be a boolean".to_string())?;
-                    if let Some(parameter) = self
-                        .cached_parameters
-                        .iter_mut()
-                        .find(|parameter| parameter.id.as_str() == "enabled")
-                    {
-                        parameter.default_value = ParameterValue::Bool(self.enabled);
-                    }
-                }
-                _ => return Err(format!("Unknown parameter: {id}")),
-            }
-        }
-        Ok(())
+        self.apply_values_realtime(&values)
     }
 
     /// Initialize the plugin at the given sample rate.

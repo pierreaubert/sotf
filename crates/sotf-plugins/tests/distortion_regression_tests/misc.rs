@@ -70,9 +70,9 @@ fn test_downmix_bypass_fidelity() {
     // Downmix with 2 channels should ideally be close to original if gains are unity
     // and phase coherence is disabled.
     let mut plugin = sotf_plugins::DownmixPlugin::new(2);
-    plugin.initialize(sample_rate).unwrap();
 
-    // Set all gains to unity (0 dB) and disable phase coherence for "bypass" test
+    // Configure structural mode before initialization, as a host rebuild does.
+    // Set all gains to unity (0 dB) and disable phase coherence for "bypass" test.
     plugin
         .set_parameter(
             "center_gain_db".into(),
@@ -97,6 +97,7 @@ fn test_downmix_bypass_fidelity() {
             sotf_plugins::ParameterValue::Bool(false),
         )
         .unwrap();
+    plugin.initialize(sample_rate).unwrap();
 
     let num_frames = 16384;
     let mut signal_gen = SignalGen::new_sine(sample_rate as f64, 1000.0, 0.5);

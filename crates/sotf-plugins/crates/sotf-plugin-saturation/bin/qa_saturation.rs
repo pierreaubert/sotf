@@ -8,7 +8,7 @@ use std::time::Instant;
 static ALLOCATOR: CountingAlloc = CountingAlloc;
 
 fn main() {
-    let inner = SaturationPlugin::from_params(
+    let inner = SaturationPlugin::from_validated_params(
         2,
         SaturationPluginParams {
             mode: "Asymmetric".to_string(),

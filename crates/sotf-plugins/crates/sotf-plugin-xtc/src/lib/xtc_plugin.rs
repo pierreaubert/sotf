@@ -159,6 +159,24 @@ pub(super) struct XtcFilterState {
     /// Completed asynchronous filter update waiting to be adopted by the audio thread.
     pub(super) pending_filter_update: Arc<ArcSwapOption<PendingFilterUpdate>>,
 
+    /// Last adopted update, retained until the filter worker can destroy it off
+    /// the audio thread. One update can be adopted per worker publication, so
+    /// the worker clears these slots before publishing its next result. Two
+    /// slots cover the race where an earlier active bundle is already retired
+    /// and a now-stale pending publication is adopted before the replacement
+    /// worker gets scheduled to reclaim it.
+    pub(super) retired_filter_update: Arc<ArcSwapOption<PendingFilterUpdate>>,
+    pub(super) retired_filter_update_2: Arc<ArcSwapOption<PendingFilterUpdate>>,
+
+    /// Ownership bundle for the currently active filters and auxiliary data.
+    /// Keeping this bundle intact lets adoption retire all old resources as one
+    /// unit instead of dropping the final HRTF/room-data reference on callback.
+    pub(super) active_filter_update: Option<Arc<PendingFilterUpdate>>,
+
+    /// Previous crossfade snapshot waiting for off-thread destruction.
+    pub(super) retired_filter_snapshot: Arc<ArcSwapOption<XtcFilters>>,
+    pub(super) retired_filter_snapshot_2: Arc<ArcSwapOption<XtcFilters>>,
+
     /// Latest requested asynchronous filter generation; workers use it to drop stale results.
     pub(super) filter_update_generation: Arc<AtomicU64>,
 
@@ -422,6 +440,13 @@ impl XtcPlugin {
         let output_channels = filters.output_channels();
         let cached_current_filters = Arc::new(filters);
         let filters = Arc::new(ArcSwap::from(Arc::clone(&cached_current_filters)));
+        let active_filter_update = Some(Arc::new(PendingFilterUpdate {
+            generation: 0,
+            filters: Arc::clone(&cached_current_filters),
+            hrtf_transfer_functions: hrtf_transfer_functions.clone(),
+            room_reflection_cache: room_reflection_cache.clone(),
+            room_params_hash,
+        }));
 
         let auto_gain = if params.auto_gain_enabled && output_channels == 2 {
             Some(
@@ -479,6 +504,11 @@ impl XtcPlugin {
                 filters,
                 cached_current_filters,
                 pending_filter_update: Arc::new(ArcSwapOption::empty()),
+                retired_filter_update: Arc::new(ArcSwapOption::empty()),
+                retired_filter_update_2: Arc::new(ArcSwapOption::empty()),
+                active_filter_update,
+                retired_filter_snapshot: Arc::new(ArcSwapOption::empty()),
+                retired_filter_snapshot_2: Arc::new(ArcSwapOption::empty()),
                 filter_update_generation: Arc::new(AtomicU64::new(0)),
                 filter_request: Arc::new(Mutex::new(None)),
                 filter_worker_running: Arc::new(AtomicBool::new(false)),
@@ -742,7 +772,17 @@ impl XtcPlugin {
                 return;
             }
             self.filter_state.filters.store(Arc::clone(&new_filters));
-            self.filter_state.cached_current_filters = new_filters;
+            self.filter_state.cached_current_filters = Arc::clone(&new_filters);
+            self.filter_state.active_filter_update = Some(Arc::new(PendingFilterUpdate {
+                generation: self
+                    .filter_state
+                    .filter_update_generation
+                    .load(Ordering::Acquire),
+                filters: new_filters,
+                hrtf_transfer_functions: hrtf_data,
+                room_reflection_cache: room_data,
+                room_params_hash: new_hash,
+            }));
             self.reconfigure_auto_gain_for_layout();
             self.filter_state.pending_filter_update.store(None);
         } else {
@@ -780,12 +820,23 @@ impl XtcPlugin {
             let worker_running_on_error = worker_running.clone();
             let worker_launches = self.filter_state.filter_worker_launches.clone();
             let pending_filter_update = self.filter_state.pending_filter_update.clone();
+            let retired_filter_update = self.filter_state.retired_filter_update.clone();
+            let retired_filter_update_2 = self.filter_state.retired_filter_update_2.clone();
+            let retired_filter_snapshot = self.filter_state.retired_filter_snapshot.clone();
+            let retired_filter_snapshot_2 = self.filter_state.retired_filter_snapshot_2.clone();
             let requested_generation = self.filter_state.filter_update_generation.clone();
             let spawn_result = std::thread::Builder::new()
                 .name("xtc-filter-worker".to_string())
                 .spawn(move || {
                     worker_launches.fetch_add(1, Ordering::Relaxed);
                     loop {
+                        // Reclaim audio-thread state before producing another
+                        // publication. The callback only transfers ownership
+                        // into these slots; it never destroys filter objects.
+                        retired_filter_update.store(None);
+                        retired_filter_update_2.store(None);
+                        retired_filter_snapshot.store(None);
+                        retired_filter_snapshot_2.store(None);
                         let request = request_mailbox
                             .lock()
                             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -866,8 +917,7 @@ impl XtcPlugin {
     }
 
     pub(super) fn adopt_pending_filters(&mut self) {
-        let update = self.filter_state.pending_filter_update.load_full();
-        let Some(update) = update.as_ref() else {
+        let Some(update) = self.filter_state.pending_filter_update.swap(None) else {
             return;
         };
 
@@ -877,25 +927,61 @@ impl XtcPlugin {
                 .filter_update_generation
                 .load(Ordering::Acquire)
         {
-            self.filter_state.pending_filter_update.store(None);
+            self.retire_filter_update(update);
             return;
         }
 
         let previous = self.filter_state.filters.load_full();
         let previous_output_channels = previous.output_channels();
+        let next_output_channels = update.filters.output_channels();
+        if previous_output_channels != next_output_channels {
+            self.retire_filter_update(update);
+            return;
+        }
         self.filter_state.filters.store(Arc::clone(&update.filters));
         self.filter_state.cached_current_filters = Arc::clone(&update.filters);
         self.filter_state.hrtf_transfer_functions = update.hrtf_transfer_functions.clone();
         self.filter_state.room_reflection_cache = update.room_reflection_cache.clone();
         self.filter_state.room_params_hash = update.room_params_hash;
-        let next_output_channels = update.filters.output_channels();
-        if previous_output_channels != next_output_channels {
-            self.filter_state.pending_filter_update.store(None);
-            return;
+        if let Some(previous_crossfade) = self.filter_state.prev_filters.take() {
+            self.retire_filter_snapshot(previous_crossfade);
         }
         self.filter_state.prev_filters = Some(previous);
         self.filter_state.crossfade_progress = 0.0;
-        self.filter_state.pending_filter_update.store(None);
+        if let Some(previous_update) = self.filter_state.active_filter_update.replace(update) {
+            self.retire_filter_update(previous_update);
+        }
+    }
+
+    /// Transfer an update bundle to worker-owned garbage without replacing a
+    /// still-live retired bundle on the callback thread.
+    #[inline]
+    fn retire_filter_update(&self, update: Arc<PendingFilterUpdate>) {
+        if self.filter_state.retired_filter_update.load().is_none() {
+            self.filter_state.retired_filter_update.store(Some(update));
+        } else {
+            debug_assert!(self.filter_state.retired_filter_update_2.load().is_none());
+            self.filter_state
+                .retired_filter_update_2
+                .store(Some(update));
+        }
+    }
+
+    /// Transfer a filter snapshot to worker-owned garbage without decrementing
+    /// its final reference on the audio thread. Interrupted crossfades can
+    /// retire two snapshots before the next worker request, hence two slots.
+    #[inline]
+    fn retire_filter_snapshot(&self, filters: Arc<XtcFilters>) {
+        if self.filter_state.retired_filter_snapshot.load().is_none() {
+            self.filter_state
+                .retired_filter_snapshot
+                .store(Some(filters));
+        } else {
+            debug_assert!(self.filter_state.retired_filter_snapshot_2.load().is_none());
+            self.filter_state
+                .retired_filter_snapshot_2
+                .store(Some(filters));
+        }
     }
 
     fn reconfigure_auto_gain_for_layout(&mut self) {
@@ -1188,8 +1274,10 @@ impl XtcPlugin {
             self.filter_state.crossfade_progress = (self.filter_state.crossfade_progress
                 + self.filter_state.progress_per_hop)
                 .min(1.0);
-            if self.filter_state.crossfade_progress >= 1.0 {
-                self.filter_state.prev_filters = None; // Release old filters
+            if self.filter_state.crossfade_progress >= 1.0
+                && let Some(previous) = self.filter_state.prev_filters.take()
+            {
+                self.retire_filter_snapshot(previous);
             }
         }
     }

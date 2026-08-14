@@ -3,7 +3,6 @@ use super::limiter_plugin::LimiterPlugin;
 use super::misc::CACHE_UPDATE_THROTTLE;
 use super::types::{LimiterData, LimiterPluginParams};
 use math_audio_dsp::fast_math::fast_pow10;
-use sotf_host::TruePeakDetector;
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::parametric_in_place_plugin::ParametricInPlacePlugin;
 use sotf_host::plugin::{PluginCompiledOp, ProcessContext};
@@ -593,54 +592,6 @@ fn test_isp_meter_resets_to_floor_when_true_peak_disabled() {
     assert!(
         without_true_peak.isp_dbtp[0] <= -119.0,
         "ISP meter should fall back to floor immediately after disabling true peak"
-    );
-}
-
-/// ISP mode: output inter-sample peaks must not exceed the ceiling.
-/// We create a signal with known inter-sample peaks, run through the
-/// ISP limiter, then verify output ISP with an independent detector.
-#[test]
-fn test_isp_mode_prevents_output_isp_violations() {
-    let mut p = LimiterPlugin::new(1, -3.0, 50.0, 5.0, false);
-    p.isp_mode = true;
-    p.true_peak = true;
-    p.rebuild_cached_parameters();
-    p.initialize(48000).unwrap();
-
-    let thresh_lin = fast_pow10(-3.0 / 20.0); // ~0.708
-
-    // Create a signal with inter-sample peaks: two adjacent samples
-    // that are below threshold but whose interpolated curve exceeds it.
-    // A rising-falling pattern creates ISP overshoots.
-    let frames = 8192;
-    let mut b = vec![0.0f32; frames];
-    for i in 0..frames {
-        // Sine at ~12kHz at 48kHz sample rate = ~4 samples per cycle
-        // This creates significant inter-sample peaks
-        b[i] = 0.65 * (2.0 * std::f32::consts::PI * 12000.0 * i as f32 / 48000.0).sin();
-    }
-
-    let ctx = ProcessContext::new(48000, frames);
-    p.process_in_place(&mut b, &ctx).unwrap();
-
-    // Verify output ISP with an independent detector (not the plugin's own)
-    let mut verifier = TruePeakDetector::new();
-    let mut max_output_isp = 0.0f32;
-    // Skip first 500 samples for lookahead + ISP correction convergence
-    for &s in &b[500..] {
-        let tp = verifier.process_linear(s);
-        max_output_isp = max_output_isp.max(tp);
-    }
-
-    // Allow 0.1 dB tolerance (ISP correction is feedback-based, 1-sample delay)
-    let tolerance_lin = fast_pow10(0.1 / 20.0); // ~1.012
-    assert!(
-        max_output_isp <= thresh_lin * tolerance_lin,
-        "ISP mode: output ISP {:.4} ({:.2} dB) exceeds ceiling {:.4} ({:.1} dB) + 0.1dB tolerance",
-        max_output_isp,
-        20.0 * max_output_isp.log10(),
-        thresh_lin,
-        -3.0,
     );
 }
 

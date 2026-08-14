@@ -487,11 +487,24 @@ fn test_compiled_plan_graph_fallback_for_dag() {
 struct CostClassPlugin {
     name: &'static str,
     class: PluginCostClass,
+    realtime_quantum_frames: usize,
+    output_sample_rate: Option<u32>,
 }
 
 impl CostClassPlugin {
     fn new(name: &'static str, class: PluginCostClass) -> Self {
-        Self { name, class }
+        Self {
+            name,
+            class,
+            realtime_quantum_frames: 1,
+            output_sample_rate: None,
+        }
+    }
+
+    fn with_realtime_contract(mut self, quantum: usize, output_sample_rate: Option<u32>) -> Self {
+        self.realtime_quantum_frames = quantum;
+        self.output_sample_rate = output_sample_rate;
+        self
     }
 }
 
@@ -569,6 +582,78 @@ impl Plugin for CostClassPlugin {
         output.copy_from_slice(input);
         Ok(ctx.num_frames)
     }
+
+    fn realtime_quantum_frames(&self) -> usize {
+        self.realtime_quantum_frames
+    }
+
+    fn output_sample_rate(&self, input_rate: u32) -> u32 {
+        self.output_sample_rate.unwrap_or(input_rate)
+    }
+}
+
+#[test]
+fn realtime_quantum_is_aggregated_in_host_input_clock_and_ignores_bypass() {
+    let mut host = DawHost::new(2, 48_000);
+    host.add_plugin(Box::new(
+        CostClassPlugin::new("rate divider", PluginCostClass::Scalar)
+            .with_realtime_contract(1, Some(24_000)),
+    ))
+    .unwrap();
+    host.add_plugin(Box::new(
+        CostClassPlugin::new("chunk worker", PluginCostClass::Convolution)
+            .with_realtime_contract(100, None),
+    ))
+    .unwrap();
+    host.build().unwrap();
+
+    assert_eq!(host.realtime_quantum_frames(), 201);
+
+    host.bypass_plugin(1).unwrap();
+    host.build().unwrap();
+    assert_eq!(host.realtime_quantum_frames(), 1);
+}
+
+#[test]
+fn realtime_work_horizon_sums_serial_plugin_budgets() {
+    let mut host = DawHost::new(2, 48_000);
+    for name in ["worker-a", "worker-b"] {
+        host.add_plugin(Box::new(
+            CostClassPlugin::new(name, PluginCostClass::Convolution)
+                .with_realtime_contract(100, None),
+        ))
+        .unwrap();
+    }
+    host.build().unwrap();
+    assert_eq!(host.realtime_quantum_frames(), 200);
+}
+
+#[test]
+fn realtime_work_horizon_sums_parallel_branches_and_respects_bypass() {
+    let mut host = DawHost::new(2, 48_000);
+    let first = host
+        .add_node(
+            "worker-a".into(),
+            Box::new(
+                CostClassPlugin::new("worker-a", PluginCostClass::Convolution)
+                    .with_realtime_contract(100, None),
+            ),
+        )
+        .unwrap();
+    host.add_node(
+        "worker-b".into(),
+        Box::new(
+            CostClassPlugin::new("worker-b", PluginCostClass::Convolution)
+                .with_realtime_contract(100, None),
+        ),
+    )
+    .unwrap();
+    host.build().unwrap();
+    assert_eq!(host.realtime_quantum_frames(), 200);
+
+    host.bypass_node(first).unwrap();
+    host.build().unwrap();
+    assert_eq!(host.realtime_quantum_frames(), 100);
 }
 
 struct SpecializedEqHookPlugin;

@@ -473,6 +473,56 @@ impl ParametricPlugin for GainPlugin {
         }
     }
 
+    fn parametric_set_parameter(
+        &mut self,
+        id: ParameterId,
+        value: ParameterValue,
+    ) -> PluginResult<()> {
+        let Some(value) = value.as_float().filter(|value| value.is_finite()) else {
+            return Err(format!("Invalid value for {id}"));
+        };
+        match id.as_str() {
+            "gain_db" => {
+                let spec = pk(GN, "gain_db");
+                if value < spec.min_f64() as f32 || value > spec.max_f64() as f32 {
+                    return Err(format!("Invalid value for {id}"));
+                }
+                self.set_gain_db(value);
+                Ok(())
+            }
+            "smoothing_ms" => {
+                let spec = pk(GN, "smoothing_ms");
+                if value < spec.min_f64() as f32 || value > spec.max_f64() as f32 {
+                    return Err(format!("Invalid value for {id}"));
+                }
+                self.smoothing_ms = value;
+                self.global_gain_smoother.set_time(value, self.sample_rate);
+                for smoother in &mut self.channel_gains_smoothers {
+                    smoother.set_time(value, self.sample_rate);
+                }
+                Ok(())
+            }
+            key => {
+                let channel = key
+                    .strip_prefix("gain_db_")
+                    .and_then(|suffix| suffix.parse::<usize>().ok())
+                    .ok_or_else(|| format!("Unknown parameter: {id}"))?;
+                self.set_channel_gain_db(channel, value)
+            }
+        }
+    }
+
+    fn parametric_get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        match id.as_str() {
+            "gain_db" => Some(ParameterValue::Float(self.global_gain_db)),
+            "smoothing_ms" => Some(ParameterValue::Float(self.smoothing_ms)),
+            key => {
+                let channel = key.strip_prefix("gain_db_")?.parse::<usize>().ok()?;
+                self.channel_gain_db(channel).map(ParameterValue::Float)
+            }
+        }
+    }
+
     fn apply_values(&mut self, values: ParameterSet) -> PluginResult<()> {
         for (id, value) in values {
             match id.as_str() {
@@ -1352,5 +1402,17 @@ mod tests {
             GainPlugin::new(1, 0.0).plugin_info().version,
             env!("CARGO_PKG_VERSION")
         );
+    }
+
+    #[test]
+    fn global_mode_reports_each_advertised_channel_parameter() {
+        let plugin = GainPlugin::new(2, -3.0);
+        for channel in 0..2 {
+            let id = ParameterId::from(format!("gain_db_{channel}").as_str());
+            assert_eq!(
+                plugin.parametric_get_parameter(&id),
+                Some(ParameterValue::Float(-3.0))
+            );
+        }
     }
 }

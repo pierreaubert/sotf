@@ -73,7 +73,7 @@ fn default_params(plugin_type: &str, channels: usize) -> serde_json::Value {
         "band_split" => serde_json::json!({
             "num_bands": 2,
             "frequency": 1000.0,
-            "type": "lr4",
+            "type": "LR24",
         }),
         "band_merge" => serde_json::json!({
             "bands": 2,
@@ -150,8 +150,6 @@ fn multi_channel_capable_plugins() -> Vec<&'static str> {
         "fletcher_munson",
         "denoiser",
         "wiener_denoiser",
-        "rnnoise",
-        "rnnoise_denoiser",
         "hiss_reducer",
         "hiss",
         "declick",
@@ -384,7 +382,7 @@ fn band_split_merge_roundtrip_at_5_1_and_7_1_4_is_finite() {
 fn mono_to_stereo_from_1ch_is_finite() {
     let mut plugin = create_plugin(
         "mono_to_stereo",
-        &default_params("mono_to_stereo", 1),
+        &serde_json::json!({"freq_dependent": false}),
         1,
         SAMPLE_RATE,
     )
@@ -409,13 +407,6 @@ fn mono_to_stereo_from_1ch_is_finite() {
             ParameterValue::Float(0.0),
         )
         .unwrap();
-    plugin
-        .set_parameter(
-            ParameterId::from("freq_dependent"),
-            ParameterValue::Bool(false),
-        )
-        .unwrap();
-
     // FFT_SIZE is 2048 inside the plugin; 16x gives the latency buffer time to
     // fill and the smoother time to settle.
     let frames = 32_768;
@@ -455,7 +446,7 @@ fn factory_reports_exact_channel_layouts_for_channel_changing_plugins() {
         ),
         (
             "band_split",
-            serde_json::json!({"num_bands": 2, "frequency": 1000.0, "type": "lr4"}),
+            serde_json::json!({"num_bands": 2, "frequency": 1000.0, "type": "LR24"}),
             3,
             6,
         ),
@@ -1013,7 +1004,7 @@ fn latency_reporting_plugins() -> Vec<(&'static str, serde_json::Value)> {
         ("limiter", default_params("limiter", 2)),
         ("convolution", default_params("convolution", 2)),
         ("upmixer", default_params("upmixer", 2)),
-        ("mono_to_stereo", default_params("mono_to_stereo", 1)),
+        ("declick", default_params("declick", 2)),
         (
             "multiband_expander",
             serde_json::json!({"lookahead_ms": 5.0}),
@@ -1105,7 +1096,6 @@ fn zero_latency_plugin_configurations() -> Vec<(&'static str, serde_json::Value)
         ("fletcher_munson", default_params("fletcher_munson", 2)),
         ("crossfeed", default_params("crossfeed", 2)),
         ("hiss_reducer", default_params("hiss_reducer", 2)),
-        ("declick", default_params("declick", 2)),
         (
             "ambisonics_decoder",
             default_params("ambisonics_decoder", 4),
@@ -1182,14 +1172,15 @@ fn reported_latency_matches_streamed_impulse_peak() {
     // Convolution has a dedicated delta-IR matrix covering uniform, NUPC, and
     // zero-latency-head modes. Resampler latency is expressed in output-rate
     // frames and has dedicated rubato/chunking tests, so neither belongs in this
-    // same-rate impulse-peak probe.
+    // same-rate impulse-peak probe. Declick deliberately suppresses the probe
+    // impulse, so its fixed lookahead is covered by its dedicated tests.
     for (plugin_type, params) in
         latency_reporting_plugins()
             .into_iter()
             .filter(|(plugin_type, _)| {
                 !matches!(
                     *plugin_type,
-                    "convolution" | "resampler" | "binaural_decoder" | "mono_to_stereo"
+                    "convolution" | "resampler" | "binaural_decoder" | "mono_to_stereo" | "declick"
                 )
             })
     {

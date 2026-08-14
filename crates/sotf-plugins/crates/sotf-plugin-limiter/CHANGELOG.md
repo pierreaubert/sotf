@@ -1,7 +1,8 @@
 # 0.5.14
 
-- Replace spline-based peak estimation with the ITU-R BS.1770 Table-2 4x
-  polyphase FIR and cover its detector delay in predictive ISP mode.
+- Replace spline-based peak estimation with a libebur128-style 49-tap
+  Hann-sinc interpolator at the rate-appropriate 4x/2x/1x factor and cover
+  its rate-dependent detector delay in predictive ISP mode.
 - Replace full lookahead scans with preallocated monotonic maximum queues,
   preserving independent channel behavior with amortized O(1) updates.
 - Require controllable ISP configurations (hard mode, 100% wet, adequate

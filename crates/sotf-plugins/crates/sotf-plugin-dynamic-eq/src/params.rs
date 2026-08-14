@@ -28,6 +28,7 @@ pub const PARAMS: &[ParamSpec] = &[
     // Global: num_bands
     ParamSpec::int("Num Bands", "num_bands", 4, 1, 8, 1, "Bands", "Setup")
         .setup()
+        .structural()
         .doc("Number of dynamic EQ bands"),
     // Global: threshold
     ParamSpec::float(
@@ -64,6 +65,7 @@ pub const PARAMS: &[ParamSpec] = &[
         "Channels",
     )
     .setup()
+    .structural()
     .doc("Stereo-link detection"),
     // Global: mix
     ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output")

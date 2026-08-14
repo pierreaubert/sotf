@@ -40,7 +40,7 @@ fn tube_curve_is_explicitly_odd_symmetric() {
 
 #[test]
 fn low_sample_rate_rejects_exciter_at_or_above_conservative_nyquist() {
-    let mut plugin = SaturationPlugin::from_params(
+    let mut plugin = SaturationPlugin::from_validated_params(
         1,
         SaturationPluginParams {
             exciter_freq: 3_000.0,
@@ -64,14 +64,14 @@ fn continuous_bulk_automation_does_not_allocate_or_rebuild_metadata() {
     values.insert(ParameterId::from("drive"), ParameterValue::Float(7.0));
     values.insert(ParameterId::from("mix"), ParameterValue::Float(0.25));
     assert_no_allocs("Saturation continuous apply_values", || {
-        plugin.apply_values(values).unwrap();
+        plugin.apply_continuous_values_realtime(&values).unwrap();
     });
     assert_eq!(plugin.cached_parameters.capacity(), metadata_capacity);
 }
 
 #[test]
 fn asymmetric_processing_does_not_allocate() {
-    let mut plugin = SaturationPlugin::from_params(
+    let mut plugin = SaturationPlugin::from_validated_params(
         2,
         SaturationPluginParams {
             mode: "Asymmetric".into(),
@@ -131,7 +131,7 @@ fn test_exciter_only_affects_hf() {
         mix: 1.0,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(channels, params);
+    let mut plugin = SaturationPlugin::from_validated_params(channels, params);
     plugin.initialize(sr).unwrap();
 
     // Test with 200Hz signal (well below exciter freq)
@@ -185,7 +185,7 @@ fn test_saturation_declares_oversampling() {
         mix: 0.5,
         ..Default::default()
     };
-    let plugin_off = SaturationPlugin::from_params(2, params_off);
+    let plugin_off = SaturationPlugin::from_validated_params(2, params_off);
     assert_eq!(plugin_off.preferred_oversampling(), None);
 
     // With oversampling set to 4x
@@ -199,7 +199,7 @@ fn test_saturation_declares_oversampling() {
         mix: 0.5,
         ..Default::default()
     };
-    let plugin_4x = SaturationPlugin::from_params(2, params_4x);
+    let plugin_4x = SaturationPlugin::from_validated_params(2, params_4x);
     assert_eq!(plugin_4x.preferred_oversampling(), Some(4));
 }
 
@@ -224,7 +224,7 @@ fn dynamic_exciter_keeps_low_band_topology() {
         dc_blocker_enabled: false,
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(1, params);
+    let mut plugin = SaturationPlugin::from_validated_params(1, params);
     plugin.initialize(sr).unwrap();
     let input = make_sine(200.0, sr, frames, 0.5);
     let mut output = input.clone();
@@ -256,10 +256,10 @@ fn dynamic_exciter_is_applied_inside_oversampled_topology() {
         dynamic_release_ms: 1.0,
         ..Default::default()
     };
-    let mut static_plugin = SaturationPlugin::from_params(1, base.clone());
+    let mut static_plugin = SaturationPlugin::from_validated_params(1, base.clone());
     let mut dynamic_params = base;
     dynamic_params.dynamic_amount = 1.0;
-    let mut dynamic_plugin = SaturationPlugin::from_params(1, dynamic_params);
+    let mut dynamic_plugin = SaturationPlugin::from_validated_params(1, dynamic_params);
     static_plugin.initialize(sr).unwrap();
     dynamic_plugin.initialize(sr).unwrap();
 
@@ -307,14 +307,14 @@ fn fallible_constructor_rejects_invalid_configuration() {
         mode: "mystery".into(),
         ..Default::default()
     };
-    assert!(SaturationPlugin::try_from_params(1, invalid).is_err());
-    assert!(SaturationPlugin::try_from_params(0, SaturationPluginParams::default()).is_err());
+    assert!(SaturationPlugin::from_params(1, invalid).is_err());
+    assert!(SaturationPlugin::from_params(0, SaturationPluginParams::default()).is_err());
 
     let non_finite = SaturationPluginParams {
         drive: f32::NAN,
         ..Default::default()
     };
-    assert!(SaturationPlugin::try_from_params(1, non_finite).is_err());
+    assert!(SaturationPlugin::from_params(1, non_finite).is_err());
 }
 
 #[test]
@@ -560,7 +560,7 @@ fn test_get_parameter_after_from_params() {
         dc_blocker_enabled: false,
         use_adaa: false,
     };
-    let plugin = SaturationPlugin::from_params(2, params);
+    let plugin = SaturationPlugin::from_validated_params(2, params);
 
     assert_eq!(
         plugin.get_parameter(&ParameterId::from("dynamic_amount")),
@@ -591,7 +591,7 @@ fn oversize_block_is_rejected_without_growing_scratch_buffers() {
         oversampling: "Off".to_string(),
         ..Default::default()
     };
-    let mut plugin = SaturationPlugin::from_params(2, params);
+    let mut plugin = SaturationPlugin::from_validated_params(2, params);
     plugin.initialize(48000).unwrap();
 
     let initial_dry_len = plugin.dry_buf.len();

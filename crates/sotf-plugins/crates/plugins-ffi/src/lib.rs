@@ -77,6 +77,9 @@ pub use plugin::*;
 pub struct PluginHandle {
     plugin: Box<dyn Plugin>,
     plugin_type: String,
+    /// Constructor configuration for transactional rebuilds of plugins whose
+    /// structural parameters cannot be changed after initialization.
+    config_json: String,
     parameter_map: ParameterMap,
     sample_rate: u32,
     input_channels: usize,

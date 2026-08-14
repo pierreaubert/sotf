@@ -34,14 +34,16 @@ fn empty_json_and_default_are_identical() {
 
 #[test]
 fn preset_roundtrip_preserves_structural_and_runtime_fields() {
-    let mut params = Params::default();
-    params.fft_size = 4096;
-    params.source_mode = "roomeq_recommended".into();
-    params.recommended_matrix_file = Some("matrix.json".into());
-    params.room_ir_file = Some("room.wav".into());
-    params.hrtf_file = None;
-    params.head_shadow_cutoff_hz = 3200.0;
-    params.auto_gain_max_db = 18.0;
+    let params = Params {
+        fft_size: 4096,
+        source_mode: "roomeq_recommended".into(),
+        recommended_matrix_file: Some("matrix.json".into()),
+        room_ir_file: Some("room.wav".into()),
+        hrtf_file: None,
+        head_shadow_cutoff_hz: 3200.0,
+        auto_gain_max_db: 18.0,
+        ..Default::default()
+    };
     let encoded = serde_json::to_string(&params).unwrap();
     let decoded: Params = serde_json::from_str(&encoded).unwrap();
     assert_eq!(

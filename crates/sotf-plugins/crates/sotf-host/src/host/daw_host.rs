@@ -98,6 +98,8 @@ pub(super) struct DawConfig {
     pub(super) parallel_enabled: bool,
     pub(super) compiled_linear_enabled: bool,
     pub(super) initial_input_channels: usize,
+    /// Cached worst-case plugin work quantum in host-input-rate frames.
+    pub(super) realtime_quantum_frames: usize,
     /// Whether plugins may request their own preferred oversampling wrapper.
     pub(super) plugin_preferred_oversampling_enabled: bool,
     /// Force an oversampling wrapper around all same-I/O plugins when set.
@@ -222,6 +224,7 @@ impl DawHost {
                 parallel_enabled: true,
                 compiled_linear_enabled: true,
                 initial_input_channels: channels,
+                realtime_quantum_frames: 1,
                 plugin_preferred_oversampling_enabled: true,
                 forced_oversampling_factor: None,
                 topology: Arc::new(ArcSwap::from_pointee(GraphTopology::empty())),
@@ -543,6 +546,38 @@ impl DawHost {
             self.cached_parallel_node_costs[id] =
                 Self::estimate_parallel_node_cost(plugin.as_ref(), id, &node.name);
         }
+        // Convert every node-local work quantum into the host input clock.
+        // Using u128 keeps the ceiling conversion exact without overflow even
+        // for adversarial plugin values; the engine separately bounds the
+        // resulting contract before activation.
+        // Sum every active node, rather than only the graph critical path.
+        // Stage execution may fall back from parallel to serial for topology,
+        // channel-map, or cost reasons, so branch work can coincide in one
+        // physical callback just like work in a linear chain.
+        self.config.realtime_quantum_frames = self
+            .plugins
+            .iter()
+            .enumerate()
+            .filter_map(|(id, plugin)| {
+                let plugin = plugin.as_ref()?;
+                if self.bypassed.get(id).copied().unwrap_or(false) {
+                    return None;
+                }
+                let node_rate = self
+                    .node_input_sample_rates
+                    .get(id)
+                    .copied()
+                    .unwrap_or(self.config.sample_rate)
+                    .max(1);
+                Some(
+                    ((plugin.realtime_quantum_frames().max(1) as u128)
+                        .saturating_mul(self.config.sample_rate.max(1) as u128)
+                        .div_ceil(node_rate as u128))
+                    .min(usize::MAX as u128) as usize,
+                )
+            })
+            .fold(0usize, usize::saturating_add)
+            .max(1);
         // Compute per-node cumulative latency from inputs and compensation delays
         let compensation_delays = self.compute_compensation_delays::<f32>(num_slots)?;
         let compensation_delays_f64 = self.compute_compensation_delays::<f64>(num_slots)?;
@@ -3530,6 +3565,23 @@ impl DawHost {
         }
         self.compute_latency()
     }
+    /// Conservative active-graph queued-work horizon in host-input frames.
+    ///
+    /// `build()` computes the exact cross-rate value. Before the first build,
+    /// this returns a conservative same-rate sum; production activation
+    /// builds the host off-thread before consuming this contract.
+    pub fn realtime_quantum_frames(&self) -> usize {
+        if self.built {
+            self.config.realtime_quantum_frames
+        } else {
+            self.plugins
+                .iter()
+                .flatten()
+                .map(|plugin| plugin.realtime_quantum_frames().max(1))
+                .fold(0usize, usize::saturating_add)
+                .max(1)
+        }
+    }
     pub(super) fn compute_latency(&self) -> usize {
         self.output_nodes
             .iter()
@@ -3855,6 +3907,9 @@ impl Host for DawHost {
     }
     fn total_latency_samples(&self) -> usize {
         self.total_latency_samples()
+    }
+    fn realtime_quantum_frames(&self) -> usize {
+        self.realtime_quantum_frames()
     }
     fn get_plugin_data(&self, i: usize) -> Option<Arc<dyn Any + Send + Sync>> {
         let &node_id = self.chain_nodes.get(i)?;

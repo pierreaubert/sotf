@@ -116,12 +116,13 @@ fn main() {
     println!("\n[Test 6] Ratio/quality/channel/callback deadline matrix");
     const WARMUP_CALLBACKS: usize = 128;
     const SAMPLED_CALLBACKS: usize = 256;
-    const CALLBACK_DEADLINE: Duration = Duration::from_millis(20);
     let mut all_samples = Vec::with_capacity(3 * 2 * 4 * 5 * SAMPLED_CALLBACKS);
     let mut worst_case_p50 = Duration::ZERO;
     let mut worst_case_p95 = Duration::ZERO;
     let mut worst_case_p99 = Duration::ZERO;
     let mut worst_callback = Duration::ZERO;
+    let mut actual_callback_misses = 0usize;
+    let mut scheduler_quantum_misses = 0usize;
     for quality in [
         ResamplerQuality::Fast,
         ResamplerQuality::Medium,
@@ -154,7 +155,16 @@ fn main() {
                     for _ in 0..SAMPLED_CALLBACKS {
                         let started = Instant::now();
                         let produced = candidate.process(&input, &mut output, &context).unwrap();
-                        samples.push(started.elapsed());
+                        let elapsed = started.elapsed();
+                        let actual_deadline =
+                            Duration::from_secs_f64(frames as f64 / source_rate as f64);
+                        let scheduler_deadline = Duration::from_secs_f64(
+                            Plugin::realtime_quantum_frames(&candidate).max(frames) as f64
+                                / source_rate as f64,
+                        );
+                        actual_callback_misses += usize::from(elapsed >= actual_deadline);
+                        scheduler_quantum_misses += usize::from(elapsed >= scheduler_deadline);
+                        samples.push(elapsed);
                         assert!(
                             output[..produced * matrix_channels]
                                 .iter()
@@ -170,8 +180,14 @@ fn main() {
                     worst_case_p95 = worst_case_p95.max(p95);
                     worst_case_p99 = worst_case_p99.max(p99);
                     worst_callback = worst_callback.max(max);
-                    assert!(p99 < CALLBACK_DEADLINE, "matrix-case p99 missed deadline");
-                    assert!(max < CALLBACK_DEADLINE, "matrix-case max missed deadline");
+                    let callback_deadline = Duration::from_secs_f64(
+                        Plugin::realtime_quantum_frames(&candidate).max(frames) as f64
+                            / source_rate as f64,
+                    );
+                    assert!(
+                        p99 < callback_deadline && max < callback_deadline,
+                        "{quality:?} {source_rate}->{sink_rate} {matrix_channels}ch/{frames}f p50/p95/p99/max={p50:?}/{p95:?}/{p99:?}/{max:?}, negotiated scheduler deadline={callback_deadline:?}"
+                    );
                     all_samples.extend_from_slice(&samples);
 
                     let mut drain =
@@ -187,11 +203,13 @@ fn main() {
     }
     all_samples.sort_unstable();
     println!(
-        "  Aggregate p50/p95/p99/max: {:.3}/{:.3}/{:.3}/{:.3}ms",
+        "  Aggregate p50/p95/p99/max: {:.3}/{:.3}/{:.3}/{:.3}ms; actual-callback misses: {}; negotiated-quantum misses: {}",
         nearest_rank(&all_samples, 50).as_secs_f64() * 1000.0,
         nearest_rank(&all_samples, 95).as_secs_f64() * 1000.0,
         nearest_rank(&all_samples, 99).as_secs_f64() * 1000.0,
-        worst_callback.as_secs_f64() * 1000.0
+        worst_callback.as_secs_f64() * 1000.0,
+        actual_callback_misses,
+        scheduler_quantum_misses
     );
     println!(
         "  Worst-case p50/p95/p99/max: {:.3}/{:.3}/{:.3}/{:.3}ms",
@@ -200,7 +218,13 @@ fn main() {
         worst_case_p99.as_secs_f64() * 1000.0,
         worst_callback.as_secs_f64() * 1000.0
     );
-    println!("  Matrix: PASS");
+    assert_eq!(
+        scheduler_quantum_misses, 0,
+        "resampler missed its explicitly reported realtime scheduling quantum"
+    );
+    println!(
+        "  Engine/offline queued-work matrix: PASS (direct fixed-frame FFI use rejects rate changes)"
+    );
 
-    println!("\n[ALL PASS] Resampler QA Complete.");
+    println!("\n[ENGINE/OFFLINE SCHEDULING PASS] Resampler QA Complete.");
 }

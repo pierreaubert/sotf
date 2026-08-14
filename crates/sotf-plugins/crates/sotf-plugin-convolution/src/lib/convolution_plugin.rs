@@ -88,72 +88,131 @@ fn get_ir_loader() -> &'static mpsc::Sender<IrLoadRequest> {
 }
 
 static IR_RECLAIMER: OnceLock<mpsc::SyncSender<RetiredIrState>> = OnceLock::new();
+static IR_RECLAIMER_FALLBACK: OnceLock<mpsc::SyncSender<RetiredIrState>> = OnceLock::new();
 static IR_ERROR_RECLAIMER: OnceLock<mpsc::SyncSender<String>> = OnceLock::new();
+static IR_ERROR_RECLAIMER_FALLBACK: OnceLock<mpsc::SyncSender<String>> = OnceLock::new();
 
-fn get_ir_reclaimer() -> &'static mpsc::SyncSender<RetiredIrState> {
-    IR_RECLAIMER.get_or_init(|| {
-        let (tx, rx) = mpsc::sync_channel::<RetiredIrState>(8);
-        std::thread::Builder::new()
-            .name("convolution-ir-reclaimer".into())
-            .spawn(move || {
-                while let Ok(retired) = rx.recv() {
+fn spawn_reclaimer(name: &str) -> mpsc::SyncSender<RetiredIrState> {
+    let (tx, rx) = mpsc::sync_channel::<RetiredIrState>(8);
+    std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            while let Ok(value) = rx.recv() {
+                // A panicking third-party destructor must not permanently
+                // disconnect a global retirement path.
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let RetiredIrState {
                         state,
                         nupc_engines,
                         fdl_flat,
                         fft_scratch,
                         rayon_accum_pool,
-                    } = retired;
-                    drop((state, nupc_engines, fdl_flat, fft_scratch, rayon_accum_pool));
-                }
-            })
-            .expect("failed to spawn convolution IR reclaimer thread");
-        tx
-    })
+                        ir_file,
+                    } = value;
+                    drop((
+                        state,
+                        nupc_engines,
+                        fdl_flat,
+                        fft_scratch,
+                        rayon_accum_pool,
+                        ir_file,
+                    ));
+                }));
+            }
+        })
+        .expect("failed to spawn convolution reclaimer thread");
+    tx
+}
+
+fn spawn_error_reclaimer(name: &str) -> mpsc::SyncSender<String> {
+    let (tx, rx) = mpsc::sync_channel::<String>(8);
+    std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            while let Ok(error) = rx.recv() {
+                log::error!("[Convolution] IR load failed: {error}");
+            }
+        })
+        .expect("failed to spawn convolution error reclaimer thread");
+    tx
+}
+
+fn get_ir_reclaimer() -> &'static mpsc::SyncSender<RetiredIrState> {
+    IR_RECLAIMER.get_or_init(|| spawn_reclaimer("convolution-ir-reclaimer"))
+}
+
+fn get_ir_reclaimer_fallback() -> &'static mpsc::SyncSender<RetiredIrState> {
+    IR_RECLAIMER_FALLBACK.get_or_init(|| spawn_reclaimer("convolution-ir-reclaimer-fallback"))
 }
 
 fn get_ir_error_reclaimer() -> &'static mpsc::SyncSender<String> {
-    IR_ERROR_RECLAIMER.get_or_init(|| {
-        let (tx, rx) = mpsc::sync_channel::<String>(8);
-        std::thread::Builder::new()
-            .name("convolution-ir-error-reclaimer".into())
-            .spawn(move || {
-                while let Ok(error) = rx.recv() {
-                    log::error!("[Convolution] IR load failed: {error}");
-                }
-            })
-            .expect("failed to spawn convolution error reclaimer thread");
-        tx
-    })
+    IR_ERROR_RECLAIMER.get_or_init(|| spawn_error_reclaimer("convolution-ir-error-reclaimer"))
 }
 
-/// Retain one payload for a later retry when a bounded reclamation queue is
-/// full. If that retry slot is already occupied, or the reclaimer has stopped,
-/// intentionally leak the payload rather than running an unbounded destructor
-/// on the realtime thread.
-pub(super) fn defer_or_forget<T>(pending: &mut Option<T>, error: mpsc::TrySendError<T>) {
-    match error {
-        mpsc::TrySendError::Full(value) if pending.is_none() => *pending = Some(value),
-        mpsc::TrySendError::Full(value) | mpsc::TrySendError::Disconnected(value) => {
-            std::mem::forget(value);
+fn get_ir_error_reclaimer_fallback() -> &'static mpsc::SyncSender<String> {
+    IR_ERROR_RECLAIMER_FALLBACK
+        .get_or_init(|| spawn_error_reclaimer("convolution-ir-error-reclaimer-fallback"))
+}
+
+/// Try two independently-owned bounded queues. The fallback makes a stopped
+/// primary worker recoverable without allocating or destroying `value` on the
+/// caller. If both queues are saturated, ownership is returned for one bounded
+/// per-instance retry slot and further ownership-producing work is fenced.
+pub(super) fn try_reclaim<T>(
+    primary: &mpsc::SyncSender<T>,
+    fallback: &mpsc::SyncSender<T>,
+    value: T,
+) -> Result<(), T> {
+    match primary.try_send(value) {
+        Ok(()) => Ok(()),
+        Err(mpsc::TrySendError::Full(value) | mpsc::TrySendError::Disconnected(value)) => {
+            fallback.try_send(value).map_err(|error| match error {
+                mpsc::TrySendError::Full(value) | mpsc::TrySendError::Disconnected(value) => value,
+            })
         }
     }
+}
+
+/// Active IR ownership and its asynchronous load/retirement lifecycle.
+/// Keeping these fields together makes state swaps auditable as one ownership
+/// transaction and prevents the plugin shell from growing with reclaimer
+/// implementation details.
+#[doc(hidden)]
+pub struct IrRuntimeState {
+    pub(super) ir_file: String,
+    pub(super) state: Arc<ArcSwap<Option<ConvolutionState>>>,
+    pub(super) fdl_flat: Vec<Complex<f32>>,
+    pub(super) fdl_head: usize,
+    pub(super) fft_scratch: Vec<Complex<f32>>,
+    pub(super) nupc_engines: Vec<nupc::NupcEngine>,
+    pub(super) rayon_accum_pool: Vec<Vec<Complex<f32>>>,
+    pub(super) ir_load_result_rx: Option<std::sync::mpsc::Receiver<IrLoadCompletion>>,
+    /// Keeps the channel allocation alive after the callback consumes and
+    /// drops its receiver. It is replaced or dropped only by control-thread
+    /// load/clear operations (or plugin destruction), never by `process`.
+    pub(super) ir_load_result_keepalive: Option<std::sync::mpsc::Sender<IrLoadCompletion>>,
+    pub(super) desired_generation: u64,
+    pub(super) load_status: AtomicU8,
+    pub(super) retired_pending: Option<RetiredIrState>,
+    pub(super) failed_error_pending: Option<String>,
+    #[cfg(test)]
+    pub(super) test_ir_reclaimers: Option<(
+        mpsc::SyncSender<RetiredIrState>,
+        mpsc::SyncSender<RetiredIrState>,
+    )>,
 }
 
 pub struct ConvolutionPlugin {
     pub(super) channels: usize,
     pub(super) sample_rate: u32,
-    pub(super) ir_file: String,
+    pub(super) ir_runtime: IrRuntimeState,
     pub(super) mix: Smoother,
     pub(super) mix_value: f32,
     pub(super) gain_linear: Smoother,
     pub(super) gain_db_value: f32,
-    pub(super) state: Arc<ArcSwap<Option<ConvolutionState>>>,
     pub(super) input_buffers: Vec<Vec<f32>>,
     pub(super) input_fill: usize,
     /// Flattened Frequency Domain Line (FDL): [partition * channels * FFT_SIZE + channel * FFT_SIZE + bin]
-    pub(super) fdl_flat: Vec<Complex<f32>>,
-    pub(super) fdl_head: usize, // ring buffer head for FDL (avoids rotate_right)
     pub(super) output_accum: Vec<Vec<f32>>,
     /// Per-channel output ring buffer: stores completed partition output so
     /// partial-block boundaries are handled correctly (fix for issue #1).
@@ -168,10 +227,8 @@ pub struct ConvolutionPlugin {
     // Pre-allocated scratch buffers (avoid heap allocs in audio callback)
     pub(super) fft_spectrum: Vec<Complex<f32>>,
     pub(super) fft_sum: Vec<Complex<f32>>,
-    pub(super) fft_scratch: Vec<Complex<f32>>,
     pub(super) cached_parameters: Vec<Parameter>,
     /// When use_nupc is true, per-channel NUPC engines for low-latency convolution
-    pub(super) nupc_engines: Vec<nupc::NupcEngine>,
     pub(super) use_nupc: bool,
     pub(super) zero_latency_head: bool,
     pub(super) head_taps: usize,
@@ -181,18 +238,25 @@ pub struct ConvolutionPlugin {
     pub(super) nupc_dry_delay_pos: usize,
     /// Pre-allocated accumulator buffers for rayon fold/reduce (one per rayon thread).
     /// Avoids heap allocation in the audio processing hot path.
-    pub(super) rayon_accum_pool: Vec<Vec<Complex<f32>>>,
-    /// Channel to receive asynchronously-loaded IR state from the background thread.
-    pub(super) ir_load_result_rx: Option<std::sync::mpsc::Receiver<IrLoadCompletion>>,
-    pub(super) desired_generation: u64,
-    pub(super) load_status: AtomicU8,
-    pub(super) retired_pending: Option<RetiredIrState>,
-    pub(super) failed_error_pending: Option<String>,
     pub(super) inactive_dry_delay: Vec<Vec<f32>>,
     pub(super) inactive_dry_delay_pos: usize,
     pub(super) last_output: Vec<f32>,
     pub(super) transition_from: Vec<f32>,
     pub(super) transition_remaining: usize,
+}
+
+impl std::ops::Deref for ConvolutionPlugin {
+    type Target = IrRuntimeState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ir_runtime
+    }
+}
+
+impl std::ops::DerefMut for ConvolutionPlugin {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.ir_runtime
+    }
 }
 
 impl ConvolutionPlugin {
@@ -251,20 +315,35 @@ impl ConvolutionPlugin {
         // callback; successful installs and failures then only perform bounded
         // non-allocating channel operations.
         let _ = get_ir_reclaimer();
+        let _ = get_ir_reclaimer_fallback();
         let _ = get_ir_error_reclaimer();
+        let _ = get_ir_error_reclaimer_fallback();
         let mut p = Self {
             channels,
             sample_rate,
-            ir_file: String::new(),
+            ir_runtime: IrRuntimeState {
+                ir_file: String::new(),
+                state: Arc::new(ArcSwap::from_pointee(None)),
+                fdl_flat: Vec::new(),
+                fdl_head: 0,
+                fft_scratch: Vec::new(),
+                nupc_engines: Vec::new(),
+                rayon_accum_pool: Vec::new(),
+                ir_load_result_rx: None,
+                ir_load_result_keepalive: None,
+                desired_generation: 0,
+                load_status: AtomicU8::new(ConvolutionLoadStatus::Idle as u8),
+                retired_pending: None,
+                failed_error_pending: None,
+                #[cfg(test)]
+                test_ir_reclaimers: None,
+            },
             mix: Smoother::new(1.0, 20.0, sample_rate),
             mix_value: 1.0,
             gain_linear: Smoother::new(1.0, 20.0, sample_rate),
             gain_db_value: 0.0,
-            state: Arc::new(ArcSwap::from_pointee(None)),
             input_buffers: vec![vec![0.0; PARTITION_SIZE]; channels],
             input_fill: 0,
-            fdl_flat: Vec::new(),
-            fdl_head: 0,
             output_accum: vec![vec![0.0; FFT_SIZE]; channels],
             output_ring: vec![vec![0.0; PARTITION_SIZE]; channels],
             output_ring_read: 0,
@@ -273,20 +352,12 @@ impl ConvolutionPlugin {
             gain_envelope: vec![1.0; PARTITION_SIZE],
             fft_spectrum: vec![Complex::new(0.0, 0.0); FFT_SIZE],
             fft_sum: vec![Complex::new(0.0, 0.0); FFT_SIZE],
-            fft_scratch: Vec::new(),
             cached_parameters: Vec::new(),
-            nupc_engines: Vec::new(),
             use_nupc: CV[3].default_bool(),
             zero_latency_head: false,
             head_taps: 128,
             nupc_dry_delay: vec![vec![0.0; PARTITION_SIZE]; channels],
             nupc_dry_delay_pos: 0,
-            rayon_accum_pool: Vec::new(),
-            ir_load_result_rx: None,
-            desired_generation: 0,
-            load_status: AtomicU8::new(ConvolutionLoadStatus::Idle as u8),
-            retired_pending: None,
-            failed_error_pending: None,
             inactive_dry_delay: vec![vec![0.0; PARTITION_SIZE]; channels],
             inactive_dry_delay_pos: 0,
             last_output: vec![0.0; channels],
@@ -335,12 +406,13 @@ impl ConvolutionPlugin {
 
     pub(super) fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = param_bridge::build_parameters(CV, |i| self.param_value(i));
+        let ir_file = self.ir_runtime.ir_file.clone();
         if let Some(ir_param) = self
             .cached_parameters
             .iter_mut()
             .find(|param| param.id.as_str() == "ir_file")
         {
-            ir_param.default_value = ParameterValue::String(self.ir_file.clone());
+            ir_param.default_value = ParameterValue::String(ir_file);
         }
     }
 
@@ -369,6 +441,7 @@ impl ConvolutionPlugin {
         let generation = self.desired_generation;
         let (result_tx, result_rx) = std::sync::mpsc::channel();
         self.ir_load_result_rx = Some(result_rx);
+        self.ir_load_result_keepalive = Some(result_tx.clone());
         self.load_status
             .store(ConvolutionLoadStatus::Loading as u8, Ordering::Release);
         get_ir_loader()
@@ -386,8 +459,17 @@ impl ConvolutionPlugin {
     }
 
     fn queue_retired(&mut self, retired: RetiredIrState) {
-        if let Err(error) = get_ir_reclaimer().try_send(retired) {
-            defer_or_forget(&mut self.retired_pending, error);
+        debug_assert!(self.retired_pending.is_none());
+        #[cfg(test)]
+        if let Some((primary, fallback)) = &self.test_ir_reclaimers {
+            if let Err(retired) = try_reclaim(primary, fallback, retired) {
+                self.retired_pending = Some(retired);
+            }
+            return;
+        }
+        if let Err(retired) = try_reclaim(get_ir_reclaimer(), get_ir_reclaimer_fallback(), retired)
+        {
+            self.retired_pending = Some(retired);
         }
     }
 
@@ -396,9 +478,13 @@ impl ConvolutionPlugin {
             self.queue_retired(retired);
         }
         if let Some(error) = self.failed_error_pending.take()
-            && let Err(error) = get_ir_error_reclaimer().try_send(error)
+            && let Err(error) = try_reclaim(
+                get_ir_error_reclaimer(),
+                get_ir_error_reclaimer_fallback(),
+                error,
+            )
         {
-            defer_or_forget(&mut self.failed_error_pending, error);
+            self.failed_error_pending = Some(error);
         }
     }
 
@@ -409,26 +495,36 @@ impl ConvolutionPlugin {
             fdl_flat: result.fdl_flat,
             fft_scratch: result.fft_scratch,
             rayon_accum_pool: result.rayon_accum_pool,
+            ir_file: result.ir_file,
         });
     }
 
-    fn clear_ir_state(&mut self) {
+    fn clear_ir_state(&mut self) -> PluginResult<()> {
+        self.flush_retired();
+        if self.retired_pending.is_some() {
+            return Err("Convolution IR retirement is backpressured; retry later".into());
+        }
         self.transition_from.copy_from_slice(&self.last_output);
         self.transition_remaining = TRANSITION_SAMPLES;
         self.desired_generation = self.desired_generation.wrapping_add(1);
         self.ir_load_result_rx = None;
+        self.ir_load_result_keepalive = None;
         let retired = RetiredIrState {
             state: self.state.swap(Arc::new(None)),
             nupc_engines: std::mem::take(&mut self.nupc_engines),
             fdl_flat: std::mem::take(&mut self.fdl_flat),
             fft_scratch: std::mem::take(&mut self.fft_scratch),
             rayon_accum_pool: std::mem::take(&mut self.rayon_accum_pool),
+            ir_file: String::new(),
         };
         self.ir_file.clear();
-        self.reset_streaming_state();
+        // The IR-sized state has been moved to the reclaimer; only fixed-size
+        // stream-boundary buffers remain locally.
+        self.reset_fixed_streaming_state();
         self.load_status
             .store(ConvolutionLoadStatus::Idle as u8, Ordering::Release);
         self.queue_retired(retired);
+        Ok(())
     }
 
     pub fn from_params(
@@ -585,6 +681,7 @@ impl ConvolutionPlugin {
     }
 
     pub(super) fn apply_ir_state(&mut self, result: IrLoadResult) {
+        debug_assert!(self.retired_pending.is_none());
         self.transition_from.copy_from_slice(&self.last_output);
         self.transition_remaining = TRANSITION_SAMPLES;
         let retired = RetiredIrState {
@@ -596,17 +693,19 @@ impl ConvolutionPlugin {
                 &mut self.rayon_accum_pool,
                 result.rayon_accum_pool,
             ),
+            ir_file: std::mem::replace(&mut self.ir_file, result.ir_file),
         };
         self.fdl_head = result.fdl_head;
-        self.ir_file = result.ir_file;
-        self.reset_streaming_state();
+        // Loader-built convolution state is already zero-initialized. Avoid
+        // scanning an IR-sized FDL or every NUPC partition on the callback;
+        // only fixed-size stream-boundary buffers can contain old audio.
+        self.reset_fixed_streaming_state();
         self.load_status
             .store(ConvolutionLoadStatus::Ready as u8, Ordering::Release);
         self.queue_retired(retired);
     }
 
-    fn reset_streaming_state(&mut self) {
-        self.fdl_flat.fill(Complex::new(0.0, 0.0));
+    pub(super) fn reset_fixed_streaming_state(&mut self) {
         self.fdl_head = 0;
         self.input_fill = 0;
         for buffer in &mut self.input_buffers {
@@ -620,9 +719,6 @@ impl ConvolutionPlugin {
         }
         self.output_ring_read = 0;
         self.output_ring_available = 0;
-        for engine in &mut self.nupc_engines {
-            engine.reset();
-        }
         for buffer in &mut self.nupc_dry_delay {
             buffer.fill(0.0);
         }
@@ -656,6 +752,10 @@ impl ConvolutionPlugin {
     }
 
     pub fn load_ir(&mut self, path: &str) -> Result<(), String> {
+        self.flush_retired();
+        if self.retired_pending.is_some() {
+            return Err("Convolution IR retirement is backpressured; retry later".into());
+        }
         let result = Self::build_ir_state(
             path,
             self.channels,
@@ -886,7 +986,7 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
                     }
                 };
                 if path.is_empty() {
-                    self.clear_ir_state();
+                    self.clear_ir_state()?;
                 } else {
                     // Quick synchronous validation so tests get immediate feedback.
                     if !std::path::Path::new(&path).exists() {
@@ -1001,13 +1101,24 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
         // Check for asynchronously-loaded IR results and swap them in.
         self.flush_retired();
         if self.retired_pending.is_none()
+            && self.failed_error_pending.is_none()
             && let Some(ref rx) = self.ir_load_result_rx
             && let Ok(completion) = rx.try_recv()
         {
             self.ir_load_result_rx = None;
             if completion.generation != self.desired_generation {
-                if let Ok(loaded) = completion.result {
-                    self.retire_uninstalled(loaded);
+                match completion.result {
+                    Ok(loaded) => self.retire_uninstalled(loaded),
+                    Err(error) => {
+                        if let Err(error) = try_reclaim(
+                            get_ir_error_reclaimer(),
+                            get_ir_error_reclaimer_fallback(),
+                            error,
+                        ) {
+                            debug_assert!(self.failed_error_pending.is_none());
+                            self.failed_error_pending = Some(error);
+                        }
+                    }
                 }
             } else {
                 match completion.result {
@@ -1015,8 +1126,13 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
                     Err(e) => {
                         self.load_status
                             .store(ConvolutionLoadStatus::Failed as u8, Ordering::Release);
-                        if let Err(error) = get_ir_error_reclaimer().try_send(e) {
-                            defer_or_forget(&mut self.failed_error_pending, error);
+                        if let Err(error) = try_reclaim(
+                            get_ir_error_reclaimer(),
+                            get_ir_error_reclaimer_fallback(),
+                            e,
+                        ) {
+                            debug_assert!(self.failed_error_pending.is_none());
+                            self.failed_error_pending = Some(error);
                         }
                     }
                 }
@@ -1168,10 +1284,13 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
                         .fft_forward
                         .as_ref()
                         .expect("UPC state must have a forward FFT plan")
-                        .process_with_scratch(&mut self.fft_spectrum, &mut self.fft_scratch);
+                        .process_with_scratch(
+                            &mut self.fft_spectrum,
+                            &mut self.ir_runtime.fft_scratch,
+                        );
 
                     let off_base = (self.fdl_head * self.channels + ch) * FFT_SIZE;
-                    self.fdl_flat[off_base..off_base + FFT_SIZE]
+                    self.ir_runtime.fdl_flat[off_base..off_base + FFT_SIZE]
                         .copy_from_slice(&self.fft_spectrum);
 
                     self.fft_sum.fill(Complex::new(0.0, 0.0));
@@ -1189,7 +1308,7 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
                         let fdl_off = (fdl_p * self.channels + ch) * FFT_SIZE;
                         complex_mul_add_simd(
                             &mut self.fft_sum,
-                            &self.fdl_flat[fdl_off..fdl_off + FFT_SIZE],
+                            &self.ir_runtime.fdl_flat[fdl_off..fdl_off + FFT_SIZE],
                             &state.partitions[ir_ch][p],
                         );
                     }
@@ -1197,7 +1316,7 @@ impl ParametricInPlacePlugin for ConvolutionPlugin {
                         .fft_inverse
                         .as_ref()
                         .expect("UPC state must have an inverse FFT plan")
-                        .process_with_scratch(&mut self.fft_sum, &mut self.fft_scratch);
+                        .process_with_scratch(&mut self.fft_sum, &mut self.ir_runtime.fft_scratch);
 
                     for i in 0..FFT_SIZE {
                         self.output_accum[ch][i] += self.fft_sum[i].re * inv_n;

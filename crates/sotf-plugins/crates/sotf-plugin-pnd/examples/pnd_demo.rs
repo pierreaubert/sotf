@@ -77,7 +77,8 @@ fn main() {
     println!("  Engine:               duration-preserving pitch correction");
     println!();
 
-    let mut plugin = PndPlugin::from_params(channels, params);
+    let mut plugin =
+        PndPlugin::from_params(channels, params).expect("PND parameters must be valid");
 
     plugin
         .initialize(sample_rate)

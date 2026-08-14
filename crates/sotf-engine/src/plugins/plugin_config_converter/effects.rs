@@ -540,6 +540,26 @@ mod tests {
     use crate::plugins::plugin_type::PluginType;
 
     #[test]
+    fn dither_defaults_and_values_reach_engine_config() {
+        let defaults = PluginSettings::default_for(&PluginType::Dither).unwrap();
+        let default_config = convert_dither(&defaults, 48_000.0).unwrap();
+        assert_eq!(default_config.plugin_type, "dither");
+        assert_eq!(default_config.parameters["bit_depth"], 0);
+        assert_eq!(default_config.parameters["noise_shaping"], true);
+        assert_eq!(default_config.parameters["dither_type"], 0);
+
+        let settings = PluginSettings::Dither {
+            bit_depth: 2,
+            noise_shaping: false,
+            dither_type: 1,
+        };
+        let config = convert_dither(&settings, 96_000.0).unwrap();
+        assert_eq!(config.parameters["bit_depth"], 2);
+        assert_eq!(config.parameters["noise_shaping"], false);
+        assert_eq!(config.parameters["dither_type"], 1);
+    }
+
+    #[test]
     fn saturation_appended_mode_reaches_engine_config() {
         let mut settings = PluginSettings::default_for(&PluginType::Saturation).unwrap();
         let PluginSettings::Saturation { mode, .. } = &mut settings else {

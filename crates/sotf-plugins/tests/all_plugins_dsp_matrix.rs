@@ -65,7 +65,7 @@ fn fixture_params(plugin_type: &str, channels: usize, sample_rate: u32) -> serde
         "band_split" => serde_json::json!({
             "num_bands": 2,
             "frequency": 1_000.0,
-            "type": "lr4",
+            "type": "LR24",
         }),
         "band_merge" => serde_json::json!({"bands": 2}),
         "beamformer" => serde_json::json!({"num_mics": channels}),

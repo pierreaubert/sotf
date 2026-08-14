@@ -7,6 +7,10 @@
 use std::any::Any;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
+use std::time::Duration;
+
+#[cfg(unix)]
+use std::os::unix::net::UnixDatagram;
 
 use crate::external_plugin_ipc::{
     PluginIpcControlRequest, PluginIpcControlResponse, PluginIpcRequest, SecurePluginSharedMemory,
@@ -28,6 +32,10 @@ pub struct ExternalPluginWorker {
     output_scratch: Vec<f32>,
     midi_scratch: Vec<MidiEvent>,
     parameter_scratch: Vec<ParameterEvent>,
+    #[cfg(unix)]
+    wake_socket: Option<UnixDatagram>,
+    #[cfg(unix)]
+    wake_path: std::path::PathBuf,
     parameters: Vec<Parameter>,
 }
 
@@ -61,6 +69,13 @@ impl ExternalPluginWorker {
         let max_output_samples = layout.max_frames as usize * layout.output_channels as usize;
 
         let parameters = plugin.parameters();
+        #[cfg(unix)]
+        let (wake_socket, wake_path) = {
+            let wake_path = shared.path().with_extension("wake");
+            let _ = std::fs::remove_file(&wake_path);
+            let socket = UnixDatagram::bind(&wake_path).ok();
+            (socket, wake_path)
+        };
         Ok(Self {
             shared,
             plugin,
@@ -69,7 +84,28 @@ impl ExternalPluginWorker {
             midi_scratch: Vec::with_capacity(1024),
             parameter_scratch: Vec::with_capacity(1024),
             parameters,
+            #[cfg(unix)]
+            wake_socket,
+            #[cfg(unix)]
+            wake_path,
         })
+    }
+
+    /// Sleep outside the realtime host until the host publishes audio or a
+    /// control request. The shared-memory state remains authoritative, so a
+    /// lost/coalesced datagram only delays this wait until `timeout`.
+    pub fn wait_for_notification(&self, timeout: Duration) {
+        #[cfg(unix)]
+        match self.wake_socket.as_ref() {
+            Some(socket) => {
+                let _ = socket.set_read_timeout(Some(timeout));
+                let mut byte = [0_u8; 1];
+                let _ = socket.recv(&mut byte);
+            }
+            None => std::thread::sleep(timeout),
+        }
+        #[cfg(not(unix))]
+        std::thread::sleep(timeout);
     }
 
     pub fn process_one(&mut self) -> Result<ExternalPluginWorkerStep, String> {
@@ -161,6 +197,13 @@ impl ExternalPluginWorker {
                 ))
             }
         }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ExternalPluginWorker {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.wake_path);
     }
 }
 

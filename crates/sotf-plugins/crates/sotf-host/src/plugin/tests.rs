@@ -73,6 +73,9 @@ impl InPlacePlugin for OversampledPlugin {
     fn supports_f64(&self) -> bool {
         true
     }
+    fn realtime_quantum_frames(&self) -> usize {
+        64
+    }
 }
 
 #[test]
@@ -92,6 +95,7 @@ fn test_adapter_forwards_oversampling() {
     let adapted = InPlacePluginAdapter::new(OversampledPlugin);
     assert_eq!(adapted.preferred_oversampling(), Some(4));
     assert!(adapted.supports_f64());
+    assert_eq!(adapted.realtime_quantum_frames(), 64);
 }
 
 #[test]
@@ -99,6 +103,7 @@ fn test_adapter_forwards_defaults() {
     let adapted = InPlacePluginAdapter::new(DummyInPlacePlugin);
     assert_eq!(adapted.preferred_oversampling(), None);
     assert!(!adapted.supports_f64());
+    assert_eq!(adapted.realtime_quantum_frames(), 1);
 }
 
 #[test]

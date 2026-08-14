@@ -1,7 +1,7 @@
-use super::convolution_plugin::{ConvolutionPlugin, defer_or_forget};
+use super::convolution_plugin::{ConvolutionPlugin, try_reclaim};
 use super::types::ConvolutionPluginParams;
 use super::types::ConvolutionState;
-use super::types::{ConvolutionLoadStatus, IrLoadCompletion};
+use super::types::{ConvolutionLoadStatus, IrLoadCompletion, IrLoadResult, RetiredIrState};
 use crate::misc::{FFT_SIZE, PARTITION_SIZE};
 use plugins_spatial::nupc;
 use rustfft::FftPlanner;
@@ -13,29 +13,275 @@ use std::sync::Arc;
 
 #[test]
 fn reclamation_queue_failure_never_drops_on_the_caller() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
 
-    struct DropCounter(Arc<AtomicUsize>);
+    #[derive(Debug)]
+    struct DropCounter(Arc<Mutex<Vec<String>>>);
     impl Drop for DropCounter {
         fn drop(&mut self) {
-            self.0.fetch_add(1, Ordering::Relaxed);
+            self.0
+                .lock()
+                .unwrap()
+                .push(std::thread::current().name().unwrap_or("unnamed").into());
         }
     }
 
-    let drops = Arc::new(AtomicUsize::new(0));
-    let mut pending = Some(DropCounter(Arc::clone(&drops)));
-    defer_or_forget(
-        &mut pending,
-        std::sync::mpsc::TrySendError::Full(DropCounter(Arc::clone(&drops))),
-    );
-    defer_or_forget(
-        &mut pending,
-        std::sync::mpsc::TrySendError::Disconnected(DropCounter(Arc::clone(&drops))),
-    );
-    assert_eq!(drops.load(Ordering::Relaxed), 0);
+    const CAPACITY: usize = 8;
+    let drops = Arc::new(Mutex::new(Vec::new()));
+    let (primary_tx, primary_rx) = std::sync::mpsc::sync_channel(CAPACITY);
+    let (fallback_tx, fallback_rx) = std::sync::mpsc::sync_channel(CAPACITY);
 
-    drop(pending);
-    assert_eq!(drops.load(Ordering::Relaxed), 1);
+    for _ in 0..CAPACITY {
+        try_reclaim(&primary_tx, &fallback_tx, DropCounter(Arc::clone(&drops))).unwrap();
+    }
+    for _ in 0..CAPACITY {
+        try_reclaim(&primary_tx, &fallback_tx, DropCounter(Arc::clone(&drops))).unwrap();
+    }
+    let pending =
+        try_reclaim(&primary_tx, &fallback_tx, DropCounter(Arc::clone(&drops))).unwrap_err();
+    assert!(drops.lock().unwrap().is_empty());
+
+    let (credit_tx, credit_rx) = std::sync::mpsc::sync_channel(0);
+    let primary_worker = std::thread::Builder::new()
+        .name("test-ir-primary-reclaimer".into())
+        .spawn(move || {
+            for index in 0..=CAPACITY {
+                drop(primary_rx.recv().unwrap());
+                if index == 0 {
+                    credit_tx.send(()).unwrap();
+                }
+            }
+        })
+        .unwrap();
+    let fallback_worker = std::thread::Builder::new()
+        .name("test-ir-fallback-reclaimer".into())
+        .spawn(move || {
+            for _ in 0..CAPACITY {
+                drop(fallback_rx.recv().unwrap());
+            }
+        })
+        .unwrap();
+    credit_rx.recv().unwrap();
+    try_reclaim(&primary_tx, &fallback_tx, pending).unwrap();
+    primary_worker.join().unwrap();
+    fallback_worker.join().unwrap();
+
+    let drop_threads = drops.lock().unwrap();
+    assert_eq!(drop_threads.len(), CAPACITY * 2 + 1);
+    assert!(drop_threads.iter().all(|name| name.contains("reclaimer")));
+}
+
+#[test]
+fn disconnected_primary_uses_the_prestarted_fallback_reclaimer() {
+    use std::sync::Mutex;
+
+    #[derive(Debug)]
+    struct DropCounter(Arc<Mutex<Option<String>>>);
+    impl Drop for DropCounter {
+        fn drop(&mut self) {
+            *self.0.lock().unwrap() =
+                Some(std::thread::current().name().unwrap_or("unnamed").into());
+        }
+    }
+
+    let (primary_tx, primary_rx) = std::sync::mpsc::sync_channel(1);
+    drop(primary_rx);
+    let (fallback_tx, fallback_rx) = std::sync::mpsc::sync_channel(1);
+    let dropped_on = Arc::new(Mutex::new(None));
+    try_reclaim(
+        &primary_tx,
+        &fallback_tx,
+        DropCounter(Arc::clone(&dropped_on)),
+    )
+    .unwrap();
+    let worker = std::thread::Builder::new()
+        .name("test-ir-disconnect-fallback".into())
+        .spawn(move || drop(fallback_rx.recv().unwrap()))
+        .unwrap();
+    worker.join().unwrap();
+    assert_eq!(
+        dropped_on.lock().unwrap().as_deref(),
+        Some("test-ir-disconnect-fallback")
+    );
+}
+
+fn empty_retired_ir_state() -> RetiredIrState {
+    RetiredIrState {
+        state: Arc::new(None),
+        nupc_engines: Vec::new(),
+        fdl_flat: Vec::new(),
+        fft_scratch: Vec::new(),
+        rayon_accum_pool: Vec::new(),
+        ir_file: String::new(),
+    }
+}
+
+#[test]
+fn process_adoption_backpressures_and_recovers_without_realtime_ownership_work() {
+    use sotf_host::assert_no_allocs;
+    use std::sync::Mutex;
+
+    const CAPACITY: usize = 8;
+    let (primary_tx, primary_rx) = std::sync::mpsc::sync_channel(CAPACITY);
+    let (fallback_tx, fallback_rx) = std::sync::mpsc::sync_channel(CAPACITY);
+    for _ in 0..CAPACITY {
+        assert!(primary_tx.try_send(empty_retired_ir_state()).is_ok());
+        assert!(fallback_tx.try_send(empty_retired_ir_state()).is_ok());
+    }
+
+    let mut plugin = make_delta_ir_plugin(false, false);
+    plugin.test_ir_reclaimers = Some((primary_tx.clone(), fallback_tx.clone()));
+    plugin.last_output[0] = 1.0;
+    let original_state = plugin.state.load_full();
+
+    let first = make_delta_ir_result("first-ir");
+    let first_state = Arc::clone(&first.state);
+    plugin.desired_generation = 1;
+    let (first_tx, first_rx) = std::sync::mpsc::channel();
+    plugin.ir_load_result_rx = Some(first_rx);
+    plugin.ir_load_result_keepalive = Some(first_tx.clone());
+    first_tx
+        .send(IrLoadCompletion {
+            generation: 1,
+            result: Ok(first),
+        })
+        .unwrap();
+    drop(first_tx);
+
+    let context = ProcessContext::new(48_000, 1);
+    let mut sample = [0.0_f32];
+    assert_no_allocs("Convolution saturated async adoption", || {
+        plugin.process_in_place(&mut sample, &context).unwrap();
+    });
+    assert!(Arc::ptr_eq(&plugin.state.load_full(), &first_state));
+    assert!(plugin.retired_pending.is_some());
+    assert_eq!(plugin.transition_remaining, 127);
+    assert!(
+        sample[0] > 0.9 && sample[0] < 1.0,
+        "crossfade sample={}",
+        sample[0]
+    );
+    assert_eq!(Arc::strong_count(&original_state), 2);
+
+    let second = make_delta_ir_result("second-ir");
+    let second_state = Arc::clone(&second.state);
+    plugin.desired_generation = 2;
+    let (second_tx, second_rx) = std::sync::mpsc::channel();
+    plugin.ir_load_result_rx = Some(second_rx);
+    plugin.ir_load_result_keepalive = Some(second_tx.clone());
+    second_tx
+        .send(IrLoadCompletion {
+            generation: 2,
+            result: Ok(second),
+        })
+        .unwrap();
+    drop(second_tx);
+    assert_no_allocs("Convolution fenced adoption", || {
+        plugin.process_in_place(&mut sample, &context).unwrap();
+    });
+    assert!(Arc::ptr_eq(&plugin.state.load_full(), &first_state));
+    assert!(plugin.ir_load_result_rx.is_some());
+
+    let drop_threads = Arc::new(Mutex::new(Vec::new()));
+    let (credit_tx, credit_rx) = std::sync::mpsc::channel();
+    let primary_drop_threads = Arc::clone(&drop_threads);
+    let primary_credit = credit_tx.clone();
+    let primary_worker = std::thread::Builder::new()
+        .name("test-process-primary-reclaimer".into())
+        .spawn(move || {
+            let mut first = true;
+            while let Ok(retired) = primary_rx.recv() {
+                drop(retired);
+                primary_drop_threads
+                    .lock()
+                    .unwrap()
+                    .push(std::thread::current().name().unwrap().to_string());
+                if first {
+                    primary_credit.send(()).unwrap();
+                    first = false;
+                }
+            }
+        })
+        .unwrap();
+    let fallback_drop_threads = Arc::clone(&drop_threads);
+    let fallback_worker = std::thread::Builder::new()
+        .name("test-process-fallback-reclaimer".into())
+        .spawn(move || {
+            let mut first = true;
+            while let Ok(retired) = fallback_rx.recv() {
+                drop(retired);
+                fallback_drop_threads
+                    .lock()
+                    .unwrap()
+                    .push(std::thread::current().name().unwrap().to_string());
+                if first {
+                    credit_tx.send(()).unwrap();
+                    first = false;
+                }
+            }
+        })
+        .unwrap();
+    credit_rx.recv().unwrap();
+    credit_rx.recv().unwrap();
+
+    assert_no_allocs("Convolution retirement recovery and adoption", || {
+        plugin.process_in_place(&mut sample, &context).unwrap();
+    });
+    assert!(plugin.retired_pending.is_none());
+    assert!(plugin.ir_load_result_rx.is_none());
+    assert!(Arc::ptr_eq(&plugin.state.load_full(), &second_state));
+    assert_eq!(plugin.transition_remaining, 127);
+
+    plugin.test_ir_reclaimers = None;
+    drop(primary_tx);
+    drop(fallback_tx);
+    primary_worker.join().unwrap();
+    fallback_worker.join().unwrap();
+
+    assert_eq!(Arc::strong_count(&original_state), 1);
+    assert_eq!(Arc::strong_count(&first_state), 1);
+    let threads = drop_threads.lock().unwrap();
+    assert_eq!(threads.len(), CAPACITY * 2 + 2);
+    assert!(threads.iter().all(|name| name.contains("reclaimer")));
+}
+
+#[test]
+fn adoption_reset_is_bounded_by_stream_buffers_not_ir_length() {
+    let mut plugin = ConvolutionPlugin::new(2, 48_000);
+    plugin.fdl_flat = vec![Complex::new(3.0, -2.0); FFT_SIZE * 1024];
+    for buffer in &mut plugin.input_buffers {
+        buffer.fill(1.0);
+    }
+    for buffer in &mut plugin.output_ring {
+        buffer.fill(1.0);
+    }
+    plugin.input_fill = 17;
+    plugin.output_ring_available = 23;
+
+    plugin.reset_fixed_streaming_state();
+
+    assert_eq!(plugin.fdl_flat.len(), FFT_SIZE * 1024);
+    assert_eq!(plugin.fdl_flat[0], Complex::new(3.0, -2.0));
+    assert_eq!(
+        plugin.fdl_flat[plugin.fdl_flat.len() - 1],
+        Complex::new(3.0, -2.0)
+    );
+    assert_eq!(plugin.input_fill, 0);
+    assert_eq!(plugin.output_ring_available, 0);
+    assert!(
+        plugin
+            .input_buffers
+            .iter()
+            .flatten()
+            .all(|sample| *sample == 0.0)
+    );
+    assert!(
+        plugin
+            .output_ring
+            .iter()
+            .flatten()
+            .all(|sample| *sample == 0.0)
+    );
 }
 
 #[path = "tests/misc.rs"]
@@ -161,6 +407,8 @@ fn upc_automation_envelope_is_captured_at_input_time() {
 
 #[test]
 fn stale_and_failed_async_generations_never_replace_last_known_good() {
+    use sotf_host::assert_no_allocs;
+
     let mut plugin = make_delta_ir_plugin(false, false);
     let original_state = plugin.state.load_full();
     plugin.desired_generation = 7;
@@ -170,27 +418,32 @@ fn stale_and_failed_async_generations_never_replace_last_known_good() {
     );
     let (tx, rx) = std::sync::mpsc::channel();
     plugin.ir_load_result_rx = Some(rx);
+    plugin.ir_load_result_keepalive = Some(tx.clone());
     tx.send(IrLoadCompletion {
         generation: 6,
         result: Err("stale failure".into()),
     })
     .unwrap();
+    drop(tx);
     let mut block = vec![0.0; 16];
-    plugin
-        .process_in_place(&mut block, &ProcessContext::new(48_000, 16))
-        .unwrap();
+    let context = ProcessContext::new(48_000, 16);
+    assert_no_allocs("Convolution stale failed completion", || {
+        plugin.process_in_place(&mut block, &context).unwrap();
+    });
     assert!(Arc::ptr_eq(&original_state, &plugin.state.load_full()));
 
     let (tx, rx) = std::sync::mpsc::channel();
     plugin.ir_load_result_rx = Some(rx);
+    plugin.ir_load_result_keepalive = Some(tx.clone());
     tx.send(IrLoadCompletion {
         generation: 7,
         result: Err("decode failed".into()),
     })
     .unwrap();
-    plugin
-        .process_in_place(&mut block, &ProcessContext::new(48_000, 16))
-        .unwrap();
+    drop(tx);
+    assert_no_allocs("Convolution current failed completion", || {
+        plugin.process_in_place(&mut block, &context).unwrap();
+    });
     assert_eq!(plugin.load_status(), ConvolutionLoadStatus::Failed);
     assert!(Arc::ptr_eq(&original_state, &plugin.state.load_full()));
 }
@@ -383,6 +636,33 @@ fn make_delta_ir_plugin(use_nupc: bool, zero_latency_head: bool) -> ConvolutionP
         }];
     }
     plugin
+}
+
+fn make_delta_ir_result(ir_file: &str) -> IrLoadResult {
+    let mut planner = FftPlanner::<f32>::new();
+    let fft_forward = planner.plan_fft_forward(FFT_SIZE);
+    let fft_inverse = planner.plan_fft_inverse(FFT_SIZE);
+    let mut partition = vec![Complex::new(0.0, 0.0); FFT_SIZE];
+    partition[0] = Complex::new(1.0, 0.0);
+    fft_forward.process(&mut partition);
+    let scratch_len = fft_forward
+        .get_inplace_scratch_len()
+        .max(fft_inverse.get_inplace_scratch_len());
+    IrLoadResult {
+        state: Arc::new(Some(ConvolutionState {
+            partitions: vec![vec![partition]],
+            num_partitions: 1,
+            ir_channels: 1,
+            fft_forward: Some(fft_forward),
+            fft_inverse: Some(fft_inverse),
+        })),
+        nupc_engines: Vec::new(),
+        fdl_flat: vec![Complex::new(0.0, 0.0); FFT_SIZE],
+        fdl_head: 0,
+        fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
+        rayon_accum_pool: Vec::new(),
+        ir_file: ir_file.into(),
+    }
 }
 
 fn processed_delta_peak(mut plugin: ConvolutionPlugin, mix: f32) -> (usize, f32) {

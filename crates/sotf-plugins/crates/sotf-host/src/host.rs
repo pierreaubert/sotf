@@ -52,6 +52,8 @@ pub trait Host {
     fn drain(&mut self, output: &mut [f32]) -> Result<PluginDrainResult, String>;
     fn reset(&mut self);
     fn total_latency_samples(&self) -> usize;
+    /// Largest worst-case plugin work quantum, expressed at the host input rate.
+    fn realtime_quantum_frames(&self) -> usize;
     /// RT diagnostics: collect cache contention stats from all analyzer plugins.
     /// Returns Vec of (plugin_index, contention_count, update_count).
     fn take_analyzer_contention_stats(&mut self) -> Vec<(usize, u64, u64)> {

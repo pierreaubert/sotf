@@ -72,25 +72,26 @@ impl SecurePluginSharedMemory {
             .copy_from_slice(&bytes);
         let header = self.header();
         header
-            .control_request_len
+            .control
+            .request_len
             .store(bytes.len() as u32, Ordering::Release);
-        header.control_response_len.store(0, Ordering::Release);
-        header.control_status.store(0, Ordering::Release);
-        header.control_sequence.store(sequence, Ordering::Release);
-        header.control_state.store(1, Ordering::Release);
+        header.control.response_len.store(0, Ordering::Release);
+        header.control.status.store(0, Ordering::Release);
+        header.control.sequence.store(sequence, Ordering::Release);
+        header.control.state.store(1, Ordering::Release);
         Ok(())
     }
 
     pub fn take_control_request(&self) -> io::Result<Option<(u64, PluginIpcControlRequest)>> {
         let header = self.header();
-        if header.control_state.load(Ordering::Acquire) != 1 {
+        if header.control.state.load(Ordering::Acquire) != 1 {
             return Ok(None);
         }
-        let sequence = header.control_sequence.load(Ordering::Acquire);
-        if header.control_worker_sequence.load(Ordering::Acquire) == sequence {
+        let sequence = header.control.sequence.load(Ordering::Acquire);
+        if header.control.worker_sequence.load(Ordering::Acquire) == sequence {
             return Ok(None);
         }
-        let len = header.control_request_len.load(Ordering::Acquire) as usize;
+        let len = header.control.request_len.load(Ordering::Acquire) as usize;
         if len > PLUGIN_IPC_CONTROL_BYTES {
             return Err(invalid_data(
                 "invalid external-plugin control request length",
@@ -121,12 +122,14 @@ impl SecurePluginSharedMemory {
             .copy_from_slice(&bytes);
         let header = self.header();
         header
-            .control_response_len
+            .control
+            .response_len
             .store(bytes.len() as u32, Ordering::Release);
         header
-            .control_worker_sequence
+            .control
+            .worker_sequence
             .store(sequence, Ordering::Release);
-        header.control_state.store(2, Ordering::Release);
+        header.control.state.store(2, Ordering::Release);
         Ok(())
     }
 
@@ -135,12 +138,12 @@ impl SecurePluginSharedMemory {
         sequence: u64,
     ) -> io::Result<Option<PluginIpcControlResponse>> {
         let header = self.header();
-        if header.control_state.load(Ordering::Acquire) != 2
-            || header.control_worker_sequence.load(Ordering::Acquire) != sequence
+        if header.control.state.load(Ordering::Acquire) != 2
+            || header.control.worker_sequence.load(Ordering::Acquire) != sequence
         {
             return Ok(None);
         }
-        let len = header.control_response_len.load(Ordering::Acquire) as usize;
+        let len = header.control.response_len.load(Ordering::Acquire) as usize;
         if len > PLUGIN_IPC_CONTROL_BYTES {
             return Err(invalid_data(
                 "invalid external-plugin control response length",
@@ -151,7 +154,7 @@ impl SecurePluginSharedMemory {
             &self.mmap.as_ref().expect("mapping is present")[offset..offset + len],
         )
         .map_err(|error| invalid_data(format!("invalid control response JSON: {error}")))?;
-        header.control_state.store(0, Ordering::Release);
+        header.control.state.store(0, Ordering::Release);
         Ok(Some(response))
     }
     pub fn create(layout: PluginIpcLayout) -> io::Result<Self> {

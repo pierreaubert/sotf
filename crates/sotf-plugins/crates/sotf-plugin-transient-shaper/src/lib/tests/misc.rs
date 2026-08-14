@@ -66,7 +66,7 @@ fn test_transient_shaper_enhances_attack() {
         output_gain_db: 0.0,
         mix: 1.0,
     };
-    let mut plugin = TransientShaperPlugin::from_params(channels, params);
+    let mut plugin = TransientShaperPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     // Create a signal with a sharp transient followed by sustained signal
@@ -113,7 +113,7 @@ fn test_transient_shaper_reduces_sustain() {
         output_gain_db: 0.0,
         mix: 1.0,
     };
-    let mut plugin = TransientShaperPlugin::from_params(channels, params);
+    let mut plugin = TransientShaperPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     // Create a sustained signal (no transient, just continuous)
@@ -168,7 +168,7 @@ fn test_sensitivity_low_level_step_affects_audio_output() {
         output_gain_db: 0.0,
         mix: 1.0,
     };
-    let mut plugin_low = TransientShaperPlugin::from_params(channels, params_low);
+    let mut plugin_low = TransientShaperPlugin::from_validated_params(channels, params_low);
     plugin_low.initialize(48000).unwrap();
     let mut buffer_low = signal.clone();
     let ctx = make_context(num_frames);
@@ -182,7 +182,7 @@ fn test_sensitivity_low_level_step_affects_audio_output() {
         output_gain_db: 0.0,
         mix: 1.0,
     };
-    let mut plugin_high = TransientShaperPlugin::from_params(channels, params_high);
+    let mut plugin_high = TransientShaperPlugin::from_validated_params(channels, params_high);
     plugin_high.initialize(48000).unwrap();
     let mut buffer_high = signal.clone();
     plugin_high
@@ -214,7 +214,7 @@ fn test_output_gain_applies_to_final_mix() {
         output_gain_db: 6.0, // +6 dB = ~2.0x linear
         mix: 0.0,            // fully dry
     };
-    let mut plugin = TransientShaperPlugin::from_params(channels, params);
+    let mut plugin = TransientShaperPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     let mut buffer = vec![0.0f32; num_frames * channels];
@@ -306,7 +306,7 @@ fn test_sensitivity_threshold_gate_affects_audio_output() {
         output_gain_db: 0.0,
         mix: 1.0,
     };
-    let mut plugin_low = TransientShaperPlugin::from_params(channels, params_low);
+    let mut plugin_low = TransientShaperPlugin::from_validated_params(channels, params_low);
     plugin_low.initialize(48000).unwrap();
 
     // High sensitivity (threshold raised → quiet parts bypass shaping)
@@ -317,7 +317,7 @@ fn test_sensitivity_threshold_gate_affects_audio_output() {
         output_gain_db: 0.0,
         mix: 1.0,
     };
-    let mut plugin_high = TransientShaperPlugin::from_params(channels, params_high);
+    let mut plugin_high = TransientShaperPlugin::from_validated_params(channels, params_high);
     plugin_high.initialize(48000).unwrap();
 
     let ctx = make_context(num_frames);
@@ -353,7 +353,7 @@ fn test_silence_produces_no_nan_inf() {
         output_gain_db: 0.0,
         mix: 1.0,
     };
-    let mut plugin = TransientShaperPlugin::from_params(channels, params);
+    let mut plugin = TransientShaperPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     let num_frames = 9600; // 200ms
@@ -441,7 +441,7 @@ fn test_output_gain_post_mix() {
         output_gain_db: 6.0,   // ≈ ×2 linear
         mix: 0.0,              // full dry
     };
-    let mut plugin = TransientShaperPlugin::from_params(channels, params);
+    let mut plugin = TransientShaperPlugin::from_validated_params(channels, params);
     plugin.initialize(48000).unwrap();
 
     let mut buffer = vec![input_val; num_frames];

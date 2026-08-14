@@ -172,6 +172,10 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
         self.plugin.latency_samples()
     }
 
+    fn realtime_quantum_frames(&self) -> usize {
+        self.plugin.realtime_quantum_frames()
+    }
+
     fn cost_class(&self) -> PluginCostClass {
         self.plugin.cost_class()
     }

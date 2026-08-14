@@ -45,6 +45,11 @@ fn last_error_string() -> String {
         .into_owned()
 }
 
+fn normalized_parameter(handle: *const super::PluginHandle, id: &str) -> f64 {
+    let id = CString::new(id).unwrap();
+    plugin_get_parameter(handle, id.as_ptr())
+}
+
 #[test]
 fn test_plugin_lifecycle() {
     let plugin_type = CString::new("EQ").unwrap();
@@ -563,6 +568,114 @@ fn test_state_save_load_roundtrip_ownership() {
     assert!((read - 0.75).abs() < f64::EPSILON * 10.0);
 
     plugin_free_state(state, state_len);
+    plugin_destroy(handle);
+}
+
+#[test]
+fn linear_phase_eq_structural_state_rebuilds_transactionally() {
+    let plugin_type = CString::new("linear_phase_eq").unwrap();
+    let config =
+        CString::new(r#"{"num_filters":1,"fir_length_index":0,"phase_mode_index":0,"filters":[]}"#)
+            .unwrap();
+    let handle = plugin_create(plugin_type.as_ptr(), config.as_ptr(), 48_000, 2, 2);
+    assert!(!handle.is_null());
+    let parameter_info = plugin_get_parameter_info(handle, 0);
+    assert!(!parameter_info.is_null());
+
+    let state = br#"{
+        "num_filters": 2,
+        "fir_length": 2,
+        "phase_mode": 1,
+        "auto_gain": true,
+        "mix": 0.25,
+        "band_0_type": 2,
+        "band_0_freq": 2000.0,
+        "band_0_q": 2.0,
+        "band_0_gain": 6.0,
+        "band_0_active": false,
+        "band_1_type": 0,
+        "band_1_freq": 500.0,
+        "band_1_q": 1.0,
+        "band_1_gain": -3.0,
+        "band_1_active": true
+    }"#;
+    assert_eq!(
+        plugin_load_state(handle, state.as_ptr(), state.len()),
+        PluginError::Success as c_int
+    );
+    assert!((normalized_parameter(handle, "num_filters") - (1.0 / 9.0)).abs() < 1e-6);
+    assert!((normalized_parameter(handle, "fir_length") - (2.0 / 3.0)).abs() < 1e-6);
+    assert_eq!(normalized_parameter(handle, "phase_mode"), 1.0);
+    assert_eq!(normalized_parameter(handle, "auto_gain"), 1.0);
+    assert!((normalized_parameter(handle, "mix") - 0.25).abs() < 1e-6);
+    assert!((normalized_parameter(handle, "band_0_type") - 0.5).abs() < 1e-6);
+    assert!((normalized_parameter(handle, "band_0_gain") - 0.625).abs() < 1e-6);
+    assert_eq!(normalized_parameter(handle, "band_0_active"), 0.0);
+    assert_eq!(plugin_get_parameter_info(handle, 0), parameter_info);
+
+    // Partial state updates have the same semantics as the generic loader:
+    // omitted live values survive the required structural reconstruction.
+    let partial = br#"{"fir_length":1}"#;
+    assert_eq!(
+        plugin_load_state(handle, partial.as_ptr(), partial.len()),
+        PluginError::Success as c_int
+    );
+    assert!((normalized_parameter(handle, "fir_length") - (1.0 / 3.0)).abs() < 1e-6);
+    assert!((normalized_parameter(handle, "mix") - 0.25).abs() < 1e-6);
+    assert!((normalized_parameter(handle, "band_0_gain") - 0.625).abs() < 1e-6);
+
+    // Reapplying the same structural state is a supported round-trip and must
+    // reconstruct from the last committed configuration.
+    assert_eq!(
+        plugin_load_state(handle, state.as_ptr(), state.len()),
+        PluginError::Success as c_int
+    );
+    assert!((normalized_parameter(handle, "fir_length") - (2.0 / 3.0)).abs() < 1e-6);
+
+    // Candidate validation failure must not alter the live plugin.
+    let invalid = br#"{"fir_length":99,"mix":0.75}"#;
+    assert_eq!(
+        plugin_load_state(handle, invalid.as_ptr(), invalid.len()),
+        PluginError::InvalidConfig as c_int
+    );
+    assert!((normalized_parameter(handle, "fir_length") - (2.0 / 3.0)).abs() < 1e-6);
+    assert!((normalized_parameter(handle, "mix") - 0.25).abs() < 1e-6);
+
+    plugin_destroy(handle);
+}
+
+#[test]
+fn linear_phase_eq_preset_import_rebuilds_alias_and_updates_structure() {
+    let plugin_type = CString::new("Linear-Phase-EQ").unwrap();
+    let config = CString::new(r#"{"fir_length_index":0,"phase_mode":0}"#).unwrap();
+    let handle = plugin_create(plugin_type.as_ptr(), config.as_ptr(), 48_000, 2, 2);
+    assert!(!handle.is_null());
+
+    let state = br#"{
+        "num_filters":1,
+        "fir_length":3,
+        "phase_mode":1,
+        "auto_gain":false,
+        "mix":0.5,
+        "band_0_type":4,
+        "band_0_freq":4000.0,
+        "band_0_q":0.7,
+        "band_0_gain":-6.0,
+        "band_0_active":true
+    }"#;
+    let document = serde_json::to_vec(&serde_json::json!({
+        "state": state.as_slice(),
+    }))
+    .unwrap();
+    assert_eq!(
+        plugin_import_preset_json(handle, document.as_ptr(), document.len()),
+        PluginError::Success as c_int
+    );
+    assert_eq!(normalized_parameter(handle, "fir_length"), 1.0);
+    assert_eq!(normalized_parameter(handle, "phase_mode"), 1.0);
+    assert_eq!(normalized_parameter(handle, "band_0_type"), 1.0);
+    assert!((normalized_parameter(handle, "band_0_gain") - 0.375).abs() < 1e-6);
+
     plugin_destroy(handle);
 }
 

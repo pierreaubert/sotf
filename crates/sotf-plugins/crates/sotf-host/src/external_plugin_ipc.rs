@@ -64,13 +64,20 @@ struct PluginIpcHeader {
     _pad1: AtomicU32,
     transport_loop_start: AtomicU64,
     transport_loop_end: AtomicU64,
-    control_sequence: AtomicU64,
-    control_worker_sequence: AtomicU64,
-    control_state: AtomicU32,
-    control_request_len: AtomicU32,
-    control_response_len: AtomicU32,
-    control_status: AtomicU32,
+    control: PluginIpcControlHeader,
     reserved: [AtomicU32; 6],
+}
+
+/// Control-plane atomics are grouped to keep the mapped top-level header
+/// reviewable without changing the C layout or audio-plane ownership.
+#[repr(C)]
+struct PluginIpcControlHeader {
+    sequence: AtomicU64,
+    worker_sequence: AtomicU64,
+    state: AtomicU32,
+    request_len: AtomicU32,
+    response_len: AtomicU32,
+    status: AtomicU32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -28,6 +28,9 @@ use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::sync::Arc;
 
+const NUPC_REALTIME_QUANTUM_FRAMES: usize = 32;
+const REALTIME_SCHEDULER_QUANTUM_FRAMES: usize = 128;
+
 #[allow(
     dead_code,
     reason = "legacy OLA buffers retained for state-format compatibility"
@@ -83,6 +86,17 @@ pub struct LinearPhaseEqPlugin {
 }
 
 impl LinearPhaseEqPlugin {
+    /// Minimum queued-work horizon for the engine scheduler.
+    ///
+    /// Smaller streaming partitions are accepted, but the non-uniform tail
+    /// occasionally completes several FFT levels on one callback. A queued
+    /// engine must keep at least this much input-rate audio ahead of hardware
+    /// consumption. This does not extend a direct AU/NIH callback deadline;
+    /// QA reports those physical-callback misses separately.
+    pub fn realtime_quantum_frames(&self) -> usize {
+        REALTIME_SCHEDULER_QUANTUM_FRAMES
+    }
+
     pub fn new(channels: usize, sample_rate: u32) -> Self {
         let fir_length_index = default_fir_length_index();
         let fir_length = fir_length_from_index(fir_length_index);
@@ -384,7 +398,7 @@ impl LinearPhaseEqPlugin {
         // Pre-compute FFT of the FIR
         self.compute_fir_spectrum();
         self.convolvers = (0..self.channels)
-            .map(|_| NupcEngine::new(&self.fir_coeffs, 32))
+            .map(|_| NupcEngine::new(&self.fir_coeffs, NUPC_REALTIME_QUANTUM_FRAMES))
             .collect();
     }
 
@@ -749,6 +763,10 @@ impl ParametricInPlacePlugin for LinearPhaseEqPlugin {
         } else {
             32
         }
+    }
+
+    fn realtime_quantum_frames(&self) -> usize {
+        REALTIME_SCHEDULER_QUANTUM_FRAMES
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {

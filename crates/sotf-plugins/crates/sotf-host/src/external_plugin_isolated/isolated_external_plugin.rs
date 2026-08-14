@@ -2,7 +2,7 @@ use super::isolated_external_plugin_config::IsolatedExternalPluginConfig;
 use super::isolated_external_plugin_config::build_worker_launch_command;
 use crate::external_plugin::{
     ExternalPluginHostingPlan, ExternalPluginSandboxMode, ExternalPluginState, PluginDescriptor,
-    plan_external_plugin_hosting,
+    PluginDescriptorProbeCache, plan_external_plugin_hosting,
 };
 use crate::external_plugin_host::{ExternalPluginHostBlockStatus, ExternalPluginHostProxy};
 use crate::external_plugin_ipc::{PluginIpcControlRequest, PluginIpcControlResponse};
@@ -38,6 +38,19 @@ pub struct IsolatedExternalPlugin {
 }
 
 impl IsolatedExternalPlugin {
+    /// Resolve scanner-only metadata through a caller-owned quarantined probe
+    /// process, then allocate IPC using the validated native bus layout.
+    pub fn new_with_quarantined_probe(
+        descriptor: PluginDescriptor,
+        sample_rate: u32,
+        config: IsolatedExternalPluginConfig,
+        cache: &mut PluginDescriptorProbeCache,
+        probe: impl FnOnce(&PluginDescriptor) -> Result<PluginDescriptor, String>,
+    ) -> Result<Self, String> {
+        let descriptor = cache.resolve_with_quarantined_probe(&descriptor, probe)?;
+        Self::new(descriptor, sample_rate, config)
+    }
+
     pub fn new(
         descriptor: PluginDescriptor,
         sample_rate: u32,
@@ -150,13 +163,8 @@ impl IsolatedExternalPlugin {
         }
 
         if config.start_worker
-            && let Err(mut error) = plugin
-                .wait_for_worker_latency_metadata(config.worker_startup_timeout)
-                .and_then(|latency| {
-                    plugin.proxy.configure_fallback_latency(latency)?;
-                    plugin.latency_samples = latency;
-                    Ok(latency)
-                })
+            && let Err(mut error) =
+                plugin.finalize_worker_latency_metadata(config.worker_startup_timeout)
         {
             if let Some(supervisor) = plugin.supervisor.as_mut() {
                 if let Ok(Some(ExternalPluginProcessEvent::Exited { status })) = supervisor.poll() {
@@ -357,12 +365,31 @@ impl IsolatedExternalPlugin {
         }
     }
 
+    /// Freeze worker latency into both the graph-visible contract and the dry
+    /// fallback delay before the plugin can be added to a built host graph.
+    pub(super) fn finalize_worker_latency_metadata(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<usize, String> {
+        let latency_samples = self.wait_for_worker_latency_metadata(timeout)?;
+        self.proxy.configure_fallback_latency(latency_samples)?;
+        self.latency_samples = latency_samples;
+        Ok(latency_samples)
+    }
+
     pub(super) fn validate_process_buffers(
         &self,
         input: &[f32],
         output: &[f32],
         frames: usize,
     ) -> Result<(), String> {
+        let max_frames = self.proxy.pipeline_latency_samples();
+        if frames > max_frames {
+            return Err(format!(
+                "isolated external plugin '{}' received {frames} frames but its configured maximum is {max_frames}",
+                self.descriptor.name
+            ));
+        }
         let expected_input = frames
             .checked_mul(self.input_channels)
             .ok_or_else(|| "isolated external plugin input length overflow".to_string())?;
@@ -396,7 +423,10 @@ impl IsolatedExternalPlugin {
     }
 
     pub(super) fn record_block_status(&mut self, status: ExternalPluginHostBlockStatus) {
-        if matches!(status, ExternalPluginHostBlockStatus::Processed) {
+        if matches!(
+            status,
+            ExternalPluginHostBlockStatus::Processed | ExternalPluginHostBlockStatus::Priming
+        ) {
             self.consecutive_block_failures = 0;
             return;
         }
@@ -488,7 +518,7 @@ impl Plugin for IsolatedExternalPlugin {
 
     fn latency_samples(&self) -> usize {
         self.latency_samples
-            .max(self.worker_reported_latency_samples().unwrap_or(0))
+            .saturating_add(self.proxy.pipeline_latency_samples())
     }
 
     fn parameters(&self) -> Vec<Parameter> {
@@ -545,6 +575,7 @@ impl Plugin for IsolatedExternalPlugin {
         self.record_block_status(status);
 
         match status {
+            ExternalPluginHostBlockStatus::Priming => {}
             ExternalPluginHostBlockStatus::Processed => {}
             ExternalPluginHostBlockStatus::TimedOut => {
                 crate::rate_limited_log!(

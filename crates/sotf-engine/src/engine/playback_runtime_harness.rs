@@ -627,6 +627,7 @@ mod tests {
     }
 
     #[cfg(not(feature = "streaming"))]
+    #[allow(clippy::too_many_arguments)]
     fn spawn_processing_thread(
         decoder_rx: std::sync::mpsc::Receiver<crate::engine::DecoderMessage>,
         message_tx: std::sync::mpsc::SyncSender<ProcessingMessage>,

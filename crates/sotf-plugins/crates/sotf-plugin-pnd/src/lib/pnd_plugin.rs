@@ -169,7 +169,7 @@ impl PndPlugin {
 
     /// Construct a plugin from serialized parameters after applying the same
     /// finite/range checks used by the live parameter schema.
-    pub fn try_from_params(channels: usize, params: PndPluginParams) -> PluginResult<Self> {
+    pub fn from_params(channels: usize, params: PndPluginParams) -> PluginResult<Self> {
         if channels == 0 {
             return Err("PND requires at least one channel".to_string());
         }
@@ -208,14 +208,16 @@ impl PndPlugin {
         Ok(plugin)
     }
 
-    /// Backwards-compatible infallible constructor. New factory code should
-    /// use [`Self::try_from_params`] so malformed serialized state is rejected
-    /// instead of reaching DSP initialization.
-    pub fn from_params(channels: usize, params: PndPluginParams) -> Self {
-        Self::try_from_params(channels, params).unwrap_or_else(|_| {
-            Self::try_from_params(channels.max(1), PndPluginParams::default())
-                .expect("default PND parameters are valid")
-        })
+    /// Convenience for compile-time/test configurations that are expected to
+    /// be valid. Malformed state is never replaced with defaults.
+    #[doc(hidden)]
+    pub fn from_validated_params(channels: usize, params: PndPluginParams) -> Self {
+        Self::from_params(channels, params).expect("PND parameters must be valid")
+    }
+
+    /// Compatibility alias for callers already using the explicit fallible name.
+    pub fn try_from_params(channels: usize, params: PndPluginParams) -> PluginResult<Self> {
+        Self::from_params(channels, params)
     }
 
     /// Phase vocoder processing path: uses STFT analysis/synthesis to shift pitch

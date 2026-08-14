@@ -29,6 +29,7 @@ use sotf_plugins::{
     SpectrumConfig, SpeechDenoiserPlugin, StereoImagerPlugin, StereoImagerPluginParams,
     TransientShaperPlugin, UpmixerPlugin, XtcPlugin, XtcPluginParams,
 };
+use std::cell::Cell;
 #[cfg(any(
     feature = "external-plugin-clap",
     feature = "external-plugin-vst3",
@@ -45,13 +46,24 @@ static REALTIME_LOG_COUNTER: RealtimeLogCounter = RealtimeLogCounter;
 static REALTIME_LOG_INIT: Once = Once::new();
 static REALTIME_LOG_RECORDS: AtomicUsize = AtomicUsize::new(0);
 
+thread_local! {
+    /// Only count records emitted on the thread currently executing the
+    /// measured callback. Worker threads from other serial tests can outlive
+    /// their test body and must not create false positives here.
+    static REALTIME_LOG_COUNTING: Cell<bool> = const { Cell::new(false) };
+}
+
 impl log::Log for RealtimeLogCounter {
     fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
         true
     }
 
     fn log(&self, _record: &log::Record<'_>) {
-        REALTIME_LOG_RECORDS.fetch_add(1, Ordering::Relaxed);
+        REALTIME_LOG_COUNTING.with(|counting| {
+            if counting.get() {
+                REALTIME_LOG_RECORDS.fetch_add(1, Ordering::Relaxed);
+            }
+        });
     }
 
     fn flush(&self) {}
@@ -62,6 +74,7 @@ fn initialize_realtime_log_counter() {
         log::set_logger(&REALTIME_LOG_COUNTER).expect("test logger should install once");
         log::set_max_level(log::LevelFilter::Trace);
     });
+    REALTIME_LOG_COUNTING.with(|counting| counting.set(false));
 }
 
 fn assert_parametric_in_place_process_zero_alloc<P>(
@@ -530,10 +543,12 @@ fn test_band_merge_armed_diagnostic_has_no_allocations_or_logs() {
     let diagnostic_id = ParameterId::from("reconstruction_error_db");
     let _ = plugin.get_parameter(&diagnostic_id);
     REALTIME_LOG_RECORDS.store(0, Ordering::Relaxed);
+    REALTIME_LOG_COUNTING.with(|counting| counting.set(true));
 
     assert_no_allocs("BandMergePlugin armed diagnostic", || {
         plugin.process(&input, &mut output, &context).unwrap();
     });
+    REALTIME_LOG_COUNTING.with(|counting| counting.set(false));
     assert_eq!(
         REALTIME_LOG_RECORDS.load(Ordering::Relaxed),
         0,
@@ -1420,6 +1435,9 @@ fn test_isolated_external_host_timeout_and_quarantine_zero_alloc() {
         descriptor,
         SAMPLE_RATE,
         IsolatedExternalPluginConfig {
+            // Keep the fixed transport latency to one test block so the
+            // delayed fallback is observable after the priming call below.
+            max_block_frames: BUFFER_SIZE as u32,
             deadline: Duration::ZERO,
             start_worker: false,
             max_consecutive_block_failures: 2,

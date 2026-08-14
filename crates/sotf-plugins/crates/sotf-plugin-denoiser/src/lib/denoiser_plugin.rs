@@ -3,6 +3,7 @@ use super::denoiser_data::DenoiserData;
 use super::misc::MIN_IN_PLACE_BLOCK_FRAMES;
 use super::misc::NUM_DISPLAY_BANDS;
 use crate::params::PARAMS as DN;
+#[cfg(not(miri))]
 use math_audio_dsp::simd::ScopedFtz;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
@@ -1020,6 +1021,10 @@ impl ParametricInPlacePlugin for DenoiserPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
+        // Miri cannot execute the architecture-specific FP-control inline
+        // assembly. The guard only changes denormal handling and owns no DSP
+        // state, so omit it under Miri while preserving production behavior.
+        #[cfg(not(miri))]
         let _ftz_guard = ScopedFtz::new();
 
         let num_frames = context.num_frames;
