@@ -37,7 +37,8 @@ expression: plan
         0.0,
         9.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 43,
@@ -48,7 +49,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     }
   ],
   "main_groups": [
@@ -65,7 +67,8 @@ expression: plan
             0.0,
             2.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 2,
@@ -76,7 +79,8 @@ expression: plan
             0.0,
             2.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 3,
@@ -87,18 +91,20 @@ expression: plan
             0.0,
             2.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
-          "param_index": 4,
-          "param_name": "Height Gain",
+          "param_index": 5,
+          "param_name": "LFE Gain",
           "control_type": "vertical_slider",
           "unit": "x",
           "range": [
             0.0,
             2.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     },
@@ -115,7 +121,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 13,
@@ -126,18 +133,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
-        },
-        {
-          "param_index": 14,
-          "param_name": "Upmix Crossover",
-          "control_type": "vertical_slider",
-          "unit": "Hz",
-          "range": [
-            150.0,
-            350.0
-          ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     }
@@ -152,7 +149,8 @@ expression: plan
         0.0,
         3.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 44,
@@ -163,7 +161,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     },
     {
       "param_index": 45,
@@ -174,7 +173,8 @@ expression: plan
         0.0,
         24.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": false
     },
     {
       "param_index": 46,
@@ -185,24 +185,14 @@ expression: plan
         10.0,
         500.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": false
     }
   ],
   "tabs": [
     {
-      "name": "LFE & Bass",
+      "name": "Bass & Output",
       "controls": [
-        {
-          "param_index": 5,
-          "param_name": "LFE Gain",
-          "control_type": "knob",
-          "unit": "x",
-          "range": [
-            0.0,
-            2.0
-          ],
-          "read_only": false
-        },
         {
           "param_index": 6,
           "param_name": "LFE Cutoff",
@@ -212,7 +202,20 @@ expression: plan
             20.0,
             180.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 14,
+          "param_name": "Upmix Crossover",
+          "control_type": "knob",
+          "unit": "Hz",
+          "range": [
+            150.0,
+            350.0
+          ],
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 7,
@@ -223,7 +226,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 8,
@@ -234,7 +238,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         },
         {
           "param_index": 9,
@@ -245,7 +250,8 @@ expression: plan
             20.0,
             80.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         },
         {
           "param_index": 10,
@@ -256,7 +262,8 @@ expression: plan
             1.0,
             100.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         },
         {
           "param_index": 11,
@@ -267,12 +274,13 @@ expression: plan
             10.0,
             500.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         }
       ]
     },
     {
-      "name": "Dialogue",
+      "name": "Spatial",
       "controls": [
         {
           "param_index": 28,
@@ -283,7 +291,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 29,
@@ -294,7 +303,8 @@ expression: plan
             200.0,
             800.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 30,
@@ -305,7 +315,8 @@ expression: plan
             2000.0,
             5000.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 31,
@@ -316,7 +327,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 32,
@@ -327,7 +339,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 33,
@@ -338,13 +351,9 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
-        }
-      ]
-    },
-    {
-      "name": "Ambient",
-      "controls": [
+          "read_only": false,
+          "enabled": true
+        },
         {
           "param_index": 25,
           "param_name": "Surround Bleed",
@@ -354,7 +363,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 26,
@@ -365,7 +375,8 @@ expression: plan
             1.0,
             3.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 27,
@@ -376,13 +387,21 @@ expression: plan
             0.0,
             0.5
           ],
-          "read_only": false
-        }
-      ]
-    },
-    {
-      "name": "Height",
-      "controls": [
+          "read_only": false,
+          "enabled": true
+        },
+        {
+          "param_index": 4,
+          "param_name": "Height Gain",
+          "control_type": "knob",
+          "unit": "x",
+          "range": [
+            0.0,
+            2.0
+          ],
+          "read_only": false,
+          "enabled": true
+        },
         {
           "param_index": 22,
           "param_name": "Height HF Cap",
@@ -392,7 +411,8 @@ expression: plan
             8000.0,
             20000.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 23,
@@ -403,7 +423,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 24,
@@ -414,13 +435,9 @@ expression: plan
             0.0,
             0.5
           ],
-          "read_only": false
-        }
-      ]
-    },
-    {
-      "name": "Enhancement",
-      "controls": [
+          "read_only": false,
+          "enabled": true
+        },
         {
           "param_index": 15,
           "param_name": "HR Direct",
@@ -430,7 +447,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 16,
@@ -441,7 +459,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 17,
@@ -452,7 +471,8 @@ expression: plan
             0.5,
             2.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 18,
@@ -463,7 +483,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 19,
@@ -474,7 +495,8 @@ expression: plan
             0.01,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         },
         {
           "param_index": 20,
@@ -485,7 +507,8 @@ expression: plan
             10.0,
             100.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 21,
@@ -496,7 +519,8 @@ expression: plan
             500.0,
             5000.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     },
@@ -512,7 +536,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 36,
@@ -523,7 +548,8 @@ expression: plan
             0.0,
             2.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 41,
@@ -534,7 +560,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 42,
@@ -545,7 +572,8 @@ expression: plan
             0.05,
             0.5
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": false
         }
       ]
     },
@@ -561,7 +589,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 38,
@@ -572,7 +601,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 39,
@@ -583,7 +613,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 40,
@@ -594,7 +625,8 @@ expression: plan
             0.0,
             1.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     }

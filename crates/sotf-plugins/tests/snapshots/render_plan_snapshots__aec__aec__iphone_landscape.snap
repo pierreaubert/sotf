@@ -39,7 +39,8 @@ expression: plan
             50.0,
             500.0
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         },
         {
           "param_index": 1,
@@ -50,7 +51,8 @@ expression: plan
             0.1,
             0.9
           ],
-          "read_only": false
+          "read_only": false,
+          "enabled": true
         }
       ]
     }
@@ -65,7 +67,8 @@ expression: plan
         0.0,
         1.0
       ],
-      "read_only": false
+      "read_only": false,
+      "enabled": true
     }
   ],
   "tabs": [],
