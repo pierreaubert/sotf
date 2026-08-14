@@ -4,12 +4,9 @@ use super::apply::apply_volume_clamp;
 use super::misc::fallback_output_format;
 use super::misc::initial_buffer_size;
 use super::misc::is_virtual_output_device_name;
-use super::misc::prefill_silence;
 use super::pick::pick_preferred_output_format;
+use super::playback::playback_buffer_capacity;
 use super::playback::playback_recovery_reason;
-use super::playback::{
-    convert_work_horizon_frames, playback_buffer_capacity, validate_playback_work_horizon,
-};
 use super::playback_state::PlaybackState;
 use super::playback_state::flush_completed;
 use super::playback_state::read_ring_buffer;
@@ -361,48 +358,18 @@ fn f32_output_volume_at_unity_does_not_clip_samples() {
 
 #[test]
 fn playback_buffer_capacity_uses_configured_buffer_ms() {
-    assert_eq!(playback_buffer_capacity(48_000, 2, 200, 1), 19_200);
+    assert_eq!(playback_buffer_capacity(48_000, 2, 200), 19_200);
 }
 
 #[test]
 fn playback_buffer_capacity_scales_with_latency_budget() {
-    assert_eq!(playback_buffer_capacity(48_000, 2, 100, 1), 9_600);
-    assert_eq!(playback_buffer_capacity(48_000, 2, 250, 1), 24_000);
+    assert_eq!(playback_buffer_capacity(48_000, 2, 100), 9_600);
+    assert_eq!(playback_buffer_capacity(48_000, 2, 250), 24_000);
 }
 
 #[test]
 fn playback_buffer_capacity_rounds_up_after_channel_scaling() {
-    assert_eq!(playback_buffer_capacity(44_100, 6, 1, 1), 265);
-}
-
-#[test]
-fn playback_buffer_capacity_enforces_two_work_horizons_at_one_ms() {
-    assert_eq!(playback_buffer_capacity(48_000, 2, 1, 1_024), 4_096);
-}
-
-#[test]
-fn half_prefill_reserves_one_complete_work_horizon() {
-    let channels = 2;
-    let horizon = 1_024;
-    let capacity = playback_buffer_capacity(48_000, channels, 1, horizon);
-    let (mut producer, consumer) = RingBuffer::<f32>::new(capacity);
-    prefill_silence(&mut producer, capacity / 2);
-    assert!(consumer.slots() >= horizon * channels);
-}
-
-#[test]
-fn work_horizon_rate_conversion_uses_exact_ceiling() {
-    assert_eq!(convert_work_horizon_frames(1_024, 48_000, 96_000), 2_048);
-    assert_eq!(convert_work_horizon_frames(128, 48_000, 44_100), 118);
-}
-
-#[test]
-fn playback_work_horizon_bound_uses_the_final_rate_and_channel_contract() {
-    let old_horizon = crate::engine::MAX_ENGINE_PLAYBACK_BUFFER_SAMPLES / 2;
-    let new_horizon = convert_work_horizon_frames(old_horizon, 96_000, 48_000);
-
-    assert!(validate_playback_work_horizon(2, new_horizon).is_ok());
-    assert!(validate_playback_work_horizon(2, old_horizon).is_err());
+    assert_eq!(playback_buffer_capacity(44_100, 6, 1), 265);
 }
 
 #[test]

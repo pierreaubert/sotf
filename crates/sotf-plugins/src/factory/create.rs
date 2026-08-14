@@ -210,12 +210,13 @@ pub fn create_plugin(
                     channels
                 );
                 params.input_channels = channels;
-                // A serialized layout describes the old channel topology and
-                // cannot remain attached after adapting to the current chain.
-                // Non-ambiguous widths are inferred by Downmix; ambiguous
-                // 8/10-channel widths correctly fail until the caller supplies
-                // an explicit current layout.
-                params.input_layout = None;
+                params.input_layout = match channels {
+                    6 => Some("5.1".to_string()),
+                    8 => Some("7.1".to_string()),
+                    10 => Some("5.1.4".to_string()),
+                    12 => Some("7.1.4".to_string()),
+                    _ => None,
+                };
             }
             let plugin = DownmixPlugin::try_from_params(params)?;
             Ok(Box::new(plugin))
