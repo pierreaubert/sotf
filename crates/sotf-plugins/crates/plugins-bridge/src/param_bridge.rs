@@ -3,7 +3,7 @@
 //! Converts between normalized (0.0-1.0) values used by AU/VST3 hosts
 //! and raw plugin parameter values.
 
-use sotf_host::param_specs::{ParamSpec, ParamType};
+use sotf_host::param_specs::{ParamSpec, ParamType, UpdateMode};
 use sotf_host::parameters::{ParameterId, ParameterValue};
 use sotf_host::plugin::Plugin;
 
@@ -35,6 +35,8 @@ pub struct BridgedParamInfo {
     pub logarithmic: bool,
     /// Group name for UI organization
     pub group: String,
+    /// Whether hosts may automate this parameter without rebuilding the plugin.
+    pub realtime: bool,
 }
 
 impl ParamBridge {
@@ -109,6 +111,7 @@ impl ParamBridge {
                 steps,
                 logarithmic,
                 group: spec.group.to_string(),
+                realtime: spec.update_mode == UpdateMode::Realtime,
             }
         })
     }
