@@ -2,7 +2,11 @@
 
 ## Final remediation status — 2026-08-12
 
-All P1–P3 findings are fixed in `0.5.6` (no P0 was reported):
+The engine queued-work path remediates the retained P1–P3 findings in `0.5.6`
+(no P0 was reported), with one integration limitation still open: direct AU/NIH
+physical callbacks do not have the engine's queued slack. An async/fixed-rate
+adapter was proposed but is not implemented pending explicit architectural
+approval, so this review does not claim direct-callback compliance.
 
 - Every FIR-response parameter is structural. Runtime changes return an error,
   so FIR design/planning/allocation, old-tail/new-filter splices, and latency
@@ -11,6 +15,13 @@ All P1–P3 findings are fixed in `0.5.6` (no P0 was reported):
 - Streaming uses 32-sample-head non-uniform partitioned convolution. QA covers
   1/2/8/12 channels, all tap lengths, and 16/32/64/127/256/512/1024-frame
   callbacks with zero allocations and deadline checks.
+- The 128-input-frame worst-case work horizon is now an object-safe `Plugin`
+  contract, forwarded by the parametric and oversampling adapters, aggregated
+  by `DawHost` in its input clock, and consumed by the production engine's
+  playback queue. The queue maintains enough upstream work to cover that
+  horizon; it does not manufacture a longer physical callback deadline.
+  Smaller and irregular partitions remain valid; the 32-frame convolution
+  priming delay remains included in reported latency.
 - FFI and DSP share `type/freq/q/gain/active` keys and the ten-band limit;
   factory and bridge construction use the same fallible validated constructor.
 - Active-band design/schema, malformed state, bounds/Nyquist checks, active-span
@@ -20,8 +31,9 @@ All P1–P3 findings are fixed in `0.5.6` (no P0 was reported):
 - Mix smoothing advances per sample and is block-partition invariant.
 - Removing recursive callback chunking eliminated its transport/event metadata
   corruption. Stable Auto Gain FIRs retain linear compile metadata.
-- README, AGENTS, changelog, QA, crate version, and lockfile match the new
-  realtime contract.
+- README, AGENTS, changelog, QA, crate version, and lockfile describe the queued
+  engine contract. QA reports direct physical-deadline misses separately and
+  leaves AU/NIH direct-callback compliance unresolved.
 
 ## Findings
 

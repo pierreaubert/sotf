@@ -9,6 +9,15 @@ counts, spectral stop-band rejection, bit-exact callback-partition invariance, a
 dynamic-ratio automation through `Plugin::set_parameter`, and warmed p50/p95/p99/max callback
 timing across every case in the QA quality/rate/channel/callback matrix.
 
+The chunk-sized worst-case work horizon is now part of the object-safe `Plugin`
+contract rather than a QA-only inherent method. `DawHost` converts and sums
+node-local horizons in the host input clock; engine activation converts the sum
+into the output clock and sizes/prefills the playback queue so at least one
+horizon is available before consumption. This is an engine/offline scheduling
+contract, not a longer physical callback deadline. Arbitrary smaller partitions
+remain valid, and the resampler's output-domain latency continues to include its
+conservative input-chunk priming time.
+
 The remaining P0 wording about producing a fixed output callback for every fixed input callback
 is not implementable inside the plugin contract when rates differ. A 256-frame callback spans
 different wall-clock durations at 44.1 and 48 kHz (about 279 output frames per 256 input frames).
@@ -17,7 +26,9 @@ periodic duplication/drop. Produced frames therefore remain authoritative; a dev
 fixed-frame consumer must own an output-clock FIFO/pull scheduler outside the plugin graph. This
 is an integration architecture boundary, not a Resampler DSP defect.
 
-All P0-P3 findings are remediated. In addition to the 0.5.25 timing,
+All P0-P3 findings are remediated for the engine/offline scheduling path. The
+fixed-frame FFI facade explicitly rejects variable-rate operation rather than
+claiming unsupported direct-callback behavior. In addition to the 0.5.25 timing,
 transactionality, realtime-parameter, choice, latency, rate-negotiation, unity,
 known-zero, estimator, documentation, and QA fixes, 0.5.26 adds an object-safe,
 allocation-free `Plugin::drain` lifecycle through `DawHost` and the processing
