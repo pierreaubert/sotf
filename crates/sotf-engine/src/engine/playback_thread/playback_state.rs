@@ -2,7 +2,7 @@ use super::build::build_output_stream;
 use super::misc::prefill_silence;
 use super::misc::select_playback_device;
 use super::pick::choose_output_format;
-use super::playback::{playback_buffer_capacity, validate_playback_work_horizon};
+use super::playback::playback_buffer_capacity;
 use super::types::RebuildPlaybackParams;
 use super::types::RebuiltPlaybackStream;
 use crate::engine::volume_ramp::VolumeRampState;
@@ -99,13 +99,7 @@ pub(super) fn rebuild_playback_stream(
     }
 
     let channels = hw_channels as usize;
-    validate_playback_work_horizon(channels, params.work_horizon_frames)?;
-    let buffer_capacity = playback_buffer_capacity(
-        params.sample_rate,
-        channels,
-        params.buffer_ms,
-        params.work_horizon_frames,
-    );
+    let buffer_capacity = playback_buffer_capacity(params.sample_rate, channels, params.buffer_ms);
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
     let state = Arc::new(PlaybackState::new(buffer_capacity));
     copy_playback_controls(params.old_state, &state);
@@ -133,7 +127,6 @@ pub(super) fn rebuild_playback_stream(
         output_format,
         channels,
         buffer_capacity,
-        work_horizon_frames: params.work_horizon_frames,
     })
 }
 

@@ -14,7 +14,6 @@ pub(super) struct RebuiltPlaybackStream {
     pub(super) output_format: SampleFormat,
     pub(super) channels: usize,
     pub(super) buffer_capacity: usize,
-    pub(super) work_horizon_frames: usize,
 }
 
 pub(super) struct RebuildPlaybackParams<'a> {
@@ -23,7 +22,6 @@ pub(super) struct RebuildPlaybackParams<'a> {
     pub(super) sample_rate: u32,
     pub(super) requested_channels: usize,
     pub(super) buffer_ms: u32,
-    pub(super) work_horizon_frames: usize,
     pub(super) buffer_size: cpal::BufferSize,
     pub(super) event_tx: crossbeam::channel::Sender<ThreadEvent>,
     pub(super) old_state: &'a PlaybackState,
